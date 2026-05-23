@@ -141,11 +141,17 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, onCw
       }
     });
 
+    // Guard for the RAF: if the component unmounts before the frame fires
+    // (rapid navigation), bail out so we don't register a listener that can
+    // never be cleaned up.
+    let destroyed = false;
+
     // Await the listener before creating the PTY so we never miss early output.
     // pty_create returns true for a new session, false when reconnecting to an
     // existing one (e.g. after a tab switch). On reconnect we send \n so bash
     // re-prints its prompt in the fresh terminal.
     requestAnimationFrame(async () => {
+      if (destroyed) return;
       fitAddon.fit();
       const unlisten = await listen<string>(`pty_data_${paneId}`, (ev) => {
         term.write(ev.payload);
@@ -156,6 +162,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, onCw
           armQuietTimer();
         }
       });
+      if (destroyed) { unlisten(); return; }
       unlistenRef.current = unlisten;
 
       const isNew = await invoke<boolean>("pty_create", {
@@ -171,14 +178,19 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, onCw
       }
     });
 
-    // Auto-resize
+    // Auto-resize. Guard against zero-dimension callbacks that fire when the
+    // console screen is hidden via display:none — fitting a zero-size terminal
+    // would corrupt the PTY dimensions until it becomes visible again.
     const ro = new ResizeObserver(() => {
-      fitAddon.fit();
-      invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+      if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+        fitAddon.fit();
+        invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+      }
     });
     ro.observe(el);
 
     return () => {
+      destroyed = true;
       if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
       el.removeEventListener("focusin", onFocusIn);
       disposeOnData.dispose();
@@ -188,7 +200,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, onCw
       termRef.current = null;
       fitRef.current  = null;
       // PTY session intentionally kept alive — reconnects on remount (tab switch).
-      // Sessions are cleaned up when the Tauri process exits.
+      // Sessions are cleaned up explicitly when a tab is closed (pty_kill).
     };
   }, [paneId]);
 
