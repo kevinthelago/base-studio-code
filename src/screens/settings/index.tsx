@@ -1,6 +1,7 @@
 import { useAppStore } from "../../store";
 import { GitHubSettings } from "./GitHub";
 import { IntegrationsSettings } from "./Integrations";
+import { AgentsSettings } from "./Agents";
 
 const NAV_ITEMS = [
   { k: "general",      label: "General"      },
@@ -44,7 +45,8 @@ export function SettingsScreen() {
         <section style={{ flex: 1, padding: 24, overflow: "auto", minWidth: 0 }}>
           {settingsSection === "github"       && <GitHubSettings />}
           {settingsSection === "integrations" && <IntegrationsSettings />}
-          {settingsSection !== "github" && settingsSection !== "integrations" && (
+          {settingsSection === "agents"       && <AgentsSettings />}
+          {settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               height: "100%", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)",
