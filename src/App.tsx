@@ -103,8 +103,19 @@ export default function App() {
     activeScreen, setScreen,
     tabs, activeTabIdx, setActiveTab,
     addTab, closeTab,
-    githubConnected,
+    focusedAgentName,
   } = useAppStore();
+
+  const SCREEN_LABELS: Record<string, string> = {
+    console:    tabs[activeTabIdx]?.name ?? "console",
+    knowledge:  "Knowledge Store",
+    automation: "Automations",
+    github:     "GitHub",
+    settings:   "Settings",
+  };
+  const pageLabel    = SCREEN_LABELS[activeScreen] ?? activeScreen;
+  const elementLabel = activeScreen === "console" && focusedAgentName ? focusedAgentName : null;
+  const titleWorkspace = [pageLabel, elementLabel].filter(Boolean).join(" · ");
 
   const [confirmCloseIdx, setConfirmCloseIdx] = useState<number | null>(null);
   const [showNewTab, setShowNewTab] = useState(false);
@@ -153,7 +164,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Titlebar workspace="orchestrator · acme/payments" />
+      <Titlebar workspace={titleWorkspace} />
       <div className="shell">
         <Rail active={activeScreen} onNavigate={setScreen} />
         <div className="main">
@@ -168,10 +179,9 @@ export default function App() {
           )}
           <div className="page">{screen}</div>
           <StatusBar extra={
-            activeScreen === "console"    ? <span className="s">9 panes · 5 views · acme/payments</span>
-            : activeScreen === "automation" ? <span className="s"><i className="warn" /> 4 schedules armed · next at 02:00</span>
-            : activeScreen === "github" && !githubConnected ? <span className="s" style={{ color: "var(--fg-dim)" }}><i className="off" /> github · not connected</span>
-            : undefined
+            activeScreen === "automation"
+              ? <span className="s"><i className="warn" /> 4 schedules armed · next at 02:00</span>
+              : undefined
           } />
         </div>
       </div>

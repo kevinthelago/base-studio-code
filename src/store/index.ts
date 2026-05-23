@@ -24,6 +24,8 @@ interface AppStore {
   setPaneMenu: (idx: number) => void;
   setFocusedPane: (idx: number) => void;
   setFullscreenPane: (idx: number) => void;
+  focusedAgentName: string;
+  setFocusedAgentName: (name: string) => void;
   setPaneView: (idx: number, view: ViewKey) => void;
   setAllPanesView: (view: ViewKey) => void;
 
@@ -90,6 +92,8 @@ export const useAppStore = create<AppStore>()(
       setPaneMenu:       (idx) => set({ paneMenuOpenIdx: idx }),
       setFocusedPane:    (idx) => set({ focusedPaneIdx: idx }),
       setFullscreenPane: (idx) => set({ fullscreenPaneIdx: idx }),
+      focusedAgentName: "",
+      setFocusedAgentName: (name) => set({ focusedAgentName: name }),
       setPaneView: (idx, view) =>
         set((s) => { const v = [...s.paneViews]; v[idx] = view; return { paneViews: v }; }),
       setAllPanesView: (view) =>
