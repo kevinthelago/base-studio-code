@@ -111,7 +111,7 @@ function BurnDown({ open, closed }: { open: number; closed: number }) {
 export function Roadmap() {
   const {
     githubToken,
-    activeProjectId, activeProjectName, activeProjectRepo, activeProjectNumber,
+    activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
   } = useAppStore();
 
   const [milestones, setMilestones] = useState<GhMilestone[]>([]);
@@ -136,6 +136,7 @@ export function Roadmap() {
     number: activeProjectNumber,
     name: activeProjectName,
     repo: activeProjectRepo,
+    repos: activeProjectRepos,
     description: "",
   };
 

@@ -410,7 +410,7 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
 export function Issues() {
   const {
     githubToken,
-    activeProjectId, activeProjectName, activeProjectRepo, activeProjectNumber,
+    activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
   } = useAppStore();
 
   const [rawIssues, setRawIssues] = useState<FlatIssue[]>([]);
@@ -516,6 +516,7 @@ export function Issues() {
     number: activeProjectNumber,
     name: activeProjectName,
     repo: activeProjectRepo,
+    repos: activeProjectRepos,
     description: "",
   };
 

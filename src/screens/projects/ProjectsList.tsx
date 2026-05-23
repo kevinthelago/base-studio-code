@@ -123,8 +123,9 @@ export function ProjectsList() {
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
   function handleOpenBoard(p: GhProject) {
-    const repo = p.repositories.nodes[0]?.nameWithOwner ?? "";
-    setActiveProjectMeta(p.id, p.title, repo, p.number);
+    const repos = p.repositories.nodes.map((r) => r.nameWithOwner);
+    const repo = repos[0] ?? "";
+    setActiveProjectMeta(p.id, p.title, repo, p.number, repos);
     setProjectsView("board");
   }
 
