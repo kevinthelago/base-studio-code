@@ -22,7 +22,7 @@ export function AutomationsScreen() {
               Automations
             </h2>
             <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
-              Schedule the app to run a premade command or load a knowledge article into a specified console.
+              Schedule the app to run a premade command or load a knowledge article into a specified pane.
             </div>
           </div>
           <button className="btn">import</button>

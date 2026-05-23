@@ -225,10 +225,10 @@ function ScheduleEditor({ s }: { s: Schedule }) {
 
         <Lbl c="info">target</Lbl>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <Field label="console">
+          <Field label="tab">
             <select className="input" defaultValue={s.target.split(" › ")[0]}>
               <option>orchestrator</option><option>feat/tunnel</option>
-              <option>scratch</option><option>all consoles</option>
+              <option>scratch</option><option>all tabs</option>
             </select>
           </Field>
           <Field label="pane (agent)">
@@ -237,7 +237,7 @@ function ScheduleEditor({ s }: { s: Schedule }) {
               <option>@docs</option><option>@github</option><option>(any free)</option>
             </select>
           </Field>
-          <Field label="if console isn't open">
+          <Field label="if tab isn't open">
             <select className="input" defaultValue="open">
               <option value="open">open it</option><option>skip</option><option>queue</option>
             </select>

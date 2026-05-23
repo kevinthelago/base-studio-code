@@ -196,7 +196,7 @@ export const SCHEDULES: Schedule[] = [
     action: "knowledge", detail: "pin blk_9a2c (Review policy — TS / Rust) into the pane context",
     lastRun: "14:15 · ✓",        nextRun: "15:15 · in 22m" },
   { id: "S-05", name: "Pause overnight",          on: false,
-    when: "every day · 22:00",      target: "all consoles",
+    when: "every day · 22:00",      target: "all tabs",
     action: "command",  detail: "base-studio mute --all && base-studio resume --at 07:00",
     lastRun: "paused",           nextRun: "—" },
 ];
