@@ -38,6 +38,7 @@ const RESET_STATE = {
   planningPitch: "",
   planningRepo: "",
   projectLocalRepos: {} as Record<string, import("../store").ResolvedRepo[]>,
+  configProfiles: [] as import("../store").ConfigProfile[],
 };
 
 beforeEach(() => {
@@ -525,11 +526,80 @@ describe("quickStartProject", () => {
     expect(paneNames[before][1]).toBe("ui");
   });
 
+  it("caps layout at 2×2 even with 5+ repos", () => {
+    const repos = Array.from({ length: 5 }, (_, i) => makeRepo(`repo${i}`, `/r${i}`));
+    useAppStore.getState().quickStartProject("p", repos);
+    const { tabs, activeTabIdx } = useAppStore.getState();
+    expect(tabs[activeTabIdx].layout).toBe("2×2");
+  });
+
   it("does nothing but switch screen when called with empty repos", () => {
     const tabsBefore = useAppStore.getState().tabs.length;
     useAppStore.getState().quickStartProject("p", []);
     expect(useAppStore.getState().tabs).toHaveLength(tabsBefore);
     expect(useAppStore.getState().activeScreen).toBe("console");
+  });
+});
+
+// ── Config profiles ───────────────────────────────────────────────────────────
+
+describe("config profiles", () => {
+  const makeProfile = (name: string) => ({
+    name,
+    instructions: `# ${name}`,
+    tools: { allow: ["Read"], deny: ["Bash"] },
+    kbBlockIds: [],
+  });
+
+  it("addConfigProfile appends with a unique id", () => {
+    useAppStore.getState().addConfigProfile(makeProfile("review-mode"));
+    useAppStore.getState().addConfigProfile(makeProfile("full-access"));
+    const { configProfiles } = useAppStore.getState();
+    expect(configProfiles).toHaveLength(2);
+    expect(configProfiles[0].id).not.toBe(configProfiles[1].id);
+    expect(configProfiles[0].name).toBe("review-mode");
+  });
+
+  it("addConfigProfile stores instructions and tools", () => {
+    useAppStore.getState().addConfigProfile(makeProfile("my-profile"));
+    const p = useAppStore.getState().configProfiles[0];
+    expect(p.instructions).toBe("# my-profile");
+    expect(p.tools.allow).toEqual(["Read"]);
+    expect(p.tools.deny).toEqual(["Bash"]);
+  });
+
+  it("updateConfigProfile patches the matching profile", () => {
+    useAppStore.getState().addConfigProfile(makeProfile("original"));
+    const { id } = useAppStore.getState().configProfiles[0];
+    useAppStore.getState().updateConfigProfile(id, { name: "updated", tools: { allow: [], deny: [] } });
+    const p = useAppStore.getState().configProfiles[0];
+    expect(p.name).toBe("updated");
+    expect(p.tools.allow).toEqual([]);
+    expect(p.instructions).toBe("# original"); // unpatched fields preserved
+  });
+
+  it("updateConfigProfile does not affect other profiles", () => {
+    useAppStore.getState().addConfigProfile(makeProfile("a"));
+    useAppStore.getState().addConfigProfile(makeProfile("b"));
+    const idA = useAppStore.getState().configProfiles[0].id;
+    useAppStore.getState().updateConfigProfile(idA, { name: "a-updated" });
+    expect(useAppStore.getState().configProfiles[1].name).toBe("b");
+  });
+
+  it("removeConfigProfile deletes by id", () => {
+    useAppStore.getState().addConfigProfile(makeProfile("keep"));
+    useAppStore.getState().addConfigProfile(makeProfile("delete-me"));
+    const { id } = useAppStore.getState().configProfiles[1];
+    useAppStore.getState().removeConfigProfile(id);
+    const { configProfiles } = useAppStore.getState();
+    expect(configProfiles).toHaveLength(1);
+    expect(configProfiles[0].name).toBe("keep");
+  });
+
+  it("addConfigProfile stores kbBlockIds", () => {
+    useAppStore.getState().addConfigProfile({ ...makeProfile("p"), kbBlockIds: ["blk_1", "blk_2"] });
+    const p = useAppStore.getState().configProfiles[0];
+    expect(p.kbBlockIds).toEqual(["blk_1", "blk_2"]);
   });
 });
 
