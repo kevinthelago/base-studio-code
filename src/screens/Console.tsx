@@ -53,12 +53,43 @@ const CELLS: PaneCell[] = [
     }]} />, meta: "tail" },
 ];
 
-export function ConsoleScreen() {
-  const { tabs, activeTabIdx, paneMenuOpenIdx } = useAppStore();
-  const activeTab = tabs[activeTabIdx];
+function PaneAt({ c, i, paneMenuOpenIdx, focusedPaneIdx }: {
+  c: PaneCell; i: number; paneMenuOpenIdx: number; focusedPaneIdx: number;
+}) {
+  return (
+    <PaneShell
+      agent={c.agent}
+      status={c.status}
+      repo="acme/payments"
+      branch="main"
+      dirty
+      model="sonnet-4.5"
+      available={["console", "files", "branches", "changes", "log"]}
+      active={c.active}
+      meta={c.meta}
+      menuOpen={i === paneMenuOpenIdx}
+      focused={i === focusedPaneIdx}
+    >
+      {c.view}
+    </PaneShell>
+  );
+}
 
-  // Parse layout string e.g. "3×3" → [3, 3]
+export function ConsoleScreen() {
+  const { tabs, activeTabIdx, paneMenuOpenIdx, focusedPaneIdx, fullscreenPaneIdx } = useAppStore();
+  const activeTab = tabs[activeTabIdx];
   const [cols, rows] = activeTab.layout.split("×").map(Number);
+  const paneCount = cols * rows;
+
+  // Fullscreen: render one pane filling the entire content area
+  if (fullscreenPaneIdx >= 0 && fullscreenPaneIdx < paneCount) {
+    const c = CELLS[fullscreenPaneIdx];
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, padding: 10 }}>
+        <PaneAt c={c} i={fullscreenPaneIdx} paneMenuOpenIdx={paneMenuOpenIdx} focusedPaneIdx={focusedPaneIdx} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -69,23 +100,8 @@ export function ConsoleScreen() {
           gridTemplateRows:    `repeat(${rows}, 1fr)`,
         }}
       >
-        {CELLS.slice(0, cols * rows).map((c, i) => (
-          <PaneShell
-            key={i}
-            agent={c.agent}
-            status={c.status}
-            repo="acme/payments"
-            branch="main"
-            dirty
-            model="sonnet-4.5"
-            available={["console", "files", "branches", "changes", "log"]}
-            active={c.active}
-            meta={c.meta}
-            menuOpen={i === paneMenuOpenIdx}
-            // Toggle menu: click same index closes, different opens
-          >
-            {c.view}
-          </PaneShell>
+        {CELLS.slice(0, paneCount).map((c, i) => (
+          <PaneAt key={i} c={c} i={i} paneMenuOpenIdx={paneMenuOpenIdx} focusedPaneIdx={focusedPaneIdx} />
         ))}
       </div>
     </div>
