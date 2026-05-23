@@ -31,7 +31,7 @@ interface PaneShellProps {
 export function PaneShell({
   agent,
   status = "run",
-  cwd,
+  cwd: _cwd,
   repo,
   branch,
   dirty,

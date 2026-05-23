@@ -136,7 +136,7 @@ export function KbConsole({ block }: Props) {
       const resultBlocks: ApiToolResult[] = [];
 
       for (const tb of toolUseBlocks) {
-        let result = "";
+        let result: string;
         let ok = true;
         try {
           if (tb.name === "apply_tag") {
