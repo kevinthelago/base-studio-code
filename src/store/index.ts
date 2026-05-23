@@ -11,8 +11,12 @@ interface AppStore {
   tabs: Tab[];
   activeTabIdx: number;
   paneMenuOpenIdx: number;
+  focusedPaneIdx: number;
+  fullscreenPaneIdx: number;
   setActiveTab: (idx: number) => void;
   setPaneMenu: (idx: number) => void;
+  setFocusedPane: (idx: number) => void;
+  setFullscreenPane: (idx: number) => void;
 
   // GitHub
   githubConnected: boolean;
@@ -39,8 +43,12 @@ export const useAppStore = create<AppStore>((set) => ({
   ],
   activeTabIdx: 0,
   paneMenuOpenIdx: -1,
-  setActiveTab: (idx) => set({ activeTabIdx: idx }),
-  setPaneMenu:  (idx) => set({ paneMenuOpenIdx: idx }),
+  focusedPaneIdx: -1,
+  fullscreenPaneIdx: -1,
+  setActiveTab:      (idx) => set({ activeTabIdx: idx }),
+  setPaneMenu:       (idx) => set({ paneMenuOpenIdx: idx }),
+  setFocusedPane:    (idx) => set({ focusedPaneIdx: idx }),
+  setFullscreenPane: (idx) => set({ fullscreenPaneIdx: idx }),
 
   githubConnected: true,
   githubActiveTab: "overview",

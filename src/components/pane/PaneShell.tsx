@@ -16,6 +16,7 @@ interface PaneShellProps {
   active?: ViewKey;
   banner?: React.ReactNode;
   menuOpen?: boolean;
+  focused?: boolean;
   children: React.ReactNode;
 }
 
@@ -32,6 +33,7 @@ export function PaneShell({
   active = "console",
   banner,
   menuOpen = false,
+  focused = false,
   children,
 }: PaneShellProps) {
   const statusColor =
@@ -40,7 +42,7 @@ export function PaneShell({
     : "var(--success)";
 
   return (
-    <div className="pane focused" style={{
+    <div className={focused ? "pane focused" : "pane"} style={{
       height: "100%",
       display: "flex", flexDirection: "column",
       position: "relative",
