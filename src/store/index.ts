@@ -1,20 +1,22 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { Screen } from "../components/chrome/Rail";
 import type { Tab } from "../components/chrome/Tabstrip";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import { KB_BLOCKS, type KbBlock } from "../data/mock";
+import { persistStorage } from "../lib/storage";
 
 interface AppStore {
   // Navigation
   activeScreen: Screen;
   setScreen: (screen: Screen) => void;
 
-  // Console
+  // Console — tabs & panes
   tabs: Tab[];
   activeTabIdx: number;
-  paneMenuOpenIdx: number;
-  focusedPaneIdx: number;
-  fullscreenPaneIdx: number;
+  paneMenuOpenIdx: number;   // transient — NOT persisted
+  focusedPaneIdx: number;    // transient — NOT persisted
+  fullscreenPaneIdx: number; // transient — NOT persisted
   paneViews: ViewKey[];
   setActiveTab: (idx: number) => void;
   setPaneMenu: (idx: number) => void;
@@ -44,69 +46,107 @@ interface AppStore {
   removeKbTag: (blockId: string, tag: string) => void;
   renameKbBlock: (blockId: string, title: string) => void;
   updateKbBlockContent: (blockId: string, content: string) => void;
+
+  // Agent settings
+  allowedCommands: string[];
+  addAllowedCommand: (cmd: string) => void;
+  removeAllowedCommand: (cmd: string) => void;
+  setAllowedCommands: (commands: string[]) => void;
 }
 
-export const useAppStore = create<AppStore>((set) => ({
-  activeScreen: "console",
-  setScreen: (screen) => set({ activeScreen: screen }),
+export const useAppStore = create<AppStore>()(
+  persist(
+    (set) => ({
+      activeScreen: "console",
+      setScreen: (screen) => set({ activeScreen: screen }),
 
-  tabs: [
-    { name: "orchestrator", layout: "3×3", state: "run" },
-    { name: "feat/tunnel",  layout: "2×2", state: "on"  },
-    { name: "scratch",      layout: "1×1", state: "idle" },
-  ],
-  activeTabIdx: 0,
-  paneMenuOpenIdx: -1,
-  focusedPaneIdx: -1,
-  fullscreenPaneIdx: -1,
-  // Initial views match CELLS order: console,files,changes,branches,console,console,log,console,console
-  paneViews: ["console", "files", "changes", "branches", "console", "console", "log", "console", "console"],
-  setActiveTab:      (idx) => set({ activeTabIdx: idx }),
-  setPaneMenu:       (idx) => set({ paneMenuOpenIdx: idx }),
-  setFocusedPane:    (idx) => set({ focusedPaneIdx: idx }),
-  setFullscreenPane: (idx) => set({ fullscreenPaneIdx: idx }),
-  setPaneView: (idx, view) =>
-    set((s) => { const v = [...s.paneViews]; v[idx] = view; return { paneViews: v }; }),
-  setAllPanesView: (view) =>
-    set((s) => ({ paneViews: s.paneViews.map(() => view) })),
+      tabs: [
+        { name: "orchestrator", layout: "3×3", state: "run" },
+        { name: "feat/tunnel",  layout: "2×2", state: "on"  },
+        { name: "scratch",      layout: "1×1", state: "idle" },
+      ],
+      activeTabIdx: 0,
+      paneMenuOpenIdx: -1,
+      focusedPaneIdx: -1,
+      fullscreenPaneIdx: -1,
+      paneViews: ["console", "files", "changes", "branches", "console", "console", "log", "console", "console"],
+      setActiveTab:      (idx) => set({ activeTabIdx: idx }),
+      setPaneMenu:       (idx) => set({ paneMenuOpenIdx: idx }),
+      setFocusedPane:    (idx) => set({ focusedPaneIdx: idx }),
+      setFullscreenPane: (idx) => set({ fullscreenPaneIdx: idx }),
+      setPaneView: (idx, view) =>
+        set((s) => { const v = [...s.paneViews]; v[idx] = view; return { paneViews: v }; }),
+      setAllPanesView: (view) =>
+        set((s) => ({ paneViews: s.paneViews.map(() => view) })),
 
-  githubConnected: true,
-  githubActiveTab: "overview",
-  setGithubTab: (tab) => set({ githubActiveTab: tab }),
+      githubConnected: true,
+      githubActiveTab: "overview",
+      setGithubTab: (tab) => set({ githubActiveTab: tab }),
 
-  automationsTab: "schedules",
-  setAutomationsTab: (tab) => set({ automationsTab: tab }),
+      automationsTab: "schedules",
+      setAutomationsTab: (tab) => set({ automationsTab: tab }),
 
-  settingsSection: "github",
-  setSettingsSection: (section) => set({ settingsSection: section }),
+      settingsSection: "github",
+      setSettingsSection: (section) => set({ settingsSection: section }),
 
-  kbBlocks: KB_BLOCKS.map((b) => ({ ...b })),
-  claudeApiKey: "",
-  setClaudeApiKey: (key) => set({ claudeApiKey: key }),
-  applyKbTag: (blockId, tag) =>
-    set((s) => ({
-      kbBlocks: s.kbBlocks.map((b) =>
-        b.id === blockId && !b.tags.includes(tag)
-          ? { ...b, tags: [...b.tags, tag] }
-          : b
-      ),
-    })),
-  removeKbTag: (blockId, tag) =>
-    set((s) => ({
-      kbBlocks: s.kbBlocks.map((b) =>
-        b.id === blockId ? { ...b, tags: b.tags.filter((t) => t !== tag) } : b
-      ),
-    })),
-  renameKbBlock: (blockId, title) =>
-    set((s) => ({
-      kbBlocks: s.kbBlocks.map((b) => (b.id === blockId ? { ...b, title } : b)),
-    })),
-  updateKbBlockContent: (blockId, content) =>
-    set((s) => ({
-      kbBlocks: s.kbBlocks.map((b) =>
-        b.id === blockId
-          ? { ...b, content, lines: content.split("\n").length }
-          : b
-      ),
-    })),
-}));
+      kbBlocks: KB_BLOCKS.map((b) => ({ ...b })),
+      claudeApiKey: "",
+      setClaudeApiKey: (key) => set({ claudeApiKey: key }),
+      applyKbTag: (blockId, tag) =>
+        set((s) => ({
+          kbBlocks: s.kbBlocks.map((b) =>
+            b.id === blockId && !b.tags.includes(tag)
+              ? { ...b, tags: [...b.tags, tag] }
+              : b
+          ),
+        })),
+      removeKbTag: (blockId, tag) =>
+        set((s) => ({
+          kbBlocks: s.kbBlocks.map((b) =>
+            b.id === blockId ? { ...b, tags: b.tags.filter((t) => t !== tag) } : b
+          ),
+        })),
+      renameKbBlock: (blockId, title) =>
+        set((s) => ({
+          kbBlocks: s.kbBlocks.map((b) => (b.id === blockId ? { ...b, title } : b)),
+        })),
+      updateKbBlockContent: (blockId, content) =>
+        set((s) => ({
+          kbBlocks: s.kbBlocks.map((b) =>
+            b.id === blockId
+              ? { ...b, content, lines: content.split("\n").length }
+              : b
+          ),
+        })),
+
+      allowedCommands: [],
+      addAllowedCommand: (cmd) =>
+        set((s) => ({
+          allowedCommands: s.allowedCommands.includes(cmd)
+            ? s.allowedCommands
+            : [...s.allowedCommands, cmd],
+        })),
+      removeAllowedCommand: (cmd) =>
+        set((s) => ({ allowedCommands: s.allowedCommands.filter((c) => c !== cmd) })),
+      setAllowedCommands: (commands) => set({ allowedCommands: commands }),
+    }),
+    {
+      name: "app-state",
+      storage: createJSONStorage(() => persistStorage),
+      // Exclude transient UI-only state from the persisted snapshot.
+      partialize: (s) => ({
+        activeScreen:    s.activeScreen,
+        tabs:            s.tabs,
+        activeTabIdx:    s.activeTabIdx,
+        paneViews:       s.paneViews,
+        githubConnected: s.githubConnected,
+        githubActiveTab: s.githubActiveTab,
+        automationsTab:  s.automationsTab,
+        settingsSection: s.settingsSection,
+        kbBlocks:        s.kbBlocks,
+        claudeApiKey:    s.claudeApiKey,
+        allowedCommands: s.allowedCommands,
+      }),
+    }
+  )
+);
