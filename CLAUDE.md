@@ -8,225 +8,132 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The core value proposition: run many AI coding agents in parallel across multiple repositories, with standardized knowledge (prompts, GitHub Actions templates, automation recipes) injected per project based on its tech stack.
 
-## Technology Decisions (TBD — record here as stack is chosen)
+## Tech Stack
 
-This section should be updated once the tech stack is decided. Candidates to evaluate:
+| Layer | Choice |
+|---|---|
+| Desktop shell | Tauri v2 (Rust backend + WebView) |
+| Frontend | React 18 + TypeScript, bundled with Vite |
+| State management | Zustand |
+| Styling | CSS custom properties (`src/styles/tokens.css`) |
+| Fonts | Inter (sans) · JetBrains Mono (mono) via Google Fonts |
+| Agent orchestration | Claude API (default: `claude-sonnet-4-6`) |
+| Mobile tunnel | WebSocket server (`crates/ws-server`) — token auth + QR pairing |
+| Storage | SQLite (`crates/kb`, `crates/orch`) |
 
-- **Desktop shell**: Tauri (Rust + WebView), Electron, or native Rust TUI
-- **Agent orchestration**: Claude API with parallel streaming sessions
-- **Tunneling to mobile**: WebSocket server on desktop, client on mobile (or ngrok-style relay)
-- **Storage**: SQLite (via `rusqlite` or `sqlx`) for settings, knowledge stores, conversation history
-- **Frontend (if web-based)**: React or Svelte
+## Commands
+
+```bash
+npm run dev          # Vite dev server — frontend only (hot-reload)
+cargo tauri dev      # Full Tauri app with native window + hot-reload
+cargo tauri build    # Production build (creates platform installer)
+cargo test           # Run Rust backend tests
+npm run typecheck    # TypeScript type-check without emit
+```
+
+## Project Structure
+
+```
+base-studio-code/
+├── src-tauri/               # Rust backend (Tauri v2)
+│   ├── Cargo.toml           # workspace
+│   ├── tauri.conf.json
+│   └── src/main.rs          # Tauri entry; registers commands
+├── src/                     # React frontend (TypeScript)
+│   ├── main.tsx             # Vite entry; imports tokens.css
+│   ├── App.tsx              # Shell (Titlebar + Rail + screen switcher)
+│   ├── styles/
+│   │   └── tokens.css       # Design tokens, base component styles
+│   ├── components/
+│   │   ├── chrome/          # Titlebar, Rail, Tabstrip, StatusBar
+│   │   └── pane/            # PaneShell, ViewTabs, HamburgerMenu
+│   │       └── views/       # ConsoleView, FilesView, BranchesView, ChangesView, LogView
+│   ├── screens/
+│   │   ├── Console.tsx
+│   │   ├── KnowledgeStore.tsx
+│   │   ├── github/          # index (GitHubShell), Empty, Overview, Actions, Hooks
+│   │   ├── automations/     # index (AutomationShell), Schedules, Commands
+│   │   └── settings/        # index (SettingsShell), GitHub, Integrations
+│   ├── data/
+│   │   └── mock.ts          # All typed sample data extracted from design files
+│   └── store/
+│       └── index.ts         # Zustand store
+├── design/                  # ⚠️  REFERENCE ONLY — do not edit
+│   └── *.jsx / styles.css   # Browser-rendered design prototype (Babel standalone)
+└── package.json
+```
 
 ## Architecture
 
 ```
 base-studio-code (desktop host)
-├── Agent Orchestrator      — spawns/manages parallel Claude API sessions
-├── GitHub Integration      — OAuth, repo selection, PR/issue access
-├── Knowledge Store         — injectable context blocks keyed by tech stack tag
-├── Automation Engine       — user-defined triggers → agent actions
-├── WebSocket Server        — tunnel endpoint for mobile-studio-code
-└── UI Shell                — tabbed console grid, settings, store editor
+├── Agent Orchestrator      — spawns/manages parallel Claude API sessions  (crates/orch)
+├── GitHub Integration      — OAuth, repo selection, PR/issue access       (crates/gh)
+├── Knowledge Store         — injectable context blocks keyed by stack tag  (crates/kb)
+├── WebSocket Server        — tunnel endpoint for mobile-studio-code       (crates/ws-server)
+└── UI Shell                — Tauri WebView running the React frontend
 ```
 
 ```
-mobile-studio-code (thin client)
-└── WebSocket Client        — connects to desktop host tunnel
+mobile-studio-code (thin client — separate repo)
+└── WebSocket Client        → connects to desktop host tunnel
     └── Mirrors console grid view + basic input
-```
-
-## UI Layout
-
-### 1. Main Console View (Primary Screen)
-
-The main workspace. A configurable grid of agent consoles. Grid sizes: 1×1, 1×2, 2×2, 2×3, 3×3, 4×4, 5×5.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  [base-studio]  [Tab 1 ▼]  [Tab 2 ▼]  [+ New Tab]   [⚙ Settings] │
-├─────────────────────────────────────────────────────────────┤
-│  Layout: [1×1] [1×2] [2×2] [2×3] [3×3] …   [+ Agent]       │
-├──────────────────────┬──────────────────────────────────────┤
-│                      │                                      │
-│  Agent Console A     │  Agent Console B                    │
-│  ─────────────────   │  ─────────────────                  │
-│  Repo: my-api        │  Repo: mobile-studio-code           │
-│  Model: sonnet-4.6   │  Model: opus-4.7                    │
-│  Status: ● Running   │  Status: ○ Idle                     │
-│                      │                                      │
-│  > fix auth bug      │  > write unit tests for...          │
-│  [assistant output…] │  [assistant output…]                │
-│                      │                                      │
-│  ──────────────────  │  ──────────────────                 │
-│  [  User input...  ] │  [  User input...  ]                │
-│  [Send] [Inject ▼]   │  [Send] [Inject ▼]                  │
-└──────────────────────┴──────────────────────────────────────┘
-```
-
-Each console panel is independently configured with: repo, model, system prompt/persona, and injected knowledge blocks. "Inject ▼" opens a picker for knowledge store entries relevant to that repo's stack.
-
-### 2. Tab Configuration
-
-Each top-level tab is a named workspace with its own grid layout and set of agent consoles. Tabs persist across sessions.
-
-```
-┌───────────────────────────────────────────┐
-│  Tab Name:  [ Backend Work              ] │
-│  Grid:      [2×2 ▼]                       │
-│                                           │
-│  Console Slots:  [A] [B] [C] [D]          │
-│  — Each slot: repo, model, initial prompt │
-│                                           │
-│  [Save]   [Delete Tab]                    │
-└───────────────────────────────────────────┘
-```
-
-### 3. Settings — GitHub
-
-```
-┌─────────────────────────────────────────────────┐
-│  GitHub                                         │
-│  ─────────────────────────────────────────────  │
-│  Account:    [ Connect GitHub Account ]         │
-│  Connected:  @kevinthelago  ✓                   │
-│                                                 │
-│  Repositories                                   │
-│  ─────────────────────────────────────────────  │
-│  [ ] org/repo-a         [ ] org/repo-b          │
-│  [x] kevinthelago/api   [x] kevinthelago/mobile │
-│  [Search repos…]                                │
-│                                                 │
-│  Default branch strategy: [develop → main ▼]   │
-│  [Save]                                         │
-└─────────────────────────────────────────────────┘
-```
-
-### 4. Settings — Integrations
-
-```
-┌─────────────────────────────────────────────────┐
-│  Integrations                                   │
-│  ─────────────────────────────────────────────  │
-│  Claude API                                     │
-│    Key: [••••••••••••••••]  [Verify]            │
-│    Default model: [claude-sonnet-4-6 ▼]         │
-│                                                 │
-│  Mobile Tunnel                                  │
-│    Status: ● Listening on ws://localhost:7734   │
-│    Auth token: [auto-generated]  [Regenerate]  │
-│    [Show QR for mobile pairing]                 │
-│                                                 │
-│  Future: Linear, Slack, Jira, Sentry…           │
-└─────────────────────────────────────────────────┘
-```
-
-### 5. Settings — Automations
-
-User-defined trigger → action rules that fire agents automatically.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Automations                          [+ New Automation]    │
-│  ─────────────────────────────────────────────────────────  │
-│  ▸ On PR opened in kevinthelago/api                         │
-│    → Run agent: "Review PR against CLAUDE.md standards"     │
-│    → Inject: [github-actions/node, code-review-checklist]   │
-│    Status: ● Enabled                  [Edit] [Delete]       │
-│                                                             │
-│  ▸ On new GitHub Issue assigned to me                       │
-│    → Run agent: "Draft implementation plan as comment"      │
-│    Status: ○ Disabled                 [Edit] [Delete]       │
-│                                                             │
-│  Automation Editor:                                         │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ Trigger: [GitHub Event ▼]  Event: [PR Opened ▼]     │   │
-│  │ Filter:  Repo [kevinthelago/api ▼]                  │   │
-│  │ Action:  [Run Agent ▼]                              │   │
-│  │ Prompt:  [____________________________________]     │   │
-│  │ Inject:  [Select knowledge blocks…]                 │   │
-│  │ [Save]  [Cancel]                                    │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 6. Knowledge Store
-
-Reusable context blocks injected into agent conversations. Each block is tagged with one or more tech stack identifiers so the UI can suggest relevant blocks per repo.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Knowledge Store                    [+ New Block]           │
-│  ─────────────────────────────────────────────────────────  │
-│  Filter: [All ▼]   Search: [________________]               │
-│                                                             │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ [rust] [tauri]  CI/CD — GitHub Actions (Rust/Tauri)  │  │
-│  │ Cross-platform build matrix, cargo test, clippy…     │  │
-│  │                              [Edit] [Delete] [Copy]  │  │
-│  └──────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ [typescript] [react]  Code Review Checklist           │  │
-│  │ Accessibility, bundle size, hook rules…               │  │
-│  │                              [Edit] [Delete] [Copy]  │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                                                             │
-│  Block Editor:                                              │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ Name:  [________________________________]           │   │
-│  │ Tags:  [rust] [tauri] [+ add tag]                   │   │
-│  │ Body:  (markdown, injected verbatim into context)   │   │
-│  │ ┌───────────────────────────────────────────────┐  │   │
-│  │ │                                               │  │   │
-│  │ │  # GitHub Actions — Rust                      │  │   │
-│  │ │  ...                                          │  │   │
-│  │ └───────────────────────────────────────────────┘  │   │
-│  │ [Save]  [Cancel]                                    │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 7. Mobile View (mobile-studio-code mirror)
-
-The mobile app displays the same grid but condensed. Tapping a console expands it full-screen. Input is available but layout controls are read-only from mobile (grid is configured on desktop).
-
-```
-┌─────────────────────┐
-│  base-studio  ⚡ ▤  │
-├─────────────────────┤
-│  ┌────────┬───────┐ │
-│  │Agent A │Agent B│ │
-│  │● Run.. │○ Idle │ │
-│  └────────┴───────┘ │
-│  ┌────────┬───────┐ │
-│  │Agent C │Agent D│ │
-│  │● Run.. │● Run..│ │
-│  └────────┴───────┘ │
-├─────────────────────┤
-│  Tap console to     │
-│  expand & interact  │
-└─────────────────────┘
 ```
 
 ## Key Concepts
 
-**Knowledge Block** — A named markdown blob tagged with stack identifiers (e.g., `rust`, `react`, `postgres`). Injected into an agent's system prompt or as a user message before the conversation. Enables standardized GitHub Actions configs, code review checklists, architecture patterns, etc. across all projects.
+**Knowledge Block** — A named markdown blob tagged with stack identifiers (e.g., `rust`, `react`, `postgres`). Injected into an agent's system prompt or as a user message. Enables standardized GitHub Actions configs, code review checklists, and architecture patterns across all projects.
 
 **Console** — A single agent session tied to a repo, model, and optional knowledge blocks. Multiple consoles run in parallel within a tab.
 
-**Tab** — A named workspace containing one grid layout with N consoles. Persists between sessions.
+**Pane** — The UI cell that renders one console. Each pane has a swappable view (console chat, file tree, branch list, diff, commit log) selected via icon tabs. Configuration is exposed via the hamburger menu (model, repo, cwd).
 
-**Tunnel** — The WebSocket bridge between desktop and mobile. Desktop runs the server; mobile connects as a client. Authentication is token-based with QR pairing for convenience.
+**Tab** — A named workspace containing one CSS grid layout with N panes. Persists across sessions.
 
-**Automation** — An event-driven rule (GitHub webhook, schedule, etc.) that automatically spawns an agent with a pre-configured prompt and knowledge injection.
+**Tunnel** — The WebSocket bridge between desktop and mobile. Desktop runs the server (`crates/ws-server`); mobile connects as a client. Authentication is token-based with QR pairing.
+
+**Automation** — A cron-triggered rule that automatically dispatches a command or loads a knowledge block into a specified console pane.
+
+## GitHub Workflow
+
+### Branch strategy
+
+```
+{issue-number}-{short-description}  →  develop  →  main
+```
+
+- All feature/fix branches are cut from `develop`.
+- PRs target `develop`. CI must pass before merge.
+- `develop → main` is a separate PR; merge only when `develop` is stable.
+- Never push directly to `main` or `develop`.
+
+### Issue → branch → PR flow
+
+1. Claim the GitHub Issue; confirm acceptance criteria.
+2. Create the branch from the issue using `gh issue develop <number>` or the GitHub UI Development panel.
+3. Implement the minimum changes to close the issue.
+4. Push and open a PR targeting `develop`. Reference the issue with `Closes #N`.
+
+### Dependency order for UI issues
+
+```
+#2 scaffold
+  └─ #3 CSS + chrome
+       ├─ #4 pane system
+       └─ #5 store + router
+            ├─ #6 Console screen
+            ├─ #7 Knowledge Store screen
+            ├─ #8 GitHub screen
+            ├─ #9 Automations screen
+            └─ #10 Settings screen
+```
+
+Issues #4 and #5 can be worked in parallel after #3 merges. Issues #6–#10 can be worked in parallel after #4 and #5 merge.
+
+## Design Reference
+
+`design/` contains the full browser-rendered prototype (React JSX + Babel standalone). Every screen, component, color token, layout, and sample data set is defined there. When implementing a screen, match the design exactly — layout, inline styles, and CSS class usage. Do not modify files under `design/`.
 
 ## Companion App
 
-**mobile-studio-code** lives in a separate repository. The integration contract between the two apps (tunnel protocol, message schema) must be kept in sync. Any breaking changes to the WebSocket message format require coordinated updates in both repos.
-
-## Development Notes
-
-- This repository (`base-studio-code`) is the desktop host. It owns the authoritative state.
-- All agent sessions are managed here; mobile is display/input only.
-- Commit to `develop` branch for all features; `main` is production-stable.
-- Branch naming: `{issue-number}-{short-description}` branched from `develop`.
+**mobile-studio-code** lives in a separate repository. The WebSocket message schema between the two apps must stay in sync. Breaking changes to the tunnel protocol require coordinated PRs in both repos.
