@@ -123,7 +123,7 @@ html, body {
 .tab.active{ background:var(--bg-canvas); color:var(--fg); border-color:var(--border-soft); }
 .tab .dot{ width:6px; height:6px; border-radius:50%; background:var(--success); flex:0 0 6px; }
 .tab .dot.idle{ background:var(--fg-dim); }
-.tab .dot.run{ background:var(--accent); }
+.tab .dot.run{ background:var(--accent); animation:pulse 1.4s ease-in-out infinite; }
 .tab .x{ color:var(--fg-dim); margin-left:4px; }
 .tab .x:hover{ color:var(--fg); }
 .tab-add{ width:24px; height:24px; align-self:center; margin-left:4px; border-radius:5px;

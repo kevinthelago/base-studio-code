@@ -43,6 +43,8 @@ interface AppStore {
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
   closeTab: (idx: number) => void;
+  renameTab: (idx: number, name: string) => void;
+  setTabLayout: (tabIdx: number, layout: string) => void;
   setPaneMenu: (idx: number) => void;
   setFocusedPane: (idx: number) => void;
   setFullscreenPane: (idx: number) => void;
@@ -144,6 +146,39 @@ export const useAppStore = create<AppStore>()(
           if (idx < s.activeTabIdx) activeTabIdx -= 1;
           else if (idx === s.activeTabIdx) activeTabIdx = Math.min(activeTabIdx, tabs.length - 1);
           return { tabs, activeTabIdx };
+        }),
+      renameTab: (idx, name) =>
+        set((s) => {
+          const tabs = [...s.tabs];
+          tabs[idx] = { ...tabs[idx], name };
+          return { tabs };
+        }),
+      setTabLayout: (tabIdx, layout) =>
+        set((s) => {
+          const [newCols, newRows] = layout.split("×").map(Number);
+          const newCount = newCols * newRows;
+          const tabs = [...s.tabs];
+          tabs[tabIdx] = { ...tabs[tabIdx], layout };
+          // Trim pane names for this tab to only surviving indices
+          const tabPaneNames = { ...(s.paneNames[tabIdx] ?? {}) };
+          (Object.keys(tabPaneNames) as unknown as number[]).forEach((k) => {
+            if (Number(k) >= newCount) delete tabPaneNames[Number(k)];
+          });
+          // Trim cwds and git info keyed by "t{tabIdx}p{n}"
+          const paneCwds = { ...s.paneCwds };
+          const paneGitInfo = { ...s.paneGitInfo };
+          const isExcess = (key: string) => {
+            const m = key.match(/^t(\d+)p(\d+)$/);
+            return m && Number(m[1]) === tabIdx && Number(m[2]) >= newCount;
+          };
+          Object.keys(paneCwds).forEach((key) => { if (isExcess(key)) delete paneCwds[key]; });
+          Object.keys(paneGitInfo).forEach((key) => { if (isExcess(key)) delete paneGitInfo[key]; });
+          return {
+            tabs,
+            paneNames: { ...s.paneNames, [tabIdx]: tabPaneNames },
+            paneCwds,
+            paneGitInfo,
+          };
         }),
       setPaneMenu:       (idx) => set({ paneMenuOpenIdx: idx }),
       setFocusedPane:    (idx) => set({ focusedPaneIdx: idx }),
