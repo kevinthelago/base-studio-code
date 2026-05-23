@@ -325,7 +325,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
 export function ProjectBoard() {
   const {
     githubToken,
-    activeProjectId, activeProjectName, activeProjectRepo, activeProjectNumber,
+    activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
     projectsDrawerIssue, setProjectsDrawerIssue,
   } = useAppStore();
 
@@ -410,6 +410,7 @@ export function ProjectBoard() {
     number: activeProjectNumber,
     name: activeProjectName,
     repo: activeProjectRepo,
+    repos: activeProjectRepos,
     description: "",
   };
 

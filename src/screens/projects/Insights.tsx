@@ -175,7 +175,7 @@ function StatCard({ k, v, sub, tone }: { k: string; v: string; sub: string; tone
 export function Insights() {
   const {
     githubToken,
-    activeProjectId, activeProjectName, activeProjectRepo, activeProjectNumber,
+    activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
   } = useAppStore();
 
   const [issues, setIssues] = useState<InsightIssue[]>([]);
@@ -334,6 +334,7 @@ export function Insights() {
     number: activeProjectNumber,
     name: activeProjectName,
     repo: activeProjectRepo,
+    repos: activeProjectRepos,
     description: "",
   };
 

@@ -12,6 +12,12 @@ export interface GithubUser {
   avatar_url: string;
 }
 
+export interface ResolvedRepo {
+  full_name: string;
+  local_path: string;
+  source: "found" | "cloned";
+}
+
 export interface GithubRepo {
   full_name: string;
   private: boolean;
@@ -105,9 +111,10 @@ interface AppStore {
   activeProjectId: string | null;
   activeProjectName: string;
   activeProjectRepo: string;
+  activeProjectRepos: string[];
   activeProjectNumber: number;
   setActiveProject: (id: string | null) => void;
-  setActiveProjectMeta: (id: string | null, name: string, repo: string, number: number) => void;
+  setActiveProjectMeta: (id: string | null, name: string, repo: string, number: number, repos?: string[]) => void;
   projectsBoardTab: "board" | "roadmap" | "issues" | "insights";
   setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights") => void;
   projectsDrawerIssue: number | null;
@@ -115,6 +122,10 @@ interface AppStore {
   planningPitch: string;
   planningRepo: string;
   setPlanningContext: (pitch: string, repo: string) => void;
+  // Repository resolution (persisted)
+  projectLocalRepos: Record<string, ResolvedRepo[]>;
+  addProjectLocalRepo: (projectId: string, repo: ResolvedRepo) => void;
+  quickStartProject: (projectName: string, repos: ResolvedRepo[]) => void;
 
   // Agent settings
   allowedCommands: string[];
@@ -316,10 +327,11 @@ export const useAppStore = create<AppStore>()(
       activeProjectId: null,
       activeProjectName: "",
       activeProjectRepo: "",
+      activeProjectRepos: [],
       activeProjectNumber: 0,
       setActiveProject: (id) => set({ activeProjectId: id }),
-      setActiveProjectMeta: (id, name, repo, number) =>
-        set({ activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number }),
+      setActiveProjectMeta: (id, name, repo, number, repos = []) =>
+        set({ activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos }),
       projectsBoardTab: "board",
       setProjectsBoardTab: (t) => set({ projectsBoardTab: t }),
       projectsDrawerIssue: null,
@@ -327,6 +339,34 @@ export const useAppStore = create<AppStore>()(
       planningPitch: "",
       planningRepo: "",
       setPlanningContext: (pitch, repo) => set({ planningPitch: pitch, planningRepo: repo }),
+      projectLocalRepos: {},
+      addProjectLocalRepo: (projectId, repo) =>
+        set((s) => {
+          const existing = s.projectLocalRepos[projectId] ?? [];
+          const updated = [...existing.filter((r) => r.full_name !== repo.full_name), repo];
+          return { projectLocalRepos: { ...s.projectLocalRepos, [projectId]: updated } };
+        }),
+      quickStartProject: (projectName, repos) =>
+        set((s) => {
+          if (repos.length === 0) return { activeScreen: "console" as Screen };
+          const newTabIdx = s.tabs.length;
+          const count = Math.min(repos.length, 4);
+          const layout = count <= 1 ? "1×1" : count === 2 ? "2×1" : "2×2";
+          const newPaneCwds = { ...s.paneCwds };
+          const tabPaneNames: Record<number, string> = {};
+          repos.slice(0, 4).forEach((repo, i) => {
+            newPaneCwds[`t${newTabIdx}p${i}`] = repo.local_path;
+            tabPaneNames[i] = repo.full_name.split("/")[1] ?? repo.full_name;
+          });
+          const newTab: Tab = { name: projectName, layout, state: "idle" };
+          return {
+            tabs: [...s.tabs, newTab],
+            activeTabIdx: newTabIdx,
+            paneCwds: newPaneCwds,
+            paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
+            activeScreen: "console" as Screen,
+          };
+        }),
 
       allowedCommands: [],
       addAllowedCommand: (cmd) =>
@@ -367,6 +407,7 @@ export const useAppStore = create<AppStore>()(
         commands:             s.commands,
         allowedCommands:      s.allowedCommands,
         autoFocusOnInterrupt: s.autoFocusOnInterrupt,
+        projectLocalRepos:    s.projectLocalRepos,
       }),
     }
   )

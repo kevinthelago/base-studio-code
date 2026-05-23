@@ -340,14 +340,18 @@ async fn github_request(token: String, path: String) -> Result<serde_json::Value
 // CLAUDE.md (auto-loaded system prompt) written on every session start so
 // the instructions stay in sync with the app without manual editing.
 
-fn bsc_base_dir() -> std::path::PathBuf {
+fn home_dir() -> std::path::PathBuf {
     let home = if cfg!(windows) {
         std::env::var("USERPROFILE")
             .unwrap_or_else(|_| std::env::var("HOME").unwrap_or_default())
     } else {
         std::env::var("HOME").unwrap_or_default()
     };
-    std::path::PathBuf::from(home).join(".base-studio-code")
+    std::path::PathBuf::from(home)
+}
+
+fn bsc_base_dir() -> std::path::PathBuf {
+    home_dir().join(".base-studio-code")
 }
 
 #[derive(serde::Deserialize)]
@@ -480,6 +484,83 @@ async fn setup_workspaces(kb_blocks: Vec<KbBlockData>) -> Result<WorkspacePaths,
     })
 }
 
+// ── Repository resolution ─────────────────────────────────────────────────────
+//
+// find_local_repo: checks well-known paths for an existing clone whose git
+//   remote matches github.com/{full_name}. No network calls — purely local.
+//
+// clone_repo: clones to ~/.base-studio-code/repos/{owner}/{name}/ via HTTPS.
+//   Uses the system git credential manager for private repos.
+
+fn normalize_github_remote(url: &str) -> Option<String> {
+    let url = url.trim();
+    let path = if let Some(rest) = url.strip_prefix("git@github.com:") {
+        rest
+    } else if let Some(rest) = url.strip_prefix("https://github.com/") {
+        rest
+    } else {
+        return None;
+    };
+    Some(path.trim_end_matches(".git").to_ascii_lowercase())
+}
+
+fn git_remote_matches(path: &std::path::Path, full_name: &str) -> bool {
+    let Ok(out) = std::process::Command::new("git")
+        .args(["-C", &path.to_string_lossy(), "remote", "get-url", "origin"])
+        .output()
+    else { return false };
+    if !out.status.success() { return false }
+    let url = String::from_utf8_lossy(&out.stdout);
+    normalize_github_remote(url.trim())
+        .map(|n| n.eq_ignore_ascii_case(full_name))
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+async fn find_local_repo(full_name: String) -> Result<Option<String>, String> {
+    let home = home_dir();
+    let name = full_name.split('/').last().unwrap_or("").to_owned();
+    let target = full_name.to_ascii_lowercase();
+
+    const SEARCH_ROOTS: &[&str] = &[
+        "code", "projects", "dev", "src", "workspace", "repos", "Developer",
+    ];
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    for root in SEARCH_ROOTS {
+        let base = home.join(root);
+        candidates.push(base.join(&name));       // ~/code/name
+        candidates.push(base.join(&full_name));  // ~/code/owner/name
+    }
+    candidates.push(bsc_base_dir().join("repos").join(&full_name));
+
+    for path in candidates {
+        if path.is_dir() && git_remote_matches(&path, &target) {
+            return Ok(Some(path.to_string_lossy().into_owned()));
+        }
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+async fn clone_repo(full_name: String) -> Result<String, String> {
+    let dest = bsc_base_dir().join("repos").join(&full_name);
+    if dest.is_dir() && dest.join(".git").exists() {
+        return Ok(dest.to_string_lossy().into_owned());
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let url = format!("https://github.com/{}.git", full_name);
+    let status = std::process::Command::new("git")
+        .args(["clone", &url, &dest.to_string_lossy()])
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("git clone failed for {}", full_name));
+    }
+    Ok(dest.to_string_lossy().into_owned())
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -499,6 +580,8 @@ pub fn run() {
             pick_directory,
             git_info,
             setup_workspaces,
+            find_local_repo,
+            clone_repo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -513,6 +596,17 @@ mod tests {
         assert_eq!(format!("t{}p{}", 0, 0), "t0p0");
         assert_eq!(format!("t{}p{}", 1, 3), "t1p3");
         assert_eq!(format!("t{}p{}", 2, 8), "t2p8");
+    }
+
+    #[test]
+    fn normalize_github_remote_handles_all_url_formats() {
+        use super::normalize_github_remote;
+        assert_eq!(normalize_github_remote("https://github.com/owner/name.git"), Some("owner/name".into()));
+        assert_eq!(normalize_github_remote("https://github.com/owner/name"),     Some("owner/name".into()));
+        assert_eq!(normalize_github_remote("git@github.com:owner/name.git"),     Some("owner/name".into()));
+        assert_eq!(normalize_github_remote("git@github.com:owner/name"),         Some("owner/name".into()));
+        assert_eq!(normalize_github_remote("https://gitlab.com/owner/name"),     None);
+        assert_eq!(normalize_github_remote("  https://github.com/Org/Repo.git "), Some("org/repo".into()));
     }
 
     #[test]

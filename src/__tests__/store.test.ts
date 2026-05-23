@@ -31,11 +31,13 @@ const RESET_STATE = {
   activeProjectId: null as string | null,
   activeProjectName: "",
   activeProjectRepo: "",
+  activeProjectRepos: [] as string[],
   activeProjectNumber: 0,
   projectsBoardTab: "board" as "board" | "roadmap" | "issues" | "insights",
   projectsDrawerIssue: null as number | null,
   planningPitch: "",
   planningRepo: "",
+  projectLocalRepos: {} as Record<string, import("../store").ResolvedRepo[]>,
 };
 
 beforeEach(() => {
@@ -393,6 +395,17 @@ describe("projects navigation", () => {
     expect(activeProjectNumber).toBe(14);
   });
 
+  it("setActiveProjectMeta stores all repos when provided", () => {
+    const repos = ["acme/api", "acme/ui"];
+    useAppStore.getState().setActiveProjectMeta("PVT_kwAbc123", "My project", "acme/api", 3, repos);
+    expect(useAppStore.getState().activeProjectRepos).toEqual(repos);
+  });
+
+  it("setActiveProjectMeta defaults repos to empty array when omitted", () => {
+    useAppStore.getState().setActiveProjectMeta("PVT_kwAbc123", "My project", "acme/api", 3);
+    expect(useAppStore.getState().activeProjectRepos).toEqual([]);
+  });
+
   it("setActiveProjectMeta(null) clears the active project", () => {
     useAppStore.getState().setActiveProjectMeta("PVT_kwAbc123", "My project", "org/repo", 5);
     useAppStore.getState().setActiveProjectMeta(null, "", "", 0);
@@ -414,6 +427,109 @@ describe("projects navigation", () => {
     useAppStore.getState().setPlanningContext("", "");
     expect(useAppStore.getState().planningPitch).toBe("");
     expect(useAppStore.getState().planningRepo).toBe("");
+  });
+});
+
+// ── Repository resolution ─────────────────────────────────────────────────────
+
+describe("repository resolution", () => {
+  it("addProjectLocalRepo stores a resolved repo under the project id", () => {
+    const repo = { full_name: "acme/api", local_path: "/home/user/code/api", source: "found" as const };
+    useAppStore.getState().addProjectLocalRepo("prj_1", repo);
+    expect(useAppStore.getState().projectLocalRepos["prj_1"]).toHaveLength(1);
+    expect(useAppStore.getState().projectLocalRepos["prj_1"][0]).toEqual(repo);
+  });
+
+  it("addProjectLocalRepo upserts: same full_name replaces the old entry", () => {
+    useAppStore.getState().addProjectLocalRepo("prj_1", { full_name: "acme/api", local_path: "/old", source: "found" });
+    useAppStore.getState().addProjectLocalRepo("prj_1", { full_name: "acme/api", local_path: "/new", source: "cloned" });
+    const repos = useAppStore.getState().projectLocalRepos["prj_1"];
+    expect(repos).toHaveLength(1);
+    expect(repos[0].local_path).toBe("/new");
+    expect(repos[0].source).toBe("cloned");
+  });
+
+  it("addProjectLocalRepo keeps existing repos for the same project", () => {
+    useAppStore.getState().addProjectLocalRepo("prj_1", { full_name: "acme/api", local_path: "/api", source: "found" });
+    useAppStore.getState().addProjectLocalRepo("prj_1", { full_name: "acme/ui",  local_path: "/ui",  source: "found" });
+    expect(useAppStore.getState().projectLocalRepos["prj_1"]).toHaveLength(2);
+  });
+
+  it("addProjectLocalRepo keeps other projects untouched", () => {
+    useAppStore.getState().addProjectLocalRepo("prj_1", { full_name: "acme/api", local_path: "/api", source: "found" });
+    useAppStore.getState().addProjectLocalRepo("prj_2", { full_name: "other/repo", local_path: "/other", source: "found" });
+    expect(useAppStore.getState().projectLocalRepos["prj_1"]).toHaveLength(1);
+    expect(useAppStore.getState().projectLocalRepos["prj_2"]).toHaveLength(1);
+  });
+});
+
+// ── Quick start ───────────────────────────────────────────────────────────────
+
+describe("quickStartProject", () => {
+  const makeRepo = (name: string, path: string) => ({
+    full_name: `acme/${name}`,
+    local_path: path,
+    source: "found" as const,
+  });
+
+  it("creates a new tab named after the project", () => {
+    useAppStore.getState().quickStartProject("my-project", [makeRepo("api", "/api")]);
+    const { tabs } = useAppStore.getState();
+    expect(tabs[tabs.length - 1].name).toBe("my-project");
+  });
+
+  it("switches activeScreen to console", () => {
+    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api")]);
+    expect(useAppStore.getState().activeScreen).toBe("console");
+  });
+
+  it("activates the new tab", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api")]);
+    expect(useAppStore.getState().activeTabIdx).toBe(before);
+  });
+
+  it("uses 1×1 layout for 1 repo", () => {
+    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api")]);
+    const { tabs, activeTabIdx } = useAppStore.getState();
+    expect(tabs[activeTabIdx].layout).toBe("1×1");
+  });
+
+  it("uses 2×1 layout for 2 repos", () => {
+    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api"), makeRepo("ui", "/ui")]);
+    const { tabs, activeTabIdx } = useAppStore.getState();
+    expect(tabs[activeTabIdx].layout).toBe("2×1");
+  });
+
+  it("uses 2×2 layout for 3+ repos", () => {
+    useAppStore.getState().quickStartProject("p", [
+      makeRepo("api", "/api"), makeRepo("ui", "/ui"), makeRepo("sdk", "/sdk"),
+    ]);
+    const { tabs, activeTabIdx } = useAppStore.getState();
+    expect(tabs[activeTabIdx].layout).toBe("2×2");
+  });
+
+  it("pre-seeds paneCwds with repo paths", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api"), makeRepo("ui", "/ui")]);
+    const { paneCwds } = useAppStore.getState();
+    expect(paneCwds[`t${before}p0`]).toBe("/api");
+    expect(paneCwds[`t${before}p1`]).toBe("/ui");
+  });
+
+  it("pre-seeds paneNames with repo short names", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api"), makeRepo("ui", "/ui")]);
+    const { paneNames } = useAppStore.getState();
+    expect(paneNames[before][0]).toBe("api");
+    expect(paneNames[before][1]).toBe("ui");
+  });
+
+  it("does nothing but switch screen when called with empty repos", () => {
+    const tabsBefore = useAppStore.getState().tabs.length;
+    useAppStore.getState().quickStartProject("p", []);
+    expect(useAppStore.getState().tabs).toHaveLength(tabsBefore);
+    expect(useAppStore.getState().activeScreen).toBe("console");
   });
 });
 
