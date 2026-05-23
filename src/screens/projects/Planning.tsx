@@ -177,6 +177,7 @@ export function Planning() {
     planningPitch, planningRepo,
     activeProjectId, activeProjectName, activeProjectNumber,
     githubToken,
+    kbBlocks,
   } = useAppStore();
 
   const isExisting = !!activeProjectId;
@@ -227,6 +228,9 @@ export function Planning() {
       invoke("pty_write", { paneId: PANE_ID, data }).catch(console.error);
     });
 
+    // Capture KB state at mount time for workspace sync.
+    const kbSnapshot = kbBlocks;
+
     requestAnimationFrame(async () => {
       fitAddon.fit();
 
@@ -267,13 +271,29 @@ export function Planning() {
         term.write("\r\n\x1b[33m[session ended — navigate away and back to restart]\x1b[0m\r\n");
       });
 
-      // initCmd: "claude" appends `; claude` to the bash init string so the
-      // CLI starts automatically inside the prepared shell environment.
+      // Create isolated workspace directories with settings.json + CLAUDE.md,
+      // and sync all KB blocks to disk so the planner can Read them via ../kb/.
+      const paths = await invoke<{ kb_dir: string; planning_dir: string }>(
+        "setup_workspaces",
+        {
+          kbBlocks: kbSnapshot.map(b => ({
+            id:      b.id,
+            title:   b.title,
+            tags:    b.tags,
+            content: b.content,
+          })),
+        },
+      ).catch((e: unknown) => {
+        console.error("workspace setup failed:", e);
+        return null;
+      });
+
+      // Launch claude inside the isolated planning directory.
       await invoke("pty_create", {
         paneId:  PANE_ID,
         cols:    term.cols,
         rows:    term.rows,
-        cwd:     "",
+        cwd:     paths?.planning_dir ?? "",
         initCmd: "claude",
       }).catch(console.error);
     });
