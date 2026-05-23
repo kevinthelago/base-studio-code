@@ -1,3 +1,5 @@
+import { useAppStore } from "../../store";
+
 const TOOLS: [string, string, boolean][] = [
   ["read",    "Read files inside cwd",                  true  ],
   ["write",   "Write & patch files",                    true  ],
@@ -10,6 +12,7 @@ const TOOLS: [string, string, boolean][] = [
 ];
 
 export function IntegrationsSettings() {
+  const { claudeApiKey, setClaudeApiKey } = useAppStore();
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Integrations</h2>
@@ -28,7 +31,13 @@ export function IntegrationsSettings() {
           <div className="field">
             <label>API key</label>
             <div style={{ display: "flex", gap: 8 }}>
-              <input className="input" type="password" defaultValue="sk-ant-abcdef0123456789xxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+              <input
+                className="input"
+                type="password"
+                value={claudeApiKey}
+                onChange={(e) => setClaudeApiKey(e.target.value)}
+                placeholder="sk-ant-…"
+              />
               <button className="btn">show</button>
               <button className="btn">test</button>
             </div>

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Screen } from "../components/chrome/Rail";
 import type { Tab } from "../components/chrome/Tabstrip";
 import type { ViewKey } from "../components/pane/ViewTabs";
+import { KB_BLOCKS, type KbBlock } from "../data/mock";
 
 interface AppStore {
   // Navigation
@@ -34,6 +35,15 @@ interface AppStore {
   // Settings
   settingsSection: string;
   setSettingsSection: (section: string) => void;
+
+  // Knowledge Store
+  kbBlocks: KbBlock[];
+  claudeApiKey: string;
+  setClaudeApiKey: (key: string) => void;
+  applyKbTag: (blockId: string, tag: string) => void;
+  removeKbTag: (blockId: string, tag: string) => void;
+  renameKbBlock: (blockId: string, title: string) => void;
+  updateKbBlockContent: (blockId: string, content: string) => void;
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -69,4 +79,34 @@ export const useAppStore = create<AppStore>((set) => ({
 
   settingsSection: "github",
   setSettingsSection: (section) => set({ settingsSection: section }),
+
+  kbBlocks: KB_BLOCKS.map((b) => ({ ...b })),
+  claudeApiKey: "",
+  setClaudeApiKey: (key) => set({ claudeApiKey: key }),
+  applyKbTag: (blockId, tag) =>
+    set((s) => ({
+      kbBlocks: s.kbBlocks.map((b) =>
+        b.id === blockId && !b.tags.includes(tag)
+          ? { ...b, tags: [...b.tags, tag] }
+          : b
+      ),
+    })),
+  removeKbTag: (blockId, tag) =>
+    set((s) => ({
+      kbBlocks: s.kbBlocks.map((b) =>
+        b.id === blockId ? { ...b, tags: b.tags.filter((t) => t !== tag) } : b
+      ),
+    })),
+  renameKbBlock: (blockId, title) =>
+    set((s) => ({
+      kbBlocks: s.kbBlocks.map((b) => (b.id === blockId ? { ...b, title } : b)),
+    })),
+  updateKbBlockContent: (blockId, content) =>
+    set((s) => ({
+      kbBlocks: s.kbBlocks.map((b) =>
+        b.id === blockId
+          ? { ...b, content, lines: content.split("\n").length }
+          : b
+      ),
+    })),
 }));
