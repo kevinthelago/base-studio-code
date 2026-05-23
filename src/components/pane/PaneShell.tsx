@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { ChevronDown, GitBranch, Menu } from "lucide-react";
 import { VIEW_DEFS, type ViewKey } from "./ViewTabs";
 import { HamburgerMenu, type ModelId } from "./HamburgerMenu";
 
@@ -56,7 +57,7 @@ export function PaneShell({
     : status === "run" ? "var(--accent)"
     : "var(--success)";
 
-  const currentDef = VIEW_DEFS[active];
+  const { Icon: ViewIcon, label: viewLabel } = VIEW_DEFS[active];
 
   return (
     <div className={focused ? "pane focused" : "pane"} style={{
@@ -86,9 +87,9 @@ export function PaneShell({
               cursor: "pointer", whiteSpace: "nowrap",
             }}
           >
-            <span style={{ fontSize: 11 }}>{currentDef.icon}</span>
-            <span>{currentDef.label}</span>
-            <span style={{ fontSize: 8, opacity: 0.6, marginLeft: 1 }}>▾</span>
+            <ViewIcon size={11} />
+            <span>{viewLabel}</span>
+            <ChevronDown size={9} style={{ opacity: 0.6 }} />
           </button>
 
           {viewOpen && (
@@ -104,7 +105,7 @@ export function PaneShell({
               fontFamily: "var(--mono)",
             }}>
               {available.map((k) => {
-                const def = VIEW_DEFS[k];
+                const { Icon, label, hotkey } = VIEW_DEFS[k];
                 const on = k === active;
                 return (
                   <div
@@ -124,9 +125,11 @@ export function PaneShell({
                       if (!on) (e.currentTarget as HTMLDivElement).style.background = "transparent";
                     }}
                   >
-                    <span style={{ width: 14, textAlign: "center", fontSize: 12, flex: "0 0 14px" }}>{def.icon}</span>
-                    <span style={{ flex: 1, fontSize: 10.5 }}>{def.label}</span>
-                    <span style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{def.hotkey}</span>
+                    <span style={{ width: 14, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 14px" }}>
+                      <Icon size={12} />
+                    </span>
+                    <span style={{ flex: 1, fontSize: 10.5 }}>{label}</span>
+                    <span style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{hotkey}</span>
                   </div>
                 );
               })}
@@ -156,7 +159,9 @@ export function PaneShell({
         }}>
           {repo ? (
             <>
-              <span style={{ color: "var(--info)" }}>⎇ {branch}</span>
+              <span style={{ color: "var(--info)", display: "flex", alignItems: "center", gap: 3 }}>
+                <GitBranch size={10} /> {branch}
+              </span>
               {dirty && <span style={{ color: "var(--danger)" }}>●</span>}
               <span style={{ color: "var(--fg-dim)", overflow: "hidden", textOverflow: "ellipsis" }}>{repo}</span>
             </>
@@ -178,8 +183,10 @@ export function PaneShell({
           background: menuOpen ? "var(--bg-canvas)" : "transparent",
           color: menuOpen ? "var(--accent)" : "var(--fg-muted)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          cursor: "pointer", fontSize: 12, lineHeight: "1", flex: "0 0 22px",
-        }}>☰</button>
+          cursor: "pointer", flex: "0 0 22px",
+        }}>
+          <Menu size={12} />
+        </button>
       </div>
 
       {banner}
