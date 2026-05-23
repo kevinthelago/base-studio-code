@@ -115,16 +115,12 @@ export const useAppStore = create<AppStore>()(
       activeScreen: "console",
       setScreen: (screen) => set({ activeScreen: screen }),
 
-      tabs: [
-        { name: "orchestrator", layout: "3×3", state: "run" },
-        { name: "feat/tunnel",  layout: "2×2", state: "on"  },
-        { name: "scratch",      layout: "1×1", state: "idle" },
-      ],
+      tabs: [],
       activeTabIdx: 0,
       paneMenuOpenIdx: -1,
       focusedPaneIdx: -1,
       fullscreenPaneIdx: -1,
-      paneViews: ["console", "files", "changes", "branches", "console", "console", "log", "console", "console"],
+      paneViews: [],
       paneNames: {},
       paneCwds: {},
       setPaneCwd: (paneId, cwd) =>
@@ -140,8 +136,8 @@ export const useAppStore = create<AppStore>()(
         })),
       closeTab: (idx) =>
         set((s) => {
-          if (s.tabs.length <= 1) return {};
           const tabs = s.tabs.filter((_, i) => i !== idx);
+          if (tabs.length === 0) return { tabs, activeTabIdx: 0 };
           let activeTabIdx = s.activeTabIdx;
           if (idx < s.activeTabIdx) activeTabIdx -= 1;
           else if (idx === s.activeTabIdx) activeTabIdx = Math.min(activeTabIdx, tabs.length - 1);
