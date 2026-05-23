@@ -5,14 +5,13 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ extra }: StatusBarProps) {
-  const { claudeApiKey, githubConnected, tabs, activeTabIdx } = useAppStore();
+  const { claudeApiKey, githubConnected, tabs } = useAppStore();
 
   const claudeOk  = Boolean(claudeApiKey);
-  const activeTab = tabs[activeTabIdx];
-  const [cols, rows] = activeTab
-    ? activeTab.layout.split("×").map(Number)
-    : [1, 1];
-  const paneCount = cols * rows;
+  const totalPanes = tabs.reduce((sum, tab) => {
+    const [c, r] = tab.layout.split("×").map(Number);
+    return sum + c * r;
+  }, 0);
 
   return (
     <div className="statusbar">
@@ -27,7 +26,7 @@ export function StatusBar({ extra }: StatusBarProps) {
       <div className="spacer" />
       {extra}
       <div className="s" style={{ color: "var(--fg-dim)" }}>
-        {tabs.length} {tabs.length === 1 ? "tab" : "tabs"} · {paneCount} {paneCount === 1 ? "pane" : "panes"}
+        {tabs.length} {tabs.length === 1 ? "tab" : "tabs"} · {totalPanes} {totalPanes === 1 ? "pane" : "panes"}
       </div>
       <div>v0.2.0 · rust 1.82</div>
     </div>

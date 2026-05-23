@@ -1,28 +1,288 @@
-import { PULL_REQUESTS, RECENT_COMMITS } from "../../data/mock";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useAppStore, type GithubRepo } from "../../store";
 
-const LANES = [
-  { name: "main",               color: "var(--accent)",  y: 36  },
-  { name: "feat/tunnel-v2",     color: "var(--info)",    y: 76  },
-  { name: "fix/retry-loop",     color: "var(--success)", y: 116 },
-  { name: "docs/migrate-store", color: "var(--fg-muted)",y: 156 },
-];
+interface GhCommit {
+  sha: string;
+  commit: { message: string; author: { name: string; date: string } };
+  author: { login: string } | null;
+}
 
-const COMMITS_GRAPH = [
-  { lane: 0, x:  80, sha: "a01" },
-  { lane: 0, x: 140, sha: "a02" },
-  { lane: 1, x: 200, sha: "b01", from: 0 },
-  { lane: 0, x: 230, sha: "a03" },
-  { lane: 1, x: 260, sha: "b02" },
-  { lane: 2, x: 300, sha: "c01", from: 0 },
-  { lane: 1, x: 330, sha: "b03" },
-  { lane: 2, x: 360, sha: "c02" },
-  { lane: 0, x: 400, sha: "a04", merge: 2 },
-  { lane: 1, x: 430, sha: "b04" },
-  { lane: 3, x: 470, sha: "d01", from: 0 },
-  { lane: 1, x: 500, sha: "b05", current: true },
-  { lane: 3, x: 540, sha: "d02" },
-  { lane: 0, x: 600, sha: "a05", head: true },
-] as const;
+interface GhPR {
+  number: number;
+  title: string;
+  user: { login: string };
+  created_at: string;
+  draft: boolean;
+  head: { ref: string };
+  base: { ref: string };
+}
+
+interface GhBranch { name: string }
+
+interface GhCompare {
+  merge_base_commit: { sha: string };
+  commits: GhCommit[];
+  ahead_by: number;
+}
+
+interface GraphPoint {
+  sha: string;
+  x: number;
+  lane: number;
+  isHead: boolean;
+  message: string;
+  author: string;
+}
+
+interface GraphEdge {
+  x1: number; y1: number;
+  x2: number; y2: number;
+  color: string;
+  curved: boolean;
+}
+
+interface GraphResult {
+  points: GraphPoint[];
+  edges: GraphEdge[];
+  laneNames: string[];
+  height: number;
+}
+
+function timeAgo(iso: string): string {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+const LANE_COLORS = ["var(--accent)", "var(--info)", "var(--success)", "var(--fg-muted)"];
+const LANE_Y      = [30, 74, 118, 162];
+const X_LEFT      = 62;
+const X_RIGHT     = 630;
+
+function buildGraphLayout(
+  mainCommits: GhCommit[],
+  defaultBranch: string,
+  branchComps: Array<{ name: string; mergeBaseSha: string; commits: GhCommit[] }>
+): GraphResult {
+  // Only use branches that have exclusive commits
+  const activeBranches = branchComps.filter(b => b.commits.length > 0).slice(0, 3);
+  const laneNames = [defaultBranch, ...activeBranches.map(b => b.name)];
+  const laneCount = Math.min(laneNames.length, 4);
+
+  // Assign every commit a lane, deduplicate by SHA (lane 0 wins ties)
+  type Entry = { sha: string; date: number; lane: number; commit: GhCommit };
+  const entries: Entry[] = [
+    ...mainCommits.map(c => ({
+      sha: c.sha, date: new Date(c.commit.author.date).getTime(), lane: 0, commit: c,
+    })),
+    ...activeBranches.flatMap((b, i) =>
+      b.commits.map(c => ({
+        sha: c.sha, date: new Date(c.commit.author.date).getTime(), lane: i + 1, commit: c,
+      }))
+    ),
+  ];
+
+  const seen = new Set<string>();
+  const unique = entries.filter(e => { if (seen.has(e.sha)) return false; seen.add(e.sha); return true; });
+  unique.sort((a, b) => a.date - b.date);
+
+  if (unique.length === 0) {
+    return { points: [], edges: [], laneNames: laneNames.slice(0, laneCount), height: 80 };
+  }
+
+  const n = unique.length;
+  const xMap = new Map<string, number>();
+  unique.forEach((e, i) => xMap.set(e.sha, n <= 1 ? (X_LEFT + X_RIGHT) / 2 : X_LEFT + (i / (n - 1)) * (X_RIGHT - X_LEFT)));
+
+  // Build points; mark the rightmost point per lane as HEAD
+  const points: GraphPoint[] = unique.map(e => ({
+    sha: e.sha,
+    x: xMap.get(e.sha)!,
+    lane: e.lane,
+    isHead: false,
+    message: e.commit.commit.message.split("\n")[0],
+    author: e.commit.author?.login ?? e.commit.commit.author.name,
+  }));
+
+  for (let lane = 0; lane < laneCount; lane++) {
+    const lp = points.filter(p => p.lane === lane);
+    if (lp.length > 0) lp.reduce((a, b) => a.x > b.x ? a : b).isHead = true;
+  }
+
+  // Build edges
+  const edges: GraphEdge[] = [];
+
+  for (let lane = 0; lane < laneCount; lane++) {
+    const lp = points.filter(p => p.lane === lane).sort((a, b) => a.x - b.x);
+    const y  = LANE_Y[lane];
+    const color = LANE_COLORS[lane];
+    for (let i = 0; i < lp.length - 1; i++) {
+      edges.push({ x1: lp[i].x, y1: y, x2: lp[i + 1].x, y2: y, color, curved: false });
+    }
+    if (lane > 0) {
+      const mergeX = xMap.get(activeBranches[lane - 1].mergeBaseSha);
+      const first = lp[0];
+      if (mergeX !== undefined && first) {
+        edges.push({ x1: mergeX, y1: LANE_Y[0], x2: first.x, y2: y, color, curved: true });
+      }
+    }
+  }
+
+  return {
+    points,
+    edges,
+    laneNames: laneNames.slice(0, laneCount),
+    height: LANE_Y[laneCount - 1] + 30,
+  };
+}
+
+// ─── Branch graph ─────────────────────────────────────────────────────────────
+
+function BranchGraph({
+  repo, branches, mainCommits, token,
+}: {
+  repo: GithubRepo;
+  branches: GhBranch[];
+  mainCommits: GhCommit[];
+  token: string;
+}) {
+  const [layout, setLayout] = useState<GraphResult | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!token || mainCommits.length === 0) return;
+    const featureBranches = branches.filter(b => b.name !== repo.default_branch).slice(0, 3);
+
+    if (featureBranches.length === 0) {
+      setLayout(buildGraphLayout(mainCommits, repo.default_branch, []));
+      return;
+    }
+
+    setBusy(true);
+    Promise.all(
+      featureBranches.map(b =>
+        invoke<GhCompare>("github_request", {
+          token,
+          path: `repos/${repo.full_name}/compare/${repo.default_branch}...${b.name}`,
+        }).catch(() => null)
+      )
+    ).then(results => {
+      const comps = featureBranches
+        .map((b, i) => results[i] ? {
+          name: b.name,
+          mergeBaseSha: results[i]!.merge_base_commit.sha,
+          commits: results[i]!.commits,
+        } : null)
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      setLayout(buildGraphLayout(mainCommits, repo.default_branch, comps));
+    }).finally(() => setBusy(false));
+  }, [repo.full_name, branches.length, mainCommits.length, token]);
+
+  const laneColors = layout?.laneNames.map((_, i) => LANE_COLORS[i]) ?? [];
+
+  return (
+    <div className="card" style={{ padding: "14px 16px 12px" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+        <h3 style={{ margin: 0 }}>Branch graph</h3>
+        <span className="hint">
+          {busy ? "loading…" : layout ? `${layout.laneNames.length} branches · ${layout.points.length} commits` : "—"}
+        </span>
+        <div style={{ flex: 1 }} />
+      </div>
+
+      {busy && (
+        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "20px 0", textAlign: "center" }}>
+          Fetching branch history…
+        </div>
+      )}
+
+      {!busy && layout && layout.points.length === 0 && (
+        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "20px 0" }}>
+          No commit history found.
+        </div>
+      )}
+
+      {!busy && layout && layout.points.length > 0 && (() => {
+        const svgH = layout.height + 10;
+        return (
+          <div style={{ overflow: "auto" }}>
+            <svg width={X_RIGHT + 30} height={svgH} style={{ display: "block" }}>
+              {/* Guide lines */}
+              {layout.laneNames.map((name, i) => (
+                <g key={`lane-${i}`}>
+                  <line x1={X_LEFT - 4} y1={LANE_Y[i]} x2={X_RIGHT + 10} y2={LANE_Y[i]}
+                    stroke="var(--border-soft)" strokeWidth="1" strokeDasharray="2 4" />
+                  <text x={X_LEFT - 8} y={LANE_Y[i] + 4} textAnchor="end"
+                    fontFamily="var(--mono)" fontSize="9.5" fill={laneColors[i]}>
+                    {name.length > 20 ? name.slice(0, 18) + "…" : name}
+                  </text>
+                </g>
+              ))}
+
+              {/* Edges */}
+              {layout.edges.map((e, idx) =>
+                e.curved ? (
+                  <path key={`e-${idx}`}
+                    d={`M ${e.x1} ${e.y1} C ${(e.x1 + e.x2) / 2} ${e.y1}, ${(e.x1 + e.x2) / 2} ${e.y2}, ${e.x2} ${e.y2}`}
+                    fill="none" stroke={e.color} strokeWidth="1.5" opacity="0.85" />
+                ) : (
+                  <line key={`e-${idx}`}
+                    x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2}
+                    stroke={e.color} strokeWidth="1.5" />
+                )
+              )}
+
+              {/* Commit dots */}
+              {layout.points.map(p => {
+                const y     = LANE_Y[p.lane];
+                const color = laneColors[p.lane];
+                const r     = p.isHead ? 6 : 4;
+                return (
+                  <g key={p.sha} style={{ cursor: "default" }}>
+                    <title>{p.sha.slice(0, 7)} · {p.message} · @{p.author}</title>
+                    <circle cx={p.x} cy={y} r={r}
+                      fill={p.isHead ? color : "var(--bg-canvas)"}
+                      stroke={color} strokeWidth={p.isHead ? 0 : 1.5} />
+                    {p.isHead && (
+                      <>
+                        <rect x={p.x - 14} y={y - 22} width="32" height="14" rx="2"
+                          fill={color} opacity="0.92" />
+                        <text x={p.x + 2} y={y - 12} textAnchor="middle"
+                          fontFamily="var(--mono)" fontSize="9" fill="#1a120a" fontWeight="700">HEAD</text>
+                      </>
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+        );
+      })()}
+
+      {/* Legend */}
+      {layout && layout.laneNames.length > 0 && (
+        <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
+          {layout.laneNames.map((name, i) => (
+            <span key={name} style={{
+              display: "inline-flex", gap: 6, alignItems: "center",
+              fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
+            }}>
+              <span style={{ width: 10, height: 2, background: laneColors[i], borderRadius: 1, flexShrink: 0 }} />
+              {name}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── File heatmap (static — requires git diff analysis) ──────────────────────
 
 const HEATMAP_FILES = [
   { p: "crates/ws-server/src/proto.rs", w: 42 },
@@ -40,86 +300,8 @@ const HEATMAP_FILES = [
   { p: "src/console/Grid.tsx",          w: 24 },
   { p: "src/console/Pane.tsx",          w: 19 },
   { p: "src/settings/GitHub.tsx",       w:  8 },
-  { p: "docs/protocol.md",              w:  7 },
   { p: "schema.json",                   w: 13 },
 ];
-
-function BranchGraph() {
-  return (
-    <div className="card" style={{ padding: "14px 16px 12px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-        <h3 style={{ margin: 0 }}>Branch graph</h3>
-        <span className="hint">last 14 days · main + 3 active branches</span>
-        <div style={{ flex: 1 }} />
-        <select className="input" style={{ height: 24, width: 130, fontSize: 10.5 }}>
-          <option>all branches</option><option>open PRs only</option><option>mine</option>
-        </select>
-      </div>
-      <div style={{ overflow: "auto" }}>
-        <svg width="680" height="200" style={{ display: "block" }}>
-          {LANES.map((l) => (
-            <g key={l.name}>
-              <line x1={56} y1={l.y} x2={650} y2={l.y}
-                stroke="var(--border-soft)" strokeWidth="1" strokeDasharray="2 4" />
-              <text x={50} y={l.y + 4} textAnchor="end"
-                fontFamily="var(--mono)" fontSize="10" fill="var(--fg-muted)">{l.name}</text>
-              <circle cx={648} cy={l.y} r="3" fill={l.color} />
-            </g>
-          ))}
-          {COMMITS_GRAPH.filter(c => "from" in c).map(c => (
-            <path key={"f" + c.sha}
-              d={`M ${c.x - 30} ${LANES["from" in c ? (c as { from: number }).from : 0].y} Q ${c.x - 10} ${LANES["from" in c ? (c as { from: number }).from : 0].y} ${c.x} ${LANES[c.lane].y}`}
-              fill="none" stroke={LANES[c.lane].color} strokeWidth="1.5" opacity=".7" />
-          ))}
-          {COMMITS_GRAPH.filter(c => "merge" in c).map(c => (
-            <path key={"m" + c.sha}
-              d={`M ${c.x - 30} ${LANES["merge" in c ? (c as { merge: number }).merge : 0].y} Q ${c.x - 10} ${LANES[c.lane].y} ${c.x} ${LANES[c.lane].y}`}
-              fill="none" stroke={LANES["merge" in c ? (c as { merge: number }).merge : 0].color} strokeWidth="1.5" opacity=".7" />
-          ))}
-          {LANES.map((l, i) => {
-            const xs = COMMITS_GRAPH.filter(c => c.lane === i).map(c => c.x).sort((a, b) => a - b);
-            return xs.slice(0, -1).map((x, j) => (
-              <line key={`l${i}-${j}`} x1={x} y1={l.y} x2={xs[j + 1]} y2={l.y}
-                stroke={l.color} strokeWidth="1.5" />
-            ));
-          })}
-          {COMMITS_GRAPH.map(c => {
-            const y = LANES[c.lane].y;
-            const isHead = "head" in c && c.head;
-            const isCurrent = "current" in c && c.current;
-            return (
-              <g key={c.sha}>
-                <circle cx={c.x} cy={y} r={isHead ? 6 : isCurrent ? 5 : 4}
-                  fill={isHead ? "var(--accent)" : isCurrent ? "var(--bg-canvas)" : LANES[c.lane].color}
-                  stroke={isCurrent ? "var(--accent)" : "transparent"}
-                  strokeWidth={isCurrent ? 2 : 0} />
-                {isHead && (
-                  <rect x={c.x - 12} y={y - 22} width="28" height="14" rx="2"
-                    fill="var(--accent)" opacity=".9" />
-                )}
-                {isHead && (
-                  <text x={c.x + 2} y={y - 12} textAnchor="middle"
-                    fontFamily="var(--mono)" fontSize="9" fill="#1a120a" fontWeight="700">HEAD</text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-      <div style={{ display: "flex", gap: 14, marginTop: 8, flexWrap: "wrap" }}>
-        {LANES.map(l => (
-          <span key={l.name} style={{
-            display: "inline-flex", gap: 6, alignItems: "center",
-            fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
-          }}>
-            <span style={{ width: 10, height: 2, background: l.color, borderRadius: 1 }} />
-            {l.name}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function FileHeatmap() {
   const maxW = Math.max(...HEATMAP_FILES.map(f => f.w));
@@ -128,10 +310,6 @@ function FileHeatmap() {
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Churn heatmap</h3>
         <span className="hint">lines changed in last 14 days · darker = hotter</span>
-        <div style={{ flex: 1 }} />
-        <select className="input" style={{ height: 24, width: 120, fontSize: 10.5 }}>
-          <option>14 days</option><option>7 days</option><option>30 days</option>
-        </select>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4 }}>
         {HEATMAP_FILES.map(f => {
@@ -148,8 +326,7 @@ function FileHeatmap() {
               overflow: "hidden",
             }}>
               <span style={{
-                display: "block",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                 color: t > 0.55 ? "#1a120a" : "var(--fg)",
               }}>{f.p.split("/").pop()}</span>
               <span style={{ fontSize: 9, opacity: .75 }}>{f.p.replace(/\/[^/]+$/, "")}</span>
@@ -162,26 +339,55 @@ function FileHeatmap() {
   );
 }
 
-export function OverviewBody() {
+// ─── Overview body ────────────────────────────────────────────────────────────
+
+export function OverviewBody({ repo }: { repo: GithubRepo | null }) {
+  const { githubToken } = useAppStore();
+
+  const [prs, setPrs]           = useState<GhPR[]>([]);
+  const [commits, setCommits]   = useState<GhCommit[]>([]);
+  const [allCommits, setAllCommits] = useState<GhCommit[]>([]);
+  const [branches, setBranches] = useState<GhBranch[]>([]);
+  const [loading, setLoading]   = useState(false);
+
+  useEffect(() => {
+    if (!repo || !githubToken) return;
+    setLoading(true);
+    const slug = repo.full_name;
+
+    Promise.all([
+      invoke<GhPR[]>("github_request", { token: githubToken, path: `repos/${slug}/pulls?state=open&per_page=20` }),
+      invoke<GhCommit[]>("github_request", { token: githubToken, path: `repos/${slug}/commits?per_page=30` }),
+      invoke<GhBranch[]>("github_request", { token: githubToken, path: `repos/${slug}/branches?per_page=50` }),
+    ])
+      .then(([prData, commitData, branchData]) => {
+        setPrs(Array.isArray(prData) ? prData : []);
+        const cs = Array.isArray(commitData) ? commitData : [];
+        setAllCommits(cs);
+        setCommits(cs.slice(0, 10));
+        setBranches(Array.isArray(branchData) ? branchData : []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [repo?.full_name, githubToken]);
+
+  const statCards = [
+    ["open PRs",      String(prs.length),                  `${prs.filter(p => !p.draft).length} ready to review`, "accent" ],
+    ["branches",      String(branches.length),              `${branches.length} total`,                            "info"   ],
+    ["open issues",   String(repo?.open_issues_count ?? "—"), "includes PRs",                                      "muted"  ],
+    ["default",       repo?.default_branch ?? "—",          "primary branch",                                      "success"],
+  ] as const;
+
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 14 }}>
-        {([
-          ["open PRs",     "5",      "2 awaiting review", "accent"],
-          ["branches",     "11",     "3 active this week", "info"],
-          ["contributors", "7",      "+ 2 bots",           "muted"],
-          ["ahead / behind","12 / 0","vs origin/main",     "success"],
-        ] as const).map(([k, v, sub, tone]) => (
+        {statCards.map(([k, v, sub, tone]) => (
           <div key={k} className="card" style={{ padding: "10px 14px" }}>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>{k}</div>
             <div style={{
-              fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
-              textTransform: "uppercase", letterSpacing: ".06em",
-            }}>{k}</div>
-            <div style={{
-              fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600,
+              fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600, marginTop: 2,
               color: tone === "accent" ? "var(--accent)" : tone === "success" ? "var(--success)" : "var(--fg)",
-              marginTop: 2,
-            }}>{v}</div>
+            }}>{loading ? "…" : v}</div>
             <div style={{ fontSize: 10.5, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</div>
           </div>
         ))}
@@ -189,72 +395,75 @@ export function OverviewBody() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 14 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <BranchGraph />
+          {repo && githubToken && (
+            <BranchGraph
+              repo={repo}
+              branches={branches}
+              mainCommits={allCommits}
+              token={githubToken}
+            />
+          )}
           <FileHeatmap />
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {/* Open PRs */}
           <div className="card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
               <h3 style={{ margin: 0 }}>Open PRs</h3>
-              <span className="hint">5 open</span>
+              <span className="hint">{loading ? "loading…" : `${prs.length} open`}</span>
               <div style={{ flex: 1 }} />
-              <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}>view all</button>
+              <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}
+                onClick={() => repo && window.open(`https://github.com/${repo.full_name}/pulls`, "_blank")}>
+                view all
+              </button>
             </div>
-            <div style={{
-              display: "flex", flexDirection: "column", gap: 1,
-              borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden",
-            }}>
-              {PULL_REQUESTS.map((p, i) => (
-                <div key={p.n} style={{
-                  padding: "10px 12px",
-                  background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)",
-                  display: "grid", gridTemplateColumns: "40px 1fr 60px",
-                  gap: 8, alignItems: "baseline", fontSize: 11,
-                }}>
-                  <span style={{ fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>{p.n}</span>
-                  <div>
-                    <div style={{ color: "var(--fg)" }}>{p.t}</div>
-                    <div style={{
-                      marginTop: 3, display: "flex", gap: 6,
-                      fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
-                    }}>
-                      <span>@{p.who}</span>
-                      <span className={"tag " + (p.st === "approved" ? "green" : p.st === "changes" ? "" : "amber")}
-                        style={{ fontSize: 9.5 }}>{p.st}</span>
-                      <span className={"tag " + (p.ci === "ok" ? "green" : "")}
-                        style={{ fontSize: 9.5, color: p.ci === "ok" ? "var(--success)" : "var(--danger)" }}>
-                        ci {p.ci}
-                      </span>
+            {prs.length === 0 && !loading && (
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No open pull requests.</div>
+            )}
+            {prs.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+                {prs.slice(0, 8).map((p, i) => (
+                  <div key={p.number} style={{
+                    padding: "10px 12px",
+                    background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)",
+                    display: "grid", gridTemplateColumns: "40px 1fr 50px",
+                    gap: 8, alignItems: "baseline", fontSize: 11,
+                  }}>
+                    <span style={{ fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>#{p.number}</span>
+                    <div>
+                      <div style={{ color: "var(--fg)" }}>{p.title}</div>
+                      <div style={{ marginTop: 3, display: "flex", gap: 6, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+                        <span>@{p.user.login}</span>
+                        <span>{p.head.ref} → {p.base.ref}</span>
+                        {p.draft && <span className="tag" style={{ fontSize: 9.5 }}>draft</span>}
+                      </div>
                     </div>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{timeAgo(p.created_at)}</span>
                   </div>
-                  <span style={{
-                    fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right",
-                  }}>{p.age}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
+          {/* Recent commits */}
           <div className="card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
               <h3 style={{ margin: 0 }}>Recent commits</h3>
-              <span className="hint">main · last 24h</span>
+              <span className="hint">{repo?.default_branch ?? "main"} · last {commits.length}</span>
             </div>
+            {commits.length === 0 && !loading && (
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No commits found.</div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {RECENT_COMMITS.map(c => (
-                <div key={c.s} style={{
-                  display: "grid", gridTemplateColumns: "40px 1fr 60px",
-                  gap: 8, alignItems: "baseline", fontSize: 11,
-                }}>
-                  <span style={{ fontFamily: "var(--mono)", color: "var(--accent)" }}>{c.s}</span>
-                  <span style={{ color: "var(--fg-muted)" }}>
-                    {c.m}
-                    <span style={{ color: "var(--fg-dim)" }}> · @{c.who}</span>
+              {commits.map(c => (
+                <div key={c.sha} style={{ display: "grid", gridTemplateColumns: "46px 1fr 40px", gap: 8, alignItems: "baseline", fontSize: 11 }}>
+                  <span style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontSize: 10 }}>{c.sha.slice(0, 7)}</span>
+                  <span style={{ color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {c.commit.message.split("\n")[0]}
+                    <span style={{ color: "var(--fg-dim)" }}> · @{c.author?.login ?? c.commit.author.name}</span>
                   </span>
-                  <span style={{
-                    fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right",
-                  }}>{c.t}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{timeAgo(c.commit.author.date)}</span>
                 </div>
               ))}
             </div>

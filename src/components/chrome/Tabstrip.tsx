@@ -43,12 +43,6 @@ export function Tabstrip({
         </div>
       ))}
       <button className="tab-add" onClick={onAdd}>+</button>
-      <div style={{ flex: 1 }} />
-      <div style={{ alignSelf: "center", marginRight: 8, color: "var(--fg-dim)", fontSize: 10 }}>
-        <span className="kbd">⌘1</span>{" "}
-        <span className="kbd">⌘2</span>{" "}
-        <span className="kbd">⌘T</span>
-      </div>
     </div>
   );
 }

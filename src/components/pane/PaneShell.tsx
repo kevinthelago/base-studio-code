@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
-import { ChevronDown, GitBranch, Menu } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { FolderOpen, GitBranch, MoreHorizontal } from "lucide-react";
 import { VIEW_DEFS, type ViewKey } from "./ViewTabs";
-import { HamburgerMenu, type ModelId } from "./HamburgerMenu";
+import { PaneMenu, type ModelId } from "./PaneMenu";
 
 export type PaneStatus = "run" | "on" | "idle";
 
@@ -20,13 +21,16 @@ interface PaneShellProps {
   menuOpen?: boolean;
   focused?: boolean;
   onViewChange?: (view: ViewKey) => void;
+  onMenuToggle?: () => void;
+  onFocus?: () => void;
+  onRename?: (name: string) => void;
+  onPickDirectory?: () => void;
   children: React.ReactNode;
 }
 
 export function PaneShell({
   agent,
   status = "run",
-  meta,
   cwd,
   repo,
   branch,
@@ -38,10 +42,59 @@ export function PaneShell({
   menuOpen = false,
   focused = false,
   onViewChange,
+  onMenuToggle,
+  onFocus,
+  onRename,
+  onPickDirectory,
   children,
 }: PaneShellProps) {
   const [viewOpen, setViewOpen] = useState(false);
+  const paneRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+
+  // Compute fixed position from the button whenever the menu opens
+  useEffect(() => {
+    if (menuOpen && menuButtonRef.current) {
+      const r = menuButtonRef.current.getBoundingClientRect();
+      setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    }
+  }, [menuOpen]);
+
+  // Close the pane menu on outside click, but let the button's own click handler toggle it
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onMouseDown(e: MouseEvent) {
+      if (menuButtonRef.current?.contains(e.target as Node)) return;
+      if (!menuRef.current?.contains(e.target as Node)) onMenuToggle?.();
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [menuOpen, onMenuToggle]);
+
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState(agent);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingName) nameInputRef.current?.select();
+  }, [editingName]);
+
+  const commitRename = useCallback(() => {
+    const trimmed = draftName.trim();
+    if (trimmed && trimmed !== agent) onRename?.(trimmed);
+    setEditingName(false);
+  }, [draftName, agent, onRename]);
+
+  useEffect(() => {
+    if (!focused) return;
+    const active = document.activeElement;
+    if (paneRef.current?.contains(active)) return;
+    const el = paneRef.current?.querySelector<HTMLElement>("textarea, input:not([type='hidden'])");
+    el?.focus();
+  }, [focused]);
 
   useEffect(() => {
     if (!viewOpen) return;
@@ -60,12 +113,17 @@ export function PaneShell({
   const { Icon: ViewIcon, label: viewLabel } = VIEW_DEFS[active];
 
   return (
-    <div className={focused ? "pane focused" : "pane"} style={{
-      height: "100%",
-      display: "flex", flexDirection: "column",
-      position: "relative",
-      zIndex: menuOpen || viewOpen ? 10 : 1,
-    }}>
+    <div
+      ref={paneRef}
+      className={focused ? "pane focused" : "pane"}
+      onClick={onFocus}
+      style={{
+        height: "100%",
+        display: "flex", flexDirection: "column",
+        position: "relative",
+        zIndex: menuOpen || viewOpen ? 10 : 1,
+      }}
+    >
       {/* Head */}
       <div style={{
         height: 32, flex: "0 0 32px", padding: "0 8px 0 6px",
@@ -76,20 +134,18 @@ export function PaneShell({
         {/* View selector dropdown */}
         <div ref={viewRef} style={{ position: "relative", flex: "0 0 auto" }}>
           <button
+            title={`${viewLabel} · switch view`}
             onClick={() => setViewOpen(!viewOpen)}
             style={{
-              display: "flex", alignItems: "center", gap: 5,
-              padding: "0 7px", height: 22, borderRadius: 4,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 26, height: 22, borderRadius: 4,
               background: viewOpen ? "var(--bg-canvas)" : "transparent",
               border: `1px solid ${viewOpen ? "var(--accent-dim)" : "var(--border-soft)"}`,
               color: viewOpen ? "var(--accent)" : "var(--fg-muted)",
-              fontFamily: "var(--mono)", fontSize: 10.5,
-              cursor: "pointer", whiteSpace: "nowrap",
+              cursor: "pointer",
             }}
           >
-            <ViewIcon size={11} />
-            <span>{viewLabel}</span>
-            <ChevronDown size={9} style={{ opacity: 0.6 }} />
+            <ViewIcon size={12} />
           </button>
 
           {viewOpen && (
@@ -144,48 +200,85 @@ export function PaneShell({
           flex: "0 0 7px",
         }} />
 
-        {/* Agent name */}
-        <span style={{
-          fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)",
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto",
-        }}>{agent}</span>
+        {/* Agent name — click to rename */}
+        {editingName ? (
+          <input
+            ref={nameInputRef}
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+              if (e.key === "Escape") { setDraftName(agent); setEditingName(false); }
+            }}
+            style={{
+              fontFamily: "var(--mono)", fontSize: 11.5,
+              background: "var(--bg-canvas)", color: "var(--fg)",
+              border: "1px solid var(--accent-dim)", borderRadius: 3,
+              padding: "1px 5px", width: 130, outline: "none", flex: "0 0 auto",
+            }}
+          />
+        ) : (
+          <span
+            onClick={() => { setDraftName(agent); setEditingName(true); }}
+            title="Click to rename"
+            style={{
+              fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)",
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto",
+              cursor: "text",
+            }}
+          >{agent}</span>
+        )}
 
-        {/* Repo / cwd / meta */}
+        {/* Repo / branch — only shown when a repo is attached */}
         <div style={{
           flex: 1, minWidth: 0,
           display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6,
           fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)",
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          whiteSpace: "nowrap", overflow: "hidden",
         }}>
-          {repo ? (
+          {repo && (
             <>
-              <span style={{ color: "var(--info)", display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ color: "var(--info)", display: "flex", alignItems: "center", gap: 3, flex: "0 0 auto" }}>
                 <GitBranch size={10} /> {branch}
               </span>
-              {dirty && <span style={{ color: "var(--danger)" }}>●</span>}
+              {dirty && <span style={{ color: "var(--danger)", flex: "0 0 auto" }}>●</span>}
               <span style={{ color: "var(--fg-dim)", overflow: "hidden", textOverflow: "ellipsis" }}>{repo}</span>
-            </>
-          ) : (
-            <span style={{ color: "var(--fg-dim)" }}>cwd: {cwd}</span>
-          )}
-          {meta && (
-            <>
-              <span style={{ color: "var(--fg-dim)" }}>·</span>
-              <span>{meta}</span>
             </>
           )}
         </div>
 
-        {/* Hamburger */}
-        <button title="Pane menu" style={{
-          width: 22, height: 22, borderRadius: 4,
-          border: "1px solid " + (menuOpen ? "var(--accent-dim)" : "transparent"),
-          background: menuOpen ? "var(--bg-canvas)" : "transparent",
-          color: menuOpen ? "var(--accent)" : "var(--fg-muted)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          cursor: "pointer", flex: "0 0 22px",
-        }}>
-          <Menu size={12} />
+        {/* Open directory */}
+        <button
+          title="Open project directory"
+          onClick={onPickDirectory}
+          style={{
+            width: 22, height: 22, borderRadius: 4,
+            border: "1px solid transparent",
+            background: "transparent",
+            color: "var(--fg-muted)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", flex: "0 0 22px",
+          }}
+        >
+          <FolderOpen size={12} />
+        </button>
+
+        {/* More options */}
+        <button
+          ref={menuButtonRef}
+          title="Pane menu"
+          onClick={onMenuToggle}
+          style={{
+            width: 22, height: 22, borderRadius: 4,
+            border: "1px solid " + (menuOpen ? "var(--accent-dim)" : "transparent"),
+            background: menuOpen ? "var(--bg-canvas)" : "transparent",
+            color: menuOpen ? "var(--accent)" : "var(--fg-muted)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", flex: "0 0 22px",
+          }}
+        >
+          <MoreHorizontal size={12} />
         </button>
       </div>
 
@@ -195,11 +288,17 @@ export function PaneShell({
         {children}
       </div>
 
-      {menuOpen && (
-        <HamburgerMenu
-          agent={agent} repo={repo} branch={branch}
-          model={model} active={active} available={available}
-        />
+      {menuOpen && menuPos && createPortal(
+        <div ref={menuRef} style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 1000 }}>
+          <PaneMenu
+            agent={agent} repo={repo} branch={branch}
+            model={model} active={active} available={available}
+            onClose={onMenuToggle}
+            onRename={() => { setDraftName(agent); setEditingName(true); onMenuToggle?.(); }}
+            onViewChange={onViewChange}
+          />
+        </div>,
+        document.body
       )}
     </div>
   );
