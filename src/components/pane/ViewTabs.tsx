@@ -1,11 +1,14 @@
+import { Terminal, FolderOpen, GitBranch, GitCompareArrows, History } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
 export type ViewKey = "console" | "files" | "branches" | "changes" | "log";
 
-export const VIEW_DEFS: Record<ViewKey, { icon: string; label: string; hint: string; hotkey: string }> = {
-  console:  { icon: "▸", label: "Console",  hint: "claude session",      hotkey: "⌥1" },
-  files:    { icon: "⌗", label: "Files",    hint: "working tree",        hotkey: "⌥2" },
-  branches: { icon: "⎇", label: "Branches", hint: "local + remote refs", hotkey: "⌥3" },
-  changes:  { icon: "±", label: "Changes",  hint: "diff vs HEAD",        hotkey: "⌥4" },
-  log:      { icon: "⏱", label: "Log",      hint: "recent commits",      hotkey: "⌥5" },
+export const VIEW_DEFS: Record<ViewKey, { Icon: LucideIcon; label: string; hint: string; hotkey: string }> = {
+  console:  { Icon: Terminal,   label: "Console",  hint: "claude session",      hotkey: "⌥1" },
+  files:    { Icon: FolderOpen, label: "Files",    hint: "working tree",        hotkey: "⌥2" },
+  branches: { Icon: GitBranch,  label: "Branches", hint: "local + remote refs", hotkey: "⌥3" },
+  changes:  { Icon: GitCompareArrows, label: "Changes", hint: "diff vs HEAD",   hotkey: "⌥4" },
+  log:      { Icon: History,    label: "Log",      hint: "recent commits",      hotkey: "⌥5" },
 };
 
 interface ViewTabsProps {
@@ -25,12 +28,12 @@ export function ViewTabs({ active, available, onSwitch }: ViewTabsProps) {
       fontFamily: "var(--mono)",
     }}>
       {available.map((k) => {
-        const v = VIEW_DEFS[k];
+        const { Icon, label, hotkey } = VIEW_DEFS[k];
         const on = k === active;
         return (
           <div
             key={k}
-            title={`${v.label} · ${v.hotkey}`}
+            title={`${label} · ${hotkey}`}
             onClick={() => onSwitch?.(k)}
             style={{
               width: 24, height: 20,
@@ -39,11 +42,10 @@ export function ViewTabs({ active, available, onSwitch }: ViewTabsProps) {
               background: on ? "var(--bg-canvas)" : "transparent",
               border: on ? "1px solid var(--accent-dim)" : "1px solid transparent",
               color: on ? "var(--accent)" : "var(--fg-muted)",
-              fontSize: 12,
               cursor: "pointer",
             }}
           >
-            {v.icon}
+            <Icon size={12} />
           </div>
         );
       })}

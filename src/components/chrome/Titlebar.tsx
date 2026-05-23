@@ -1,3 +1,5 @@
+import { Minus, Maximize2, X } from "lucide-react";
+
 interface TitlebarProps {
   workspace?: string;
   meta?: React.ReactNode;
@@ -54,9 +56,15 @@ export function Titlebar({ workspace = "orchestrator · acme/payments", meta }: 
       <div className="tl-title">{title}</div>
       <MetaSlot meta={meta} />
       <div className="tl-controls">
-        <button onClick={() => windowAction("minimize")} title="Minimize">—</button>
-        <button onClick={() => windowAction("toggleMaximize")} title="Maximize">□</button>
-        <button className="tl-close" onClick={() => windowAction("close")} title="Close">✕</button>
+        <button onClick={() => windowAction("minimize")} title="Minimize">
+          <Minus size={11} />
+        </button>
+        <button onClick={() => windowAction("toggleMaximize")} title="Maximize">
+          <Maximize2 size={11} />
+        </button>
+        <button className="tl-close" onClick={() => windowAction("close")} title="Close">
+          <X size={11} />
+        </button>
       </div>
     </div>
   );
