@@ -330,6 +330,156 @@ async fn github_request(token: String, path: String) -> Result<serde_json::Value
     Ok(json)
 }
 
+// ── Workspaces ───────────────────────────────────────────────────────────────
+//
+// Two isolated directories under ~/.base-studio-code/:
+//   kb/        — knowledge blocks as markdown files; claude can Read/Write .md
+//   planning/  — claude planning session CWD; has Read access to ../kb/
+//
+// Each directory gets a .claude/settings.json (tool restrictions) and a
+// CLAUDE.md (auto-loaded system prompt) written on every session start so
+// the instructions stay in sync with the app without manual editing.
+
+fn bsc_base_dir() -> std::path::PathBuf {
+    let home = if cfg!(windows) {
+        std::env::var("USERPROFILE")
+            .unwrap_or_else(|_| std::env::var("HOME").unwrap_or_default())
+    } else {
+        std::env::var("HOME").unwrap_or_default()
+    };
+    std::path::PathBuf::from(home).join(".base-studio-code")
+}
+
+#[derive(serde::Deserialize)]
+struct KbBlockData {
+    id:      String,
+    title:   String,
+    tags:    Vec<String>,
+    content: String,
+}
+
+#[derive(serde::Serialize)]
+struct WorkspacePaths {
+    kb_dir:       String,
+    planning_dir: String,
+}
+
+const KB_CLAUDE_MD: &str = r#"# base-studio-code · Knowledge Base
+
+You manage knowledge blocks for the base-studio-code platform. Knowledge blocks
+are markdown files, tagged by tech stack, that get injected as context into AI
+coding agent sessions.
+
+## File format
+
+Each block is a `.md` file with YAML frontmatter:
+
+    ---
+    id: blk_xxxx
+    title: Descriptive Title
+    tags: [rust, react, postgres]
+    ---
+
+    Block content here...
+
+## Responsibilities
+
+- Read existing blocks to understand the current knowledge base
+- Create new `.md` files for new knowledge blocks
+- Edit existing blocks to improve or update them
+- Keep content concise, focused, and reusable across projects
+
+## Constraints
+
+Only `.md` files in this directory. No shell commands. No external URLs.
+"#;
+
+const PLANNING_CLAUDE_MD: &str = r#"# base-studio-code · Project Planner
+
+Guide the user through planning a software project one question at a time, then
+emit a structured plan that the app publishes to GitHub as milestones and issues.
+
+## Knowledge base
+
+Knowledge blocks live in `../kb/`. Use the Read tool to load context relevant to
+the project's stack before planning. For example, if the project uses Rust and
+React, read the files in `../kb/` tagged with those stacks first.
+
+## Plan output format
+
+As you gather information, emit plan sections anywhere in your response using
+these XML tags — the app parses them in real time to populate the plan panel:
+
+<plan_update section="goal">One or two sentence goal statement.</plan_update>
+<plan_update section="scope">Bullet list of what is in and out of scope.</plan_update>
+<plan_update section="stack">Technology choices with brief justification.</plan_update>
+<plan_update section="phases">[{"name":"Phase 1","description":"...","dueWeeks":2}]</plan_update>
+<plan_update section="risks">Key risks and mitigations.</plan_update>
+
+## Workflow
+
+1. Acknowledge the pitch, then read relevant KB files with the Read tool
+2. Ask one focused question at a time
+3. After each answer emit plan_update tags for the relevant section(s)
+4. Work through: goal → scope → stack → phases → risks
+5. For phases emit valid JSON — 3-5 phases with realistic week estimates
+6. When all sections are drafted, summarize what will publish to GitHub
+
+## Saved plans
+
+Write plan summaries to `plans/` as markdown files for reference.
+"#;
+
+#[tauri::command]
+async fn setup_workspaces(kb_blocks: Vec<KbBlockData>) -> Result<WorkspacePaths, String> {
+    let base         = bsc_base_dir();
+    let kb_dir       = base.join("kb");
+    let planning_dir = base.join("planning");
+
+    for dir in &[
+        kb_dir.join(".claude"),
+        planning_dir.join(".claude"),
+        planning_dir.join("plans"),
+    ] {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+
+    // KB: read + write/edit markdown only; no web access or shell
+    std::fs::write(
+        kb_dir.join(".claude").join("settings.json"),
+        r#"{"permissions":{"allow":["Read","Write","Edit"],"deny":["Bash","MultiEdit","WebFetch","WebSearch"]}}"#,
+    ).map_err(|e| e.to_string())?;
+
+    // Planning: read + markdown writes + WebFetch for GitHub API; no shell
+    std::fs::write(
+        planning_dir.join(".claude").join("settings.json"),
+        r#"{"permissions":{"allow":["Read","Write","Edit","WebFetch"],"deny":["Bash","MultiEdit","WebSearch"]}}"#,
+    ).map_err(|e| e.to_string())?;
+
+    std::fs::write(kb_dir.join("CLAUDE.md"), KB_CLAUDE_MD)
+        .map_err(|e| e.to_string())?;
+    std::fs::write(planning_dir.join("CLAUDE.md"), PLANNING_CLAUDE_MD)
+        .map_err(|e| e.to_string())?;
+
+    // Sync every KB block to disk as a markdown file (overwrite on each call)
+    for block in &kb_blocks {
+        let content = format!(
+            "---\nid: {}\ntitle: {}\ntags: [{}]\n---\n\n{}",
+            block.id,
+            block.title,
+            block.tags.join(", "),
+            block.content,
+        );
+        std::fs::write(kb_dir.join(format!("{}.md", block.id)), content)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(WorkspacePaths {
+        kb_dir:       kb_dir.to_string_lossy().into_owned(),
+        planning_dir: planning_dir.to_string_lossy().into_owned(),
+    })
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -348,6 +498,7 @@ pub fn run() {
             pty_kill,
             pick_directory,
             git_info,
+            setup_workspaces,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
