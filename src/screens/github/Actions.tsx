@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, type GithubRepo } from "../../store";
 
@@ -204,7 +204,7 @@ export function ActionsBody({ repo }: { repo: GithubRepo | null }) {
   );
 
   // Stat card calculations
-  const now = Date.now();
+  const now = useMemo(() => Date.now(), []);
   const weekRuns = runs.filter(r => now - new Date(r.created_at).getTime() < 7 * 86_400_000);
   const passing  = weekRuns.filter(r => r.conclusion === "success").length;
   const failing  = weekRuns.filter(r => r.conclusion === "failure").length;
