@@ -246,3 +246,13 @@ html, body {
 .pane-input .chev{ color:var(--accent); }
 
 @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ===== scrollbars ===== */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: oklch(0.38 0.006 250 / 0.6);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background: oklch(0.50 0.008 250 / 0.8); }
+::-webkit-scrollbar-corner { background: transparent; }
