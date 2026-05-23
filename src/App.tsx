@@ -24,7 +24,7 @@ function Placeholder({ name }: { name: string }) {
 
 export default function App() {
   useHotkeys();
-  const { activeScreen, setScreen, tabs, activeTabIdx, setActiveTab } = useAppStore();
+  const { activeScreen, setScreen, tabs, activeTabIdx, setActiveTab, githubConnected } = useAppStore();
 
   const screen = (() => {
     switch (activeScreen) {
@@ -48,9 +48,10 @@ export default function App() {
           )}
           <div className="page">{screen}</div>
           <StatusBar extra={
-            activeScreen === "console"
-              ? <span className="s">9 panes · 5 views · acme/payments</span>
-              : undefined
+            activeScreen === "console"    ? <span className="s">9 panes · 5 views · acme/payments</span>
+            : activeScreen === "automation" ? <span className="s"><i className="warn" /> 4 schedules armed · next at 02:00</span>
+            : activeScreen === "github" && !githubConnected ? <span className="s" style={{ color: "var(--fg-dim)" }}><i className="off" /> github · not connected</span>
+            : undefined
           } />
         </div>
       </div>
