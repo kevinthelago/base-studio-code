@@ -1,5 +1,4 @@
 import { useState, useMemo, useRef, useCallback } from "react";
-import { KB_TAGS } from "../data/mock";
 import { useAppStore } from "../store";
 import { KbConsole } from "../components/kb/KbConsole";
 
@@ -14,7 +13,16 @@ const MIN_EDITOR_H = 160;
 const MIN_CONSOLE_H = 140;
 
 export function KnowledgeStoreScreen() {
-  const { kbBlocks } = useAppStore();
+  const { kbBlocks, addKbBlock } = useAppStore();
+
+  const allTags = useMemo(() => {
+    const counts: Record<string, number> = {};
+    kbBlocks.forEach(b => b.tags.forEach(t => { counts[t] = (counts[t] ?? 0) + 1; }));
+    return [
+      { name: "all", n: kbBlocks.length },
+      ...Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, n })),
+    ];
+  }, [kbBlocks]);
 
   const [activeTags, setActiveTags] = useState<string[]>(["all"]);
   const [selectedId, setSelectedId] = useState<string>(kbBlocks[0]?.id ?? "");
@@ -91,7 +99,7 @@ export function KnowledgeStoreScreen() {
           <span style={{ cursor: "pointer", color: "var(--fg-muted)" }}>+</span>
         </div>
 
-        {KB_TAGS.map((t) => {
+        {allTags.map((t) => {
           const on = activeTags.includes(t.name);
           return (
             <div
@@ -195,7 +203,11 @@ export function KnowledgeStoreScreen() {
         </div>
 
         <div style={{ padding: 10, borderTop: "1px solid var(--border-soft)" }}>
-          <button className="btn primary" style={{ width: "100%", justifyContent: "center" }}>+ New block</button>
+          <button
+            className="btn primary"
+            style={{ width: "100%", justifyContent: "center" }}
+            onClick={addKbBlock}
+          >+ New block</button>
         </div>
       </aside>
 

@@ -1,4 +1,4 @@
-import { TerminalSquare, BookOpen, Zap, GitFork, Settings, User } from "lucide-react";
+import { TerminalSquare, BookOpen, Zap, GitFork, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type Screen = "console" | "knowledge" | "automation" | "github" | "settings";
@@ -30,10 +30,6 @@ export function Rail({ active, onNavigate }: RailProps) {
           <Icon size={18} />
         </button>
       ))}
-      <div className="spacer" />
-      <button title="Profile">
-        <User size={18} />
-      </button>
     </div>
   );
 }

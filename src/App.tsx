@@ -104,18 +104,40 @@ export default function App() {
     tabs, activeTabIdx, setActiveTab,
     addTab, closeTab,
     focusedAgentName,
+    activeRepoName, githubActiveTab,
+    automationsTab,
+    settingsSection,
   } = useAppStore();
 
-  const SCREEN_LABELS: Record<string, string> = {
-    console:    tabs[activeTabIdx]?.name ?? "console",
-    knowledge:  "Knowledge Store",
-    automation: "Automations",
-    github:     "GitHub",
-    settings:   "Settings",
-  };
-  const pageLabel    = SCREEN_LABELS[activeScreen] ?? activeScreen;
-  const elementLabel = activeScreen === "console" && focusedAgentName ? focusedAgentName : null;
-  const titleWorkspace = [pageLabel, elementLabel].filter(Boolean).join(" · ");
+  const titleWorkspace = (() => {
+    const parts: string[] = [];
+    switch (activeScreen) {
+      case "console":
+        parts.push("Console");
+        if (tabs[activeTabIdx]?.name) parts.push(tabs[activeTabIdx].name);
+        if (focusedAgentName) parts.push(focusedAgentName);
+        break;
+      case "knowledge":
+        parts.push("Knowledge Store");
+        break;
+      case "github":
+        parts.push("GitHub");
+        if (activeRepoName) parts.push(activeRepoName);
+        parts.push(githubActiveTab);
+        break;
+      case "automation":
+        parts.push("Automations");
+        parts.push(automationsTab);
+        break;
+      case "settings":
+        parts.push("Settings");
+        parts.push(settingsSection);
+        break;
+      default:
+        parts.push(activeScreen);
+    }
+    return parts.filter(Boolean).join(" — ");
+  })();
 
   const [confirmCloseIdx, setConfirmCloseIdx] = useState<number | null>(null);
   const [showNewTab, setShowNewTab] = useState(false);

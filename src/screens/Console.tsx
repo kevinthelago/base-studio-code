@@ -1,107 +1,152 @@
 import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { PaneShell } from "../components/pane/PaneShell";
-import { ConsoleView } from "../components/pane/views/ConsoleView";
+import { TerminalView } from "../components/pane/views/TerminalView";
 import { FilesView } from "../components/pane/views/FilesView";
 import { BranchesView } from "../components/pane/views/BranchesView";
 import { ChangesView } from "../components/pane/views/ChangesView";
 import { LogView } from "../components/pane/views/LogView";
 import { useAppStore } from "../store";
-import { REVIEW_TURNS, TREE, BRANCHES, HUNKS, COMMITS } from "../data/mock";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
-interface PaneCell {
-  agent: string;
-  status: "run" | "on" | "idle";
-  meta?: string;
+function resolvePaneName(
+  tabIdx: number,
+  paneIdx: number,
+  names: Record<number, Record<number, string>>,
+): string {
+  return names[tabIdx]?.[paneIdx] ?? `console-${tabIdx + 1}-${paneIdx + 1}`;
 }
 
-const CELLS: PaneCell[] = [
-  { agent: "@reviewer",   status: "run",  meta: "PR #418" },
-  { agent: "@docs",       status: "on",   meta: "watch"   },
-  { agent: "@triager",    status: "run",  meta: "WIP"     },
-  { agent: "@scratch",    status: "on",   meta: ""        },
-  { agent: "@dispatcher", status: "on",   meta: "q:2"     },
-  { agent: "@db-shell",   status: "idle", meta: "sqlite"  },
-  { agent: "@github",     status: "on",   meta: "main"    },
-  { agent: "@tunnel-mon", status: "on",   meta: "42 e/s"  },
-  { agent: "@logs",       status: "on",   meta: "tail"    },
-];
-
-// Per-pane console content so each agent has distinct chat history
-const PANE_CONSOLE: React.ReactNode[] = [
-  <ConsoleView small turns={REVIEW_TURNS.slice(0, 2)} />,
-  <ConsoleView small withInput={false} turns={[{ role: "assistant", blocks: [{ kind: "text", text: "Watching for file changes…" }] }]} />,
-  <ConsoleView small withInput={false} turns={[{ role: "assistant", blocks: [{ kind: "text", text: "Triaging issue #421." }, { kind: "tool", tool: "gh", args: "issue list", ok: true, summary: "8 open" }] }]} />,
-  <ConsoleView small withInput={false} turns={[{ role: "assistant", blocks: [{ kind: "text", text: "On branch feat/tunnel. Nothing to push." }] }]} />,
-  <ConsoleView small withInput={false} turns={[{ role: "assistant", blocks: [{ kind: "text", text: "awaiting webhook routing. 2 in queue." }, { kind: "tool", tool: "gh", args: "webhooks recent", ok: true, summary: "12 in 1h" }] }]} />,
-  <ConsoleView small withInput={false} turns={[{ role: "assistant", blocks: [{ kind: "text", text: "sqlite session idle. /scan to start." }] }]} />,
-  <ConsoleView small withInput={false} turns={[{ role: "assistant", blocks: [{ kind: "text", text: "Monitoring GitHub events on main." }] }]} />,
-  <ConsoleView small withInput={false} turns={[{ role: "assistant", blocks: [{ kind: "tool", tool: "ws", args: "ping iPhone-Lina", ok: true, summary: "24ms" }, { kind: "tool", tool: "ws", args: "ping Pixel-Alex", ok: true, summary: "61ms" }, { kind: "text", text: "forwarded 12 frames · 0 dropped" }] }]} />,
-  <ConsoleView small withInput={false} turns={[{ role: "assistant", blocks: [{ kind: "text", text: "[14:22:08] auto  fired rule=R-02\n[14:22:10] kb    upsert id=blk_9a2c\n[14:22:14] orch  spawn agent=@reviewer pid=8821" }] }]} />,
-];
-
-function renderView(viewKey: ViewKey, idx: number): React.ReactNode {
-  switch (viewKey) {
-    case "console":  return PANE_CONSOLE[idx] ?? <ConsoleView small turns={[]} />;
-    case "files":    return <FilesView small tree={TREE.slice(0, 10)} active="crates/ws-server/src/tunnel.rs" cwd="~/Code/acme/payments" />;
-    case "branches": return <BranchesView small branches={BRANCHES} />;
-    case "changes":  return <ChangesView small hunks={HUNKS} />;
-    case "log":      return <LogView small commits={COMMITS} />;
-  }
+function paneId(tabIdx: number, paneIdx: number): string {
+  return `t${tabIdx}p${paneIdx}`;
 }
 
-function PaneAt({ c, i, paneMenuOpenIdx, focusedPaneIdx, view, onViewChange }: {
-  c: PaneCell; i: number; paneMenuOpenIdx: number; focusedPaneIdx: number;
-  view: ViewKey; onViewChange: (v: ViewKey) => void;
-}) {
+interface GitInfo { repo: string; branch: string; dirty: boolean }
+
+interface PaneAtProps {
+  i: number;
+  tabIdx: number;
+  name: string;
+  view: ViewKey;
+  cwd?: string;
+  gitInfo?: GitInfo | null;
+  onRename: (name: string) => void;
+  onMenuToggle: () => void;
+  onFocus: () => void;
+  onViewChange: (v: ViewKey) => void;
+  onPickDirectory: () => void;
+  onCwdChange: (path: string) => void;
+  paneMenuOpenIdx: number;
+  focusedPaneIdx: number;
+}
+
+function PaneAt({
+  i, tabIdx, name, view, cwd, gitInfo,
+  onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange,
+  paneMenuOpenIdx, focusedPaneIdx,
+}: PaneAtProps) {
+  const pid = paneId(tabIdx, i);
   return (
     <PaneShell
-      agent={c.agent}
-      status={c.status}
-      repo="acme/payments"
-      branch="main"
-      dirty
+      agent={name}
+      onRename={onRename}
+      onMenuToggle={onMenuToggle}
+      onFocus={onFocus}
+      onPickDirectory={onPickDirectory}
+      status="idle"
       model="sonnet-4.5"
+      cwd={gitInfo ? undefined : cwd}
+      repo={gitInfo?.repo}
+      branch={gitInfo?.branch}
+      dirty={gitInfo?.dirty}
       available={["console", "files", "branches", "changes", "log"]}
       active={view}
-      meta={c.meta}
       menuOpen={i === paneMenuOpenIdx}
       focused={i === focusedPaneIdx}
       onViewChange={onViewChange}
     >
-      {renderView(view, i)}
+      {/* Terminal stays mounted so the PTY session survives view switches */}
+      <TerminalView
+        paneId={pid}
+        visible={view === "console"}
+        initialCwd={cwd}
+        onCwdChange={onCwdChange}
+      />
+      {view === "files"    && <FilesView    small tree={[]} cwd={cwd} />}
+      {view === "branches" && <BranchesView small branches={[]} />}
+      {view === "changes"  && <ChangesView  small hunks={[]} />}
+      {view === "log"      && <LogView      small commits={[]} />}
     </PaneShell>
   );
 }
 
 export function ConsoleScreen() {
   const {
-    tabs, activeTabIdx, paneMenuOpenIdx,
-    focusedPaneIdx, fullscreenPaneIdx,
+    tabs, activeTabIdx, paneMenuOpenIdx, setPaneMenu,
+    focusedPaneIdx, setFocusedPane, fullscreenPaneIdx,
     paneViews, setPaneView,
+    paneNames, setPaneName,
+    paneCwds, setPaneCwd,
+    paneGitInfo, setPaneGitInfo,
     setFocusedAgentName,
   } = useAppStore();
 
-  // Keep the titlebar breadcrumb in sync with the focused pane
+  // Keep titlebar breadcrumb in sync
   useEffect(() => {
-    const agent = focusedPaneIdx >= 0 ? (CELLS[focusedPaneIdx]?.agent ?? "") : "";
-    setFocusedAgentName(agent);
-  }, [focusedPaneIdx, setFocusedAgentName]);
+    const name = focusedPaneIdx >= 0
+      ? resolvePaneName(activeTabIdx, focusedPaneIdx, paneNames)
+      : "";
+    setFocusedAgentName(name);
+  }, [focusedPaneIdx, activeTabIdx, paneNames, setFocusedAgentName]);
 
   const activeTab = tabs[activeTabIdx];
   const [cols, rows] = activeTab.layout.split("×").map(Number);
   const paneCount = cols * rows;
 
+  async function handleCwdChange(paneIdx: number, path: string) {
+    const pid = paneId(activeTabIdx, paneIdx);
+    setPaneCwd(pid, path);
+    const info = await invoke<GitInfo | null>("git_info", { path }).catch(() => null);
+    setPaneGitInfo(pid, info);
+  }
+
+  async function handlePickDirectory(paneIdx: number) {
+    const pid = paneId(activeTabIdx, paneIdx);
+    const dir = await invoke<string | null>("pick_directory");
+    if (!dir) return;
+    // cd in the running shell (bash on Windows uses forward slashes)
+    const posix = dir.replace(/\\/g, "/").replace(/^([A-Z]):/, (_, d) => `/${d.toLowerCase()}`);
+    await invoke("pty_write", { paneId: pid, data: `cd "${posix}"\r` });
+    await handleCwdChange(paneIdx, dir);
+  }
+
+  function renderPane(i: number) {
+    const pid = paneId(activeTabIdx, i);
+    return (
+      <PaneAt
+        key={i}
+        i={i}
+        tabIdx={activeTabIdx}
+        name={resolvePaneName(activeTabIdx, i, paneNames)}
+        view={paneViews[i] ?? "console"}
+        cwd={paneCwds[pid]}
+        gitInfo={paneGitInfo[pid]}
+        onRename={(n) => setPaneName(activeTabIdx, i, n)}
+        onMenuToggle={() => setPaneMenu(paneMenuOpenIdx === i ? -1 : i)}
+        onFocus={() => setFocusedPane(i)}
+        onViewChange={(v) => setPaneView(i, v)}
+        onPickDirectory={() => handlePickDirectory(i)}
+        onCwdChange={(path) => handleCwdChange(i, path)}
+        paneMenuOpenIdx={paneMenuOpenIdx}
+        focusedPaneIdx={focusedPaneIdx}
+      />
+    );
+  }
+
   if (fullscreenPaneIdx >= 0 && fullscreenPaneIdx < paneCount) {
-    const c = CELLS[fullscreenPaneIdx];
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, padding: 10 }}>
-        <PaneAt
-          c={c} i={fullscreenPaneIdx}
-          paneMenuOpenIdx={paneMenuOpenIdx} focusedPaneIdx={focusedPaneIdx}
-          view={paneViews[fullscreenPaneIdx]}
-          onViewChange={(v) => setPaneView(fullscreenPaneIdx, v)}
-        />
+        {renderPane(fullscreenPaneIdx)}
       </div>
     );
   }
@@ -115,14 +160,7 @@ export function ConsoleScreen() {
           gridTemplateRows:    `repeat(${rows}, 1fr)`,
         }}
       >
-        {CELLS.slice(0, paneCount).map((c, i) => (
-          <PaneAt
-            key={i} c={c} i={i}
-            paneMenuOpenIdx={paneMenuOpenIdx} focusedPaneIdx={focusedPaneIdx}
-            view={paneViews[i]}
-            onViewChange={(v) => setPaneView(i, v)}
-          />
-        ))}
+        {Array.from({ length: paneCount }, (_, i) => renderPane(i))}
       </div>
     </div>
   );

@@ -19,6 +19,7 @@ export function useHotkeys() {
     setScreen,
     tabs,
     activeTabIdx,
+    setActiveTab,
     focusedPaneIdx,
     fullscreenPaneIdx,
     setFocusedPane,
@@ -30,40 +31,60 @@ export function useHotkeys() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return;
+      const inInput = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable;
+      // Plain typing in inputs is fine; modifier combos still fire
+      if (inInput && !e.ctrlKey && !e.metaKey && !e.altKey) return;
 
       // F1–F5: navigate screens
-      if (SCREEN_KEYS[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (SCREEN_KEYS[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
         e.preventDefault();
         setScreen(SCREEN_KEYS[e.key]);
         return;
       }
 
-      // Ctrl+1–9: pane focus → fullscreen → restore
-      // Use e.code so Ctrl+Shift+1 etc. still resolve to the right digit
-      const ctrlDigit = e.ctrlKey && !e.metaKey && !e.altKey && e.code.match(/^Digit([1-9])$/);
-      if (ctrlDigit) {
+      // ── CTRL = SELECT ─────────────────────────────────────────────────────
+
+      // Ctrl+1–9: switch to workspace tab by index
+      const ctrlTab = e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code.match(/^Digit([1-9])$/);
+      if (ctrlTab) {
         e.preventDefault();
-        const targetIdx = parseInt(ctrlDigit[1], 10) - 1;
+        const targetIdx = parseInt(ctrlTab[1], 10) - 1;
+        if (targetIdx < tabs.length) setActiveTab(targetIdx);
+        return;
+      }
+
+      // Ctrl+Shift+1–9: select console pane
+      //   first press  → focus that pane
+      //   second press → fullscreen that pane
+      //   third press  → restore
+      const ctrlShiftPane = e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code.match(/^Digit([1-9])$/);
+      if (ctrlShiftPane) {
+        if (activeScreen !== "console") return;
+        e.preventDefault();
+        const targetIdx = parseInt(ctrlShiftPane[1], 10) - 1;
         const activeTab = tabs[activeTabIdx];
         const [cols, rows] = activeTab.layout.split("×").map(Number);
         if (targetIdx >= cols * rows) return;
 
         if (fullscreenPaneIdx === targetIdx) {
+          // restore from fullscreen
           setFullscreenPane(-1);
           setFocusedPane(-1);
         } else if (focusedPaneIdx === targetIdx) {
+          // already focused → fullscreen
           setFullscreenPane(targetIdx);
         } else {
+          // focus it
           setFullscreenPane(-1);
           setFocusedPane(targetIdx);
         }
         return;
       }
 
-      // Alt+1–5: change focused pane's view (console screen only)
-      // Alt+Shift+1–5: change all panes' view (console screen only)
-      // Use e.code so Shift doesn't turn "1" into "!" before we read it
+      // ── ALT = MODIFY ──────────────────────────────────────────────────────
+
+      // Alt+1–5: switch focused pane's view
+      // Alt+Shift+1–5: switch ALL panes' view
       const altDigit = e.altKey && !e.ctrlKey && !e.metaKey && e.code.match(/^Digit([1-5])$/);
       if (altDigit) {
         if (activeScreen !== "console") return;
@@ -74,6 +95,7 @@ export function useHotkeys() {
         } else if (focusedPaneIdx >= 0) {
           setPaneView(focusedPaneIdx, view);
         }
+        return;
       }
     }
 
@@ -81,7 +103,7 @@ export function useHotkeys() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [
     activeScreen, setScreen,
-    tabs, activeTabIdx,
+    tabs, activeTabIdx, setActiveTab,
     focusedPaneIdx, fullscreenPaneIdx,
     setFocusedPane, setFullscreenPane,
     setPaneView, setAllPanesView,
