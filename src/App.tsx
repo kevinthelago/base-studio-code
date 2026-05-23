@@ -6,6 +6,7 @@ import { useAppStore } from "./store";
 import { ConsoleScreen } from "./screens/Console";
 import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
+import { AutomationsScreen } from "./screens/automations";
 
 function Placeholder({ name }: { name: string }) {
   return (
@@ -24,10 +25,11 @@ export default function App() {
 
   const screen = (() => {
     switch (activeScreen) {
-      case "console":   return <ConsoleScreen />;
-      case "knowledge": return <KnowledgeStoreScreen />;
-      case "github":    return <GitHubScreen />;
-      default:          return <Placeholder name={activeScreen} />;
+      case "console":    return <ConsoleScreen />;
+      case "knowledge":  return <KnowledgeStoreScreen />;
+      case "github":     return <GitHubScreen />;
+      case "automation": return <AutomationsScreen />;
+      default:           return <Placeholder name={activeScreen} />;
     }
   })();
 
