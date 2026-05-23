@@ -37,9 +37,10 @@
   display:flex; align-items:center; padding:0 12px; gap:10px;
   font-family:var(--mono); font-size:11px; color:var(--fg-muted);
   -webkit-user-select:none;
+  -webkit-app-region:drag;
 }
-.tl-lights{ display:flex; gap:6px; margin-right:6px; }
-.tl-lights i{ width:11px; height:11px; border-radius:50%; display:block; }
+.tl-lights{ display:flex; gap:6px; margin-right:6px; -webkit-app-region:no-drag; }
+.tl-lights i{ width:11px; height:11px; border-radius:50%; display:block; cursor:pointer; }
 .tl-lights i:nth-child(1){ background:#ed6a5e; }
 .tl-lights i:nth-child(2){ background:#f4bf4f; }
 .tl-lights i:nth-child(3){ background:#61c454; }
