@@ -4,6 +4,7 @@ import { Tabstrip } from "./components/chrome/Tabstrip";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { useAppStore } from "./store";
 import { ConsoleScreen } from "./screens/Console";
+import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 
 function Placeholder({ name }: { name: string }) {
   return (
@@ -22,8 +23,9 @@ export default function App() {
 
   const screen = (() => {
     switch (activeScreen) {
-      case "console":    return <ConsoleScreen />;
-      default:           return <Placeholder name={activeScreen} />;
+      case "console":   return <ConsoleScreen />;
+      case "knowledge": return <KnowledgeStoreScreen />;
+      default:          return <Placeholder name={activeScreen} />;
     }
   })();
 
