@@ -8,7 +8,8 @@ const SCREEN_KEYS: Record<string, Screen> = {
   F2: "knowledge",
   F3: "automation",
   F4: "github",
-  F5: "settings",
+  F5: "projects",
+  F6: "settings",
 };
 
 const VIEWS_ORDER: ViewKey[] = ["console", "files", "branches", "changes", "log"];
@@ -60,6 +61,9 @@ export function useHotkeys() {
       const ctrlShiftPane = e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code.match(/^Digit([1-9])$/);
       if (ctrlShiftPane) {
         if (activeScreen !== "console") return;
+        // stopPropagation here: xterm's textarea handler runs in bubble phase and
+        // interprets Ctrl+2 as \x00 (NUL). We claim this combo before xterm sees it.
+        e.stopPropagation();
         e.preventDefault();
         const targetIdx = parseInt(ctrlShiftPane[1], 10) - 1;
         const activeTab = tabs[activeTabIdx];
@@ -99,8 +103,10 @@ export function useHotkeys() {
       }
     }
 
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    // Capture phase: fires before element handlers (including xterm's textarea listener),
+    // so pane/tab hotkeys are intercepted regardless of which element has focus.
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [
     activeScreen, setScreen,
     tabs, activeTabIdx, setActiveTab,

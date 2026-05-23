@@ -13,6 +13,7 @@ import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
 import { AutomationsScreen } from "./screens/automations";
 import { SettingsScreen } from "./screens/settings";
+import { ProjectsScreen } from "./screens/projects";
 import type { Tab } from "./components/chrome/Tabstrip";
 
 // ── New-tab dialog ────────────────────────────────────────────────────────────
@@ -128,6 +129,7 @@ export default function App() {
     activeRepoName, githubActiveTab,
     automationsTab,
     settingsSection,
+    projectsView, activeProjectName, projectsBoardTab,
   } = useAppStore();
 
   const titleWorkspace = (() => {
@@ -149,6 +151,15 @@ export default function App() {
       case "automation":
         parts.push("Automations");
         parts.push(automationsTab);
+        break;
+      case "projects":
+        parts.push("Projects");
+        if (projectsView === "planning") {
+          parts.push("planning");
+        } else if (projectsView === "board" && activeProjectName) {
+          parts.push(activeProjectName);
+          parts.push(projectsBoardTab);
+        }
         break;
       case "settings":
         parts.push("Settings");
@@ -218,6 +229,7 @@ export default function App() {
       case "knowledge":  return <KnowledgeStoreScreen />;
       case "github":     return <GitHubScreen />;
       case "automation": return <AutomationsScreen />;
+      case "projects":   return <ProjectsScreen />;
       case "settings":   return <SettingsScreen />;
       default:           return null;
     }

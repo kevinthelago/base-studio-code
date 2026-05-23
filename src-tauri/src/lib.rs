@@ -27,6 +27,7 @@ async fn pty_create(
     cols: u16,
     rows: u16,
     cwd: String,
+    init_cmd: Option<String>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -54,15 +55,20 @@ async fn pty_create(
     let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
 
-    // Inject OSC 7 cwd reporting into every bash prompt.
-    // Buffered in the PTY input — bash reads it after .bashrc finishes.
-    // Uses printf for the ANSI clear (ESC[2J ESC[H) instead of `clear`
-    // so it works in minimal environments like Git Bash where clear may
-    // not be on PATH.
-    let osc7 = concat!(
-        "__bsc_osc7() { printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; };",
-        " PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND; }__bsc_osc7\";",
-        " __bsc_osc7; printf '\\033[2J\\033[H'\n"
+    // Inject bash helpers into every new session.
+    // Optional init_cmd is appended after the screen clear so callers can
+    // auto-launch a process (e.g. "claude") inside the prepared shell.
+    let init_suffix = init_cmd
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("; {}", s))
+        .unwrap_or_default();
+    let osc7 = format!(
+        "__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
+         __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
+         claude() {{ __bsc_state run; command claude \"$@\"; }}; \
+         PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
+         __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
     );
     writer.write_all(osc7.as_bytes()).ok();
 
@@ -223,6 +229,80 @@ async fn kb_chat(
 // ── GitHub proxy ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
+async fn github_graphql(
+    token: String,
+    query: String,
+    variables: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
+    let client = reqwest::Client::new();
+    let mut body = serde_json::json!({ "query": query });
+    if let Some(vars) = variables {
+        body["variables"] = vars;
+    }
+    let response = client
+        .post("https://api.github.com/graphql")
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Content-Type", "application/json")
+        .header("User-Agent", "base-studio-code/0.2.0")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    if !status.is_success() {
+        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        return Err(format!("GitHub API error ({}): {}", status, msg));
+    }
+    if let Some(errors) = json.get("errors") {
+        if errors.is_array() && !errors.as_array().unwrap().is_empty() {
+            let msg = errors[0]["message"].as_str().unwrap_or("GraphQL error").to_string();
+            return Err(format!("GraphQL error: {}", msg));
+        }
+    }
+    Ok(json["data"].clone())
+}
+
+#[tauri::command]
+async fn github_post(
+    token: String,
+    path: String,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/{}", path);
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "base-studio-code/0.2.0")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    if !status.is_success() {
+        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        return Err(format!("GitHub API error ({}): {}", status, msg));
+    }
+    Ok(json)
+}
+
+#[tauri::command]
 async fn github_request(token: String, path: String) -> Result<serde_json::Value, String> {
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
@@ -260,6 +340,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             kb_chat,
             github_request,
+            github_graphql,
+            github_post,
             pty_create,
             pty_write,
             pty_resize,

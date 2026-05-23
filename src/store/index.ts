@@ -45,6 +45,7 @@ interface AppStore {
   closeTab: (idx: number) => void;
   renameTab: (idx: number, name: string) => void;
   setTabLayout: (tabIdx: number, layout: string) => void;
+  setTabState: (tabIdx: number, state: Tab["state"]) => void;
   setPaneMenu: (idx: number) => void;
   setFocusedPane: (idx: number) => void;
   setFullscreenPane: (idx: number) => void;
@@ -98,6 +99,23 @@ interface AppStore {
   updateCommand: (id: string, patch: Partial<Command>) => void;
   removeCommand: (id: string) => void;
 
+  // Projects (transient)
+  projectsView: "list" | "board" | "planning";
+  setProjectsView: (v: "list" | "board" | "planning") => void;
+  activeProjectId: string | null;
+  activeProjectName: string;
+  activeProjectRepo: string;
+  activeProjectNumber: number;
+  setActiveProject: (id: string | null) => void;
+  setActiveProjectMeta: (id: string | null, name: string, repo: string, number: number) => void;
+  projectsBoardTab: "board" | "roadmap" | "issues" | "insights";
+  setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights") => void;
+  projectsDrawerIssue: number | null;
+  setProjectsDrawerIssue: (n: number | null) => void;
+  planningPitch: string;
+  planningRepo: string;
+  setPlanningContext: (pitch: string, repo: string) => void;
+
   // Agent settings
   allowedCommands: string[];
   addAllowedCommand: (cmd: string) => void;
@@ -147,6 +165,12 @@ export const useAppStore = create<AppStore>()(
         set((s) => {
           const tabs = [...s.tabs];
           tabs[idx] = { ...tabs[idx], name };
+          return { tabs };
+        }),
+      setTabState: (tabIdx, state) =>
+        set((s) => {
+          const tabs = [...s.tabs];
+          tabs[tabIdx] = { ...tabs[tabIdx], state };
           return { tabs };
         }),
       setTabLayout: (tabIdx, layout) =>
@@ -286,6 +310,23 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ commands: s.commands.map(c => c.id === id ? { ...c, ...patch } : c) })),
       removeCommand: (id) =>
         set((s) => ({ commands: s.commands.filter(c => c.id !== id) })),
+
+      projectsView: "list",
+      setProjectsView: (v) => set({ projectsView: v }),
+      activeProjectId: null,
+      activeProjectName: "",
+      activeProjectRepo: "",
+      activeProjectNumber: 0,
+      setActiveProject: (id) => set({ activeProjectId: id }),
+      setActiveProjectMeta: (id, name, repo, number) =>
+        set({ activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number }),
+      projectsBoardTab: "board",
+      setProjectsBoardTab: (t) => set({ projectsBoardTab: t }),
+      projectsDrawerIssue: null,
+      setProjectsDrawerIssue: (n) => set({ projectsDrawerIssue: n }),
+      planningPitch: "",
+      planningRepo: "",
+      setPlanningContext: (pitch, repo) => set({ planningPitch: pitch, planningRepo: repo }),
 
       allowedCommands: [],
       addAllowedCommand: (cmd) =>

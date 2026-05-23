@@ -25,15 +25,34 @@ const TERM_THEME: import("@xterm/xterm").ITheme = {
 interface TerminalViewProps {
   paneId: string;
   visible?: boolean;
+  focused?: boolean;
   initialCwd?: string;
   onCwdChange?: (path: string) => void;
+  onStatusChange?: (status: "run" | "idle") => void;
+  onFocus?: () => void;
 }
 
-export function TerminalView({ paneId, visible = true, initialCwd, onCwdChange }: TerminalViewProps) {
+export function TerminalView({ paneId, visible = true, focused, initialCwd, onCwdChange, onStatusChange, onFocus }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
+
+  // Stable refs so handlers registered once always call the latest callback
+  const onStatusChangeRef = useRef(onStatusChange);
+  useEffect(() => { onStatusChangeRef.current = onStatusChange; }, [onStatusChange]);
+  const onFocusRef = useRef(onFocus);
+  useEffect(() => { onFocusRef.current = onFocus; }, [onFocus]);
+
+  // Session state for interactive claude REPL detection.
+  // __bsc_state only fires on process start/exit, but in REPL mode claude
+  // stays alive between turns. We use output silence to detect mid-session idle:
+  // 1.5 s with no PTY output while a claude session is active → emit "idle".
+  // When the user presses Enter, we re-emit "run" to re-arm.
+  const inClaudeRef  = useRef(false);               // true between __bsc_state run/idle
+  const claudeActiveRef = useRef<"run" | "idle">("idle"); // current within-session status
+  const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const QUIET_MS = 800; // ms of silence after last printable output → claude is at its prompt
 
   // Mount terminal + spawn PTY once per paneId
   useEffect(() => {
@@ -56,20 +75,71 @@ export function TerminalView({ paneId, visible = true, initialCwd, onCwdChange }
     termRef.current = term;
     fitRef.current  = fitAddon;
 
+    // Called whenever claude finishes responding. Focuses the terminal directly
+    // so there are no React render-timing races. The focusin listener on the
+    // container div will fire and call setFocusedPane naturally when focus lands.
+    function onClaudeIdle(autoFocus: boolean) {
+      claudeActiveRef.current = "idle";
+      onStatusChangeRef.current?.("idle");
+      if (autoFocus) {
+        term.focus();
+      }
+    }
+
+    function armQuietTimer() {
+      if (quietTimerRef.current) clearTimeout(quietTimerRef.current);
+      quietTimerRef.current = setTimeout(() => {
+        quietTimerRef.current = null;
+        if (inClaudeRef.current && claudeActiveRef.current === "run") {
+          onClaudeIdle(true);
+        }
+      }, QUIET_MS);
+    }
+
     // OSC 7: bash reports cwd after every prompt via our injected PROMPT_COMMAND.
     // Format: ESC ] 7 ; file://localhost/path BEL
     term.parser.registerOscHandler(7, (data) => {
-      // Strip the scheme+host, leaving just the POSIX path
       const path = data.replace(/^file:\/\/[^/]*/, "");
       if (path) onCwdChange?.(path);
       return true;
     });
 
-    // Initial fit + PTY creation after layout
-    // Terminal input → PTY
-    const disposeOnData = term.onData((data) =>
-      invoke("pty_write", { paneId, data }).catch(console.error)
-    );
+    // OSC 100: claude() wrapper signals process start ("run") and exit ("idle").
+    // For interactive REPL sessions the process never exits mid-turn, so we
+    // supplement with the quiet-timer approach to catch mid-session idle states.
+    term.parser.registerOscHandler(100, (data) => {
+      if (data === "run") {
+        inClaudeRef.current = true;
+        claudeActiveRef.current = "run";
+        onStatusChangeRef.current?.("run");
+        armQuietTimer();
+      } else if (data === "idle") {
+        const wasRun = claudeActiveRef.current === "run";
+        inClaudeRef.current = false;
+        if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
+        onClaudeIdle(wasRun);
+      }
+      return true;
+    });
+
+    // focusin bubbles from xterm's internal textarea up to the container div.
+    // Covers clicks, Tab navigation, and programmatic focus — more reliable than
+    // relying on click events propagating through xterm's canvas.
+    const onFocusIn = () => onFocusRef.current?.();
+    el.addEventListener("focusin", onFocusIn);
+
+    // Terminal input → PTY.
+    // Also handles two session-tracking concerns:
+    //   • Output silence detection: reset the quiet timer on every byte received
+    //   • Re-arm: when user presses Enter while claude is idle, switch back to "run"
+    const disposeOnData = term.onData((data) => {
+      invoke("pty_write", { paneId, data }).catch(console.error);
+      if (inClaudeRef.current && claudeActiveRef.current === "idle" && data.includes("\r")) {
+        claudeActiveRef.current = "run";
+        onStatusChangeRef.current?.("run");
+        armQuietTimer();
+      }
+    });
 
     // Await the listener before creating the PTY so we never miss early output.
     // pty_create returns true for a new session, false when reconnecting to an
@@ -79,6 +149,12 @@ export function TerminalView({ paneId, visible = true, initialCwd, onCwdChange }
       fitAddon.fit();
       const unlisten = await listen<string>(`pty_data_${paneId}`, (ev) => {
         term.write(ev.payload);
+        // Reset quiet timer only for printable output — pure ANSI control sequences
+        // (cursor moves, color resets after the last response line) don't count,
+        // so Claude's trailing formatting doesn't keep pushing the timer out.
+        if (inClaudeRef.current && claudeActiveRef.current === "run" && /[^\x00-\x1f\x7f-\x9f]/.test(ev.payload)) {
+          armQuietTimer();
+        }
       });
       unlistenRef.current = unlisten;
 
@@ -103,6 +179,8 @@ export function TerminalView({ paneId, visible = true, initialCwd, onCwdChange }
     ro.observe(el);
 
     return () => {
+      if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
+      el.removeEventListener("focusin", onFocusIn);
       disposeOnData.dispose();
       unlistenRef.current?.();
       ro.disconnect();
@@ -127,6 +205,13 @@ export function TerminalView({ paneId, visible = true, initialCwd, onCwdChange }
       });
     }
   }, [visible, paneId]);
+
+  // Call term.focus() whenever this pane becomes the focused one
+  useEffect(() => {
+    if (focused && visible) {
+      requestAnimationFrame(() => termRef.current?.focus());
+    }
+  }, [focused, visible]);
 
   return (
     <div
