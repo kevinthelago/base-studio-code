@@ -38,18 +38,34 @@ html, body {
 }
 .app * { box-sizing:border-box; }
 
-/* titlebar */
+/* titlebar — shared */
 .titlebar{
   height:32px; flex:0 0 32px; background:var(--bg-panel);
   border-bottom:1px solid var(--border-soft);
-  display:flex; align-items:center; padding:0 0 0 14px; gap:10px;
+  display:flex; align-items:center; gap:10px;
   font-family:var(--mono); font-size:11px; color:var(--fg-muted);
-  -webkit-user-select:none;
-  -webkit-app-region:drag;
+  -webkit-user-select:none; -webkit-app-region:drag;
 }
 .tl-title{ font-size:11px; letter-spacing:0.04em; white-space:nowrap; }
-.tl-meta{ display:flex; gap:14px; font-size:10.5px; flex:1; justify-content:flex-end; padding-right:6px; }
+.tl-meta{ display:flex; gap:14px; font-size:10.5px; }
 .tl-meta b{ color:var(--fg); font-weight:500; }
+
+/* titlebar — macOS: lights left, title centered */
+.titlebar.mac{ padding:0 14px; }
+.titlebar.mac .tl-title{ flex:1; text-align:center; }
+.tl-lights{ display:flex; gap:6px; -webkit-app-region:no-drag; }
+.tl-lights i{
+  width:11px; height:11px; border-radius:50%; display:block; cursor:pointer;
+  transition:filter 0.1s;
+}
+.tl-lights i:hover{ filter:brightness(1.2); }
+.tl-lights i:nth-child(1){ background:#ed6a5e; }
+.tl-lights i:nth-child(2){ background:#f4bf4f; }
+.tl-lights i:nth-child(3){ background:#61c454; }
+
+/* titlebar — Windows/Linux: title left, controls right */
+.titlebar.win{ padding-left:14px; }
+.titlebar.win .tl-meta{ flex:1; justify-content:flex-end; padding-right:6px; }
 .tl-controls{
   display:flex; align-items:stretch; height:32px;
   -webkit-app-region:no-drag;
