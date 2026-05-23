@@ -19,6 +19,8 @@ interface AppStore {
   fullscreenPaneIdx: number; // transient — NOT persisted
   paneViews: ViewKey[];
   setActiveTab: (idx: number) => void;
+  addTab: (tab: Tab) => void;
+  closeTab: (idx: number) => void;
   setPaneMenu: (idx: number) => void;
   setFocusedPane: (idx: number) => void;
   setFullscreenPane: (idx: number) => void;
@@ -70,7 +72,21 @@ export const useAppStore = create<AppStore>()(
       focusedPaneIdx: -1,
       fullscreenPaneIdx: -1,
       paneViews: ["console", "files", "changes", "branches", "console", "console", "log", "console", "console"],
-      setActiveTab:      (idx) => set({ activeTabIdx: idx }),
+      setActiveTab: (idx) => set({ activeTabIdx: idx }),
+      addTab: (tab) =>
+        set((s) => ({
+          tabs: [...s.tabs, tab],
+          activeTabIdx: s.tabs.length,
+        })),
+      closeTab: (idx) =>
+        set((s) => {
+          if (s.tabs.length <= 1) return {};
+          const tabs = s.tabs.filter((_, i) => i !== idx);
+          let activeTabIdx = s.activeTabIdx;
+          if (idx < s.activeTabIdx) activeTabIdx -= 1;
+          else if (idx === s.activeTabIdx) activeTabIdx = Math.min(activeTabIdx, tabs.length - 1);
+          return { tabs, activeTabIdx };
+        }),
       setPaneMenu:       (idx) => set({ paneMenuOpenIdx: idx }),
       setFocusedPane:    (idx) => set({ focusedPaneIdx: idx }),
       setFullscreenPane: (idx) => set({ fullscreenPaneIdx: idx }),
