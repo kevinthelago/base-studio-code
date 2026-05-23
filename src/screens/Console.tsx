@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { PaneShell } from "../components/pane/PaneShell";
 import { ConsoleView } from "../components/pane/views/ConsoleView";
 import { FilesView } from "../components/pane/views/FilesView";
@@ -78,7 +79,14 @@ export function ConsoleScreen() {
     tabs, activeTabIdx, paneMenuOpenIdx,
     focusedPaneIdx, fullscreenPaneIdx,
     paneViews, setPaneView,
+    setFocusedAgentName,
   } = useAppStore();
+
+  // Keep the titlebar breadcrumb in sync with the focused pane
+  useEffect(() => {
+    const agent = focusedPaneIdx >= 0 ? (CELLS[focusedPaneIdx]?.agent ?? "") : "";
+    setFocusedAgentName(agent);
+  }, [focusedPaneIdx, setFocusedAgentName]);
 
   const activeTab = tabs[activeTabIdx];
   const [cols, rows] = activeTab.layout.split("×").map(Number);
