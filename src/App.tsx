@@ -3,6 +3,7 @@ import { Rail } from "./components/chrome/Rail";
 import { Tabstrip } from "./components/chrome/Tabstrip";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { useAppStore } from "./store";
+import { useHotkeys } from "./hooks/useHotkeys";
 import { ConsoleScreen } from "./screens/Console";
 import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
@@ -22,6 +23,7 @@ function Placeholder({ name }: { name: string }) {
 }
 
 export default function App() {
+  useHotkeys();
   const { activeScreen, setScreen, tabs, activeTabIdx, setActiveTab } = useAppStore();
 
   const screen = (() => {
