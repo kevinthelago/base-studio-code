@@ -24,10 +24,10 @@ The core value proposition: run many AI coding agents in parallel across multipl
 ## Commands
 
 ```bash
-npm run dev          # Vite dev server — frontend only (hot-reload)
-cargo tauri dev      # Full Tauri app with native window + hot-reload
-cargo tauri build    # Production build (creates platform installer)
-cargo test           # Run Rust backend tests
+npm run dev               # Vite dev server — frontend only (hot-reload)
+npm run tauri -- dev      # Full Tauri app with native window + hot-reload
+npm run tauri -- build    # Production build (creates platform installer)
+cargo test                # Run Rust backend tests
 npm run typecheck    # TypeScript type-check without emit
 ```
 
