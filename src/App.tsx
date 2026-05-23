@@ -186,6 +186,13 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [activeScreen]);
 
+  function killTabPtys(tabIdx: number, layout: string) {
+    const [c, r] = layout.split("×").map(Number);
+    for (let i = 0; i < c * r; i++) {
+      invoke("pty_kill", { paneId: `t${tabIdx}p${i}` }).catch(console.error);
+    }
+  }
+
   async function handleLayoutChange(tabIdx: number, layout: string) {
     const tab = tabs[tabIdx];
     const [oldCols, oldRows] = tab.layout.split("×").map(Number);
@@ -206,12 +213,16 @@ export default function App() {
     if (tab.state === "run" || tab.state === "on") {
       setConfirmCloseIdx(idx);
     } else {
+      killTabPtys(idx, tab.layout);
       closeTab(idx);
     }
   }
 
   function confirmClose() {
-    if (confirmCloseIdx !== null) closeTab(confirmCloseIdx);
+    if (confirmCloseIdx !== null) {
+      killTabPtys(confirmCloseIdx, tabs[confirmCloseIdx].layout);
+      closeTab(confirmCloseIdx);
+    }
     setConfirmCloseIdx(null);
   }
 
@@ -219,21 +230,6 @@ export default function App() {
   const activeSessionCount = pendingTab
     ? /* placeholder until real session tracking */ 1
     : 0;
-
-  const screen = (() => {
-    switch (activeScreen) {
-      case "console":
-        return tabs.length > 0
-          ? <ConsoleScreen />
-          : <ConsoleEmptyState onNew={() => setShowNewTab(true)} />;
-      case "knowledge":  return <KnowledgeStoreScreen />;
-      case "github":     return <GitHubScreen />;
-      case "automation": return <AutomationsScreen />;
-      case "projects":   return <ProjectsScreen />;
-      case "settings":   return <SettingsScreen />;
-      default:           return null;
-    }
-  })();
 
   return (
     <div className="app">
@@ -252,7 +248,27 @@ export default function App() {
               onChangeLayout={handleLayoutChange}
             />
           )}
-          <div className="page">{screen}</div>
+          {/* ConsoleScreen stays mounted across all screen navigations so xterm
+              instances and PTY sessions are never torn down unnecessarily. CSS
+              hides it when another screen is active. */}
+          <div className="page">
+          {tabs.length > 0 && (
+            <div style={{
+              display: activeScreen === "console" ? "flex" : "none",
+              flex: 1, flexDirection: "column", minHeight: 0,
+            }}>
+              <ConsoleScreen />
+            </div>
+          )}
+          {activeScreen === "console" && tabs.length === 0 && (
+            <ConsoleEmptyState onNew={() => setShowNewTab(true)} />
+          )}
+          {activeScreen === "knowledge"  && <KnowledgeStoreScreen />}
+          {activeScreen === "github"     && <GitHubScreen />}
+          {activeScreen === "automation" && <AutomationsScreen />}
+          {activeScreen === "projects"   && <ProjectsScreen />}
+          {activeScreen === "settings"   && <SettingsScreen />}
+          </div>
           <StatusBar extra={
             activeScreen === "automation"
               ? <span className="s"><i className="warn" /> 4 schedules armed · next at 02:00</span>
