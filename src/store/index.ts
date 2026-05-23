@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Screen } from "../components/chrome/Rail";
 import type { Tab } from "../components/chrome/Tabstrip";
+import type { ViewKey } from "../components/pane/ViewTabs";
 
 interface AppStore {
   // Navigation
@@ -13,10 +14,13 @@ interface AppStore {
   paneMenuOpenIdx: number;
   focusedPaneIdx: number;
   fullscreenPaneIdx: number;
+  paneViews: ViewKey[];
   setActiveTab: (idx: number) => void;
   setPaneMenu: (idx: number) => void;
   setFocusedPane: (idx: number) => void;
   setFullscreenPane: (idx: number) => void;
+  setPaneView: (idx: number, view: ViewKey) => void;
+  setAllPanesView: (view: ViewKey) => void;
 
   // GitHub
   githubConnected: boolean;
@@ -45,10 +49,16 @@ export const useAppStore = create<AppStore>((set) => ({
   paneMenuOpenIdx: -1,
   focusedPaneIdx: -1,
   fullscreenPaneIdx: -1,
+  // Initial views match CELLS order: console,files,changes,branches,console,console,log,console,console
+  paneViews: ["console", "files", "changes", "branches", "console", "console", "log", "console", "console"],
   setActiveTab:      (idx) => set({ activeTabIdx: idx }),
   setPaneMenu:       (idx) => set({ paneMenuOpenIdx: idx }),
   setFocusedPane:    (idx) => set({ focusedPaneIdx: idx }),
   setFullscreenPane: (idx) => set({ fullscreenPaneIdx: idx }),
+  setPaneView: (idx, view) =>
+    set((s) => { const v = [...s.paneViews]; v[idx] = view; return { paneViews: v }; }),
+  setAllPanesView: (view) =>
+    set((s) => ({ paneViews: s.paneViews.map(() => view) })),
 
   githubConnected: true,
   githubActiveTab: "overview",
