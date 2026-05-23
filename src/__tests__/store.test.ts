@@ -1,0 +1,346 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { useAppStore } from "../store";
+import type { ViewKey } from "../components/pane/ViewTabs";
+
+const RESET_STATE = {
+  tabs: [
+    { name: "orchestrator", layout: "3×3", state: "run" as const },
+    { name: "feat/tunnel",  layout: "2×2", state: "on"  as const },
+    { name: "scratch",      layout: "1×1", state: "idle" as const },
+  ],
+  activeTabIdx: 0,
+  paneMenuOpenIdx: -1,
+  focusedPaneIdx: -1,
+  fullscreenPaneIdx: -1,
+  paneViews: [] as ViewKey[],
+  paneNames: {} as Record<number, Record<number, string>>,
+  paneCwds: {} as Record<string, string>,
+  paneGitInfo: {} as Record<string, { repo: string; branch: string; dirty: boolean } | null>,
+  kbBlocks: [],
+  schedules: [],
+  commands: [],
+  allowedCommands: [] as string[],
+  autoFocusOnInterrupt: true,
+  focusedAgentName: "",
+  githubConnected: false,
+  githubToken: "",
+  githubUser: null,
+  githubRepos: [],
+  activeRepoName: "",
+};
+
+beforeEach(() => {
+  useAppStore.setState(RESET_STATE);
+});
+
+// ── Tab management ────────────────────────────────────────────────────────────
+
+describe("tab management", () => {
+  it("starts with 3 default tabs", () => {
+    expect(useAppStore.getState().tabs).toHaveLength(3);
+    expect(useAppStore.getState().activeTabIdx).toBe(0);
+  });
+
+  it("addTab appends and activates the new tab", () => {
+    useAppStore.getState().addTab({ name: "new-tab", layout: "1×1", state: "idle" });
+    const { tabs, activeTabIdx } = useAppStore.getState();
+    expect(tabs).toHaveLength(4);
+    expect(tabs[3].name).toBe("new-tab");
+    expect(activeTabIdx).toBe(3);
+  });
+
+  it("setActiveTab updates activeTabIdx", () => {
+    useAppStore.getState().setActiveTab(2);
+    expect(useAppStore.getState().activeTabIdx).toBe(2);
+  });
+
+  it("closeTab removes the tab", () => {
+    useAppStore.getState().closeTab(1);
+    const { tabs } = useAppStore.getState();
+    expect(tabs).toHaveLength(2);
+    expect(tabs.map(t => t.name)).toEqual(["orchestrator", "scratch"]);
+  });
+
+  it("closeTab adjusts activeTabIdx when closing a tab before the active one", () => {
+    useAppStore.getState().setActiveTab(2);
+    useAppStore.getState().closeTab(0);
+    expect(useAppStore.getState().activeTabIdx).toBe(1);
+  });
+
+  it("closeTab clamps activeTabIdx when closing the last tab", () => {
+    useAppStore.getState().setActiveTab(2);
+    useAppStore.getState().closeTab(2);
+    expect(useAppStore.getState().activeTabIdx).toBe(1);
+  });
+
+  it("closeTab does not remove the only remaining tab", () => {
+    useAppStore.setState({ tabs: [{ name: "only", layout: "1×1", state: "idle" }], activeTabIdx: 0 });
+    useAppStore.getState().closeTab(0);
+    expect(useAppStore.getState().tabs).toHaveLength(1);
+  });
+});
+
+// ── Pane state ────────────────────────────────────────────────────────────────
+
+describe("pane state", () => {
+  it("setPaneName stores name by tab+pane index", () => {
+    useAppStore.getState().setPaneName(0, 2, "my-agent");
+    expect(useAppStore.getState().paneNames[0][2]).toBe("my-agent");
+  });
+
+  it("setPaneName preserves existing names in the same tab", () => {
+    useAppStore.getState().setPaneName(0, 0, "agent-a");
+    useAppStore.getState().setPaneName(0, 1, "agent-b");
+    const names = useAppStore.getState().paneNames[0];
+    expect(names[0]).toBe("agent-a");
+    expect(names[1]).toBe("agent-b");
+  });
+
+  it("setPaneCwd stores working directory by pane ID", () => {
+    useAppStore.getState().setPaneCwd("t0p0", "/home/user/project");
+    expect(useAppStore.getState().paneCwds["t0p0"]).toBe("/home/user/project");
+  });
+
+  it("setPaneGitInfo stores git metadata by pane ID", () => {
+    const info = { repo: "my-repo", branch: "main", dirty: true };
+    useAppStore.getState().setPaneGitInfo("t0p1", info);
+    expect(useAppStore.getState().paneGitInfo["t0p1"]).toEqual(info);
+  });
+
+  it("setPaneGitInfo accepts null to clear git context", () => {
+    useAppStore.getState().setPaneGitInfo("t0p0", { repo: "r", branch: "b", dirty: false });
+    useAppStore.getState().setPaneGitInfo("t0p0", null);
+    expect(useAppStore.getState().paneGitInfo["t0p0"]).toBeNull();
+  });
+
+  it("setPaneMenu tracks which pane has the menu open", () => {
+    useAppStore.getState().setPaneMenu(3);
+    expect(useAppStore.getState().paneMenuOpenIdx).toBe(3);
+    useAppStore.getState().setPaneMenu(-1);
+    expect(useAppStore.getState().paneMenuOpenIdx).toBe(-1);
+  });
+
+  it("setFocusedPane tracks focused pane index", () => {
+    useAppStore.getState().setFocusedPane(1);
+    expect(useAppStore.getState().focusedPaneIdx).toBe(1);
+  });
+
+  it("setFullscreenPane tracks fullscreen pane index", () => {
+    useAppStore.getState().setFullscreenPane(2);
+    expect(useAppStore.getState().fullscreenPaneIdx).toBe(2);
+  });
+
+  it("setPaneView updates a single pane's view", () => {
+    useAppStore.setState({ paneViews: ["console", "console", "console"] });
+    useAppStore.getState().setPaneView(1, "files");
+    const { paneViews } = useAppStore.getState();
+    expect(paneViews[0]).toBe("console");
+    expect(paneViews[1]).toBe("files");
+    expect(paneViews[2]).toBe("console");
+  });
+
+  it("setAllPanesView sets every pane to the same view", () => {
+    useAppStore.setState({ paneViews: ["console", "files", "branches"] });
+    useAppStore.getState().setAllPanesView("log");
+    expect(useAppStore.getState().paneViews).toEqual(["log", "log", "log"]);
+  });
+
+  it("setFocusedAgentName updates breadcrumb label", () => {
+    useAppStore.getState().setFocusedAgentName("my-agent");
+    expect(useAppStore.getState().focusedAgentName).toBe("my-agent");
+  });
+});
+
+// ── Knowledge blocks ──────────────────────────────────────────────────────────
+
+describe("knowledge blocks", () => {
+  it("addKbBlock appends a block with a unique id", () => {
+    useAppStore.getState().addKbBlock();
+    useAppStore.getState().addKbBlock();
+    const { kbBlocks } = useAppStore.getState();
+    expect(kbBlocks).toHaveLength(2);
+    expect(kbBlocks[0].id).not.toBe(kbBlocks[1].id);
+  });
+
+  it("addKbBlock creates block with default title and empty content", () => {
+    useAppStore.getState().addKbBlock();
+    const block = useAppStore.getState().kbBlocks[0];
+    expect(block.title).toBe("Untitled block");
+    expect(block.content).toBe("");
+    expect(block.tags).toEqual([]);
+  });
+
+  it("removeKbBlock removes by id", () => {
+    useAppStore.getState().addKbBlock();
+    useAppStore.getState().addKbBlock();
+    const id = useAppStore.getState().kbBlocks[0].id;
+    useAppStore.getState().removeKbBlock(id);
+    expect(useAppStore.getState().kbBlocks).toHaveLength(1);
+    expect(useAppStore.getState().kbBlocks[0].id).not.toBe(id);
+  });
+
+  it("renameKbBlock updates the title", () => {
+    useAppStore.getState().addKbBlock();
+    const { id } = useAppStore.getState().kbBlocks[0];
+    useAppStore.getState().renameKbBlock(id, "My Block");
+    expect(useAppStore.getState().kbBlocks[0].title).toBe("My Block");
+  });
+
+  it("updateKbBlockContent updates content and recounts lines", () => {
+    useAppStore.getState().addKbBlock();
+    const { id } = useAppStore.getState().kbBlocks[0];
+    useAppStore.getState().updateKbBlockContent(id, "line 1\nline 2\nline 3");
+    const block = useAppStore.getState().kbBlocks[0];
+    expect(block.content).toBe("line 1\nline 2\nline 3");
+    expect(block.lines).toBe(3);
+  });
+
+  it("applyKbTag adds a tag to a block", () => {
+    useAppStore.getState().addKbBlock();
+    const { id } = useAppStore.getState().kbBlocks[0];
+    useAppStore.getState().applyKbTag(id, "rust");
+    expect(useAppStore.getState().kbBlocks[0].tags).toContain("rust");
+  });
+
+  it("applyKbTag does not add duplicate tags", () => {
+    useAppStore.getState().addKbBlock();
+    const { id } = useAppStore.getState().kbBlocks[0];
+    useAppStore.getState().applyKbTag(id, "rust");
+    useAppStore.getState().applyKbTag(id, "rust");
+    expect(useAppStore.getState().kbBlocks[0].tags).toHaveLength(1);
+  });
+
+  it("removeKbTag removes a specific tag", () => {
+    useAppStore.getState().addKbBlock();
+    const { id } = useAppStore.getState().kbBlocks[0];
+    useAppStore.getState().applyKbTag(id, "rust");
+    useAppStore.getState().applyKbTag(id, "react");
+    useAppStore.getState().removeKbTag(id, "rust");
+    const { tags } = useAppStore.getState().kbBlocks[0];
+    expect(tags).not.toContain("rust");
+    expect(tags).toContain("react");
+  });
+});
+
+// ── Allowed commands ──────────────────────────────────────────────────────────
+
+describe("allowed commands", () => {
+  it("addAllowedCommand appends a command", () => {
+    useAppStore.getState().addAllowedCommand("git status");
+    expect(useAppStore.getState().allowedCommands).toContain("git status");
+  });
+
+  it("addAllowedCommand ignores duplicates", () => {
+    useAppStore.getState().addAllowedCommand("cargo test");
+    useAppStore.getState().addAllowedCommand("cargo test");
+    expect(useAppStore.getState().allowedCommands).toHaveLength(1);
+  });
+
+  it("removeAllowedCommand removes a specific command", () => {
+    useAppStore.getState().addAllowedCommand("npm run dev");
+    useAppStore.getState().addAllowedCommand("cargo build");
+    useAppStore.getState().removeAllowedCommand("npm run dev");
+    const { allowedCommands } = useAppStore.getState();
+    expect(allowedCommands).not.toContain("npm run dev");
+    expect(allowedCommands).toContain("cargo build");
+  });
+
+  it("setAllowedCommands replaces the full list", () => {
+    useAppStore.getState().addAllowedCommand("old");
+    useAppStore.getState().setAllowedCommands(["new-a", "new-b"]);
+    expect(useAppStore.getState().allowedCommands).toEqual(["new-a", "new-b"]);
+  });
+
+  it("setAutoFocusOnInterrupt toggles the setting", () => {
+    expect(useAppStore.getState().autoFocusOnInterrupt).toBe(true);
+    useAppStore.getState().setAutoFocusOnInterrupt(false);
+    expect(useAppStore.getState().autoFocusOnInterrupt).toBe(false);
+  });
+});
+
+// ── Automations ───────────────────────────────────────────────────────────────
+
+describe("schedules", () => {
+  it("addSchedule appends a new schedule with default values", () => {
+    useAppStore.getState().addSchedule();
+    const { schedules } = useAppStore.getState();
+    expect(schedules).toHaveLength(1);
+    expect(schedules[0].name).toBe("New schedule");
+    expect(schedules[0].on).toBe(false);
+  });
+
+  it("updateSchedule patches an existing schedule", () => {
+    useAppStore.getState().addSchedule();
+    const { id } = useAppStore.getState().schedules[0];
+    useAppStore.getState().updateSchedule(id, { name: "Nightly build", on: true });
+    const schedule = useAppStore.getState().schedules[0];
+    expect(schedule.name).toBe("Nightly build");
+    expect(schedule.on).toBe(true);
+  });
+
+  it("removeSchedule deletes by id", () => {
+    useAppStore.getState().addSchedule();
+    useAppStore.getState().addSchedule();
+    const { id } = useAppStore.getState().schedules[0];
+    useAppStore.getState().removeSchedule(id);
+    expect(useAppStore.getState().schedules).toHaveLength(1);
+    expect(useAppStore.getState().schedules[0].id).not.toBe(id);
+  });
+});
+
+describe("commands", () => {
+  it("addCommand appends a new command with empty cmd", () => {
+    useAppStore.getState().addCommand();
+    const { commands } = useAppStore.getState();
+    expect(commands).toHaveLength(1);
+    expect(commands[0].name).toBe("New command");
+    expect(commands[0].cmd).toBe("");
+  });
+
+  it("updateCommand patches fields", () => {
+    useAppStore.getState().addCommand();
+    const { id } = useAppStore.getState().commands[0];
+    useAppStore.getState().updateCommand(id, { name: "Deploy", cmd: "cargo tauri build" });
+    const cmd = useAppStore.getState().commands[0];
+    expect(cmd.name).toBe("Deploy");
+    expect(cmd.cmd).toBe("cargo tauri build");
+  });
+
+  it("removeCommand deletes by id", () => {
+    useAppStore.getState().addCommand();
+    const { id } = useAppStore.getState().commands[0];
+    useAppStore.getState().removeCommand(id);
+    expect(useAppStore.getState().commands).toHaveLength(0);
+  });
+});
+
+// ── GitHub ────────────────────────────────────────────────────────────────────
+
+describe("github state", () => {
+  it("setGithubToken stores the token", () => {
+    useAppStore.getState().setGithubToken("ghp_abc123");
+    expect(useAppStore.getState().githubToken).toBe("ghp_abc123");
+  });
+
+  it("setGithubConnected marks as connected", () => {
+    useAppStore.getState().setGithubConnected(true);
+    expect(useAppStore.getState().githubConnected).toBe(true);
+  });
+
+  it("disconnectGithub clears all github state", () => {
+    useAppStore.getState().setGithubToken("tok");
+    useAppStore.getState().setGithubConnected(true);
+    useAppStore.getState().setGithubUser({ login: "kevin", name: "Kevin", avatar_url: "x" });
+    useAppStore.getState().disconnectGithub();
+    const { githubConnected, githubToken, githubUser, githubRepos } = useAppStore.getState();
+    expect(githubConnected).toBe(false);
+    expect(githubToken).toBe("");
+    expect(githubUser).toBeNull();
+    expect(githubRepos).toHaveLength(0);
+  });
+
+  it("setActiveRepo stores the selected repo name", () => {
+    useAppStore.getState().setActiveRepo("kevinthelago/base-studio-code");
+    expect(useAppStore.getState().activeRepoName).toBe("kevinthelago/base-studio-code");
+  });
+});
