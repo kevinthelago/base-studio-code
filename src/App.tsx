@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Titlebar } from "./components/chrome/Titlebar";
 import { Rail } from "./components/chrome/Rail";
 import { Tabstrip } from "./components/chrome/Tabstrip";
@@ -102,7 +103,7 @@ export default function App() {
   const {
     activeScreen, setScreen,
     tabs, activeTabIdx, setActiveTab,
-    addTab, closeTab,
+    addTab, closeTab, renameTab, setTabLayout,
     focusedAgentName,
     activeRepoName, githubActiveTab,
     automationsTab,
@@ -154,6 +155,21 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [activeScreen]);
 
+  async function handleLayoutChange(tabIdx: number, layout: string) {
+    const tab = tabs[tabIdx];
+    const [oldCols, oldRows] = tab.layout.split("×").map(Number);
+    const [newCols, newRows] = layout.split("×").map(Number);
+    const oldCount = oldCols * oldRows;
+    const newCount = newCols * newRows;
+    // Kill PTY sessions for panes that will no longer exist
+    if (newCount < oldCount) {
+      for (let i = newCount; i < oldCount; i++) {
+        invoke("pty_kill", { paneId: `t${tabIdx}p${i}` }).catch(console.error);
+      }
+    }
+    setTabLayout(tabIdx, layout);
+  }
+
   function handleCloseRequest(idx: number) {
     const tab = tabs[idx];
     if (tab.state === "run" || tab.state === "on") {
@@ -197,6 +213,8 @@ export default function App() {
               onSelect={setActiveTab}
               onClose={handleCloseRequest}
               onAdd={() => setShowNewTab(true)}
+              onRename={renameTab}
+              onChangeLayout={handleLayoutChange}
             />
           )}
           <div className="page">{screen}</div>
