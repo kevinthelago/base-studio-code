@@ -21,6 +21,14 @@
   --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
 }
 
+/* ===== reset ===== */
+html, body {
+  margin: 0; padding: 0;
+  height: 100%; overflow: hidden;
+  background: var(--bg-canvas);
+}
+#root { height: 100%; display: flex; flex-direction: column; }
+
 /* ===== artboard shell ===== */
 .app {
   width:100%; height:100%; background:var(--bg-canvas); color:var(--fg);
@@ -30,23 +38,30 @@
 }
 .app * { box-sizing:border-box; }
 
-/* titlebar (mac-y, neutral) */
+/* titlebar */
 .titlebar{
   height:32px; flex:0 0 32px; background:var(--bg-panel);
   border-bottom:1px solid var(--border-soft);
-  display:flex; align-items:center; padding:0 12px; gap:10px;
+  display:flex; align-items:center; padding:0 0 0 14px; gap:10px;
   font-family:var(--mono); font-size:11px; color:var(--fg-muted);
   -webkit-user-select:none;
   -webkit-app-region:drag;
 }
-.tl-lights{ display:flex; gap:6px; margin-right:6px; -webkit-app-region:no-drag; }
-.tl-lights i{ width:11px; height:11px; border-radius:50%; display:block; cursor:pointer; }
-.tl-lights i:nth-child(1){ background:#ed6a5e; }
-.tl-lights i:nth-child(2){ background:#f4bf4f; }
-.tl-lights i:nth-child(3){ background:#61c454; }
-.tl-title{ flex:1; text-align:center; letter-spacing:0.04em; }
-.tl-meta{ display:flex; gap:14px; font-size:10.5px; }
+.tl-title{ font-size:11px; letter-spacing:0.04em; white-space:nowrap; }
+.tl-meta{ display:flex; gap:14px; font-size:10.5px; flex:1; justify-content:flex-end; padding-right:6px; }
 .tl-meta b{ color:var(--fg); font-weight:500; }
+.tl-controls{
+  display:flex; align-items:stretch; height:32px;
+  -webkit-app-region:no-drag;
+}
+.tl-controls button{
+  width:46px; height:100%; border:none; background:transparent;
+  color:var(--fg-muted); font-size:14px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:background 0.1s;
+}
+.tl-controls button:hover{ background:var(--bg-elev); color:var(--fg); }
+.tl-controls button.tl-close:hover{ background:#c42b1c; color:#fff; }
 
 /* main shell w/ left rail */
 .shell{ flex:1; display:flex; min-height:0; }

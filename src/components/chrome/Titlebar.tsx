@@ -18,11 +18,6 @@ export function Titlebar({
 }: TitlebarProps) {
   return (
     <div className="titlebar">
-      <div className="tl-lights">
-        <i onClick={() => windowAction("close")} />
-        <i onClick={() => windowAction("minimize")} />
-        <i onClick={() => windowAction("toggleMaximize")} />
-      </div>
       <div className="tl-title">base-studio-code — {workspace}</div>
       <div className="tl-meta">
         {meta ?? (
@@ -35,6 +30,11 @@ export function Titlebar({
             </span>
           </>
         )}
+      </div>
+      <div className="tl-controls">
+        <button onClick={() => windowAction("minimize")} title="Minimize">—</button>
+        <button onClick={() => windowAction("toggleMaximize")} title="Maximize">□</button>
+        <button className="tl-close" onClick={() => windowAction("close")} title="Close">✕</button>
       </div>
     </div>
   );
