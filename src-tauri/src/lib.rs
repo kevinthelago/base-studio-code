@@ -484,6 +484,80 @@ async fn setup_workspaces(kb_blocks: Vec<KbBlockData>) -> Result<WorkspacePaths,
     })
 }
 
+// ── Claude config file management ────────────────────────────────────────────
+//
+// Reads and writes CLAUDE.md + .claude/settings.json for two target types:
+//   global   — local_path = "" → ~/.claude/CLAUDE.md and ~/.claude/settings.json
+//   per-repo — local_path = repo root → {root}/CLAUDE.md and {root}/.claude/settings.json
+
+fn claude_paths(local_path: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    if local_path.is_empty() {
+        let global = home_dir().join(".claude");
+        (global.join("CLAUDE.md"), global.join("settings.json"))
+    } else {
+        let base = std::path::PathBuf::from(local_path);
+        (base.join("CLAUDE.md"), base.join(".claude").join("settings.json"))
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ClaudeConfigData {
+    instructions: String,
+    allow:        Vec<String>,
+    deny:         Vec<String>,
+}
+
+#[tauri::command]
+async fn read_claude_config(local_path: String) -> Result<ClaudeConfigData, String> {
+    let (md_path, settings_path) = claude_paths(&local_path);
+
+    let instructions = std::fs::read_to_string(&md_path).unwrap_or_default();
+
+    let (allow, deny) = if settings_path.exists() {
+        let raw = std::fs::read_to_string(&settings_path).map_err(|e| e.to_string())?;
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+        let parse_list = |key: &str| -> Vec<String> {
+            v["permissions"][key].as_array()
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .unwrap_or_default()
+        };
+        (parse_list("allow"), parse_list("deny"))
+    } else {
+        (vec![], vec![])
+    };
+
+    Ok(ClaudeConfigData { instructions, allow, deny })
+}
+
+#[tauri::command]
+async fn write_claude_config(
+    local_path: String,
+    instructions: String,
+    allow: Vec<String>,
+    deny: Vec<String>,
+) -> Result<(), String> {
+    let (md_path, settings_path) = claude_paths(&local_path);
+
+    if let Some(parent) = md_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    if let Some(parent) = settings_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    std::fs::write(&md_path, &instructions).map_err(|e| e.to_string())?;
+
+    let settings = serde_json::json!({
+        "permissions": { "allow": allow, "deny": deny }
+    });
+    std::fs::write(
+        &settings_path,
+        serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?,
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 // ── Repository resolution ─────────────────────────────────────────────────────
 //
 // find_local_repo: checks well-known paths for an existing clone whose git
@@ -582,6 +656,8 @@ pub fn run() {
             setup_workspaces,
             find_local_repo,
             clone_repo,
+            read_claude_config,
+            write_claude_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

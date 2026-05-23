@@ -18,6 +18,19 @@ export interface ResolvedRepo {
   source: "found" | "cloned";
 }
 
+export interface ToolPermissions {
+  allow: string[];
+  deny: string[];
+}
+
+export interface ConfigProfile {
+  id: string;
+  name: string;
+  instructions: string;
+  tools: ToolPermissions;
+  kbBlockIds: string[];
+}
+
 export interface GithubRepo {
   full_name: string;
   private: boolean;
@@ -126,6 +139,12 @@ interface AppStore {
   projectLocalRepos: Record<string, ResolvedRepo[]>;
   addProjectLocalRepo: (projectId: string, repo: ResolvedRepo) => void;
   quickStartProject: (projectName: string, repos: ResolvedRepo[]) => void;
+
+  // Claude config profiles (persisted)
+  configProfiles: ConfigProfile[];
+  addConfigProfile: (profile: Omit<ConfigProfile, "id">) => void;
+  updateConfigProfile: (id: string, patch: Partial<Omit<ConfigProfile, "id">>) => void;
+  removeConfigProfile: (id: string) => void;
 
   // Agent settings
   allowedCommands: string[];
@@ -368,6 +387,23 @@ export const useAppStore = create<AppStore>()(
           };
         }),
 
+      configProfiles: [],
+      addConfigProfile: (profile) =>
+        set((s) => ({
+          configProfiles: [
+            ...s.configProfiles,
+            { ...profile, id: `cfg_${Math.random().toString(36).slice(2, 8)}` },
+          ],
+        })),
+      updateConfigProfile: (id, patch) =>
+        set((s) => ({
+          configProfiles: s.configProfiles.map((p) =>
+            p.id === id ? { ...p, ...patch } : p,
+          ),
+        })),
+      removeConfigProfile: (id) =>
+        set((s) => ({ configProfiles: s.configProfiles.filter((p) => p.id !== id) })),
+
       allowedCommands: [],
       addAllowedCommand: (cmd) =>
         set((s) => ({
@@ -408,6 +444,7 @@ export const useAppStore = create<AppStore>()(
         allowedCommands:      s.allowedCommands,
         autoFocusOnInterrupt: s.autoFocusOnInterrupt,
         projectLocalRepos:    s.projectLocalRepos,
+        configProfiles:       s.configProfiles,
       }),
     }
   )
