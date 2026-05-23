@@ -5,6 +5,7 @@ import { StatusBar } from "./components/chrome/StatusBar";
 import { useAppStore } from "./store";
 import { ConsoleScreen } from "./screens/Console";
 import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
+import { GitHubScreen } from "./screens/github";
 
 function Placeholder({ name }: { name: string }) {
   return (
@@ -25,6 +26,7 @@ export default function App() {
     switch (activeScreen) {
       case "console":   return <ConsoleScreen />;
       case "knowledge": return <KnowledgeStoreScreen />;
+      case "github":    return <GitHubScreen />;
       default:          return <Placeholder name={activeScreen} />;
     }
   })();
