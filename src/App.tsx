@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { LayoutGrid } from "lucide-react";
 import { Titlebar } from "./components/chrome/Titlebar";
 import { Rail } from "./components/chrome/Rail";
 import { Tabstrip } from "./components/chrome/Tabstrip";
@@ -18,38 +19,35 @@ import type { Tab } from "./components/chrome/Tabstrip";
 
 const LAYOUTS: string[] = ["1×1", "2×1", "1×2", "2×2", "3×2", "3×3"];
 
+function nextTabName(tabs: Tab[]): string {
+  const nums = tabs
+    .map(t => t.name.match(/^tab-(\d+)$/)?.[1])
+    .filter((n): n is string => n !== undefined)
+    .map(Number);
+  return `tab-${nums.length === 0 ? 1 : Math.max(...nums) + 1}`;
+}
+
 interface NewTabDialogProps {
-  onConfirm: (tab: Tab) => void;
+  onConfirm: (layout: string) => void;
   onDismiss: () => void;
 }
 
 function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
-  const [name, setName] = useState("");
   const [layout, setLayout] = useState("2×2");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    onConfirm({ name: name.trim() || "workspace", layout, state: "idle" });
+    onConfirm(layout);
   }
 
   return (
-    <Dialog title="New tab" onDismiss={onDismiss} actions={
+    <Dialog title="New workspace" onDismiss={onDismiss} actions={
       <>
         <button className="btn" onClick={onDismiss}>cancel</button>
         <button className="btn primary" onClick={handleSubmit}>create</button>
       </>
     }>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div className="field">
-          <label>Name</label>
-          <input
-            className="input"
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="workspace"
-          />
-        </div>
         <div className="field">
           <label>Layout</label>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -60,6 +58,7 @@ function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
                 <button
                   key={l}
                   type="button"
+                  autoFocus={l === layout}
                   onClick={() => setLayout(l)}
                   style={{
                     padding: "6px 10px", borderRadius: 5, cursor: "pointer",
@@ -70,7 +69,6 @@ function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
                     display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
                   }}
                 >
-                  {/* Mini grid preview */}
                   <div style={{
                     display: "grid",
                     gridTemplateColumns: `repeat(${c}, 10px)`,
@@ -92,6 +90,28 @@ function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
         </div>
       </form>
     </Dialog>
+  );
+}
+
+function ConsoleEmptyState({ onNew }: { onNew: () => void }) {
+  return (
+    <div style={{
+      flex: 1, display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", gap: 16,
+    }}>
+      <LayoutGrid size={40} style={{ color: "var(--fg-dim)", opacity: 0.4 }} />
+      <div style={{ textAlign: "center", lineHeight: 1.6 }}>
+        <div style={{ fontFamily: "var(--mono)", fontSize: 14, color: "var(--fg)", marginBottom: 4 }}>
+          No workspaces
+        </div>
+        <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>
+          Create a workspace to start running agents in parallel.
+        </div>
+      </div>
+      <button className="btn primary" onClick={onNew} style={{ marginTop: 4 }}>
+        New workspace
+      </button>
+    </div>
   );
 }
 
@@ -191,7 +211,10 @@ export default function App() {
 
   const screen = (() => {
     switch (activeScreen) {
-      case "console":    return <ConsoleScreen />;
+      case "console":
+        return tabs.length > 0
+          ? <ConsoleScreen />
+          : <ConsoleEmptyState onNew={() => setShowNewTab(true)} />;
       case "knowledge":  return <KnowledgeStoreScreen />;
       case "github":     return <GitHubScreen />;
       case "automation": return <AutomationsScreen />;
@@ -255,7 +278,7 @@ export default function App() {
       {/* New tab */}
       {showNewTab && (
         <NewTabDialog
-          onConfirm={(tab) => { addTab(tab); setShowNewTab(false); }}
+          onConfirm={(layout) => { addTab({ name: nextTabName(tabs), layout, state: "idle" }); setShowNewTab(false); }}
           onDismiss={() => setShowNewTab(false)}
         />
       )}

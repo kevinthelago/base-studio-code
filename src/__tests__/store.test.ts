@@ -73,10 +73,11 @@ describe("tab management", () => {
     expect(useAppStore.getState().activeTabIdx).toBe(1);
   });
 
-  it("closeTab does not remove the only remaining tab", () => {
+  it("closeTab allows closing the last tab, resulting in empty state", () => {
     useAppStore.setState({ tabs: [{ name: "only", layout: "1×1", state: "idle" }], activeTabIdx: 0 });
     useAppStore.getState().closeTab(0);
-    expect(useAppStore.getState().tabs).toHaveLength(1);
+    expect(useAppStore.getState().tabs).toHaveLength(0);
+    expect(useAppStore.getState().activeTabIdx).toBe(0);
   });
 });
 
