@@ -7,6 +7,7 @@ import { ConsoleScreen } from "./screens/Console";
 import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
 import { AutomationsScreen } from "./screens/automations";
+import { SettingsScreen } from "./screens/settings";
 
 function Placeholder({ name }: { name: string }) {
   return (
@@ -29,6 +30,7 @@ export default function App() {
       case "knowledge":  return <KnowledgeStoreScreen />;
       case "github":     return <GitHubScreen />;
       case "automation": return <AutomationsScreen />;
+      case "settings":   return <SettingsScreen />;
       default:           return <Placeholder name={activeScreen} />;
     }
   })();
