@@ -3,6 +3,13 @@ interface TitlebarProps {
   meta?: React.ReactNode;
 }
 
+const platform = (() => {
+  if (typeof navigator === "undefined") return "win";
+  const s = (navigator.platform + " " + navigator.userAgent).toLowerCase();
+  if (s.includes("mac") || s.includes("darwin")) return "mac";
+  return "win";
+})();
+
 async function windowAction(action: "close" | "minimize" | "toggleMaximize") {
   if (!("__TAURI_INTERNALS__" in window)) return;
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -12,25 +19,40 @@ async function windowAction(action: "close" | "minimize" | "toggleMaximize") {
   else await w.toggleMaximize();
 }
 
-export function Titlebar({
-  workspace = "orchestrator · acme/payments",
-  meta,
-}: TitlebarProps) {
+function MetaSlot({ meta }: { meta: React.ReactNode }) {
   return (
-    <div className="titlebar">
-      <div className="tl-title">base-studio-code — {workspace}</div>
-      <div className="tl-meta">
-        {meta ?? (
-          <>
-            <span>
-              claude <b style={{ color: "var(--success)" }}>● connected</b>
-            </span>
-            <span>
-              github <b>kevinthelago</b>
-            </span>
-          </>
-        )}
+    <div className="tl-meta">
+      {meta ?? (
+        <>
+          <span>claude <b style={{ color: "var(--success)" }}>● connected</b></span>
+          <span>github <b>kevinthelago</b></span>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function Titlebar({ workspace = "orchestrator · acme/payments", meta }: TitlebarProps) {
+  const title = `base-studio-code — ${workspace}`;
+
+  if (platform === "mac") {
+    return (
+      <div className="titlebar mac">
+        <div className="tl-lights">
+          <i onClick={() => windowAction("close")} title="Close" />
+          <i onClick={() => windowAction("minimize")} title="Minimize" />
+          <i onClick={() => windowAction("toggleMaximize")} title="Zoom" />
+        </div>
+        <div className="tl-title">{title}</div>
+        <MetaSlot meta={meta} />
       </div>
+    );
+  }
+
+  return (
+    <div className="titlebar win">
+      <div className="tl-title">{title}</div>
+      <MetaSlot meta={meta} />
       <div className="tl-controls">
         <button onClick={() => windowAction("minimize")} title="Minimize">—</button>
         <button onClick={() => windowAction("toggleMaximize")} title="Maximize">□</button>
