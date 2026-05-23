@@ -3,8 +3,9 @@ import { Rail } from "./components/chrome/Rail";
 import { Tabstrip } from "./components/chrome/Tabstrip";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { useAppStore } from "./store";
+import { ConsoleScreen } from "./screens/Console";
 
-function ScreenPlaceholder({ name }: { name: string }) {
+function Placeholder({ name }: { name: string }) {
   return (
     <div style={{
       flex: 1,
@@ -17,10 +18,14 @@ function ScreenPlaceholder({ name }: { name: string }) {
 }
 
 export default function App() {
-  const {
-    activeScreen, setScreen,
-    tabs, activeTabIdx, setActiveTab,
-  } = useAppStore();
+  const { activeScreen, setScreen, tabs, activeTabIdx, setActiveTab } = useAppStore();
+
+  const screen = (() => {
+    switch (activeScreen) {
+      case "console":    return <ConsoleScreen />;
+      default:           return <Placeholder name={activeScreen} />;
+    }
+  })();
 
   return (
     <div className="app">
@@ -29,16 +34,14 @@ export default function App() {
         <Rail active={activeScreen} onNavigate={setScreen} />
         <div className="main">
           {activeScreen === "console" && (
-            <Tabstrip
-              tabs={tabs}
-              activeIdx={activeTabIdx}
-              onSelect={setActiveTab}
-            />
+            <Tabstrip tabs={tabs} activeIdx={activeTabIdx} onSelect={setActiveTab} />
           )}
-          <div className="page">
-            <ScreenPlaceholder name={activeScreen} />
-          </div>
-          <StatusBar />
+          <div className="page">{screen}</div>
+          <StatusBar extra={
+            activeScreen === "console"
+              ? <span className="s">9 panes · 5 views · acme/payments</span>
+              : undefined
+          } />
         </div>
       </div>
     </div>
