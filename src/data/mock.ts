@@ -114,7 +114,7 @@ export const COMMITS: Commit[] = [
 // ─── Knowledge Store ───────────────────────────────────────────────────────
 
 export interface KbTag   { name: string; n: number; on?: boolean }
-export interface KbBlock { id: string; title: string; tags: string[]; updated: string; lines: number; sel?: boolean }
+export interface KbBlock { id: string; title: string; tags: string[]; updated: string; lines: number; sel?: boolean; content?: string }
 
 export const KB_TAGS: KbTag[] = [
   { name: "all",           n: 142, on: true },
@@ -130,13 +130,20 @@ export const KB_TAGS: KbTag[] = [
 ];
 
 export const KB_BLOCKS: KbBlock[] = [
-  { id: "blk_9a2c", title: "Review policy — TS / Rust",       tags: ["review-policy", "decisions"], updated: "14:02",     lines: 42, sel: true },
-  { id: "blk_71fe", title: "Tunnel framing v2",               tags: ["tunnel", "architecture"],      updated: "yesterday", lines: 88 },
-  { id: "blk_4ad8", title: "Agent: @reviewer system prompt",  tags: ["agents", "prompts"],           updated: "2d",        lines: 64 },
-  { id: "blk_2199", title: "Decision · SQLite over LMDB",     tags: ["decisions", "architecture"],   updated: "3d",        lines: 31 },
-  { id: "blk_aa17", title: "Glossary — console, tab, pane",   tags: ["glossary"],                    updated: "5d",        lines: 22 },
-  { id: "blk_cd03", title: "Repro pattern — flaky retry loop",tags: ["repro", "runbooks"],           updated: "1w",        lines: 17 },
-  { id: "blk_55fd", title: "Webhook routing table",           tags: ["architecture", "decisions"],   updated: "1w",        lines: 54 },
+  { id: "blk_9a2c", title: "Review policy — TS / Rust",       tags: ["review-policy", "decisions"], updated: "14:02",     lines: 42, sel: true,
+    content: `# Review policy — TS / Rust\n\nApplies to: acme/payments, acme/ledger-core\n\n## Required signals\n- \`cargo clippy --workspace\` must pass\n- \`cargo fmt --check\` must pass\n- New public surface needs a doc-comment\n- Migrations require an explicit \`rollback.sql\`\n\n## Tone\n- Friendly, terse, no preamble.\n- Quote line numbers, never paraphrase code.\n\n## Out of scope\n- Style nits beyond rustfmt\n- Bumping deps unless asked\n\n> Linked from agent prompt @reviewer` },
+  { id: "blk_71fe", title: "Tunnel framing v2",               tags: ["tunnel", "architecture"],      updated: "yesterday", lines: 88,
+    content: `# Tunnel framing v2\n\nThe ws-server tunnel uses a length-prefixed binary frame format.\n\n## Frame layout\n\`\`\`\n[4B length][1B type][payload]\n\`\`\`\n\n## Types\n- \`0x01\` — text message\n- \`0x02\` — ping\n- \`0x03\` — pong\n- \`0x10\` — auth token\n- \`0x11\` — auth ack\n\n## Notes\nMax payload: 1 MiB. Larger messages must be chunked.` },
+  { id: "blk_4ad8", title: "Agent: @reviewer system prompt",  tags: ["agents", "prompts"],           updated: "2d",        lines: 64,
+    content: `# Agent: @reviewer system prompt\n\nYou are a code reviewer for the acme monorepo.\n\nFocus on correctness, safety, and clarity. Do not flag style issues already covered by rustfmt or eslint.\n\nAlways cite line numbers. Suggest concrete fixes, not abstract advice.` },
+  { id: "blk_2199", title: "Decision · SQLite over LMDB",     tags: ["decisions", "architecture"],   updated: "3d",        lines: 31,
+    content: `# Decision: SQLite over LMDB\n\n**Date:** 2024-11-03\n**Status:** accepted\n\n## Context\nWe evaluated SQLite and LMDB for the knowledge store. SQLite won on:\n- FTS5 full-text search built-in\n- Familiar SQL query model\n- Tooling (sqlite3 CLI, DB Browser)\n\nLMDB is faster for raw key-value but lacks query flexibility.` },
+  { id: "blk_aa17", title: "Glossary — console, tab, pane",   tags: ["glossary"],                    updated: "5d",        lines: 22,
+    content: `# Glossary\n\n**Tab** — A named workspace containing one CSS grid layout with N panes.\n\n**Pane** — A single cell in the grid. Renders one agent session (console view) or a supporting view (files, branches, diff, log).\n\n**Console** — An agent session tied to a repo, model, and optional knowledge blocks.\n\n**Tunnel** — The WebSocket bridge between desktop and mobile.` },
+  { id: "blk_cd03", title: "Repro pattern — flaky retry loop",tags: ["repro", "runbooks"],           updated: "1w",        lines: 17,
+    content: `# Repro: flaky retry loop\n\nThe retry loop in \`crates/ws-server/src/tunnel.rs\` fails intermittently under load.\n\n## Steps\n1. Set \`RUST_LOG=debug\`\n2. Run \`cargo test -p ws-server -- --nocapture\`\n3. Observe \`attempts exceeded\` panic after ~6 retries\n\n## Root cause\nBase delay too small (100ms). See blk_9a2c for fix.` },
+  { id: "blk_55fd", title: "Webhook routing table",           tags: ["architecture", "decisions"],   updated: "1w",        lines: 54,
+    content: `# Webhook routing table\n\nInbound webhooks are routed by \`X-Hook-Source\` header.\n\n| Source | Handler | Notes |\n|---|---|---|\n| github | \`crates/gh/src/webhook.rs\` | Verifies HMAC-SHA256 |\n| stripe | \`crates/payments/src/hooks.rs\` | Validates event type whitelist |\n\nAll unrecognized sources are rejected with 422.` },
 ];
 
 // ─── GitHub ────────────────────────────────────────────────────────────────
