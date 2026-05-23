@@ -27,6 +27,15 @@ const RESET_STATE = {
   githubUser: null,
   githubRepos: [],
   activeRepoName: "",
+  projectsView: "list" as "list" | "board" | "planning",
+  activeProjectId: null as string | null,
+  activeProjectName: "",
+  activeProjectRepo: "",
+  activeProjectNumber: 0,
+  projectsBoardTab: "board" as "board" | "roadmap" | "issues" | "insights",
+  projectsDrawerIssue: null as number | null,
+  planningPitch: "",
+  planningRepo: "",
 };
 
 beforeEach(() => {
@@ -78,6 +87,20 @@ describe("tab management", () => {
     useAppStore.getState().closeTab(0);
     expect(useAppStore.getState().tabs).toHaveLength(0);
     expect(useAppStore.getState().activeTabIdx).toBe(0);
+  });
+
+  it("setTabState updates a tab's state", () => {
+    useAppStore.getState().setTabState(0, "run");
+    expect(useAppStore.getState().tabs[0].state).toBe("run");
+    useAppStore.getState().setTabState(0, "idle");
+    expect(useAppStore.getState().tabs[0].state).toBe("idle");
+  });
+
+  it("setTabState does not affect other tabs", () => {
+    useAppStore.getState().setTabState(1, "run");
+    expect(useAppStore.getState().tabs[0].state).toBe("run");  // orchestrator starts as "run"
+    expect(useAppStore.getState().tabs[1].state).toBe("run");
+    expect(useAppStore.getState().tabs[2].state).toBe("idle");
   });
 });
 
@@ -312,6 +335,85 @@ describe("commands", () => {
     const { id } = useAppStore.getState().commands[0];
     useAppStore.getState().removeCommand(id);
     expect(useAppStore.getState().commands).toHaveLength(0);
+  });
+});
+
+// ── Projects navigation ───────────────────────────────────────────────────────
+
+describe("projects navigation", () => {
+  it("defaults to list view", () => {
+    expect(useAppStore.getState().projectsView).toBe("list");
+  });
+
+  it("setProjectsView switches to board", () => {
+    useAppStore.getState().setProjectsView("board");
+    expect(useAppStore.getState().projectsView).toBe("board");
+  });
+
+  it("setProjectsView switches to planning", () => {
+    useAppStore.getState().setProjectsView("planning");
+    expect(useAppStore.getState().projectsView).toBe("planning");
+  });
+
+  it("setActiveProject stores a project id", () => {
+    useAppStore.getState().setActiveProject("prj_31a");
+    expect(useAppStore.getState().activeProjectId).toBe("prj_31a");
+  });
+
+  it("setActiveProject(null) clears selection", () => {
+    useAppStore.getState().setActiveProject("prj_31a");
+    useAppStore.getState().setActiveProject(null);
+    expect(useAppStore.getState().activeProjectId).toBeNull();
+  });
+
+  it("setProjectsBoardTab updates the active tab", () => {
+    useAppStore.getState().setProjectsBoardTab("roadmap");
+    expect(useAppStore.getState().projectsBoardTab).toBe("roadmap");
+    useAppStore.getState().setProjectsBoardTab("board");
+    expect(useAppStore.getState().projectsBoardTab).toBe("board");
+  });
+
+  it("setProjectsDrawerIssue opens the drawer", () => {
+    useAppStore.getState().setProjectsDrawerIssue(418);
+    expect(useAppStore.getState().projectsDrawerIssue).toBe(418);
+  });
+
+  it("setProjectsDrawerIssue(null) closes the drawer", () => {
+    useAppStore.getState().setProjectsDrawerIssue(418);
+    useAppStore.getState().setProjectsDrawerIssue(null);
+    expect(useAppStore.getState().projectsDrawerIssue).toBeNull();
+  });
+
+  it("setActiveProjectMeta stores id, name, repo, and number together", () => {
+    useAppStore.getState().setActiveProjectMeta("PVT_kwAbc123", "Settlement webhooks v2", "acme/payments", 14);
+    const { activeProjectId, activeProjectName, activeProjectRepo, activeProjectNumber } = useAppStore.getState();
+    expect(activeProjectId).toBe("PVT_kwAbc123");
+    expect(activeProjectName).toBe("Settlement webhooks v2");
+    expect(activeProjectRepo).toBe("acme/payments");
+    expect(activeProjectNumber).toBe(14);
+  });
+
+  it("setActiveProjectMeta(null) clears the active project", () => {
+    useAppStore.getState().setActiveProjectMeta("PVT_kwAbc123", "My project", "org/repo", 5);
+    useAppStore.getState().setActiveProjectMeta(null, "", "", 0);
+    const { activeProjectId, activeProjectName, activeProjectRepo, activeProjectNumber } = useAppStore.getState();
+    expect(activeProjectId).toBeNull();
+    expect(activeProjectName).toBe("");
+    expect(activeProjectRepo).toBe("");
+    expect(activeProjectNumber).toBe(0);
+  });
+
+  it("setPlanningContext stores pitch and repo", () => {
+    useAppStore.getState().setPlanningContext("Build a mobile auth SDK", "acme/mobile");
+    expect(useAppStore.getState().planningPitch).toBe("Build a mobile auth SDK");
+    expect(useAppStore.getState().planningRepo).toBe("acme/mobile");
+  });
+
+  it("setPlanningContext can clear the context", () => {
+    useAppStore.getState().setPlanningContext("something", "org/repo");
+    useAppStore.getState().setPlanningContext("", "");
+    expect(useAppStore.getState().planningPitch).toBe("");
+    expect(useAppStore.getState().planningRepo).toBe("");
   });
 });
 

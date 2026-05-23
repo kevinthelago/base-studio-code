@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PaneShell } from "../components/pane/PaneShell";
 import { TerminalView } from "../components/pane/views/TerminalView";
@@ -28,6 +28,7 @@ interface PaneAtProps {
   tabIdx: number;
   name: string;
   view: ViewKey;
+  status: "run" | "on" | "idle";
   cwd?: string;
   gitInfo?: GitInfo | null;
   onRename: (name: string) => void;
@@ -36,13 +37,14 @@ interface PaneAtProps {
   onViewChange: (v: ViewKey) => void;
   onPickDirectory: () => void;
   onCwdChange: (path: string) => void;
+  onStatusChange: (status: "run" | "idle") => void;
   paneMenuOpenIdx: number;
   focusedPaneIdx: number;
 }
 
 function PaneAt({
-  i, tabIdx, name, view, cwd, gitInfo,
-  onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange,
+  i, tabIdx, name, view, status, cwd, gitInfo,
+  onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange, onStatusChange,
   paneMenuOpenIdx, focusedPaneIdx,
 }: PaneAtProps) {
   const pid = paneId(tabIdx, i);
@@ -53,7 +55,7 @@ function PaneAt({
       onMenuToggle={onMenuToggle}
       onFocus={onFocus}
       onPickDirectory={onPickDirectory}
-      status="idle"
+      status={status}
       model="sonnet-4.5"
       cwd={gitInfo ? undefined : cwd}
       repo={gitInfo?.repo}
@@ -69,8 +71,11 @@ function PaneAt({
       <TerminalView
         paneId={pid}
         visible={view === "console"}
+        focused={i === focusedPaneIdx}
         initialCwd={cwd}
         onCwdChange={onCwdChange}
+        onStatusChange={onStatusChange}
+        onFocus={onFocus}
       />
       {view === "files"    && <FilesView    small tree={[]} cwd={cwd} />}
       {view === "branches" && <BranchesView small branches={[]} />}
@@ -89,6 +94,7 @@ export function ConsoleScreen() {
     paneCwds, setPaneCwd,
     paneGitInfo, setPaneGitInfo,
     setFocusedAgentName,
+    setTabState, autoFocusOnInterrupt,
   } = useAppStore();
 
   // Keep titlebar breadcrumb in sync
@@ -102,6 +108,36 @@ export function ConsoleScreen() {
   const activeTab = tabs[activeTabIdx];
   const [cols, rows] = activeTab.layout.split("×").map(Number);
   const paneCount = cols * rows;
+
+  // Per-pane status ("run" | "idle"), keyed by paneId string.
+  // Kept local — not persisted, resets on reload.
+  const [paneStatuses, setPaneStatuses] = useState<Record<string, "run" | "on" | "idle">>({});
+  // Ref so the callback passed to TerminalView always has the latest value without re-registering
+  const paneStatusesRef = useRef(paneStatuses);
+  useEffect(() => { paneStatusesRef.current = paneStatuses; }, [paneStatuses]);
+
+  const handleStatusChange = useCallback((paneIdx: number, status: "run" | "idle") => {
+    const pid = paneId(activeTabIdx, paneIdx);
+    const prev = paneStatusesRef.current[pid] ?? "idle";
+
+    // Auto-focus the pane that just finished responding
+    if (status === "idle" && prev === "run" && autoFocusOnInterrupt) {
+      setFocusedPane(paneIdx);
+    }
+
+    setPaneStatuses((current) => {
+      const next = { ...current, [pid]: status };
+      // Aggregate to tab-level state: any "run" → run, else any "on" → on, else idle
+      let tabState: "run" | "on" | "idle" = "idle";
+      for (let i = 0; i < paneCount; i++) {
+        const s = next[paneId(activeTabIdx, i)] ?? "idle";
+        if (s === "run") { tabState = "run"; break; }
+        if (s === "on") tabState = "on";
+      }
+      setTabState(activeTabIdx, tabState);
+      return next;
+    });
+  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, setFocusedPane, setTabState]);
 
   async function handleCwdChange(paneIdx: number, path: string) {
     const pid = paneId(activeTabIdx, paneIdx);
@@ -129,6 +165,7 @@ export function ConsoleScreen() {
         tabIdx={activeTabIdx}
         name={resolvePaneName(activeTabIdx, i, paneNames)}
         view={paneViews[i] ?? "console"}
+        status={paneStatuses[pid] ?? "idle"}
         cwd={paneCwds[pid]}
         gitInfo={paneGitInfo[pid]}
         onRename={(n) => setPaneName(activeTabIdx, i, n)}
@@ -137,6 +174,7 @@ export function ConsoleScreen() {
         onViewChange={(v) => setPaneView(i, v)}
         onPickDirectory={() => handlePickDirectory(i)}
         onCwdChange={(path) => handleCwdChange(i, path)}
+        onStatusChange={(s) => handleStatusChange(i, s)}
         paneMenuOpenIdx={paneMenuOpenIdx}
         focusedPaneIdx={focusedPaneIdx}
       />
