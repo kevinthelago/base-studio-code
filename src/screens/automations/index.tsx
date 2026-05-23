@@ -1,4 +1,3 @@
-import { StatusBar } from "../../components/chrome/StatusBar";
 import { useAppStore } from "../../store";
 import { SchedulesTab } from "./Schedules";
 import { CommandsTab } from "./Commands";
@@ -68,11 +67,6 @@ export function AutomationsScreen() {
           )}
         </section>
       </div>
-      <StatusBar extra={
-        <span className="s">
-          <i className="warn" /> 4 schedules armed · next at 02:00
-        </span>
-      } />
     </div>
   );
 }

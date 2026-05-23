@@ -1,4 +1,3 @@
-import { StatusBar } from "../../components/chrome/StatusBar";
 import { useAppStore } from "../../store";
 import { GitHubSettings } from "./GitHub";
 import { IntegrationsSettings } from "./Integrations";
@@ -17,8 +16,7 @@ export function SettingsScreen() {
   const { settingsSection, setSettingsSection } = useAppStore();
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+    <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <aside style={{
           width: 200, flex: "0 0 200px", background: "var(--bg-panel)",
           borderRight: "1px solid var(--border-soft)", padding: "16px 8px",
@@ -53,8 +51,6 @@ export function SettingsScreen() {
             }}>{settingsSection} · coming soon</div>
           )}
         </section>
-      </div>
-      <StatusBar />
     </div>
   );
 }

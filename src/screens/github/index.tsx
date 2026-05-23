@@ -1,4 +1,3 @@
-import { StatusBar } from "../../components/chrome/StatusBar";
 import { useAppStore } from "../../store";
 import { GitHubEmpty } from "./Empty";
 import { OverviewBody } from "./Overview";
@@ -59,11 +58,6 @@ export function GitHubScreen() {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <GitHubEmpty />
-        <StatusBar extra={
-          <span className="s" style={{ color: "var(--fg-dim)" }}>
-            <i className="off" /> github · not connected
-          </span>
-        } />
       </div>
     );
   }
@@ -144,7 +138,6 @@ export function GitHubScreen() {
           </section>
         </div>
       </div>
-      <StatusBar />
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { StatusBar } from "../components/chrome/StatusBar";
-import { KB_TAGS, KB_BLOCKS } from "../data/mock";
+import { useState, useMemo } from "react";
+import { KB_TAGS, KB_BLOCKS, type KbBlock } from "../data/mock";
 
 const KB_EDITOR_BODY = `# Review policy — TS / Rust
 
@@ -21,12 +21,60 @@ Applies to: acme/payments, acme/ledger-core
 
 > Linked from agent prompt @reviewer`;
 
+function tagColor(tag: string) {
+  if (tag === "review-policy") return "amber";
+  if (tag === "architecture" || tag === "decisions") return "info";
+  if (tag === "agents" || tag === "prompts") return "green";
+  return "";
+}
+
 export function KnowledgeStoreScreen() {
-  const selected = KB_BLOCKS.find((b) => b.sel) ?? KB_BLOCKS[0];
+  const [activeTags, setActiveTags] = useState<string[]>(["all"]);
+  const [selectedId, setSelectedId] = useState<string>(KB_BLOCKS[0].id);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"updated" | "title" | "size">("updated");
+
+  function toggleTag(name: string) {
+    if (name === "all") {
+      setActiveTags(["all"]);
+      return;
+    }
+    setActiveTags((prev) => {
+      const isOn = prev.includes(name);
+      const next = prev.filter((t) => t !== "all" && t !== name);
+      if (isOn) return next.length === 0 ? ["all"] : next;
+      return [...next, name];
+    });
+  }
+
+  const filtered = useMemo(() => {
+    let list = KB_BLOCKS.filter((b) => {
+      if (!activeTags.includes("all")) {
+        if (!b.tags.some((t) => activeTags.includes(t))) return false;
+      }
+      if (search.trim()) {
+        if (!b.title.toLowerCase().includes(search.trim().toLowerCase())) return false;
+      }
+      return true;
+    });
+
+    if (sortBy === "title") list = [...list].sort((a, b) => a.title.localeCompare(b.title));
+    if (sortBy === "size")  list = [...list].sort((a, b) => b.lines - a.lines);
+    return list;
+  }, [activeTags, search, sortBy]);
+
+  // If current selection is filtered out, auto-advance to first visible block
+  const selected: KbBlock =
+    filtered.find((b) => b.id === selectedId) ?? filtered[0] ?? KB_BLOCKS[0];
+
+  const hintText = activeTags.includes("all")
+    ? `${filtered.length} blocks · all`
+    : `${filtered.length} blocks · ${activeTags.map((t) => `#${t}`).join(", ")}`;
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+
         {/* Tag rail */}
         <aside style={{
           width: 200, flex: "0 0 200px", background: "var(--bg-panel)",
@@ -41,21 +89,30 @@ export function KnowledgeStoreScreen() {
             <span>TAGS</span>
             <span style={{ cursor: "pointer", color: "var(--fg-muted)" }}>+</span>
           </div>
-          {KB_TAGS.map((t) => (
-            <div key={t.name} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "6px 10px 6px 12px",
-              borderRadius: 5, fontSize: 11.5,
-              background: t.on ? "var(--bg-elev)" : "transparent",
-              color: t.on ? "var(--fg)" : "var(--fg-muted)",
-              borderLeft: t.on ? "2px solid var(--accent)" : "2px solid transparent",
-              paddingLeft: t.on ? 10 : 12,
-              cursor: "pointer", fontFamily: "var(--mono)",
-            }}>
-              <span>#{t.name}</span>
-              <span style={{ color: "var(--fg-dim)", fontSize: 10.5 }}>{t.n}</span>
-            </div>
-          ))}
+
+          {KB_TAGS.map((t) => {
+            const on = activeTags.includes(t.name);
+            return (
+              <div
+                key={t.name}
+                onClick={() => toggleTag(t.name)}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: on ? "6px 10px 6px 10px" : "6px 10px 6px 12px",
+                  borderRadius: 5, fontSize: 11.5,
+                  background: on ? "var(--bg-elev)" : "transparent",
+                  color: on ? "var(--fg)" : "var(--fg-muted)",
+                  borderLeft: on ? "2px solid var(--accent)" : "2px solid transparent",
+                  cursor: "pointer", fontFamily: "var(--mono)",
+                  userSelect: "none",
+                }}
+              >
+                <span>#{t.name}</span>
+                <span style={{ color: "var(--fg-dim)", fontSize: 10.5 }}>{t.n}</span>
+              </div>
+            );
+          })}
+
           <div style={{ height: 14 }} />
           <div style={{
             fontFamily: "var(--mono)", fontSize: 10, letterSpacing: ".08em",
@@ -78,41 +135,65 @@ export function KnowledgeStoreScreen() {
             padding: "12px 12px 8px", borderBottom: "1px solid var(--border-soft)",
             display: "flex", flexDirection: "column", gap: 8,
           }}>
-            <input className="input" placeholder="⌕ search blocks…" />
+            <input
+              className="input"
+              placeholder="⌕ search blocks…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
             <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "space-between" }}>
-              <span className="hint">7 blocks · #review-policy</span>
-              <select className="input" style={{ height: 22, width: 90, fontSize: 10.5 }}>
-                <option>updated</option><option>title</option><option>size</option>
+              <span className="hint">{hintText}</span>
+              <select
+                className="input"
+                style={{ height: 22, width: 90, fontSize: 10.5 }}
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              >
+                <option value="updated">updated</option>
+                <option value="title">title</option>
+                <option value="size">size</option>
               </select>
             </div>
           </div>
+
           <div style={{ flex: 1, overflow: "auto" }}>
-            {KB_BLOCKS.map((b) => (
-              <div key={b.id} style={{
-                padding: "11px 12px", borderBottom: "1px solid var(--border-soft)",
-                background: b.sel ? "var(--bg-elev)" : "transparent",
-                borderLeft: b.sel ? "2px solid var(--accent)" : "2px solid transparent",
-                paddingLeft: b.sel ? 10 : 12,
-                cursor: "pointer",
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{b.id}</span>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{b.updated}</span>
+            {filtered.length === 0 ? (
+              <div style={{
+                padding: "24px 16px", fontFamily: "var(--mono)", fontSize: 11,
+                color: "var(--fg-dim)", textAlign: "center",
+              }}>no blocks match</div>
+            ) : filtered.map((b) => {
+              const sel = b.id === selected.id;
+              return (
+                <div
+                  key={b.id}
+                  onClick={() => setSelectedId(b.id)}
+                  style={{
+                    padding: sel ? "11px 12px 11px 10px" : "11px 12px",
+                    borderBottom: "1px solid var(--border-soft)",
+                    background: sel ? "var(--bg-elev)" : "transparent",
+                    borderLeft: sel ? "2px solid var(--accent)" : "2px solid transparent",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{b.id}</span>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{b.updated}</span>
+                  </div>
+                  <div style={{
+                    fontSize: 12, color: sel ? "var(--fg)" : "var(--fg-muted)",
+                    marginBottom: 5, fontWeight: 500,
+                  }}>{b.title}</div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {b.tags.map((tag) => (
+                      <span key={tag} className={`tag ${tagColor(tag)}`}>#{tag}</span>
+                    ))}
+                  </div>
                 </div>
-                <div style={{
-                  fontSize: 12, color: b.sel ? "var(--fg)" : "var(--fg-muted)",
-                  marginBottom: 5, fontWeight: 500,
-                }}>{b.title}</div>
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  {b.tags.map((tag) => (
-                    <span key={tag} className={"tag " + (tag === "review-policy" ? "amber" : "")}>
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+
           <div style={{ padding: 10, borderTop: "1px solid var(--border-soft)" }}>
             <button className="btn primary" style={{ width: "100%", justifyContent: "center" }}>+ New block</button>
           </div>
@@ -124,14 +205,20 @@ export function KnowledgeStoreScreen() {
             padding: "12px 18px", borderBottom: "1px solid var(--border-soft)",
             display: "flex", alignItems: "center", gap: 10, background: "var(--bg-panel)",
           }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{selected.id}</span>
-            <input className="input" defaultValue={selected.title}
+            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>
+              {selected.id}
+            </span>
+            <input
+              className="input"
+              key={selected.id}
+              defaultValue={selected.title}
               style={{
                 flex: 1, height: 30, fontSize: 14, fontFamily: "var(--sans)",
                 background: "transparent", border: "1px solid transparent",
-              }} />
+              }}
+            />
             {selected.tags.map((tag) => (
-              <span key={tag} className={"tag " + (tag === "review-policy" ? "amber" : "")}>#{tag}</span>
+              <span key={tag} className={`tag ${tagColor(tag)}`}>#{tag}</span>
             ))}
             <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}>+ tag</button>
             <div style={{ width: 1, height: 18, background: "var(--border-soft)" }} />
@@ -196,7 +283,6 @@ export function KnowledgeStoreScreen() {
           </div>
         </section>
       </div>
-      <StatusBar />
     </div>
   );
 }
