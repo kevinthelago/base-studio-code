@@ -1,11 +1,11 @@
 export type ViewKey = "console" | "files" | "branches" | "changes" | "log";
 
 export const VIEW_DEFS: Record<ViewKey, { icon: string; label: string; hint: string; hotkey: string }> = {
-  console:  { icon: "▸", label: "console",  hint: "claude session",      hotkey: "⌘1" },
-  files:    { icon: "⌗", label: "files",    hint: "working tree",        hotkey: "⌘2" },
-  branches: { icon: "⎇", label: "branches", hint: "local + remote refs", hotkey: "⌘3" },
-  changes:  { icon: "±", label: "changes",  hint: "diff vs HEAD",        hotkey: "⌘4" },
-  log:      { icon: "⏱", label: "log",      hint: "recent commits",      hotkey: "⌘5" },
+  console:  { icon: "▸", label: "Console",  hint: "claude session",      hotkey: "⌥1" },
+  files:    { icon: "⌗", label: "Files",    hint: "working tree",        hotkey: "⌥2" },
+  branches: { icon: "⎇", label: "Branches", hint: "local + remote refs", hotkey: "⌥3" },
+  changes:  { icon: "±", label: "Changes",  hint: "diff vs HEAD",        hotkey: "⌥4" },
+  log:      { icon: "⏱", label: "Log",      hint: "recent commits",      hotkey: "⌥5" },
 };
 
 interface ViewTabsProps {

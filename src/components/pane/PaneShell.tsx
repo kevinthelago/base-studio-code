@@ -1,4 +1,5 @@
-import { ViewTabs, type ViewKey } from "./ViewTabs";
+import { useState, useRef, useEffect } from "react";
+import { VIEW_DEFS, type ViewKey } from "./ViewTabs";
 import { HamburgerMenu, type ModelId } from "./HamburgerMenu";
 
 export type PaneStatus = "run" | "on" | "idle";
@@ -17,6 +18,7 @@ interface PaneShellProps {
   banner?: React.ReactNode;
   menuOpen?: boolean;
   focused?: boolean;
+  onViewChange?: (view: ViewKey) => void;
   children: React.ReactNode;
 }
 
@@ -34,36 +36,118 @@ export function PaneShell({
   banner,
   menuOpen = false,
   focused = false,
+  onViewChange,
   children,
 }: PaneShellProps) {
+  const [viewOpen, setViewOpen] = useState(false);
+  const viewRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!viewOpen) return;
+    function onMouseDown(e: MouseEvent) {
+      if (!viewRef.current?.contains(e.target as Node)) setViewOpen(false);
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [viewOpen]);
+
   const statusColor =
     status === "idle" ? "var(--fg-dim)"
     : status === "run" ? "var(--accent)"
     : "var(--success)";
+
+  const currentDef = VIEW_DEFS[active];
 
   return (
     <div className={focused ? "pane focused" : "pane"} style={{
       height: "100%",
       display: "flex", flexDirection: "column",
       position: "relative",
-      zIndex: menuOpen ? 5 : 1,
+      zIndex: menuOpen || viewOpen ? 10 : 1,
     }}>
       {/* Head */}
       <div style={{
-        height: 32, flex: "0 0 32px", padding: "0 8px 0 10px",
-        display: "flex", alignItems: "center", gap: 8,
+        height: 32, flex: "0 0 32px", padding: "0 8px 0 6px",
+        display: "flex", alignItems: "center", gap: 6,
         background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)",
       }}>
+
+        {/* View selector dropdown */}
+        <div ref={viewRef} style={{ position: "relative", flex: "0 0 auto" }}>
+          <button
+            onClick={() => setViewOpen(!viewOpen)}
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              padding: "0 7px", height: 22, borderRadius: 4,
+              background: viewOpen ? "var(--bg-canvas)" : "transparent",
+              border: `1px solid ${viewOpen ? "var(--accent-dim)" : "var(--border-soft)"}`,
+              color: viewOpen ? "var(--accent)" : "var(--fg-muted)",
+              fontFamily: "var(--mono)", fontSize: 10.5,
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            <span style={{ fontSize: 11 }}>{currentDef.icon}</span>
+            <span>{currentDef.label}</span>
+            <span style={{ fontSize: 8, opacity: 0.6, marginLeft: 1 }}>▾</span>
+          </button>
+
+          {viewOpen && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 4px)", left: 0,
+              zIndex: 20,
+              background: "var(--bg-panel)",
+              border: "1px solid var(--border-soft)",
+              borderRadius: "var(--r-md)",
+              minWidth: 170,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
+              overflow: "hidden",
+              fontFamily: "var(--mono)",
+            }}>
+              {available.map((k) => {
+                const def = VIEW_DEFS[k];
+                const on = k === active;
+                return (
+                  <div
+                    key={k}
+                    onClick={() => { onViewChange?.(k); setViewOpen(false); }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      padding: "6px 10px",
+                      cursor: "pointer",
+                      background: on ? "color-mix(in oklch, var(--accent), transparent 88%)" : "transparent",
+                      color: on ? "var(--accent)" : "var(--fg-muted)",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!on) (e.currentTarget as HTMLDivElement).style.background = "var(--bg-elev)";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!on) (e.currentTarget as HTMLDivElement).style.background = "transparent";
+                    }}
+                  >
+                    <span style={{ width: 14, textAlign: "center", fontSize: 12, flex: "0 0 14px" }}>{def.icon}</span>
+                    <span style={{ flex: 1, fontSize: 10.5 }}>{def.label}</span>
+                    <span style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{def.hotkey}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Status dot */}
         <span style={{
           width: 7, height: 7, borderRadius: "50%", background: statusColor,
           animation: status === "run" ? "pulse 1.4s ease-in-out infinite" : "none",
           flex: "0 0 7px",
         }} />
+
+        {/* Agent name */}
         <span style={{
           fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto",
         }}>{agent}</span>
 
+        {/* Repo / cwd / meta */}
         <div style={{
           flex: 1, minWidth: 0,
           display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6,
@@ -99,7 +183,6 @@ export function PaneShell({
       </div>
 
       {banner}
-      <ViewTabs active={active} available={available} />
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {children}
