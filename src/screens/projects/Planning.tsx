@@ -54,6 +54,7 @@ function stripAnsi(s: string): string {
     s
       .replace(ANSI_RE, "")  // remove escape sequences
       .replace(/\r/g, "")    // remove lone carriage returns (spinner overwrites)
+      // eslint-disable-next-line no-control-regex -- intentional: strip bare ESC bytes from PTY output
       .replace(/\x1b/g, "")  // remove any leftover bare ESC bytes
   );
 }

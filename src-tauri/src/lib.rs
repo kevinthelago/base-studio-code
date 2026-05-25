@@ -87,7 +87,7 @@ fn to_bash_path(p: &str) -> String {
             let drive = s[..1].to_lowercase();
             return format!("/{}{}", drive, &s[2..]);
         }
-        return s;
+        s
     }
     #[cfg(not(windows))]
     p.to_string()
@@ -132,6 +132,7 @@ fn plan_dir_for(project_key: &str) -> std::path::PathBuf {
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn pty_create(
     pane_id: String,
     cols: u16,
@@ -1578,6 +1579,7 @@ fn sanitize_project_key(key: &str) -> String {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn setup_workspaces(
     kb_blocks: Vec<KbBlockData>,
     repo_full_names: Vec<String>,
@@ -2088,6 +2090,7 @@ fn relpath_posix(base: &std::path::Path, path: &std::path::Path) -> Option<Strin
 ///   - `projects/<p>/.claude/settings.json`                  → kind "project"
 ///   - `projects/<p>/<repo>/{CLAUDE.md,CLAUDE.local.md}`     → kind "repo"
 ///   - `projects/<p>/<repo>/.claude/settings.json`           → kind "repo"
+///
 /// A `projects/<p>/<repo>/` subdir is treated as a repo clone (kind "repo") iff
 /// it contains a `.git` entry; only its managed files are surfaced — the clone's
 /// source tree is never recursed. Sorted most-recently-modified first.
@@ -2353,8 +2356,8 @@ mod tests {
         // Mirrors what TerminalView.tsx does in the browser:
         // data.replace(/^file:\/\/[^/]*/, "")
         let input = "file://localhost/c/Users/Kevin/project";
-        let stripped = input.trim_start_matches("file://").splitn(2, '/').nth(1)
-            .map(|s| format!("/{}", s))
+        let stripped = input.trim_start_matches("file://").split_once('/')
+            .map(|(_, rest)| format!("/{}", rest))
             .unwrap_or_default();
         assert_eq!(stripped, "/c/Users/Kevin/project");
     }
