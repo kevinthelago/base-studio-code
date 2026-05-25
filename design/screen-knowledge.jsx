@@ -15,20 +15,41 @@ const KB_TAGS = [
 
 const KB_BLOCKS = [
   { id:"blk_9a2c", title:"Review policy — TS / Rust",
-    tags:["review-policy","decisions"], updated:"14:02", lines:42, sel:true },
+    tags:["review-policy","decisions"], updated:"14:02", lines:42, sel:true, scope:"manual" },
   { id:"blk_71fe", title:"Tunnel framing v2",
-    tags:["tunnel","architecture"], updated:"yesterday", lines:88 },
+    tags:["tunnel","architecture"], updated:"yesterday", lines:88, scope:"project" },
   { id:"blk_4ad8", title:"Agent: @reviewer system prompt",
-    tags:["agents","prompts"], updated:"2d", lines:64 },
+    tags:["agents","prompts"], updated:"2d", lines:64, scope:"global" },
   { id:"blk_2199", title:"Decision · SQLite over LMDB",
-    tags:["decisions","architecture"], updated:"3d", lines:31 },
+    tags:["decisions","architecture"], updated:"3d", lines:31, scope:"project" },
   { id:"blk_aa17", title:"Glossary — console, tab, pane",
-    tags:["glossary"], updated:"5d", lines:22 },
+    tags:["glossary"], updated:"5d", lines:22, scope:"global" },
   { id:"blk_cd03", title:"Repro pattern — flaky retry loop",
-    tags:["repro","runbooks"], updated:"1w", lines:17 },
+    tags:["repro","runbooks"], updated:"1w", lines:17, scope:"manual" },
   { id:"blk_55fd", title:"Webhook routing table",
-    tags:["architecture","decisions"], updated:"1w", lines:54 },
+    tags:["architecture","decisions"], updated:"1w", lines:54, scope:"manual" },
 ];
+
+const SCOPE_BADGE = {
+  global:  { l:"G",    bg:"var(--accent)",                                       fg:"#1a120a",       title:"pinned globally" },
+  project: { l:"P",    bg:"color-mix(in oklch, var(--info), transparent 50%)",   fg:"#1a120a",       title:"pinned for a project" },
+  pane:    { l:"·",    bg:"var(--bg-elev2)",                                     fg:"var(--fg-muted)", title:"pinned in a pane" },
+  manual:  { l:"",     bg:"transparent",                                         fg:"var(--fg-dim)", title:"not pinned" },
+};
+
+function ScopeBadge({ scope }) {
+  const s = SCOPE_BADGE[scope] || SCOPE_BADGE.manual;
+  if (!s.l) return <span style={{width:18}}/>;
+  return (
+    <span title={s.title} style={{
+      width:18, height:18, borderRadius:4,
+      background:s.bg, color:s.fg,
+      fontFamily:"var(--mono)", fontSize:10, fontWeight:700,
+      display:"inline-flex", alignItems:"center", justifyContent:"center",
+      flex:"0 0 18px",
+    }}>{s.l}</span>
+  );
+}
 
 function ScreenKnowledgeStore() {
   return (
@@ -102,8 +123,10 @@ function ScreenKnowledgeStore() {
                     paddingLeft: b.sel ? 10 : 12,
                     cursor:"pointer",
                   }}>
-                    <div style={{display:"flex", justifyContent:"space-between", marginBottom:4}}>
+                    <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:4}}>
+                      <ScopeBadge scope={b.scope}/>
                       <span style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--fg-dim)"}}>{b.id}</span>
+                      <span style={{flex:1}}/>
                       <span style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--fg-dim)"}}>{b.updated}</span>
                     </div>
                     <div style={{fontSize:12, color: b.sel ? "var(--fg)" : "var(--fg-muted)",
@@ -139,6 +162,48 @@ function ScreenKnowledgeStore() {
                 <button className="btn ghost" style={{height:24}}>⎘ embed</button>
                 <button className="btn">save</button>
               </header>
+
+              {/* Scope strip */}
+              <div style={{
+                padding:"10px 18px",
+                background:"var(--bg-panel)",
+                borderBottom:"1px solid var(--border-soft)",
+                display:"flex", alignItems:"center", gap:12, flexWrap:"wrap",
+              }}>
+                <div style={{display:"flex", alignItems:"center", gap:6,
+                  fontFamily:"var(--mono)", fontSize:10.5, color:"var(--fg-dim)",
+                  textTransform:"uppercase", letterSpacing:".06em"}}>
+                  <span>scope</span>
+                </div>
+                {/* Segmented */}
+                <div style={{display:"flex", gap:4, padding:3, background:"var(--bg-elev)",
+                  borderRadius:6, border:"1px solid var(--border-soft)"}}>
+                  {[
+                    { k:"manual",  l:"Manual",            on:true,  hint:"only when /pin'd ad-hoc" },
+                    { k:"global",  l:"Global",            hint:"auto-pinned to every session" },
+                    { k:"project", l:"Project",           hint:"per-project pin" },
+                    { k:"pane",    l:"Pane",              hint:"this pane only" },
+                  ].map(s=>(
+                    <span key={s.k} title={s.hint} style={{
+                      padding:"4px 10px", borderRadius:4,
+                      background: s.on ? "var(--bg-canvas)" : "transparent",
+                      border:"1px solid " + (s.on?"var(--accent-dim)":"transparent"),
+                      color: s.on ? "var(--accent)" : "var(--fg-muted)",
+                      fontFamily:"var(--mono)", fontSize:10.5, cursor:"pointer",
+                    }}>{s.l}</span>
+                  ))}
+                </div>
+                <div style={{fontFamily:"var(--mono)", fontSize:10.5, color:"var(--fg-muted)"}}>
+                  currently · <b style={{color:"var(--fg)"}}>not pinned</b> — surfaces only when an agent runs <code>/pin blk_9a2c</code>.
+                </div>
+                <div style={{flex:1}}/>
+                <button className="btn ghost" style={{height:24, fontSize:10.5}}>
+                  ✦ pin globally
+                </button>
+                <button className="btn ghost" style={{height:24, fontSize:10.5}}>
+                  pin to project…
+                </button>
+              </div>
 
               <div style={{flex:1, display:"flex", minHeight:0}}>
                 <div style={{flex:1, padding:"18px 22px", overflow:"auto",
