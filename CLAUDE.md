@@ -21,6 +21,22 @@ The core value proposition: run many AI coding agents in parallel across multipl
 | Mobile tunnel | WebSocket server (`crates/ws-server`) — token auth + QR pairing |
 | Storage | SQLite (`crates/kb`, `crates/orch`) |
 
+## Testing
+
+Every feature or bug fix must include tests as part of the same branch — never after. Tests are not optional.
+
+| What changed | What to test |
+|---|---|
+| New store action | Unit test covering the action's state transitions and edge cases |
+| New component | Render smoke test + interaction tests for each user-facing behavior |
+| New Rust command | Unit test or integration test in `src-tauri/src/lib.rs` `#[cfg(test)]` module |
+| Bug fix | A regression test that would have caught the original bug |
+
+**Frontend:** Vitest + React Testing Library. Run with `npm test`.
+**Rust:** Standard `#[test]` in a `#[cfg(test)]` module. Run with `cargo test --manifest-path src-tauri/Cargo.toml`.
+
+Mocks for Tauri APIs (`invoke`, `listen`, `plugin-store`) are pre-configured in `src/test/setup.ts` and apply to every test file automatically.
+
 ## Commands
 
 ```bash

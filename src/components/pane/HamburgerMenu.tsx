@@ -1,11 +1,13 @@
+import { RefreshCw, Pin, FolderInput, Unlink2, X, GitBranch } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
 
 export type ModelId = "haiku-4.5" | "sonnet-4.5" | "opus-4.5";
 
 const MODELS: Array<{ id: ModelId; tone: string; price: string }> = [
-  { id: "haiku-4.5",  tone: "fast",     price: "$ ·"    },
-  { id: "sonnet-4.5", tone: "balanced", price: "$$ ··"  },
-  { id: "opus-4.5",   tone: "deep",     price: "$$$ ···" },
+  { id: "haiku-4.5",  tone: "fast",     price: "$"   },
+  { id: "sonnet-4.5", tone: "balanced", price: "$$"  },
+  { id: "opus-4.5",   tone: "deep",     price: "$$$" },
 ];
 
 interface HamburgerMenuProps {
@@ -45,11 +47,13 @@ export function HamburgerMenu({
         {repo && (
           <div style={{
             fontSize: 10, color: "var(--fg-muted)", marginTop: 3,
+            display: "flex", alignItems: "center", gap: 4,
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
           }}>
-            <span style={{ color: "var(--info)" }}>⎇ {branch}</span>
-            <span style={{ color: "var(--fg-dim)" }}> · </span>
-            {repo}
+            <GitBranch size={9} style={{ color: "var(--info)", flexShrink: 0 }} />
+            <span style={{ color: "var(--info)" }}>{branch}</span>
+            <span style={{ color: "var(--fg-dim)" }}>·</span>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{repo}</span>
           </div>
         )}
       </div>
@@ -60,10 +64,13 @@ export function HamburgerMenu({
           const on = m.id === model;
           return (
             <MenuRow key={m.id} on={on}>
-              <span style={{ color: on ? "var(--accent)" : "var(--fg-dim)", width: 10 }}>{on ? "●" : "○"}</span>
+              <span style={{
+                width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                background: on ? "var(--accent)" : "var(--border)",
+              }} />
               <span style={{ color: on ? "var(--accent)" : "var(--fg)", flex: 1 }}>{m.id}</span>
               <span style={{ color: "var(--fg-dim)", fontSize: 9.5, marginRight: 6 }}>{m.tone}</span>
-              <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>{m.price}</span>
+              <span style={{ color: "var(--fg-dim)", fontSize: 9.5, fontFamily: "var(--sans)" }}>{m.price}</span>
             </MenuRow>
           );
         })}
@@ -72,14 +79,14 @@ export function HamburgerMenu({
       {/* Views */}
       <MenuSection label="view">
         {available.map((k) => {
-          const v = VIEW_DEFS[k];
+          const { Icon, label, hotkey } = VIEW_DEFS[k];
           const on = k === active;
           return (
             <MenuRow key={k} on={on}>
-              <span style={{ color: on ? "var(--accent)" : "var(--fg-muted)", width: 12, textAlign: "center" }}>{v.icon}</span>
-              <span style={{ color: on ? "var(--accent)" : "var(--fg)", flex: 1 }}>{v.label}</span>
+              <Icon size={12} style={{ flexShrink: 0, color: on ? "var(--accent)" : "var(--fg-muted)" }} />
+              <span style={{ color: on ? "var(--accent)" : "var(--fg)", flex: 1 }}>{label}</span>
               {on && <span style={{ color: "var(--accent)", fontSize: 9.5, marginRight: 6 }}>current</span>}
-              <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>{v.hotkey}</span>
+              <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>{hotkey}</span>
             </MenuRow>
           );
         })}
@@ -87,11 +94,11 @@ export function HamburgerMenu({
 
       {/* Pane actions */}
       <MenuSection label="pane" last>
-        <ActionRow icon="↻" label="rescan repo"    sub="re-detect HEAD" />
-        <ActionRow icon="✦" label="pin knowledge…" sub="surface a block in context" />
-        <ActionRow icon="⌖" label="set cwd…"       sub="change working dir" />
-        <ActionRow icon="⊘" label="unbind repo"    sub="drop git context" danger />
-        <ActionRow icon="✕" label="close pane"     sub="" danger />
+        <ActionRow Icon={RefreshCw} label="rescan repo"    sub="re-detect HEAD" />
+        <ActionRow Icon={Pin}       label="pin knowledge…" sub="surface a block in context" />
+        <ActionRow Icon={FolderInput} label="set cwd…"     sub="change working dir" />
+        <ActionRow Icon={Unlink2}   label="unbind repo"    sub="drop git context" danger />
+        <ActionRow Icon={X}         label="close pane"     sub="" danger />
       </MenuSection>
     </div>
   );
@@ -120,13 +127,13 @@ function MenuRow({ on, children }: { on?: boolean; children: React.ReactNode }) 
   );
 }
 
-function ActionRow({ icon, label, sub, danger }: { icon: string; label: string; sub: string; danger?: boolean }) {
+function ActionRow({ Icon, label, sub, danger }: { Icon: LucideIcon; label: string; sub: string; danger?: boolean }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 8, padding: "6px 8px",
       borderRadius: 5, cursor: "pointer",
     }}>
-      <span style={{ width: 12, color: danger ? "var(--danger)" : "var(--fg-muted)" }}>{icon}</span>
+      <Icon size={12} style={{ flexShrink: 0, color: danger ? "var(--danger)" : "var(--fg-muted)" }} />
       <span style={{ color: danger ? "var(--danger)" : "var(--fg)" }}>{label}</span>
       <span style={{ flex: 1 }} />
       {sub && <span style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{sub}</span>}

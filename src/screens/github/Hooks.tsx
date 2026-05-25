@@ -1,4 +1,14 @@
-const HOOKS = [
+import { useState } from "react";
+
+interface Hook {
+  n: string;
+  on: boolean;
+  scope: "shared" | "local";
+  desc: string;
+  cmds: string[];
+}
+
+const DEFAULT_HOOKS: Hook[] = [
   { n: "pre-commit",  on: true,  scope: "shared",
     desc: "Runs before each commit; non-zero exit blocks it.",
     cmds: ["cargo fmt --check", "cargo clippy --quiet", "tools/check-blocked-paths.sh"] },
@@ -20,6 +30,14 @@ const HOOKS = [
 ];
 
 export function HooksBody() {
+  const [hooks, setHooks] = useState<Hook[]>(DEFAULT_HOOKS);
+
+  function toggleHook(name: string) {
+    setHooks(prev => prev.map(h => h.n === name ? { ...h, on: !h.on } : h));
+  }
+
+  const activeCount = hooks.filter(h => h.on).length;
+
   return (
     <>
       <div className="card" style={{ padding: "14px 18px", marginBottom: 14 }}>
@@ -48,19 +66,20 @@ export function HooksBody() {
         }}>
           <span>core.hooksPath = <span style={{ color: "var(--accent)" }}>.githooks/</span></span>
           <span>·</span>
-          <span>6 hooks · 4 active</span>
+          <span>{hooks.length} hooks · {activeCount} active</span>
           <span>·</span>
           <span>shared with all collaborators on commit</span>
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
-        {HOOKS.map(h => (
+        {hooks.map(h => (
           <div key={h.n} className="card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
               <span style={{
                 width: 7, height: 7, borderRadius: "50%",
                 background: h.on ? "var(--success)" : "var(--fg-dim)",
+                flexShrink: 0, alignSelf: "center",
               }} />
               <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{h.n}</h3>
               <span className={"tag " + (h.scope === "shared" ? "amber" : "")} style={{ fontSize: 9.5 }}>
@@ -68,18 +87,21 @@ export function HooksBody() {
               </span>
               <div style={{ flex: 1 }} />
               <button className="btn ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>edit</button>
-              <label style={{ display: "flex", alignItems: "center" }}>
+              <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}
+                onClick={() => toggleHook(h.n)}>
                 <span style={{
                   width: 24, height: 14, borderRadius: 99,
                   background: h.on ? "var(--accent)" : "var(--bg-elev2)",
                   border: "1px solid " + (h.on ? "transparent" : "var(--border)"),
                   position: "relative",
+                  transition: "background .15s",
                 }}>
                   <span style={{
                     position: "absolute", top: 1,
                     ...(h.on ? { right: 1 } : { left: 1 }),
                     width: 10, height: 10, borderRadius: "50%",
                     background: h.on ? "#1a120a" : "var(--fg-dim)",
+                    transition: "left .15s, right .15s",
                   }} />
                 </span>
               </label>

@@ -49,22 +49,31 @@ export function ConsoleView({ small = false, withInput = true, turns, draft, str
           <div style={{
             display: "flex", alignItems: "center", gap: 6,
             fontFamily: "var(--mono)", fontSize: small ? 10 : 11,
-            color: draft ? "var(--fg)" : "var(--fg-dim)",
           }}>
-            <span style={{ color: "var(--accent)" }}>▸</span>
-            <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {draft ?? "ask claude… try /scan to load repo context"}
-            </span>
+            <span style={{ color: "var(--accent)", flex: "0 0 auto" }}>▸</span>
+            <textarea
+              defaultValue={draft}
+              placeholder="ask claude… try /scan to load repo context"
+              rows={1}
+              style={{
+                flex: 1,
+                background: "transparent", border: "none", outline: "none",
+                resize: "none", overflow: "hidden",
+                fontFamily: "var(--mono)", fontSize: small ? 10 : 11,
+                color: "var(--fg)", lineHeight: 1.5,
+                padding: 0,
+              }}
+            />
             {!small && (
               <>
                 <span style={{
                   padding: "0 5px", borderRadius: 3,
                   background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-                  color: "var(--fg-muted)", fontSize: 10,
+                  color: "var(--fg-muted)", fontSize: 10, flex: "0 0 auto",
                 }}>+ attach</span>
                 <span style={{
                   padding: "0 5px", borderRadius: 3,
-                  background: "var(--accent)", color: "#1a120a", fontWeight: 600, fontSize: 10,
+                  background: "var(--accent)", color: "#1a120a", fontWeight: 600, fontSize: 10, flex: "0 0 auto",
                 }}>↵ send</span>
               </>
             )}

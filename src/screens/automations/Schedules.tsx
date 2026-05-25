@@ -1,6 +1,14 @@
-import { SCHEDULES } from "../../data/mock";
+import { useState } from "react";
+import { useAppStore } from "../../store";
+import type { Schedule } from "../../data/mock";
 
-type Schedule = typeof SCHEDULES[number];
+function resolvePaneName(
+  tabIdx: number,
+  paneIdx: number,
+  names: Record<number, Record<number, string>>,
+): string {
+  return names[tabIdx]?.[paneIdx] ?? `console-${tabIdx + 1}-${paneIdx + 1}`;
+}
 
 function Lbl({ c, children }: { c: "accent" | "info" | "success" | "muted"; children: React.ReactNode }) {
   return (
@@ -150,7 +158,24 @@ function KnowledgeAction({ detail }: { detail: string }) {
   );
 }
 
-function ScheduleEditor({ s }: { s: Schedule }) {
+function ScheduleEditor({ s, onSave, onRemove }: {
+  s: Schedule;
+  onSave: (patch: Partial<Schedule>) => void;
+  onRemove: () => void;
+}) {
+  const { tabs, activeTabIdx, paneNames } = useAppStore();
+  const [name, setName] = useState(s.name);
+  const [on, setOn] = useState(s.on);
+  const [selectedTabIdx, setSelectedTabIdx] = useState(activeTabIdx);
+  const [selectedPaneIdx, setSelectedPaneIdx] = useState(0);
+
+  const selectedTab = tabs[selectedTabIdx] ?? tabs[0];
+  const [cols, rows] = selectedTab?.layout.split("×").map(Number) ?? [1, 1];
+  const paneCount = cols * rows;
+  const paneOptions = Array.from({ length: paneCount }, (_, i) =>
+    resolvePaneName(selectedTabIdx, i, paneNames)
+  );
+
   return (
     <div className="card" style={{ padding: 0 }}>
       <div style={{
@@ -158,29 +183,41 @@ function ScheduleEditor({ s }: { s: Schedule }) {
         display: "flex", alignItems: "center", gap: 10,
       }}>
         <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{s.id}</span>
-        <input className="input" defaultValue={s.name}
+        <input
+          className="input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           style={{
             flex: 1, height: 30, fontSize: 14, fontFamily: "var(--sans)",
             background: "transparent", border: "1px solid transparent",
-          }} />
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 11 }}>
+          }}
+        />
+        <label
+          onClick={() => setOn(v => !v)}
+          style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 11, cursor: "pointer" }}
+        >
           <span style={{
             width: 30, height: 18, borderRadius: 99,
-            background: s.on ? "var(--accent)" : "var(--bg-elev2)",
-            border: "1px solid " + (s.on ? "transparent" : "var(--border)"),
+            background: on ? "var(--accent)" : "var(--bg-elev2)",
+            border: "1px solid " + (on ? "transparent" : "var(--border)"),
             position: "relative",
           }}>
             <span style={{
               position: "absolute", top: 2,
-              ...(s.on ? { right: 2 } : { left: 2 }),
+              ...(on ? { right: 2 } : { left: 2 }),
               width: 14, height: 14,
-              background: s.on ? "#1a120a" : "var(--fg-dim)",
+              background: on ? "#1a120a" : "var(--fg-dim)",
               borderRadius: "50%",
             }} />
           </span>
           enabled
         </label>
-        <button className="btn">save</button>
+        <button
+          className="btn ghost"
+          style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+          onClick={onRemove}
+        >delete</button>
+        <button className="btn" onClick={() => onSave({ name: name.trim() || s.name, on })}>save</button>
       </div>
 
       <div style={{
@@ -225,19 +262,34 @@ function ScheduleEditor({ s }: { s: Schedule }) {
 
         <Lbl c="info">target</Lbl>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <Field label="console">
-            <select className="input" defaultValue={s.target.split(" › ")[0]}>
-              <option>orchestrator</option><option>feat/tunnel</option>
-              <option>scratch</option><option>all consoles</option>
+          <Field label="tab">
+            <select
+              className="input"
+              value={selectedTabIdx}
+              onChange={(e) => {
+                setSelectedTabIdx(Number(e.target.value));
+                setSelectedPaneIdx(0);
+              }}
+            >
+              {tabs.map((t, i) => (
+                <option key={i} value={i}>{t.name}</option>
+              ))}
+              <option value={-1}>all tabs</option>
             </select>
           </Field>
-          <Field label="pane (agent)">
-            <select className="input" defaultValue={s.target.split(" › ")[1] ?? ""}>
-              <option>@scratch</option><option>@reviewer</option>
-              <option>@docs</option><option>@github</option><option>(any free)</option>
+          <Field label="pane">
+            <select
+              className="input"
+              value={selectedPaneIdx}
+              onChange={(e) => setSelectedPaneIdx(Number(e.target.value))}
+            >
+              {paneOptions.map((name, i) => (
+                <option key={i} value={i}>{name}</option>
+              ))}
+              <option value={-1}>(any free)</option>
             </select>
           </Field>
-          <Field label="if console isn't open">
+          <Field label="if tab isn't open">
             <select className="input" defaultValue="open">
               <option value="open">open it</option><option>skip</option><option>queue</option>
             </select>
@@ -332,59 +384,110 @@ function ScheduleHistory({ s }: { s: Schedule }) {
 }
 
 export function SchedulesTab() {
-  const sel = SCHEDULES.find(s => s.sel) ?? SCHEDULES[0];
+  const { schedules, addSchedule, updateSchedule, removeSchedule } = useAppStore();
+  const [selectedId, setSelectedId] = useState<string | null>(schedules[0]?.id ?? null);
+  const [filter, setFilter] = useState("");
+
+  const filtered = schedules.filter(s =>
+    !filter.trim() || s.name.toLowerCase().includes(filter.toLowerCase())
+  );
+  const sel = schedules.find(s => s.id === selectedId) ?? schedules[0] ?? null;
+  const armed = schedules.filter(s => s.on).length;
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 16, height: "100%" }}>
       <div className="card" style={{ padding: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ padding: "12px 14px 8px", borderBottom: "1px solid var(--border-soft)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <h3 style={{ margin: 0 }}>Schedules</h3>
-            <span className="hint">5 total · 4 armed</span>
+            {schedules.length > 0 && (
+              <span className="hint">{schedules.length} total · {armed} armed</span>
+            )}
           </div>
-          <input className="input" placeholder="filter…" style={{ marginTop: 8, height: 24, fontSize: 10.5 }} />
+          <input
+            className="input"
+            placeholder="filter…"
+            style={{ marginTop: 8, height: 24, fontSize: 10.5 }}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
         </div>
         <div style={{ flex: 1, overflow: "auto" }}>
-          {SCHEDULES.map(s => (
-            <div key={s.id} style={{
-              padding: "11px 14px", borderBottom: "1px solid var(--border-soft)",
-              background: s.sel ? "var(--bg-elev)" : "transparent",
-              borderLeft: s.sel ? "2px solid var(--accent)" : "2px solid transparent",
-              paddingLeft: s.sel ? 12 : 14,
-              cursor: "pointer",
+          {filtered.length === 0 && (
+            <div style={{
+              padding: "24px 14px", fontFamily: "var(--mono)", fontSize: 11,
+              color: "var(--fg-dim)", textAlign: "center",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{
-                  width: 7, height: 7, borderRadius: "50%",
-                  background: s.on ? "var(--success)" : "var(--fg-dim)",
-                }} />
-                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{s.id}</span>
-                <span style={{ flex: 1 }} />
-                <span className={"tag " + (s.action === "knowledge" ? "info" : "")} style={{ fontSize: 9.5 }}>
-                  {s.action}
-                </span>
-              </div>
-              <div style={{
-                fontSize: 12, color: s.sel ? "var(--fg)" : "var(--fg-muted)",
-                marginTop: 4, fontWeight: 500,
-              }}>{s.name}</div>
-              <div style={{
-                marginTop: 5, fontFamily: "var(--mono)", fontSize: 9.5,
-                color: "var(--fg-dim)", display: "flex", gap: 8, flexWrap: "wrap",
-              }}>
-                <span>⏱ {s.when}</span>
-                <span>→ {s.target}</span>
-              </div>
+              {schedules.length === 0 ? "No schedules yet." : "No matches."}
             </div>
-          ))}
+          )}
+          {filtered.map(s => {
+            const active = s.id === (sel?.id ?? "");
+            return (
+              <div key={s.id} onClick={() => setSelectedId(s.id)} style={{
+                padding: "11px 14px", borderBottom: "1px solid var(--border-soft)",
+                background: active ? "var(--bg-elev)" : "transparent",
+                borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
+                paddingLeft: active ? 12 : 14,
+                cursor: "pointer",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{
+                    width: 7, height: 7, borderRadius: "50%",
+                    background: s.on ? "var(--success)" : "var(--fg-dim)",
+                  }} />
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{s.id}</span>
+                  <span style={{ flex: 1 }} />
+                  <span className={"tag " + (s.action === "knowledge" ? "info" : "")} style={{ fontSize: 9.5 }}>
+                    {s.action}
+                  </span>
+                </div>
+                <div style={{
+                  fontSize: 12, color: active ? "var(--fg)" : "var(--fg-muted)",
+                  marginTop: 4, fontWeight: 500,
+                }}>{s.name}</div>
+                <div style={{
+                  marginTop: 5, fontFamily: "var(--mono)", fontSize: 9.5,
+                  color: "var(--fg-dim)", display: "flex", gap: 8, flexWrap: "wrap",
+                }}>
+                  <span>⏱ {s.when}</span>
+                  {s.target && <span>→ {s.target}</span>}
+                </div>
+              </div>
+            );
+          })}
           <div style={{ padding: "12px 14px" }}>
-            <button className="btn ghost" style={{ width: "100%", justifyContent: "center" }}>+ new schedule</button>
+            <button
+              className="btn ghost"
+              style={{ width: "100%", justifyContent: "center" }}
+              onClick={() => { addSchedule(); }}
+            >+ new schedule</button>
           </div>
         </div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-        <ScheduleEditor s={sel} />
-        <ScheduleHistory s={sel} />
+        {sel ? (
+          <>
+            <ScheduleEditor
+              key={sel.id}
+              s={sel}
+              onSave={(patch) => updateSchedule(sel.id, patch)}
+              onRemove={() => {
+                removeSchedule(sel.id);
+                setSelectedId(schedules.find(s => s.id !== sel.id)?.id ?? null);
+              }}
+            />
+            <ScheduleHistory s={sel} />
+          </>
+        ) : (
+          <div style={{
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)",
+          }}>
+            Select a schedule or create one to get started.
+          </div>
+        )}
       </div>
     </div>
   );

@@ -5,7 +5,8 @@ node_modules/
 dist/
 dist-ssr/
 
-# Tauri build artifacts
+# Tauri / Cargo build artifacts
+/target/
 src-tauri/target/
 src-tauri/gen/
 
