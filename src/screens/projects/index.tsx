@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useAppStore } from "../../store";
 import { ProjectsEmpty } from "./Empty";
 import { ProjectsList } from "./ProjectsList";
@@ -6,10 +7,32 @@ import { Roadmap } from "./Roadmap";
 import { Issues } from "./Issues";
 import { Insights } from "./Insights";
 import { Planning } from "./Planning";
-
+import { ProjectsSummary, ProjectsPageModeStrip } from "./ProjectsSummary";
+import { useProjectScan } from "./useProjectScan";
 
 export function ProjectsScreen() {
-  const { githubConnected, projectsView, projectsBoardTab } = useAppStore();
+  // Re-resolve the active project's repos + plan on tab open / project change.
+  useProjectScan();
+
+  const {
+    githubConnected,
+    projectsPageMode,
+    projectsView,
+    projectsBoardTab,
+    activeProjectId,
+    planningPitch,
+    planningTitle,
+    planningSessionKey,
+  } = useAppStore();
+
+  const planningEverShown = useRef(false);
+  if (projectsView === "planning") planningEverShown.current = true;
+
+  // Single source of truth for the session identity, frozen at session start.
+  // Remounting Planning only when this changes means publish assigning a project
+  // id (or a title edit) no longer tears down the active session. Fallback keeps
+  // older sessions working if the key was never set.
+  const planningKey = planningSessionKey || activeProjectId || `${planningTitle}::${planningPitch}`;
 
   if (!githubConnected) {
     return (
@@ -19,28 +42,39 @@ export function ProjectsScreen() {
     );
   }
 
-  if (projectsView === "planning") {
-    return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <Planning />
-      </div>
-    );
-  }
-
-  if (projectsView === "board") {
-    return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        {projectsBoardTab === "roadmap"  && <Roadmap />}
-        {projectsBoardTab === "board"    && <ProjectBoard />}
-        {projectsBoardTab === "issues"   && <Issues />}
-        {projectsBoardTab === "insights" && <Insights />}
-      </div>
-    );
-  }
-
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <ProjectsList />
+      <ProjectsPageModeStrip />
+
+      {/* Summary page */}
+      {projectsPageMode === "summary" && <ProjectsSummary />}
+
+      {/* Projects views — kept mounted via CSS when in summary so Planning PTY survives */}
+      <div style={{
+        display: projectsPageMode === "projects" ? "flex" : "none",
+        flex: 1, flexDirection: "column", minHeight: 0,
+      }}>
+        {/* Planning — mounted once on first visit, then CSS-hidden */}
+        {planningEverShown.current && (
+          <div style={{
+            display: projectsView === "planning" ? "flex" : "none",
+            flex: 1, flexDirection: "column", minHeight: 0,
+          }}>
+            <Planning key={planningKey} visible={projectsView === "planning"} />
+          </div>
+        )}
+
+        <div style={{
+          display: projectsView !== "planning" ? "flex" : "none",
+          flex: 1, flexDirection: "column", minHeight: 0,
+        }}>
+          {projectsView === "board" && projectsBoardTab === "roadmap"  && <Roadmap />}
+          {projectsView === "board" && projectsBoardTab === "board"    && <ProjectBoard />}
+          {projectsView === "board" && projectsBoardTab === "issues"   && <Issues />}
+          {projectsView === "board" && projectsBoardTab === "insights" && <Insights />}
+          {projectsView !== "board" && <ProjectsList />}
+        </div>
+      </div>
     </div>
   );
 }

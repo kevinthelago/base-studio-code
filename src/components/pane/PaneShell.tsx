@@ -20,8 +20,14 @@ interface PaneShellProps {
   banner?: React.ReactNode;
   menuOpen?: boolean;
   focused?: boolean;
+  fullscreen?: boolean;
+  disabled?: boolean;
+  /** Hidden but kept mounted (e.g. a non-maximized pane while another is fullscreen). */
+  hidden?: boolean;
   onViewChange?: (view: ViewKey) => void;
   onMenuToggle?: () => void;
+  onToggleFullscreen?: () => void;
+  onToggleDisable?: () => void;
   onFocus?: () => void;
   onRename?: (name: string) => void;
   onPickDirectory?: () => void;
@@ -41,8 +47,13 @@ export function PaneShell({
   banner,
   menuOpen = false,
   focused = false,
+  fullscreen = false,
+  disabled = false,
+  hidden = false,
   onViewChange,
   onMenuToggle,
+  onToggleFullscreen,
+  onToggleDisable,
   onFocus,
   onRename,
   onPickDirectory,
@@ -53,13 +64,26 @@ export function PaneShell({
   const viewRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<
+    { right: number; maxHeight: number; top?: number; bottom?: number } | null
+  >(null);
 
-  // Compute fixed position from the button whenever the menu opens
+  // Position the menu from the button when it opens. Open toward whichever side
+  // has more room (so lower panes flip the menu UPWARD instead of clipping off
+  // the bottom of the window) and cap its height to the available space so it
+  // scrolls rather than overflowing the window edge.
   useEffect(() => {
     if (menuOpen && menuButtonRef.current) {
       const r = menuButtonRef.current.getBoundingClientRect();
-      setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+      const margin = 8;
+      const right = window.innerWidth - r.right;
+      const spaceBelow = window.innerHeight - r.bottom - margin;
+      const spaceAbove = r.top - margin;
+      if (spaceBelow >= spaceAbove) {
+        setMenuPos({ top: r.bottom + 4, right, maxHeight: spaceBelow });
+      } else {
+        setMenuPos({ bottom: window.innerHeight - r.top + 4, right, maxHeight: spaceAbove });
+      }
     }
   }, [menuOpen]);
 
@@ -119,7 +143,9 @@ export function PaneShell({
       onClick={onFocus}
       style={{
         height: "100%",
-        display: "flex", flexDirection: "column",
+        // Hidden panes stay mounted (xterm/PTY/scrollback preserved) — just not displayed.
+        display: hidden ? "none" : "flex",
+        flexDirection: "column",
         position: "relative",
         zIndex: menuOpen || viewOpen ? 10 : 1,
       }}
@@ -289,10 +315,20 @@ export function PaneShell({
       </div>
 
       {menuOpen && menuPos && createPortal(
-        <div ref={menuRef} style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 1000 }}>
+        <div ref={menuRef} style={{
+          position: "fixed",
+          right: menuPos.right,
+          ...(menuPos.top !== undefined ? { top: menuPos.top } : { bottom: menuPos.bottom }),
+          zIndex: 1000,
+        }}>
           <PaneMenu
             agent={agent} repo={repo} branch={branch}
             model={model} active={active} available={available}
+            maxHeight={menuPos.maxHeight}
+            fullscreen={fullscreen}
+            disabled={disabled}
+            onToggleFullscreen={onToggleFullscreen}
+            onToggleDisable={onToggleDisable}
             onClose={onMenuToggle}
             onRename={() => { setDraftName(agent); setEditingName(true); onMenuToggle?.(); }}
             onViewChange={onViewChange}

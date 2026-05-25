@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RefreshCw, Pin, FolderInput, Unlink2, X, GitBranch } from "lucide-react";
+import { RefreshCw, Pin, FolderInput, Unlink2, X, GitBranch, Maximize2, Minimize2, Power, PowerOff } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
 
@@ -18,22 +18,34 @@ interface PaneMenuProps {
   model: ModelId;
   active: ViewKey;
   available: ViewKey[];
+  /** Caps the menu height so it scrolls instead of clipping past the window edge. */
+  maxHeight?: number;
+  /** Whether this pane is currently maximized (fullscreen). */
+  fullscreen?: boolean;
+  /** Whether this pane's console is currently disabled (PTY stopped). */
+  disabled?: boolean;
+  onToggleFullscreen?: () => void;
+  onToggleDisable?: () => void;
   onClose?: () => void;
   onRename?: () => void;
   onViewChange?: (view: ViewKey) => void;
 }
 
 export function PaneMenu({
-  agent, repo, branch, model, active, available, onClose, onRename, onViewChange,
+  agent, repo, branch, model, active, available, maxHeight, fullscreen, disabled,
+  onToggleFullscreen, onToggleDisable, onClose, onRename, onViewChange,
 }: PaneMenuProps) {
   return (
     <div style={{
       width: 268,
+      maxHeight,
       background: "var(--bg-panel)",
       border: "1px solid var(--border)",
       borderRadius: 8,
       boxShadow: "0 18px 50px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02)",
-      overflow: "hidden",
+      // Scroll vertically (capped by maxHeight) but keep rounded corners; the menu's
+      // own drop shadow is unaffected since overflow only clips descendants.
+      overflowX: "hidden", overflowY: "auto",
       fontFamily: "var(--mono)", fontSize: 11,
     }}>
       {/* Header */}
@@ -99,6 +111,19 @@ export function PaneMenu({
 
       {/* Pane actions */}
       <MenuSection label="pane" last>
+        <ActionRow
+          Icon={fullscreen ? Minimize2 : Maximize2}
+          label={fullscreen ? "minimize pane" : "maximize pane"}
+          sub={fullscreen ? "back to grid" : "fill the tab"}
+          onClick={() => { onToggleFullscreen?.(); onClose?.(); }}
+        />
+        <ActionRow
+          Icon={disabled ? Power : PowerOff}
+          label={disabled ? "enable console" : "disable console"}
+          sub={disabled ? "restart session" : "stop session"}
+          danger={!disabled}
+          onClick={() => { onToggleDisable?.(); onClose?.(); }}
+        />
         <ActionRow Icon={RefreshCw}   label="rescan repo"    sub="re-detect HEAD" />
         <ActionRow Icon={Pin}         label="pin knowledge…" sub="surface a block in context" />
         <ActionRow Icon={FolderInput} label="set cwd…"       sub="change working dir" />

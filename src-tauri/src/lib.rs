@@ -16,7 +16,117 @@ struct PtySession {
 
 struct PtyState(Mutex<HashMap<String, PtySession>>);
 
+// ── Logging / performance ────────────────────────────────────────────────────
+
+/// ANSI color for a log level, used by the custom log format. Pure.
+fn level_color(level: log::Level) -> &'static str {
+    match level {
+        log::Level::Error => "\x1b[31m", // red
+        log::Level::Warn  => "\x1b[33m", // yellow
+        log::Level::Info  => "\x1b[32m", // green
+        log::Level::Debug => "\x1b[36m", // cyan
+        log::Level::Trace => "\x1b[90m", // bright black
+    }
+}
+
+/// RAII timer: logs how long a scope took when it drops, but only if the elapsed
+/// time crosses `threshold_ms` — so it surfaces slow operations without noise.
+/// Lives across `.await` points, so wrapping an async command times the whole call.
+struct PerfSpan {
+    label: &'static str,
+    start: std::time::Instant,
+    threshold_ms: u128,
+}
+
+impl PerfSpan {
+    fn new(label: &'static str) -> Self {
+        Self { label, start: std::time::Instant::now(), threshold_ms: 50 }
+    }
+}
+
+impl Drop for PerfSpan {
+    fn drop(&mut self) {
+        let ms = self.start.elapsed().as_millis();
+        if ms >= self.threshold_ms {
+            log::info!("perf · {} took {}ms", self.label, ms);
+        }
+    }
+}
+
 // ── PTY commands ─────────────────────────────────────────────────────────────
+
+/// Splits `bytes` at the last complete UTF-8 character boundary.
+/// Returns `(valid_string, leftover_bytes)` where `leftover_bytes` is any
+/// trailing incomplete multi-byte sequence to prepend to the next read.
+fn split_utf8_at_boundary(bytes: &[u8]) -> (String, Vec<u8>) {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => (s.to_string(), Vec::new()),
+        Err(e) => {
+            let valid_up_to = e.valid_up_to();
+            if e.error_len().is_none() {
+                // Incomplete sequence at end of buffer — hold the trailing
+                // bytes for the next read rather than replacing with U+FFFD.
+                let text = unsafe { std::str::from_utf8_unchecked(&bytes[..valid_up_to]) }.to_string();
+                (text, bytes[valid_up_to..].to_vec())
+            } else {
+                // Genuinely invalid bytes mid-stream — keep going with lossy.
+                (String::from_utf8_lossy(bytes).into_owned(), Vec::new())
+            }
+        }
+    }
+}
+
+/// Converts a native OS path to a bash-compatible POSIX path.
+/// On Windows (Git Bash): `C:\Users\foo` → `/c/Users/foo`.
+/// On Unix: returns the path unchanged.
+fn to_bash_path(p: &str) -> String {
+    #[cfg(windows)]
+    {
+        let s = p.replace('\\', "/");
+        if s.len() >= 2 && s.as_bytes()[1] == b':' {
+            let drive = s[..1].to_lowercase();
+            return format!("/{}{}", drive, &s[2..]);
+        }
+        return s;
+    }
+    #[cfg(not(windows))]
+    p.to_string()
+}
+
+/// Root of the flat, reusable document library: `~/.base-studio-code/documents`.
+/// Holds standalone markdown blocks (`*.md`) plus the library's own `CLAUDE.md`
+/// and `.claude/settings.json`. These are reusable across every project — they
+/// are referenced from a project's `kb_index.md` via a relative path.
+fn documents_dir() -> std::path::PathBuf {
+    bsc_base_dir().join("documents")
+}
+
+/// The project hub directory and the planner session's CWD:
+/// `~/.base-studio-code/projects/<sanitized-project-key>`. Holds the project's
+/// `CLAUDE.md` (ancestor-loaded context for repo sessions), plan sections
+/// (`goal.md`…`risks.md`), control files, `prompts/`, and the cloned repos as
+/// subdirectories.
+fn project_dir(project_key: &str) -> std::path::PathBuf {
+    bsc_base_dir()
+        .join("projects")
+        .join(sanitize_project_key(project_key))
+}
+
+/// The on-disk clone location of a repo within its project hub:
+/// `projects/<sanitized-project-key>/<short-repo-name>`, where the short name is
+/// the part of `owner/name` after the `/`. Each repo clone is a repo session's CWD.
+fn repo_dir(project_key: &str, repo_full_name: &str) -> std::path::PathBuf {
+    let short = repo_full_name.rsplit('/').next().unwrap_or(repo_full_name);
+    project_dir(project_key).join(short)
+}
+
+/// Absolute on-disk location of a project's plan section files, which live FLAT
+/// in the project hub: `~/.base-studio-code/projects/<sanitized-project-key>`.
+/// Plan sections sit alongside the control files (CLAUDE.md, kb_index.md, …) in
+/// the planner's CWD.
+fn plan_dir_for(project_key: &str) -> std::path::PathBuf {
+    project_dir(project_key)
+}
 
 /// Returns `true` when a new session is created, `false` when reconnecting to
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
@@ -28,32 +138,46 @@ async fn pty_create(
     rows: u16,
     cwd: String,
     init_cmd: Option<String>,
+    env: Option<std::collections::HashMap<String, String>>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
     // If a session already exists for this pane (e.g. user switched tabs and
     // switched back), reconnect rather than recreating.
     if state.0.lock().unwrap().contains_key(&pane_id) {
+        log::info!("pty[{pane_id}] reconnect to existing session");
         return Ok(false);
     }
 
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| { log::error!("pty[{pane_id}] openpty failed: {e}"); e.to_string() })?;
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
     let mut cmd = CommandBuilder::new(&shell);
 
     if !cwd.is_empty() {
         cmd.cwd(&cwd);
+        // Pre-accept Claude Code's folder-trust prompt for this directory so the
+        // auto-launched `claude` starts already trusted instead of blocking on
+        // the "Do you trust the files in this folder?" dialog.
+        trust_claude_dir(&cwd);
+    }
+    // Caller-supplied environment flows through generically (e.g. GH_TOKEN).
+    let env_map = env.unwrap_or_default();
+    for (k, v) in &env_map {
+        cmd.env(k, v);
     }
 
-    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let child = pair.slave.spawn_command(cmd)
+        .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
     drop(pair.slave);
 
-    let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
-    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let mut writer = pair.master.take_writer()
+        .map_err(|e| { log::error!("pty[{pane_id}] take_writer failed: {e}"); e.to_string() })?;
+    let mut reader = pair.master.try_clone_reader()
+        .map_err(|e| { log::error!("pty[{pane_id}] clone_reader failed: {e}"); e.to_string() })?;
 
     // Inject bash helpers into every new session.
     // Optional init_cmd is appended after the screen clear so callers can
@@ -63,8 +187,15 @@ async fn pty_create(
         .filter(|s| !s.is_empty())
         .map(|s| format!("; {}", s))
         .unwrap_or_default();
+    // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
+    // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
+    let cd_prefix = if !cwd.is_empty() {
+        format!("cd \"{}\" 2>/dev/null; ", to_bash_path(&cwd))
+    } else {
+        String::new()
+    };
     let osc7 = format!(
-        "__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
+        "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
          __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
          claude() {{ __bsc_state run; command claude \"$@\"; }}; \
          PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
@@ -72,25 +203,111 @@ async fn pty_create(
     );
     writer.write_all(osc7.as_bytes()).ok();
 
-    // Stream PTY output to frontend via Tauri events
-    let pane_id_r = pane_id.clone();
-    let app_r = app.clone();
+    // Stream PTY output to the frontend, COALESCED to ~one event per frame.
+    //
+    // A reader thread decodes bytes and forwards complete UTF-8 chunks over a
+    // channel; an emitter thread batches them and emits at most once per ~16ms.
+    // With many sessions streaming at once, emitting per read floods the Tauri
+    // IPC boundary and the main thread (xterm writes) — the dominant source of
+    // UI lag. Batching collapses that to one event per frame per session.
+    //
+    // The `leftover` buffer holds any trailing incomplete multi-byte sequence
+    // (e.g. ✓, →, box-drawing) so we never split a character across reads.
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let pane_id_rd = pane_id.clone();
     std::thread::spawn(move || {
         let mut buf = vec![0u8; 8192];
+        let mut leftover: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                Ok(0) => { log::info!("pty[{pane_id_rd}] reader EOF"); break; }
+                Err(e) => { log::warn!("pty[{pane_id_rd}] reader error: {e}"); break; }
                 Ok(n) => {
-                    let text = String::from_utf8_lossy(&buf[..n]).into_owned();
-                    let _ = app_r.emit(&format!("pty_data_{}", pane_id_r), text);
+                    leftover.extend_from_slice(&buf[..n]);
+                    let (text, keep) = split_utf8_at_boundary(&leftover);
+                    leftover = keep;
+                    if !text.is_empty() && tx.send(text).is_err() {
+                        break; // emitter gone
+                    }
                 }
             }
         }
-        let _ = app_r.emit(&format!("pty_exit_{}", pane_id_r), ());
+        if !leftover.is_empty() {
+            let _ = tx.send(String::from_utf8_lossy(&leftover).into_owned());
+        }
+        // tx drops here → emitter sees Disconnected and finishes.
     });
 
-    state.0.lock().unwrap()
-        .insert(pane_id, PtySession { writer, master: pair.master, _child: child });
+    let pane_id_em = pane_id.clone();
+    let app_em = app.clone();
+    std::thread::spawn(move || {
+        use std::sync::mpsc::RecvTimeoutError;
+        use std::time::{Duration, Instant};
+        const FLUSH: Duration = Duration::from_millis(16);
+        const MAX_PENDING: usize = 64 * 1024;
+        let evt = format!("pty_data_{}", pane_id_em);
+        let mut pending = String::new();
+        let mut last_emit = Instant::now();
+        let mut total: u64 = 0;
+        // Rolling window to flag sustained output floods.
+        let mut win_start = Instant::now();
+        let mut win_bytes: u64 = 0;
+        let mut win_emits: u64 = 0;
+        let mut done = false;
+        while !done {
+            let mut flush_now = false;
+            match rx.recv_timeout(FLUSH) {
+                Ok(chunk) => {
+                    total += chunk.len() as u64;
+                    win_bytes += chunk.len() as u64;
+                    pending.push_str(&chunk);
+                    if pending.len() >= MAX_PENDING || last_emit.elapsed() >= FLUSH {
+                        flush_now = true;
+                    }
+                }
+                // Idle for a frame — flush trailing output (e.g. the prompt) now.
+                Err(RecvTimeoutError::Timeout) => flush_now = true,
+                Err(RecvTimeoutError::Disconnected) => { flush_now = true; done = true; }
+            }
+            if flush_now && !pending.is_empty() {
+                let _ = app_em.emit(&evt, std::mem::take(&mut pending));
+                win_emits += 1;
+                last_emit = Instant::now();
+            }
+            let secs = win_start.elapsed().as_secs_f64();
+            if secs >= 2.0 {
+                let eps = win_emits as f64 / secs;
+                let bps = win_bytes as f64 / secs;
+                if eps > 60.0 || bps > 128_000.0 {
+                    log::warn!("pty[{pane_id_em}] high output: {eps:.0} emits/s, {bps:.0} B/s");
+                }
+                win_start = Instant::now();
+                win_bytes = 0;
+                win_emits = 0;
+            }
+        }
+        let _ = app_em.emit(&format!("pty_exit_{}", pane_id_em), ());
+        log::info!("pty[{pane_id_em}] session ended ({total} bytes)");
+    });
+
+    log::info!(
+        "pty[{}] created · {}x{} · shell={} · cwd={} · init={}",
+        pane_id, cols, rows, shell,
+        if cwd.is_empty() { "<none>" } else { cwd.as_str() },
+        init_cmd.as_deref().filter(|s| !s.is_empty()).unwrap_or("<none>"),
+    );
+
+    let active = {
+        let mut map = state.0.lock().unwrap();
+        map.insert(pane_id, PtySession { writer, master: pair.master, _child: child });
+        map.len()
+    };
+    // Concurrency is the dominant memory driver — each session is a claude (node)
+    // process + a terminal. Surface it so a 4×4 triage's footprint is visible.
+    log::info!("pty: {active} active session(s)");
+    if active >= 12 {
+        log::warn!("pty: {active} concurrent sessions — high memory pressure (each spawns a claude process + terminal)");
+    }
     Ok(true)
 }
 
@@ -101,10 +318,32 @@ async fn pty_write(
     state: State<'_, PtyState>,
 ) -> Result<(), String> {
     let mut sessions = state.0.lock().unwrap();
-    if let Some(s) = sessions.get_mut(&pane_id) {
-        s.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+    match sessions.get_mut(&pane_id) {
+        Some(s) => s.writer.write_all(data.as_bytes())
+            .map_err(|e| { log::error!("pty[{pane_id}] write failed: {e}"); e.to_string() })?,
+        // Can happen during teardown races; the bytes are simply dropped.
+        None => log::debug!("pty[{pane_id}] write to missing session ({} bytes dropped)", data.len()),
     }
     Ok(())
+}
+
+#[tauri::command]
+fn pty_broadcast(
+    pane_ids: Vec<String>,
+    data: String,
+    state: State<'_, PtyState>,
+) {
+    let mut sessions = state.0.lock().unwrap();
+    let mut hit = 0usize;
+    for id in &pane_ids {
+        if let Some(s) = sessions.get_mut(id) {
+            match s.writer.write_all(data.as_bytes()) {
+                Ok(_)  => hit += 1,
+                Err(e) => log::warn!("pty[{id}] broadcast write failed: {e}"),
+            }
+        }
+    }
+    log::debug!("pty broadcast → {hit}/{} panes", pane_ids.len());
 }
 
 #[tauri::command]
@@ -118,14 +357,15 @@ async fn pty_resize(
     if let Some(s) = sessions.get(&pane_id) {
         s.master
             .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| { log::warn!("pty[{pane_id}] resize to {cols}x{rows} failed: {e}"); e.to_string() })?;
     }
     Ok(())
 }
 
 #[tauri::command]
 async fn pty_kill(pane_id: String, state: State<'_, PtyState>) -> Result<(), String> {
-    state.0.lock().unwrap().remove(&pane_id);
+    let existed = state.0.lock().unwrap().remove(&pane_id).is_some();
+    log::info!("pty[{pane_id}] kill (existed={existed})");
     Ok(())
 }
 
@@ -140,6 +380,7 @@ struct GitInfo {
 
 #[tauri::command]
 async fn git_info(path: String) -> Option<GitInfo> {
+    let _perf = PerfSpan::new("git_info");
     let root_out = std::process::Command::new("git")
         .args(["-C", &path, "rev-parse", "--show-toplevel"])
         .output()
@@ -234,6 +475,7 @@ async fn github_graphql(
     query: String,
     variables: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
+    let _perf = PerfSpan::new("github_graphql");
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
@@ -258,11 +500,13 @@ async fn github_graphql(
         .map_err(|e| format!("Failed to parse response: {}", e))?;
     if !status.is_success() {
         let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        log::warn!("github_graphql HTTP {status}: {msg}");
         return Err(format!("GitHub API error ({}): {}", status, msg));
     }
     if let Some(errors) = json.get("errors") {
         if errors.is_array() && !errors.as_array().unwrap().is_empty() {
             let msg = errors[0]["message"].as_str().unwrap_or("GraphQL error").to_string();
+            log::warn!("github_graphql GraphQL error: {msg}");
             return Err(format!("GraphQL error: {}", msg));
         }
     }
@@ -275,6 +519,7 @@ async fn github_post(
     path: String,
     body: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    let _perf = PerfSpan::new("github_post");
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
@@ -297,6 +542,7 @@ async fn github_post(
         .map_err(|e| format!("Failed to parse response: {}", e))?;
     if !status.is_success() {
         let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        log::warn!("github_post {path} HTTP {status}: {msg}");
         return Err(format!("GitHub API error ({}): {}", status, msg));
     }
     Ok(json)
@@ -304,6 +550,7 @@ async fn github_post(
 
 #[tauri::command]
 async fn github_request(token: String, path: String) -> Result<serde_json::Value, String> {
+    let _perf = PerfSpan::new("github_request");
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
@@ -325,6 +572,7 @@ async fn github_request(token: String, path: String) -> Result<serde_json::Value
         .map_err(|e| format!("Failed to parse response: {}", e))?;
     if !status.is_success() {
         let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        log::warn!("github_request {path} HTTP {status}: {msg}");
         return Err(format!("GitHub API error ({}): {}", status, msg));
     }
     Ok(json)
@@ -332,13 +580,14 @@ async fn github_request(token: String, path: String) -> Result<serde_json::Value
 
 // ── Workspaces ───────────────────────────────────────────────────────────────
 //
-// Two isolated directories under ~/.base-studio-code/:
-//   kb/        — knowledge blocks as markdown files; claude can Read/Write .md
-//   planning/  — claude planning session CWD; has Read access to ../kb/
+// Two roots under ~/.base-studio-code/:
+//   documents/        — flat reusable markdown library; claude can Read/Write .md
+//   projects/<key>/   — project hub + planner session CWD; references reusable
+//                       blocks at ../../documents/{id}.md
 //
-// Each directory gets a .claude/settings.json (tool restrictions) and a
-// CLAUDE.md (auto-loaded system prompt) written on every session start so
-// the instructions stay in sync with the app without manual editing.
+// Each gets a .claude/settings.json (tool restrictions) and a CLAUDE.md
+// (auto-loaded system prompt) written on every session start so the instructions
+// stay in sync with the app without manual editing.
 
 fn home_dir() -> std::path::PathBuf {
     let home = if cfg!(windows) {
@@ -354,12 +603,108 @@ fn bsc_base_dir() -> std::path::PathBuf {
     home_dir().join(".base-studio-code")
 }
 
+/// Checks `~/.claude.json` for valid JSON and resets it to `{}` if corrupt.
+/// Claude CLI aborts on startup when this file is invalid, which happens when
+/// a previous session was interrupted mid-write. Safe to call before any PTY
+/// session that will run the claude CLI.
+fn sanitize_claude_config() {
+    let path = home_dir().join(".claude.json");
+    if !path.exists() { return; }
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if serde_json::from_str::<serde_json::Value>(&content).is_err() {
+            let _ = std::fs::write(&path, "{}");
+        }
+    }
+}
+
+/// Normalises a filesystem path to the form Claude Code uses as a key in the
+/// `projects` map of `~/.claude.json`: forward slashes, an upper-case Windows
+/// drive letter, no `\\?\` verbatim prefix, and no trailing slash (e.g.
+/// `C:\Users\Kevin\proj` → `C:/Users/Kevin/proj`). The key must match exactly
+/// or Claude Code treats the directory as unseen and re-shows the trust prompt.
+fn claude_project_key(path: &str) -> String {
+    let mut s = path.replace('\\', "/");
+    if let Some(rest) = s.strip_prefix("//?/") {
+        s = rest.to_string();
+    }
+    if s.len() >= 2 && s.as_bytes()[1] == b':' && s.as_bytes()[0].is_ascii_alphabetic() {
+        s = format!("{}{}", s[..1].to_uppercase(), &s[1..]);
+    }
+    while s.len() > 1 && s.ends_with('/') {
+        s.pop();
+    }
+    s
+}
+
+/// Sets `projects[key].hasTrustDialogAccepted = true` in a parsed `~/.claude.json`
+/// value, creating the `projects` map and the per-directory entry if absent and
+/// preserving every other field (history, allowedTools, sibling projects, …).
+///
+/// Returns `true` if the value was changed, `false` if `key` was already trusted
+/// (so the caller can skip an unnecessary write and shrink the clobber window
+/// against a concurrently-running `claude`).
+fn mark_dir_trusted(config: &mut serde_json::Value, key: &str) -> bool {
+    use serde_json::{Map, Value};
+    let obj = match config.as_object_mut() {
+        Some(o) => o,
+        None => { *config = Value::Object(Map::new()); config.as_object_mut().unwrap() }
+    };
+    let projects = obj.entry("projects").or_insert_with(|| Value::Object(Map::new()));
+    if !projects.is_object() { *projects = Value::Object(Map::new()); }
+    let entry = projects.as_object_mut().unwrap()
+        .entry(key.to_string()).or_insert_with(|| Value::Object(Map::new()));
+    if !entry.is_object() { *entry = Value::Object(Map::new()); }
+    let entry = entry.as_object_mut().unwrap();
+    if entry.get("hasTrustDialogAccepted") == Some(&Value::Bool(true)) {
+        return false;
+    }
+    entry.insert("hasTrustDialogAccepted".into(), Value::Bool(true));
+    true
+}
+
+/// Pre-accepts Claude Code's per-directory trust prompt for `cwd` so a `claude`
+/// session auto-launched there starts already trusted (no blocking "Do you
+/// trust the files in this folder?" dialog).
+///
+/// Merges into the existing `~/.claude.json` rather than replacing it, and
+/// refuses to touch a non-empty file it can't parse (leaving recovery to
+/// [`sanitize_claude_config`]) so a corrupt config is never clobbered here.
+/// No-op for an empty `cwd` or when the directory is already trusted.
+fn trust_claude_dir(cwd: &str) {
+    if cwd.is_empty() { return; }
+    let path = home_dir().join(".claude.json");
+    let mut config = match std::fs::read_to_string(&path) {
+        Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
+            Ok(v) => v,
+            Err(e) => { log::warn!("trust_claude_dir: ~/.claude.json unparseable ({e}); skipping"); return; }
+        },
+        Err(_) => serde_json::json!({}), // missing file → start fresh
+    };
+    let key = claude_project_key(cwd);
+    if !mark_dir_trusted(&mut config, &key) { return; }
+    match serde_json::to_string_pretty(&config) {
+        Ok(s) => match std::fs::write(&path, s) {
+            Ok(())  => log::info!("trust_claude_dir: pre-trusted {key}"),
+            Err(e)  => log::warn!("trust_claude_dir: write {} failed: {e}", path.display()),
+        },
+        Err(e) => log::warn!("trust_claude_dir: serialize failed: {e}"),
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct KbBlockData {
     id:      String,
     title:   String,
     tags:    Vec<String>,
     content: String,
+}
+
+#[derive(serde::Deserialize)]
+struct AutomationData {
+    id:       String,
+    name:     String,
+    command:  String,
+    schedule: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -370,80 +715,899 @@ struct WorkspacePaths {
 
 const KB_CLAUDE_MD: &str = r#"# base-studio-code · Knowledge Base
 
-You manage knowledge blocks for the base-studio-code platform. Knowledge blocks
-are markdown files, tagged by tech stack, that get injected as context into AI
-coding agent sessions.
+You manage a library of markdown articles. Each article is a reusable piece of
+context that gets injected into AI coding sessions based on the project's tech stack.
 
-## File format
+## Your role
 
-Each block is a `.md` file with YAML frontmatter:
+Help the user create, edit, and organise articles. When asked to:
+- **Create** an article — write a new `.md` file with a descriptive kebab-case filename.
+- **Edit** an article — read the file first, then write the updated version.
+- **List** what exists — use the Glob or Read tools to inspect the directory.
 
-    ---
-    id: blk_xxxx
-    title: Descriptive Title
-    tags: [rust, react, postgres]
-    ---
+## Conventions
 
-    Block content here...
-
-## Responsibilities
-
-- Read existing blocks to understand the current knowledge base
-- Create new `.md` files for new knowledge blocks
-- Edit existing blocks to improve or update them
-- Keep content concise, focused, and reusable across projects
+- One file per topic: `react-testing.md`, `rust-error-handling.md`, `postgres-migrations.md`
+- No subdirectories — everything lives at the top level of this directory.
+- Start each file with a `# Title` heading; the rest is freeform markdown.
+- Write for a developer reading in a hurry: short, concrete, actionable.
+- Keep articles focused — split broad topics into smaller targeted files.
 
 ## Constraints
 
-Only `.md` files in this directory. No shell commands. No external URLs.
+Only `.md` files in this directory. No shell commands, no external URLs.
 "#;
 
-const PLANNING_CLAUDE_MD: &str = r#"# base-studio-code · Project Planner
+// ── Knowledge base workspace ──────────────────────────────────────────────────
 
-Guide the user through planning a software project one question at a time, then
-emit a structured plan that the app publishes to GitHub as milestones and issues.
+/// Creates the flat reusable document library at `documents/`, writing CLAUDE.md
+/// and .claude/settings.json. Safe to call on every mount — overwrites config
+/// files but leaves articles alone. Returns the library path.
+#[tauri::command]
+async fn setup_kb_workspace() -> Result<String, String> {
+    sanitize_claude_config();
+    let kb_dir     = documents_dir();
+    let claude_dir = kb_dir.join(".claude");
+    std::fs::create_dir_all(&claude_dir).map_err(|e| e.to_string())?;
+    std::fs::write(
+        claude_dir.join("settings.json"),
+        r#"{"permissions":{"allow":["Read","Write","Edit"],"deny":["Bash","WebFetch","WebSearch","MultiEdit"]}}"#,
+    ).map_err(|e| e.to_string())?;
+    std::fs::write(kb_dir.join("CLAUDE.md"), KB_CLAUDE_MD)
+        .map_err(|e| e.to_string())?;
+    Ok(kb_dir.to_string_lossy().into_owned())
+}
 
-## Knowledge base
+// ── Planning workspace CLAUDE.md templates ───────────────────────────────────
+//
+// Two startup scripts depending on whether the user is planning a brand-new
+// project or expanding an existing one. Context placeholders ({PITCH},
+// {PROJECT_NAME}, {PROJECT_NUMBER}) are replaced at runtime by setup_workspaces.
+//
+// Both templates share the same plan_update output format and GitHub tools
+// section. The key difference is the orientation workflow:
+//
+//   NEW      → discovery questions → create repos → emit repo_link tags → plan
+//   EXISTING → find/confirm repos → emit repo_link tags → read context → plan
+//
+// repo_link tags are parsed by the frontend and trigger an automatic clone
+// into ~/.base-studio-code/projects/<project>/<repo>/ so the app stays in sync.
 
-Knowledge blocks live in `../kb/`. Use the Read tool to load context relevant to
-the project's stack before planning. For example, if the project uses Rust and
-React, read the files in `../kb/` tagged with those stacks first.
+const PLANNING_NEW_MD: &str = r#"# base-studio-code · New Project Planner
 
-## Plan output format
+You are starting a brand-new software project. Your job is to understand the
+scope, create the necessary GitHub repositories, and produce a complete project
+plan that is detailed enough for a Claude coding session to start implementing
+without asking clarifying questions.
 
-As you gather information, emit plan sections anywhere in your response using
-these XML tags — the app parses them in real time to populate the plan panel:
+## Pitch
 
-<plan_update section="goal">One or two sentence goal statement.</plan_update>
-<plan_update section="scope">Bullet list of what is in and out of scope.</plan_update>
-<plan_update section="stack">Technology choices with brief justification.</plan_update>
-<plan_update section="phases">[{"name":"Phase 1","description":"...","dueWeeks":2}]</plan_update>
-<plan_update section="risks">Key risks and mitigations.</plan_update>
+{PITCH}
 
-## Workflow
+## Tools available
 
-1. Acknowledge the pitch, then read relevant KB files with the Read tool
-2. Ask one focused question at a time
-3. After each answer emit plan_update tags for the relevant section(s)
-4. Work through: goal → scope → stack → phases → risks
-5. For phases emit valid JSON — 3-5 phases with realistic week estimates
-6. When all sections are drafted, summarize what will publish to GitHub
+| Tool             | What you can do                                                        |
+|------------------|------------------------------------------------------------------------|
+| **Read**         | Read any file on disk                                                  |
+| **Write**        | Create or overwrite any file — plan files, CLAUDE.md, workflow YAMLs  |
+| **Edit**         | Patch a single file in-place                                           |
+| **WebFetch**     | Fetch any URL — package registries, docs, GitHub raw content           |
+| **Bash(git \*)** | Any git subcommand — clone, commit, push, log, diff, status, etc.     |
+| **Bash(gh \*)**  | Any gh CLI subcommand — repos, issues, PRs, labels, milestones, etc.  |
 
-## Saved plans
+**Not available:** generic shell commands (`cp`, `ls`, `cat`, `base64`, `mkdir`, etc.)
+and WebSearch. Use **Read**/**Write** wherever you would use `cat`/`cp`, and
+**WebFetch** for documentation or version lookups.
 
-Write plan summaries to `plans/` as markdown files for reference.
+## Core rule — fill plan sections as you learn (two channels)
+
+As soon as you have content for a section — even a partial draft — do **both**:
+
+**Channel 1 — Write each section file in your current directory** (reliable; survives restarts):
+Use the Write tool to write the section content as plain text or markdown.
+The app polls these files every 2 seconds and updates the right panel.
+Overwrite to refine — each write replaces the previous version.
+
+Section files:
+- `goal.md`         — project vision
+- `scope.md`        — boundaries (in scope / out of scope)
+- `stack.md`        — technology choices
+- `architecture.md` — system design
+- `schema.md`       — data model
+- `api.md`          — API / interface contracts
+- `testing.md`      — quality strategy
+- `cicd.md`         — delivery pipeline
+- `risks.md`        — technical risks
+- `phases.json`     — milestones as a JSON array (see format below)
+
+**Channel 2 — Emit an inline tag** (immediate display before the next poll):
+```
+<plan_update section="goal">content here</plan_update>
+```
+
+Do both whenever you draft or refine a section.
+
+## How discovery works — one section at a time, conversationally
+
+Discovery is a guided conversation, **not** a questionnaire to rush through. You
+work through the sections **one at a time, in order**, and you do not move on
+until the user is happy with the current section.
+
+**Mark the section you are working on** so the UI can highlight it:
+```
+<plan_focus section="goal" />
+```
+Emit this the moment you start a section, before you ask anything.
+
+The loop for each section:
+1. Emit `<plan_focus section="key" />`.
+2. Ask 1–3 focused questions and genuinely discuss — dig into the *why*, surface
+   trade-offs, suggest options grounded in the KB. This is the rich part; take
+   your time.
+3. When you have enough, propose a draft via `<plan_update>` (and write the file).
+4. Ask the user to review it: "Does this look right? Anything to add or change?"
+   Refine from their feedback and re-emit.
+5. **Stop and wait.** Do not draft the next section. When the user approves the
+   section in the UI you will receive a line like
+   `[The user confirmed the "Goal" section ... — continue to the next section.]`
+   — that is your signal to move to the next section's `<plan_focus>`.
+
+**Hard rules:**
+- Never draft a section ahead of the one in focus. One section at a time.
+- Always wait for the user between sections — do not race to fill everything.
+- If a section genuinely does not apply (e.g. `schema` for a static site),
+  say so, propose skipping it, and move on once the user agrees — leave it empty.
+
+## Plan sections — what each one means and when to fill it
+
+### `goal` — Project vision
+Emit as soon as you understand what is being built.
+Content: 2–4 sentences covering (1) what the software does, (2) who uses it,
+(3) the measurable outcome that defines success.
+Re-emit if the purpose or target audience shifts.
+
+Example:
+```
+<plan_update section="goal">
+A CLI tool that lets developers run database migrations against any Postgres
+instance without installing drivers locally. Target users are backend engineers
+on CI pipelines and local dev. Success = migrations run reliably across environments
+with zero manual driver setup.
+</plan_update>
+```
+
+### `scope` — Boundaries
+Emit once you understand which features are in and which are explicitly excluded.
+Content: two labelled groups — "In scope" (concrete deliverables) and "Out of scope"
+(explicit exclusions). Explicit out-of-scope items prevent scope creep later.
+Re-emit when you learn a feature is out of scope.
+
+Example:
+```
+<plan_update section="scope">
+In scope:
+- Migration runner (up/down) for Postgres via connection string
+- Dry-run mode that prints SQL without executing
+- Status command showing which migrations have run
+- GitHub Actions integration via a prebuilt action
+
+Out of scope:
+- GUI or web interface
+- MySQL / SQLite support (v1)
+- Migration generation / scaffolding
+</plan_update>
+```
+
+### `stack` — Technology choices
+Emit as soon as language and framework decisions are made — draft early, refine later.
+Content: one entry per layer: runtime, framework/library, database, auth, testing,
+CI, hosting/deploy target. Include specific versions where known and a one-line
+justification for non-obvious choices.
+Re-emit when a decision changes or is confirmed.
+
+Example:
+```
+<plan_update section="stack">
+- Runtime: Go 1.22 (single binary, no runtime dep — ideal for CLI distribution)
+- Migration lib: golang-migrate/migrate (battle-tested, supports embed FS)
+- Config: Viper (env vars + YAML, 12-factor)
+- Testing: testify + dockertest for real-Postgres integration tests
+- CI: GitHub Actions (native Go support, matrix across OS)
+- Release: GoReleaser (cross-compile + GitHub Releases)
+</plan_update>
+```
+
+### `architecture` — System design
+Emit after the stack is decided and you understand the main data flows.
+Content: (1) named components with a single-sentence responsibility each,
+(2) how they communicate (protocol, direction, sync/async), (3) 2–3 key user
+journeys described as step-by-step data flows. ASCII diagrams welcome.
+Re-emit as the design evolves.
+
+Example:
+```
+<plan_update section="architecture">
+Components:
+- CLI binary — parses flags/config, drives the runner, formats output
+- Runner — applies/rolls back migrations in a transaction, tracks state in schema_migrations table
+- Registry — discovers .sql files from embed.FS or a directory path, orders by timestamp prefix
+
+Key flow (migrate up):
+1. CLI reads DSN from --db flag or DATABASE_URL env
+2. Registry loads and sorts migration files from migrations/
+3. Runner opens transaction, queries schema_migrations for applied set
+4. Applies each pending migration in order, records in schema_migrations, commits
+5. On error: rolls back transaction, exits non-zero with migration filename + Postgres error
+</plan_update>
+```
+
+### `schema` — Data model
+Emit as soon as you know the core entities — start with a subset and add rows as
+more entities emerge. Content: for each model, its table/collection name, key
+fields with types, constraints, relationships, and any important enums.
+Re-emit incrementally as new entities are identified.
+
+Example:
+```
+<plan_update section="schema">
+schema_migrations (managed internally by the runner)
+  - version: TEXT PRIMARY KEY (timestamp prefix, e.g. "20240115_143000")
+  - applied_at: TIMESTAMPTZ NOT NULL DEFAULT now()
+  - checksum: TEXT NOT NULL (SHA-256 of migration file, detects tampering)
+
+No application-owned schema — this is a tooling library, not a data app.
+</plan_update>
+```
+
+### `api` — Interface contracts
+Emit when the external surface (HTTP endpoints or public function signatures)
+becomes clear. Content: for each endpoint or exported function: method + path
+(or signature with param/return types), request/response shape, auth requirement.
+Include the shared error format and status codes.
+Re-emit when endpoints are added or shapes are confirmed.
+
+Example:
+```
+<plan_update section="api">
+Public Go API (library mode):
+  New(db *sql.DB, source Source) *Runner
+  Runner.Up(ctx context.Context, n int) ([]AppliedMigration, error)
+  Runner.Down(ctx context.Context, n int) ([]RolledBackMigration, error)
+  Runner.Status(ctx context.Context) ([]MigrationStatus, error)
+
+CLI surface:
+  migrate up [--n N] --db DSN [--dry-run]
+  migrate down [--n N] --db DSN
+  migrate status --db DSN
+  migrate version
+
+Errors: non-zero exit + human-readable message to stderr; JSON mode with --json flag.
+</plan_update>
+```
+
+### `testing` — Quality strategy
+Emit once the stack is decided (framework choice is stack-dependent).
+Content: (1) unit tests — what to cover, framework, mocking approach, (2)
+integration tests — which boundaries, how the test DB is managed, (3) E2E /
+acceptance tests — 3–5 key scenarios and the tool, (4) coverage target and
+how it is enforced in CI.
+Re-emit if the strategy changes or critical paths are identified.
+
+Example:
+```
+<plan_update section="testing">
+Unit (testify):
+- Registry: sorting, duplicate detection, checksum calculation
+- Runner: migration application logic using a mock DB interface
+- CLI flag parsing and config resolution
+
+Integration (testify + dockertest — spins up real Postgres):
+- Full up/down cycle against a temporary database
+- Rollback on error leaves DB unchanged
+- Checksum mismatch is detected and rejected
+
+CI gate: `go test ./... -race -coverprofile=coverage.out` must pass with ≥80% coverage.
+Pre-commit: `golangci-lint run` blocks on lint errors.
+</plan_update>
+```
+
+### `cicd` — Delivery pipeline
+Emit once the deploy target and branching strategy are known.
+Content: (1) pipeline stages per environment, (2) deployment mechanism,
+(3) secrets management, (4) branching and release versioning.
+Re-emit if the deploy target or tooling changes.
+
+Example:
+```
+<plan_update section="cicd">
+Pipeline (GitHub Actions):
+  PR:      lint (golangci-lint) → test (matrix: ubuntu/macos/windows, Go 1.21/1.22)
+  main:    same as PR + GoReleaser dry-run
+  tag:     GoReleaser full release → GitHub Releases + Docker image to GHCR
+
+Environments:
+  No staging — this is a CLI tool; integration tests use ephemeral Docker Postgres.
+
+Secrets: DATABASE_URL for integration tests stored in repo Actions secrets.
+Branching: trunk-based; feature branches → main via PR. Tags trigger releases.
+Versioning: semver tags (v1.2.3); CHANGELOG.md updated by release-please action.
+</plan_update>
+```
+
+### `phases` — Milestones
+Emit once scope is agreed on.
+Format: JSON array — the app renders each entry as a milestone card.
+Each phase needs a crisp "done when" definition, not a task list. Do NOT include time estimates or week numbers.
+Re-emit as scope shifts.
+
+Example:
+```
+<plan_update section="phases">[
+  {"name":"Phase 1 — Working CLI","description":"migrate up/down/status works against a real Postgres instance; single binary builds cross-platform"},
+  {"name":"Phase 2 — Production ready","description":"integration test suite passes; GoReleaser pipeline ships v1.0.0 to GitHub Releases"},
+  {"name":"Phase 3 — GitHub Action","description":"reusable GHA action published to Marketplace; docs site live"}
+]</plan_update>
+```
+
+### `risks` — Technical risks
+Emit continuously — add a risk whenever you spot one. Never wait for all sections
+to be complete before emitting the first risk.
+Content: for each risk: what could go wrong, likelihood (low/med/high), impact,
+and the planned mitigation. Update as plans solidify.
+
+Example:
+```
+<plan_update section="risks">
+1. Postgres driver version mismatches on CI matrix — likelihood: med, impact: high
+   Mitigation: pin driver version in go.mod; test matrix includes oldest supported PG version.
+
+2. Migration file ordering ambiguity — likelihood: low, impact: high
+   Mitigation: enforce timestamp-prefix naming convention; Registry rejects files without it.
+
+3. Transaction isolation varies by migration type (e.g. CREATE INDEX CONCURRENTLY) — likelihood: med, impact: med
+   Mitigation: document limitation; provide --no-tx flag for DDL migrations that can't run in a transaction.
+</plan_update>
+```
+
+## Workflow (follow in order, one step at a time)
+
+### Step 1 — Read knowledge base
+
+Before asking anything, read all `.md` files in `../kb/`. These contain team
+standards, stack conventions, and templates — your suggestions should match
+existing patterns where possible. Assign relevant blocks now:
+```
+<kb_assign id="block-id" />
+```
+
+### Step 2 — Set up repositories
+
+Do this **before** section discovery, because the Publish button stays disabled
+until at least one `<repo_link>` is registered.
+
+1. **GitHub owner** — `gh api user --jq .login` to get the authenticated user.
+2. **Repository names** — Ask what distinct codebases the project needs (name,
+   purpose, language, public/private). Skip anything the pitch already makes obvious.
+3. As soon as the names are confirmed, for each repo **immediately**:
+   - Create it: `gh repo create {owner}/{name} --{public|private} --description "{description}"`
+   - Clone it: `git clone https://github.com/{owner}/{name} {name}`
+   - Write an initial CLAUDE.md (`Write` tool) to
+     `{name}/CLAUDE.md` with a project overview,
+     tech-stack summary, and relevant KB conventions.
+   - Emit the repo_link tag (one per repo, on its own line):
+     ```
+     <repo_link full_name="{owner}/{name}" />
+     ```
+
+Then tell the user the repos are ready and begin section discovery.
+
+### Step 3 — Section-by-section discovery
+
+Walk the sections in this order, **one at a time**, using the discovery loop
+described above ("How discovery works"):
+
+```
+goal → scope → stack → architecture → schema → api → testing → cicd → phases → risks
+```
+
+For each: emit `<plan_focus>`, ask focused questions and discuss, propose a draft
+via `<plan_update>`, refine from feedback, then **wait** for the user's
+confirmation before advancing to the next section. Never draft ahead.
+
+A natural conversation will surface related sections (e.g. discussing the stack
+informs architecture and CI) — capture those notes, but keep the *focus* on one
+section at a time and only formally draft the section you are on.
+
+### Step 4 — Publish plan to GitHub
+
+After all sections are filled and the user has confirmed them in the right panel,
+push the full plan into GitHub.
+
+Do this IN ORDER for each linked repository:
+
+**4a — Labels** (create once; `gh label create` is idempotent with `--force`):
+```
+gh label create "scope:core"     --color "0075ca" --repo owner/repo --force
+gh label create "scope:infra"    --color "e4e669" --repo owner/repo --force
+gh label create "scope:testing"  --color "d93f0b" --repo owner/repo --force
+gh label create "phase:1"        --color "0e8a16" --repo owner/repo --force
+gh label create "risk:high"      --color "b60205" --repo owner/repo --force
+gh label create "risk:med"       --color "e99695" --repo owner/repo --force
+```
+
+**4b — Milestones** (one per phase from the `phases` section):
+```
+gh api repos/owner/repo/milestones \
+  --method POST \
+  --field title="Phase 1 — <name>" \
+  --field description="<done-when definition>" \
+  --field due_on="<ISO 8601 date>"
+```
+
+**4c — Issues** (one per in-scope deliverable from the `scope` section):
+```
+gh issue create \
+  --repo owner/repo \
+  --title "<deliverable name>" \
+  --body "$(cat <<'EOF'
+## Goal
+<why this deliverable matters>
+
+## Acceptance criteria
+- [ ] criterion 1
+- [ ] criterion 2
+
+## Notes
+<stack/architecture/api details relevant to this feature>
+EOF
+)" \
+  --milestone <number> \
+  --label "scope:core,phase:1"
+```
+
+**4d — Pin the plan as a repo topic and update the description**:
+```
+gh repo edit owner/repo --description "<one-line goal statement>"
+gh repo edit owner/repo --add-topic "<primary-language>" --add-topic "<framework>"
+```
+
+**4e — Commit the plan file to the repo:**
+1. Use the **Write** tool to write `project-plan.md` to
+   `{name}/.github/PROJECT_PLAN.md`
+2. Then commit and push:
+```
+git -C {name} add .github/PROJECT_PLAN.md
+git -C {name} commit -m "docs: add project plan"
+git -C {name} push origin main
+```
+
+Confirm each step succeeded before moving to the next.
+
+## App integration — repositories, knowledge base & automations
+
+**Link a repository** (emit for every repo that belongs to this project — created,
+confirmed by the user, or otherwise associated):
+```
+<repo_link full_name="owner/repo" />
+```
+Emit once per repo at the moment it's confirmed. Duplicates are harmless.
+The tag registers the repo in the app UI and includes it in future workspace syncs.
+
+**Assign a KB block** (read `kb_index.md` for available blocks):
+```
+<kb_assign id="block-id" />
+```
+
+**Suggest an automation** (read `automations.md` for existing ones):
+```
+<automation_assign name="Daily audit" command="npm audit" schedule="0 9 * * 1-5" description="Runs every weekday morning" />
+```
+Schedule is a cron expression — omit for on-demand commands.
+
+## Plan persistence
+
+The app writes `.claude/project-plan.md` into every linked repo when the user
+confirms a section. GitHub is the canonical home — the local file is a cache.
+
+## GitHub tools
+
+`GH_TOKEN` is pre-loaded. Use `gh` for all GitHub operations.
+
+Read `github_context.md` for the authenticated user's login, linked repos, and
+common command examples.
+
+```
+gh repo create owner/name --private --description "..."
+gh api user --jq .login
+gh repo list --limit 100 --json nameWithOwner,description
+gh label create "name" --color "hex" --repo owner/repo --force
+gh api repos/owner/repo/milestones --method POST --field title="..." --field due_on="..."
+gh issue create --repo owner/repo --title "..." --body "..." --milestone N --label "a,b"
+gh repo edit owner/repo --description "..." --add-topic "..."
+```
 "#;
+
+const PLANNING_EXISTING_MD: &str = r#"# base-studio-code · Project Planner
+
+You are planning an existing project. Your job is to read the codebase, understand
+what has been built, identify what is next, and produce a complete plan that is
+detailed enough for a Claude coding session to start implementing without asking
+clarifying questions.
+
+## Project context
+
+- **Name**: {PROJECT_NAME}
+- **GitHub Project**: #{PROJECT_NUMBER}
+
+## Tools available
+
+| Tool             | What you can do                                                        |
+|------------------|------------------------------------------------------------------------|
+| **Read**         | Read any file on disk                                                  |
+| **Write**        | Create or overwrite any file — plan files, CLAUDE.md, workflow YAMLs  |
+| **Edit**         | Patch a single file in-place                                           |
+| **WebFetch**     | Fetch any URL — package registries, docs, GitHub raw content           |
+| **Bash(git \*)** | Any git subcommand — clone, commit, push, log, diff, status, etc.     |
+| **Bash(gh \*)**  | Any gh CLI subcommand — repos, issues, PRs, labels, milestones, etc.  |
+
+**Not available:** generic shell commands (`cp`, `ls`, `cat`, `base64`, `mkdir`, etc.)
+and WebSearch. Use **Read**/**Write** wherever you would use `cat`/`cp`, and
+**WebFetch** for documentation or version lookups.
+
+## Core rule — fill plan sections as you learn (two channels)
+
+As soon as you have content for a section — even a partial draft — do **both**:
+
+**Channel 1 — Write each section file in your current directory** (reliable; survives restarts):
+Use the Write tool to write the section content as plain text or markdown.
+The app polls these files every 2 seconds and updates the right panel.
+Overwrite to refine — each write replaces the previous version.
+
+Section files:
+- `goal.md`         — project vision
+- `scope.md`        — boundaries (in scope / out of scope)
+- `stack.md`        — technology choices
+- `architecture.md` — system design
+- `schema.md`       — data model
+- `api.md`          — API / interface contracts
+- `testing.md`      — quality strategy
+- `cicd.md`         — delivery pipeline
+- `risks.md`        — technical risks
+- `phases.json`     — milestones as a JSON array (see format below)
+
+**Channel 2 — Emit an inline tag** (immediate display before the next poll):
+```
+<plan_update section="goal">content here</plan_update>
+```
+
+Do both whenever you draft or refine a section.
+
+## How discovery works — scan, pre-fill, confirm (one section at a time)
+
+This project already exists, so discovery is **not** an interview from scratch —
+it is you reading the code and proposing what is already true, then letting the
+user correct and extend it. Work through the sections **one at a time, in order**,
+and do not move on until the user is happy with the current one.
+
+**Mark the section you are working on** so the UI can highlight it:
+```
+<plan_focus section="goal" />
+```
+Emit this the moment you start a section, before you scan.
+
+The loop for each section:
+1. Emit `<plan_focus section="key" />`.
+2. **Scan the repo(s) for this section** — read the files that inform it (see the
+   "Emit after reading …" note on each section below: manifests for `stack`,
+   migrations/models for `schema`, `.github/workflows/` for `cicd`, route files
+   for `api`, open issues/milestones for `scope`/`phases`, and so on).
+3. Pre-fill a grounded draft via `<plan_update>` (and write the file), citing
+   actual file/dir/table/route names you found.
+4. Present it to the user: "Here's what I found for <section> — accurate? Anything
+   to add, correct, or change going forward?" Refine from their feedback and re-emit.
+5. **Stop and wait.** Do not draft the next section. When the user approves the
+   section in the UI you will receive a line like
+   `[The user confirmed the "Goal" section ... — continue to the next section.]`
+   — that is your signal to move to the next section's `<plan_focus>`.
+
+**Hard rules:**
+- Never draft a section ahead of the one in focus. One section at a time.
+- Always scan before you propose — the draft must reflect the real codebase.
+- Always wait for the user between sections — do not race to fill everything.
+- If a section genuinely does not apply, say so, propose skipping it, and move on
+  once the user agrees — leave it empty.
+
+## Plan sections — what each one means and when to fill it
+
+### `goal` — Project vision
+Emit as soon as you read CLAUDE.md or the README and understand the project.
+Content: 2–4 sentences — what the software does, who uses it, the measurable
+outcome that defines success. If the goal has evolved, capture current intent.
+
+### `scope` — Boundaries
+Emit after reading open issues and PRs to understand what work is in flight.
+Content: two groups — "In scope" (the next chunk of work) and "Out of scope"
+(explicit exclusions). Be specific; vague scope leads to scope creep.
+Re-emit when you learn a feature is deferred or out of scope.
+
+### `stack` — Technology choices
+Emit immediately after reading the manifests (Cargo.toml / package.json / go.mod etc.).
+Content: one entry per layer — runtime, framework, database, auth, queue, cache,
+deploy target — with specific versions and a note on any non-obvious choices.
+Re-emit if you discover additional dependencies or the stack changes.
+
+### `architecture` — System design
+Emit after reading the source tree and understanding component boundaries.
+Content: (1) named components with single-sentence responsibilities,
+(2) how they communicate, (3) 2–3 key user journeys as step-by-step data flows.
+Reference actual directory names or crate/package names from the codebase.
+
+### `schema` — Data model
+Emit after reading migration files, models, or ORM definitions.
+Content: for each entity — table/collection name, key fields with types,
+constraints, relationships, important enums.
+Include the actual table/collection names from the codebase.
+
+### `api` — Interface contracts
+Emit after reading route definitions, OpenAPI specs, or handler files.
+Content: for each endpoint — method + path, request/response shapes, auth.
+Include the shared error format. Reference actual route files.
+
+### `testing` — Quality strategy
+Emit after reading the test suite structure.
+Content: what frameworks are already in use, what is well-covered, what is
+missing, what the CI gate enforces. Note gaps that need to be filled next.
+
+### `cicd` — Delivery pipeline
+Emit after reading `.github/workflows/` or equivalent.
+Content: current pipeline stages, environments, deploy mechanism, secrets
+approach, branching strategy. Note any gaps or improvements planned.
+
+### `phases` — Milestones
+Emit after understanding scope and the project's current state.
+Format: JSON array written to `phases.json` — the app renders each entry
+as a milestone card. Phase 1 should describe "what done looks like" for the
+immediate next chunk. Do NOT include time estimates or week numbers.
+
+Example:
+```
+<plan_update section="phases">[
+  {"name":"Phase 1 — Auth hardening","description":"OAuth token refresh works silently; session expiry redirects cleanly; all existing tests pass"},
+  {"name":"Phase 2 — Mobile parity","description":"iOS app feature-complete with web; shared API layer; E2E tests cover critical paths"}
+]</plan_update>
+```
+
+### `risks` — Technical risks
+Emit continuously — add a risk the moment you spot one while reading the code.
+Content: for each risk: what, likelihood (low/med/high), impact, mitigation.
+
+## Workflow (follow in order before responding to the user)
+
+### Step 1 — Link repositories
+
+Check whether `## Linked repositories` appears at the bottom of this file.
+
+**If repositories are listed:**
+For each one:
+1. Emit a repo_link tag immediately — this registers the repo in the app:
+   ```
+   <repo_link full_name="owner/repo" />
+   ```
+2. Clone if the local path doesn't exist:
+   ```
+   git clone https://github.com/{full_name} {local_path}
+   ```
+3. Read `{local_path}/CLAUDE.md`, then top-level manifests
+   (`README.md`, `Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, etc.).
+4. Check recent activity:
+   ```
+   gh issue list --repo {full_name} --state open --limit 10
+   gh pr list   --repo {full_name} --state open --limit 5
+   ```
+5. This is orientation only — get the lay of the land. Do **not** pre-fill every
+   section now; you draft each section during the per-section discovery loop
+   (Step 3), scanning the relevant files when that section is in focus.
+
+**If NO repositories are listed:**
+1. `gh api user --jq .login` to get the authenticated user.
+2. `gh repo list --limit 100 --json nameWithOwner,description,pushedAt`
+3. Present the most likely candidates for **{PROJECT_NAME}** — prioritise repos
+   whose names, descriptions, or recent activity match.
+4. Ask: "Which of these repositories belong to this project?"
+5. For each confirmed repo, emit (one per line):
+   ```
+   <repo_link full_name="owner/repo" />
+   ```
+6. Clone and read each confirmed repo for orientation (Step 3 drafts the sections).
+
+**Rule: emit `<repo_link>` for every repo associated with this project** — whether
+listed in context, discovered via `gh repo list`, or newly created. The tag
+registers the repo in the app's UI so it appears in the project strip and gets
+included in future workspace syncs. Emit it once per repo; duplicates are ignored.
+
+### Step 2 — Read knowledge base and assign relevant blocks
+
+Read `kb_index.md` to see available blocks, then read any whose tags match
+the repo stack. Assign relevant blocks immediately:
+```
+<kb_assign id="block-id" />
+```
+Read `automations.md` and suggest automations that make sense for this project.
+
+### Step 3 — Section-by-section discovery
+
+Open with a short orientation message: 3–5 sentences on what you found (current
+state, tech stack, recent activity). Then walk the sections in this order, **one
+at a time**, using the scan→pre-fill→confirm loop described above ("How discovery
+works"):
+
+```
+goal → scope → stack → architecture → schema → api → testing → cicd → phases → risks
+```
+
+For each: emit `<plan_focus>`, scan the files that inform that section, pre-fill a
+grounded draft via `<plan_update>` citing real names from the code, present it for
+the user to correct/extend, then **wait** for their confirmation before advancing.
+Never draft ahead.
+
+### Step 4 — Publish plan to GitHub
+
+Once sections are complete, push the full plan into GitHub so every session and
+collaborator has access without reading a local file.
+
+Do this IN ORDER for each linked repository:
+
+**4a — Labels** (create once; `--force` makes this idempotent):
+```
+gh label create "scope:core"    --color "0075ca" --repo owner/repo --force
+gh label create "scope:infra"   --color "e4e669" --repo owner/repo --force
+gh label create "scope:testing" --color "d93f0b" --repo owner/repo --force
+gh label create "phase:1"       --color "0e8a16" --repo owner/repo --force
+gh label create "risk:high"     --color "b60205" --repo owner/repo --force
+gh label create "risk:med"      --color "e99695" --repo owner/repo --force
+```
+
+**4b — Milestones** (one per phase):
+```
+gh api repos/owner/repo/milestones \
+  --method POST \
+  --field title="Phase 1 — <name>" \
+  --field description="<done-when definition>" \
+  --field due_on="<ISO 8601 date>"
+```
+
+**4c — Issues** (one per in-scope deliverable from the `scope` section):
+```
+gh issue create \
+  --repo owner/repo \
+  --title "<deliverable>" \
+  --body "$(cat <<'EOF'
+## Goal
+<why this deliverable matters>
+
+## Acceptance criteria
+- [ ] criterion 1
+- [ ] criterion 2
+
+## Technical notes
+<relevant stack/architecture/api details>
+EOF
+)" \
+  --milestone <number> \
+  --label "scope:core,phase:1"
+```
+
+**4d — Update repo metadata**:
+```
+gh repo edit owner/repo --description "<one-line goal statement>"
+gh repo edit owner/repo --add-topic "<primary-language>" --add-topic "<framework>"
+```
+
+**4e — Commit the plan file** to the repo:
+1. Use the **Write** tool to write `project-plan.md` to
+   `<local_path>/.github/PROJECT_PLAN.md`
+2. Then branch, commit, push, and open a PR:
+```
+git -C <local_path> checkout -b docs/project-plan
+git -C <local_path> add .github/PROJECT_PLAN.md
+git -C <local_path> commit -m "docs: add project plan"
+git -C <local_path> push -u origin docs/project-plan
+gh pr create --repo owner/repo --title "docs: add project plan" --body "Auto-generated by base-studio-code planner." --base main
+```
+
+Confirm each step succeeded before moving on.
+
+## App integration — repositories, knowledge base & automations
+
+**Link a repository** (emit for every repo confirmed as part of this project —
+listed in context, discovered, or newly created by you during this session):
+```
+<repo_link full_name="owner/repo" />
+```
+Emit once per repo at the moment it's confirmed. Duplicates are harmless.
+The tag registers the repo in the app UI and includes it in future workspace syncs.
+
+**Assign a KB block** (read `kb_index.md` for IDs):
+```
+<kb_assign id="block-id" />
+```
+
+**Suggest an automation**:
+```
+<automation_assign name="Daily audit" command="npm audit" schedule="0 9 * * 1-5" description="Runs every weekday morning" />
+```
+Schedule is a cron expression — omit for on-demand commands.
+
+## Plan persistence
+
+The app writes `.claude/project-plan.md` into every linked repo when the user
+confirms a section. GitHub is the canonical home — write notes to this directory.
+
+## GitHub tools
+
+`GH_TOKEN` is pre-loaded. Use `gh` for all GitHub operations.
+
+Read `github_context.md` for the authenticated user's login, linked repos, and
+common command examples.
+
+```
+gh issue list --repo owner/repo --state open --limit 20
+gh pr list   --repo owner/repo --state open
+gh milestone list --repo owner/repo
+gh api repos/owner/repo/milestones --method POST --field title="..." --field due_on="..."
+gh issue create --repo owner/repo --title "..." --body "..." --milestone N --label "a,b"
+gh label create "name" --color "hex" --repo owner/repo --force
+gh repo edit owner/repo --description "..." --add-topic "..."
+```
+"#;
+
+/// Turns an arbitrary project key into a filesystem-safe directory name.
+/// Canonicalize a project key into a filesystem-safe slug.
+///
+/// Must stay byte-for-byte identical to the frontend's paneId sanitization in
+/// Planning.tsx (`replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 80)`) so the PTY id and
+/// the planning directory always correspond. ASCII-only on purpose — Rust's
+/// `char::is_alphanumeric` accepts Unicode letters, which the JS regex does not.
+fn sanitize_project_key(key: &str) -> String {
+    let s: String = key
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .collect();
+    // Truncate so paths stay manageable.
+    s.chars().take(80).collect()
+}
 
 #[tauri::command]
-async fn setup_workspaces(kb_blocks: Vec<KbBlockData>) -> Result<WorkspacePaths, String> {
-    let base         = bsc_base_dir();
-    let kb_dir       = base.join("kb");
-    let planning_dir = base.join("planning");
+async fn setup_workspaces(
+    kb_blocks: Vec<KbBlockData>,
+    repo_full_names: Vec<String>,
+    automations: Vec<AutomationData>,
+    is_existing: bool,
+    project_name: String,
+    project_number: u32,
+    pitch: String,
+    project_key: String,
+    github_login: String,
+    github_name: String,
+) -> Result<WorkspacePaths, String> {
+    let _perf = PerfSpan::new("setup_workspaces");
+    sanitize_claude_config();
+    // KB session CWD = the flat reusable document library (`documents/`).
+    // Planner session CWD = the project hub (`projects/<key>`), holding plan
+    // sections + control files FLAT alongside the project's CLAUDE.md.
+    let kb_dir       = documents_dir();
+    let safe_key     = sanitize_project_key(&project_key);
+    // A blank key would resolve the project dir to `projects/` itself and scatter
+    // `.claude/` and the plan sections across the parent — refuse it instead.
+    if safe_key.is_empty() {
+        return Err("setup_workspaces: empty project_key".to_string());
+    }
+    let planning_dir = project_dir(&project_key);
 
     for dir in &[
         kb_dir.join(".claude"),
         planning_dir.join(".claude"),
-        planning_dir.join("plans"),
+        planning_dir.join("prompts"),
     ] {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -454,15 +1618,45 @@ async fn setup_workspaces(kb_blocks: Vec<KbBlockData>) -> Result<WorkspacePaths,
         r#"{"permissions":{"allow":["Read","Write","Edit"],"deny":["Bash","MultiEdit","WebFetch","WebSearch"]}}"#,
     ).map_err(|e| e.to_string())?;
 
-    // Planning: read + markdown writes + WebFetch for GitHub API; no shell
+    // Planning: read/write markdown + WebFetch + git + gh CLI
+    // git: clone/fetch/log/status for linked repos
+    // gh:  issues, PRs, releases, workflows — full GitHub access via GH_TOKEN env var
     std::fs::write(
         planning_dir.join(".claude").join("settings.json"),
-        r#"{"permissions":{"allow":["Read","Write","Edit","WebFetch"],"deny":["Bash","MultiEdit","WebSearch"]}}"#,
+        r#"{"permissions":{"allow":["Read","Write","Edit","WebFetch","Bash(git *)","Bash(gh *)"],"deny":["MultiEdit","WebSearch"]}}"#,
     ).map_err(|e| e.to_string())?;
 
     std::fs::write(kb_dir.join("CLAUDE.md"), KB_CLAUDE_MD)
         .map_err(|e| e.to_string())?;
-    std::fs::write(planning_dir.join("CLAUDE.md"), PLANNING_CLAUDE_MD)
+
+    // Choose template and inject project context.
+    let mut planning_md = if is_existing {
+        PLANNING_EXISTING_MD
+            .replace("{PROJECT_NAME}", &project_name)
+            .replace("{PROJECT_NUMBER}", &project_number.to_string())
+    } else {
+        PLANNING_NEW_MD.replace("{PITCH}", &pitch)
+    };
+
+    // Append linked repos section for existing projects (always, even when
+    // empty, so Claude knows the current state and acts accordingly).
+    if is_existing {
+        planning_md.push_str("\n## Linked repositories\n\n");
+        if repo_full_names.is_empty() {
+            planning_md.push_str("No repositories are currently linked to this project.\n");
+        } else {
+            for full_name in &repo_full_names {
+                let local_path = repo_dir(&project_key, full_name);
+                planning_md.push_str(&format!(
+                    "- **{full_name}**\n  - local path: `{local_path}`\n  - clone if missing: `git clone https://github.com/{full_name} {local_path}`\n",
+                    full_name  = full_name,
+                    local_path = local_path.display(),
+                ));
+            }
+        }
+    }
+
+    std::fs::write(planning_dir.join("CLAUDE.md"), planning_md)
         .map_err(|e| e.to_string())?;
 
     // Sync every KB block to disk as a markdown file (overwrite on each call)
@@ -477,6 +1671,87 @@ async fn setup_workspaces(kb_blocks: Vec<KbBlockData>) -> Result<WorkspacePaths,
         std::fs::write(kb_dir.join(format!("{}.md", block.id)), content)
             .map_err(|e| e.to_string())?;
     }
+
+    // Write a KB index so Claude can quickly see what's available without
+    // reading every individual block file. The planner's session CWD is this
+    // project hub (`projects/<key>`), and reusable KB blocks live in the flat
+    // library (`documents/`), so the relative reference is `../../documents/{id}.md`.
+    let mut kb_index = String::from(
+        "# Knowledge Base Index\n\n\
+         Read any block file at `../../documents/{id}.md` for full content.\n\
+         Assign a block to this project with: `<kb_assign id=\"{id}\" />`\n\n"
+    );
+    if kb_blocks.is_empty() {
+        kb_index.push_str("_No knowledge blocks in the store yet._\n");
+    } else {
+        for block in &kb_blocks {
+            kb_index.push_str(&format!(
+                "- `{}` — **{}** (tags: {})\n",
+                block.id,
+                block.title,
+                if block.tags.is_empty() { "none".to_string() } else { block.tags.join(", ") },
+            ));
+        }
+    }
+    std::fs::write(planning_dir.join("kb_index.md"), kb_index)
+        .map_err(|e| e.to_string())?;
+
+    // Write automations catalogue so Claude can reference and assign them.
+    let mut auto_md = String::from(
+        "# Automations Catalogue\n\n\
+         Suggest assigning an automation to this project with a single-line tag:\n\
+         `<automation_assign name=\"...\" command=\"...\" schedule=\"0 9 * * 1-5\" description=\"...\" />`\n\n\
+         The `schedule` field is a cron expression (omit for one-shot commands).\n\n"
+    );
+    if automations.is_empty() {
+        auto_md.push_str("_No saved automations yet — suggest new ones using the tag above._\n");
+    } else {
+        auto_md.push_str("## Saved automations\n\n");
+        for a in &automations {
+            auto_md.push_str(&format!("- **{}** (`{}`)", a.name, a.id));
+            if let Some(sched) = &a.schedule {
+                auto_md.push_str(&format!(" · cron: `{}`", sched));
+            }
+            auto_md.push_str(&format!("\n  command: `{}`\n", a.command));
+        }
+    }
+    std::fs::write(planning_dir.join("automations.md"), auto_md)
+        .map_err(|e| e.to_string())?;
+
+    // Write a github_context.md so Claude knows the authenticated user and
+    // what repos are available without needing to run `gh api user` first.
+    let mut gh_ctx = String::from("# GitHub Context\n\n");
+    if !github_login.is_empty() {
+        gh_ctx.push_str("## Authenticated user\n\n");
+        gh_ctx.push_str(&format!("- **Login**: `{}`\n", github_login));
+        if !github_name.is_empty() {
+            gh_ctx.push_str(&format!("- **Name**: {}\n", github_name));
+        }
+        gh_ctx.push_str(&format!("- **Profile**: https://github.com/{}\n\n", github_login));
+    }
+    if !repo_full_names.is_empty() {
+        gh_ctx.push_str("## Linked repositories\n\n");
+        for full_name in &repo_full_names {
+            let local_path = repo_dir(&project_key, full_name);
+            gh_ctx.push_str(&format!(
+                "- `{}` — local path: `{}`\n",
+                full_name, local_path.display(),
+            ));
+        }
+        gh_ctx.push('\n');
+    }
+    gh_ctx.push_str(
+        "## Useful gh commands\n\n\
+         ```\n\
+         gh api user                                    # confirm auth\n\
+         gh repo list --limit 100 --json nameWithOwner  # all repos\n\
+         gh repo create {login}/{name} --private        # new repo\n\
+         gh issue list --repo {owner}/{repo}            # open issues\n\
+         gh pr list   --repo {owner}/{repo}             # open PRs\n\
+         ```\n"
+    );
+    std::fs::write(planning_dir.join("github_context.md"), gh_ctx)
+        .map_err(|e| e.to_string())?;
 
     Ok(WorkspacePaths {
         kb_dir:       kb_dir.to_string_lossy().into_owned(),
@@ -560,64 +1835,19 @@ async fn write_claude_config(
 
 // ── Repository resolution ─────────────────────────────────────────────────────
 //
-// find_local_repo: checks well-known paths for an existing clone whose git
-//   remote matches github.com/{full_name}. No network calls — purely local.
-//
-// clone_repo: clones to ~/.base-studio-code/repos/{owner}/{name}/ via HTTPS.
-//   Uses the system git credential manager for private repos.
+// Repos live inside their project hub at `projects/<project>/<short-repo-name>`.
+// clone_repo: clones there via HTTPS; idempotent if the dir already exists.
 
-fn normalize_github_remote(url: &str) -> Option<String> {
-    let url = url.trim();
-    let path = if let Some(rest) = url.strip_prefix("git@github.com:") {
-        rest
-    } else if let Some(rest) = url.strip_prefix("https://github.com/") {
-        rest
-    } else {
-        return None;
-    };
-    Some(path.trim_end_matches(".git").to_ascii_lowercase())
-}
-
-fn git_remote_matches(path: &std::path::Path, full_name: &str) -> bool {
-    let Ok(out) = std::process::Command::new("git")
-        .args(["-C", &path.to_string_lossy(), "remote", "get-url", "origin"])
-        .output()
-    else { return false };
-    if !out.status.success() { return false }
-    let url = String::from_utf8_lossy(&out.stdout);
-    normalize_github_remote(url.trim())
-        .map(|n| n.eq_ignore_ascii_case(full_name))
-        .unwrap_or(false)
-}
-
+/// Clones `full_name` (an `owner/name` GitHub slug) into the project hub at
+/// `projects/<sanitize(project)>/<short-repo-name>` and returns the clone path.
+/// Idempotent: if the destination is already a git clone it is returned as-is.
+/// After cloning, `CLAUDE.local.md` is appended to the clone's
+/// `.git/info/exclude` so the planner-generated per-repo context file stays out
+/// of `git status`.
 #[tauri::command]
-async fn find_local_repo(full_name: String) -> Result<Option<String>, String> {
-    let home = home_dir();
-    let name = full_name.split('/').last().unwrap_or("").to_owned();
-    let target = full_name.to_ascii_lowercase();
-
-    const SEARCH_ROOTS: &[&str] = &[
-        "code", "projects", "dev", "src", "workspace", "repos", "Developer",
-    ];
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    for root in SEARCH_ROOTS {
-        let base = home.join(root);
-        candidates.push(base.join(&name));       // ~/code/name
-        candidates.push(base.join(&full_name));  // ~/code/owner/name
-    }
-    candidates.push(bsc_base_dir().join("repos").join(&full_name));
-
-    for path in candidates {
-        if path.is_dir() && git_remote_matches(&path, &target) {
-            return Ok(Some(path.to_string_lossy().into_owned()));
-        }
-    }
-    Ok(None)
-}
-
-#[tauri::command]
-async fn clone_repo(full_name: String) -> Result<String, String> {
-    let dest = bsc_base_dir().join("repos").join(&full_name);
+async fn clone_repo(project: String, full_name: String) -> Result<String, String> {
+    let _perf = PerfSpan::new("clone_repo");
+    let dest = repo_dir(&project, &full_name);
     if dest.is_dir() && dest.join(".git").exists() {
         return Ok(dest.to_string_lossy().into_owned());
     }
@@ -630,9 +1860,418 @@ async fn clone_repo(full_name: String) -> Result<String, String> {
         .status()
         .map_err(|e| e.to_string())?;
     if !status.success() {
+        log::warn!("clone_repo: git clone failed for {full_name}");
         return Err(format!("git clone failed for {}", full_name));
     }
+    // Keep the planner's per-repo CLAUDE.local.md out of `git status`.
+    let exclude = dest.join(".git").join("info").join("exclude");
+    let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
+    if !existing.lines().any(|l| l.trim() == "CLAUDE.local.md") {
+        let next = if existing.trim().is_empty() {
+            "CLAUDE.local.md\n".to_string()
+        } else {
+            format!("{}\nCLAUDE.local.md\n", existing.trim_end())
+        };
+        let _ = std::fs::write(&exclude, next);
+    }
+    log::info!("clone_repo: cloned {full_name} → {}", dest.display());
     Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Reads plan section files from the project hub. They live FLAT in
+/// `projects/<key>/<section>.{md|json}` (no `plans/` subdir).
+/// Returns a map of section key → file content for every file that exists and
+/// is non-empty. Callers poll this on a short interval to pick up sections that
+/// Claude writes via its Write tool (more reliable than parsing PTY output).
+#[tauri::command]
+async fn read_plan_sections(project_key: String) -> Result<std::collections::HashMap<String, String>, String> {
+    let _perf = PerfSpan::new("read_plan_sections");
+    let safe_key  = sanitize_project_key(&project_key);
+    if safe_key.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let plans_dir = plan_dir_for(&project_key);
+    if !plans_dir.exists() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let keys = [
+        "goal", "scope", "stack", "architecture",
+        "schema", "api", "testing", "cicd", "phases", "risks",
+    ];
+    let mut sections = std::collections::HashMap::new();
+    for key in &keys {
+        // Prefer .md; phases also accepted as .json.
+        for ext in &["md", "json"] {
+            let path = plans_dir.join(format!("{}.{}", key, ext));
+            if path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    let content = content.trim().to_string();
+                    if !content.is_empty() {
+                        sections.insert(key.to_string(), content);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    Ok(sections)
+}
+
+// ── Document store listing ──────────────────────────────────────────────────
+//
+// The KB page enumerates three kinds of markdown across the on-disk layout:
+//   - "reusable" — the flat library under `documents/**`
+//   - "project"  — a project hub's own files under `projects/<p>/` (+ prompts/)
+//   - "repo"     — only the managed CLAUDE.md / CLAUDE.local.md inside a clone
+// `list_documents` walks the tree via `collect_documents`; per-document metadata
+// (title, tags) is parsed from the same YAML-ish frontmatter setup_workspaces
+// writes (`id`, `title`, `tags`).
+
+/// Metadata for one markdown document surfaced to the KB page. Serialized to the
+/// frontend with snake_case field names (Tauri's serde passes them through as-is).
+#[derive(serde::Serialize)]
+struct DocInfo {
+    /// Posix path relative to `bsc_base_dir()` (forward slashes on every OS) so
+    /// the frontend can pass it straight back to `read_document`/`write_document`.
+    relpath:       String,
+    /// File name including extension (e.g. `goal.md`).
+    name:          String,
+    /// Frontmatter `title:` if present, otherwise the file-name stem.
+    title:         String,
+    /// Taxonomy bucket: "reusable", "project", or "repo".
+    kind:          String,
+    /// Project key (the `projects/<proj>` segment) for "project" and "repo" kinds.
+    project:       Option<String>,
+    /// Repo short name (the `projects/<proj>/<repo>` segment) for the "repo" kind.
+    repo:          Option<String>,
+    /// Frontmatter `tags:` list, empty when absent.
+    tags:          Vec<String>,
+    size_bytes:    u64,
+    modified_secs: u64,
+}
+
+/// Extracts `title` and `tags` from a document's leading YAML-ish frontmatter
+/// block (a `---` fenced header as written by setup_workspaces). Returns
+/// `(title, tags)` with `title` empty when no `title:` line is present so the
+/// caller can fall back to the file-name stem. Best-effort and tolerant of
+/// documents that have no frontmatter at all.
+fn parse_frontmatter(content: &str) -> (String, Vec<String>) {
+    let mut title = String::new();
+    let mut tags: Vec<String> = Vec::new();
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return (title, tags);
+    }
+    // Take the lines between the opening `---` and the next `---`.
+    let mut lines = trimmed.lines();
+    lines.next(); // opening fence
+    for line in lines {
+        let line = line.trim();
+        if line == "---" {
+            break;
+        }
+        if let Some(rest) = line.strip_prefix("title:") {
+            title = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("tags:") {
+            // Accept either `[a, b]` or a bare comma list.
+            let rest = rest.trim().trim_start_matches('[').trim_end_matches(']');
+            tags = rest
+                .split(',')
+                .map(|t| t.trim().trim_matches('"').trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect();
+        }
+    }
+    (title, tags)
+}
+
+/// Builds a `DocInfo` for `path` whose store-relative posix `relpath` and
+/// `kind`/`project`/`repo` taxonomy are already known. Returns `None` if the file
+/// is missing or its metadata can't be read.
+fn doc_info_for(
+    path: &std::path::Path,
+    relpath: String,
+    kind: &str,
+    project: Option<String>,
+    repo: Option<String>,
+) -> Option<DocInfo> {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    let file_name = path.file_name().and_then(|n| n.to_str())?.to_string();
+    let modified_secs = meta.modified().ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let (fm_title, tags) = parse_frontmatter(&content);
+    // settings.json carries no frontmatter — give it a stable display title.
+    let title = if file_name == "settings.json" {
+        "settings.json".to_string()
+    } else if fm_title.is_empty() {
+        path.file_stem().and_then(|s| s.to_str()).unwrap_or(&file_name).to_string()
+    } else {
+        fm_title
+    };
+    Some(DocInfo {
+        relpath,
+        name: file_name,
+        title,
+        kind: kind.to_string(),
+        project,
+        repo,
+        tags,
+        size_bytes: meta.len(),
+        modified_secs,
+    })
+}
+
+/// Recursively pushes every `.md` file under `dir` into `out` with the given
+/// `kind`/`project`, computing each one's posix relpath against `base`.
+/// `.claude/` directories are not descended into (their settings.json is added
+/// explicitly by the caller).
+fn collect_md_tree(
+    base: &std::path::Path,
+    dir: &std::path::Path,
+    kind: &str,
+    project: &Option<String>,
+    out: &mut Vec<DocInfo>,
+) {
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let entries = match std::fs::read_dir(&d) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            if path.is_dir() {
+                if name == ".claude" {
+                    continue; // settings.json handled explicitly
+                }
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            if let Some(rel) = relpath_posix(base, &path) {
+                if let Some(info) = doc_info_for(&path, rel, kind, project.clone(), None) {
+                    out.push(info);
+                }
+            }
+        }
+    }
+}
+
+/// Posix-joined path of `path` relative to `base`, or `None` if `path` is not
+/// under `base`.
+fn relpath_posix(base: &std::path::Path, path: &std::path::Path) -> Option<String> {
+    let rel = path.strip_prefix(base).ok()?;
+    Some(
+        rel.iter()
+            .filter_map(|s| s.to_str())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
+}
+
+/// Collects every surfaced document under `base` (= `bsc_base_dir()`):
+///   - `documents/**/*.md`                                   → kind "reusable"
+///   - `documents/.claude/settings.json`                     → kind "reusable"
+///   - `projects/<p>/*.md`, `projects/<p>/prompts/**/*.md`   → kind "project"
+///   - `projects/<p>/.claude/settings.json`                  → kind "project"
+///   - `projects/<p>/<repo>/{CLAUDE.md,CLAUDE.local.md}`     → kind "repo"
+///   - `projects/<p>/<repo>/.claude/settings.json`           → kind "repo"
+/// A `projects/<p>/<repo>/` subdir is treated as a repo clone (kind "repo") iff
+/// it contains a `.git` entry; only its managed files are surfaced — the clone's
+/// source tree is never recursed. Sorted most-recently-modified first.
+/// Factored out of the command so it can be unit-tested against a temp tree.
+fn collect_documents(base: &std::path::Path) -> Vec<DocInfo> {
+    let mut out: Vec<DocInfo> = Vec::new();
+
+    // 1. Flat reusable library: documents/**/*.md (+ its .claude/settings.json).
+    let docs = base.join("documents");
+    if docs.is_dir() {
+        collect_md_tree(base, &docs, "reusable", &None, &mut out);
+        let settings = docs.join(".claude").join("settings.json");
+        if let Some(rel) = relpath_posix(base, &settings) {
+            if let Some(info) = doc_info_for(&settings, rel, "reusable", None, None) {
+                out.push(info);
+            }
+        }
+    }
+
+    // 2. Project hubs: projects/<p>/.
+    let projects = base.join("projects");
+    if let Ok(entries) = std::fs::read_dir(&projects) {
+        for entry in entries.flatten() {
+            let pdir = entry.path();
+            if !pdir.is_dir() {
+                continue;
+            }
+            let pname = match pdir.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            let proj = Some(pname.clone());
+
+            // Project-level *.md sitting directly in the hub.
+            if let Ok(items) = std::fs::read_dir(&pdir) {
+                for item in items.flatten() {
+                    let path = item.path();
+                    if path.is_file()
+                        && path.extension().and_then(|e| e.to_str()) == Some("md")
+                    {
+                        if let Some(rel) = relpath_posix(base, &path) {
+                            if let Some(info) =
+                                doc_info_for(&path, rel, "project", proj.clone(), None)
+                            {
+                                out.push(info);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Project prompts/ subtree.
+            let prompts = pdir.join("prompts");
+            if prompts.is_dir() {
+                collect_md_tree(base, &prompts, "project", &proj, &mut out);
+            }
+
+            // Project .claude/settings.json.
+            let psettings = pdir.join(".claude").join("settings.json");
+            if let Some(rel) = relpath_posix(base, &psettings) {
+                if let Some(info) =
+                    doc_info_for(&psettings, rel, "project", proj.clone(), None)
+                {
+                    out.push(info);
+                }
+            }
+
+            // Repo clones: subdirs that contain a `.git` entry. Surface only the
+            // managed CLAUDE.md / CLAUDE.local.md plus .claude/settings.json.
+            if let Ok(subs) = std::fs::read_dir(&pdir) {
+                for sub in subs.flatten() {
+                    let rdir = sub.path();
+                    if !rdir.is_dir() {
+                        continue;
+                    }
+                    let rname = match rdir.file_name().and_then(|n| n.to_str()) {
+                        Some(n) => n.to_string(),
+                        None => continue,
+                    };
+                    if rname == ".claude" || rname == "prompts" {
+                        continue;
+                    }
+                    if !rdir.join(".git").exists() {
+                        continue; // not a clone — skip (don't recurse its tree)
+                    }
+                    let repo = Some(rname.clone());
+                    for managed in ["CLAUDE.md", "CLAUDE.local.md"] {
+                        let path = rdir.join(managed);
+                        if path.is_file() {
+                            if let Some(rel) = relpath_posix(base, &path) {
+                                if let Some(info) = doc_info_for(
+                                    &path, rel, "repo", proj.clone(), repo.clone(),
+                                ) {
+                                    out.push(info);
+                                }
+                            }
+                        }
+                    }
+                    let rsettings = rdir.join(".claude").join("settings.json");
+                    if let Some(rel) = relpath_posix(base, &rsettings) {
+                        if let Some(info) =
+                            doc_info_for(&rsettings, rel, "repo", proj.clone(), repo.clone())
+                        {
+                            out.push(info);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    out.sort_by(|a, b| b.modified_secs.cmp(&a.modified_secs));
+    out
+}
+
+/// Absolute path of the base-studio-code data dir, so the frontend can build
+/// project/repo session paths: `<base>/projects/<sanitized project>/<repo>`.
+#[tauri::command]
+fn get_base_dir() -> String {
+    bsc_base_dir().to_string_lossy().into_owned()
+}
+
+/// Lists every surfaced markdown/settings document across the reusable library
+/// (`documents/`), the project hubs (`projects/<p>/`), and the managed files in
+/// each project's repo clones. Sorted most-recently-modified first.
+#[tauri::command]
+async fn list_documents() -> Result<Vec<DocInfo>, String> {
+    let _perf = PerfSpan::new("list_documents");
+    Ok(collect_documents(&bsc_base_dir()))
+}
+
+/// Validates a base-relative posix path for read/write: rejects `..` segments,
+/// rejects absolute paths, and only permits paths under `documents/` or
+/// `projects/`. Returns the resolved absolute path on success.
+fn resolve_store_path(relpath: &str) -> Result<std::path::PathBuf, String> {
+    if relpath.contains("..") {
+        return Err("invalid relpath: contains '..'".to_string());
+    }
+    let normalized = relpath.replace('\\', "/");
+    // Reject absolute paths (unix `/x`, windows `C:/x` or `\\server`).
+    let is_absolute = normalized.starts_with('/')
+        || std::path::Path::new(relpath).is_absolute()
+        || (normalized.len() >= 2 && normalized.as_bytes()[1] == b':');
+    if is_absolute {
+        return Err("invalid relpath: must be relative".to_string());
+    }
+    if !(normalized.starts_with("documents/") || normalized.starts_with("projects/")) {
+        return Err("invalid relpath: must begin with documents/ or projects/".to_string());
+    }
+    Ok(bsc_base_dir().join(relpath))
+}
+
+/// Reads one document by its base-relative posix path (as returned in
+/// `DocInfo::relpath`). Path must be under `documents/` or `projects/` and must
+/// not contain `..` (see [`resolve_store_path`]).
+#[tauri::command]
+async fn read_document(relpath: String) -> Result<String, String> {
+    let path = resolve_store_path(&relpath)?;
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+/// Writes `content` to a document at its base-relative posix path, creating
+/// parent directories as needed. Same path guards as [`read_document`].
+#[tauri::command]
+async fn write_document(relpath: String, content: String) -> Result<(), String> {
+    let path = resolve_store_path(&relpath)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+/// Writes a comprehensive project plan markdown file to `.claude/project-plan.md`
+/// inside each linked repository. Console Claude sessions can `Read` this file
+/// to get full project context without needing to ask the user for it.
+#[tauri::command]
+async fn write_project_plan(content: String, repo_paths: Vec<String>) -> Result<(), String> {
+    for path in &repo_paths {
+        let claude_dir = std::path::PathBuf::from(path).join(".claude");
+        std::fs::create_dir_all(&claude_dir).map_err(|e| e.to_string())?;
+        std::fs::write(claude_dir.join("project-plan.md"), &content)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -640,6 +2279,34 @@ async fn clone_repo(full_name: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                // Keep noisy dependencies (tauri/wry/reqwest) quiet — only warnings
+                // and above — while showing our own app logs at info. A global Info
+                // filter floods stdout+file from deps and can stall the UI.
+                .level(log::LevelFilter::Warn)
+                .level_for("base_studio_code_lib", log::LevelFilter::Info)
+                .format(|out, message, record| {
+                    let ts = time::OffsetDateTime::now_utc()
+                        .format(&time::macros::format_description!("[hour]:[minute]:[second]"))
+                        .unwrap_or_default();
+                    out.finish(format_args!(
+                        "\x1b[90m{ts}\x1b[0m {color}{level:<5}\x1b[0m \x1b[90m{target}\x1b[0m {message}",
+                        color = level_color(record.level()),
+                        level = record.level(),
+                        target = record.target(),
+                    ));
+                })
+                .targets([
+                    // Visible in the `tauri dev` terminal…
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    // …and persisted to a rotating file in the app log dir.
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("base-studio-code".into()),
+                    }),
+                ])
+                .build(),
+        )
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(PtyState(Mutex::new(HashMap::new())))
         .invoke_handler(tauri::generate_handler![
@@ -649,15 +2316,22 @@ pub fn run() {
             github_post,
             pty_create,
             pty_write,
+            pty_broadcast,
             pty_resize,
             pty_kill,
             pick_directory,
             git_info,
             setup_workspaces,
-            find_local_repo,
+            setup_kb_workspace,
             clone_repo,
+            get_base_dir,
             read_claude_config,
             write_claude_config,
+            read_plan_sections,
+            write_project_plan,
+            list_documents,
+            read_document,
+            write_document,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -675,17 +2349,6 @@ mod tests {
     }
 
     #[test]
-    fn normalize_github_remote_handles_all_url_formats() {
-        use super::normalize_github_remote;
-        assert_eq!(normalize_github_remote("https://github.com/owner/name.git"), Some("owner/name".into()));
-        assert_eq!(normalize_github_remote("https://github.com/owner/name"),     Some("owner/name".into()));
-        assert_eq!(normalize_github_remote("git@github.com:owner/name.git"),     Some("owner/name".into()));
-        assert_eq!(normalize_github_remote("git@github.com:owner/name"),         Some("owner/name".into()));
-        assert_eq!(normalize_github_remote("https://gitlab.com/owner/name"),     None);
-        assert_eq!(normalize_github_remote("  https://github.com/Org/Repo.git "), Some("org/repo".into()));
-    }
-
-    #[test]
     fn osc7_path_strip_removes_scheme_and_host() {
         // Mirrors what TerminalView.tsx does in the browser:
         // data.replace(/^file:\/\/[^/]*/, "")
@@ -694,5 +2357,302 @@ mod tests {
             .map(|s| format!("/{}", s))
             .unwrap_or_default();
         assert_eq!(stripped, "/c/Users/Kevin/project");
+    }
+
+    use super::sanitize_project_key;
+
+    #[test]
+    fn sanitize_preserves_ascii_alphanumerics_and_dash() {
+        assert_eq!(sanitize_project_key("my-project-123"), "my-project-123");
+    }
+
+    #[test]
+    fn sanitize_replaces_punctuation_and_whitespace_with_underscore() {
+        // Slashes, spaces, colons, dots → '_'.
+        assert_eq!(sanitize_project_key("acme/api"), "acme_api");
+        assert_eq!(sanitize_project_key("title::pitch"), "title__pitch");
+        assert_eq!(sanitize_project_key("Studio Code v2.0"), "Studio_Code_v2_0");
+    }
+
+    #[test]
+    fn sanitize_preserves_github_project_node_id() {
+        // Project v2 node ids (underscores stay underscores, dash stays) are ASCII-safe.
+        assert_eq!(sanitize_project_key("PVT_kwHOA_-LFc4BYsJC"), "PVT_kwHOA_-LFc4BYsJC");
+    }
+
+    #[test]
+    fn sanitize_drops_unicode_letters_to_match_js_regex() {
+        // The frontend's /[^a-zA-Z0-9-]/ is ASCII-only; café → caf_ (not café),
+        // so the PTY id and planning directory stay byte-for-byte identical.
+        assert_eq!(sanitize_project_key("café"), "caf_");
+    }
+
+    #[test]
+    fn sanitize_truncates_to_80_chars() {
+        let long = "a".repeat(200);
+        assert_eq!(sanitize_project_key(&long).len(), 80);
+    }
+
+    use super::plan_dir_for;
+
+    #[test]
+    fn plan_dir_for_places_sanitized_key_under_projects() {
+        let dir = plan_dir_for("studio-code");
+        let s = dir.to_string_lossy().replace('\\', "/");
+        // Project hub — plan sections live directly in projects/<key> (no
+        // documents/ prefix, no trailing /plans).
+        assert!(s.ends_with("/projects/studio-code"), "got {s}");
+        assert!(!s.contains("/documents/"), "got {s}");
+    }
+
+    #[test]
+    fn plan_dir_for_sanitizes_the_key() {
+        let dir = plan_dir_for("acme/api project");
+        let s = dir.to_string_lossy().replace('\\', "/");
+        assert!(s.ends_with("/projects/acme_api_project"), "got {s}");
+    }
+
+    use super::level_color;
+
+    #[test]
+    fn level_color_is_distinct_per_level() {
+        let colors = [
+            level_color(log::Level::Error),
+            level_color(log::Level::Warn),
+            level_color(log::Level::Info),
+            level_color(log::Level::Debug),
+            level_color(log::Level::Trace),
+        ];
+        // every code is a non-empty ANSI escape, and all five are distinct
+        assert!(colors.iter().all(|c| c.starts_with("\x1b[")));
+        let unique: std::collections::HashSet<_> = colors.iter().collect();
+        assert_eq!(unique.len(), colors.len());
+    }
+
+    use super::{claude_project_key, mark_dir_trusted};
+
+    #[test]
+    fn claude_project_key_uses_forward_slashes_and_upper_drive() {
+        // Backslashes → forward slashes; lower-case drive → upper, matching the
+        // form Claude Code writes (verified against a real ~/.claude.json).
+        assert_eq!(claude_project_key(r"C:\Users\Kevin\proj"), "C:/Users/Kevin/proj");
+        assert_eq!(claude_project_key("c:/Users/Kevin/proj"), "C:/Users/Kevin/proj");
+        // Already-canonical paths pass through unchanged.
+        assert_eq!(
+            claude_project_key("C:/Users/Kevin/.base-studio-code/repos/x"),
+            "C:/Users/Kevin/.base-studio-code/repos/x"
+        );
+    }
+
+    #[test]
+    fn claude_project_key_strips_trailing_slash_and_verbatim_prefix() {
+        assert_eq!(claude_project_key("C:/Users/Kevin/proj/"), "C:/Users/Kevin/proj");
+        assert_eq!(claude_project_key(r"\\?\C:\Users\Kevin\proj"), "C:/Users/Kevin/proj");
+        assert_eq!(claude_project_key("/"), "/"); // bare root preserved
+    }
+
+    #[test]
+    fn mark_dir_trusted_creates_projects_entry_when_absent() {
+        let mut cfg = serde_json::json!({});
+        assert!(mark_dir_trusted(&mut cfg, "C:/Users/Kevin/proj"));
+        assert_eq!(
+            cfg["projects"]["C:/Users/Kevin/proj"]["hasTrustDialogAccepted"],
+            serde_json::Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn mark_dir_trusted_preserves_other_fields_and_sibling_projects() {
+        let mut cfg = serde_json::json!({
+            "numStartups": 7,
+            "projects": {
+                "C:/other": { "allowedTools": ["Read"], "hasTrustDialogAccepted": true },
+                "C:/proj":  { "allowedTools": ["Edit"], "history": [{ "display": "hi" }] }
+            }
+        });
+        assert!(mark_dir_trusted(&mut cfg, "C:/proj"));
+        // Target gains trust without losing its existing fields …
+        assert_eq!(cfg["projects"]["C:/proj"]["hasTrustDialogAccepted"], serde_json::Value::Bool(true));
+        assert_eq!(cfg["projects"]["C:/proj"]["allowedTools"][0], "Edit");
+        assert_eq!(cfg["projects"]["C:/proj"]["history"][0]["display"], "hi");
+        // … and unrelated keys / sibling projects are untouched.
+        assert_eq!(cfg["numStartups"], 7);
+        assert_eq!(cfg["projects"]["C:/other"]["allowedTools"][0], "Read");
+    }
+
+    #[test]
+    fn mark_dir_trusted_is_noop_when_already_trusted() {
+        let mut cfg = serde_json::json!({ "projects": { "C:/proj": { "hasTrustDialogAccepted": true } } });
+        assert!(!mark_dir_trusted(&mut cfg, "C:/proj"));
+    }
+
+    #[test]
+    fn mark_dir_trusted_flips_existing_false_to_true() {
+        let mut cfg = serde_json::json!({ "projects": { "C:/proj": { "hasTrustDialogAccepted": false } } });
+        assert!(mark_dir_trusted(&mut cfg, "C:/proj"));
+        assert_eq!(cfg["projects"]["C:/proj"]["hasTrustDialogAccepted"], serde_json::Value::Bool(true));
+    }
+
+    // ── Document store ──────────────────────────────────────────────────────
+
+    use super::{collect_documents, parse_frontmatter, read_document, write_document, bsc_base_dir};
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex as StdMutex;
+
+    /// Serializes the env-mutating tests (they all repoint HOME/USERPROFILE,
+    /// which `home_dir()` reads) so they can't race each other.
+    static ENV_LOCK: StdMutex<()> = StdMutex::new(());
+
+    /// Creates a fresh, unique temp directory for a test and points
+    /// HOME/USERPROFILE at it so `bsc_base_dir()` resolves inside it.
+    /// Returns the temp dir; caller removes it when done.
+    fn temp_home(tag: &str) -> PathBuf {
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("bsc-test-{tag}-{pid}-{nanos}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("HOME", &dir);
+        std::env::set_var("USERPROFILE", &dir);
+        dir
+    }
+
+    fn write_file(path: &Path, contents: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn parse_frontmatter_extracts_title_and_tags() {
+        let (title, tags) = parse_frontmatter("---\nid: abc\ntitle: My Doc\ntags: [rust, react]\n---\n\nbody");
+        assert_eq!(title, "My Doc");
+        assert_eq!(tags, vec!["rust".to_string(), "react".to_string()]);
+    }
+
+    #[test]
+    fn parse_frontmatter_empty_when_absent() {
+        let (title, tags) = parse_frontmatter("# Just a heading\n\nno frontmatter");
+        assert!(title.is_empty());
+        assert!(tags.is_empty());
+    }
+
+    #[test]
+    fn collect_documents_classifies_reusable_project_and_repo() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let home = temp_home("collect");
+        let base = home.join(".base-studio-code");
+        let docs = base.join("documents");
+        let proj = base.join("projects").join("proj-x");
+        let repo = proj.join("api"); // short-name clone dir
+
+        // Reusable library article with frontmatter.
+        write_file(&docs.join("a1.md"),
+            "---\nid: a1\ntitle: Alpha\ntags: [rust]\n---\n\nbody");
+        // Reusable CLAUDE.md IS included (kind reusable).
+        write_file(&docs.join("CLAUDE.md"), "# lib claude");
+        // Reusable settings.json.
+        write_file(&docs.join(".claude").join("settings.json"), "{}");
+
+        // Project plan section (no title frontmatter → stem fallback).
+        write_file(&proj.join("goal.md"), "the goal");
+        // Project prompt.
+        write_file(&proj.join("prompts").join("kickoff.md"), "go");
+        // Project settings.json.
+        write_file(&proj.join(".claude").join("settings.json"), "{}");
+
+        // Repo clone: a `.git` entry marks it as a clone. Only managed files
+        // are surfaced; the clone's own source tree must NOT be listed.
+        write_file(&repo.join(".git").join("HEAD"), "ref: refs/heads/main");
+        write_file(&repo.join("CLAUDE.md"), "# repo claude");
+        write_file(&repo.join("CLAUDE.local.md"), "# repo local");
+        write_file(&repo.join(".claude").join("settings.json"), "{}");
+        // These are clone source files — they MUST be ignored.
+        write_file(&repo.join("README.md"), "do not list me");
+        write_file(&repo.join("src").join("deep.md"), "do not list me either");
+
+        let found = collect_documents(&base);
+        let by_rel = |rel: &str| found.iter().find(|d| d.relpath == rel);
+
+        // Reusable.
+        let a = by_rel("documents/a1.md").expect("reusable article present");
+        assert_eq!(a.kind, "reusable");
+        assert_eq!(a.project, None);
+        assert_eq!(a.repo, None);
+        assert_eq!(a.title, "Alpha");
+        assert_eq!(a.tags, vec!["rust".to_string()]);
+        assert_eq!(by_rel("documents/CLAUDE.md").expect("reusable CLAUDE.md present").kind, "reusable");
+        let ds = by_rel("documents/.claude/settings.json").expect("reusable settings present");
+        assert_eq!(ds.kind, "reusable");
+        assert_eq!(ds.title, "settings.json");
+
+        // Project.
+        let g = by_rel("projects/proj-x/goal.md").expect("project section present");
+        assert_eq!(g.kind, "project");
+        assert_eq!(g.project.as_deref(), Some("proj-x"));
+        assert_eq!(g.repo, None);
+        assert_eq!(g.title, "goal"); // stem fallback
+        assert_eq!(by_rel("projects/proj-x/prompts/kickoff.md").expect("project prompt present").kind, "project");
+        assert_eq!(by_rel("projects/proj-x/.claude/settings.json").expect("project settings present").kind, "project");
+
+        // Repo: only managed files, one DocInfo each, project + repo set.
+        let rc = by_rel("projects/proj-x/api/CLAUDE.md").expect("repo CLAUDE.md present");
+        assert_eq!(rc.kind, "repo");
+        assert_eq!(rc.project.as_deref(), Some("proj-x"));
+        assert_eq!(rc.repo.as_deref(), Some("api"));
+        assert!(by_rel("projects/proj-x/api/CLAUDE.local.md").is_some(), "repo CLAUDE.local.md present");
+        assert!(by_rel("projects/proj-x/api/.claude/settings.json").is_some(), "repo settings present");
+
+        // The clone's own source files are NOT listed.
+        assert!(by_rel("projects/proj-x/api/README.md").is_none(), "clone README must not be listed");
+        assert!(by_rel("projects/proj-x/api/src/deep.md").is_none(), "clone source must not be listed");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn write_document_round_trips_and_rejects_traversal() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let home = temp_home("writedoc");
+        let base = bsc_base_dir();
+
+        // Round-trip: write under documents/, read it back, parent dirs created.
+        tauri::async_runtime::block_on(write_document(
+            "documents/new-note.md".to_string(),
+            "hello world".to_string(),
+        )).expect("write succeeds");
+        assert!(base.join("documents").join("new-note.md").exists(), "file created");
+        let got = tauri::async_runtime::block_on(
+            read_document("documents/new-note.md".to_string())
+        ).expect("read succeeds");
+        assert_eq!(got, "hello world");
+
+        // Writing under projects/ also works (creates parent dirs).
+        tauri::async_runtime::block_on(write_document(
+            "projects/p1/goal.md".to_string(),
+            "the goal".to_string(),
+        )).expect("project write succeeds");
+        assert!(base.join("projects").join("p1").join("goal.md").exists());
+
+        // Traversal is rejected.
+        assert!(tauri::async_runtime::block_on(write_document(
+            "documents/../secret.md".to_string(), "x".to_string(),
+        )).is_err(), "`..` rejected on write");
+        assert!(tauri::async_runtime::block_on(
+            read_document("documents/../secret.md".to_string())
+        ).is_err(), "`..` rejected on read");
+
+        // Out-of-store roots are rejected.
+        assert!(tauri::async_runtime::block_on(write_document(
+            "repos/x.md".to_string(), "x".to_string(),
+        )).is_err(), "non documents/projects root rejected");
+
+        // Absolute paths are rejected.
+        assert!(tauri::async_runtime::block_on(write_document(
+            "/etc/passwd".to_string(), "x".to_string(),
+        )).is_err(), "absolute path rejected");
+
+        std::fs::remove_dir_all(&home).ok();
     }
 }

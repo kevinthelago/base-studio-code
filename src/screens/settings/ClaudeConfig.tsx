@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import type { ConfigProfile } from "../../store";
+import { projectRepoCwd } from "../../lib/projectPaths";
 
 const TOOL_PRESETS: Array<{ label: string; allow: string[]; deny: string[] }> = [
   { label: "read-only",  allow: ["Read", "Glob", "Grep"],                        deny: ["Write", "Edit", "MultiEdit", "Bash", "WebFetch", "WebSearch"] },
@@ -62,20 +63,25 @@ function ChipInput({
 
 export function ClaudeConfigSettings() {
   const {
-    projectLocalRepos, kbBlocks,
+    projectLocalRepos, bscBaseDir, kbBlocks,
     configProfiles, addConfigProfile, updateConfigProfile, removeConfigProfile,
   } = useAppStore();
 
-  // All unique resolved repos across all projects
+  // All unique cloned repos across all projects, with their local clone paths.
+  // Repos live under `<base>/projects/<projectKey>/<repoShort>`, so the path is
+  // derived from the project key each repo was cloned under.
   const allRepos = useMemo(() => {
-    const seen = new Map<string, { full_name: string; local_path: string }>();
-    for (const repos of Object.values(projectLocalRepos)) {
-      for (const repo of repos) {
-        seen.set(repo.full_name, repo);
+    const seen = new Map<string, string>(); // full_name → local_path (first seen wins)
+    for (const [projectKey, fullNames] of Object.entries(projectLocalRepos)) {
+      for (const fullName of fullNames) {
+        if (!seen.has(fullName)) seen.set(fullName, projectRepoCwd(bscBaseDir, projectKey, fullName));
       }
     }
-    return Array.from(seen.values());
-  }, [projectLocalRepos]);
+    return Array.from(seen.entries()).map(([fullName, local_path]) => ({
+      full_name: fullName,
+      local_path,
+    }));
+  }, [projectLocalRepos, bscBaseDir]);
 
   // Editor state
   const [target, setTarget]                 = useState("global");

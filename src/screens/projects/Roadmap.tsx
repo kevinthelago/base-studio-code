@@ -31,8 +31,22 @@ function weeksBetween(a: Date, b: Date): number {
   return Math.max(0, Math.ceil((b.getTime() - a.getTime()) / (7 * 24 * 3600 * 1000)));
 }
 
-function buildGantt(milestones: GhMilestone[]): { rows: GanttRow[]; totalWeeks: number; todayWeek: number } {
-  if (milestones.length === 0) return { rows: [], totalWeeks: 8, todayWeek: 0 };
+function tickIntervalWeeks(totalWeeks: number): number {
+  if (totalWeeks <= 16)  return 1;
+  if (totalWeeks <= 52)  return 4;
+  if (totalWeeks <= 130) return 8;
+  return 13;
+}
+
+function tickLabel(weekIndex: number, origin: Date, interval: number): string {
+  if (interval <= 1) return `w${weekIndex + 1}`;
+  const d = new Date(origin.getTime() + weekIndex * 7 * 24 * 3600 * 1000);
+  return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+}
+
+function buildGantt(milestones: GhMilestone[]): { rows: GanttRow[]; totalWeeks: number; todayWeek: number; origin: Date } {
+  const fallbackOrigin = new Date();
+  if (milestones.length === 0) return { rows: [], totalWeeks: 8, todayWeek: 0, origin: fallbackOrigin };
 
   const starts = milestones.map(m => new Date(m.created_at));
   const origin = starts.reduce((a, b) => a < b ? a : b);
@@ -69,7 +83,7 @@ function buildGantt(milestones: GhMilestone[]): { rows: GanttRow[]; totalWeeks: 
     };
   });
 
-  return { rows, totalWeeks, todayWeek };
+  return { rows, totalWeeks, todayWeek, origin };
 }
 
 function BurnDown({ open, closed }: { open: number; closed: number }) {
@@ -118,18 +132,21 @@ export function Roadmap() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Use the primary repo; fall back to any repo derived from board items.
+  const effectiveRepo = activeProjectRepo || activeProjectRepos[0] || "";
+
   useEffect(() => {
-    if (!githubToken || !activeProjectRepo) return;
+    if (!githubToken || !effectiveRepo) return;
     setLoading(true);
     setError(null);
     invoke<GhMilestone[]>("github_request", {
       token: githubToken,
-      path: `repos/${activeProjectRepo}/milestones?state=all&per_page=20&sort=due_on&direction=asc`,
+      path: `repos/${effectiveRepo}/milestones?state=all&per_page=20&sort=due_on&direction=asc`,
     })
       .then(data => setMilestones(Array.isArray(data) ? data : []))
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [githubToken, activeProjectRepo]);
+  }, [githubToken, effectiveRepo]);
 
   const project: ActiveProjectInfo = {
     id: activeProjectId ?? "",
@@ -140,7 +157,9 @@ export function Roadmap() {
     description: "",
   };
 
-  const { rows, totalWeeks, todayWeek } = buildGantt(milestones);
+  const { rows, totalWeeks, todayWeek, origin } = buildGantt(milestones);
+  const tickInterval = tickIntervalWeeks(totalWeeks);
+  const tickCount    = Math.ceil(totalWeeks / tickInterval) + 1;
 
   const totalOpen   = milestones.reduce((s, m) => s + m.open_issues, 0);
   const totalClosed = milestones.reduce((s, m) => s + m.closed_issues, 0);
@@ -151,7 +170,7 @@ export function Roadmap() {
     { k: "open issues",   v: loading ? "…" : String(totalOpen),   sub: `of ${totalIssues} total`,  tone: "accent"  },
     { k: "milestones",    v: loading ? "…" : String(milestones.length), sub: `${milestones.filter(m => m.state === "closed").length} closed`, tone: "info" },
     { k: "velocity",      v: loading ? "…" : `${velocity}/wk`,     sub: "issues closed per week",   tone: "success" },
-    { k: "repo",          v: activeProjectRepo.split("/")[1] ?? "—", sub: activeProjectRepo,         tone: "muted"   },
+    { k: "repo",          v: effectiveRepo.split("/")[1] || "—",    sub: effectiveRepo || "no repo", tone: "muted"   },
   ] as const;
 
   return (
@@ -193,7 +212,7 @@ export function Roadmap() {
 
             {!loading && rows.length === 0 && (
               <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "20px 0" }}>
-                No milestones found for {activeProjectRepo}.
+                No milestones found for {effectiveRepo || "this project"}.
               </div>
             )}
 
@@ -202,14 +221,23 @@ export function Roadmap() {
                 {/* Week header */}
                 <div style={{ display: "grid", gridTemplateColumns: "230px 1fr", gap: 14, marginBottom: 8 }}>
                   <div />
-                  <div style={{ position: "relative", height: 24, display: "grid", gridTemplateColumns: `repeat(${totalWeeks}, 1fr)` }}>
-                    {Array.from({ length: totalWeeks }, (_, i) => (
-                      <div key={i} style={{
-                        fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
-                        borderLeft: i === 0 ? "none" : "1px dashed var(--border-soft)",
-                        paddingLeft: 6, paddingTop: 4,
-                      }}>w{i + 1}</div>
-                    ))}
+                  <div style={{ position: "relative", height: 24 }}>
+                    {Array.from({ length: tickCount }, (_, i) => {
+                      const week = i * tickInterval;
+                      if (week > totalWeeks) return null;
+                      const pct = (week / totalWeeks) * 100;
+                      return (
+                        <div key={i} style={{
+                          position: "absolute", left: `${pct}%`,
+                          top: 0, paddingLeft: 4, paddingTop: 4,
+                          borderLeft: i === 0 ? "none" : "1px dashed var(--border-soft)",
+                          fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {tickLabel(week, origin, tickInterval)}
+                        </div>
+                      );
+                    })}
                     {todayWeek < totalWeeks && (
                       <div style={{
                         position: "absolute", top: 0, bottom: -300,
@@ -236,9 +264,13 @@ export function Roadmap() {
                         </div>
                       </div>
                       <div style={{ position: "relative", height: 32 }}>
-                        {Array.from({ length: totalWeeks }, (_, i) => (
-                          <div key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${(i / totalWeeks) * 100}%`, width: 1, background: "var(--border-soft)" }} />
-                        ))}
+                        {Array.from({ length: tickCount }, (_, i) => {
+                          const week = i * tickInterval;
+                          if (week > totalWeeks) return null;
+                          return (
+                            <div key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${(week / totalWeeks) * 100}%`, width: 1, background: "var(--border-soft)" }} />
+                          );
+                        })}
                         <div style={{
                           position: "absolute", top: 4, bottom: 4,
                           left: `${(m.startWeek / totalWeeks) * 100}%`,

@@ -10,6 +10,14 @@ vi.mock("@tauri-apps/api/event", () => ({
   emit: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@tauri-apps/plugin-log", () => ({
+  trace: vi.fn().mockResolvedValue(undefined),
+  debug: vi.fn().mockResolvedValue(undefined),
+  info:  vi.fn().mockResolvedValue(undefined),
+  warn:  vi.fn().mockResolvedValue(undefined),
+  error: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: vi.fn().mockResolvedValue({
     get: vi.fn().mockResolvedValue(null),

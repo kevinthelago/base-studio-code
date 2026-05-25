@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { LayoutGrid } from "lucide-react";
 import { Titlebar } from "./components/chrome/Titlebar";
@@ -8,6 +8,8 @@ import { StatusBar } from "./components/chrome/StatusBar";
 import { Dialog } from "./components/Dialog";
 import { useAppStore } from "./store";
 import { useHotkeys } from "./hooks/useHotkeys";
+import { startPerfMonitor, recordStoreWrite } from "./lib/perf";
+import { log } from "./lib/log";
 import { ConsoleScreen } from "./screens/Console";
 import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
@@ -130,7 +132,35 @@ export default function App() {
     automationsTab,
     settingsSection,
     projectsView, activeProjectName, projectsBoardTab,
+    setBscBaseDir,
   } = useAppStore();
+
+  // Mount the Knowledge Store (and spawn its claude session) lazily on first
+  // visit, then keep it mounted so the PTY survives navigation. Avoids launching
+  // a background claude at app startup for a screen that may never be opened.
+  const knowledgeEverShown = useRef(false);
+  if (activeScreen === "knowledge") knowledgeEverShown.current = true;
+
+  // Fetch the app-managed base directory once so the rest of the UI can
+  // compute repo local paths deterministically without round-tripping Rust.
+  useEffect(() => {
+    invoke<string>("get_base_dir")
+      .then(setBscBaseDir)
+      .catch((e) => log.error(`get_base_dir failed: ${e}`));
+    // Watch the main thread for jank (logs `[perf] main thread blocked …`).
+    startPerfMonitor();
+    // Diagnostic: count how often each store key changes, so a re-render loop
+    // reveals which key drives it (shown as `store <key>×N` in the perf line).
+    const unsub = useAppStore.subscribe((state, prev) => {
+      const s = state as unknown as Record<string, unknown>;
+      const p = prev as unknown as Record<string, unknown>;
+      for (const k in s) {
+        if (s[k] !== p[k]) recordStoreWrite(k);
+      }
+    });
+    return unsub;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const titleWorkspace = (() => {
     const parts: string[] = [];
@@ -263,10 +293,20 @@ export default function App() {
           {activeScreen === "console" && tabs.length === 0 && (
             <ConsoleEmptyState onNew={() => setShowNewTab(true)} />
           )}
-          {activeScreen === "knowledge"  && <KnowledgeStoreScreen />}
+          {/* KnowledgeStore and Projects stay mounted so local state and PTY
+              sessions survive screen switches. CSS hides them when inactive.
+              KnowledgeStore is mounted lazily on first visit (see above) so its
+              claude session isn't spawned at startup. */}
+          {knowledgeEverShown.current && (
+            <div style={{ display: activeScreen === "knowledge" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
+              <KnowledgeStoreScreen />
+            </div>
+          )}
+          <div style={{ display: activeScreen === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
+            <ProjectsScreen />
+          </div>
           {activeScreen === "github"     && <GitHubScreen />}
           {activeScreen === "automation" && <AutomationsScreen />}
-          {activeScreen === "projects"   && <ProjectsScreen />}
           {activeScreen === "settings"   && <SettingsScreen />}
           </div>
           <StatusBar extra={

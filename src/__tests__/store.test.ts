@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useAppStore } from "../store";
+import { useAppStore, TRIAGE_PROMPT } from "../store";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 const RESET_STATE = {
@@ -15,7 +15,9 @@ const RESET_STATE = {
   paneViews: [] as ViewKey[],
   paneNames: {} as Record<number, Record<number, string>>,
   paneCwds: {} as Record<string, string>,
+  paneInitCmds: {} as Record<string, string>,
   paneGitInfo: {} as Record<string, { repo: string; branch: string; dirty: boolean } | null>,
+  disabledPanes: {} as Record<string, boolean>,
   kbBlocks: [],
   schedules: [],
   commands: [],
@@ -37,8 +39,16 @@ const RESET_STATE = {
   projectsDrawerIssue: null as number | null,
   planningPitch: "",
   planningRepo: "",
-  projectLocalRepos: {} as Record<string, import("../store").ResolvedRepo[]>,
+  projectLocalRepos: {} as Record<string, string[]>,
   configProfiles: [] as import("../store").ConfigProfile[],
+  paneStartupPromptDocs: {} as Record<string, string>,
+  paneStartupPromptText: {} as Record<string, string>,
+  bscBaseDir: "",
+  tabStartedAt: {} as Record<number, number>,
+  defaultStartupPromptDoc: null as string | null,
+  projectStartupPromptDoc: {} as Record<string, string | null>,
+  repoStartupPromptDoc: {} as Record<string, string | null>,
+  kbProjectScope: null as { keys: string[]; label: string } | null,
 };
 
 beforeEach(() => {
@@ -155,6 +165,19 @@ describe("pane state", () => {
   it("setFullscreenPane tracks fullscreen pane index", () => {
     useAppStore.getState().setFullscreenPane(2);
     expect(useAppStore.getState().fullscreenPaneIdx).toBe(2);
+  });
+
+  it("setPaneDisabled marks a pane disabled and clears it on enable", () => {
+    useAppStore.getState().setPaneDisabled("t0p1", true);
+    expect(useAppStore.getState().disabledPanes["t0p1"]).toBe(true);
+    useAppStore.getState().setPaneDisabled("t0p1", false);
+    expect(useAppStore.getState().disabledPanes["t0p1"]).toBeUndefined();
+  });
+
+  it("setPaneDisabled keeps other panes untouched", () => {
+    useAppStore.getState().setPaneDisabled("t0p0", true);
+    useAppStore.getState().setPaneDisabled("t0p2", true);
+    expect(Object.keys(useAppStore.getState().disabledPanes).sort()).toEqual(["t0p0", "t0p2"]);
   });
 
   it("setPaneView updates a single pane's view", () => {
@@ -434,31 +457,26 @@ describe("projects navigation", () => {
 // ── Repository resolution ─────────────────────────────────────────────────────
 
 describe("repository resolution", () => {
-  it("addProjectLocalRepo stores a resolved repo under the project id", () => {
-    const repo = { full_name: "acme/api", local_path: "/home/user/code/api", source: "found" as const };
-    useAppStore.getState().addProjectLocalRepo("prj_1", repo);
+  it("addProjectRepo stores a full_name under the project id", () => {
+    useAppStore.getState().addProjectRepo("prj_1", "acme/api");
+    expect(useAppStore.getState().projectLocalRepos["prj_1"]).toEqual(["acme/api"]);
+  });
+
+  it("addProjectRepo is idempotent: duplicate full_names are ignored", () => {
+    useAppStore.getState().addProjectRepo("prj_1", "acme/api");
+    useAppStore.getState().addProjectRepo("prj_1", "acme/api");
     expect(useAppStore.getState().projectLocalRepos["prj_1"]).toHaveLength(1);
-    expect(useAppStore.getState().projectLocalRepos["prj_1"][0]).toEqual(repo);
   });
 
-  it("addProjectLocalRepo upserts: same full_name replaces the old entry", () => {
-    useAppStore.getState().addProjectLocalRepo("prj_1", { full_name: "acme/api", local_path: "/old", source: "found" });
-    useAppStore.getState().addProjectLocalRepo("prj_1", { full_name: "acme/api", local_path: "/new", source: "cloned" });
-    const repos = useAppStore.getState().projectLocalRepos["prj_1"];
-    expect(repos).toHaveLength(1);
-    expect(repos[0].local_path).toBe("/new");
-    expect(repos[0].source).toBe("cloned");
-  });
-
-  it("addProjectLocalRepo keeps existing repos for the same project", () => {
-    useAppStore.getState().addProjectLocalRepo("prj_1", { full_name: "acme/api", local_path: "/api", source: "found" });
-    useAppStore.getState().addProjectLocalRepo("prj_1", { full_name: "acme/ui",  local_path: "/ui",  source: "found" });
+  it("addProjectRepo keeps existing repos for the same project", () => {
+    useAppStore.getState().addProjectRepo("prj_1", "acme/api");
+    useAppStore.getState().addProjectRepo("prj_1", "acme/ui");
     expect(useAppStore.getState().projectLocalRepos["prj_1"]).toHaveLength(2);
   });
 
-  it("addProjectLocalRepo keeps other projects untouched", () => {
-    useAppStore.getState().addProjectLocalRepo("prj_1", { full_name: "acme/api", local_path: "/api", source: "found" });
-    useAppStore.getState().addProjectLocalRepo("prj_2", { full_name: "other/repo", local_path: "/other", source: "found" });
+  it("addProjectRepo keeps other projects untouched", () => {
+    useAppStore.getState().addProjectRepo("prj_1", "acme/api");
+    useAppStore.getState().addProjectRepo("prj_2", "other/repo");
     expect(useAppStore.getState().projectLocalRepos["prj_1"]).toHaveLength(1);
     expect(useAppStore.getState().projectLocalRepos["prj_2"]).toHaveLength(1);
   });
@@ -467,67 +485,86 @@ describe("repository resolution", () => {
 // ── Quick start ───────────────────────────────────────────────────────────────
 
 describe("quickStartProject", () => {
-  const makeRepo = (name: string, path: string) => ({
-    full_name: `acme/${name}`,
-    local_path: path,
-    source: "found" as const,
-  });
-
   it("creates a new tab named after the project", () => {
-    useAppStore.getState().quickStartProject("my-project", [makeRepo("api", "/api")]);
+    useAppStore.getState().quickStartProject("my-project", ["acme/api"]);
     const { tabs } = useAppStore.getState();
     expect(tabs[tabs.length - 1].name).toBe("my-project");
   });
 
   it("switches activeScreen to console", () => {
-    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api")]);
+    useAppStore.getState().quickStartProject("p", ["acme/api"]);
     expect(useAppStore.getState().activeScreen).toBe("console");
   });
 
   it("activates the new tab", () => {
     const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api")]);
+    useAppStore.getState().quickStartProject("p", ["acme/api"]);
     expect(useAppStore.getState().activeTabIdx).toBe(before);
   });
 
   it("uses 1×1 layout for 1 repo", () => {
-    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api")]);
+    useAppStore.getState().quickStartProject("p", ["acme/api"]);
     const { tabs, activeTabIdx } = useAppStore.getState();
     expect(tabs[activeTabIdx].layout).toBe("1×1");
   });
 
   it("uses 2×1 layout for 2 repos", () => {
-    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api"), makeRepo("ui", "/ui")]);
+    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
     const { tabs, activeTabIdx } = useAppStore.getState();
     expect(tabs[activeTabIdx].layout).toBe("2×1");
   });
 
   it("uses 2×2 layout for 3+ repos", () => {
-    useAppStore.getState().quickStartProject("p", [
-      makeRepo("api", "/api"), makeRepo("ui", "/ui"), makeRepo("sdk", "/sdk"),
-    ]);
+    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui", "acme/sdk"]);
     const { tabs, activeTabIdx } = useAppStore.getState();
     expect(tabs[activeTabIdx].layout).toBe("2×2");
   });
 
-  it("pre-seeds paneCwds with repo paths", () => {
+  it("disables the empty grid cell when 3 repos fill a 2×2", () => {
     const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api"), makeRepo("ui", "/ui")]);
+    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui", "acme/sdk"]);
+    const { disabledPanes } = useAppStore.getState();
+    // 3 real panes enabled, the 4th cell starts disabled.
+    expect(disabledPanes[`t${before}p0`]).toBeUndefined();
+    expect(disabledPanes[`t${before}p2`]).toBeUndefined();
+    expect(disabledPanes[`t${before}p3`]).toBe(true);
+  });
+
+  it("disables no cells when repos exactly fill the grid", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui", "acme/sdk", "acme/cli"]);
+    const { disabledPanes } = useAppStore.getState();
+    for (let i = 0; i < 4; i++) expect(disabledPanes[`t${before}p${i}`]).toBeUndefined();
+  });
+
+  it("pre-seeds paneCwds with computed repo paths under projects/<key>", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
     const { paneCwds } = useAppStore.getState();
-    expect(paneCwds[`t${before}p0`]).toBe("/api");
-    expect(paneCwds[`t${before}p1`]).toBe("/ui");
+    expect(paneCwds[`t${before}p0`]).toBe("/base/projects/p/api");
+    expect(paneCwds[`t${before}p1`]).toBe("/base/projects/p/ui");
   });
 
   it("pre-seeds paneNames with repo short names", () => {
     const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", [makeRepo("api", "/api"), makeRepo("ui", "/ui")]);
+    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
     const { paneNames } = useAppStore.getState();
     expect(paneNames[before][0]).toBe("api");
     expect(paneNames[before][1]).toBe("ui");
   });
 
+  it("pre-seeds paneInitCmds so each console launches claude with the plan prompt", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
+    const { paneInitCmds } = useAppStore.getState();
+    expect(paneInitCmds[`t${before}p0`]).toMatch(/^claude "/);
+    expect(paneInitCmds[`t${before}p0`]).toContain("CLAUDE.local.md");
+    expect(paneInitCmds[`t${before}p1`]).toMatch(/^claude "/);
+  });
+
   it("caps layout at 2×2 even with 5+ repos", () => {
-    const repos = Array.from({ length: 5 }, (_, i) => makeRepo(`repo${i}`, `/r${i}`));
+    const repos = Array.from({ length: 5 }, (_, i) => `acme/repo${i}`);
     useAppStore.getState().quickStartProject("p", repos);
     const { tabs, activeTabIdx } = useAppStore.getState();
     expect(tabs[activeTabIdx].layout).toBe("2×2");
@@ -538,6 +575,100 @@ describe("quickStartProject", () => {
     useAppStore.getState().quickStartProject("p", []);
     expect(useAppStore.getState().tabs).toHaveLength(tabsBefore);
     expect(useAppStore.getState().activeScreen).toBe("console");
+  });
+});
+
+// ── Triage ────────────────────────────────────────────────────────────────────
+
+describe("triageStartProject", () => {
+  it("launches a pane per repo (cwd under projects/<key>) and disables the empty grid cells", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const before = useAppStore.getState().tabs.length;
+    // 5 repos → 3×2 grid = 6 cells, so the 6th cell (index 5) is empty.
+    const repos = ["o/a", "o/b", "o/c", "o/d", "o/e"];
+    useAppStore.getState().triageStartProject("proj", repos);
+
+    const { tabs, activeTabIdx, paneCwds, paneInitCmds, disabledPanes } = useAppStore.getState();
+    expect(tabs[activeTabIdx].layout).toBe("3×2");
+
+    // The 5 real repos are wired up (clone path) and left enabled.
+    for (let i = 0; i < repos.length; i++) {
+      const key = `t${before}p${i}`;
+      expect(paneCwds[key]).toBe(`/base/projects/proj/${repos[i].split("/")[1]}`);
+      expect(paneInitCmds[key]).toContain("claude");
+      expect(disabledPanes[key]).toBeUndefined();
+    }
+    // The single empty cell starts disabled (no shell spawned).
+    expect(disabledPanes[`t${before}p5`]).toBe(true);
+    expect(paneCwds[`t${before}p5`]).toBeUndefined();
+  });
+
+  it("disables no cells when the grid is exactly filled", () => {
+    const before = useAppStore.getState().tabs.length;
+    // 4 repos → 2×2 grid = 4 cells, no empties.
+    useAppStore.getState().triageStartProject("full", ["o/a", "o/b", "o/c", "o/d"]);
+
+    const { disabledPanes } = useAppStore.getState();
+    for (let i = 0; i < 4; i++) {
+      expect(disabledPanes[`t${before}p${i}`]).toBeUndefined();
+    }
+  });
+
+  it("clears stale disabled state on the reused tab index for real repos", () => {
+    const before = useAppStore.getState().tabs.length;
+    // Simulate a leftover disabled flag on a pane id this triage tab will reuse.
+    useAppStore.setState({ disabledPanes: { [`t${before}p0`]: true } });
+    useAppStore.getState().triageStartProject("reuse", ["o/a", "o/b"]);
+
+    expect(useAppStore.getState().disabledPanes[`t${before}p0`]).toBeUndefined();
+  });
+
+  it("sets the verbatim triage prompt text on every triage pane", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
+    const { paneStartupPromptText } = useAppStore.getState();
+    expect(paneStartupPromptText[`t${before}p0`]).toBe(TRIAGE_PROMPT);
+    expect(paneStartupPromptText[`t${before}p1`]).toBe(TRIAGE_PROMPT);
+  });
+
+  it("defaults every triage pane's doc prompt to the built-in default ('')", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
+    const { paneStartupPromptDocs } = useAppStore.getState();
+    expect(paneStartupPromptDocs[`t${before}p0`]).toBe("");
+    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("");
+  });
+
+  it("resolves each pane's doc startup prompt (repo override > project default)", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.setState({
+      projectStartupPromptDoc: { P1: "user/p1.md" },
+      repoStartupPromptDoc: { "P1::o/b": "user/b.md" },
+    });
+    useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
+    const { paneStartupPromptDocs } = useAppStore.getState();
+    // o/a → project default; o/b → its repo override.
+    expect(paneStartupPromptDocs[`t${before}p0`]).toBe("user/p1.md");
+    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("user/b.md");
+  });
+});
+
+describe("startup prompt assignment setters", () => {
+  it("store a relpath at each level, keyed for the resolver", () => {
+    const s = useAppStore.getState();
+    s.setDefaultStartupPromptDoc("user/g.md");
+    s.setProjectStartupPromptDoc("P1", "user/p.md");
+    s.setRepoStartupPromptDoc("P1", "o/a", "user/r.md");
+    const st = useAppStore.getState();
+    expect(st.defaultStartupPromptDoc).toBe("user/g.md");
+    expect(st.projectStartupPromptDoc["P1"]).toBe("user/p.md");
+    expect(st.repoStartupPromptDoc["P1::o/a"]).toBe("user/r.md");
+  });
+
+  it("null clears an override (inherit)", () => {
+    useAppStore.getState().setProjectStartupPromptDoc("P1", "user/p.md");
+    useAppStore.getState().setProjectStartupPromptDoc("P1", null);
+    expect(useAppStore.getState().projectStartupPromptDoc["P1"]).toBeNull();
   });
 });
 
