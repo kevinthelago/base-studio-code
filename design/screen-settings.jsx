@@ -6,6 +6,7 @@ function SettingsShell({ section, children }) {
   const items = [
     {k:"general",      label:"General"},
     {k:"github",       label:"GitHub"},
+    {k:"claude",       label:"Claude",       badge:"new"},
     {k:"integrations", label:"Integrations"},
     {k:"agents",       label:"Agents"},
     {k:"appearance",   label:"Appearance"},
@@ -39,7 +40,15 @@ function SettingsShell({ section, children }) {
                     cursor:"pointer",
                     borderLeft: on ? "2px solid var(--accent)" : "2px solid transparent",
                     paddingLeft: on ? 10 : 12,
-                  }}>{it.label}</div>
+                    display:"flex", alignItems:"center", gap:8,
+                  }}>
+                    <span style={{flex:1}}>{it.label}</span>
+                    {it.badge && <span style={{
+                      padding:"0 5px", borderRadius:3,
+                      fontFamily:"var(--mono)", fontSize:9, color:"var(--accent)",
+                      background:"color-mix(in oklch, var(--accent), transparent 80%)",
+                    }}>{it.badge}</span>}
+                  </div>
                 );
               })}
             </aside>
