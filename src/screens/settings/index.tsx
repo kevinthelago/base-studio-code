@@ -1,24 +1,25 @@
-import { StatusBar } from "../../components/chrome/StatusBar";
 import { useAppStore } from "../../store";
 import { GitHubSettings } from "./GitHub";
 import { IntegrationsSettings } from "./Integrations";
+import { AgentsSettings } from "./Agents";
+import { ClaudeConfigSettings } from "./ClaudeConfig";
 
 const NAV_ITEMS = [
-  { k: "general",      label: "General"      },
-  { k: "github",       label: "GitHub"        },
-  { k: "integrations", label: "Integrations"  },
-  { k: "agents",       label: "Agents"        },
-  { k: "appearance",   label: "Appearance"    },
-  { k: "keyboard",     label: "Keyboard"      },
-  { k: "advanced",     label: "Advanced"      },
+  { k: "general",       label: "General"        },
+  { k: "github",        label: "GitHub"          },
+  { k: "integrations",  label: "Integrations"    },
+  { k: "agents",        label: "Agents"          },
+  { k: "claude-config", label: "Claude Config"   },
+  { k: "appearance",    label: "Appearance"      },
+  { k: "keyboard",      label: "Keyboard"        },
+  { k: "advanced",      label: "Advanced"        },
 ];
 
 export function SettingsScreen() {
   const { settingsSection, setSettingsSection } = useAppStore();
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+    <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <aside style={{
           width: 200, flex: "0 0 200px", background: "var(--bg-panel)",
           borderRight: "1px solid var(--border-soft)", padding: "16px 8px",
@@ -44,17 +45,17 @@ export function SettingsScreen() {
           })}
         </aside>
         <section style={{ flex: 1, padding: 24, overflow: "auto", minWidth: 0 }}>
-          {settingsSection === "github"       && <GitHubSettings />}
-          {settingsSection === "integrations" && <IntegrationsSettings />}
-          {settingsSection !== "github" && settingsSection !== "integrations" && (
+          {settingsSection === "github"        && <GitHubSettings />}
+          {settingsSection === "integrations"  && <IntegrationsSettings />}
+          {settingsSection === "agents"        && <AgentsSettings />}
+          {settingsSection === "claude-config" && <ClaudeConfigSettings />}
+          {settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               height: "100%", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)",
             }}>{settingsSection} · coming soon</div>
           )}
         </section>
-      </div>
-      <StatusBar />
     </div>
   );
 }

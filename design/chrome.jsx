@@ -4,6 +4,7 @@
 
 const NAV = [
   { key:"console",    label:"⌘", title:"Console" },
+  { key:"projects",   label:"P", title:"Project planning" },
   { key:"knowledge",  label:"K", title:"Knowledge Store" },
   { key:"automation", label:"A", title:"Automations" },
   { key:"github",     label:"G", title:"GitHub" },
