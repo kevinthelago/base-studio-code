@@ -186,6 +186,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // Reset quiet timer only for printable output — pure ANSI control sequences
         // (cursor moves, color resets after the last response line) don't count,
         // so Claude's trailing formatting doesn't keep pushing the timer out.
+        // eslint-disable-next-line no-control-regex -- intentional: detect printable vs control bytes
         if (inClaudeRef.current && claudeActiveRef.current === "run" && /[^\x00-\x1f\x7f-\x9f]/.test(ev.payload)) {
           armQuietTimer();
         }

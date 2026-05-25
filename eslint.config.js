@@ -21,6 +21,8 @@ export default tseslint.config(
       "react-hooks/set-state-in-effect": "warn",
       // Date.now() / new Date() in render is acceptable for snapshot comparisons
       "react-hooks/purity": "warn",
+      // ref.current reads in render back "ever-shown"/latest-value flags (intentional)
+      "react-hooks/refs": "warn",
     },
   }
 );
