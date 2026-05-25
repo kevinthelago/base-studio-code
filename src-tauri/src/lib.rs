@@ -2202,7 +2202,7 @@ fn collect_documents(base: &std::path::Path) -> Vec<DocInfo> {
         }
     }
 
-    out.sort_by(|a, b| b.modified_secs.cmp(&a.modified_secs));
+    out.sort_by_key(|d| std::cmp::Reverse(d.modified_secs));
     out
 }
 
