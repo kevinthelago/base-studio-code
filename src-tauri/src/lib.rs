@@ -604,18 +604,54 @@ fn bsc_base_dir() -> std::path::PathBuf {
     home_dir().join(".base-studio-code")
 }
 
-/// Checks `~/.claude.json` for valid JSON and resets it to `{}` if corrupt.
-/// Claude CLI aborts on startup when this file is invalid, which happens when
-/// a previous session was interrupted mid-write. Safe to call before any PTY
-/// session that will run the claude CLI.
+/// Serializes the app's read-modify-write of `~/.claude.json` so concurrent
+/// session launches (each `pty_create` calls `trust_claude_dir`) don't interleave
+/// writes with each other.
+static CLAUDE_JSON_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Writes `content` to `path` atomically: write a sibling temp file, then rename
+/// over the target (atomic on the same volume). A direct `fs::write` can be
+/// observed half-written or interleaved with another process's write — the
+/// failure mode that left trailing bytes after valid JSON and corrupted
+/// `~/.claude.json` when many sessions launched at once.
+fn atomic_write(path: &std::path::Path, content: &str) -> std::io::Result<()> {
+    let mut tmp = path.as_os_str().to_os_string();
+    tmp.push(".tmp");
+    let tmp = std::path::PathBuf::from(tmp);
+    std::fs::write(&tmp, content)?;
+    std::fs::rename(&tmp, path)
+}
+
+/// Returns valid, pretty-printed JSON for `content`: the content re-serialized if
+/// it already parses; otherwise the leading JSON value with any trailing junk
+/// dropped (the common `<valid JSON><junk>` corruption); otherwise `None`.
+fn repair_claude_json(content: &str) -> Option<String> {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(content) {
+        return serde_json::to_string_pretty(&v).ok();
+    }
+    serde_json::Deserializer::from_str(content)
+        .into_iter::<serde_json::Value>()
+        .next()
+        .and_then(|r| r.ok())
+        .and_then(|v| serde_json::to_string_pretty(&v).ok())
+}
+
+/// Ensures `~/.claude.json` is valid JSON (Claude CLI aborts on startup when it
+/// isn't). Rather than wiping the user's config to `{}`, this keeps the leading
+/// valid object and drops trailing junk where possible, only resetting to `{}`
+/// when nothing parses. Safe to call before any PTY session that runs claude.
 fn sanitize_claude_config() {
     let path = home_dir().join(".claude.json");
     if !path.exists() { return; }
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        if serde_json::from_str::<serde_json::Value>(&content).is_err() {
-            let _ = std::fs::write(&path, "{}");
-        }
-    }
+    let _guard = CLAUDE_JSON_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let Ok(content) = std::fs::read_to_string(&path) else { return; };
+    if serde_json::from_str::<serde_json::Value>(&content).is_ok() { return; }
+    let (json, what) = match repair_claude_json(&content) {
+        Some(j) => (j, "repaired (dropped trailing junk)"),
+        None    => ("{}".to_string(), "unrecoverable; reset to {}"),
+    };
+    let _ = atomic_write(&path, &json);
+    log::warn!("sanitize_claude_config: ~/.claude.json {what}");
 }
 
 /// Normalises a filesystem path to the form Claude Code uses as a key in the
@@ -673,6 +709,9 @@ fn mark_dir_trusted(config: &mut serde_json::Value, key: &str) -> bool {
 /// No-op for an empty `cwd` or when the directory is already trusted.
 fn trust_claude_dir(cwd: &str) {
     if cwd.is_empty() { return; }
+    // Serialize with sanitize_claude_config and other concurrent launches so the
+    // read-modify-write can't interleave and corrupt the file.
+    let _guard = CLAUDE_JSON_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = home_dir().join(".claude.json");
     let mut config = match std::fs::read_to_string(&path) {
         Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
@@ -684,7 +723,7 @@ fn trust_claude_dir(cwd: &str) {
     let key = claude_project_key(cwd);
     if !mark_dir_trusted(&mut config, &key) { return; }
     match serde_json::to_string_pretty(&config) {
-        Ok(s) => match std::fs::write(&path, s) {
+        Ok(s) => match atomic_write(&path, &s) {
             Ok(())  => log::info!("trust_claude_dir: pre-trusted {key}"),
             Err(e)  => log::warn!("trust_claude_dir: write {} failed: {e}", path.display()),
         },
@@ -2494,6 +2533,29 @@ mod tests {
         let mut cfg = serde_json::json!({ "projects": { "C:/proj": { "hasTrustDialogAccepted": false } } });
         assert!(mark_dir_trusted(&mut cfg, "C:/proj"));
         assert_eq!(cfg["projects"]["C:/proj"]["hasTrustDialogAccepted"], serde_json::Value::Bool(true));
+    }
+
+    use super::repair_claude_json;
+
+    #[test]
+    fn repair_claude_json_passes_through_valid() {
+        let out = repair_claude_json(r#"{"a":1,"b":[2,3]}"#).unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&out).unwrap()["a"], 1);
+    }
+
+    #[test]
+    fn repair_claude_json_drops_trailing_junk() {
+        // The observed corruption: a complete object followed by stray bytes.
+        let out = repair_claude_json("{\"a\":1}\n}garbage").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["a"], 1);
+        assert!(v.get("garbage").is_none());
+    }
+
+    #[test]
+    fn repair_claude_json_returns_none_for_unrecoverable() {
+        assert!(repair_claude_json("not json at all").is_none());
+        assert!(repair_claude_json("").is_none());
     }
 
     // ── Document store ──────────────────────────────────────────────────────
