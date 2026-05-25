@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { ProjectsHeader } from "./ProjectsHeader";
 import type { ActiveProjectInfo } from "./ProjectsHeader";
+import { reposFromItems } from "./projectScan";
 
 // ── GitHub data types ─────────────────────────────────────────────────────────
 
@@ -83,8 +84,10 @@ query($id: ID!) {
             }
           }
           content {
+            __typename
             ... on Issue {
               number title body state
+              repository            { nameWithOwner }
               labels(first: 5)      { nodes { name color } }
               assignees(first: 3)   { nodes { login } }
               comments              { totalCount }
@@ -326,7 +329,7 @@ export function ProjectBoard() {
   const {
     githubToken,
     activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
-    projectsDrawerIssue, setProjectsDrawerIssue,
+    projectsDrawerIssue, setProjectsDrawerIssue, setActiveProjectRepos,
   } = useAppStore();
 
   const [columns, setColumns] = useState<BoardColumn[]>([]);
@@ -353,6 +356,7 @@ export function ProjectBoard() {
             fieldValues: { nodes: Array<{ name?: string; optionId?: string; field?: { name: string } }> };
             content?: {
               number: number; title: string; body: string; state: string;
+              repository: { nameWithOwner: string };
               labels: { nodes: GhLabel[] };
               assignees: { nodes: GhUser[] };
               comments: { totalCount: number };
@@ -375,7 +379,8 @@ export function ProjectBoard() {
         cols.forEach(c => { grouped[c.id] = []; });
 
         for (const item of node.items.nodes) {
-          if (!item.content) continue;
+          const typename = (item.content as { __typename?: string } | undefined)?.__typename;
+          if (!item.content || typename !== "Issue") continue;
           const c = item.content;
           const issue: BoardIssue = {
             id: item.id,
@@ -396,6 +401,11 @@ export function ProjectBoard() {
           if (grouped[colId]) grouped[colId].push(issue);
           else grouped[cols[0]?.id ?? "all"] = [...(grouped[cols[0]?.id ?? "all"] ?? []), issue];
         }
+
+        // Derive repos from the issues themselves — more reliable than the
+        // project-level repositories field, which requires explicit linking in GitHub UI.
+        const repos = reposFromItems(node.items.nodes);
+        if (repos.length > 0) setActiveProjectRepos(repos);
 
         setColumns(cols);
         setByColumn(grouped);

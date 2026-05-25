@@ -1,4 +1,4 @@
-import { TerminalSquare, BookOpen, Zap, GitFork, Kanban, Settings } from "lucide-react";
+import { TerminalSquare, BookOpen, Zap, GitFork, FolderKanban, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type Screen = "console" | "knowledge" | "automation" | "github" | "projects" | "settings";
@@ -8,7 +8,7 @@ const NAV: Array<{ key: Screen; Icon: LucideIcon; title: string }> = [
   { key: "knowledge",  Icon: BookOpen,       title: "Knowledge Store" },
   { key: "automation", Icon: Zap,            title: "Automations"     },
   { key: "github",     Icon: GitFork,        title: "GitHub"          },
-  { key: "projects",   Icon: Kanban,         title: "Projects"        },
+  { key: "projects",   Icon: FolderKanban,   title: "Projects"        },
   { key: "settings",   Icon: Settings,       title: "Settings"        },
 ];
 

@@ -51,6 +51,7 @@ query($id: ID!) {
             }
           }
           content {
+            __typename
             ... on Issue {
               number state createdAt updatedAt
               labels(first: 5)    { nodes { name color } }
@@ -215,7 +216,8 @@ export function Insights() {
 
         const list: InsightIssue[] = [];
         for (const item of node.items.nodes) {
-          if (!item.content) continue;
+          const typename = (item.content as { __typename?: string } | undefined)?.__typename;
+          if (!item.content || typename !== "Issue") continue;
           const c = item.content;
           const statusFv = item.fieldValues.nodes.find(fv => fv.field?.name === "Status");
           list.push({

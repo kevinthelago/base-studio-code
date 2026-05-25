@@ -3,6 +3,7 @@ import { GitHubEmpty } from "./Empty";
 import { OverviewBody } from "./Overview";
 import { ActionsBody } from "./Actions";
 import { HooksBody } from "./Hooks";
+import { GitHubSummary, GitHubPageModeStrip } from "./GitHubSummary";
 
 const PAGE_TABS = [
   { k: "overview", label: "Overview", hint: "branches · commits · PRs"    },
@@ -63,7 +64,8 @@ function timeAgo(iso: string): string {
 
 export function GitHubScreen() {
   const {
-    githubConnected, githubActiveTab, setGithubTab,
+    githubConnected, githubPageMode,
+    githubActiveTab, setGithubTab,
     githubRepos, activeRepoName, setActiveRepo,
     disconnectGithub,
   } = useAppStore();
@@ -80,7 +82,16 @@ export function GitHubScreen() {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+      <GitHubPageModeStrip />
+
+      {/* Summary page */}
+      {githubPageMode === "summary" && <GitHubSummary />}
+
+      {/* Repositories view */}
+      <div style={{
+        display: githubPageMode === "repos" ? "flex" : "none",
+        flex: 1, minHeight: 0,
+      }}>
         {/* Repo sidebar */}
         <aside style={{
           width: 220, flex: "0 0 220px", background: "var(--bg-panel)",
