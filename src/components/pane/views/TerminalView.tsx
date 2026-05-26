@@ -43,6 +43,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
+  // Skips the first font-zoom effect run per (re)mount — the terminal is already
+  // created at the current size, so we must not pty_resize before pty_create.
+  const fontReadyRef = useRef(false);
+
+  // Global terminal font size (Ctrl++ / Ctrl+-). Subscribed so a zoom change
+  // re-renders this view; the effect below resizes the already-mounted terminal.
+  const terminalFontSize = useAppStore((s) => s.terminalFontSize);
 
   // Stable refs so handlers registered once always call the latest callback
   const onStatusChangeRef = useRef(onStatusChange);
@@ -72,10 +79,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     const [lc, lr] = layout.split("×").map(Number);
     const scrollback = scrollbackForPaneCount((lc || 1) * (lr || 1));
 
+    // (Re)mounting: re-arm the skip so the font-zoom effect doesn't fire against
+    // a terminal whose PTY hasn't been created yet.
+    fontReadyRef.current = false;
+
     const term = new Terminal({
       theme: TERM_THEME,
       fontFamily: '"JetBrains Mono", monospace',
-      fontSize: 12,
+      fontSize: useAppStore.getState().terminalFontSize,
       lineHeight: 1.4,
       cursorBlink: true,
       cursorStyle: "bar",
@@ -297,6 +308,23 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       requestAnimationFrame(() => termRef.current?.focus());
     }
   }, [focused, visible]);
+
+  // Apply global font-zoom changes to the live terminal, re-fitting so rows/cols
+  // recompute for the new cell size and the PTY is resized to match. The skip on
+  // first run avoids resizing a session that pty_create hasn't established yet.
+  useEffect(() => {
+    if (!fontReadyRef.current) { fontReadyRef.current = true; return; }
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontSize = terminalFontSize;
+    // Defer a frame so xterm remeasures the new glyph size before we fit, then
+    // resize the PTY to the recomputed rows/cols.
+    requestAnimationFrame(() => {
+      if (!termRef.current) return;
+      fitRef.current?.fit();
+      invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+    });
+  }, [terminalFontSize, paneId]);
 
   return (
     <div
