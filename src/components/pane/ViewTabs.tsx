@@ -4,11 +4,11 @@ import type { LucideIcon } from "lucide-react";
 export type ViewKey = "console" | "files" | "branches" | "changes" | "log";
 
 export const VIEW_DEFS: Record<ViewKey, { Icon: LucideIcon; label: string; hint: string; hotkey: string }> = {
-  console:  { Icon: Terminal,   label: "Console",  hint: "claude session",      hotkey: "⌥1" },
-  files:    { Icon: FolderOpen, label: "Files",    hint: "working tree",        hotkey: "⌥2" },
-  branches: { Icon: GitBranch,  label: "Branches", hint: "local + remote refs", hotkey: "⌥3" },
-  changes:  { Icon: GitCompareArrows, label: "Changes", hint: "diff vs HEAD",   hotkey: "⌥4" },
-  log:      { Icon: History,    label: "Log",      hint: "recent commits",      hotkey: "⌥5" },
+  console:  { Icon: Terminal,   label: "Console",  hint: "claude session",      hotkey: "Alt+1" },
+  files:    { Icon: FolderOpen, label: "Files",    hint: "working tree",        hotkey: "Alt+2" },
+  branches: { Icon: GitBranch,  label: "Branches", hint: "local + remote refs", hotkey: "Alt+3" },
+  changes:  { Icon: GitCompareArrows, label: "Changes", hint: "diff vs HEAD",   hotkey: "Alt+4" },
+  log:      { Icon: History,    label: "Log",      hint: "recent commits",      hotkey: "Alt+5" },
 };
 
 interface ViewTabsProps {

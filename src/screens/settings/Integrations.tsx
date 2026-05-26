@@ -11,8 +11,32 @@ const TOOLS: [string, string, boolean][] = [
   ["browser", "Headless browsing for docs",             false ],
 ];
 
+function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <span
+      onClick={onToggle}
+      style={{
+        display: "inline-flex", alignItems: "center",
+        width: 32, height: 18, borderRadius: 99, cursor: "pointer",
+        background: on ? "var(--accent)" : "var(--bg-elev2)",
+        border: "1px solid " + (on ? "transparent" : "var(--border)"),
+        transition: "background 0.15s",
+        flex: "0 0 auto",
+      }}
+    >
+      <span style={{
+        width: 12, height: 12, borderRadius: "50%",
+        background: on ? "#1a120a" : "var(--fg-dim)",
+        marginLeft: on ? "auto" : 2,
+        marginRight: on ? 2 : "auto",
+        transition: "margin 0.15s",
+      }} />
+    </span>
+  );
+}
+
 export function IntegrationsSettings() {
-  const { claudeApiKey, setClaudeApiKey } = useAppStore();
+  const { claudeApiKey, setClaudeApiKey, autoFocusOnInterrupt, setAutoFocusOnInterrupt, autoAdvanceOnReply, setAutoAdvanceOnReply } = useAppStore();
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Integrations</h2>
@@ -73,6 +97,40 @@ export function IntegrationsSettings() {
               ))}
             </div>
             <div className="hint">Off for haiku regardless of this setting.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ height: 18 }} />
+
+      <div style={{ height: 18 }} />
+
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
+          <h3 style={{ margin: 0 }}>Console behavior</h3>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Toggle on={autoFocusOnInterrupt} onToggle={() => setAutoFocusOnInterrupt(!autoFocusOnInterrupt)} />
+            <div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
+                Auto-focus on interrupt
+              </div>
+              <div className="hint">
+                Automatically focus and scroll to a pane when its agent is interrupted, completes, or requests permission.
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Toggle on={autoAdvanceOnReply} onToggle={() => setAutoAdvanceOnReply(!autoAdvanceOnReply)} />
+            <div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
+                Cycle to next console on reply
+              </div>
+              <div className="hint">
+                When you send a response to a console, jump focus to the next one waiting in the queue (Ctrl+Shift+N cycles manually). Works while maximized.
+              </div>
+            </div>
           </div>
         </div>
       </div>
