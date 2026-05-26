@@ -50,6 +50,7 @@ const RESET_STATE = {
   configProfiles: [] as import("../store").ConfigProfile[],
   paneStartupPromptDocs: {} as Record<string, string>,
   paneStartupPromptText: {} as Record<string, string>,
+  paneContinue: {} as Record<string, boolean>,
   bscBaseDir: "",
   tabStartedAt: {} as Record<number, number>,
   defaultStartupPromptDoc: null as string | null,
@@ -729,6 +730,14 @@ describe("triageStartProject", () => {
     // The single empty cell starts disabled (no shell spawned).
     expect(disabledPanes[`t${before}p5`]).toBe(true);
     expect(paneCwds[`t${before}p5`]).toBeUndefined();
+  });
+
+  it("marks each real-repo pane to resume its prior conversation (--continue)", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().triageStartProject("cont", ["o/a", "o/b"]);
+    const { paneContinue } = useAppStore.getState();
+    expect(paneContinue[`t${before}p0`]).toBe(true);
+    expect(paneContinue[`t${before}p1`]).toBe(true);
   });
 
   it("disables no cells when the grid is exactly filled", () => {
