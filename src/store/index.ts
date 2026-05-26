@@ -116,6 +116,10 @@ interface AppStore {
   // exact text is sent to the session once Claude reaches its prompt. Used by
   // triage panes (see TRIAGE_PROMPT).
   paneStartupPromptText: Record<string, string>;
+  // Per-pane flag (transient — NOT persisted): launch claude with --continue to
+  // resume the repo's prior conversation rather than starting fresh. Set for
+  // triage panes (see triageStartProject); read by TerminalView.
+  paneContinue: Record<string, boolean>;
   // Epoch ms when each tab's sessions launched (transient — NOT persisted), so
   // auto-focus can be suppressed during a grid's cold-start window.
   tabStartedAt: Record<number, number>;
@@ -345,6 +349,7 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ paneInitCmds: { ...s.paneInitCmds, [paneId]: cmd } })),
       paneStartupPromptDocs: {},
       paneStartupPromptText: {},
+      paneContinue: {},
       tabStartedAt: {},
       paneGitInfo: {},
       setPaneGitInfo: (paneId, info) =>
@@ -660,6 +665,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneInitCmds = { ...s.paneInitCmds };
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
+          const newPaneContinue          = { ...s.paneContinue };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newDisabledPanes = { ...s.disabledPanes };
           const tabPaneNames: Record<number, string> = {};
@@ -696,6 +702,9 @@ export const useAppStore = create<AppStore>()(
                 s.projectAllowedCommands[projectId],
                 s.repoAllowedCommands[repoPromptKey(projectId, fullName ?? "")],
               );
+              // Triage resumes the repo's prior conversation (claude --continue)
+              // so each pass builds on the last instead of starting cold.
+              newPaneContinue[key] = true;
               delete newDisabledPanes[key];
             } else {
               // Empty grid cell (more cells than repos) — start it disabled so it
@@ -714,6 +723,7 @@ export const useAppStore = create<AppStore>()(
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
+            paneContinue: newPaneContinue,
             paneAllowedCommands: newPaneAllowedCommands,
             tabStartedAt: { ...s.tabStartedAt, [newTabIdx]: Date.now() },
             disabledPanes: newDisabledPanes,
