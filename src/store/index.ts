@@ -5,6 +5,7 @@ import type { Tab } from "../components/chrome/Tabstrip";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
+import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
 import { projectRepoCwd } from "../lib/projectPaths";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
@@ -84,6 +85,10 @@ interface AppStore {
   fullscreenPaneIdx: number; // transient — NOT persisted
   consoleBroadcast: boolean; // transient — NOT persisted
   setConsoleBroadcast: (v: boolean) => void;
+  // Global terminal font size (px), shared by every console pane (persisted).
+  // Adjusted via Ctrl++ / Ctrl+- / Ctrl+0; clamped to the legible range.
+  terminalFontSize: number;
+  setTerminalFontSize: (size: number) => void;
   paneViews: ViewKey[];
   paneNames: Record<number, Record<number, string>>;
   paneCwds: Record<string, string>;  // keyed by "t{tabIdx}p{paneIdx}"
@@ -282,6 +287,8 @@ export const useAppStore = create<AppStore>()(
       fullscreenPaneIdx: -1,
       consoleBroadcast: false,
       setConsoleBroadcast: (v) => set({ consoleBroadcast: v }),
+      terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+      setTerminalFontSize: (size) => set({ terminalFontSize: clampFontSize(size) }),
       paneViews: [],
       paneNames: {},
       paneCwds: {},
@@ -789,6 +796,7 @@ export const useAppStore = create<AppStore>()(
         activeScreen:    s.activeScreen,
         tabs:            s.tabs,
         activeTabIdx:    s.activeTabIdx,
+        terminalFontSize: s.terminalFontSize,
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
         paneCwds:        s.paneCwds,

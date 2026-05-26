@@ -26,6 +26,7 @@ const RESET_STATE = {
   repoAllowedCommands: {} as Record<string, string[]>,
   paneAllowedCommands: {} as Record<string, string[]>,
   autoFocusOnInterrupt: true,
+  terminalFontSize: 12,
   focusedAgentName: "",
   githubConnected: false,
   githubToken: "",
@@ -57,6 +58,26 @@ const RESET_STATE = {
 
 beforeEach(() => {
   useAppStore.setState(RESET_STATE);
+});
+
+// ── Terminal font zoom ──────────────────────────────────────────────────────────
+
+describe("terminal font zoom", () => {
+  it("defaults to the baseline font size", () => {
+    expect(useAppStore.getState().terminalFontSize).toBe(12);
+  });
+
+  it("setTerminalFontSize stores an in-range value", () => {
+    useAppStore.getState().setTerminalFontSize(16);
+    expect(useAppStore.getState().terminalFontSize).toBe(16);
+  });
+
+  it("setTerminalFontSize clamps out-of-range values", () => {
+    useAppStore.getState().setTerminalFontSize(2);
+    expect(useAppStore.getState().terminalFontSize).toBe(8);
+    useAppStore.getState().setTerminalFontSize(99);
+    expect(useAppStore.getState().terminalFontSize).toBe(28);
+  });
 });
 
 // ── Tab management ────────────────────────────────────────────────────────────
