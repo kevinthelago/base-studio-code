@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { computeBroadcastTargets } from "../lib/broadcast";
+import { adjustFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { nextFullscreen } from "../lib/consoleFocus";
 import type { Screen } from "../components/chrome/Rail";
 import type { ViewKey } from "../components/pane/ViewTabs";
@@ -76,6 +77,7 @@ export function useHotkeys() {
     setAllPanesView,
     consoleBroadcast,
     setConsoleBroadcast,
+    setTerminalFontSize,
   } = useAppStore();
 
   useEffect(() => {
@@ -102,6 +104,23 @@ export function useHotkeys() {
         e.stopPropagation();
         const next = nextFullscreen(focusedPaneIdx, fullscreenPaneIdx);
         if (next !== null) setFullscreenPane(next);
+        return;
+      }
+
+      // ── Ctrl +/- /0: zoom the console terminal font (global, all panes) ─────
+      // Before the broadcast intercept so it isn't mirrored as a literal key, and
+      // before the inInput guard so it works while typing in a terminal. "+"/"="
+      // zoom in, "-"/"_" out, "0" resets; Shift state and numpad keys are folded
+      // in via e.key. Off the console screen we let the browser have the event.
+      if (e.ctrlKey && !e.metaKey && !e.altKey &&
+          ["+", "=", "-", "_", "0"].includes(e.key)) {
+        if (activeScreen !== "console") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const cur = useAppStore.getState().terminalFontSize;
+        if (e.key === "0")                      setTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE);
+        else if (e.key === "-" || e.key === "_") setTerminalFontSize(adjustFontSize(cur, -1));
+        else                                     setTerminalFontSize(adjustFontSize(cur, +1));
         return;
       }
 
@@ -222,5 +241,6 @@ export function useHotkeys() {
     setFocusedPane, setFullscreenPane,
     setPaneView, setAllPanesView,
     consoleBroadcast, setConsoleBroadcast,
+    setTerminalFontSize,
   ]);
 }
