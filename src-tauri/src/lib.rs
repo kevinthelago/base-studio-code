@@ -182,6 +182,14 @@ async fn pty_create(
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
     let mut cmd = CommandBuilder::new(&shell);
 
+    // Self-heal a corrupt ~/.claude.json before this session can launch claude.
+    // The repair (drop trailing junk, keep the leading valid object) already runs
+    // at workspace setup, but a session launched later (e.g. triage) would hit a
+    // config corrupted in the meantime; claude aborts on invalid JSON. Mutex-
+    // guarded + atomic, so it's safe alongside trust_claude_dir and concurrent
+    // launches, and a no-op when the config is already valid.
+    sanitize_claude_config();
+
     if !cwd.is_empty() {
         cmd.cwd(&cwd);
         // Pre-accept Claude Code's folder-trust prompt for this directory so the
@@ -2451,6 +2459,16 @@ mod tests {
     fn repair_claude_json_returns_none_for_unrecoverable() {
         assert!(repair_claude_json("not json at all").is_none());
         assert!(repair_claude_json("").is_none());
+    }
+
+    #[test]
+    fn repair_claude_json_handles_concurrent_write_tail() {
+        // The real-world tail: a complete object, then leftover bytes from a
+        // longer previous write that wasn't truncated (e.g. `}4\n  }\n}`).
+        let out = repair_claude_json("{\n  \"numStartups\": 239,\n  \"ok\": true\n}4\n  }\n}").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["numStartups"], 239);
+        assert_eq!(v["ok"], true);
     }
 
     // ── Document store ──────────────────────────────────────────────────────
