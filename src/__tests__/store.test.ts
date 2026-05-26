@@ -47,6 +47,7 @@ const RESET_STATE = {
   planningPitch: "",
   planningRepo: "",
   projectLocalRepos: {} as Record<string, string[]>,
+  hiddenProjectIds: [] as string[],
   configProfiles: [] as import("../store").ConfigProfile[],
   paneStartupPromptDocs: {} as Record<string, string>,
   paneStartupPromptText: {} as Record<string, string>,
@@ -192,6 +193,14 @@ describe("deleteLocalProject", () => {
     useAppStore.getState().deleteLocalProject(["Gone", "PVT_gone"]);
     expect(useAppStore.getState().activeProjectId).toBe("keep");
     expect(useAppStore.getState().projectsView).toBe("board");
+  });
+
+  it("dismissProject records the id once (deduped) so syncs stay filtered", () => {
+    useAppStore.getState().dismissProject("PVT_x");
+    useAppStore.getState().dismissProject("PVT_x"); // dup ignored
+    useAppStore.getState().dismissProject("PVT_y");
+    useAppStore.getState().dismissProject("");      // empty ignored
+    expect(useAppStore.getState().hiddenProjectIds).toEqual(["PVT_x", "PVT_y"]);
   });
 });
 
