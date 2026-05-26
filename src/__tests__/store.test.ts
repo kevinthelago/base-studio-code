@@ -152,6 +152,49 @@ describe("focus queue", () => {
   });
 });
 
+// ── Local project deletion ──────────────────────────────────────────────────────
+
+describe("deleteLocalProject", () => {
+  it("prunes per-project and repo-scoped state and resets active meta", () => {
+    useAppStore.setState({
+      planSections: { "My App": { goal: "x" }, Other: { goal: "y" } },
+      planConfirmedSections: { "My App": ["goal"] },
+      projectStartupPromptDoc: { "My App": "doc", Other: "z" },
+      projectLocalRepos: { "My App": ["o/a"] },
+      repoStartupPromptDoc: { "My App::o/a": "d", "Other::o/b": "e" },
+      repoTriagePromptDoc: { "My App::o/a": "t" },
+      repoAllowedCommands: { "My App::o/a": ["gh"] },
+      activeProjectId: "PVT_id1",
+      activeProjectName: "My App",
+      projectsView: "board",
+    });
+    // Pass both the session key (title) and the GitHub id.
+    useAppStore.getState().deleteLocalProject(["My App", "PVT_id1"]);
+    const s = useAppStore.getState();
+    expect(s.planSections["My App"]).toBeUndefined();
+    expect(s.planSections.Other).toBeDefined();          // other project untouched
+    expect(s.planConfirmedSections["My App"]).toBeUndefined();
+    expect(s.projectStartupPromptDoc["My App"]).toBeUndefined();
+    expect(s.projectStartupPromptDoc.Other).toBe("z");
+    expect(s.projectLocalRepos["My App"]).toBeUndefined();
+    expect(s.repoStartupPromptDoc["My App::o/a"]).toBeUndefined();
+    expect(s.repoStartupPromptDoc["Other::o/b"]).toBe("e"); // other project's repo kept
+    expect(s.repoTriagePromptDoc["My App::o/a"]).toBeUndefined();
+    expect(s.repoAllowedCommands["My App::o/a"]).toBeUndefined();
+    // Active project meta cleared and view sent back to the list.
+    expect(s.activeProjectId).toBeNull();
+    expect(s.activeProjectName).toBe("");
+    expect(s.projectsView).toBe("list");
+  });
+
+  it("leaves active meta alone when a different project is deleted", () => {
+    useAppStore.setState({ activeProjectId: "keep", activeProjectName: "Keep", projectsView: "board" });
+    useAppStore.getState().deleteLocalProject(["Gone", "PVT_gone"]);
+    expect(useAppStore.getState().activeProjectId).toBe("keep");
+    expect(useAppStore.getState().projectsView).toBe("board");
+  });
+});
+
 // ── Tab management ────────────────────────────────────────────────────────────
 
 describe("tab management", () => {

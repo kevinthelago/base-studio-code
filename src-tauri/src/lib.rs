@@ -128,6 +128,22 @@ fn plan_dir_for(project_key: &str) -> std::path::PathBuf {
     project_dir(project_key)
 }
 
+/// Delete a project's on-disk hub (`projects/<sanitized-key>`) and everything in
+/// it — plan sections, prompts, cloned repos. Best-effort: a missing dir is fine.
+/// Refuses an empty key so it can never wipe the `projects/` root.
+#[tauri::command]
+fn delete_project_dir(project_key: String) -> Result<(), String> {
+    if sanitize_project_key(&project_key).is_empty() {
+        return Err("delete_project_dir: empty project_key".to_string());
+    }
+    let dir = project_dir(&project_key);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("delete_project_dir: {e}"))?;
+        log::info!("deleted project hub {:?}", dir);
+    }
+    Ok(())
+}
+
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
 ///
 /// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
@@ -2248,6 +2264,7 @@ pub fn run() {
             ensure_session_settings,
             read_plan_sections,
             write_project_plan,
+            delete_project_dir,
             list_documents,
             read_document,
             write_document,

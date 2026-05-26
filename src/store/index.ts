@@ -202,6 +202,11 @@ interface AppStore {
   setActiveProject: (id: string | null) => void;
   setActiveProjectMeta: (id: string | null, name: string, repo: string, number: number, repos?: string[]) => void;
   setActiveProjectRepos: (repos: string[]) => void;
+  // Purge a project's local footprint from the store: the per-project plan/config
+  // maps and repo-scoped (`<key>::<repo>`) maps for every key in `keys` (pass the
+  // planning session key — the title — and the GitHub id), plus the active-project
+  // meta if it matches. Pairs with the backend delete_project_dir for the on-disk hub.
+  deleteLocalProject: (keys: string[]) => void;
   // Startup-prompt assignment (persisted). Values are unified-store document
   // relpaths, or null = inherit. Resolution: repo → project → global default →
   // built-in. See lib/startupPrompt.ts.
@@ -547,6 +552,32 @@ export const useAppStore = create<AppStore>()(
       setActiveProject: (id) => set({ activeProjectId: id }),
       setActiveProjectMeta: (id, name, repo, number, repos = []) =>
         set({ activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos }),
+      deleteLocalProject: (keys) =>
+        set((s) => {
+          const keySet = new Set(keys.filter(Boolean));
+          // Drop entries whose key is the project key.
+          const byKey = <T,>(m: Record<string, T>): Record<string, T> =>
+            Object.fromEntries(Object.entries(m).filter(([k]) => !keySet.has(k)));
+          // Drop repo-scoped entries (`<projectKey>::<repo>`) for this project.
+          const byRepoKey = <T,>(m: Record<string, T>): Record<string, T> =>
+            Object.fromEntries(Object.entries(m).filter(([k]) => !keySet.has(k.split("::")[0])));
+          const clearActive = s.activeProjectId != null && keySet.has(s.activeProjectId);
+          return {
+            planSections:           byKey(s.planSections),
+            planConfirmedSections:  byKey(s.planConfirmedSections),
+            planKbAssignments:      byKey(s.planKbAssignments),
+            planAutomations:        byKey(s.planAutomations),
+            projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
+            projectLocalRepos:      byKey(s.projectLocalRepos),
+            projectAllowedCommands: byKey(s.projectAllowedCommands),
+            repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
+            repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
+            repoAllowedCommands:    byRepoKey(s.repoAllowedCommands),
+            ...(clearActive
+              ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], projectsView: "list" as const }
+              : {}),
+          };
+        }),
       setActiveProjectRepos: (repos) =>
         set((s) => ({ activeProjectRepos: repos, activeProjectRepo: repos[0] ?? s.activeProjectRepo })),
       defaultStartupPromptDoc: null,
