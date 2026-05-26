@@ -250,6 +250,8 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         cwd:     initialCwd ?? "",
         initCmd: initCmd ?? "",
         startupPrompt,
+        // Triage panes resume the repo's prior conversation (claude --continue).
+        continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
         env: undefined,
       }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
 

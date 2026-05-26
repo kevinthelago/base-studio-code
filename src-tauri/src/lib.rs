@@ -151,6 +151,14 @@ fn bash_ansi_c_quote(s: &str) -> String {
     out
 }
 
+/// Build the shell command that launches `claude` with the baked startup prompt.
+/// Triage sessions pass `continue_session = true` to resume the repo's most recent
+/// conversation (`--continue`) instead of starting a fresh one.
+fn claude_launch(prompt: &str, continue_session: bool) -> String {
+    let flag = if continue_session { "--continue " } else { "" };
+    format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
+}
+
 /// Returns `true` when a new session is created, `false` when reconnecting to
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
@@ -164,6 +172,7 @@ async fn pty_create(
     init_cmd: Option<String>,
     env: Option<std::collections::HashMap<String, String>>,
     startup_prompt: Option<String>,
+    continue_session: Option<bool>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -214,7 +223,7 @@ async fn pty_create(
     // safe line and overrides any claude launch in init_cmd. With no prompt,
     // init_cmd runs as-is.
     let launch = match startup_prompt.as_deref().filter(|s| !s.is_empty()) {
-        Some(p) => Some(format!("claude {}", bash_ansi_c_quote(p))),
+        Some(p) => Some(claude_launch(p, continue_session.unwrap_or(false))),
         None => init_cmd.as_deref().filter(|s| !s.is_empty()).map(|s| s.to_string()),
     };
     let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
@@ -2238,11 +2247,22 @@ mod tests {
         assert_eq!(stripped, "/c/Users/Kevin/project");
     }
 
-    use super::{bash_ansi_c_quote, sanitize_project_key};
+    use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch};
 
     #[test]
     fn ansi_c_quote_wraps_plain_text() {
         assert_eq!(bash_ansi_c_quote("triage the issues"), "$'triage the issues'");
+    }
+
+    #[test]
+    fn claude_launch_bakes_prompt_fresh() {
+        assert_eq!(claude_launch("triage the issues", false), "claude $'triage the issues'");
+    }
+
+    #[test]
+    fn claude_launch_adds_continue_flag() {
+        // Triage resumes the repo's prior conversation instead of starting fresh.
+        assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
     }
 
     #[test]
