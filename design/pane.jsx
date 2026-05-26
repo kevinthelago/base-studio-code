@@ -117,6 +117,15 @@ function HamburgerMenu({ agent, repo, branch, model="sonnet-4.5", active, availa
       </Section>
 
       {/* Pane actions */}
+      <Section label="context">
+        <Row>
+          <span style={{color:"var(--accent)", width:12, textAlign:"center"}}>✦</span>
+          <span style={{color:"var(--fg)", flex:1}}>3 blocks pinned</span>
+          <span style={{color:"var(--fg-dim)", fontSize:9.5}}>2G · 1P</span>
+        </Row>
+        <ActionRow icon="↗" t="open context inspector…" sub="see what's resolved"/>
+      </Section>
+
       <Section label="pane" last>
         <ActionRow icon="↻" t="rescan repo"            sub="re-detect HEAD"/>
         <ActionRow icon="✦" t="pin knowledge…"         sub="surface a block in context"/>

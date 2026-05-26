@@ -5,7 +5,11 @@ node_modules/
 dist/
 dist-ssr/
 
-# Tauri build artifacts
+# Test coverage output
+coverage/
+
+# Tauri / Cargo build artifacts
+/target/
 src-tauri/target/
 src-tauri/gen/
 

@@ -305,6 +305,7 @@ function GitHubShell({ tab, children }) {
       <div className="shell">
         <Rail active="github"/>
         <div className="main">
+          {typeof GitHubPageMode !== "undefined" && <GitHubPageMode active="repos"/>}
           <div style={{flex:1, display:"flex", minHeight:0}}>
             {/* Repo sidebar */}
             <aside style={{

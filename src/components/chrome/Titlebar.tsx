@@ -2,7 +2,6 @@ import { Minus, Maximize2, X } from "lucide-react";
 
 interface TitlebarProps {
   workspace?: string;
-  meta?: React.ReactNode;
 }
 
 const platform = (() => {
@@ -21,20 +20,7 @@ async function windowAction(action: "close" | "minimize" | "toggleMaximize") {
   else await w.toggleMaximize();
 }
 
-function MetaSlot({ meta }: { meta: React.ReactNode }) {
-  return (
-    <div className="tl-meta">
-      {meta ?? (
-        <>
-          <span>claude <b style={{ color: "var(--success)" }}>● connected</b></span>
-          <span>github <b>kevinthelago</b></span>
-        </>
-      )}
-    </div>
-  );
-}
-
-export function Titlebar({ workspace = "orchestrator · acme/payments", meta }: TitlebarProps) {
+export function Titlebar({ workspace = "orchestrator · acme/payments" }: TitlebarProps) {
   const title = `base-studio-code — ${workspace}`;
 
   if (platform === "mac") {
@@ -46,7 +32,6 @@ export function Titlebar({ workspace = "orchestrator · acme/payments", meta }: 
           <i onClick={() => windowAction("toggleMaximize")} title="Zoom" />
         </div>
         <div className="tl-title">{title}</div>
-        <MetaSlot meta={meta} />
       </div>
     );
   }
@@ -54,7 +39,6 @@ export function Titlebar({ workspace = "orchestrator · acme/payments", meta }: 
   return (
     <div className="titlebar win">
       <div className="tl-title">{title}</div>
-      <MetaSlot meta={meta} />
       <div className="tl-controls">
         <button onClick={() => windowAction("minimize")} title="Minimize">
           <Minus size={11} />
