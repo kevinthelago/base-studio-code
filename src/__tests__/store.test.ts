@@ -47,6 +47,7 @@ const RESET_STATE = {
   planningPitch: "",
   planningRepo: "",
   projectLocalRepos: {} as Record<string, string[]>,
+  hiddenProjectIds: [] as string[],
   configProfiles: [] as import("../store").ConfigProfile[],
   paneStartupPromptDocs: {} as Record<string, string>,
   paneStartupPromptText: {} as Record<string, string>,
@@ -149,6 +150,57 @@ describe("focus queue", () => {
     useAppStore.setState({ focusQueue: [1, 2, 3] });
     useAppStore.getState().reconcileFocusQueue([1, 3]); // 2 no longer idle
     expect(useAppStore.getState().focusQueue).toEqual([1, 3]);
+  });
+});
+
+// ── Local project deletion ──────────────────────────────────────────────────────
+
+describe("deleteLocalProject", () => {
+  it("prunes per-project and repo-scoped state and resets active meta", () => {
+    useAppStore.setState({
+      planSections: { "My App": { goal: "x" }, Other: { goal: "y" } },
+      planConfirmedSections: { "My App": ["goal"] },
+      projectStartupPromptDoc: { "My App": "doc", Other: "z" },
+      projectLocalRepos: { "My App": ["o/a"] },
+      repoStartupPromptDoc: { "My App::o/a": "d", "Other::o/b": "e" },
+      repoTriagePromptDoc: { "My App::o/a": "t" },
+      repoAllowedCommands: { "My App::o/a": ["gh"] },
+      activeProjectId: "PVT_id1",
+      activeProjectName: "My App",
+      projectsView: "board",
+    });
+    // Pass both the session key (title) and the GitHub id.
+    useAppStore.getState().deleteLocalProject(["My App", "PVT_id1"]);
+    const s = useAppStore.getState();
+    expect(s.planSections["My App"]).toBeUndefined();
+    expect(s.planSections.Other).toBeDefined();          // other project untouched
+    expect(s.planConfirmedSections["My App"]).toBeUndefined();
+    expect(s.projectStartupPromptDoc["My App"]).toBeUndefined();
+    expect(s.projectStartupPromptDoc.Other).toBe("z");
+    expect(s.projectLocalRepos["My App"]).toBeUndefined();
+    expect(s.repoStartupPromptDoc["My App::o/a"]).toBeUndefined();
+    expect(s.repoStartupPromptDoc["Other::o/b"]).toBe("e"); // other project's repo kept
+    expect(s.repoTriagePromptDoc["My App::o/a"]).toBeUndefined();
+    expect(s.repoAllowedCommands["My App::o/a"]).toBeUndefined();
+    // Active project meta cleared and view sent back to the list.
+    expect(s.activeProjectId).toBeNull();
+    expect(s.activeProjectName).toBe("");
+    expect(s.projectsView).toBe("list");
+  });
+
+  it("leaves active meta alone when a different project is deleted", () => {
+    useAppStore.setState({ activeProjectId: "keep", activeProjectName: "Keep", projectsView: "board" });
+    useAppStore.getState().deleteLocalProject(["Gone", "PVT_gone"]);
+    expect(useAppStore.getState().activeProjectId).toBe("keep");
+    expect(useAppStore.getState().projectsView).toBe("board");
+  });
+
+  it("dismissProject records the id once (deduped) so syncs stay filtered", () => {
+    useAppStore.getState().dismissProject("PVT_x");
+    useAppStore.getState().dismissProject("PVT_x"); // dup ignored
+    useAppStore.getState().dismissProject("PVT_y");
+    useAppStore.getState().dismissProject("");      // empty ignored
+    expect(useAppStore.getState().hiddenProjectIds).toEqual(["PVT_x", "PVT_y"]);
   });
 });
 

@@ -143,7 +143,7 @@ function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpenId }: 
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession } = useAppStore();
+  const { githubToken, activeScreen, setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -207,27 +207,43 @@ export function ProjectsList() {
   }
 
   async function handleDeleteConfirm() {
-    if (!deleteTarget || !githubToken) return;
+    if (!deleteTarget) return;
     setDeleting(true);
     setDeleteError(null);
-    try {
-      await invoke("github_graphql", {
-        token: githubToken,
-        query: DELETE_MUTATION,
-        variables: { projectId: deleteTarget.id },
-      });
-      setProjects(prev => prev.filter(p => p.id !== deleteTarget.id));
-      setDeleteTarget(null);
-    } catch (e) {
-      setDeleteError(String(e));
-    } finally {
-      setDeleting(false);
+    // Best-effort GitHub delete: a project already deleted on the web returns a
+    // GraphQL "could not resolve to a node" error, which must NOT block removing
+    // it locally — that was the bug where stale projects couldn't be cleared.
+    if (githubToken) {
+      try {
+        await invoke("github_graphql", {
+          token: githubToken,
+          query: DELETE_MUTATION,
+          variables: { projectId: deleteTarget.id },
+        });
+      } catch (e) {
+        console.warn(`github project delete failed (removing locally anyway): ${e}`);
+      }
     }
+    // Always remove the local footprint: the on-disk hub + per-project store state,
+    // keyed by the planning session key (title) and the GitHub id.
+    await invoke("delete_project_dir", { projectKey: deleteTarget.title })
+      .catch((e) => console.warn(`delete_project_dir failed: ${e}`));
+    deleteLocalProject([deleteTarget.title, deleteTarget.id]);
+    // Persist the removal so the next GitHub sync doesn't re-add it (the list is
+    // re-fetched from GitHub, which still returns closed / not-yet-purged projects).
+    dismissProject(deleteTarget.id);
+    setProjects(prev => prev.filter(p => p.id !== deleteTarget.id));
+    setDeleting(false);
+    setDeleteTarget(null);
   }
+
+  // The GitHub list is re-fetched on every sync, so a project removed in-app is
+  // filtered out here (persisted) rather than only spliced from local state.
+  const visibleProjects = projects.filter(p => !hiddenProjectIds.includes(p.id));
 
   const titleTrimmed = title.trim();
   const titleConflict = titleTrimmed
-    ? projects.find(p => p.title.toLowerCase() === titleTrimmed.toLowerCase()) ?? null
+    ? visibleProjects.find(p => p.title.toLowerCase() === titleTrimmed.toLowerCase()) ?? null
     : null;
 
   function handleStartPlanning() {
@@ -241,7 +257,7 @@ export function ProjectsList() {
     setProjectsView("planning");
   }
 
-  const repos = new Set(projects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? []));
+  const repos = new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? []));
 
   return (
     <section style={{ flex: 1, overflow: "auto", padding: "24px 32px", minWidth: 0 }}>
@@ -251,11 +267,11 @@ export function ProjectsList() {
             <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600 }}>Projects</h2>
             <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ color: "var(--success)" }}>● github connected</span>
-              {!loading && projects.length > 0 && (
+              {!loading && visibleProjects.length > 0 && (
                 <>
                   <span>·</span>
                   <span>
-                    {projects.length} project{projects.length !== 1 ? "s" : ""}
+                    {visibleProjects.length} project{visibleProjects.length !== 1 ? "s" : ""}
                     {repos.size > 0 ? ` across ${repos.size} repo${repos.size !== 1 ? "s" : ""}` : ""}
                   </span>
                 </>
@@ -358,20 +374,20 @@ export function ProjectsList() {
           </div>
         )}
 
-        {loading && projects.length === 0 && (
+        {loading && visibleProjects.length === 0 && (
           <div style={{ textAlign: "center", padding: "40px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
             Loading projects…
           </div>
         )}
 
-        {!loading && projects.length === 0 && !error && (
+        {!loading && visibleProjects.length === 0 && !error && (
           <div style={{ textAlign: "center", padding: "40px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
             No GitHub Projects found. Create one at github.com/your-org to get started.
           </div>
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {projects.map(p => (
+          {visibleProjects.map(p => (
             <ProjectRow
               key={p.id}
               p={p}
@@ -400,8 +416,8 @@ export function ProjectsList() {
               Delete project?
             </h3>
             <p style={{ margin: "0 0 20px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
-              <b style={{ color: "var(--fg)" }}>{deleteTarget.title}</b> will be permanently deleted from GitHub.
-              Issues and milestones linked to this project will not be deleted.
+              <b style={{ color: "var(--fg)" }}>{deleteTarget.title}</b> will be deleted from GitHub (if it still exists)
+              and its local planning data removed. Linked issues and milestones are not deleted.
             </p>
             {deleteError && (
               <div style={{
