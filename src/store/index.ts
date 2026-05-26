@@ -6,7 +6,7 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
-import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle } from "../lib/focusQueue";
+import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue } from "../lib/focusQueue";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
 import { projectRepoCwd } from "../lib/projectPaths";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
@@ -94,6 +94,9 @@ interface AppStore {
   removeFocus: (idx: number) => void;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
+  // Prune the queue to just the still-idle panes (passed in). A session stays
+  // queued only while idle; this sweep self-heals any desync.
+  reconcileFocusQueue: (waiting: number[]) => void;
   // Global terminal font size (px), shared by every console pane (persisted).
   // Adjusted via Ctrl++ / Ctrl+- / Ctrl+0; clamped to the legible range.
   terminalFontSize: number;
@@ -319,6 +322,8 @@ export const useAppStore = create<AppStore>()(
       removeFocus: (idx) =>
         set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, idx) })),
       clearFocusQueue: () => set({ focusQueue: [] }),
+      reconcileFocusQueue: (waiting) =>
+        set((s) => ({ focusQueue: reconcileQueue(s.focusQueue, waiting) })),
       // Cycle to the next waiting pane relative to the one you're on (maximized
       // pane if maximized, else focused). Focuses it — and swaps the maximized
       // pane to it so you stay full-screen. Does NOT dequeue: a pane leaves the

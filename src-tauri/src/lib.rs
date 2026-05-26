@@ -159,6 +159,28 @@ fn claude_launch(prompt: &str, continue_session: bool) -> String {
     format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
 }
 
+/// Build the environment for a session shell.
+///
+/// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
+/// were previously never set on the spawned shell — so `claude` (and other TUIs)
+/// could fall back to a degraded terminal type, breaking inline features like the
+/// ghost-text autocomplete and truecolor output. We advertise sensible defaults
+/// here; caller-supplied vars (e.g. `GH_TOKEN`, or an explicit `TERM`) win.
+fn session_env(caller: &HashMap<String, String>) -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> = vec![
+        ("TERM".to_string(), "xterm-256color".to_string()),
+        ("COLORTERM".to_string(), "truecolor".to_string()),
+    ];
+    for (k, v) in caller {
+        if let Some(slot) = env.iter_mut().find(|(ek, _)| ek == k) {
+            slot.1 = v.clone(); // caller overrides a default
+        } else {
+            env.push((k.clone(), v.clone()));
+        }
+    }
+    env
+}
+
 /// Returns `true` when a new session is created, `false` when reconnecting to
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
@@ -191,6 +213,14 @@ async fn pty_create(
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
     let mut cmd = CommandBuilder::new(&shell);
 
+    // Self-heal a corrupt ~/.claude.json before this session can launch claude.
+    // The repair (drop trailing junk, keep the leading valid object) already runs
+    // at workspace setup, but a session launched later (e.g. triage) would hit a
+    // config corrupted in the meantime; claude aborts on invalid JSON. Mutex-
+    // guarded + atomic, so it's safe alongside trust_claude_dir and concurrent
+    // launches, and a no-op when the config is already valid.
+    sanitize_claude_config();
+
     if !cwd.is_empty() {
         cmd.cwd(&cwd);
         // Pre-accept Claude Code's folder-trust prompt for this directory so the
@@ -198,9 +228,10 @@ async fn pty_create(
         // the "Do you trust the files in this folder?" dialog.
         trust_claude_dir(&cwd);
     }
-    // Caller-supplied environment flows through generically (e.g. GH_TOKEN).
+    // Terminal-type defaults (so claude's TUI gets full xterm capabilities) plus
+    // any caller-supplied environment (e.g. GH_TOKEN), which takes precedence.
     let env_map = env.unwrap_or_default();
-    for (k, v) in &env_map {
+    for (k, v) in session_env(&env_map) {
         cmd.env(k, v);
     }
 
@@ -2248,6 +2279,30 @@ mod tests {
     }
 
     use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch};
+    use super::session_env;
+    use std::collections::HashMap;
+
+    #[test]
+    fn session_env_sets_xterm_term_by_default() {
+        // TERM/COLORTERM were previously unset on the spawned shell; default them
+        // so claude's TUI (ghost-text autocomplete, truecolor) works.
+        let env = session_env(&HashMap::new());
+        assert!(env.iter().any(|(k, v)| k == "TERM" && v == "xterm-256color"));
+        assert!(env.iter().any(|(k, v)| k == "COLORTERM" && v == "truecolor"));
+    }
+
+    #[test]
+    fn session_env_lets_caller_override_term_and_appends_extras() {
+        let mut caller = HashMap::new();
+        caller.insert("TERM".to_string(), "screen-256color".to_string());
+        caller.insert("GH_TOKEN".to_string(), "secret".to_string());
+        let env = session_env(&caller);
+        // caller TERM wins, with no duplicate entry
+        assert_eq!(env.iter().filter(|(k, _)| k == "TERM").count(), 1);
+        assert!(env.iter().any(|(k, v)| k == "TERM" && v == "screen-256color"));
+        // unrelated caller vars still flow through
+        assert!(env.iter().any(|(k, v)| k == "GH_TOKEN" && v == "secret"));
+    }
 
     #[test]
     fn ansi_c_quote_wraps_plain_text() {
@@ -2471,6 +2526,16 @@ mod tests {
     fn repair_claude_json_returns_none_for_unrecoverable() {
         assert!(repair_claude_json("not json at all").is_none());
         assert!(repair_claude_json("").is_none());
+    }
+
+    #[test]
+    fn repair_claude_json_handles_concurrent_write_tail() {
+        // The real-world tail: a complete object, then leftover bytes from a
+        // longer previous write that wasn't truncated (e.g. `}4\n  }\n}`).
+        let out = repair_claude_json("{\n  \"numStartups\": 239,\n  \"ok\": true\n}4\n  }\n}").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["numStartups"], 239);
+        assert_eq!(v["ok"], true);
     }
 
     // ── Document store ──────────────────────────────────────────────────────
