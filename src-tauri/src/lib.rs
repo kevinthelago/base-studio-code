@@ -151,6 +151,28 @@ fn bash_ansi_c_quote(s: &str) -> String {
     out
 }
 
+/// Build the environment for a session shell.
+///
+/// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
+/// were previously never set on the spawned shell — so `claude` (and other TUIs)
+/// could fall back to a degraded terminal type, breaking inline features like the
+/// ghost-text autocomplete and truecolor output. We advertise sensible defaults
+/// here; caller-supplied vars (e.g. `GH_TOKEN`, or an explicit `TERM`) win.
+fn session_env(caller: &HashMap<String, String>) -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> = vec![
+        ("TERM".to_string(), "xterm-256color".to_string()),
+        ("COLORTERM".to_string(), "truecolor".to_string()),
+    ];
+    for (k, v) in caller {
+        if let Some(slot) = env.iter_mut().find(|(ek, _)| ek == k) {
+            slot.1 = v.clone(); // caller overrides a default
+        } else {
+            env.push((k.clone(), v.clone()));
+        }
+    }
+    env
+}
+
 /// Returns `true` when a new session is created, `false` when reconnecting to
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
@@ -197,9 +219,10 @@ async fn pty_create(
         // the "Do you trust the files in this folder?" dialog.
         trust_claude_dir(&cwd);
     }
-    // Caller-supplied environment flows through generically (e.g. GH_TOKEN).
+    // Terminal-type defaults (so claude's TUI gets full xterm capabilities) plus
+    // any caller-supplied environment (e.g. GH_TOKEN), which takes precedence.
     let env_map = env.unwrap_or_default();
-    for (k, v) in &env_map {
+    for (k, v) in session_env(&env_map) {
         cmd.env(k, v);
     }
 
@@ -2247,6 +2270,30 @@ mod tests {
     }
 
     use super::{bash_ansi_c_quote, sanitize_project_key};
+    use super::session_env;
+    use std::collections::HashMap;
+
+    #[test]
+    fn session_env_sets_xterm_term_by_default() {
+        // TERM/COLORTERM were previously unset on the spawned shell; default them
+        // so claude's TUI (ghost-text autocomplete, truecolor) works.
+        let env = session_env(&HashMap::new());
+        assert!(env.iter().any(|(k, v)| k == "TERM" && v == "xterm-256color"));
+        assert!(env.iter().any(|(k, v)| k == "COLORTERM" && v == "truecolor"));
+    }
+
+    #[test]
+    fn session_env_lets_caller_override_term_and_appends_extras() {
+        let mut caller = HashMap::new();
+        caller.insert("TERM".to_string(), "screen-256color".to_string());
+        caller.insert("GH_TOKEN".to_string(), "secret".to_string());
+        let env = session_env(&caller);
+        // caller TERM wins, with no duplicate entry
+        assert_eq!(env.iter().filter(|(k, _)| k == "TERM").count(), 1);
+        assert!(env.iter().any(|(k, v)| k == "TERM" && v == "screen-256color"));
+        // unrelated caller vars still flow through
+        assert!(env.iter().any(|(k, v)| k == "GH_TOKEN" && v == "secret"));
+    }
 
     #[test]
     fn ansi_c_quote_wraps_plain_text() {
