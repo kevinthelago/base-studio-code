@@ -229,14 +229,16 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         if (destroyed) return;
       }
 
-      // Auto-approve this session's shell commands (resolved global+project+repo
-      // at tab creation, falling back to the global list; gh/git always added by
-      // the backend) so claude never blocks on a permission prompt mid-task — the
-      // reason triage's `gh issue list` used to stall.
+      // Configure this session's shell permissions before launch: Bash is allowed
+      // broadly (start-and-go) with a curated deny-list, so claude never blocks on
+      // a permission prompt mid-task. Allowed commands are the resolved
+      // global+project+repo set; denied are the user's global blocks (the backend
+      // always adds its dangerous defaults).
       if (launchesClaude && (initialCwd ?? "") !== "") {
         const cmds = useAppStore.getState().paneAllowedCommands[paneId]
           ?? useAppStore.getState().allowedCommands;
-        await invoke("ensure_session_settings", { cwd: initialCwd, allowedCommands: cmds })
+        const denied = useAppStore.getState().deniedCommands;
+        await invoke("ensure_session_settings", { cwd: initialCwd, allowedCommands: cmds, deniedCommands: denied })
           .catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         if (destroyed) return;
       }
