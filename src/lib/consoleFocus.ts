@@ -31,11 +31,14 @@ export const AUTOFOCUS_COOLDOWN_MS = 1500;
  *    cold-starting and every pane's first settle would yank the cursor around
  *    the grid (see {@link STARTUP_GRACE_MS});
  *  - a cooldown right after a previous steal, so competing near-simultaneous
- *    idles don't ping-pong the cursor (see {@link AUTOFOCUS_COOLDOWN_MS}).
+ *    idles don't ping-pong the cursor (see {@link AUTOFOCUS_COOLDOWN_MS});
+ *  - while a pane is maximized, so the full-screen view isn't yanked to another
+ *    pane — there you step through finished agents deliberately with Ctrl+Shift+N.
  * Manual focus (clicking a pane) is never gated.
  *
  * @param msSinceLastAutoFocus ms since the last auto-focus steal; defaults to
  *   Infinity (no prior steal → cooldown never applies).
+ * @param maximized whether a pane is currently maximized (suppresses the steal).
  */
 export function shouldAutoFocusOnIdle(
   autoFocus: boolean,
@@ -43,11 +46,28 @@ export function shouldAutoFocusOnIdle(
   prevStatus: PaneStatus,
   withinStartupGrace: boolean,
   msSinceLastAutoFocus: number = Infinity,
+  maximized: boolean = false,
 ): boolean {
   if (!autoFocus || status !== "idle" || prevStatus !== "run") return false;
   if (withinStartupGrace) return false;
   if (msSinceLastAutoFocus < AUTOFOCUS_COOLDOWN_MS) return false;
+  if (maximized) return false;
   return true;
+}
+
+/**
+ * Whether replying to the focused agent — it just went idle -> run — should
+ * auto-advance focus to the next waiting pane (complete an interaction, move on).
+ * Only the focused pane's reply triggers it; a background pane resuming on its
+ * own must not move the cursor.
+ */
+export function shouldAdvanceOnReply(
+  prevStatus: PaneStatus,
+  status: PaneStatus,
+  paneIdx: number,
+  focusedIdx: number,
+): boolean {
+  return status === "run" && prevStatus === "idle" && focusedIdx >= 0 && paneIdx === focusedIdx;
 }
 
 /**

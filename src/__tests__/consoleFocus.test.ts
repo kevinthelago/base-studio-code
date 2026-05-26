@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shouldAutoFocusOnIdle, nextFullscreen, STARTUP_GRACE_MS, AUTOFOCUS_COOLDOWN_MS } from "../lib/consoleFocus";
+import { shouldAutoFocusOnIdle, shouldAdvanceOnReply, nextFullscreen, STARTUP_GRACE_MS, AUTOFOCUS_COOLDOWN_MS } from "../lib/consoleFocus";
 
 describe("shouldAutoFocusOnIdle", () => {
   it("steals focus when an agent finishes after the startup grace", () => {
@@ -35,9 +35,33 @@ describe("shouldAutoFocusOnIdle", () => {
     expect(shouldAutoFocusOnIdle(true, "idle", "run", false)).toBe(true);
   });
 
+  it("does not steal focus while a pane is maximized", () => {
+    // The full-screen view shouldn't be yanked; Ctrl+Shift+N steps through instead.
+    expect(shouldAutoFocusOnIdle(true, "idle", "run", false, Infinity, true)).toBe(false);
+  });
+
   it("exposes positive grace and cooldown windows", () => {
     expect(STARTUP_GRACE_MS).toBeGreaterThan(0);
     expect(AUTOFOCUS_COOLDOWN_MS).toBeGreaterThan(0);
+  });
+});
+
+describe("shouldAdvanceOnReply", () => {
+  it("advances when you reply to the focused agent (idle -> run)", () => {
+    expect(shouldAdvanceOnReply("idle", "run", 2, 2)).toBe(true);
+  });
+
+  it("does not advance for a non-focused pane resuming on its own", () => {
+    expect(shouldAdvanceOnReply("idle", "run", 3, 2)).toBe(false);
+  });
+
+  it("does not advance on other transitions", () => {
+    expect(shouldAdvanceOnReply("run", "idle", 2, 2)).toBe(false);
+    expect(shouldAdvanceOnReply("run", "run", 2, 2)).toBe(false);
+  });
+
+  it("does nothing when no pane is focused", () => {
+    expect(shouldAdvanceOnReply("idle", "run", -1, -1)).toBe(false);
   });
 });
 

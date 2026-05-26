@@ -9,7 +9,7 @@ import { LogView } from "../components/pane/views/LogView";
 import { useAppStore } from "../store";
 import { recordRender } from "../lib/perf";
 import { resetLaunchGate } from "../lib/launchGate";
-import { shouldAutoFocusOnIdle, STARTUP_GRACE_MS } from "../lib/consoleFocus";
+import { shouldAutoFocusOnIdle, shouldAdvanceOnReply, STARTUP_GRACE_MS } from "../lib/consoleFocus";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 function resolvePaneName(
@@ -136,8 +136,9 @@ export function ConsoleScreen() {
     paneGitInfo, setPaneGitInfo,
     disabledPanes, setPaneDisabled,
     setFocusedAgentName,
-    setTabState, autoFocusOnInterrupt,
+    setTabState, autoFocusOnInterrupt, autoAdvanceOnReply,
     consoleBroadcast,
+    enqueueFocus, removeFocus, advanceFocus,
   } = useAppStore();
 
   // Count every commit so the perf summary can tell a React re-render loop apart
@@ -170,16 +171,32 @@ export function ConsoleScreen() {
     const pid = paneId(activeTabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
 
-    // Auto-focus the pane that just finished so you can reply fast — this is meant
-    // to steal focus. Suppressed during a freshly-launched grid's cold-start
-    // window and for a short cooldown after a previous steal (so competing idles
-    // don't ping-pong the cursor between panes).
+    // A finished agent (run -> idle) either steals focus (grid mode, so you can
+    // reply fast) or joins the focus queue to be stepped through with Ctrl+Shift+N.
+    // The steal is suppressed during cold-start, for a cooldown after a previous
+    // steal, and while maximized (so the full-screen view isn't yanked) — in those
+    // cases the pane is queued instead. Going back to "run" clears it from the queue.
     const now = Date.now();
     const startedAt = useAppStore.getState().tabStartedAt[activeTabIdx] ?? 0;
     const withinStartupGrace = startedAt > 0 && now - startedAt < STARTUP_GRACE_MS;
-    if (shouldAutoFocusOnIdle(autoFocusOnInterrupt, status, prev, withinStartupGrace, now - lastAutoFocusRef.current)) {
-      setFocusedPane(paneIdx);
-      lastAutoFocusRef.current = now;
+    const maximized = useAppStore.getState().fullscreenPaneIdx >= 0;
+    if (status === "idle" && prev === "run") {
+      // Finished a turn → now waiting for a response: always queue it. It stays
+      // queued (even if you focus it) until you actually respond. In grid mode
+      // also jump to it so you can reply fast; the steal is suppressed when
+      // maximized, during cold-start, and on cooldown.
+      enqueueFocus(paneIdx);
+      if (shouldAutoFocusOnIdle(autoFocusOnInterrupt, status, prev, withinStartupGrace, now - lastAutoFocusRef.current, maximized)) {
+        setFocusedPane(paneIdx);
+        lastAutoFocusRef.current = now;
+      }
+    } else if (status === "run") {
+      // It left the prompt — a response was sent: dequeue it, and if it was the
+      // pane you're on, cycle to the next waiting one (when auto-advance is on).
+      // "Active" pane is the maximized one when maximized, else the focused one.
+      const activeIdx = maximized ? useAppStore.getState().fullscreenPaneIdx : useAppStore.getState().focusedPaneIdx;
+      removeFocus(paneIdx);
+      if (autoAdvanceOnReply && shouldAdvanceOnReply(prev, status, paneIdx, activeIdx)) advanceFocus();
     }
 
     setPaneStatuses((current) => {
@@ -194,7 +211,7 @@ export function ConsoleScreen() {
       setTabState(activeTabIdx, tabState);
       return next;
     });
-  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, setFocusedPane, setTabState]);
+  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, autoAdvanceOnReply, setFocusedPane, setTabState, enqueueFocus, removeFocus, advanceFocus]);
 
   // All per-pane handlers are stable (useCallback) so the memoized PaneAt
   // children don't re-render on every ConsoleScreen commit. Store-action refs
@@ -236,6 +253,8 @@ export function ConsoleScreen() {
   const handleRename = useCallback((paneIdx: number, n: string) => setPaneName(activeTabIdx, paneIdx, n), [activeTabIdx, setPaneName]);
   const handleMenuToggle = useCallback((paneIdx: number) => setPaneMenu(useAppStore.getState().paneMenuOpenIdx === paneIdx ? -1 : paneIdx), [setPaneMenu]);
   const handleViewChange = useCallback((paneIdx: number, v: ViewKey) => setPaneView(paneIdx, v), [setPaneView]);
+  // Focusing/viewing a pane does NOT dequeue it — it stays queued until you send
+  // it a response (handled in handleStatusChange on idle -> run).
   const handleFocusPane = useCallback((paneIdx: number) => setFocusedPane(paneIdx), [setFocusedPane]);
   const handleToggleFullscreen = useCallback((paneIdx: number) => setFullscreenPane(useAppStore.getState().fullscreenPaneIdx === paneIdx ? -1 : paneIdx), [setFullscreenPane]);
 
