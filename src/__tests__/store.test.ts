@@ -22,6 +22,7 @@ const RESET_STATE = {
   schedules: [],
   commands: [],
   allowedCommands: [] as string[],
+  deniedCommands: [] as string[],
   projectAllowedCommands: {} as Record<string, string[]>,
   repoAllowedCommands: {} as Record<string, string[]>,
   paneAllowedCommands: {} as Record<string, string[]>,
@@ -303,6 +304,14 @@ describe("allowed commands", () => {
     useAppStore.getState().addAllowedCommand("old");
     useAppStore.getState().setAllowedCommands(["new-a", "new-b"]);
     expect(useAppStore.getState().allowedCommands).toEqual(["new-a", "new-b"]);
+  });
+
+  it("add/removeDeniedCommand manages the global block list (lowercased, deduped)", () => {
+    useAppStore.getState().addDeniedCommand("SCP");
+    useAppStore.getState().addDeniedCommand("scp"); // dup ignored
+    expect(useAppStore.getState().deniedCommands).toEqual(["scp"]);
+    useAppStore.getState().removeDeniedCommand("scp");
+    expect(useAppStore.getState().deniedCommands).toEqual([]);
   });
 
   it("add/removeProjectAllowedCommand scopes to a project and lowercases", () => {
