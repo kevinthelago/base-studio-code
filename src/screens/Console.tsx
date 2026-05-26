@@ -138,7 +138,7 @@ export function ConsoleScreen() {
     setFocusedAgentName,
     setTabState, autoFocusOnInterrupt, autoAdvanceOnReply,
     consoleBroadcast,
-    enqueueFocus, removeFocus, advanceFocus,
+    enqueueFocus, advanceFocus, reconcileFocusQueue,
   } = useAppStore();
 
   // Count every commit so the perf summary can tell a React re-render loop apart
@@ -190,12 +190,12 @@ export function ConsoleScreen() {
         setFocusedPane(paneIdx);
         lastAutoFocusRef.current = now;
       }
-    } else if (status === "run") {
-      // It left the prompt — a response was sent: dequeue it, and if it was the
-      // pane you're on, cycle to the next waiting one (when auto-advance is on).
+    } else if (status === "run" && prev === "idle") {
+      // A response was sent to this pane — if it's the one you're on, cycle to the
+      // next waiting pane (when auto-advance is on). Dequeuing the now-non-idle
+      // pane is handled by the reconcile sweep below, not here.
       // "Active" pane is the maximized one when maximized, else the focused one.
       const activeIdx = maximized ? useAppStore.getState().fullscreenPaneIdx : useAppStore.getState().focusedPaneIdx;
-      removeFocus(paneIdx);
       if (autoAdvanceOnReply && shouldAdvanceOnReply(prev, status, paneIdx, activeIdx)) advanceFocus();
     }
 
@@ -211,7 +211,19 @@ export function ConsoleScreen() {
       setTabState(activeTabIdx, tabState);
       return next;
     });
-  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, autoAdvanceOnReply, setFocusedPane, setTabState, enqueueFocus, removeFocus, advanceFocus]);
+  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, autoAdvanceOnReply, setFocusedPane, setTabState, enqueueFocus, advanceFocus]);
+
+  // Reconcile the focus queue with reality: a session stays queued only while it's
+  // idle, so whenever statuses change, drop any queued pane that's no longer idle.
+  // Self-heals desync (manual focus changes, a missed transition) instead of
+  // relying on catching one specific dequeue event.
+  useEffect(() => {
+    const waiting: number[] = [];
+    for (let i = 0; i < paneCount; i++) {
+      if ((paneStatuses[paneId(activeTabIdx, i)] ?? "idle") === "idle") waiting.push(i);
+    }
+    reconcileFocusQueue(waiting);
+  }, [paneStatuses, activeTabIdx, paneCount, reconcileFocusQueue]);
 
   // All per-pane handlers are stable (useCallback) so the memoized PaneAt
   // children don't re-render on every ConsoleScreen commit. Store-action refs

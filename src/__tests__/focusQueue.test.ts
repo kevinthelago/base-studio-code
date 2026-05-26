@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { enqueue, removeFromQueue, nextInCycle } from "../lib/focusQueue";
+import { enqueue, removeFromQueue, nextInCycle, reconcileQueue } from "../lib/focusQueue";
 
 describe("enqueue", () => {
   it("appends a new pane in FIFO order", () => {
@@ -51,5 +51,24 @@ describe("nextInCycle", () => {
 
   it("returns null for an empty queue", () => {
     expect(nextInCycle([], 3)).toBeNull();
+  });
+});
+
+describe("reconcileQueue", () => {
+  it("drops panes that are no longer waiting", () => {
+    expect(reconcileQueue([1, 2, 3], [1, 3])).toEqual([1, 3]);
+  });
+
+  it("preserves queue order, not the waiting-set order", () => {
+    expect(reconcileQueue([3, 1, 2], [2, 1, 3])).toEqual([3, 1, 2]);
+  });
+
+  it("returns the same reference when nothing is pruned", () => {
+    const q = [1, 2];
+    expect(reconcileQueue(q, [1, 2, 5])).toBe(q);
+  });
+
+  it("empties when nothing is waiting", () => {
+    expect(reconcileQueue([1, 2], [])).toEqual([]);
   });
 });
