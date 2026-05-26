@@ -162,18 +162,24 @@ export function ConsoleScreen() {
   // Ref so the callback passed to TerminalView always has the latest value without re-registering
   const paneStatusesRef = useRef(paneStatuses);
   useEffect(() => { paneStatusesRef.current = paneStatuses; }, [paneStatuses]);
+  // Timestamp of the last auto-focus steal — feeds the cooldown that stops two
+  // panes settling in quick succession from ping-ponging the cursor.
+  const lastAutoFocusRef = useRef(0);
 
   const handleStatusChange = useCallback((paneIdx: number, status: "run" | "idle") => {
     const pid = paneId(activeTabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
 
     // Auto-focus the pane that just finished so you can reply fast — this is meant
-    // to steal focus. The exception is a freshly-launched grid's cold-start window,
-    // where every pane's first settle would yank the cursor around the screen.
+    // to steal focus. Suppressed during a freshly-launched grid's cold-start
+    // window and for a short cooldown after a previous steal (so competing idles
+    // don't ping-pong the cursor between panes).
+    const now = Date.now();
     const startedAt = useAppStore.getState().tabStartedAt[activeTabIdx] ?? 0;
-    const withinStartupGrace = startedAt > 0 && Date.now() - startedAt < STARTUP_GRACE_MS;
-    if (shouldAutoFocusOnIdle(autoFocusOnInterrupt, status, prev, withinStartupGrace)) {
+    const withinStartupGrace = startedAt > 0 && now - startedAt < STARTUP_GRACE_MS;
+    if (shouldAutoFocusOnIdle(autoFocusOnInterrupt, status, prev, withinStartupGrace, now - lastAutoFocusRef.current)) {
       setFocusedPane(paneIdx);
+      lastAutoFocusRef.current = now;
     }
 
     setPaneStatuses((current) => {
