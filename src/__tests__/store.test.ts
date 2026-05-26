@@ -12,6 +12,7 @@ const RESET_STATE = {
   paneMenuOpenIdx: -1,
   focusedPaneIdx: -1,
   fullscreenPaneIdx: -1,
+  focusQueue: [] as number[],
   paneViews: [] as ViewKey[],
   paneNames: {} as Record<number, Record<number, string>>,
   paneCwds: {} as Record<string, string>,
@@ -27,6 +28,7 @@ const RESET_STATE = {
   repoAllowedCommands: {} as Record<string, string[]>,
   paneAllowedCommands: {} as Record<string, string[]>,
   autoFocusOnInterrupt: true,
+  autoAdvanceOnReply: true,
   terminalFontSize: 12,
   focusedAgentName: "",
   githubConnected: false,
@@ -78,6 +80,68 @@ describe("terminal font zoom", () => {
     expect(useAppStore.getState().terminalFontSize).toBe(8);
     useAppStore.getState().setTerminalFontSize(99);
     expect(useAppStore.getState().terminalFontSize).toBe(28);
+  });
+});
+
+// ── Focus queue ─────────────────────────────────────────────────────────────────
+
+describe("focus queue", () => {
+  it("enqueueFocus appends (deduped) and skips the excluded pane", () => {
+    const s = useAppStore.getState();
+    s.enqueueFocus(2);
+    s.enqueueFocus(2);            // dup ignored
+    s.enqueueFocus(3, 3);         // skipped (the one you're on)
+    s.enqueueFocus(4);
+    expect(useAppStore.getState().focusQueue).toEqual([2, 4]);
+  });
+
+  it("removeFocus drops a pane from the queue", () => {
+    useAppStore.setState({ focusQueue: [1, 2, 3] });
+    useAppStore.getState().removeFocus(2);
+    expect(useAppStore.getState().focusQueue).toEqual([1, 3]);
+  });
+
+  it("advanceFocus cycles to the next waiting pane WITHOUT dequeuing", () => {
+    useAppStore.setState({ focusQueue: [5, 6, 7], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
+    useAppStore.getState().advanceFocus();
+    expect(useAppStore.getState().focusedPaneIdx).toBe(6);
+    expect(useAppStore.getState().focusQueue).toEqual([5, 6, 7]); // stays queued until you respond
+    expect(useAppStore.getState().fullscreenPaneIdx).toBe(-1);
+  });
+
+  it("advanceFocus starts at the front when you're not on a queued pane", () => {
+    useAppStore.setState({ focusQueue: [5, 6], focusedPaneIdx: 0, fullscreenPaneIdx: -1 });
+    useAppStore.getState().advanceFocus();
+    expect(useAppStore.getState().focusedPaneIdx).toBe(5);
+  });
+
+  it("advanceFocus swaps the maximized pane, relative to the maximized one", () => {
+    useAppStore.setState({ focusQueue: [5, 6, 7], focusedPaneIdx: 5, fullscreenPaneIdx: 5 });
+    useAppStore.getState().advanceFocus();
+    expect(useAppStore.getState().focusedPaneIdx).toBe(6);
+    expect(useAppStore.getState().fullscreenPaneIdx).toBe(6);
+    expect(useAppStore.getState().focusQueue).toEqual([5, 6, 7]); // not dequeued
+  });
+
+  it("advanceFocus is a no-op when there's nowhere else to go", () => {
+    useAppStore.setState({ focusQueue: [5], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
+    useAppStore.getState().advanceFocus();
+    expect(useAppStore.getState().focusedPaneIdx).toBe(5); // only queued pane is current
+    useAppStore.setState({ focusQueue: [], focusedPaneIdx: 2 });
+    useAppStore.getState().advanceFocus();
+    expect(useAppStore.getState().focusedPaneIdx).toBe(2);
+  });
+
+  it("setActiveTab clears the queue (indices are tab-relative)", () => {
+    useAppStore.setState({ focusQueue: [1, 2] });
+    useAppStore.getState().setActiveTab(1);
+    expect(useAppStore.getState().focusQueue).toEqual([]);
+  });
+
+  it("setAutoAdvanceOnReply toggles the setting", () => {
+    expect(useAppStore.getState().autoAdvanceOnReply).toBe(true);
+    useAppStore.getState().setAutoAdvanceOnReply(false);
+    expect(useAppStore.getState().autoAdvanceOnReply).toBe(false);
   });
 });
 

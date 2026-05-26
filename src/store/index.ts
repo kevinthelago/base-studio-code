@@ -6,6 +6,7 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
+import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle } from "../lib/focusQueue";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
 import { projectRepoCwd } from "../lib/projectPaths";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
@@ -85,6 +86,14 @@ interface AppStore {
   fullscreenPaneIdx: number; // transient — NOT persisted
   consoleBroadcast: boolean; // transient — NOT persisted
   setConsoleBroadcast: (v: boolean) => void;
+  // Focus queue (transient — NOT persisted): active-tab pane indices that
+  // finished a turn and await attention, FIFO. Stepped through with Ctrl+Shift+N
+  // (advanceFocus); cleared on tab change since indices are tab-relative.
+  focusQueue: number[];
+  enqueueFocus: (idx: number, skip?: number) => void;
+  removeFocus: (idx: number) => void;
+  clearFocusQueue: () => void;
+  advanceFocus: () => void;
   // Global terminal font size (px), shared by every console pane (persisted).
   // Adjusted via Ctrl++ / Ctrl+- / Ctrl+0; clamped to the legible range.
   terminalFontSize: number;
@@ -281,6 +290,10 @@ interface AppStore {
   // Console behavior
   autoFocusOnInterrupt: boolean;
   setAutoFocusOnInterrupt: (v: boolean) => void;
+  // When a response is sent to the active console, cycle focus to the next pane
+  // waiting in the focus queue (persisted; configured in Settings → Integrations).
+  autoAdvanceOnReply: boolean;
+  setAutoAdvanceOnReply: (v: boolean) => void;
 }
 
 export const useAppStore = create<AppStore>()(
@@ -296,6 +309,25 @@ export const useAppStore = create<AppStore>()(
       fullscreenPaneIdx: -1,
       consoleBroadcast: false,
       setConsoleBroadcast: (v) => set({ consoleBroadcast: v }),
+      focusQueue: [],
+      enqueueFocus: (idx, skip = -1) =>
+        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, idx, skip) })),
+      removeFocus: (idx) =>
+        set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, idx) })),
+      clearFocusQueue: () => set({ focusQueue: [] }),
+      // Cycle to the next waiting pane relative to the one you're on (maximized
+      // pane if maximized, else focused). Focuses it — and swaps the maximized
+      // pane to it so you stay full-screen. Does NOT dequeue: a pane leaves the
+      // queue only when you respond to it (see Console.handleStatusChange).
+      advanceFocus: () =>
+        set((s) => {
+          const active = s.fullscreenPaneIdx >= 0 ? s.fullscreenPaneIdx : s.focusedPaneIdx;
+          const next = nextInCycle(s.focusQueue, active);
+          if (next === null) return {};
+          return s.fullscreenPaneIdx >= 0
+            ? { focusedPaneIdx: next, fullscreenPaneIdx: next }
+            : { focusedPaneIdx: next };
+        }),
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       setTerminalFontSize: (size) => set({ terminalFontSize: clampFontSize(size) }),
       paneViews: [],
@@ -322,7 +354,7 @@ export const useAppStore = create<AppStore>()(
       // Switching tabs clears focus/fullscreen/menu — these are positional and
       // global, so a stale index from the previous tab would mis-target features
       // like broadcast (excluding a console that isn't actually focused).
-      setActiveTab: (idx) => set({ activeTabIdx: idx, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: -1 }),
+      setActiveTab: (idx) => set({ activeTabIdx: idx, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: -1, focusQueue: [] }),
       addTab: (tab) =>
         set((s) => ({
           tabs: [...s.tabs, tab],
@@ -330,15 +362,16 @@ export const useAppStore = create<AppStore>()(
           focusedPaneIdx: -1,
           fullscreenPaneIdx: -1,
           paneMenuOpenIdx: -1,
+          focusQueue: [],
         })),
       closeTab: (idx) =>
         set((s) => {
           const tabs = s.tabs.filter((_, i) => i !== idx);
-          if (tabs.length === 0) return { tabs, activeTabIdx: 0 };
+          if (tabs.length === 0) return { tabs, activeTabIdx: 0, focusQueue: [] };
           let activeTabIdx = s.activeTabIdx;
           if (idx < s.activeTabIdx) activeTabIdx -= 1;
           else if (idx === s.activeTabIdx) activeTabIdx = Math.min(activeTabIdx, tabs.length - 1);
-          return { tabs, activeTabIdx };
+          return { tabs, activeTabIdx, focusQueue: [] };
         }),
       renameTab: (idx, name) =>
         set((s) => {
@@ -807,6 +840,8 @@ export const useAppStore = create<AppStore>()(
 
       autoFocusOnInterrupt: true,
       setAutoFocusOnInterrupt: (v) => set({ autoFocusOnInterrupt: v }),
+      autoAdvanceOnReply: true,
+      setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v }),
     }),
     {
       name: "app-state",
@@ -838,6 +873,7 @@ export const useAppStore = create<AppStore>()(
         projectAllowedCommands: s.projectAllowedCommands,
         repoAllowedCommands:    s.repoAllowedCommands,
         autoFocusOnInterrupt: s.autoFocusOnInterrupt,
+        autoAdvanceOnReply:   s.autoAdvanceOnReply,
         projectLocalRepos:    s.projectLocalRepos,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
         projectStartupPromptDoc: s.projectStartupPromptDoc,
