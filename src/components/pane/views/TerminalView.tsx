@@ -60,11 +60,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const QUIET_MS = 800; // ms of silence after last printable output → claude is at its prompt
 
-  // Startup prompt queued for a fresh session (triage/project panes). Sent once,
-  // the first time Claude reaches its prompt, then cleared. See the pty_create
-  // block below and onClaudeIdle.
-  const pendingStartupRef = useRef<string | null>(null);
-
   // Mount terminal + spawn PTY once per paneId
   useEffect(() => {
     const el = containerRef.current;
@@ -96,17 +91,9 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
     // Called whenever claude finishes responding (or its process exits).
     function onClaudeIdle() {
-      // First time Claude reaches its prompt on a fresh session with a queued
-      // startup prompt: send it and stay "run" (Claude will respond) rather than
-      // reporting idle. The next quiet period reports idle normally. Gated on
-      // inClaudeRef so a process-exit idle (claude died) never types into bash.
-      if (pendingStartupRef.current && inClaudeRef.current) {
-        const prompt = pendingStartupRef.current;
-        pendingStartupRef.current = null;
-        invoke("pty_write", { paneId, data: prompt + "\r" }).catch(console.error);
-        armQuietTimer();
-        return;
-      }
+      // Report idle status only. The startup prompt is delivered by claude itself
+      // (baked as its initial-message arg in pty_create), so there is nothing to
+      // type here and no startup race to manage.
       claudeActiveRef.current = "idle";
       onStatusChangeRef.current?.("idle");
       // Focus is decided by ConsoleScreen (which pane to auto-focus, with a
@@ -197,11 +184,49 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       if (destroyed) { unlisten(); return; }
       unlistenRef.current = unlisten;
 
+      // Resolve this pane's startup prompt (triage / console kickoff), if any, so
+      // it can be baked into the claude launch (see pty_create). Verbatim text
+      // (paneStartupPromptText) wins; otherwise the doc path: "" = built-in
+      // default, a relpath is read from the unified document store. Delivering it
+      // as claude's initial-message arg is reliable — claude submits it itself, so
+      // there is no PTY-typing race against the animated TUI.
+      let startupPrompt: string | undefined;
+      const text = useAppStore.getState().paneStartupPromptText[paneId];
+      if (text !== undefined) {
+        startupPrompt = text;
+      } else {
+        const doc = useAppStore.getState().paneStartupPromptDocs[paneId];
+        if (doc !== undefined) {
+          if (doc === "") {
+            startupPrompt = PROJECT_INIT_PROMPT;
+          } else {
+            const docText = await invoke<string>("read_document", { relpath: doc }).catch(() => PROJECT_INIT_PROMPT);
+            startupPrompt = docText.trim() || PROJECT_INIT_PROMPT;
+          }
+        }
+      }
+      if (destroyed) return;
+
       // Serialize `claude` cold-starts so simultaneously-mounted panes don't
-      // stampede the shared OAuth credential store and log every session out.
-      // Non-claude shells and tab-switch reconnects pass through instantly.
-      if ((initCmd ?? "").includes("claude")) {
+      // stampede the shared OAuth credential store and log every session out. A
+      // pane launches claude if its initCmd says so or it has a startup prompt
+      // (which the backend turns into a claude launch). Non-claude shells and
+      // tab-switch reconnects pass through instantly.
+      const launchesClaude = (initCmd ?? "").includes("claude") || startupPrompt !== undefined;
+      if (launchesClaude) {
         await gateClaudeLaunch(paneId);
+        if (destroyed) return;
+      }
+
+      // Auto-approve this session's shell commands (resolved global+project+repo
+      // at tab creation, falling back to the global list; gh/git always added by
+      // the backend) so claude never blocks on a permission prompt mid-task — the
+      // reason triage's `gh issue list` used to stall.
+      if (launchesClaude && (initialCwd ?? "") !== "") {
+        const cmds = useAppStore.getState().paneAllowedCommands[paneId]
+          ?? useAppStore.getState().allowedCommands;
+        await invoke("ensure_session_settings", { cwd: initialCwd, allowedCommands: cmds })
+          .catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         if (destroyed) return;
       }
 
@@ -211,31 +236,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         rows: term.rows,
         cwd:     initialCwd ?? "",
         initCmd: initCmd ?? "",
+        startupPrompt,
         env: undefined,
       }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
 
-      if (isNew) {
-        // Seed a startup prompt if this pane has one assigned (triage sessions).
-        // Verbatim text (paneStartupPromptText) wins and is sent as-is. Otherwise
-        // fall back to the doc-based path: "" = built-in default; a relpath is
-        // read from the unified doc store. Queued here, delivered by onClaudeIdle
-        // once Claude is at its prompt.
-        const text = useAppStore.getState().paneStartupPromptText[paneId];
-        if (text !== undefined && !destroyed) {
-          pendingStartupRef.current = text;
-        } else {
-          const doc = useAppStore.getState().paneStartupPromptDocs[paneId];
-          if (doc !== undefined && !destroyed) {
-            if (doc === "") {
-              pendingStartupRef.current = PROJECT_INIT_PROMPT;
-            } else {
-              const docText = await invoke<string>("read_document", { relpath: doc })
-                .catch(() => PROJECT_INIT_PROMPT);
-              if (!destroyed) pendingStartupRef.current = docText.trim() || PROJECT_INIT_PROMPT;
-            }
-          }
-        }
-      } else {
+      if (!isNew) {
         // Reconnecting — Ctrl+L repaints the prompt without submitting a command
         invoke("pty_write", { paneId, data: "\x0c" }).catch((e) => log.error(`console[${paneId}] repaint write failed: ${e}`));
       }
