@@ -39,3 +39,18 @@ export function nextInCycle(queue: number[], current: number): number | null {
   const next = queue[(idx + 1) % queue.length];
   return next === current ? null : next;          // only the current pane is queued → nowhere to go
 }
+
+/**
+ * Prune the queue to the panes still waiting. A session stays queued only while
+ * it's idle and drops out the moment it's no longer idle (it got a response / is
+ * working). Run as a sweep whenever statuses change, so a missed transition or a
+ * manual focus change can't strand a handled session in the queue.
+ *
+ * @param queue current waiting queue.
+ * @param waiting indices that are currently idle (still waiting).
+ * @returns the pruned queue, or the same reference when nothing changed.
+ */
+export function reconcileQueue(queue: number[], waiting: number[]): number[] {
+  const pruned = queue.filter((i) => waiting.includes(i));
+  return pruned.length === queue.length ? queue : pruned;
+}

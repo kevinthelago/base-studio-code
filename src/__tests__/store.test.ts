@@ -143,6 +143,12 @@ describe("focus queue", () => {
     useAppStore.getState().setAutoAdvanceOnReply(false);
     expect(useAppStore.getState().autoAdvanceOnReply).toBe(false);
   });
+
+  it("reconcileFocusQueue prunes panes that are no longer waiting", () => {
+    useAppStore.setState({ focusQueue: [1, 2, 3] });
+    useAppStore.getState().reconcileFocusQueue([1, 3]); // 2 no longer idle
+    expect(useAppStore.getState().focusQueue).toEqual([1, 3]);
+  });
 });
 
 // ── Tab management ────────────────────────────────────────────────────────────
