@@ -36,7 +36,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 }
 
 export function IntegrationsSettings() {
-  const { claudeApiKey, setClaudeApiKey, autoFocusOnInterrupt, setAutoFocusOnInterrupt } = useAppStore();
+  const { claudeApiKey, setClaudeApiKey, autoFocusOnInterrupt, setAutoFocusOnInterrupt, autoAdvanceOnReply, setAutoAdvanceOnReply } = useAppStore();
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Integrations</h2>
@@ -118,6 +118,17 @@ export function IntegrationsSettings() {
               </div>
               <div className="hint">
                 Automatically focus and scroll to a pane when its agent is interrupted, completes, or requests permission.
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Toggle on={autoAdvanceOnReply} onToggle={() => setAutoAdvanceOnReply(!autoAdvanceOnReply)} />
+            <div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
+                Cycle to next console on reply
+              </div>
+              <div className="hint">
+                When you send a response to a console, jump focus to the next one waiting in the queue (Ctrl+Shift+N cycles manually). Works while maximized.
               </div>
             </div>
           </div>

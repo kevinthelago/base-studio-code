@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { enqueue, removeFromQueue, dequeueNext } from "../lib/focusQueue";
+import { enqueue, removeFromQueue, nextInCycle } from "../lib/focusQueue";
 
 describe("enqueue", () => {
   it("appends a new pane in FIFO order", () => {
@@ -32,12 +32,24 @@ describe("removeFromQueue", () => {
   });
 });
 
-describe("dequeueNext", () => {
-  it("takes the front and returns the rest", () => {
-    expect(dequeueNext([5, 6, 7])).toEqual({ next: 5, rest: [6, 7] });
+describe("nextInCycle", () => {
+  it("moves to the next waiting pane after the current one", () => {
+    expect(nextInCycle([5, 6, 7], 5)).toBe(6);
+  });
+
+  it("wraps around to the front", () => {
+    expect(nextInCycle([5, 6, 7], 7)).toBe(5);
+  });
+
+  it("starts at the front when the current pane isn't queued", () => {
+    expect(nextInCycle([5, 6, 7], 9)).toBe(5);
+  });
+
+  it("returns null when the only queued pane is the current one", () => {
+    expect(nextInCycle([5], 5)).toBeNull();
   });
 
   it("returns null for an empty queue", () => {
-    expect(dequeueNext([])).toEqual({ next: null, rest: [] });
+    expect(nextInCycle([], 3)).toBeNull();
   });
 });

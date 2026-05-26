@@ -6,7 +6,7 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
-import { enqueue as enqueueFocusQueue, removeFromQueue, dequeueNext } from "../lib/focusQueue";
+import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle } from "../lib/focusQueue";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
 import { projectRepoCwd } from "../lib/projectPaths";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
@@ -290,6 +290,10 @@ interface AppStore {
   // Console behavior
   autoFocusOnInterrupt: boolean;
   setAutoFocusOnInterrupt: (v: boolean) => void;
+  // When a response is sent to the active console, cycle focus to the next pane
+  // waiting in the focus queue (persisted; configured in Settings → Integrations).
+  autoAdvanceOnReply: boolean;
+  setAutoAdvanceOnReply: (v: boolean) => void;
 }
 
 export const useAppStore = create<AppStore>()(
@@ -311,15 +315,18 @@ export const useAppStore = create<AppStore>()(
       removeFocus: (idx) =>
         set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, idx) })),
       clearFocusQueue: () => set({ focusQueue: [] }),
-      // Advance to the next waiting pane: focus it (and, if a pane is maximized,
-      // swap the maximized pane to it so you stay full-screen) and pop the queue.
+      // Cycle to the next waiting pane relative to the one you're on (maximized
+      // pane if maximized, else focused). Focuses it — and swaps the maximized
+      // pane to it so you stay full-screen. Does NOT dequeue: a pane leaves the
+      // queue only when you respond to it (see Console.handleStatusChange).
       advanceFocus: () =>
         set((s) => {
-          const { next, rest } = dequeueNext(s.focusQueue);
+          const active = s.fullscreenPaneIdx >= 0 ? s.fullscreenPaneIdx : s.focusedPaneIdx;
+          const next = nextInCycle(s.focusQueue, active);
           if (next === null) return {};
           return s.fullscreenPaneIdx >= 0
-            ? { focusQueue: rest, focusedPaneIdx: next, fullscreenPaneIdx: next }
-            : { focusQueue: rest, focusedPaneIdx: next };
+            ? { focusedPaneIdx: next, fullscreenPaneIdx: next }
+            : { focusedPaneIdx: next };
         }),
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       setTerminalFontSize: (size) => set({ terminalFontSize: clampFontSize(size) }),
@@ -833,6 +840,8 @@ export const useAppStore = create<AppStore>()(
 
       autoFocusOnInterrupt: true,
       setAutoFocusOnInterrupt: (v) => set({ autoFocusOnInterrupt: v }),
+      autoAdvanceOnReply: true,
+      setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v }),
     }),
     {
       name: "app-state",
@@ -864,6 +873,7 @@ export const useAppStore = create<AppStore>()(
         projectAllowedCommands: s.projectAllowedCommands,
         repoAllowedCommands:    s.repoAllowedCommands,
         autoFocusOnInterrupt: s.autoFocusOnInterrupt,
+        autoAdvanceOnReply:   s.autoAdvanceOnReply,
         projectLocalRepos:    s.projectLocalRepos,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
         projectStartupPromptDoc: s.projectStartupPromptDoc,
