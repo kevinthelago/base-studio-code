@@ -7,6 +7,7 @@ import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
 import { projectRepoCwd } from "../lib/projectPaths";
+import { resolveAllowedCommands } from "../lib/allowedCommands";
 
 // Sent as the first message to each console when a project tab is opened, so the
 // session starts by reading and executing the laid-out plan. Plain text only — no
@@ -32,9 +33,6 @@ export const TRIAGE_PROMPT =
   "(create the label first with gh label create if it does not exist). Finally, flag any " +
   "P3 issue with no activity in the last 90 days as stale by adding a stale label, and " +
   "summarize the triage results grouped by priority when done.";
-
-/** Shell command that launches an interactive claude pre-seeded with the init prompt. */
-export const projectInitCmd = (): string => `claude "${PROJECT_INIT_PROMPT}"`;
 
 export interface GithubUser {
   login: string;
@@ -192,6 +190,11 @@ interface AppStore {
   setProjectStartupPromptDoc: (projectId: string, doc: string | null) => void;
   repoStartupPromptDoc: Record<string, string | null>;
   setRepoStartupPromptDoc: (projectId: string, repo: string, doc: string | null) => void;
+  // Per-repo TRIAGE starting script (persisted). relpath of a unified-store doc,
+  // or null. Used by triageStartProject for that repo's triage pane; falls back
+  // to the verbatim TRIAGE_PROMPT when unset. Keyed by repoPromptKey.
+  repoTriagePromptDoc: Record<string, string | null>;
+  setRepoTriagePromptDoc: (projectId: string, repo: string, doc: string | null) => void;
   // When set, the Knowledge Base screen shows only this project's documents
   // (its `keys` are the candidate folder keys — title- and id-derived). Set when
   // navigating from a project's "documents" button. Transient — NOT persisted.
@@ -218,7 +221,7 @@ interface AppStore {
   setBscBaseDir: (dir: string) => void;
   projectLocalRepos: Record<string, string[]>;
   addProjectRepo: (projectId: string, fullName: string) => void;
-  quickStartProject: (projectName: string, repos: string[]) => void;
+  quickStartProject: (projectName: string, repos: string[], projectId?: string) => void;
   triageStartProject: (projectName: string, repos: string[], projectId?: string) => void;
   findTriageTabIdx: (projectName: string) => number;
 
@@ -241,11 +244,25 @@ interface AppStore {
   addPlanAutomation:  (projectId: string, a: AutomationSuggestion) => void;
   clearPlanAutomations: (projectId: string) => void;
 
-  // Agent settings
+  // Agent settings — the GLOBAL allowed-command tier (auto-approved in every
+  // session). Per-project / per-repo tiers below combine additively with it.
   allowedCommands: string[];
   addAllowedCommand: (cmd: string) => void;
   removeAllowedCommand: (cmd: string) => void;
   setAllowedCommands: (commands: string[]) => void;
+
+  // Per-project / per-repo allowed-command lists, configured during planning and
+  // combined additively with the global list (see resolveAllowedCommands). gh/git
+  // are always added by the backend, so they need not be listed here.
+  projectAllowedCommands: Record<string, string[]>;
+  addProjectAllowedCommand: (projectId: string, cmd: string) => void;
+  removeProjectAllowedCommand: (projectId: string, cmd: string) => void;
+  repoAllowedCommands: Record<string, string[]>;
+  addRepoAllowedCommand: (projectId: string, repo: string, cmd: string) => void;
+  removeRepoAllowedCommand: (projectId: string, repo: string, cmd: string) => void;
+  // Resolved per-pane allowlist (transient): set when a project/triage tab is
+  // created; TerminalView passes it to ensure_session_settings before launch.
+  paneAllowedCommands: Record<string, string[]>;
 
   // Console behavior
   autoFocusOnInterrupt: boolean;
@@ -481,6 +498,9 @@ export const useAppStore = create<AppStore>()(
       repoStartupPromptDoc: {},
       setRepoStartupPromptDoc: (projectId, repo, doc) =>
         set((s) => ({ repoStartupPromptDoc: { ...s.repoStartupPromptDoc, [repoPromptKey(projectId, repo)]: doc } })),
+      repoTriagePromptDoc: {},
+      setRepoTriagePromptDoc: (projectId, repo, doc) =>
+        set((s) => ({ repoTriagePromptDoc: { ...s.repoTriagePromptDoc, [repoPromptKey(projectId, repo)]: doc } })),
       kbProjectScope: null,
       setKbProjectScope: (scope) => set({ kbProjectScope: scope }),
       projectsBoardTab: "board",
@@ -503,7 +523,7 @@ export const useAppStore = create<AppStore>()(
           if (existing.includes(fullName)) return {};
           return { projectLocalRepos: { ...s.projectLocalRepos, [projectId]: [...existing, fullName] } };
         }),
-      quickStartProject: (projectName, repos) =>
+      quickStartProject: (projectName, repos, projectId = "") =>
         set((s) => {
           if (repos.length === 0) return { activeScreen: "console" as Screen };
           const newTabIdx = s.tabs.length;
@@ -513,16 +533,33 @@ export const useAppStore = create<AppStore>()(
           const paneCount = cols * rows;
           const newPaneCwds      = { ...s.paneCwds };
           const newPaneInitCmds  = { ...s.paneInitCmds };
+          const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
+          const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newDisabledPanes = { ...s.disabledPanes };
           const tabPaneNames: Record<number, string> = {};
+          const assignments = {
+            defaultStartupPromptDoc: s.defaultStartupPromptDoc,
+            projectStartupPromptDoc: s.projectStartupPromptDoc,
+            repoStartupPromptDoc:    s.repoStartupPromptDoc,
+          };
           for (let i = 0; i < paneCount; i++) {
             const pid = `t${newTabIdx}p${i}`;
             if (i < count) {
               const fullName = repos[i];
               newPaneCwds[pid] = projectRepoCwd(s.bscBaseDir, projectName, fullName);
-              // Each console launches claude pre-seeded to read & execute the plan.
-              newPaneInitCmds[pid] = projectInitCmd();
               tabPaneNames[i] = fullName.split("/")[1] ?? fullName;
+              // claude launches with the resolved startup prompt baked in by the
+              // backend (reliable: claude submits it itself). The doc assignment
+              // is "" = the built-in plan prompt, or a relpath to a per-repo /
+              // project kickoff script. initCmd just marks this a claude pane so
+              // the launch gate engages.
+              newPaneInitCmds[pid] = "claude";
+              newPaneStartupPromptDocs[pid] = resolveStartupPromptDoc(assignments, projectId, fullName) ?? "";
+              newPaneAllowedCommands[pid] = resolveAllowedCommands(
+                s.allowedCommands,
+                s.projectAllowedCommands[projectId],
+                s.repoAllowedCommands[repoPromptKey(projectId, fullName)],
+              );
               delete newDisabledPanes[pid];
             } else {
               // Empty grid cell (e.g. 3 repos in a 2×2) — start it disabled so it
@@ -539,6 +576,8 @@ export const useAppStore = create<AppStore>()(
             paneMenuOpenIdx: -1,
             paneCwds: newPaneCwds,
             paneInitCmds: newPaneInitCmds,
+            paneStartupPromptDocs: newPaneStartupPromptDocs,
+            paneAllowedCommands: newPaneAllowedCommands,
             tabStartedAt: { ...s.tabStartedAt, [newTabIdx]: Date.now() },
             disabledPanes: newDisabledPanes,
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
@@ -567,6 +606,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneInitCmds = { ...s.paneInitCmds };
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
+          const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newDisabledPanes = { ...s.disabledPanes };
           const tabPaneNames: Record<number, string> = {};
           const paneCount = cols * rows;
@@ -581,17 +621,27 @@ export const useAppStore = create<AppStore>()(
               const fullName = repos[i];
               // A real repo — launch claude in its clone, ensure it's enabled.
               newPaneCwds[key]     = projectRepoCwd(s.bscBaseDir, projectName, fullName);
-              newPaneInitCmds[key] = "claude --continue 2>/dev/null || claude";
+              newPaneInitCmds[key] = "claude";
               tabPaneNames[i]      = fullName?.split("/")[1] ?? `pane-${i + 1}`;
-              // Triage panes always receive the verbatim triage prompt, which
-              // TerminalView prefers over any doc-based assignment.
-              newPaneStartupPromptText[key] = TRIAGE_PROMPT;
-              // Also resolve a doc-based startup prompt (repo→project→global→
-              // built-in) so the doc path still works if the text is cleared.
-              // "" tells TerminalView to use the built-in default; a relpath is
-              // read from the unified document store and sent after launch.
-              const doc = resolveStartupPromptDoc(assignments, projectId, fullName ?? "");
-              newPaneStartupPromptDocs[key] = doc ?? "";
+              // The startup prompt is baked into the claude launch by the backend
+              // (reliable). A per-repo triage script (planner-authored,
+              // auto-assigned) wins as a document; otherwise the verbatim shared
+              // TRIAGE_PROMPT text (which TerminalView prefers over the dev doc
+              // chain), with a doc-based fallback (repo→project→global→built-in;
+              // "" = built-in default) for if the text is later cleared.
+              const triageDoc = s.repoTriagePromptDoc[repoPromptKey(projectId, fullName ?? "")];
+              if (triageDoc) {
+                newPaneStartupPromptDocs[key] = triageDoc;
+              } else {
+                newPaneStartupPromptText[key] = TRIAGE_PROMPT;
+                const doc = resolveStartupPromptDoc(assignments, projectId, fullName ?? "");
+                newPaneStartupPromptDocs[key] = doc ?? "";
+              }
+              newPaneAllowedCommands[key] = resolveAllowedCommands(
+                s.allowedCommands,
+                s.projectAllowedCommands[projectId],
+                s.repoAllowedCommands[repoPromptKey(projectId, fullName ?? "")],
+              );
               delete newDisabledPanes[key];
             } else {
               // Empty grid cell (more cells than repos) — start it disabled so it
@@ -610,6 +660,7 @@ export const useAppStore = create<AppStore>()(
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
+            paneAllowedCommands: newPaneAllowedCommands,
             tabStartedAt: { ...s.tabStartedAt, [newTabIdx]: Date.now() },
             disabledPanes: newDisabledPanes,
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
@@ -691,6 +742,42 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ allowedCommands: s.allowedCommands.filter((c) => c !== cmd) })),
       setAllowedCommands: (commands) => set({ allowedCommands: commands }),
 
+      projectAllowedCommands: {},
+      addProjectAllowedCommand: (projectId, cmd) =>
+        set((s) => {
+          const c = cmd.trim().toLowerCase();
+          const cur = s.projectAllowedCommands[projectId] ?? [];
+          if (!c || cur.includes(c)) return {};
+          return { projectAllowedCommands: { ...s.projectAllowedCommands, [projectId]: [...cur, c] } };
+        }),
+      removeProjectAllowedCommand: (projectId, cmd) =>
+        set((s) => ({
+          projectAllowedCommands: {
+            ...s.projectAllowedCommands,
+            [projectId]: (s.projectAllowedCommands[projectId] ?? []).filter((x) => x !== cmd),
+          },
+        })),
+      repoAllowedCommands: {},
+      addRepoAllowedCommand: (projectId, repo, cmd) =>
+        set((s) => {
+          const key = repoPromptKey(projectId, repo);
+          const c = cmd.trim().toLowerCase();
+          const cur = s.repoAllowedCommands[key] ?? [];
+          if (!c || cur.includes(c)) return {};
+          return { repoAllowedCommands: { ...s.repoAllowedCommands, [key]: [...cur, c] } };
+        }),
+      removeRepoAllowedCommand: (projectId, repo, cmd) =>
+        set((s) => {
+          const key = repoPromptKey(projectId, repo);
+          return {
+            repoAllowedCommands: {
+              ...s.repoAllowedCommands,
+              [key]: (s.repoAllowedCommands[key] ?? []).filter((x) => x !== cmd),
+            },
+          };
+        }),
+      paneAllowedCommands: {},
+
       autoFocusOnInterrupt: true,
       setAutoFocusOnInterrupt: (v) => set({ autoFocusOnInterrupt: v }),
     }),
@@ -719,11 +806,14 @@ export const useAppStore = create<AppStore>()(
         schedules:            s.schedules,
         commands:             s.commands,
         allowedCommands:      s.allowedCommands,
+        projectAllowedCommands: s.projectAllowedCommands,
+        repoAllowedCommands:    s.repoAllowedCommands,
         autoFocusOnInterrupt: s.autoFocusOnInterrupt,
         projectLocalRepos:    s.projectLocalRepos,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
         projectStartupPromptDoc: s.projectStartupPromptDoc,
         repoStartupPromptDoc:    s.repoStartupPromptDoc,
+        repoTriagePromptDoc:     s.repoTriagePromptDoc,
         configProfiles:       s.configProfiles,
         planSections:          s.planSections,
         planConfirmedSections: s.planConfirmedSections,

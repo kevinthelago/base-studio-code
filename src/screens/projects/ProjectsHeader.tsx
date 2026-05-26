@@ -160,7 +160,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
           <button
             className="btn primary"
             style={{ height: 22, padding: "0 10px", fontSize: 10, marginLeft: "auto" }}
-            onClick={() => quickStartProject(project.name, clonedNames.filter(r => project.repos.includes(r)))}
+            onClick={() => quickStartProject(project.name, clonedNames.filter(r => project.repos.includes(r)), project.id)}
           >
             ⚡ quick start →
           </button>
