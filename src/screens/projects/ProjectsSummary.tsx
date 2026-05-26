@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
+import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "./burndown";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,45 @@ const PROJECTS_SUMMARY_QUERY = `{
   }
 }`;
 
+// Fetches one project's Iteration + Status fields and items (with close times) so
+// the burn-down can be computed from real iteration data. See burndown.ts.
+const PROJECT_ITERATION_QUERY = `query ProjectIteration($projectId: ID!) {
+  node(id: $projectId) {
+    ... on ProjectV2 {
+      title
+      fields(first: 30) {
+        nodes {
+          __typename
+          ... on ProjectV2IterationField {
+            name
+            configuration {
+              iterations { id title startDate duration }
+              completedIterations { id title startDate duration }
+            }
+          }
+          ... on ProjectV2SingleSelectField { name options { id name } }
+        }
+      }
+      items(first: 100) {
+        nodes {
+          content {
+            __typename
+            ... on Issue { closed closedAt }
+            ... on PullRequest { closed closedAt }
+          }
+          fieldValues(first: 20) {
+            nodes {
+              __typename
+              ... on ProjectV2ItemFieldIterationValue { iterationId field { ... on ProjectV2IterationField { name } } }
+              ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { name } } }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
 // ── Data hook ─────────────────────────────────────────────────────────────────
 
 function useProjectsSummaryData() {
@@ -91,6 +131,7 @@ function useProjectsSummaryData() {
   const [events, setEvents] = useState<GHEvent[]>([]);
   const [repoMilestones, setRepoMilestones] = useState<Record<string, GhMilestone[]>>({});
   const [repoIssues, setRepoIssues] = useState<Record<string, GhIssue[]>>({});
+  const [burndown, setBurndown] = useState<BurndownResult | null>(null);
 
   useEffect(() => {
     if (!githubToken || !githubUser) return;
@@ -113,6 +154,21 @@ function useProjectsSummaryData() {
       const evtArr = Array.isArray(evts) ? evts : [];
       setProjects(projArr);
       setEvents(evtArr);
+
+      // Iteration burn-down for the lead project (first active with items): pull
+      // its Iteration/Status fields + items and resolve the current iteration.
+      const lead = projArr.find(p => !p.closed && p.items.totalCount > 0);
+      if (lead) {
+        invoke<{ node: ProjectIterationNode | null }>("github_graphql", {
+          token: githubToken,
+          query: PROJECT_ITERATION_QUERY,
+          variables: { projectId: lead.id },
+        })
+          .then(d => setBurndown(parseProjectIteration(d?.node ?? null, Date.now())))
+          .catch(() => setBurndown({ status: "no-field" }));
+      } else {
+        setBurndown({ status: "no-field" });
+      }
 
       // Collect unique repos from all projects
       const slugSet = new Set<string>();
@@ -147,7 +203,7 @@ function useProjectsSummaryData() {
     }).catch(() => setLoading(false));
   }, [githubToken, githubUser?.login]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { loading, projects, events, repoMilestones, repoIssues };
+  return { loading, projects, events, repoMilestones, repoIssues, burndown };
 }
 
 // ── Shared page-mode strip ────────────────────────────────────────────────────
@@ -255,39 +311,57 @@ function AISummary() {
   );
 }
 
-// ── Iteration burn-down (approximated from project data) ──────────────────────
+// ── Iteration burn-down (real, from the project's Projects V2 Iteration field) ──
 
-function IterationBurnDown({ projects }: { projects: GhProject[] }) {
-  const firstActive = projects.find(p => !p.closed && p.items.totalCount > 0);
-  const totalItems = firstActive?.items.totalCount ?? 56;
-  const projectName = firstActive?.title ?? "Portfolio";
-
-  const days = 14;
-  const scale = totalItems / 56;
-  const ideal = Array.from({ length: days + 1 }, (_, i) => Math.round(totalItems * (1 - i / days)));
-  const mockActual = [56, 55, 54, 52, 49, 48, 47, 45, 42, 40, 39, 36, null, null, null];
-  const actual = mockActual.map(v => v != null ? Math.round(v * scale) : null);
-  const todayDay = 11;
-
-  const W = 720, H = 180, PAD = { l: 36, r: 20, t: 14, b: 24 };
-  const innerW = W - PAD.l - PAD.r;
-  const innerH = H - PAD.t - PAD.b;
-  const x = (i: number) => PAD.l + (i / days) * innerW;
-  const y = (v: number) => PAD.t + (1 - v / totalItems) * innerH;
-  const idealPath = ideal.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`).join(" ");
-  const filteredActual = actual.filter((v): v is number => v != null);
-  const actualPath = filteredActual.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`).join(" ");
-  const lastActual = filteredActual[filteredActual.length - 1];
-  const yTicks = [0, Math.round(totalItems * 0.25), Math.round(totalItems * 0.5), Math.round(totalItems * 0.75), totalItems];
-
+function BurnCard({ hint, badge, children }: {
+  hint: string;
+  badge?: { text: string; tone: string };
+  children?: ReactNode;
+}) {
   return (
     <div className="card" style={{ padding: "14px 16px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
         <h3 style={{ margin: 0 }}>Iteration burn-down</h3>
-        <span className="hint">{projectName} · approximate · iter in progress</span>
+        <span className="hint">{hint}</span>
         <div style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--success)" }}>● on track</span>
+        {badge && <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: badge.tone }}>● {badge.text}</span>}
       </div>
+      {children}
+    </div>
+  );
+}
+
+const burnNote = (text: string): ReactNode => (
+  <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "12px 0" }}>{text}</div>
+);
+
+function IterationBurnDown({ data, loading }: { data: BurndownResult | null; loading: boolean }) {
+  if (loading && !data) return <BurnCard hint="loading…">{burnNote("loading…")}</BurnCard>;
+  if (!data || data.status === "no-field")
+    return <BurnCard hint="Projects V2 Iteration field">{burnNote("No Iteration field on the lead project — add one in the project's field settings to see a real burn-down.")}</BurnCard>;
+  if (data.status === "no-active-iteration")
+    return <BurnCard hint={data.projectTitle}>{burnNote("No active iteration right now (today is between iterations).")}</BurnCard>;
+
+  const { series, projectTitle, iterationTitle } = data;
+  if (series.total === 0)
+    return <BurnCard hint={`${projectTitle} · ${iterationTitle}`}>{burnNote("No items assigned to this iteration yet.")}</BurnCard>;
+
+  const { total, daysTotal, daysElapsed, ideal, actual, remaining, onTrack } = series;
+  const W = 720, H = 180, PAD = { l: 36, r: 20, t: 14, b: 24 };
+  const innerW = W - PAD.l - PAD.r;
+  const innerH = H - PAD.t - PAD.b;
+  const x = (i: number) => PAD.l + (i / daysTotal) * innerW;
+  const y = (v: number) => PAD.t + (1 - v / total) * innerH;
+  const idealPath = ideal.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`).join(" ");
+  const pts = actual.flatMap((v, i) => (v != null ? [{ v, i }] : []));
+  const actualPath = pts.map((p, k) => `${k === 0 ? "M" : "L"} ${x(p.i)} ${y(p.v)}`).join(" ");
+  const yTicks = [0, Math.round(total * 0.25), Math.round(total * 0.5), Math.round(total * 0.75), total];
+
+  return (
+    <BurnCard
+      hint={`${projectTitle} · ${iterationTitle} · day ${daysElapsed + 1}/${daysTotal}`}
+      badge={{ text: onTrack ? "on track" : "behind", tone: onTrack ? "var(--success)" : "var(--danger)" }}
+    >
       <svg width={W} height={H} style={{ width: "100%", maxWidth: W, display: "block" }}>
         {yTicks.map(v => (
           <g key={v}>
@@ -295,25 +369,18 @@ function IterationBurnDown({ projects }: { projects: GhProject[] }) {
             <text x={PAD.l - 4} y={y(v) + 3} textAnchor="end" fontFamily="var(--mono)" fontSize="9" fill="var(--fg-dim)">{v}</text>
           </g>
         ))}
-        {Array.from({ length: days + 1 }, (_, i) =>
-          i % 2 === 0 ? (
-            <text key={i} x={x(i)} y={H - PAD.b + 12} textAnchor="middle" fontFamily="var(--mono)" fontSize="9" fill="var(--fg-dim)">d{i + 1}</text>
-          ) : null
-        )}
+        {ideal.map((_, i) => i % 2 === 0 ? (
+          <text key={i} x={x(i)} y={H - PAD.b + 12} textAnchor="middle" fontFamily="var(--mono)" fontSize="9" fill="var(--fg-dim)">d{i + 1}</text>
+        ) : null)}
         <path d={idealPath} fill="none" stroke="var(--fg-dim)" strokeDasharray="3 4" strokeWidth="1.5" />
         <path d={actualPath} fill="none" stroke="var(--accent)" strokeWidth="2" />
-        {actual.map((v, i) => v != null && (
-          <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="var(--accent)" />
-        ))}
-        <line x1={x(todayDay)} y1={PAD.t} x2={x(todayDay)} y2={H - PAD.b}
-          stroke="var(--accent)" strokeDasharray="2 3" strokeWidth="1" />
-        <text x={x(todayDay)} y={PAD.t - 3} textAnchor="middle" fontFamily="var(--mono)" fontSize="9" fill="var(--accent)">today</text>
-        {lastActual != null && (
-          <text x={x(days) - 2} y={y(lastActual) - 6} textAnchor="end" fontFamily="var(--mono)" fontSize="9" fill="var(--accent)">actual · {lastActual}</text>
-        )}
-        <text x={x(days) - 2} y={y(0) - 6} textAnchor="end" fontFamily="var(--mono)" fontSize="9" fill="var(--fg-dim)">ideal · 0</text>
+        {pts.map(p => <circle key={p.i} cx={x(p.i)} cy={y(p.v)} r="2.5" fill="var(--accent)" />)}
+        <line x1={x(daysElapsed)} y1={PAD.t} x2={x(daysElapsed)} y2={H - PAD.b} stroke="var(--accent)" strokeDasharray="2 3" strokeWidth="1" />
+        <text x={x(daysElapsed)} y={PAD.t - 3} textAnchor="middle" fontFamily="var(--mono)" fontSize="9" fill="var(--accent)">today</text>
+        <text x={x(daysTotal) - 2} y={y(remaining) - 6} textAnchor="end" fontFamily="var(--mono)" fontSize="9" fill="var(--accent)">remaining · {remaining}</text>
+        <text x={x(daysTotal) - 2} y={y(0) - 6} textAnchor="end" fontFamily="var(--mono)" fontSize="9" fill="var(--fg-dim)">ideal · 0</text>
       </svg>
-    </div>
+    </BurnCard>
   );
 }
 
@@ -769,7 +836,7 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
 
 export function ProjectsSummary() {
   const { setProjectsPageMode } = useAppStore();
-  const { loading, projects, events, repoMilestones, repoIssues } = useProjectsSummaryData();
+  const { loading, projects, events, repoMilestones, repoIssues, burndown } = useProjectsSummaryData();
 
   const activeProjects = projects.filter(p => !p.closed);
   const draftingCount = activeProjects.filter(p => p.items.totalCount === 0).length;
@@ -847,7 +914,7 @@ export function ProjectsSummary() {
         <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
             <ProjectsGrid projects={projects} repoIssues={repoIssues} loading={loading} />
-            <IterationBurnDown projects={projects} />
+            <IterationBurnDown data={burndown} loading={loading} />
             <UpcomingMilestones repoMilestones={repoMilestones} loading={loading} />
             <CrossProjectActivity events={events} projects={projects} loading={loading} />
           </div>
