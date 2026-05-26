@@ -49,3 +49,19 @@ export function shouldAutoFocusOnIdle(
   if (msSinceLastAutoFocus < AUTOFOCUS_COOLDOWN_MS) return false;
   return true;
 }
+
+/**
+ * Resolve the next `fullscreenPaneIdx` when toggling maximize/minimize on a pane.
+ * Shared by the header button (via Console's handler) and the Ctrl+Shift+F hotkey
+ * so both follow identical maximize ⇄ restore semantics.
+ *
+ * @param targetIdx the pane to act on (e.g. the focused pane); negative means
+ *   nothing is selected.
+ * @param currentFullscreenIdx the pane currently maximized, or -1 for none.
+ * @returns -1 to restore the grid (target was already maximized), the target
+ *   index to maximize it, or `null` when there is no pane to act on (no-op).
+ */
+export function nextFullscreen(targetIdx: number, currentFullscreenIdx: number): number | null {
+  if (targetIdx < 0) return null;
+  return currentFullscreenIdx === targetIdx ? -1 : targetIdx;
+}

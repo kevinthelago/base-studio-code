@@ -26,6 +26,8 @@ interface PaneMenuProps {
   disabled?: boolean;
   onToggleFullscreen?: () => void;
   onToggleDisable?: () => void;
+  /** Open the directory picker to change this pane's working dir (moved here from the header). */
+  onPickDirectory?: () => void;
   onClose?: () => void;
   onRename?: () => void;
   onViewChange?: (view: ViewKey) => void;
@@ -33,7 +35,7 @@ interface PaneMenuProps {
 
 export function PaneMenu({
   agent, repo, branch, model, active, available, maxHeight, fullscreen, disabled,
-  onToggleFullscreen, onToggleDisable, onClose, onRename, onViewChange,
+  onToggleFullscreen, onToggleDisable, onPickDirectory, onClose, onRename, onViewChange,
 }: PaneMenuProps) {
   return (
     <div style={{
@@ -126,7 +128,7 @@ export function PaneMenu({
         />
         <ActionRow Icon={RefreshCw}   label="rescan repo"    sub="re-detect HEAD" />
         <ActionRow Icon={Pin}         label="pin knowledge…" sub="surface a block in context" />
-        <ActionRow Icon={FolderInput} label="set cwd…"       sub="change working dir" />
+        <ActionRow Icon={FolderInput} label="set cwd…"       sub="change working dir" onClick={() => { onPickDirectory?.(); onClose?.(); }} />
         <ActionRow Icon={Unlink2}     label="unbind repo"    sub="drop git context" danger />
         <ActionRow Icon={X}           label="close pane"     sub="" danger onClick={onClose} />
       </MenuSection>
