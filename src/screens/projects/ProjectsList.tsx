@@ -54,10 +54,22 @@ interface ProjectRowProps {
   setMenuOpenId: (id: string | null) => void;
 }
 
-function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpenId }: ProjectRowProps) {
+export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpenId }: ProjectRowProps) {
   const repo    = p.repositories?.nodes?.[0]?.nameWithOwner ?? "";
   const menuRef = useRef<HTMLDivElement>(null);
   const isOpen  = menuOpenId === p.id;
+
+  // Close the menu on an outside mousedown, but NOT on a mousedown inside it —
+  // otherwise the menu unmounts before a menu item's click fires, and delete /
+  // plan-edit never run. (This is why the menuRef exists.)
+  useEffect(() => {
+    if (!isOpen) return;
+    function onDown(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpenId(null);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [isOpen, setMenuOpenId]);
 
   return (
     <div className="card" style={{
@@ -155,13 +167,6 @@ export function ProjectsList() {
   const [deleting, setDeleting]   = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Close menu on outside click
-  useEffect(() => {
-    if (!menuOpenId) return;
-    function handleClick() { setMenuOpenId(null); }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [menuOpenId]);
 
   const fetchProjects = useCallback(() => {
     if (!githubToken) return;
