@@ -207,6 +207,12 @@ interface AppStore {
   // planning session key — the title — and the GitHub id), plus the active-project
   // meta if it matches. Pairs with the backend delete_project_dir for the on-disk hub.
   deleteLocalProject: (keys: string[]) => void;
+  // GitHub project ids the user removed in-app (persisted). The Projects list is
+  // re-fetched from GitHub on every sync, so without this a deleted-but-still-
+  // returned project (closed, delete denied, or stale) would reappear. The list
+  // is filtered against this set so removal sticks.
+  hiddenProjectIds: string[];
+  dismissProject: (id: string) => void;
   // Startup-prompt assignment (persisted). Values are unified-store document
   // relpaths, or null = inherit. Resolution: repo → project → global default →
   // built-in. See lib/startupPrompt.ts.
@@ -552,6 +558,9 @@ export const useAppStore = create<AppStore>()(
       setActiveProject: (id) => set({ activeProjectId: id }),
       setActiveProjectMeta: (id, name, repo, number, repos = []) =>
         set({ activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos }),
+      hiddenProjectIds: [],
+      dismissProject: (id) =>
+        set((s) => (!id || s.hiddenProjectIds.includes(id) ? {} : { hiddenProjectIds: [...s.hiddenProjectIds, id] })),
       deleteLocalProject: (keys) =>
         set((s) => {
           const keySet = new Set(keys.filter(Boolean));
@@ -921,6 +930,7 @@ export const useAppStore = create<AppStore>()(
         autoFocusOnInterrupt: s.autoFocusOnInterrupt,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         projectLocalRepos:    s.projectLocalRepos,
+        hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
         projectStartupPromptDoc: s.projectStartupPromptDoc,
         repoStartupPromptDoc:    s.repoStartupPromptDoc,
