@@ -128,6 +128,29 @@ fn plan_dir_for(project_key: &str) -> std::path::PathBuf {
     project_dir(project_key)
 }
 
+/// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
+///
+/// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
+/// keeps the whole value on one physical line (newlines become `\n`) and `$`,
+/// backticks, and double quotes are literal — so no shell expansion, no PS2
+/// continuation, and any prompt content survives intact.
+fn bash_ansi_c_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    out.push_str("$'");
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(c),
+        }
+    }
+    out.push('\'');
+    out
+}
+
 /// Returns `true` when a new session is created, `false` when reconnecting to
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
@@ -140,6 +163,7 @@ async fn pty_create(
     cwd: String,
     init_cmd: Option<String>,
     env: Option<std::collections::HashMap<String, String>>,
+    startup_prompt: Option<String>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -183,11 +207,17 @@ async fn pty_create(
     // Inject bash helpers into every new session.
     // Optional init_cmd is appended after the screen clear so callers can
     // auto-launch a process (e.g. "claude") inside the prepared shell.
-    let init_suffix = init_cmd
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .map(|s| format!("; {}", s))
-        .unwrap_or_default();
+    // A startup prompt (triage/console kickoff) is delivered the reliable way:
+    // baked as claude's initial-message argument so claude submits it itself once
+    // it's ready — no PTY-typing race against the animated TUI. ANSI-C ($'...')
+    // quoting keeps arbitrary content (newlines, quotes, $, backticks) on a single
+    // safe line and overrides any claude launch in init_cmd. With no prompt,
+    // init_cmd runs as-is.
+    let launch = match startup_prompt.as_deref().filter(|s| !s.is_empty()) {
+        Some(p) => Some(format!("claude {}", bash_ansi_c_quote(p))),
+        None => init_cmd.as_deref().filter(|s| !s.is_empty()).map(|s| s.to_string()),
+    };
+    let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
     // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
     // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
     let cd_prefix = if !cwd.is_empty() {
@@ -800,478 +830,98 @@ async fn setup_kb_workspace() -> Result<String, String> {
 
 // ── Planning workspace CLAUDE.md templates ───────────────────────────────────
 //
-// Two startup scripts depending on whether the user is planning a brand-new
-// project or expanding an existing one. Context placeholders ({PITCH},
-// {PROJECT_NAME}, {PROJECT_NUMBER}) are replaced at runtime by setup_workspaces.
+// The planner is guided but DYNAMIC: there is no fixed list of sections. Claude
+// walks a curated checklist of every dimension of modern app development and,
+// per dimension, either documents it (writes `{topic}.md`) or records it as
+// skipped (in `_skipped.md`). Each documented topic is surfaced in the UI as its
+// own section the moment the file appears.
 //
-// Both templates share the same plan_update output format and GitHub tools
-// section. The key difference is the orientation workflow:
+// A template is assembled at runtime as INTRO + PROCESS. The INTRO differs by
+// orientation (new vs. existing project) and carries the context placeholders
+// ({PITCH}, {PROJECT_NAME}, {PROJECT_NUMBER}); the PROCESS block — channels,
+// checklist, structured templates, publish flow, integration tags — is shared.
 //
-//   NEW      → discovery questions → create repos → emit repo_link tags → plan
-//   EXISTING → find/confirm repos → emit repo_link tags → read context → plan
-//
-// repo_link tags are parsed by the frontend and trigger an automatic clone
-// into ~/.base-studio-code/projects/<project>/<repo>/ so the app stays in sync.
+// repo_link tags are parsed by the frontend and trigger an automatic clone into
+// ~/.base-studio-code/projects/<project>/<repo>/ so the app stays in sync.
 
-const PLANNING_NEW_MD: &str = r#"# base-studio-code · New Project Planner
+const PLANNING_NEW_INTRO: &str = r#"# base-studio-code · New Project Planner
 
-You are starting a brand-new software project. Your job is to understand the
-scope, create the necessary GitHub repositories, and produce a complete project
-plan that is detailed enough for a Claude coding session to start implementing
-without asking clarifying questions.
+You are planning a brand-new software project. Your job is to understand it
+deeply, create the GitHub repositories it needs, and produce a plan thorough
+enough that a Claude coding session can start implementing without asking
+clarifying questions.
 
 ## Pitch
 
 {PITCH}
 
-## Tools available
-
-| Tool             | What you can do                                                        |
-|------------------|------------------------------------------------------------------------|
-| **Read**         | Read any file on disk                                                  |
-| **Write**        | Create or overwrite any file — plan files, CLAUDE.md, workflow YAMLs  |
-| **Edit**         | Patch a single file in-place                                           |
-| **WebFetch**     | Fetch any URL — package registries, docs, GitHub raw content           |
-| **Bash(git \*)** | Any git subcommand — clone, commit, push, log, diff, status, etc.     |
-| **Bash(gh \*)**  | Any gh CLI subcommand — repos, issues, PRs, labels, milestones, etc.  |
-
-**Not available:** generic shell commands (`cp`, `ls`, `cat`, `base64`, `mkdir`, etc.)
-and WebSearch. Use **Read**/**Write** wherever you would use `cat`/`cp`, and
-**WebFetch** for documentation or version lookups.
-
-## Core rule — fill plan sections as you learn (two channels)
-
-As soon as you have content for a section — even a partial draft — do **both**:
-
-**Channel 1 — Write each section file in your current directory** (reliable; survives restarts):
-Use the Write tool to write the section content as plain text or markdown.
-The app polls these files every 2 seconds and updates the right panel.
-Overwrite to refine — each write replaces the previous version.
-
-Section files:
-- `goal.md`         — project vision
-- `scope.md`        — boundaries (in scope / out of scope)
-- `stack.md`        — technology choices
-- `architecture.md` — system design
-- `schema.md`       — data model
-- `api.md`          — API / interface contracts
-- `testing.md`      — quality strategy
-- `cicd.md`         — delivery pipeline
-- `risks.md`        — technical risks
-- `phases.json`     — milestones as a JSON array (see format below)
-
-**Channel 2 — Emit an inline tag** (immediate display before the next poll):
-```
-<plan_update section="goal">content here</plan_update>
-```
-
-Do both whenever you draft or refine a section.
-
-## How discovery works — one section at a time, conversationally
-
-Discovery is a guided conversation, **not** a questionnaire to rush through. You
-work through the sections **one at a time, in order**, and you do not move on
-until the user is happy with the current section.
-
-**Mark the section you are working on** so the UI can highlight it:
-```
-<plan_focus section="goal" />
-```
-Emit this the moment you start a section, before you ask anything.
-
-The loop for each section:
-1. Emit `<plan_focus section="key" />`.
-2. Ask 1–3 focused questions and genuinely discuss — dig into the *why*, surface
-   trade-offs, suggest options grounded in the KB. This is the rich part; take
-   your time.
-3. When you have enough, propose a draft via `<plan_update>` (and write the file).
-4. Ask the user to review it: "Does this look right? Anything to add or change?"
-   Refine from their feedback and re-emit.
-5. **Stop and wait.** Do not draft the next section. When the user approves the
-   section in the UI you will receive a line like
-   `[The user confirmed the "Goal" section ... — continue to the next section.]`
-   — that is your signal to move to the next section's `<plan_focus>`.
-
-**Hard rules:**
-- Never draft a section ahead of the one in focus. One section at a time.
-- Always wait for the user between sections — do not race to fill everything.
-- If a section genuinely does not apply (e.g. `schema` for a static site),
-  say so, propose skipping it, and move on once the user agrees — leave it empty.
-
-## Plan sections — what each one means and when to fill it
-
-### `goal` — Project vision
-Emit as soon as you understand what is being built.
-Content: 2–4 sentences covering (1) what the software does, (2) who uses it,
-(3) the measurable outcome that defines success.
-Re-emit if the purpose or target audience shifts.
-
-Example:
-```
-<plan_update section="goal">
-A CLI tool that lets developers run database migrations against any Postgres
-instance without installing drivers locally. Target users are backend engineers
-on CI pipelines and local dev. Success = migrations run reliably across environments
-with zero manual driver setup.
-</plan_update>
-```
-
-### `scope` — Boundaries
-Emit once you understand which features are in and which are explicitly excluded.
-Content: two labelled groups — "In scope" (concrete deliverables) and "Out of scope"
-(explicit exclusions). Explicit out-of-scope items prevent scope creep later.
-Re-emit when you learn a feature is out of scope.
-
-Example:
-```
-<plan_update section="scope">
-In scope:
-- Migration runner (up/down) for Postgres via connection string
-- Dry-run mode that prints SQL without executing
-- Status command showing which migrations have run
-- GitHub Actions integration via a prebuilt action
-
-Out of scope:
-- GUI or web interface
-- MySQL / SQLite support (v1)
-- Migration generation / scaffolding
-</plan_update>
-```
-
-### `stack` — Technology choices
-Emit as soon as language and framework decisions are made — draft early, refine later.
-Content: one entry per layer: runtime, framework/library, database, auth, testing,
-CI, hosting/deploy target. Include specific versions where known and a one-line
-justification for non-obvious choices.
-Re-emit when a decision changes or is confirmed.
-
-Example:
-```
-<plan_update section="stack">
-- Runtime: Go 1.22 (single binary, no runtime dep — ideal for CLI distribution)
-- Migration lib: golang-migrate/migrate (battle-tested, supports embed FS)
-- Config: Viper (env vars + YAML, 12-factor)
-- Testing: testify + dockertest for real-Postgres integration tests
-- CI: GitHub Actions (native Go support, matrix across OS)
-- Release: GoReleaser (cross-compile + GitHub Releases)
-</plan_update>
-```
-
-### `architecture` — System design
-Emit after the stack is decided and you understand the main data flows.
-Content: (1) named components with a single-sentence responsibility each,
-(2) how they communicate (protocol, direction, sync/async), (3) 2–3 key user
-journeys described as step-by-step data flows. ASCII diagrams welcome.
-Re-emit as the design evolves.
-
-Example:
-```
-<plan_update section="architecture">
-Components:
-- CLI binary — parses flags/config, drives the runner, formats output
-- Runner — applies/rolls back migrations in a transaction, tracks state in schema_migrations table
-- Registry — discovers .sql files from embed.FS or a directory path, orders by timestamp prefix
-
-Key flow (migrate up):
-1. CLI reads DSN from --db flag or DATABASE_URL env
-2. Registry loads and sorts migration files from migrations/
-3. Runner opens transaction, queries schema_migrations for applied set
-4. Applies each pending migration in order, records in schema_migrations, commits
-5. On error: rolls back transaction, exits non-zero with migration filename + Postgres error
-</plan_update>
-```
-
-### `schema` — Data model
-Emit as soon as you know the core entities — start with a subset and add rows as
-more entities emerge. Content: for each model, its table/collection name, key
-fields with types, constraints, relationships, and any important enums.
-Re-emit incrementally as new entities are identified.
-
-Example:
-```
-<plan_update section="schema">
-schema_migrations (managed internally by the runner)
-  - version: TEXT PRIMARY KEY (timestamp prefix, e.g. "20240115_143000")
-  - applied_at: TIMESTAMPTZ NOT NULL DEFAULT now()
-  - checksum: TEXT NOT NULL (SHA-256 of migration file, detects tampering)
-
-No application-owned schema — this is a tooling library, not a data app.
-</plan_update>
-```
-
-### `api` — Interface contracts
-Emit when the external surface (HTTP endpoints or public function signatures)
-becomes clear. Content: for each endpoint or exported function: method + path
-(or signature with param/return types), request/response shape, auth requirement.
-Include the shared error format and status codes.
-Re-emit when endpoints are added or shapes are confirmed.
-
-Example:
-```
-<plan_update section="api">
-Public Go API (library mode):
-  New(db *sql.DB, source Source) *Runner
-  Runner.Up(ctx context.Context, n int) ([]AppliedMigration, error)
-  Runner.Down(ctx context.Context, n int) ([]RolledBackMigration, error)
-  Runner.Status(ctx context.Context) ([]MigrationStatus, error)
-
-CLI surface:
-  migrate up [--n N] --db DSN [--dry-run]
-  migrate down [--n N] --db DSN
-  migrate status --db DSN
-  migrate version
-
-Errors: non-zero exit + human-readable message to stderr; JSON mode with --json flag.
-</plan_update>
-```
-
-### `testing` — Quality strategy
-Emit once the stack is decided (framework choice is stack-dependent).
-Content: (1) unit tests — what to cover, framework, mocking approach, (2)
-integration tests — which boundaries, how the test DB is managed, (3) E2E /
-acceptance tests — 3–5 key scenarios and the tool, (4) coverage target and
-how it is enforced in CI.
-Re-emit if the strategy changes or critical paths are identified.
-
-Example:
-```
-<plan_update section="testing">
-Unit (testify):
-- Registry: sorting, duplicate detection, checksum calculation
-- Runner: migration application logic using a mock DB interface
-- CLI flag parsing and config resolution
-
-Integration (testify + dockertest — spins up real Postgres):
-- Full up/down cycle against a temporary database
-- Rollback on error leaves DB unchanged
-- Checksum mismatch is detected and rejected
-
-CI gate: `go test ./... -race -coverprofile=coverage.out` must pass with ≥80% coverage.
-Pre-commit: `golangci-lint run` blocks on lint errors.
-</plan_update>
-```
-
-### `cicd` — Delivery pipeline
-Emit once the deploy target and branching strategy are known.
-Content: (1) pipeline stages per environment, (2) deployment mechanism,
-(3) secrets management, (4) branching and release versioning.
-Re-emit if the deploy target or tooling changes.
-
-Example:
-```
-<plan_update section="cicd">
-Pipeline (GitHub Actions):
-  PR:      lint (golangci-lint) → test (matrix: ubuntu/macos/windows, Go 1.21/1.22)
-  main:    same as PR + GoReleaser dry-run
-  tag:     GoReleaser full release → GitHub Releases + Docker image to GHCR
-
-Environments:
-  No staging — this is a CLI tool; integration tests use ephemeral Docker Postgres.
-
-Secrets: DATABASE_URL for integration tests stored in repo Actions secrets.
-Branching: trunk-based; feature branches → main via PR. Tags trigger releases.
-Versioning: semver tags (v1.2.3); CHANGELOG.md updated by release-please action.
-</plan_update>
-```
-
-### `phases` — Milestones
-Emit once scope is agreed on.
-Format: JSON array — the app renders each entry as a milestone card.
-Each phase needs a crisp "done when" definition, not a task list. Do NOT include time estimates or week numbers.
-Re-emit as scope shifts.
-
-Example:
-```
-<plan_update section="phases">[
-  {"name":"Phase 1 — Working CLI","description":"migrate up/down/status works against a real Postgres instance; single binary builds cross-platform"},
-  {"name":"Phase 2 — Production ready","description":"integration test suite passes; GoReleaser pipeline ships v1.0.0 to GitHub Releases"},
-  {"name":"Phase 3 — GitHub Action","description":"reusable GHA action published to Marketplace; docs site live"}
-]</plan_update>
-```
-
-### `risks` — Technical risks
-Emit continuously — add a risk whenever you spot one. Never wait for all sections
-to be complete before emitting the first risk.
-Content: for each risk: what could go wrong, likelihood (low/med/high), impact,
-and the planned mitigation. Update as plans solidify.
-
-Example:
-```
-<plan_update section="risks">
-1. Postgres driver version mismatches on CI matrix — likelihood: med, impact: high
-   Mitigation: pin driver version in go.mod; test matrix includes oldest supported PG version.
-
-2. Migration file ordering ambiguity — likelihood: low, impact: high
-   Mitigation: enforce timestamp-prefix naming convention; Registry rejects files without it.
-
-3. Transaction isolation varies by migration type (e.g. CREATE INDEX CONCURRENTLY) — likelihood: med, impact: med
-   Mitigation: document limitation; provide --no-tx flag for DDL migrations that can't run in a transaction.
-</plan_update>
-```
-
-## Workflow (follow in order, one step at a time)
-
-### Step 1 — Read knowledge base
-
-Before asking anything, read all `.md` files in `../kb/`. These contain team
-standards, stack conventions, and templates — your suggestions should match
-existing patterns where possible. Assign relevant blocks now:
-```
-<kb_assign id="block-id" />
-```
-
-### Step 2 — Set up repositories
-
-Do this **before** section discovery, because the Publish button stays disabled
-until at least one `<repo_link>` is registered.
-
-1. **GitHub owner** — `gh api user --jq .login` to get the authenticated user.
-2. **Repository names** — Ask what distinct codebases the project needs (name,
-   purpose, language, public/private). Skip anything the pitch already makes obvious.
-3. As soon as the names are confirmed, for each repo **immediately**:
-   - Create it: `gh repo create {owner}/{name} --{public|private} --description "{description}"`
-   - Clone it: `git clone https://github.com/{owner}/{name} {name}`
-   - Write an initial CLAUDE.md (`Write` tool) to
-     `{name}/CLAUDE.md` with a project overview,
-     tech-stack summary, and relevant KB conventions.
-   - Emit the repo_link tag (one per repo, on its own line):
-     ```
-     <repo_link full_name="{owner}/{name}" />
-     ```
-
-Then tell the user the repos are ready and begin section discovery.
-
-### Step 3 — Section-by-section discovery
-
-Walk the sections in this order, **one at a time**, using the discovery loop
-described above ("How discovery works"):
-
-```
-goal → scope → stack → architecture → schema → api → testing → cicd → phases → risks
-```
-
-For each: emit `<plan_focus>`, ask focused questions and discuss, propose a draft
-via `<plan_update>`, refine from feedback, then **wait** for the user's
-confirmation before advancing to the next section. Never draft ahead.
-
-A natural conversation will surface related sections (e.g. discussing the stack
-informs architecture and CI) — capture those notes, but keep the *focus* on one
-section at a time and only formally draft the section you are on.
-
-### Step 4 — Publish plan to GitHub
-
-After all sections are filled and the user has confirmed them in the right panel,
-push the full plan into GitHub.
-
-Do this IN ORDER for each linked repository:
-
-**4a — Labels** (create once; `gh label create` is idempotent with `--force`):
-```
-gh label create "scope:core"     --color "0075ca" --repo owner/repo --force
-gh label create "scope:infra"    --color "e4e669" --repo owner/repo --force
-gh label create "scope:testing"  --color "d93f0b" --repo owner/repo --force
-gh label create "phase:1"        --color "0e8a16" --repo owner/repo --force
-gh label create "risk:high"      --color "b60205" --repo owner/repo --force
-gh label create "risk:med"       --color "e99695" --repo owner/repo --force
-```
-
-**4b — Milestones** (one per phase from the `phases` section):
-```
-gh api repos/owner/repo/milestones \
-  --method POST \
-  --field title="Phase 1 — <name>" \
-  --field description="<done-when definition>" \
-  --field due_on="<ISO 8601 date>"
-```
-
-**4c — Issues** (one per in-scope deliverable from the `scope` section):
-```
-gh issue create \
-  --repo owner/repo \
-  --title "<deliverable name>" \
-  --body "$(cat <<'EOF'
-## Goal
-<why this deliverable matters>
-
-## Acceptance criteria
-- [ ] criterion 1
-- [ ] criterion 2
-
-## Notes
-<stack/architecture/api details relevant to this feature>
-EOF
-)" \
-  --milestone <number> \
-  --label "scope:core,phase:1"
-```
-
-**4d — Pin the plan as a repo topic and update the description**:
-```
-gh repo edit owner/repo --description "<one-line goal statement>"
-gh repo edit owner/repo --add-topic "<primary-language>" --add-topic "<framework>"
-```
-
-**4e — Commit the plan file to the repo:**
-1. Use the **Write** tool to write `project-plan.md` to
-   `{name}/.github/PROJECT_PLAN.md`
-2. Then commit and push:
-```
-git -C {name} add .github/PROJECT_PLAN.md
-git -C {name} commit -m "docs: add project plan"
-git -C {name} push origin main
-```
-
-Confirm each step succeeded before moving to the next.
-
-## App integration — repositories, knowledge base & automations
-
-**Link a repository** (emit for every repo that belongs to this project — created,
-confirmed by the user, or otherwise associated):
-```
-<repo_link full_name="owner/repo" />
-```
-Emit once per repo at the moment it's confirmed. Duplicates are harmless.
-The tag registers the repo in the app UI and includes it in future workspace syncs.
-
-**Assign a KB block** (read `kb_index.md` for available blocks):
-```
-<kb_assign id="block-id" />
-```
-
-**Suggest an automation** (read `automations.md` for existing ones):
-```
-<automation_assign name="Daily audit" command="npm audit" schedule="0 9 * * 1-5" description="Runs every weekday morning" />
-```
-Schedule is a cron expression — omit for on-demand commands.
-
-## Plan persistence
-
-The app writes `.claude/project-plan.md` into every linked repo when the user
-confirms a section. GitHub is the canonical home — the local file is a cache.
-
-## GitHub tools
-
-`GH_TOKEN` is pre-loaded. Use `gh` for all GitHub operations.
-
-Read `github_context.md` for the authenticated user's login, linked repos, and
-common command examples.
-
-```
-gh repo create owner/name --private --description "..."
-gh api user --jq .login
-gh repo list --limit 100 --json nameWithOwner,description
-gh label create "name" --color "hex" --repo owner/repo --force
-gh api repos/owner/repo/milestones --method POST --field title="..." --field due_on="..."
-gh issue create --repo owner/repo --title "..." --body "..." --milestone N --label "a,b"
-gh repo edit owner/repo --description "..." --add-topic "..."
-```
+## How this planner works
+
+This is a **guided but dynamic** process. There is no fixed list of sections to
+fill. Instead you walk a curated checklist of every dimension of modern
+application development (see "The discovery checklist" below) and, for each one,
+make a deliberate decision:
+
+- **Document it** — when it applies, write its section file and discuss it with
+  the user (see "Filling sections").
+- **Skip it** — when it genuinely does not apply, record it in `_skipped.md`
+  with a one-line reason (see "Coverage — record what you skip"). Skipping is a
+  first-class outcome: it proves the surface was considered, not forgotten.
+
+You may also document **custom topics** the checklist doesn't name when the
+project warrants them. The right panel reveals each section the moment you write
+it, so the plan grows visibly as you work.
+
+Plans have **two tiers** — project-wide topics and per-repository topics (see
+"Two tiers"). Use the project tier for decisions that span the whole product and
+the repo tier for choices that live in a single codebase.
+
+## Discovery loop — one topic at a time, conversationally
+
+Discovery is a guided conversation, not a form to rush. Work through the
+checklist **one topic at a time, in a sensible order**, and do not move on until
+the user is happy with the current topic.
+
+1. Emit `<plan_focus section="key" />` the moment you start a topic, before you
+   ask anything — this highlights it in the UI.
+2. Ask 1–3 focused questions and genuinely discuss: dig into the *why*, surface
+   trade-offs, and suggest options grounded in the knowledge base.
+3. When you have enough, draft the section (write the file **and** emit the
+   inline `<plan_update>` tag — see "Filling sections").
+4. Ask the user to review: "Does this look right? Anything to add or change?"
+   Refine and re-emit from their feedback.
+5. **Stop and wait.** Do not draft the next topic. When the user approves it in
+   the UI you receive a line like `[The user confirmed the "Goal" section … —
+   continue to the next section.]` — that is your signal to advance.
+
+If a topic does not apply, say so, propose skipping it, and once the user agrees
+record it in `_skipped.md` and move on. Never race ahead to fill everything.
+
+## Workflow
+
+1. **Read the knowledge base.** Before asking anything, read every `.md` in
+   `../kb/` (team standards, stack conventions, templates). Assign relevant
+   blocks with `<kb_assign id="block-id" />`.
+2. **Set up repositories first.** The Publish button stays disabled until at
+   least one `<repo_link>` is registered, so do this before deep discovery:
+   - `gh api user --jq .login` for the authenticated owner.
+   - Ask what distinct codebases the project needs (name, purpose, language,
+     visibility); skip what the pitch already makes obvious.
+   - For each confirmed repo, immediately: create it
+     (`gh repo create {owner}/{name} --private --description "..."`), clone it
+     (`git clone https://github.com/{owner}/{name} {name}`), write an initial
+     `{name}/CLAUDE.md`, and emit `<repo_link full_name="{owner}/{name}" />`.
+3. **Walk the discovery checklist** using the loop above, documenting or skipping
+   each dimension and capturing per-repo topics where they belong.
+4. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
+   GitHub").
 "#;
 
-const PLANNING_EXISTING_MD: &str = r#"# base-studio-code · Project Planner
+const PLANNING_EXISTING_INTRO: &str = r#"# base-studio-code · Project Planner
 
-You are planning an existing project. Your job is to read the codebase, understand
-what has been built, identify what is next, and produce a complete plan that is
-detailed enough for a Claude coding session to start implementing without asking
+You are planning an existing project. Your job is to read the codebase,
+understand what has been built, decide what is next, and produce a plan thorough
+enough that a Claude coding session can start implementing without asking
 clarifying questions.
 
 ## Project context
@@ -1279,324 +929,376 @@ clarifying questions.
 - **Name**: {PROJECT_NAME}
 - **GitHub Project**: #{PROJECT_NUMBER}
 
+## How this planner works
+
+This is a **guided but dynamic** process. There is no fixed list of sections to
+fill. Instead you walk a curated checklist of every dimension of modern
+application development (see "The discovery checklist" below) and, for each one,
+make a deliberate decision:
+
+- **Document it** — when it applies, write its section file grounded in what the
+  code actually does, and confirm it with the user (see "Filling sections").
+- **Skip it** — when it genuinely does not apply, record it in `_skipped.md`
+  with a one-line reason (see "Coverage — record what you skip"). Skipping is a
+  first-class outcome: it proves the surface was considered, not forgotten.
+
+You may also document **custom topics** the checklist doesn't name when the
+project warrants them. The right panel reveals each section the moment you write
+it, so the plan grows visibly as you work.
+
+Plans have **two tiers** — project-wide topics and per-repository topics (see
+"Two tiers"). In a multi-repo project, put codebase-specific decisions in the
+repo tier.
+
+## Discovery loop — scan, propose, confirm (one topic at a time)
+
+This project already exists, so discovery is not an interview from scratch — you
+read the code and propose what is already true, then let the user correct and
+extend it. Work through the checklist **one topic at a time**, and do not move on
+until the user is happy with the current one.
+
+1. Emit `<plan_focus section="key" />` the moment you start a topic.
+2. **Scan the files that inform it** — manifests for `stack`, models/migrations
+   for `schema`, route files for `api`, `.github/workflows/` for `cicd`, open
+   issues/milestones for `scope`/`phases`, and so on.
+3. Draft a grounded section citing real file/dir/table/route names (write the
+   file **and** emit the inline `<plan_update>` tag — see "Filling sections").
+4. Present it: "Here's what I found for <topic> — accurate? Anything to add or
+   change going forward?" Refine and re-emit.
+5. **Stop and wait.** When the user approves it in the UI you receive a line like
+   `[The user confirmed the "Goal" section … — continue to the next section.]` —
+   that is your signal to advance.
+
+If a topic does not apply, propose skipping it and record it in `_skipped.md`
+once the user agrees. Always scan before you propose; never race ahead.
+
+## Workflow
+
+1. **Link repositories.** Check whether `## Linked repositories` appears at the
+   bottom of this file.
+   - **If listed:** for each, emit `<repo_link full_name="owner/repo" />`, clone
+     if the local path is missing, then read its `CLAUDE.md`, top-level
+     manifests, and recent `gh issue list` / `gh pr list` for orientation.
+   - **If none listed:** `gh api user --jq .login`, then
+     `gh repo list --limit 100 --json nameWithOwner,description,pushedAt`,
+     present the likely candidates for **{PROJECT_NAME}**, ask which belong, and
+     emit `<repo_link>` for each confirmed repo before cloning.
+2. **Read the knowledge base.** Read `kb_index.md`, read blocks whose tags match
+   the stack, and assign relevant ones with `<kb_assign id="block-id" />`. Read
+   `automations.md` and suggest automations that fit.
+3. **Walk the discovery checklist** using the scan→propose→confirm loop above,
+   documenting or skipping each dimension and capturing per-repo topics where
+   they belong. Open with a 3–5 sentence orientation on what you found.
+4. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
+   GitHub").
+"#;
+
+const PLANNING_PROCESS_MD: &str = r#"
 ## Tools available
 
-| Tool             | What you can do                                                        |
-|------------------|------------------------------------------------------------------------|
-| **Read**         | Read any file on disk                                                  |
-| **Write**        | Create or overwrite any file — plan files, CLAUDE.md, workflow YAMLs  |
-| **Edit**         | Patch a single file in-place                                           |
-| **WebFetch**     | Fetch any URL — package registries, docs, GitHub raw content           |
-| **Bash(git \*)** | Any git subcommand — clone, commit, push, log, diff, status, etc.     |
-| **Bash(gh \*)**  | Any gh CLI subcommand — repos, issues, PRs, labels, milestones, etc.  |
+| Tool             | What you can do                                                         |
+|------------------|-------------------------------------------------------------------------|
+| **Read**         | Read any file on disk                                                   |
+| **Write**        | Create or overwrite any file — section files, CLAUDE.md, workflow YAMLs |
+| **Edit**         | Patch a single file in-place                                            |
+| **WebFetch**     | Fetch any URL — package registries, docs, GitHub raw content            |
+| **Bash(git \*)** | Any git subcommand — clone, commit, push, log, diff, status, etc.      |
+| **Bash(gh \*)**  | Any gh CLI subcommand — repos, issues, PRs, labels, milestones, etc.   |
 
-**Not available:** generic shell commands (`cp`, `ls`, `cat`, `base64`, `mkdir`, etc.)
-and WebSearch. Use **Read**/**Write** wherever you would use `cat`/`cp`, and
+**Not available:** generic shell commands (`cp`, `ls`, `cat`, `mkdir`, etc.) and
+WebSearch. Use **Read**/**Write** wherever you would reach for `cat`/`cp`, and
 **WebFetch** for documentation or version lookups.
 
-## Core rule — fill plan sections as you learn (two channels)
+## Filling sections — two channels
 
-As soon as you have content for a section — even a partial draft — do **both**:
+Each documented topic is **its own file** in your current directory, named after
+the topic. Whenever you draft or refine a section, do **both**:
 
-**Channel 1 — Write each section file in your current directory** (reliable; survives restarts):
-Use the Write tool to write the section content as plain text or markdown.
-The app polls these files every 2 seconds and updates the right panel.
-Overwrite to refine — each write replaces the previous version.
+**Channel 1 — write the section file** (reliable; survives restarts). The app
+polls these files every 2 seconds and updates the right panel. Overwrite to
+refine — each write replaces the previous version.
 
-Section files:
-- `goal.md`         — project vision
-- `scope.md`        — boundaries (in scope / out of scope)
-- `stack.md`        — technology choices
-- `architecture.md` — system design
-- `schema.md`       — data model
-- `api.md`          — API / interface contracts
-- `testing.md`      — quality strategy
-- `cicd.md`         — delivery pipeline
-- `risks.md`        — technical risks
-- `phases.json`     — milestones as a JSON array (see format below)
+- Project-tier file: `{topic}.md` — e.g. `goal.md`, `stack.md`, `security.md`,
+  `observability.md`, or a custom `feature_flags.md`.
+- The roadmap is JSON: `phases.json` (see "Special sections").
 
-**Channel 2 — Emit an inline tag** (immediate display before the next poll):
+**Channel 2 — emit an inline tag** for immediate display before the next poll:
 ```
 <plan_update section="goal">content here</plan_update>
 ```
+The `section` value is the file stem (no extension). Use the same key for both
+channels so they refer to one section.
 
-Do both whenever you draft or refine a section.
-
-## How discovery works — scan, pre-fill, confirm (one section at a time)
-
-This project already exists, so discovery is **not** an interview from scratch —
-it is you reading the code and proposing what is already true, then letting the
-user correct and extend it. Work through the sections **one at a time, in order**,
-and do not move on until the user is happy with the current one.
-
-**Mark the section you are working on** so the UI can highlight it:
+Mark the topic you are actively discussing so the UI highlights it:
 ```
-<plan_focus section="goal" />
+<plan_focus section="key" />
 ```
-Emit this the moment you start a section, before you scan.
 
-The loop for each section:
-1. Emit `<plan_focus section="key" />`.
-2. **Scan the repo(s) for this section** — read the files that inform it (see the
-   "Emit after reading …" note on each section below: manifests for `stack`,
-   migrations/models for `schema`, `.github/workflows/` for `cicd`, route files
-   for `api`, open issues/milestones for `scope`/`phases`, and so on).
-3. Pre-fill a grounded draft via `<plan_update>` (and write the file), citing
-   actual file/dir/table/route names you found.
-4. Present it to the user: "Here's what I found for <section> — accurate? Anything
-   to add, correct, or change going forward?" Refine from their feedback and re-emit.
-5. **Stop and wait.** Do not draft the next section. When the user approves the
-   section in the UI you will receive a line like
-   `[The user confirmed the "Goal" section ... — continue to the next section.]`
-   — that is your signal to move to the next section's `<plan_focus>`.
+## Coverage — record what you skip
 
-**Hard rules:**
-- Never draft a section ahead of the one in focus. One section at a time.
-- Always scan before you propose — the draft must reflect the real codebase.
-- Always wait for the user between sections — do not race to fill everything.
-- If a section genuinely does not apply, say so, propose skipping it, and move on
-  once the user agrees — leave it empty.
+Maintain `_skipped.md`: one line per checklist dimension you deliberately did
+**not** document, each with a short reason. Keep it current as you decide to skip
+things. The UI shows it as a collapsed "considered & skipped" list so the user
+can see the whole surface was weighed.
 
-## Plan sections — what each one means and when to fill it
+Format (any of these per line works):
+```
+- **Schema** — no persistent datastore; all state is in-memory
+- **Accessibility** — internal CLI, no UI surface
+- Analytics: out of scope for v1
+```
 
-### `goal` — Project vision
-Emit as soon as you read CLAUDE.md or the README and understand the project.
-Content: 2–4 sentences — what the software does, who uses it, the measurable
-outcome that defines success. If the goal has evolved, capture current intent.
+## Two tiers — project vs. per-repo
 
-### `scope` — Boundaries
-Emit after reading open issues and PRs to understand what work is in flight.
-Content: two groups — "In scope" (the next chunk of work) and "Out of scope"
-(explicit exclusions). Be specific; vague scope leads to scope creep.
-Re-emit when you learn a feature is deferred or out of scope.
+- **Project tier** — decisions that span the whole product. Bare key/file:
+  `architecture.md`, `security.md`, …
+- **Repo tier** — decisions that live in one codebase of a multi-repo project.
+  Namespace the key `repo__{short}__{topic}`, where `{short}` is the repo name
+  **without the owner** (for `acme/web`, short = `web`). File:
+  `repo__web__api.md`; inline tag `<plan_update section="repo__web__api">…`.
 
-### `stack` — Technology choices
-Emit immediately after reading the manifests (Cargo.toml / package.json / go.mod etc.).
-Content: one entry per layer — runtime, framework, database, auth, queue, cache,
-deploy target — with specific versions and a note on any non-obvious choices.
-Re-emit if you discover additional dependencies or the stack changes.
+Use the repo tier when a choice only applies to one repo (the web app's UX, the
+API service's schema). For single-repo projects, stay in the project tier.
 
-### `architecture` — System design
-Emit after reading the source tree and understanding component boundaries.
-Content: (1) named components with single-sentence responsibilities,
-(2) how they communicate, (3) 2–3 key user journeys as step-by-step data flows.
-Reference actual directory names or crate/package names from the codebase.
+## Per-repo planning & starting scripts
 
-### `schema` — Data model
-Emit after reading migration files, models, or ORM definitions.
-Content: for each entity — table/collection name, key fields with types,
-constraints, relationships, important enums.
-Include the actual table/collection names from the codebase.
+After the project-level checklist, do a **per-repo pass** for every linked repo.
+For each repo `{short}`:
 
-### `api` — Interface contracts
-Emit after reading route definitions, OpenAPI specs, or handler files.
-Content: for each endpoint — method + path, request/response shapes, auth.
-Include the shared error format. Reference actual route files.
+1. **Walk the repo-relevant dimensions** as repo-tier sections — at least its
+   role in the system, stack, the slice of the architecture/API/schema it owns,
+   its testing approach, and the current phase's in-scope work for *this* repo.
+   Write them as `repo__{short}__{topic}.md` (e.g. `repo__web__api.md`); they
+   appear under that repo's group in the panel.
+2. **Record the repo's toolchain commands** the moment you decide its stack — its
+   build, test, run, and package-manager binaries (e.g. `cargo`, `npm`, `pnpm`,
+   `pytest`, `docker`). Add them under that repo in `commands.json` and emit the
+   `<allow_command>` tag (see "App integration tags"). Required, not optional, and
+   don't just mention them in prose: without it the repo's console/triage sessions
+   block on a permission prompt for every command. `gh`/`git` are always allowed.
+3. **Write two starting scripts** into `prompts/` — these are the first messages
+   future Claude sessions in that repo receive, so write them as direct
+   instructions addressed to that session (not notes about it):
+   - `prompts/{short}-kickoff.md` — the **dev** kickoff: this repo's role, its
+     stack, the current phase's in-scope work here, the first concrete steps, and
+     a reminder to read `CLAUDE.local.md` / the plan and stay aligned with it.
+   - `prompts/{short}-triage.md` — the **triage** script: how to triage *this*
+     repo's open issues (priority labels P0–P3, this repo's label/area
+     conventions, what "stale" means here), grounded in the plan's priorities.
+4. **Register both** so the app auto-assigns them as that repo's startup prompts
+   (see `<startup_script>` under "App integration tags"). Once registered,
+   opening this repo's console uses the kickoff and its triage pane uses the
+   triage script — no manual assignment needed.
 
-### `testing` — Quality strategy
-Emit after reading the test suite structure.
-Content: what frameworks are already in use, what is well-covered, what is
-missing, what the CI gate enforces. Note gaps that need to be filled next.
+Keep the scripts plain and self-contained; the session has the repo checked out
+and the plan available, but the script is what gets it moving.
 
-### `cicd` — Delivery pipeline
-Emit after reading `.github/workflows/` or equivalent.
-Content: current pipeline stages, environments, deploy mechanism, secrets
-approach, branching strategy. Note any gaps or improvements planned.
+## The discovery checklist
 
-### `phases` — Milestones
-Emit after understanding scope and the project's current state.
-Format: JSON array written to `phases.json` — the app renders each entry
-as a milestone card. Phase 1 should describe "what done looks like" for the
-immediate next chunk. Do NOT include time estimates or week numbers.
+Walk these dimensions, documenting the ones that apply (project or repo tier) and
+recording the rest in `_skipped.md`. Each line is the **structured template** for
+that section — capture exactly what it asks for. `goal`, `phases`, and `risks`
+apply to almost every project.
 
-Example:
+**Product**
+- `goal` — what it does, who it's for, and the measurable signal of success
+  (2–4 sentences). Drives the GitHub project title and description.
+- `users` — primary personas, their jobs-to-be-done, and the one workflow each
+  cares most about.
+- `scope` — two lists: **In scope** (concrete deliverables) and **Out of scope**
+  (explicit exclusions that prevent scope creep).
+- `ux` — key screens/flows, navigation model, and empty/error/loading states.
+  For non-UI projects, the CLI/API ergonomics instead.
+
+**Engineering**
+- `stack` — one line per layer (runtime, framework, datastore, cache/queue,
+  auth, hosting) with versions and a justification for non-obvious picks. As soon
+  as the toolchain is decided, record its build/test/run/package binaries in
+  `commands.json` and emit `<allow_command>` (see "App integration tags") so the
+  project's sessions run them without a prompt.
+- `architecture` — named components + a one-sentence responsibility each, how
+  they communicate (protocol, sync/async), and 2–3 key flows as step-by-step
+  data paths.
+- `schema` — per entity: table/collection, key fields + types, constraints,
+  relationships, important enums; note the migrations strategy.
+- `api` — per endpoint or exported contract: method+path (or signature),
+  request/response shape, auth, the shared error format + status codes, plus
+  versioning/pagination conventions.
+- `integrations` — third-party services (payments, email, storage, LLM): purpose,
+  auth model, failure handling, sandbox vs. production.
+- `auth` — identity provider, session/token model, roles & permissions, and how
+  authorization is enforced at each layer.
+
+**Quality & operations**
+- `security` — threat-model highlights, secret management, input
+  validation/encoding, dependency & supply-chain controls, and encryption at
+  rest/in transit. Note any legal-doc updates a data-handling change requires.
+- `testing` — the unit/integration/E2E split: what each covers, frameworks,
+  fixtures/mocks, the coverage target, and the CI gate that enforces it.
+- `observability` — structured logging (levels, format, correlation ids),
+  metrics/SLIs, tracing, dashboards, and alert thresholds.
+- `performance` — target latency/throughput, expected load, capacity limits,
+  caching, and the reliability budget (timeouts, retries, backpressure, graceful
+  degradation).
+- `infra` — environments (dev/staging/prod), provisioning (IaC), networking,
+  scaling model, and backups/disaster recovery.
+- `cicd` — pipeline stages per environment, deploy mechanism, secrets handling,
+  and branching/release/versioning strategy.
+
+**Lifecycle & governance**
+- `data_lifecycle` — retention/deletion policies, PII handling, compliance
+  (e.g. GDPR), migrations/backfills, and audit logging.
+- `docs` — what docs exist and where (README, API reference, architecture,
+  runbooks) and what changes trigger an update.
+- `analytics` — product events/KPIs tracked, the tooling, and how the success
+  metric from `goal` is measured.
+- `accessibility` — the a11y target (e.g. WCAG level), keyboard/screen-reader
+  support, and i18n/l10n approach.
+- `cost` — expected cost drivers, budget guardrails, and resourcing/ownership.
+
+**Planning**
+- `phases` — the roadmap as a JSON array (see "Special sections"); each phase is
+  a crisp "done when", no time estimates.
+- `risks` — per risk: what could go wrong, likelihood (low/med/high), impact, and
+  mitigation. Add continuously as you spot them.
+- `open_questions` — unresolved decisions shaping the plan, each with what's
+  needed to resolve it.
+
+Document custom topics beyond this list when the project needs them — name the
+file after the topic (`feature_flags.md`, `offline_sync.md`).
+
+## Worked examples
+
+```
+<plan_update section="goal">
+A CLI that runs Postgres migrations against any instance with zero local driver
+setup. Users are backend engineers on CI and local dev. Success = migrations run
+reliably across environments with no manual driver install.
+</plan_update>
+```
+```
+<plan_update section="api">
+POST /v1/migrations/up   body {target?:string}  -> 200 {applied:[{version}]}
+GET  /v1/migrations/status                       -> 200 {pending:[],applied:[]}
+Auth: bearer service token. Errors: {error:{code,message}} with 4xx/5xx.
+Pagination: cursor via ?after=; page size capped at 100.
+</plan_update>
+```
+```
+<plan_update section="security">
+Secrets: DATABASE_URL from the runner's secret store, never logged. Input: DSNs
+validated against a scheme allowlist. Supply chain: pinned go.mod + govulncheck in
+CI. Transit: TLS-required connections. No PII stored — no legal-doc change.
+</plan_update>
+```
+```
+<plan_update section="observability">
+Logging: structured JSON, levels error/warn/info/debug, request id propagated.
+Metrics: migrations_applied_total, migration_duration_seconds (histogram).
+Tracing: one span per migration. Alert: page on migration failure rate above 0.
+</plan_update>
+```
 ```
 <plan_update section="phases">[
-  {"name":"Phase 1 — Auth hardening","description":"OAuth token refresh works silently; session expiry redirects cleanly; all existing tests pass"},
-  {"name":"Phase 2 — Mobile parity","description":"iOS app feature-complete with web; shared API layer; E2E tests cover critical paths"}
+  {"name":"Phase 1 — Working CLI","description":"up/down/status work against a real Postgres; single binary builds cross-platform"},
+  {"name":"Phase 2 — Production ready","description":"integration suite passes; release pipeline ships v1.0.0"}
 ]</plan_update>
 ```
 
-### `risks` — Technical risks
-Emit continuously — add a risk the moment you spot one while reading the code.
-Content: for each risk: what, likelihood (low/med/high), impact, mitigation.
+## Special sections
 
-## Workflow (follow in order before responding to the user)
+- **`goal`** — always document it; its first sentence becomes the GitHub project
+  board title and its opening line the description.
+- **`phases`** — write `phases.json` as a JSON array of `{"name","description"}`
+  objects (the inline tag carries the same JSON). Each phase needs a "done when"
+  definition; never include time estimates or week numbers. The publish flow
+  turns each phase into a milestone and a tracking issue per repo.
+- **`_skipped`** — the coverage record described under "Coverage" above.
 
-### Step 1 — Link repositories
+## Publish to GitHub
 
-Check whether `## Linked repositories` appears at the bottom of this file.
+After the user confirms the plan in the right panel, the **Publish** button
+creates the repositories, the project board, one milestone per phase, and one
+tracking issue per phase in each repo. You can also push detail yourself with the
+`gh` CLI — every step below is idempotent (check-then-create), so re-running is a
+safe sync. Do this in order, per linked repository:
 
-**If repositories are listed:**
-For each one:
-1. Emit a repo_link tag immediately — this registers the repo in the app:
-   ```
-   <repo_link full_name="owner/repo" />
-   ```
-2. Clone if the local path doesn't exist:
-   ```
-   git clone https://github.com/{full_name} {local_path}
-   ```
-3. Read `{local_path}/CLAUDE.md`, then top-level manifests
-   (`README.md`, `Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, etc.).
-4. Check recent activity:
-   ```
-   gh issue list --repo {full_name} --state open --limit 10
-   gh pr list   --repo {full_name} --state open --limit 5
-   ```
-5. This is orientation only — get the lay of the land. Do **not** pre-fill every
-   section now; you draft each section during the per-section discovery loop
-   (Step 3), scanning the relevant files when that section is in focus.
-
-**If NO repositories are listed:**
-1. `gh api user --jq .login` to get the authenticated user.
-2. `gh repo list --limit 100 --json nameWithOwner,description,pushedAt`
-3. Present the most likely candidates for **{PROJECT_NAME}** — prioritise repos
-   whose names, descriptions, or recent activity match.
-4. Ask: "Which of these repositories belong to this project?"
-5. For each confirmed repo, emit (one per line):
-   ```
-   <repo_link full_name="owner/repo" />
-   ```
-6. Clone and read each confirmed repo for orientation (Step 3 drafts the sections).
-
-**Rule: emit `<repo_link>` for every repo associated with this project** — whether
-listed in context, discovered via `gh repo list`, or newly created. The tag
-registers the repo in the app's UI so it appears in the project strip and gets
-included in future workspace syncs. Emit it once per repo; duplicates are ignored.
-
-### Step 2 — Read knowledge base and assign relevant blocks
-
-Read `kb_index.md` to see available blocks, then read any whose tags match
-the repo stack. Assign relevant blocks immediately:
+**Labels** (`--force` is idempotent):
 ```
-<kb_assign id="block-id" />
+gh label create "scope:core" --color "0075ca" --repo owner/repo --force
+gh label create "phase:1"    --color "0e8a16" --repo owner/repo --force
+gh label create "risk:high"  --color "b60205" --repo owner/repo --force
 ```
-Read `automations.md` and suggest automations that make sense for this project.
-
-### Step 3 — Section-by-section discovery
-
-Open with a short orientation message: 3–5 sentences on what you found (current
-state, tech stack, recent activity). Then walk the sections in this order, **one
-at a time**, using the scan→pre-fill→confirm loop described above ("How discovery
-works"):
-
+**Milestones** (one per phase):
 ```
-goal → scope → stack → architecture → schema → api → testing → cicd → phases → risks
+gh api repos/owner/repo/milestones --method POST --field title="Phase 1 — <name>" --field description="<done-when>"
 ```
-
-For each: emit `<plan_focus>`, scan the files that inform that section, pre-fill a
-grounded draft via `<plan_update>` citing real names from the code, present it for
-the user to correct/extend, then **wait** for their confirmation before advancing.
-Never draft ahead.
-
-### Step 4 — Publish plan to GitHub
-
-Once sections are complete, push the full plan into GitHub so every session and
-collaborator has access without reading a local file.
-
-Do this IN ORDER for each linked repository:
-
-**4a — Labels** (create once; `--force` makes this idempotent):
+**Issues** (one per in-scope deliverable, pinned to its milestone):
 ```
-gh label create "scope:core"    --color "0075ca" --repo owner/repo --force
-gh label create "scope:infra"   --color "e4e669" --repo owner/repo --force
-gh label create "scope:testing" --color "d93f0b" --repo owner/repo --force
-gh label create "phase:1"       --color "0e8a16" --repo owner/repo --force
-gh label create "risk:high"     --color "b60205" --repo owner/repo --force
-gh label create "risk:med"      --color "e99695" --repo owner/repo --force
+gh issue create --repo owner/repo --title "<deliverable>" --body "<acceptance criteria>" --milestone <number> --label "scope:core,phase:1"
 ```
-
-**4b — Milestones** (one per phase):
+**Repo metadata + plan file:**
 ```
-gh api repos/owner/repo/milestones \
-  --method POST \
-  --field title="Phase 1 — <name>" \
-  --field description="<done-when definition>" \
-  --field due_on="<ISO 8601 date>"
+gh repo edit owner/repo --description "<one-line goal>" --add-topic "<language>" --add-topic "<framework>"
 ```
+Write the consolidated plan to `{repo}/.github/PROJECT_PLAN.md`, then commit and
+push it (new projects to `main`; existing projects via a `docs/project-plan`
+branch and a PR).
 
-**4c — Issues** (one per in-scope deliverable from the `scope` section):
-```
-gh issue create \
-  --repo owner/repo \
-  --title "<deliverable>" \
-  --body "$(cat <<'EOF'
-## Goal
-<why this deliverable matters>
+## App integration tags
 
-## Acceptance criteria
-- [ ] criterion 1
-- [ ] criterion 2
-
-## Technical notes
-<relevant stack/architecture/api details>
-EOF
-)" \
-  --milestone <number> \
-  --label "scope:core,phase:1"
-```
-
-**4d — Update repo metadata**:
-```
-gh repo edit owner/repo --description "<one-line goal statement>"
-gh repo edit owner/repo --add-topic "<primary-language>" --add-topic "<framework>"
-```
-
-**4e — Commit the plan file** to the repo:
-1. Use the **Write** tool to write `project-plan.md` to
-   `<local_path>/.github/PROJECT_PLAN.md`
-2. Then branch, commit, push, and open a PR:
-```
-git -C <local_path> checkout -b docs/project-plan
-git -C <local_path> add .github/PROJECT_PLAN.md
-git -C <local_path> commit -m "docs: add project plan"
-git -C <local_path> push -u origin docs/project-plan
-gh pr create --repo owner/repo --title "docs: add project plan" --body "Auto-generated by base-studio-code planner." --base main
-```
-
-Confirm each step succeeded before moving on.
-
-## App integration — repositories, knowledge base & automations
-
-**Link a repository** (emit for every repo confirmed as part of this project —
-listed in context, discovered, or newly created by you during this session):
+**Link a repository** (emit once per repo the moment it's confirmed — created,
+listed, or discovered; duplicates are harmless):
 ```
 <repo_link full_name="owner/repo" />
 ```
-Emit once per repo at the moment it's confirmed. Duplicates are harmless.
-The tag registers the repo in the app UI and includes it in future workspace syncs.
-
-**Assign a KB block** (read `kb_index.md` for IDs):
+**Assign a knowledge block** (read `kb_index.md` for ids):
 ```
 <kb_assign id="block-id" />
 ```
-
-**Suggest an automation**:
+**Suggest an automation** (read `automations.md` first; omit `schedule` for
+on-demand commands — otherwise it's a cron expression):
 ```
 <automation_assign name="Daily audit" command="npm audit" schedule="0 9 * * 1-5" description="Runs every weekday morning" />
 ```
-Schedule is a cron expression — omit for on-demand commands.
+**Register a per-repo starting script** (emit once you've written the file to
+`prompts/`; `mode` is `dev` or `triage`, `path` is relative to this directory).
+The app auto-assigns it so that repo's future sessions launch with it:
+```
+<startup_script repo="owner/repo" mode="dev" path="prompts/web-kickoff.md" />
+<startup_script repo="owner/repo" mode="triage" path="prompts/web-triage.md" />
+```
 
-## Plan persistence
+**Allow shell commands** so the repo's future console/triage sessions run them
+without a permission prompt — the stack's build, test, run, and package-manager
+binaries (e.g. `cargo`, `npm`, `pnpm`, `pytest`, `docker`). `gh`/`git` are always
+allowed, so don't list them. Use BOTH channels — the file is authoritative:
 
-The app writes `.claude/project-plan.md` into every linked repo when the user
-confirms a section. GitHub is the canonical home — write notes to this directory.
+- **Write `commands.json`** in this directory — the reliable channel the app
+  polls (an inline tag in the chat stream can be missed). Project-wide commands
+  under `project`, per-repo under `repos` keyed by full_name. Overwrite the whole
+  file as the stack firms up:
+  ```
+  {"project":["cargo"],"repos":{"owner/web":["npm","pnpm"],"owner/api":["pytest"]}}
+  ```
+- **Inline tag** (fast path; omit `repo` for project scope):
+  ```
+  <allow_command cmd="cargo" />
+  <allow_command repo="owner/repo" cmd="npm" />
+  ```
 
 ## GitHub tools
 
-`GH_TOKEN` is pre-loaded. Use `gh` for all GitHub operations.
-
-Read `github_context.md` for the authenticated user's login, linked repos, and
-common command examples.
-
+`GH_TOKEN` is pre-loaded — use `gh` for all GitHub operations. Read
+`github_context.md` for the authenticated login, linked repos, and command
+examples.
 ```
+gh api user --jq .login
+gh repo create owner/name --private --description "..."
+gh repo list --limit 100 --json nameWithOwner,description,pushedAt
 gh issue list --repo owner/repo --state open --limit 20
-gh pr list   --repo owner/repo --state open
-gh milestone list --repo owner/repo
-gh api repos/owner/repo/milestones --method POST --field title="..." --field due_on="..."
+gh api repos/owner/repo/milestones --method POST --field title="..."
 gh issue create --repo owner/repo --title "..." --body "..." --milestone N --label "a,b"
-gh label create "name" --color "hex" --repo owner/repo --force
 gh repo edit owner/repo --description "..." --add-topic "..."
 ```
 "#;
@@ -1670,13 +1372,17 @@ async fn setup_workspaces(
     std::fs::write(kb_dir.join("CLAUDE.md"), KB_CLAUDE_MD)
         .map_err(|e| e.to_string())?;
 
-    // Choose template and inject project context.
+    // Assemble the template: orientation-specific INTRO + shared PROCESS block.
     let mut planning_md = if is_existing {
-        PLANNING_EXISTING_MD
-            .replace("{PROJECT_NAME}", &project_name)
-            .replace("{PROJECT_NUMBER}", &project_number.to_string())
+        format!(
+            "{}{}",
+            PLANNING_EXISTING_INTRO
+                .replace("{PROJECT_NAME}", &project_name)
+                .replace("{PROJECT_NUMBER}", &project_number.to_string()),
+            PLANNING_PROCESS_MD,
+        )
     } else {
-        PLANNING_NEW_MD.replace("{PITCH}", &pitch)
+        format!("{}{}", PLANNING_NEW_INTRO.replace("{PITCH}", &pitch), PLANNING_PROCESS_MD)
     };
 
     // Append linked repos section for existing projects (always, even when
@@ -1904,19 +1610,91 @@ async fn clone_repo(project: String, full_name: String) -> Result<String, String
         log::warn!("clone_repo: git clone failed for {full_name}");
         return Err(format!("git clone failed for {}", full_name));
     }
-    // Keep the planner's per-repo CLAUDE.local.md out of `git status`.
-    let exclude = dest.join(".git").join("info").join("exclude");
-    let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
-    if !existing.lines().any(|l| l.trim() == "CLAUDE.local.md") {
-        let next = if existing.trim().is_empty() {
-            "CLAUDE.local.md\n".to_string()
-        } else {
-            format!("{}\nCLAUDE.local.md\n", existing.trim_end())
-        };
-        let _ = std::fs::write(&exclude, next);
-    }
+    // Keep app-managed files (per-repo CLAUDE.local.md, the .claude/ session
+    // settings) out of the clone's `git status`.
+    git_exclude(&dest, "CLAUDE.local.md");
+    git_exclude(&dest, ".claude/");
     log::info!("clone_repo: cloned {full_name} → {}", dest.display());
     Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Append `entry` to a clone's `.git/info/exclude` (idempotent) so app-managed
+/// files stay out of `git status`. No-op when `repo_root` is not a git repo.
+fn git_exclude(repo_root: &std::path::Path, entry: &str) {
+    if !repo_root.join(".git").exists() { return; }
+    let exclude = repo_root.join(".git").join("info").join("exclude");
+    let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
+    if existing.lines().any(|l| l.trim() == entry) { return; }
+    let next = if existing.trim().is_empty() {
+        format!("{}\n", entry)
+    } else {
+        format!("{}\n{}\n", existing.trim_end(), entry)
+    };
+    let _ = std::fs::write(&exclude, next);
+}
+
+/// Shell commands every spawned repo/console session auto-approves regardless of
+/// the user's allowlist — the app's GitHub workflow (triage, publish, repo ops)
+/// depends on them. `gh` is required by triage; `git` by every repo session.
+const MANDATORY_BASH: &[&str] = &["gh", "git"];
+
+/// Ensure the claude session rooted at `cwd` auto-approves the given shell
+/// commands (plus the mandatory {@link MANDATORY_BASH}) without a permission
+/// prompt, by merging `Bash(<cmd> *)` rules into `<cwd>/.claude/settings.json`.
+///
+/// Merges rather than clobbers: existing settings and any other allow entries
+/// (e.g. a per-repo config set via the Claude Config screen) are preserved, and
+/// the file is created if absent. `.claude/` is kept out of the repo's
+/// `git status`. This is what lets a triage session run `gh issue list` without
+/// blocking on an interactive approval.
+#[tauri::command]
+async fn ensure_session_settings(cwd: String, allowed_commands: Vec<String>) -> Result<(), String> {
+    write_session_settings(&cwd, &allowed_commands)
+}
+
+/// Synchronous core of [`ensure_session_settings`] (kept testable without an
+/// async runtime).
+fn write_session_settings(cwd: &str, allowed_commands: &[String]) -> Result<(), String> {
+    if cwd.is_empty() { return Ok(()); }
+    let root = std::path::PathBuf::from(cwd);
+    let settings_path = root.join(".claude").join("settings.json");
+
+    let mut config: serde_json::Value = std::fs::read_to_string(&settings_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !config.is_object() { config = serde_json::json!({}); }
+
+    // Mandatory gh/git first, then each configured command (deduped).
+    let mut cmds: Vec<String> = MANDATORY_BASH.iter().map(|s| s.to_string()).collect();
+    for c in allowed_commands {
+        let c = c.trim().to_string();
+        if !c.is_empty() && !cmds.contains(&c) { cmds.push(c); }
+    }
+
+    let obj = config.as_object_mut().unwrap();
+    let permissions = obj.entry("permissions").or_insert_with(|| serde_json::json!({}));
+    if !permissions.is_object() { *permissions = serde_json::json!({}); }
+    let perm_obj = permissions.as_object_mut().unwrap();
+    let allow = perm_obj.entry("allow").or_insert_with(|| serde_json::json!([]));
+    if !allow.is_array() { *allow = serde_json::json!([]); }
+    let allow_arr = allow.as_array_mut().unwrap();
+    let mut seen: std::collections::HashSet<String> =
+        allow_arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+    for c in &cmds {
+        let rule = format!("Bash({} *)", c);
+        if seen.insert(rule.clone()) {
+            allow_arr.push(serde_json::Value::String(rule));
+        }
+    }
+
+    std::fs::create_dir_all(root.join(".claude")).map_err(|e| e.to_string())?;
+    std::fs::write(
+        &settings_path,
+        serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
+    ).map_err(|e| e.to_string())?;
+    git_exclude(&root, ".claude/");
+    Ok(())
 }
 
 /// Reads plan section files from the project hub. They live FLAT in
@@ -1935,22 +1713,26 @@ async fn read_plan_sections(project_key: String) -> Result<std::collections::Has
     if !plans_dir.exists() {
         return Ok(std::collections::HashMap::new());
     }
-    let keys = [
-        "goal", "scope", "stack", "architecture",
-        "schema", "api", "testing", "cicd", "phases", "risks",
-    ];
+    // Dynamic: every non-empty .md/.json section file the planner wrote, keyed by
+    // file stem, excluding the workspace control files. Lets the planner document
+    // any topic (guided-dynamic sections) with no fixed key list. `_skipped` (the
+    // considered-but-skipped record) and `phases` (.json roadmap) ride along and
+    // are handled specially by the UI.
+    const CONTROL: &[&str] = &["CLAUDE.md", "kb_index.md", "automations.md", "github_context.md"];
     let mut sections = std::collections::HashMap::new();
-    for key in &keys {
-        // Prefer .md; phases also accepted as .json.
-        for ext in &["md", "json"] {
-            let path = plans_dir.join(format!("{}.{}", key, ext));
-            if path.exists() {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    let content = content.trim().to_string();
-                    if !content.is_empty() {
-                        sections.insert(key.to_string(), content);
-                        break;
-                    }
+    if let Ok(entries) = std::fs::read_dir(&plans_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() { continue; }
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if CONTROL.contains(&name) { continue; }
+            if !matches!(path.extension().and_then(|e| e.to_str()), Some("md") | Some("json")) { continue; }
+            if let (Some(stem), Ok(content)) =
+                (path.file_stem().and_then(|s| s.to_str()), std::fs::read_to_string(&path))
+            {
+                let content = content.trim().to_string();
+                if !content.is_empty() {
+                    sections.insert(stem.to_string(), content);
                 }
             }
         }
@@ -2369,6 +2151,7 @@ pub fn run() {
             get_base_dir,
             read_claude_config,
             write_claude_config,
+            ensure_session_settings,
             read_plan_sections,
             write_project_plan,
             list_documents,
@@ -2401,7 +2184,54 @@ mod tests {
         assert_eq!(stripped, "/c/Users/Kevin/project");
     }
 
-    use super::sanitize_project_key;
+    use super::{bash_ansi_c_quote, sanitize_project_key};
+
+    #[test]
+    fn ansi_c_quote_wraps_plain_text() {
+        assert_eq!(bash_ansi_c_quote("triage the issues"), "$'triage the issues'");
+    }
+
+    #[test]
+    fn ansi_c_quote_escapes_newlines_quotes_and_backslashes() {
+        // Newlines collapse to \n so the whole token stays on one physical line;
+        // single quotes and backslashes are escaped. $ and backticks pass through
+        // literally (ANSI-C quoting does not expand them).
+        assert_eq!(
+            bash_ansi_c_quote("line1\nit's $HOME `cmd` \\x"),
+            "$'line1\\nit\\'s $HOME `cmd` \\\\x'"
+        );
+    }
+
+    #[test]
+    fn ensure_session_settings_merges_mandatory_and_custom_commands() {
+        use super::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-{}", std::process::id()));
+        let settings = dir.join(".claude").join("settings.json");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        // Seed an existing setting that must be preserved (not clobbered).
+        std::fs::write(
+            &settings,
+            r#"{"model":"claude-sonnet-4-6","permissions":{"allow":["Read"],"deny":["WebSearch"]}}"#,
+        ).unwrap();
+
+        write_session_settings(&dir.to_string_lossy(), &["cargo".into(), "git".into()]).unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        // Pre-existing entries and the deny list are preserved.
+        assert!(allow.contains(&"Read".to_string()));
+        assert_eq!(v["model"], "claude-sonnet-4-6");
+        assert_eq!(v["permissions"]["deny"][0], "WebSearch");
+        // Mandatory gh/git plus the custom command are added; git is not duplicated.
+        assert!(allow.contains(&"Bash(gh *)".to_string()));
+        assert!(allow.contains(&"Bash(git *)".to_string()));
+        assert!(allow.contains(&"Bash(cargo *)".to_string()));
+        assert_eq!(allow.iter().filter(|r| *r == "Bash(git *)").count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn sanitize_preserves_ascii_alphanumerics_and_dash() {
