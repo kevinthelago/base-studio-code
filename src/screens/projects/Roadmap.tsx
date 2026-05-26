@@ -3,88 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { ProjectsHeader } from "./ProjectsHeader";
 import type { ActiveProjectInfo } from "./ProjectsHeader";
-
-interface GhMilestone {
-  number: number;
-  title: string;
-  description: string | null;
-  state: "open" | "closed";
-  due_on: string | null;
-  created_at: string;
-  open_issues: number;
-  closed_issues: number;
-  creator: { login: string } | null;
-}
-
-interface GanttRow {
-  id: string;
-  title: string;
-  startWeek: number;
-  lengthWeeks: number;
-  pct: number;
-  state: "done" | "doing" | "upcoming" | "backlog";
-  creator: string;
-  dueLabel: string;
-}
-
-function weeksBetween(a: Date, b: Date): number {
-  return Math.max(0, Math.ceil((b.getTime() - a.getTime()) / (7 * 24 * 3600 * 1000)));
-}
-
-function tickIntervalWeeks(totalWeeks: number): number {
-  if (totalWeeks <= 16)  return 1;
-  if (totalWeeks <= 52)  return 4;
-  if (totalWeeks <= 130) return 8;
-  return 13;
-}
-
-function tickLabel(weekIndex: number, origin: Date, interval: number): string {
-  if (interval <= 1) return `w${weekIndex + 1}`;
-  const d = new Date(origin.getTime() + weekIndex * 7 * 24 * 3600 * 1000);
-  return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-}
-
-function buildGantt(milestones: GhMilestone[]): { rows: GanttRow[]; totalWeeks: number; todayWeek: number; origin: Date } {
-  const fallbackOrigin = new Date();
-  if (milestones.length === 0) return { rows: [], totalWeeks: 8, todayWeek: 0, origin: fallbackOrigin };
-
-  const starts = milestones.map(m => new Date(m.created_at));
-  const origin = starts.reduce((a, b) => a < b ? a : b);
-  const today = new Date();
-  const todayWeek = weeksBetween(origin, today);
-
-  const ends = milestones.map(m => m.due_on ? new Date(m.due_on) : new Date(new Date(m.created_at).getTime() + 14 * 24 * 3600 * 1000));
-  const horizon = ends.reduce((a, b) => a > b ? a : b);
-  const totalWeeks = Math.max(weeksBetween(origin, horizon) + 1, 8);
-
-  const rows: GanttRow[] = milestones.map((m, i) => {
-    const start = starts[i];
-    const end = ends[i];
-    const startWeek = weeksBetween(origin, start);
-    const lengthWeeks = Math.max(1, weeksBetween(start, end));
-    const total = m.open_issues + m.closed_issues;
-    const pct = total > 0 ? m.closed_issues / total : 0;
-    const state: GanttRow["state"] =
-      m.state === "closed" ? "done"
-      : pct > 0 ? "doing"
-      : startWeek <= todayWeek ? "upcoming"
-      : "backlog";
-
-    const dueLabel = m.due_on
-      ? new Date(m.due_on).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-      : "no due date";
-
-    return {
-      id: String(m.number),
-      title: m.title,
-      startWeek, lengthWeeks, pct, state,
-      creator: m.creator?.login ?? "",
-      dueLabel,
-    };
-  });
-
-  return { rows, totalWeeks, todayWeek, origin };
-}
+import {
+  buildGantt, tickIntervalWeeks, tickLabel, windowStartFrom,
+  WINDOW_PRESETS, DEFAULT_WINDOW_WEEKS,
+  type GhMilestone,
+} from "./roadmapGantt";
 
 function BurnDown({ open, closed }: { open: number; closed: number }) {
   const total = open + closed;
@@ -131,6 +54,10 @@ export function Roadmap() {
   const [milestones, setMilestones] = useState<GhMilestone[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Filters: time window (clamps the Gantt so milestones aren't spread across the
+  // project's whole history) and milestone state.
+  const [windowWeeks, setWindowWeeks] = useState<number | null>(DEFAULT_WINDOW_WEEKS);
+  const [stateFilter, setStateFilter] = useState<"all" | "open" | "closed">("all");
 
   // Use the primary repo; fall back to any repo derived from board items.
   const effectiveRepo = activeProjectRepo || activeProjectRepos[0] || "";
@@ -157,18 +84,22 @@ export function Roadmap() {
     description: "",
   };
 
-  const { rows, totalWeeks, todayWeek, origin } = buildGantt(milestones);
+  // Apply the state filter, then build the windowed Gantt. Stats reflect the
+  // filtered set so the cards match what the chart shows.
+  const now = new Date();
+  const filtered = stateFilter === "all" ? milestones : milestones.filter(m => m.state === stateFilter);
+  const { rows, totalWeeks, todayWeek, origin } = buildGantt(filtered, windowStartFrom(windowWeeks, now), now);
   const tickInterval = tickIntervalWeeks(totalWeeks);
   const tickCount    = Math.ceil(totalWeeks / tickInterval) + 1;
 
-  const totalOpen   = milestones.reduce((s, m) => s + m.open_issues, 0);
-  const totalClosed = milestones.reduce((s, m) => s + m.closed_issues, 0);
+  const totalOpen   = filtered.reduce((s, m) => s + m.open_issues, 0);
+  const totalClosed = filtered.reduce((s, m) => s + m.closed_issues, 0);
   const totalIssues = totalOpen + totalClosed;
   const velocity = totalIssues > 0 ? (totalClosed / Math.max(todayWeek, 1)).toFixed(1) : "—";
 
   const stats = [
     { k: "open issues",   v: loading ? "…" : String(totalOpen),   sub: `of ${totalIssues} total`,  tone: "accent"  },
-    { k: "milestones",    v: loading ? "…" : String(milestones.length), sub: `${milestones.filter(m => m.state === "closed").length} closed`, tone: "info" },
+    { k: "milestones",    v: loading ? "…" : String(filtered.length), sub: `${filtered.filter(m => m.state === "closed").length} closed`, tone: "info" },
     { k: "velocity",      v: loading ? "…" : `${velocity}/wk`,     sub: "issues closed per week",   tone: "success" },
     { k: "repo",          v: effectiveRepo.split("/")[1] || "—",    sub: effectiveRepo || "no repo", tone: "muted"   },
   ] as const;
@@ -203,11 +134,40 @@ export function Roadmap() {
 
           {/* Gantt */}
           <div className="card" style={{ padding: "16px 20px" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
               <h3 style={{ margin: 0 }}>Milestones · weeks</h3>
               <span className="hint">
-                {loading ? "loading…" : `${milestones.length} milestone${milestones.length !== 1 ? "s" : ""}`}
+                {loading ? "loading…"
+                  : `${rows.length} shown${milestones.length !== rows.length ? ` of ${milestones.length}` : ""}`}
               </span>
+              <div style={{ flex: 1 }} />
+              {(() => {
+                const chip = (active: boolean, label: string, onClick: () => void) => (
+                  <button
+                    key={label}
+                    onClick={onClick}
+                    className="btn"
+                    style={{
+                      height: 22, fontSize: 10, padding: "0 8px",
+                      background: active ? "var(--bg-elev2)" : "var(--bg-elev)",
+                      borderColor: active ? "var(--accent-dim)" : "var(--border-soft)",
+                      color: active ? "var(--accent)" : "var(--fg-muted)",
+                    }}
+                  >{label}</button>
+                );
+                return (
+                  <>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>state</span>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {(["all", "open", "closed"] as const).map(s => chip(stateFilter === s, s, () => setStateFilter(s)))}
+                    </div>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginLeft: 6 }}>window</span>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {WINDOW_PRESETS.map(p => chip(windowWeeks === p.weeks, p.label, () => setWindowWeeks(p.weeks)))}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             {!loading && rows.length === 0 && (
