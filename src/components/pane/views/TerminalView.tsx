@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
@@ -8,6 +8,7 @@ import { log } from "../../../lib/log";
 import { recordPtyData, bumpTerminals } from "../../../lib/perf";
 import { gateClaudeLaunch } from "../../../lib/launchGate";
 import { scrollbackForPaneCount } from "../../../lib/terminal";
+import { composerBytes } from "../../../lib/composer";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 
 // Hex equivalents of the oklch design tokens so xterm can use them
@@ -26,6 +27,11 @@ const TERM_THEME: import("@xterm/xterm").ITheme = {
   cyan:                "#4aabb5", brightCyan:    "#64d5e4",
   white:               "#939aa4", brightWhite:   "#eeeae4",
 };
+
+// Height of the single-line composer bar overlaid on the terminal's bottom. It
+// must be tall enough to mask claude's own multi-line (~3 row) input box that
+// renders there; tune if the box peeks out or too much output is hidden.
+const INPUT_COVER_PX = 60;
 
 interface TerminalViewProps {
   paneId: string;
@@ -50,6 +56,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // Global terminal font size (Ctrl++ / Ctrl+-). Subscribed so a zoom change
   // re-renders this view; the effect below resizes the already-mounted terminal.
   const terminalFontSize = useAppStore((s) => s.terminalFontSize);
+
+  // Single-line composer: the visible input that replaces claude's own boxy
+  // prompt. sendRef is wired in the mount effect so the composer writes to the
+  // PTY through the exact same path (and run-status re-arm) as terminal keys.
+  const composerRef = useRef<HTMLInputElement>(null);
+  const sendRef = useRef<(data: string) => void>(() => {});
+  const [draft, setDraft] = useState("");
 
   // Stable refs so handlers registered once always call the latest callback
   const onStatusChangeRef = useRef(onStatusChange);
@@ -157,14 +170,19 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // Also handles two session-tracking concerns:
     //   • Output silence detection: reset the quiet timer on every byte received
     //   • Re-arm: when user presses Enter while claude is idle, switch back to "run"
-    const disposeOnData = term.onData((data) => {
+    // Write to the PTY and, when the user submits while claude is idle, flip the
+    // session back to "run". Shared by terminal keystrokes and the composer.
+    function sendToPty(data: string) {
       invoke("pty_write", { paneId, data }).catch(console.error);
       if (inClaudeRef.current && claudeActiveRef.current === "idle" && data.includes("\r")) {
         claudeActiveRef.current = "run";
         onStatusChangeRef.current?.("run");
         armQuietTimer();
       }
-    });
+    }
+    sendRef.current = sendToPty;
+
+    const disposeOnData = term.onData((data) => sendToPty(data));
 
     // Guard for the RAF: if the component unmounts before the frame fires
     // (rapid navigation), bail out so we don't register a listener that can
@@ -302,10 +320,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     }
   }, [visible, paneId]);
 
-  // Call term.focus() whenever this pane becomes the focused one
+  // Focus the composer (the primary input) whenever this pane becomes focused.
+  // The terminal itself stays clickable for scrolling/selection.
   useEffect(() => {
     if (focused && visible) {
-      requestAnimationFrame(() => termRef.current?.focus());
+      requestAnimationFrame(() => composerRef.current?.focus());
     }
   }, [focused, visible]);
 
@@ -328,13 +347,60 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
   return (
     <div
-      ref={containerRef}
       style={{
-        flex: 1, minHeight: 0, overflow: "hidden",
+        flex: 1, minHeight: 0, position: "relative",
+        display: visible ? "block" : "none",
         background: TERM_THEME.background as string,
-        display: visible ? "flex" : "none",
-        padding: "6px 4px",
       }}
-    />
+    >
+      {/* Single-line composer — the visible input, set off by a background change.
+          Listed first so it (not xterm's hidden textarea) is the pane's focus
+          target; raised with z-index to mask claude's own ~3-line prompt box that
+          renders in the terminal's bottom rows. Enter submits; Ctrl+C interrupts. */}
+      <div
+        style={{
+          position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 2,
+          height: INPUT_COVER_PX,
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "0 10px",
+          background: "var(--bg-elev)",
+          borderTop: "1px solid var(--border-soft)",
+        }}
+      >
+        <span style={{ color: "var(--accent)", flex: "0 0 auto", fontFamily: "var(--mono)", fontSize: 12 }}>▸</span>
+        <input
+          ref={composerRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={() => onFocusRef.current?.()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              sendRef.current(composerBytes(draft));
+              setDraft("");
+            } else if (e.ctrlKey && (e.key === "c" || e.key === "C")) {
+              e.preventDefault();
+              sendRef.current("\x03"); // interrupt claude
+            }
+          }}
+          placeholder="message claude…"
+          style={{
+            flex: 1, minWidth: 0,
+            background: "transparent", border: "none", outline: "none",
+            color: "var(--fg)", fontFamily: "var(--mono)", fontSize: 12,
+          }}
+        />
+      </div>
+
+      {/* xterm fills the pane; claude's input box at the very bottom is masked by
+          the composer above. */}
+      <div
+        ref={containerRef}
+        style={{
+          position: "absolute", inset: 0, zIndex: 1, overflow: "hidden",
+          padding: "6px 4px",
+        }}
+      />
+    </div>
   );
 }
