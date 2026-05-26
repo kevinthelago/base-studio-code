@@ -175,6 +175,72 @@ fn claude_launch(prompt: &str, continue_session: bool) -> String {
     format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
 }
 
+/// Resolve the shell to spawn for a session. The injected bash helpers
+/// (OSC7/OSC100, the `claude()` wrapper, `PROMPT_COMMAND`) need a real bash.
+///
+/// On Windows a bare `"bash"` on PATH resolves to `C:\Windows\System32\bash.exe`
+/// — the WSL launcher — which fails with `execvpe(/bin/bash)` when there's no WSL
+/// distro (the production-build failure). So we honor an explicit `$SHELL`, then
+/// locate Git Bash explicitly, and only then fall back to bare `"bash"`.
+fn resolve_shell() -> String {
+    if let Ok(s) = std::env::var("SHELL") {
+        if !s.is_empty() && std::path::Path::new(&s).exists() {
+            return s;
+        }
+    }
+    #[cfg(windows)]
+    if let Some(b) = find_git_bash() {
+        return b;
+    }
+    "bash".to_string()
+}
+
+/// Locate Git Bash's `bash.exe` (never WSL's System32 stub) from known install
+/// roots plus any Git dir derived from `git.exe` on PATH.
+#[cfg(windows)]
+fn find_git_bash() -> Option<String> {
+    use std::path::PathBuf;
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for var in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
+        if let Ok(p) = std::env::var(var) {
+            roots.push(PathBuf::from(p).join("Git"));
+        }
+    }
+    if let Ok(p) = std::env::var("LOCALAPPDATA") {
+        roots.push(PathBuf::from(p).join("Programs").join("Git"));
+    }
+    roots.push(PathBuf::from(r"C:\Program Files\Git"));
+    // git.exe on PATH lives in <Git>\cmd or <Git>\bin — its parent is the Git root.
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            if dir.join("git.exe").exists() {
+                if let Some(root) = dir.parent() {
+                    roots.push(root.to_path_buf());
+                }
+            }
+        }
+    }
+    bash_in_roots(&roots, &|p| p.exists())
+}
+
+/// First existing `bash.exe` under any root (checking `bin\` then `usr\bin\`).
+/// The `exists` predicate is injected so the path logic is testable without a
+/// real Git install.
+#[cfg(windows)]
+fn bash_in_roots(roots: &[std::path::PathBuf], exists: &dyn Fn(&std::path::Path) -> bool) -> Option<String> {
+    for root in roots {
+        let bin = root.join("bin").join("bash.exe");
+        if exists(&bin) {
+            return Some(bin.to_string_lossy().into_owned());
+        }
+        let usr = root.join("usr").join("bin").join("bash.exe");
+        if exists(&usr) {
+            return Some(usr.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
 /// Build the environment for a session shell.
 ///
 /// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
@@ -226,7 +292,7 @@ async fn pty_create(
         .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| { log::error!("pty[{pane_id}] openpty failed: {e}"); e.to_string() })?;
 
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
+    let shell = resolve_shell();
     let mut cmd = CommandBuilder::new(&shell);
 
     // Self-heal a corrupt ~/.claude.json before this session can launch claude.
@@ -2335,6 +2401,21 @@ mod tests {
     fn claude_launch_adds_continue_flag() {
         // Triage resumes the repo's prior conversation instead of starting fresh.
         assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn bash_in_roots_checks_bin_then_usr_bin() {
+        use std::path::PathBuf;
+        let roots = vec![PathBuf::from(r"C:\Program Files\Git")];
+        let bin = r"C:\Program Files\Git\bin\bash.exe";
+        let usr = r"C:\Program Files\Git\usr\bin\bash.exe";
+        // bin\bash.exe wins when present.
+        assert_eq!(super::bash_in_roots(&roots, &|p| p.to_string_lossy() == bin).as_deref(), Some(bin));
+        // falls through to usr\bin\bash.exe.
+        assert_eq!(super::bash_in_roots(&roots, &|p| p.to_string_lossy() == usr).as_deref(), Some(usr));
+        // nothing found.
+        assert_eq!(super::bash_in_roots(&roots, &|_| false), None);
     }
 
     #[test]
