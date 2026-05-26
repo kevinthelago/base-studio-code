@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { computeBroadcastTargets } from "../lib/broadcast";
+import { nextFullscreen } from "../lib/consoleFocus";
 import type { Screen } from "../components/chrome/Rail";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
@@ -89,6 +90,18 @@ export function useHotkeys() {
         e.preventDefault();
         e.stopPropagation();
         setConsoleBroadcast(!consoleBroadcast);
+        return;
+      }
+
+      // ── Ctrl+Shift+F: maximize / minimize the focused console pane ──────────
+      // Before the broadcast intercept so it works in broadcast mode too, and
+      // before the inInput guard so it fires while typing in a pane's terminal.
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "KeyF") {
+        if (activeScreen !== "console") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const next = nextFullscreen(focusedPaneIdx, fullscreenPaneIdx);
+        if (next !== null) setFullscreenPane(next);
         return;
       }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shouldAutoFocusOnIdle, STARTUP_GRACE_MS, AUTOFOCUS_COOLDOWN_MS } from "../lib/consoleFocus";
+import { shouldAutoFocusOnIdle, nextFullscreen, STARTUP_GRACE_MS, AUTOFOCUS_COOLDOWN_MS } from "../lib/consoleFocus";
 
 describe("shouldAutoFocusOnIdle", () => {
   it("steals focus when an agent finishes after the startup grace", () => {
@@ -38,5 +38,24 @@ describe("shouldAutoFocusOnIdle", () => {
   it("exposes positive grace and cooldown windows", () => {
     expect(STARTUP_GRACE_MS).toBeGreaterThan(0);
     expect(AUTOFOCUS_COOLDOWN_MS).toBeGreaterThan(0);
+  });
+});
+
+describe("nextFullscreen", () => {
+  it("maximizes the target when nothing is currently fullscreen", () => {
+    expect(nextFullscreen(3, -1)).toBe(3);
+  });
+
+  it("maximizes the target when a different pane is fullscreen", () => {
+    expect(nextFullscreen(3, 5)).toBe(3);
+  });
+
+  it("restores the grid when the target is already fullscreen", () => {
+    expect(nextFullscreen(3, 3)).toBe(-1);
+  });
+
+  it("is a no-op (null) when no pane is selected", () => {
+    expect(nextFullscreen(-1, -1)).toBeNull();
+    expect(nextFullscreen(-1, 2)).toBeNull();
   });
 });
