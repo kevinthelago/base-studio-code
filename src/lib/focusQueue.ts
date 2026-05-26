@@ -1,6 +1,7 @@
 // Pure logic for the console focus queue — the ordered set of panes (active tab)
-// that finished a turn (run -> idle) and await attention, stepped through with
-// Ctrl+Shift+N. FIFO by completion: oldest waiting agent first.
+// that finished a turn (run -> idle) and await a response, cycled through with
+// Ctrl+Shift+N or auto-advance on reply. A pane stays queued (even while you view
+// it) until you actually send it a response; advancing just moves the cursor.
 
 /**
  * Append a pane index to the waiting queue, de-duplicated and order-preserving.
@@ -22,10 +23,19 @@ export function removeFromQueue(queue: number[], idx: number): number[] {
 }
 
 /**
- * Take the next waiting pane (front of the FIFO queue).
- * @returns the next pane index and the remaining queue, or `next: null` when empty.
+ * The next pane to move to when cycling the queue, relative to the pane you're on.
+ * Round-robins through the waiting panes — the current one is NOT removed (a pane
+ * leaves only when you respond to it), so cycling can land back on it later.
+ *
+ * @param queue waiting panes.
+ * @param current the pane you're on (focused, or maximized).
+ * @returns the next waiting pane, or null when there's nowhere else to go (empty
+ *   queue, or the only queued pane is the current one).
  */
-export function dequeueNext(queue: number[]): { next: number | null; rest: number[] } {
-  if (queue.length === 0) return { next: null, rest: queue };
-  return { next: queue[0], rest: queue.slice(1) };
+export function nextInCycle(queue: number[], current: number): number | null {
+  if (queue.length === 0) return null;
+  const idx = queue.indexOf(current);
+  if (idx === -1) return queue[0];               // current isn't waiting → first waiting pane
+  const next = queue[(idx + 1) % queue.length];
+  return next === current ? null : next;          // only the current pane is queued → nowhere to go
 }
