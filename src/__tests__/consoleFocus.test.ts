@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shouldAutoFocusOnIdle, STARTUP_GRACE_MS } from "../lib/consoleFocus";
+import { shouldAutoFocusOnIdle, STARTUP_GRACE_MS, AUTOFOCUS_COOLDOWN_MS } from "../lib/consoleFocus";
 
 describe("shouldAutoFocusOnIdle", () => {
   it("steals focus when an agent finishes after the startup grace", () => {
@@ -21,7 +21,22 @@ describe("shouldAutoFocusOnIdle", () => {
     expect(shouldAutoFocusOnIdle(true, "run", "run", false)).toBe(false);
   });
 
-  it("exposes a positive grace window", () => {
+  it("suppresses a steal within the cooldown after a recent steal", () => {
+    // Another pane settling right after a steal must not yank the cursor back.
+    expect(shouldAutoFocusOnIdle(true, "idle", "run", false, AUTOFOCUS_COOLDOWN_MS - 1)).toBe(false);
+  });
+
+  it("allows a steal once the cooldown has elapsed", () => {
+    expect(shouldAutoFocusOnIdle(true, "idle", "run", false, AUTOFOCUS_COOLDOWN_MS)).toBe(true);
+  });
+
+  it("does not gate the first idle in a quiet stretch (no prior steal)", () => {
+    // Default msSinceLastAutoFocus is Infinity → cooldown never applies.
+    expect(shouldAutoFocusOnIdle(true, "idle", "run", false)).toBe(true);
+  });
+
+  it("exposes positive grace and cooldown windows", () => {
     expect(STARTUP_GRACE_MS).toBeGreaterThan(0);
+    expect(AUTOFOCUS_COOLDOWN_MS).toBeGreaterThan(0);
   });
 });

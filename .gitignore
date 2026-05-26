@@ -5,6 +5,9 @@ node_modules/
 dist/
 dist-ssr/
 
+# Test coverage output
+coverage/
+
 # Tauri / Cargo build artifacts
 /target/
 src-tauri/target/
