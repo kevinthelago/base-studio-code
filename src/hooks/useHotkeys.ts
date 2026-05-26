@@ -79,6 +79,7 @@ export function useHotkeys() {
     consoleBroadcast,
     setConsoleBroadcast,
     setTerminalFontSize,
+    advanceFocus,
   } = useAppStore();
 
   // Chained-digit pane selector: digits accumulate while Ctrl+Shift is held,
@@ -135,6 +136,17 @@ export function useHotkeys() {
         e.stopPropagation();
         const next = nextFullscreen(focusedPaneIdx, fullscreenPaneIdx);
         if (next !== null) setFullscreenPane(next);
+        return;
+      }
+
+      // ── Ctrl+Shift+N: focus the next waiting pane (maximize-aware) ──────────
+      // Steps through agents that finished a turn. If a pane is maximized it
+      // swaps the maximized pane to the next one, so you stay full-screen.
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "KeyN") {
+        if (activeScreen !== "console") return;
+        e.preventDefault();
+        e.stopPropagation();
+        advanceFocus();
         return;
       }
 
@@ -277,5 +289,6 @@ export function useHotkeys() {
     setPaneView, setAllPanesView,
     consoleBroadcast, setConsoleBroadcast,
     setTerminalFontSize,
+    advanceFocus,
   ]);
 }

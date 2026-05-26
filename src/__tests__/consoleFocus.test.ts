@@ -35,6 +35,11 @@ describe("shouldAutoFocusOnIdle", () => {
     expect(shouldAutoFocusOnIdle(true, "idle", "run", false)).toBe(true);
   });
 
+  it("does not steal focus while a pane is maximized", () => {
+    // The full-screen view shouldn't be yanked; Ctrl+Shift+N steps through instead.
+    expect(shouldAutoFocusOnIdle(true, "idle", "run", false, Infinity, true)).toBe(false);
+  });
+
   it("exposes positive grace and cooldown windows", () => {
     expect(STARTUP_GRACE_MS).toBeGreaterThan(0);
     expect(AUTOFOCUS_COOLDOWN_MS).toBeGreaterThan(0);

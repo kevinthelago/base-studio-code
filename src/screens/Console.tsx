@@ -138,6 +138,7 @@ export function ConsoleScreen() {
     setFocusedAgentName,
     setTabState, autoFocusOnInterrupt,
     consoleBroadcast,
+    enqueueFocus, removeFocus,
   } = useAppStore();
 
   // Count every commit so the perf summary can tell a React re-render loop apart
@@ -170,16 +171,25 @@ export function ConsoleScreen() {
     const pid = paneId(activeTabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
 
-    // Auto-focus the pane that just finished so you can reply fast — this is meant
-    // to steal focus. Suppressed during a freshly-launched grid's cold-start
-    // window and for a short cooldown after a previous steal (so competing idles
-    // don't ping-pong the cursor between panes).
+    // A finished agent (run -> idle) either steals focus (grid mode, so you can
+    // reply fast) or joins the focus queue to be stepped through with Ctrl+Shift+N.
+    // The steal is suppressed during cold-start, for a cooldown after a previous
+    // steal, and while maximized (so the full-screen view isn't yanked) — in those
+    // cases the pane is queued instead. Going back to "run" clears it from the queue.
     const now = Date.now();
     const startedAt = useAppStore.getState().tabStartedAt[activeTabIdx] ?? 0;
     const withinStartupGrace = startedAt > 0 && now - startedAt < STARTUP_GRACE_MS;
-    if (shouldAutoFocusOnIdle(autoFocusOnInterrupt, status, prev, withinStartupGrace, now - lastAutoFocusRef.current)) {
-      setFocusedPane(paneIdx);
-      lastAutoFocusRef.current = now;
+    const maximized = useAppStore.getState().fullscreenPaneIdx >= 0;
+    if (status === "idle" && prev === "run") {
+      if (shouldAutoFocusOnIdle(autoFocusOnInterrupt, status, prev, withinStartupGrace, now - lastAutoFocusRef.current, maximized)) {
+        setFocusedPane(paneIdx);
+        lastAutoFocusRef.current = now;
+        removeFocus(paneIdx); // you're on it now — not waiting
+      } else {
+        enqueueFocus(paneIdx, useAppStore.getState().focusedPaneIdx); // queue it (skip the one you're watching)
+      }
+    } else if (status === "run") {
+      removeFocus(paneIdx);
     }
 
     setPaneStatuses((current) => {
@@ -194,7 +204,7 @@ export function ConsoleScreen() {
       setTabState(activeTabIdx, tabState);
       return next;
     });
-  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, setFocusedPane, setTabState]);
+  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, setFocusedPane, setTabState, enqueueFocus, removeFocus]);
 
   // All per-pane handlers are stable (useCallback) so the memoized PaneAt
   // children don't re-render on every ConsoleScreen commit. Store-action refs
@@ -236,7 +246,7 @@ export function ConsoleScreen() {
   const handleRename = useCallback((paneIdx: number, n: string) => setPaneName(activeTabIdx, paneIdx, n), [activeTabIdx, setPaneName]);
   const handleMenuToggle = useCallback((paneIdx: number) => setPaneMenu(useAppStore.getState().paneMenuOpenIdx === paneIdx ? -1 : paneIdx), [setPaneMenu]);
   const handleViewChange = useCallback((paneIdx: number, v: ViewKey) => setPaneView(paneIdx, v), [setPaneView]);
-  const handleFocusPane = useCallback((paneIdx: number) => setFocusedPane(paneIdx), [setFocusedPane]);
+  const handleFocusPane = useCallback((paneIdx: number) => { setFocusedPane(paneIdx); removeFocus(paneIdx); }, [setFocusedPane, removeFocus]);
   const handleToggleFullscreen = useCallback((paneIdx: number) => setFullscreenPane(useAppStore.getState().fullscreenPaneIdx === paneIdx ? -1 : paneIdx), [setFullscreenPane]);
 
   function renderPane(i: number) {
