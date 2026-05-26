@@ -28,11 +28,6 @@ const TERM_THEME: import("@xterm/xterm").ITheme = {
   white:               "#939aa4", brightWhite:   "#eeeae4",
 };
 
-// Height of the single-line composer bar overlaid on the terminal's bottom. It
-// must be tall enough to mask claude's own multi-line (~3 row) input box that
-// renders there; tune if the box peeks out or too much output is hidden.
-const INPUT_COVER_PX = 60;
-
 interface TerminalViewProps {
   paneId: string;
   visible?: boolean;
@@ -355,19 +350,19 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     >
       {/* Single-line composer — the visible input, set off by a background change.
           Listed first so it (not xterm's hidden textarea) is the pane's focus
-          target; raised with z-index to mask claude's own ~3-line prompt box that
-          renders in the terminal's bottom rows. Enter submits; Ctrl+C interrupts. */}
+          target; raised with z-index so it sits above the terminal. A slim bar:
+          its height is the font size plus a few px of padding. Enter submits the
+          line to whatever's running (shell or claude); Ctrl+C sends interrupt. */}
       <div
         style={{
           position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 2,
-          height: INPUT_COVER_PX,
           display: "flex", alignItems: "center", gap: 8,
-          padding: "0 10px",
+          padding: "4px 10px",
           background: "var(--bg-elev)",
           borderTop: "1px solid var(--border-soft)",
         }}
       >
-        <span style={{ color: "var(--accent)", flex: "0 0 auto", fontFamily: "var(--mono)", fontSize: 12 }}>▸</span>
+        <span style={{ color: "var(--accent)", flex: "0 0 auto", fontFamily: "var(--mono)", fontSize: terminalFontSize }}>▸</span>
         <input
           ref={composerRef}
           value={draft}
@@ -380,14 +375,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
               setDraft("");
             } else if (e.ctrlKey && (e.key === "c" || e.key === "C")) {
               e.preventDefault();
-              sendRef.current("\x03"); // interrupt claude
+              sendRef.current("\x03"); // send interrupt
             }
           }}
-          placeholder="message claude…"
+          placeholder="type a command…"
           style={{
             flex: 1, minWidth: 0,
             background: "transparent", border: "none", outline: "none",
-            color: "var(--fg)", fontFamily: "var(--mono)", fontSize: 12,
+            color: "var(--fg)", fontFamily: "var(--mono)", fontSize: terminalFontSize,
+            lineHeight: 1.4, padding: 0,
           }}
         />
       </div>
