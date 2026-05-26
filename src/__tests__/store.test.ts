@@ -22,6 +22,9 @@ const RESET_STATE = {
   schedules: [],
   commands: [],
   allowedCommands: [] as string[],
+  projectAllowedCommands: {} as Record<string, string[]>,
+  repoAllowedCommands: {} as Record<string, string[]>,
+  paneAllowedCommands: {} as Record<string, string[]>,
   autoFocusOnInterrupt: true,
   focusedAgentName: "",
   githubConnected: false,
@@ -48,6 +51,7 @@ const RESET_STATE = {
   defaultStartupPromptDoc: null as string | null,
   projectStartupPromptDoc: {} as Record<string, string | null>,
   repoStartupPromptDoc: {} as Record<string, string | null>,
+  repoTriagePromptDoc: {} as Record<string, string | null>,
   kbProjectScope: null as { keys: string[]; label: string } | null,
 };
 
@@ -299,6 +303,20 @@ describe("allowed commands", () => {
     useAppStore.getState().addAllowedCommand("old");
     useAppStore.getState().setAllowedCommands(["new-a", "new-b"]);
     expect(useAppStore.getState().allowedCommands).toEqual(["new-a", "new-b"]);
+  });
+
+  it("add/removeProjectAllowedCommand scopes to a project and lowercases", () => {
+    useAppStore.getState().addProjectAllowedCommand("P1", "Cargo");
+    expect(useAppStore.getState().projectAllowedCommands["P1"]).toEqual(["cargo"]);
+    useAppStore.getState().addProjectAllowedCommand("P1", "cargo"); // dup ignored
+    expect(useAppStore.getState().projectAllowedCommands["P1"]).toEqual(["cargo"]);
+    useAppStore.getState().removeProjectAllowedCommand("P1", "cargo");
+    expect(useAppStore.getState().projectAllowedCommands["P1"]).toEqual([]);
+  });
+
+  it("addRepoAllowedCommand scopes to a project::repo key", () => {
+    useAppStore.getState().addRepoAllowedCommand("P1", "acme/web", "npm");
+    expect(useAppStore.getState().repoAllowedCommands["P1::acme/web"]).toEqual(["npm"]);
   });
 
   it("setAutoFocusOnInterrupt toggles the setting", () => {
@@ -554,13 +572,29 @@ describe("quickStartProject", () => {
     expect(paneNames[before][1]).toBe("ui");
   });
 
-  it("pre-seeds paneInitCmds so each console launches claude with the plan prompt", () => {
+  it("launches a claude pane per repo, defaulting to the built-in plan prompt", () => {
     const before = useAppStore.getState().tabs.length;
     useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
-    const { paneInitCmds } = useAppStore.getState();
-    expect(paneInitCmds[`t${before}p0`]).toMatch(/^claude "/);
-    expect(paneInitCmds[`t${before}p0`]).toContain("CLAUDE.local.md");
-    expect(paneInitCmds[`t${before}p1`]).toMatch(/^claude "/);
+    const { paneInitCmds, paneStartupPromptDocs } = useAppStore.getState();
+    // initCmd marks a claude pane; the backend bakes the resolved prompt in.
+    expect(paneInitCmds[`t${before}p0`]).toBe("claude");
+    expect(paneInitCmds[`t${before}p1`]).toBe("claude");
+    // "" = the built-in plan prompt (PROJECT_INIT_PROMPT) when nothing assigned.
+    expect(paneStartupPromptDocs[`t${before}p0`]).toBe("");
+    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("");
+  });
+
+  it("assigns each repo's resolved kickoff doc (repo override; built-in when unset)", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.setState({
+      repoStartupPromptDoc: { "P1::acme/api": "projects/P1/prompts/api-kickoff.md" },
+    });
+    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"], "P1");
+    const { paneInitCmds, paneStartupPromptDocs } = useAppStore.getState();
+    expect(paneInitCmds[`t${before}p0`]).toBe("claude");
+    expect(paneStartupPromptDocs[`t${before}p0`]).toBe("projects/P1/prompts/api-kickoff.md");
+    // acme/ui has no assignment → "" = built-in plan prompt.
+    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("");
   });
 
   it("caps layout at 2×2 even with 5+ repos", () => {
@@ -651,6 +685,33 @@ describe("triageStartProject", () => {
     expect(paneStartupPromptDocs[`t${before}p0`]).toBe("user/p1.md");
     expect(paneStartupPromptDocs[`t${before}p1`]).toBe("user/b.md");
   });
+
+  it("uses a per-repo triage script (doc) and skips the verbatim prompt for that pane", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.setState({
+      repoTriagePromptDoc: { "P1::o/b": "projects/P1/prompts/b-triage.md" },
+    });
+    useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
+    const { paneStartupPromptDocs, paneStartupPromptText } = useAppStore.getState();
+    // o/a has no triage doc → verbatim prompt; o/b → its triage doc, no verbatim text.
+    expect(paneStartupPromptText[`t${before}p0`]).toBe(TRIAGE_PROMPT);
+    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("projects/P1/prompts/b-triage.md");
+    expect(paneStartupPromptText[`t${before}p1`]).toBeUndefined();
+  });
+
+  it("resolves each triage pane's allowed commands as global ∪ project ∪ repo", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.setState({
+      allowedCommands: ["docker"],
+      projectAllowedCommands: { P1: ["cargo"] },
+      repoAllowedCommands: { "P1::o/b": ["npm"] },
+    });
+    useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
+    const { paneAllowedCommands } = useAppStore.getState();
+    // o/a: global + project; o/b: global + project + its own repo command.
+    expect(paneAllowedCommands[`t${before}p0`]).toEqual(["docker", "cargo"]);
+    expect(paneAllowedCommands[`t${before}p1`]).toEqual(["docker", "cargo", "npm"]);
+  });
 });
 
 describe("startup prompt assignment setters", () => {
@@ -663,6 +724,11 @@ describe("startup prompt assignment setters", () => {
     expect(st.defaultStartupPromptDoc).toBe("user/g.md");
     expect(st.projectStartupPromptDoc["P1"]).toBe("user/p.md");
     expect(st.repoStartupPromptDoc["P1::o/a"]).toBe("user/r.md");
+  });
+
+  it("stores a per-repo triage script relpath keyed for the resolver", () => {
+    useAppStore.getState().setRepoTriagePromptDoc("P1", "o/a", "projects/P1/prompts/a-triage.md");
+    expect(useAppStore.getState().repoTriagePromptDoc["P1::o/a"]).toBe("projects/P1/prompts/a-triage.md");
   });
 
   it("null clears an override (inherit)", () => {

@@ -39,10 +39,12 @@ export function AgentsSettings() {
       {/* Allowed shell commands ───────────────────────────────────── */}
       <div className="card">
         <div style={{ marginBottom: 6 }}>
-          <h3 style={{ margin: "0 0 6px" }}>Allowed shell commands</h3>
+          <h3 style={{ margin: "0 0 6px" }}>Allowed shell commands · global</h3>
           <p style={{ margin: 0, color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
-            When non-empty, Claude's <code style={{ fontFamily: "var(--mono)", fontSize: 11 }}>bash</code> tool
-            is restricted to commands matching one of these prefixes. Leave empty to allow everything.
+            Commands here are auto-approved (no permission prompt) in every console and
+            triage session. <code style={{ fontFamily: "var(--mono)", fontSize: 11 }}>gh</code> and{" "}
+            <code style={{ fontFamily: "var(--mono)", fontSize: 11 }}>git</code> are always enabled.
+            This is the global tier — add per-project and per-repo commands in a project's planner.
           </p>
         </div>
 

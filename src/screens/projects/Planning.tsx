@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
@@ -7,23 +7,20 @@ import "@xterm/xterm/css/xterm.css";
 import ReactMarkdown from "react-markdown";
 import { useAppStore } from "../../store";
 import type { AutomationSuggestion } from "../../store";
-import { projectRepoCwd } from "../../lib/projectPaths";
+import { projectRepoCwd, sanitizeProjectKey } from "../../lib/projectPaths";
 import { buildGhStructure, parsePhases } from "./ghStructure";
-import type { Section, SectionKey, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
-import { parsePlanFocus, stripPlanFocus, buildSectionConfirmMessage } from "./planningSession";
-
-const SECTION_DEFS: { k: SectionKey; title: string }[] = [
-  { k: "goal",         title: "Goal"         },
-  { k: "scope",        title: "Scope"        },
-  { k: "stack",        title: "Stack"        },
-  { k: "architecture", title: "Architecture" },
-  { k: "schema",       title: "Schema"       },
-  { k: "api",          title: "API"          },
-  { k: "testing",      title: "Testing"      },
-  { k: "cicd",         title: "CI/CD"        },
-  { k: "phases",       title: "Phases"       },
-  { k: "risks",        title: "Risks"        },
-];
+import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
+import {
+  parsePlanFocus, stripPlanFocus, buildSectionConfirmMessage,
+  parseStartupScripts, stripStartupScripts, scriptDocRelpath,
+  parseAllowCommands, stripAllowCommands,
+} from "./planningSession";
+import { repoPromptKey } from "../../lib/startupPrompt";
+import { parseCommandsFile } from "../../lib/allowedCommands";
+import {
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, titleForKey, groupSections, parseSkipped, parseSectionKey,
+  type SkippedItem,
+} from "./planSections";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
   background:          "#181a1f",
@@ -67,7 +64,7 @@ function PlanSectionCard({
   active,
 }: {
   section: Section;
-  onConfirm: (k: SectionKey) => void;
+  onConfirm: (k: string) => void;
   flashing: boolean;
   active: boolean;
 }) {
@@ -405,6 +402,135 @@ function AutomationsCard({ automations, onRemove }: { automations: AutomationSug
   );
 }
 
+// Coverage record: the dimensions Claude considered but deliberately did not
+// document, each with a reason. Collapsed by default — it's reassurance that the
+// full surface was weighed, not primary plan content.
+function SkippedCard({ items }: { items: SkippedItem[] }) {
+  const [collapsed, setCollapsed] = useState(true);
+  if (items.length === 0) return null;
+  return (
+    <div style={{
+      borderRadius: 6, border: "1px dashed var(--border-soft)",
+      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0, opacity: 0.85,
+    }}>
+      <div
+        onClick={() => setCollapsed(c => !c)}
+        style={{
+          padding: "7px 10px", background: "var(--bg-elev)",
+          borderBottom: collapsed ? "none" : "1px solid var(--border-soft)",
+          display: "flex", alignItems: "center", gap: 8,
+          fontFamily: "var(--mono)", fontSize: 10.5, cursor: "pointer", userSelect: "none",
+        }}
+      >
+        <span style={{
+          display: "inline-block", width: 10, textAlign: "center", fontSize: 8, color: "var(--fg-dim)",
+          transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.15s",
+        }}>▼</span>
+        <span style={{ color: "var(--fg-muted)" }}>Considered &amp; skipped</span>
+        <div style={{ flex: 1 }} />
+        <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>{items.length}</span>
+      </div>
+      {!collapsed && (
+        <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
+          {items.map((it, i) => (
+            <div key={i} style={{ fontFamily: "var(--mono)", fontSize: 10.5, lineHeight: 1.5 }}>
+              <span style={{ color: "var(--fg-dim)" }}>– </span>
+              <span style={{ color: "var(--fg-muted)" }}>{it.topic}</span>
+              {it.reason && <span style={{ color: "var(--fg-dim)" }}> — {it.reason}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Allowed shell commands for this project's sessions, configured during planning.
+// gh/git are always auto-approved by the backend; these add to them, per project
+// and per repo. They combine additively with the global list (Settings → Agents)
+// and are written into each repo session's .claude/settings.json at launch so
+// triage/console Claude never blocks on a permission prompt.
+function AllowedCommandsCard({ projectId, repos }: { projectId: string; repos: string[] }) {
+  const {
+    allowedCommands, projectAllowedCommands, repoAllowedCommands,
+    addProjectAllowedCommand, removeProjectAllowedCommand,
+    addRepoAllowedCommand, removeRepoAllowedCommand,
+  } = useAppStore();
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const setDraft = (k: string, v: string) => setDrafts(d => ({ ...d, [k]: v }));
+
+  const chip = (label: string, onRemove?: () => void) => (
+    <span key={label} style={{
+      display: "inline-flex", alignItems: "center", gap: 5,
+      padding: "2px 8px", borderRadius: 4,
+      background: "var(--bg-canvas)", border: "1px solid var(--border)",
+      fontFamily: "var(--mono)", fontSize: 10.5, color: onRemove ? "var(--accent)" : "var(--fg-dim)",
+    }}>
+      {label}
+      {onRemove && <span onClick={onRemove} style={{ cursor: "pointer", color: "var(--fg-dim)", lineHeight: 1 }}>×</span>}
+    </span>
+  );
+
+  // A render function (not a nested component) so the input keeps focus across renders.
+  const row = (scopeKey: string, label: string, cmds: string[], onAdd: (c: string) => void, onRemove: (c: string) => void) => {
+    const draft = drafts[scopeKey] ?? "";
+    const commit = () => { if (draft.trim()) { onAdd(draft); setDraft(scopeKey, ""); } };
+    return (
+      <div key={scopeKey} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{label}</span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
+          {cmds.length === 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", fontStyle: "italic" }}>none</span>}
+          {cmds.map(c => chip(c, () => onRemove(c)))}
+          <input
+            value={draft}
+            onChange={e => setDraft(scopeKey, e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
+            placeholder="+ cmd"
+            style={{
+              width: 64, height: 20, padding: "0 6px",
+              background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 4,
+              fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)", outline: "none",
+            }}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{
+      borderRadius: 6, border: "1px solid var(--border-soft)",
+      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0,
+    }}>
+      <div style={{
+        padding: "7px 10px", background: "var(--bg-elev)",
+        borderBottom: "1px solid var(--border-soft)",
+        display: "flex", alignItems: "center", gap: 8,
+        fontFamily: "var(--mono)", fontSize: 10.5,
+      }}>
+        <span style={{ color: "var(--fg)" }}>Allowed commands</span>
+        <div style={{ flex: 1 }} />
+        <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>auto-approved · gh, git always on</span>
+      </div>
+      <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {allowedCommands.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>global (inherited)</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{allowedCommands.map(c => chip(c))}</div>
+          </div>
+        )}
+        {row("__project", "project", projectAllowedCommands[projectId] ?? [],
+          c => addProjectAllowedCommand(projectId, c),
+          c => removeProjectAllowedCommand(projectId, c))}
+        {repos.map(r =>
+          row(r, r.split("/")[1] ?? r, repoAllowedCommands[repoPromptKey(projectId, r)] ?? [],
+            c => addRepoAllowedCommand(projectId, r, c),
+            c => removeRepoAllowedCommand(projectId, r, c)))}
+      </div>
+    </div>
+  );
+}
+
 // ── GitHub structure card ─────────────────────────────────────────────────────
 //
 // A live map of the GitHub objects this plan produces. Each node mirrors a real
@@ -599,15 +725,58 @@ export function Planning({ visible }: { visible: boolean }) {
     ...(planningRepo ? [planningRepo] : []),
   ])].filter(Boolean);
 
-  const savedSections  = planSections[effectiveProjectId] ?? {};
-  const confirmedSet   = new Set(planConfirmedSections[effectiveProjectId] ?? []);
-  const [sections, setSections] = useState<Section[]>(
-    SECTION_DEFS.map(d => {
-      const saved = savedSections[d.k];
-      const state = confirmedSet.has(d.k) ? "confirmed" : (saved ? "drafted" : "pending");
-      return { ...d, state: state as SectionState, content: saved ?? "" };
-    })
-  );
+  // Sections are DYNAMIC: derived from whatever section files Claude has written
+  // (surfaced via the store), not a fixed list. The store — populated by the
+  // <plan_update> tag parser and the 2s file poll — is the single source of
+  // truth; deriving here keeps the UI in lockstep as new topics appear. The two
+  // anchor keys (goal, phases) are always present because the publish flow keys
+  // off them. `_skipped` is handled separately as the coverage record.
+  // Memoize the per-project store slices so the derived useMemos below don't
+  // recompute every render (the `?? {}` / `?? []` fallbacks would otherwise mint
+  // a fresh ref each time the project has no sections yet).
+  const savedSections = useMemo(
+    () => planSections[effectiveProjectId] ?? {}, [planSections, effectiveProjectId]);
+  const confirmedSet  = useMemo(
+    () => new Set(planConfirmedSections[effectiveProjectId] ?? []),
+    [planConfirmedSections, effectiveProjectId]);
+
+  const sections = useMemo<Section[]>(() => {
+    const keys = new Set<string>(ANCHOR_KEYS);
+    for (const k of Object.keys(savedSections)) {
+      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY) keys.add(k);
+    }
+    const { project, repos } = groupSections([...keys]);
+    const ordered = [...project, ...repos.flatMap(r => r.keys)];
+    return ordered.map(k => {
+      const content = savedSections[k] ?? "";
+      const state: SectionState = confirmedSet.has(k) ? "confirmed" : (content ? "drafted" : "pending");
+      return { k, title: titleForKey(k), state, content };
+    });
+  }, [savedSections, confirmedSet]);
+
+  // Tier grouping for rendering, plus a key→section lookup.
+  const sectionByKey = useMemo(() => new Map(sections.map(s => [s.k, s])), [sections]);
+  const { project: projectKeys, repos: repoGroups } =
+    useMemo(() => groupSections(sections.map(s => s.k)), [sections]);
+  // Considered-but-skipped coverage record (the `_skipped.md` file).
+  const skipped = useMemo<SkippedItem[]>(
+    () => parseSkipped(savedSections[SKIPPED_KEY] ?? ""), [savedSections]);
+
+  // Sync the planner's commands.json (the reliable channel — surfaced by the file
+  // poll like plan sections, so it can't be lost in the PTY stream) into the
+  // per-project/repo command store. Additive: file commands merge in; manual
+  // edits and inline-tag adds are preserved. Runs only when the file changes.
+  const commandsSyncedRef = useRef("");
+  useEffect(() => {
+    const raw = savedSections[COMMANDS_KEY] ?? "";
+    if (raw === commandsSyncedRef.current) return;
+    commandsSyncedRef.current = raw;
+    const { project, repos } = parseCommandsFile(raw);
+    const store = useAppStore.getState();
+    for (const c of project) store.addProjectAllowedCommand(effectiveProjectId, c);
+    for (const [repo, list] of Object.entries(repos))
+      for (const c of list) store.addRepoAllowedCommand(effectiveProjectId, repo, c);
+  }, [savedSections, effectiveProjectId]);
 
   // Title + derived GitHub object graph that the structure card renders and the
   // publish flow fills in. Kept in sync with handlePublish's own derivation.
@@ -635,7 +804,7 @@ export function Planning({ visible }: { visible: boolean }) {
 
   // The section Claude is currently discussing, driven by <plan_focus> tags.
   // Null until the first focus tag arrives. Highlights the matching card.
-  const [activeSection, setActiveSection] = useState<SectionKey | null>(null);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
 
   const containerRef   = useRef<HTMLDivElement>(null);
   const termRef        = useRef<Terminal | null>(null);
@@ -725,21 +894,18 @@ export function Planning({ visible }: { visible: boolean }) {
         );
         let foundPlan = false;
         while ((m = planRe.exec(bufRef.current)) !== null) {
-          const key     = m[1] as SectionKey;
+          const key     = m[1];
           const content = m[2].trim();
-          if (SECTION_DEFS.some(d => d.k === key)) {
-            setSections(prev => {
-              const idx = prev.findIndex(s => s.k === key);
-              if (idx >= 0 && prev[idx].state !== "confirmed") {
-                const next = [...prev];
-                next[idx] = { ...next[idx], state: "drafted", content };
-                return next;
-              }
-              return prev;
-            });
+          // Any \w+ key is a valid section (dynamic planner). Persist to the
+          // store unless the user already confirmed it — confirmed sections are
+          // frozen. The derived `sections`/`skipped` pick the change up on the
+          // next render. Read confirmed state fresh (this listener is created
+          // once at mount, so a captured set would go stale).
+          const confirmed = new Set(useAppStore.getState().planConfirmedSections[projIdSnap] ?? []);
+          if (!confirmed.has(key)) {
             useAppStore.getState().setPlanSection(projIdSnap, key, content);
-            foundPlan = true;
           }
+          foundPlan = true;
         }
         if (foundPlan) {
           bufRef.current = bufRef.current.replace(
@@ -750,9 +916,9 @@ export function Planning({ visible }: { visible: boolean }) {
 
         // ── <plan_focus section="key" /> ─────────────────────────────────────
         // Marks the section Claude is currently discussing. The last focus tag
-        // in this chunk wins (Claude emits one per section as it advances).
-        const focusKeys = parsePlanFocus(bufRef.current)
-          .filter(k => SECTION_DEFS.some(d => d.k === k)) as SectionKey[];
+        // in this chunk wins (Claude emits one per section as it advances). Any
+        // key is accepted — the focused section may not exist as a card yet.
+        const focusKeys = parsePlanFocus(bufRef.current);
         if (focusKeys.length > 0) {
           setActiveSection(focusKeys[focusKeys.length - 1]);
           bufRef.current = stripPlanFocus(bufRef.current);
@@ -814,6 +980,37 @@ export function Planning({ visible }: { visible: boolean }) {
         }
         if (foundAuto) {
           bufRef.current = bufRef.current.replace(/<automation_assign[^/]*\/>/g, "");
+        }
+
+        // ── <startup_script repo="owner/repo" mode="dev|triage" path="..." /> ──
+        // Registers a per-repo starting script the planner wrote to prompts/.
+        // The path is relative to the project dir; resolve it to a unified-store
+        // relpath and auto-assign so opening that repo's console (dev) or triage
+        // pane uses it. projectId = the planning session key (matches what the
+        // board passes to quick start / triage for existing projects).
+        const scripts = parseStartupScripts(bufRef.current);
+        if (scripts.length > 0) {
+          const key = sanitizeProjectKey(projIdSnap);
+          const store = useAppStore.getState();
+          for (const sc of scripts) {
+            const relpath = scriptDocRelpath(key, sc.path);
+            if (sc.mode === "triage") store.setRepoTriagePromptDoc(projIdSnap, sc.repo, relpath);
+            else                      store.setRepoStartupPromptDoc(projIdSnap, sc.repo, relpath);
+          }
+          bufRef.current = stripStartupScripts(bufRef.current);
+        }
+
+        // ── <allow_command cmd="cargo" [repo="owner/repo"] /> ─────────────────
+        // Adds a shell command to the project's (or a repo's) auto-approve list,
+        // so the repo's console/triage sessions can run it without a prompt.
+        const allowCmds = parseAllowCommands(bufRef.current);
+        if (allowCmds.length > 0) {
+          const store = useAppStore.getState();
+          for (const a of allowCmds) {
+            if (a.repo) store.addRepoAllowedCommand(projIdSnap, a.repo, a.cmd);
+            else        store.addProjectAllowedCommand(projIdSnap, a.cmd);
+          }
+          bufRef.current = stripAllowCommands(bufRef.current);
         }
 
         // Cap buffer to prevent unbounded growth while preserving any partial
@@ -934,9 +1131,12 @@ export function Planning({ visible }: { visible: boolean }) {
     return () => { cancelled = true; cancelAnimationFrame(raf); clearTimeout(delayed); };
   }, [visible]);
 
-  // Poll plan section files written by Claude every 2 seconds while visible.
-  // Claude writes to plans/{key}.md via its Write tool; this is more reliable
-  // than parsing the raw PTY stream for <plan_update> tags.
+  // Poll the section files Claude writes every 2 seconds while visible. Each
+  // documented topic is its own file ({key}.md / phases.json / _skipped.md);
+  // read_plan_sections returns them all dynamically, keyed by file stem. Writing
+  // to the store drives the derived `sections`/`skipped` — confirmed sections
+  // stay frozen. This file poll is more reliable than the raw <plan_update>
+  // stream and is what surfaces brand-new topics as their own cards.
   useEffect(() => {
     if (!visible) return;
 
@@ -948,28 +1148,12 @@ export function Planning({ visible }: { visible: boolean }) {
 
         const store = useAppStore.getState();
         const saved = store.planSections[effectiveProjectId] ?? {};
-        const updates: Record<string, string> = {};
+        const confirmed = new Set(store.planConfirmedSections[effectiveProjectId] ?? []);
 
         for (const [key, content] of entries) {
-          if (content && content !== (saved[key] ?? "")) {
-            updates[key] = content;
+          if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
             store.setPlanSection(effectiveProjectId, key, content);
           }
-        }
-
-        if (Object.keys(updates).length > 0) {
-          setSections(prev => {
-            const next = [...prev];
-            let changed = false;
-            for (const [key, content] of Object.entries(updates)) {
-              const idx = next.findIndex(s => s.k === key);
-              if (idx >= 0 && next[idx].state !== "confirmed") {
-                next[idx] = { ...next[idx], state: "drafted", content };
-                changed = true;
-              }
-            }
-            return changed ? next : prev;
-          });
         }
       } catch {
         // plans dir may not exist yet — ignore
@@ -1052,12 +1236,12 @@ export function Planning({ visible }: { visible: boolean }) {
     setRestarting(false);
   }
 
-  function handleConfirm(k: SectionKey) {
-    setSections(prev => prev.map(s => s.k === k ? { ...s, state: "confirmed" } : s));
+  function handleConfirm(k: string) {
+    // Confirming writes to the store; the derived `sections` flips this card to
+    // "confirmed" on the next render (and freezes it against further updates).
     useAppStore.getState().confirmPlanSection(effectiveProjectId, k);
     // Tell Claude the user approved this section so the discovery loop advances.
-    const title = SECTION_DEFS.find(d => d.k === k)?.title ?? k;
-    invoke("pty_write", { paneId, data: `${buildSectionConfirmMessage(title)}\r` }).catch(console.error);
+    invoke("pty_write", { paneId, data: `${buildSectionConfirmMessage(titleForKey(k))}\r` }).catch(console.error);
     // Clear the highlight; Claude will set the next active section via <plan_focus>.
     if (activeSection === k) setActiveSection(null);
   }
@@ -1353,7 +1537,7 @@ export function Planning({ visible }: { visible: boolean }) {
             )}
           </div>
           <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
-            claude cli · interactive pty · {confirmedCount}/{SECTION_DEFS.length} sections confirmed
+            claude cli · interactive pty · {confirmedCount}/{sections.length} sections confirmed
           </div>
         </div>
         <button className="btn ghost" onClick={() => setProjectsView(isExisting ? "board" : "list")}>
@@ -1421,16 +1605,28 @@ export function Planning({ visible }: { visible: boolean }) {
         );
       })()}
 
-      {/* Section progress bar */}
-      <div style={{ padding: "14px 24px 12px", display: "flex", gap: 6 }}>
-        {sections.map(s => {
-          const tone = s.state === "confirmed" ? "var(--accent)"
-                     : s.state === "drafted"   ? "color-mix(in oklch, var(--accent), transparent 50%)"
-                     : "var(--bg-elev2)";
-          return (
-            <div key={s.k} style={{ flex: 1, height: 5, borderRadius: 3, background: tone }} title={s.title} />
+      {/* Section progress bar — project tier first, then a divider and each
+          repo's tier so the per-repo dynamic sections are visibly accounted for. */}
+      <div style={{ padding: "14px 24px 12px", display: "flex", gap: 6, alignItems: "center" }}>
+        {(() => {
+          const seg = (k: string) => {
+            const s = sectionByKey.get(k);
+            const tone = s?.state === "confirmed" ? "var(--accent)"
+                       : s?.state === "drafted"   ? "color-mix(in oklch, var(--accent), transparent 50%)"
+                       : "var(--bg-elev2)";
+            const info = parseSectionKey(k);
+            const label = info.tier === "repo" ? `${info.repo} · ${titleForKey(k)}` : titleForKey(k);
+            return <div key={k} style={{ flex: 1, height: 5, borderRadius: 3, background: tone }} title={label} />;
+          };
+          const divider = (id: string) => (
+            <div key={id} title="per-repo sections"
+              style={{ flex: "0 0 auto", width: 2, height: 9, borderRadius: 1, background: "var(--border)" }} />
           );
-        })}
+          return [
+            ...projectKeys.map(seg),
+            ...repoGroups.flatMap(g => [divider(`div-${g.repo}`), ...g.keys.map(seg)]),
+          ];
+        })()}
       </div>
 
       {/* Split panel */}
@@ -1489,12 +1685,37 @@ export function Planning({ visible }: { visible: boolean }) {
                   ⌘ plan · {draftedOrConfirmed > 0 ? "building" : "waiting"}
                 </span>
                 <div style={{ flex: 1 }} />
-                <span style={{ fontSize: 10 }}>{confirmedCount}/{SECTION_DEFS.length} confirmed</span>
+                <span style={{ fontSize: 10 }}>{confirmedCount}/{sections.length} confirmed</span>
               </div>
               <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-                {sections.map(s => (
-                  <PlanSectionCard key={s.k} section={s} onConfirm={handleConfirm} flashing={flashConfirm && s.state === "drafted"} active={activeSection === s.k} />
+                {/* Project-tier sections, in checklist order. */}
+                {projectKeys.map(k => {
+                  const s = sectionByKey.get(k);
+                  return s ? (
+                    <PlanSectionCard key={k} section={s} onConfirm={handleConfirm} flashing={flashConfirm && s.state === "drafted"} active={activeSection === k} />
+                  ) : null;
+                })}
+                {/* Per-repo tier: one labelled group per repo with codebase-specific topics. */}
+                {repoGroups.map(g => (
+                  <div key={g.repo} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 6, marginTop: 4,
+                      fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase",
+                      letterSpacing: ".06em", color: "var(--fg-muted)",
+                    }}>
+                      <span style={{ color: "var(--accent)" }}>repo</span>
+                      <span>· {g.repo}</span>
+                    </div>
+                    {g.keys.map(k => {
+                      const s = sectionByKey.get(k);
+                      return s ? (
+                        <PlanSectionCard key={k} section={s} onConfirm={handleConfirm} flashing={flashConfirm && s.state === "drafted"} active={activeSection === k} />
+                      ) : null;
+                    })}
+                  </div>
                 ))}
+                <SkippedCard items={skipped} />
+                <AllowedCommandsCard projectId={effectiveProjectId} repos={publishRepos} />
                 <KbAssignedCard
                   blockIds={planKbAssignments[effectiveProjectId] ?? []}
                   onRemove={(id) => removePlanKbAssignment(effectiveProjectId, id)}
