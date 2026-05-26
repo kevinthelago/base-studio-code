@@ -269,6 +269,15 @@ interface AppStore {
   // created; TerminalView passes it to ensure_session_settings before launch.
   paneAllowedCommands: Record<string, string[]>;
 
+  // Blocked shell commands. Sessions allow Bash broadly (start-and-go); the
+  // backend always denies a curated dangerous set, and these are the user's
+  // additional global denies (edited in Knowledge Base → Commands). Deny wins
+  // over allow.
+  deniedCommands: string[];
+  addDeniedCommand: (cmd: string) => void;
+  removeDeniedCommand: (cmd: string) => void;
+  setDeniedCommands: (commands: string[]) => void;
+
   // Console behavior
   autoFocusOnInterrupt: boolean;
   setAutoFocusOnInterrupt: (v: boolean) => void;
@@ -749,6 +758,17 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ allowedCommands: s.allowedCommands.filter((c) => c !== cmd) })),
       setAllowedCommands: (commands) => set({ allowedCommands: commands }),
 
+      deniedCommands: [],
+      addDeniedCommand: (cmd) =>
+        set((s) => {
+          const c = cmd.trim().toLowerCase();
+          if (!c || s.deniedCommands.includes(c)) return {};
+          return { deniedCommands: [...s.deniedCommands, c] };
+        }),
+      removeDeniedCommand: (cmd) =>
+        set((s) => ({ deniedCommands: s.deniedCommands.filter((c) => c !== cmd) })),
+      setDeniedCommands: (commands) => set({ deniedCommands: commands }),
+
       projectAllowedCommands: {},
       addProjectAllowedCommand: (projectId, cmd) =>
         set((s) => {
@@ -814,6 +834,7 @@ export const useAppStore = create<AppStore>()(
         schedules:            s.schedules,
         commands:             s.commands,
         allowedCommands:      s.allowedCommands,
+        deniedCommands:       s.deniedCommands,
         projectAllowedCommands: s.projectAllowedCommands,
         repoAllowedCommands:    s.repoAllowedCommands,
         autoFocusOnInterrupt: s.autoFocusOnInterrupt,

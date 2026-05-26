@@ -1638,23 +1638,58 @@ fn git_exclude(repo_root: &std::path::Path, entry: &str) {
 /// depends on them. `gh` is required by triage; `git` by every repo session.
 const MANDATORY_BASH: &[&str] = &["gh", "git"];
 
-/// Ensure the claude session rooted at `cwd` auto-approves the given shell
-/// commands (plus the mandatory {@link MANDATORY_BASH}) without a permission
-/// prompt, by merging `Bash(<cmd> *)` rules into `<cwd>/.claude/settings.json`.
+/// Dangerous command patterns denied in every spawned session by default.
 ///
-/// Merges rather than clobbers: existing settings and any other allow entries
-/// (e.g. a per-repo config set via the Claude Config screen) are preserved, and
-/// the file is created if absent. `.claude/` is kept out of the repo's
-/// `git status`. This is what lets a triage session run `gh issue list` without
-/// blocking on an interactive approval.
+/// The session allows the Bash tool broadly so ordinary work — including loops
+/// and `&&` / `|` compound commands — runs without a prompt ("start and go").
+/// These guard against the most catastrophic *direct* invocations; deny takes
+/// precedence over allow in Claude Code. Best-effort: prefix matching can't catch
+/// a dangerous command nested inside a loop or pipe, so this raises the bar
+/// against accidents, not a true sandbox. Users extend it from the Knowledge Base
+/// → Commands section (the per-session `denied_commands`).
+const DEFAULT_DENY: &[&str] = &[
+    "Bash(sudo *)",
+    "Bash(rm -rf /*)",
+    "Bash(rm -fr /*)",
+    "Bash(rm -rf ~*)",
+    "Bash(dd *)",
+    "Bash(mkfs *)",
+    "Bash(shutdown *)",
+    "Bash(reboot *)",
+    "Bash(git push --force*)",
+    "Bash(git push -f *)",
+    "Bash(curl *| sh)",
+    "Bash(curl *| bash)",
+    "Bash(wget *| sh)",
+];
+
+/// Ensure the claude session rooted at `cwd` can run shell commands without a
+/// permission prompt while blocking dangerous ones, by merging permission rules
+/// into `<cwd>/.claude/settings.json`.
 #[tauri::command]
-async fn ensure_session_settings(cwd: String, allowed_commands: Vec<String>) -> Result<(), String> {
-    write_session_settings(&cwd, &allowed_commands)
+async fn ensure_session_settings(
+    cwd: String,
+    allowed_commands: Vec<String>,
+    denied_commands: Vec<String>,
+) -> Result<(), String> {
+    write_session_settings(&cwd, &allowed_commands, &denied_commands)
 }
 
-/// Synchronous core of [`ensure_session_settings`] (kept testable without an
-/// async runtime).
-fn write_session_settings(cwd: &str, allowed_commands: &[String]) -> Result<(), String> {
+/// Synchronous core of [`ensure_session_settings`] (testable without a runtime).
+///
+/// Security model: the session ALLOWS the Bash tool broadly so normal commands
+/// (loops, pipes, `&&` chains) run without a prompt. A curated default deny-list
+/// ({@link DEFAULT_DENY}) plus any user/project `denied_commands` block the most
+/// dangerous direct invocations (deny wins over allow). The configured
+/// `allowed_commands` are still written as explicit prefix rules — harmless under
+/// the broad allow, and meaningful if "Bash" is ever removed to go strict.
+/// Merges into existing settings rather than clobbering; `.claude/` stays out of
+/// the repo's `git status`.
+fn write_session_settings(
+    cwd: &str,
+    allowed_commands: &[String],
+    denied_commands: &[String],
+) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     let root = std::path::PathBuf::from(cwd);
     let settings_path = root.join(".claude").join("settings.json");
@@ -1665,28 +1700,30 @@ fn write_session_settings(cwd: &str, allowed_commands: &[String]) -> Result<(), 
         .unwrap_or_else(|| serde_json::json!({}));
     if !config.is_object() { config = serde_json::json!({}); }
 
-    // Mandatory gh/git first, then each configured command (deduped).
-    let mut cmds: Vec<String> = MANDATORY_BASH.iter().map(|s| s.to_string()).collect();
-    for c in allowed_commands {
-        let c = c.trim().to_string();
-        if !c.is_empty() && !cmds.contains(&c) { cmds.push(c); }
-    }
-
-    let obj = config.as_object_mut().unwrap();
-    let permissions = obj.entry("permissions").or_insert_with(|| serde_json::json!({}));
-    if !permissions.is_object() { *permissions = serde_json::json!({}); }
-    let perm_obj = permissions.as_object_mut().unwrap();
-    let allow = perm_obj.entry("allow").or_insert_with(|| serde_json::json!([]));
-    if !allow.is_array() { *allow = serde_json::json!([]); }
-    let allow_arr = allow.as_array_mut().unwrap();
-    let mut seen: std::collections::HashSet<String> =
-        allow_arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
-    for c in &cmds {
-        let rule = format!("Bash({} *)", c);
-        if seen.insert(rule.clone()) {
-            allow_arr.push(serde_json::Value::String(rule));
+    // Allow: the Bash tool broadly (start-and-go) + mandatory gh/git + each
+    // configured command as an explicit prefix rule (deduped).
+    let mut allow_rules: Vec<String> = vec!["Bash".to_string()];
+    for c in MANDATORY_BASH.iter().map(|s| (*s).to_string())
+        .chain(allowed_commands.iter().map(|c| c.trim().to_string()))
+    {
+        if !c.is_empty() {
+            let r = format!("Bash({} *)", c);
+            if !allow_rules.contains(&r) { allow_rules.push(r); }
         }
     }
+
+    // Deny: curated dangerous defaults + user/project denies (deny > allow).
+    let mut deny_rules: Vec<String> = DEFAULT_DENY.iter().map(|s| (*s).to_string()).collect();
+    for c in denied_commands {
+        let c = c.trim();
+        if !c.is_empty() {
+            let r = format!("Bash({} *)", c);
+            if !deny_rules.contains(&r) { deny_rules.push(r); }
+        }
+    }
+
+    merge_permission_list(&mut config, "allow", &allow_rules);
+    merge_permission_list(&mut config, "deny", &deny_rules);
 
     std::fs::create_dir_all(root.join(".claude")).map_err(|e| e.to_string())?;
     std::fs::write(
@@ -1695,6 +1732,23 @@ fn write_session_settings(cwd: &str, allowed_commands: &[String]) -> Result<(), 
     ).map_err(|e| e.to_string())?;
     git_exclude(&root, ".claude/");
     Ok(())
+}
+
+/// Merge `rules` into `config.permissions.<key>` (an array), preserving existing
+/// entries and order, deduped. Creates the objects/array as needed.
+fn merge_permission_list(config: &mut serde_json::Value, key: &str, rules: &[String]) {
+    let obj = config.as_object_mut().unwrap();
+    let permissions = obj.entry("permissions").or_insert_with(|| serde_json::json!({}));
+    if !permissions.is_object() { *permissions = serde_json::json!({}); }
+    let perm_obj = permissions.as_object_mut().unwrap();
+    let list = perm_obj.entry(key).or_insert_with(|| serde_json::json!([]));
+    if !list.is_array() { *list = serde_json::json!([]); }
+    let arr = list.as_array_mut().unwrap();
+    let mut seen: std::collections::HashSet<String> =
+        arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+    for r in rules {
+        if seen.insert(r.clone()) { arr.push(serde_json::Value::String(r.clone())); }
+    }
 }
 
 /// Reads plan section files from the project hub. They live FLAT in
@@ -2215,21 +2269,32 @@ mod tests {
             r#"{"model":"claude-sonnet-4-6","permissions":{"allow":["Read"],"deny":["WebSearch"]}}"#,
         ).unwrap();
 
-        write_session_settings(&dir.to_string_lossy(), &["cargo".into(), "git".into()]).unwrap();
+        write_session_settings(
+            &dir.to_string_lossy(),
+            &["cargo".into(), "git".into()],
+            &["scp".into()],
+        ).unwrap();
 
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
             .iter().map(|x| x.as_str().unwrap().to_string()).collect();
-        // Pre-existing entries and the deny list are preserved.
+        let deny: Vec<String> = v["permissions"]["deny"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        // Pre-existing entries are preserved (merged, not clobbered).
         assert!(allow.contains(&"Read".to_string()));
+        assert!(deny.contains(&"WebSearch".to_string()));
         assert_eq!(v["model"], "claude-sonnet-4-6");
-        assert_eq!(v["permissions"]["deny"][0], "WebSearch");
-        // Mandatory gh/git plus the custom command are added; git is not duplicated.
+        // Bash is allowed broadly (start-and-go) plus explicit gh/git/custom rules.
+        assert!(allow.contains(&"Bash".to_string()));
         assert!(allow.contains(&"Bash(gh *)".to_string()));
         assert!(allow.contains(&"Bash(git *)".to_string()));
         assert!(allow.contains(&"Bash(cargo *)".to_string()));
         assert_eq!(allow.iter().filter(|r| *r == "Bash(git *)").count(), 1);
+        // Curated dangerous defaults plus the user deny are present.
+        assert!(deny.contains(&"Bash(sudo *)".to_string()));
+        assert!(deny.contains(&"Bash(rm -rf /*)".to_string()));
+        assert!(deny.contains(&"Bash(scp *)".to_string()));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

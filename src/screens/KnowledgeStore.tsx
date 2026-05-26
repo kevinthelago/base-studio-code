@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
@@ -65,10 +65,111 @@ function formatAge(secs: number): string {
   return `${Math.floor(delta / 86400)}d`;
 }
 
+// Built-in dangerous commands always blocked in spawned sessions — display copy
+// of the backend's DEFAULT_DENY (keep roughly in sync; this list is informational).
+const BUILTIN_BLOCKED = [
+  "sudo", "rm -rf /", "rm -rf ~", "dd", "mkfs", "shutdown", "reboot",
+  "git push --force", "curl … | sh",
+];
+
+// The command-policy editor surfaced as the Knowledge Base → Commands section.
+// Sessions allow the Bash tool broadly (so loops and compound commands run
+// without a prompt); a curated built-in deny-list plus the user's blocks below
+// guard against dangerous commands (deny wins over allow). The allow list is the
+// global tier that combines with per-project/repo commands set in the planner.
+function CommandsPanel() {
+  const {
+    allowedCommands, addAllowedCommand, removeAllowedCommand,
+    deniedCommands, addDeniedCommand, removeDeniedCommand,
+  } = useAppStore();
+  const [allowDraft, setAllowDraft] = useState("");
+  const [denyDraft, setDenyDraft] = useState("");
+
+  const chips = (
+    items: string[],
+    onRemove: (c: string) => void,
+    color: string,
+    empty: string,
+  ) => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, minHeight: 22, alignItems: "center" }}>
+      {items.length === 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", fontStyle: "italic" }}>{empty}</span>}
+      {items.map(c => (
+        <span key={c} style={{
+          display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: 4,
+          background: "var(--bg-canvas)", border: "1px solid var(--border)",
+          fontFamily: "var(--mono)", fontSize: 10.5, color,
+        }}>
+          {c}
+          <span onClick={() => onRemove(c)} style={{ cursor: "pointer", color: "var(--fg-dim)", lineHeight: 1 }}>×</span>
+        </span>
+      ))}
+    </div>
+  );
+
+  const adder = (draft: string, setDraft: (v: string) => void, onAdd: (c: string) => void, placeholder: string) => (
+    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+      <input
+        className="input"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter" && draft.trim()) { e.preventDefault(); onAdd(draft.trim()); setDraft(""); } }}
+        placeholder={placeholder}
+        style={{ flex: 1, height: 26, fontFamily: "var(--mono)", fontSize: 10.5 }}
+      />
+      <button className="btn" onClick={() => { if (draft.trim()) { onAdd(draft.trim()); setDraft(""); } }} style={{ height: 26, fontSize: 10.5 }}>+ add</button>
+    </div>
+  );
+
+  const card = (title: string, sub: string, body: ReactNode) => (
+    <div className="card" style={{ padding: "14px 16px" }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 13 }}>{title}</h3>
+      <p style={{ margin: "0 0 10px", color: "var(--fg-muted)", fontSize: 11.5, lineHeight: 1.6 }}>{sub}</p>
+      {body}
+    </div>
+  );
+
+  return (
+    <div style={{ flex: 1, overflow: "auto", padding: "18px 22px" }}>
+      <div style={{ maxWidth: 720, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600 }}>Commands</h2>
+          <p style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4, lineHeight: 1.6 }}>
+            Project and triage sessions can run shell commands freely — including loops and
+            piped/compound commands — so agents start working without permission prompts. A
+            curated set of dangerous commands is always blocked, and you can block or pin more here.
+          </p>
+        </div>
+
+        {card(
+          "Always blocked",
+          "Built-in — these dangerous commands are denied in every session (deny overrides allow). Best-effort against direct invocations.",
+          chips(BUILTIN_BLOCKED, () => {}, "var(--danger)", ""),
+        )}
+
+        {card(
+          "Also block",
+          "Additional commands to deny everywhere (e.g. scp, kubectl, terraform). Applied to new sessions.",
+          <>{chips(deniedCommands, removeDeniedCommand, "var(--danger)", "nothing extra blocked")}
+            {adder(denyDraft, setDenyDraft, c => addDeniedCommand(c), "block a command…")}</>,
+        )}
+
+        {card(
+          "Always allowed (global)",
+          "Pinned as explicitly allowed across every project. Per-project and per-repo commands are added in a project's planner; they combine with this list.",
+          <>{chips(allowedCommands, removeAllowedCommand, "var(--accent)", "Bash is allowed broadly by default")}
+            {adder(allowDraft, setAllowDraft, c => addAllowedCommand(c.toLowerCase()), "allow a command…")}</>,
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function KnowledgeStoreScreen() {
   // When navigated from a project, scope the list to that project's documents.
   const { kbProjectScope, setKbProjectScope } = useAppStore();
   const [docs, setDocs]             = useState<Doc[]>([]);
+  // Commands section: swaps the main area to the command-policy editor.
+  const [showCommands, setShowCommands] = useState(false);
   const [filter, setFilter]         = useState<DocFilter>("all");
   const [search, setSearch]         = useState("");
   const [selectedPath, setSelected] = useState<string | null>(null);
@@ -299,6 +400,21 @@ export function KnowledgeStoreScreen() {
         background: "var(--bg-panel)", borderRight: "1px solid var(--border-soft)",
         display: "flex", flexDirection: "column", minHeight: 0,
       }}>
+        {/* Commands section entry — swaps the main area to the command-policy editor. */}
+        <div
+          onClick={() => { setShowCommands(true); setSelected(null); }}
+          style={{
+            padding: "9px 12px", cursor: "pointer", userSelect: "none",
+            borderBottom: "1px solid var(--border-soft)",
+            borderLeft: "2px solid " + (showCommands ? "var(--accent)" : "transparent"),
+            background: showCommands ? "var(--bg-elev)" : "transparent",
+            display: "flex", alignItems: "center", gap: 8,
+            fontFamily: "var(--mono)", fontSize: 11.5,
+            color: showCommands ? "var(--fg)" : "var(--fg-muted)",
+          }}
+        >
+          <span>⌘</span><span>Commands</span>
+        </div>
         <div style={{
           padding: "10px 12px 8px",
           borderBottom: "1px solid var(--border-soft)",
@@ -392,7 +508,7 @@ export function KnowledgeStoreScreen() {
             return (
               <div
                 key={d.relpath}
-                onClick={() => setSelected(sel ? null : d.relpath)}
+                onClick={() => { setShowCommands(false); setSelected(sel ? null : d.relpath); }}
                 style={{
                   padding: sel ? "9px 12px 9px 10px" : "9px 12px",
                   borderBottom: "1px solid var(--border-soft)",
@@ -434,7 +550,8 @@ export function KnowledgeStoreScreen() {
         )}
       </aside>
 
-      {/* ── Right side: preview (when selected) + terminal ──────────────────── */}
+      {/* ── Right side: Commands policy, or document preview + terminal ──────── */}
+      {showCommands ? <CommandsPanel /> : (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
 
         {/* Document preview — shown only when a document is selected */}
@@ -562,6 +679,7 @@ export function KnowledgeStoreScreen() {
         </div>
 
       </div>
+      )}
     </div>
   );
 }
