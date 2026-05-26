@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { FolderOpen, GitBranch, MoreHorizontal } from "lucide-react";
+import { GitBranch, MoreHorizontal, Maximize2, Minimize2 } from "lucide-react";
 import { VIEW_DEFS, type ViewKey } from "./ViewTabs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
 
@@ -274,10 +274,10 @@ export function PaneShell({
           )}
         </div>
 
-        {/* Open directory */}
+        {/* Maximize / minimize — one control that swaps by fullscreen state */}
         <button
-          title="Open project directory"
-          onClick={onPickDirectory}
+          title={fullscreen ? "Minimize pane" : "Maximize pane"}
+          onClick={onToggleFullscreen}
           style={{
             width: 22, height: 22, borderRadius: 4,
             border: "1px solid transparent",
@@ -287,7 +287,7 @@ export function PaneShell({
             cursor: "pointer", flex: "0 0 22px",
           }}
         >
-          <FolderOpen size={12} />
+          {fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
         </button>
 
         {/* More options */}
@@ -329,6 +329,7 @@ export function PaneShell({
             disabled={disabled}
             onToggleFullscreen={onToggleFullscreen}
             onToggleDisable={onToggleDisable}
+            onPickDirectory={onPickDirectory}
             onClose={onMenuToggle}
             onRename={() => { setDraftName(agent); setEditingName(true); onMenuToggle?.(); }}
             onViewChange={onViewChange}
