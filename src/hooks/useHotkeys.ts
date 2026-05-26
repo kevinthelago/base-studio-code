@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { computeBroadcastTargets } from "../lib/broadcast";
 import { adjustFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { nextFullscreen } from "../lib/consoleFocus";
+import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/paneSelect";
 import type { Screen } from "../components/chrome/Rail";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
@@ -80,7 +81,37 @@ export function useHotkeys() {
     setTerminalFontSize,
   } = useAppStore();
 
+  // Chained-digit pane selector: digits accumulate while Ctrl+Shift is held,
+  // then commit (resolve to a pane) on modifier release or after a short pause.
+  const digitBufferRef = useRef("");
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
+    // Resolve the accumulated pane-number buffer and run the focus → fullscreen →
+    // restore cycle on it. State is read fresh (the timer fires later) so a stale
+    // closure can't mis-target.
+    function commitDigitBuffer() {
+      if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
+      const buf = digitBufferRef.current;
+      digitBufferRef.current = "";
+      if (!buf) return;
+      const { tabs, activeTabIdx, focusedPaneIdx, fullscreenPaneIdx } = useAppStore.getState();
+      const activeTab = tabs[activeTabIdx];
+      if (!activeTab) return;
+      const [cols, rows] = activeTab.layout.split("×").map(Number);
+      const idx = resolvePaneFromBuffer(buf, cols * rows);
+      if (idx === null) return;
+      if (fullscreenPaneIdx === idx) {
+        setFullscreenPane(-1);
+        setFocusedPane(-1);
+      } else if (focusedPaneIdx === idx) {
+        setFullscreenPane(idx);
+      } else {
+        setFullscreenPane(-1);
+        setFocusedPane(idx);
+      }
+    }
+
     function onKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement).tagName;
       const inInput = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable;
@@ -172,29 +203,20 @@ export function useHotkeys() {
         return;
       }
 
-      // Ctrl+Shift+1–9: select console pane
-      //   first press  → focus that pane
-      //   second press → fullscreen that pane
-      //   third press  → restore
-      const ctrlShiftPane = e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code.match(/^Digit([1-9])$/);
-      if (ctrlShiftPane) {
+      // Ctrl+Shift+<digits>: select a console pane by number.
+      //   Hold Ctrl+Shift and type one or more digits — they accumulate so panes
+      //   10+ are reachable (e.g. 1 then 3 → pane 13). The number commits on a
+      //   short pause or when Ctrl/Shift is released (see onKeyUp), so a single
+      //   digit still feels instant. On the resolved pane the selection cycles
+      //   focus → fullscreen → restore, exactly as a direct press did before.
+      const ctrlShiftDigit = e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code.match(/^Digit(\d)$/);
+      if (ctrlShiftDigit) {
         if (activeScreen !== "console") return;
         e.stopPropagation();
         e.preventDefault();
-        const targetIdx = parseInt(ctrlShiftPane[1], 10) - 1;
-        const activeTab = tabs[activeTabIdx];
-        const [cols, rows] = activeTab.layout.split("×").map(Number);
-        if (targetIdx >= cols * rows) return;
-
-        if (fullscreenPaneIdx === targetIdx) {
-          setFullscreenPane(-1);
-          setFocusedPane(-1);
-        } else if (focusedPaneIdx === targetIdx) {
-          setFullscreenPane(targetIdx);
-        } else {
-          setFullscreenPane(-1);
-          setFocusedPane(targetIdx);
-        }
+        digitBufferRef.current += ctrlShiftDigit[1];
+        if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = setTimeout(commitDigitBuffer, PANE_SELECT_COMMIT_MS);
         return;
       }
 
@@ -230,10 +252,23 @@ export function useHotkeys() {
       }
     }
 
+    // Releasing Ctrl/Shift commits a pending pane-number buffer immediately, so
+    // single-digit selections don't wait out the timeout.
+    function onKeyUp(e: KeyboardEvent) {
+      if ((e.key === "Control" || e.key === "Shift") && digitBufferRef.current) {
+        commitDigitBuffer();
+      }
+    }
+
     // Capture phase: fires before element handlers (including xterm's textarea listener),
     // so pane/tab hotkeys are intercepted regardless of which element has focus.
     document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
+    document.addEventListener("keyup", onKeyUp, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("keyup", onKeyUp, true);
+      if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
+    };
   }, [
     activeScreen, setScreen,
     tabs, activeTabIdx, setActiveTab,
