@@ -9,7 +9,7 @@ import { LogView } from "../components/pane/views/LogView";
 import { useAppStore } from "../store";
 import { recordRender } from "../lib/perf";
 import { resetLaunchGate } from "../lib/launchGate";
-import { shouldAutoFocusOnIdle, STARTUP_GRACE_MS } from "../lib/consoleFocus";
+import { shouldAutoFocusOnIdle, shouldAdvanceOnReply, STARTUP_GRACE_MS } from "../lib/consoleFocus";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 function resolvePaneName(
@@ -138,7 +138,7 @@ export function ConsoleScreen() {
     setFocusedAgentName,
     setTabState, autoFocusOnInterrupt,
     consoleBroadcast,
-    enqueueFocus, removeFocus,
+    enqueueFocus, removeFocus, advanceFocus,
   } = useAppStore();
 
   // Count every commit so the perf summary can tell a React re-render loop apart
@@ -189,7 +189,11 @@ export function ConsoleScreen() {
         enqueueFocus(paneIdx, useAppStore.getState().focusedPaneIdx); // queue it (skip the one you're watching)
       }
     } else if (status === "run") {
+      // You replied to the focused agent (idle -> run): drop it from the queue and
+      // auto-advance to the next waiting pane (no-op when the queue is empty).
+      const wasFocusedReply = shouldAdvanceOnReply(prev, status, paneIdx, useAppStore.getState().focusedPaneIdx);
       removeFocus(paneIdx);
+      if (wasFocusedReply) advanceFocus();
     }
 
     setPaneStatuses((current) => {
@@ -204,7 +208,7 @@ export function ConsoleScreen() {
       setTabState(activeTabIdx, tabState);
       return next;
     });
-  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, setFocusedPane, setTabState, enqueueFocus, removeFocus]);
+  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, setFocusedPane, setTabState, enqueueFocus, removeFocus, advanceFocus]);
 
   // All per-pane handlers are stable (useCallback) so the memoized PaneAt
   // children don't re-render on every ConsoleScreen commit. Store-action refs
