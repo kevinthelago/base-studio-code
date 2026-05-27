@@ -634,11 +634,31 @@ async fn github_graphql(
     token: String,
     query: String,
     variables: Option<serde_json::Value>,
+    max_age_secs: Option<u64>,
+    force: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("github_graphql");
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
+    let force = force.unwrap_or(false);
+    // GraphQL has no ETag, so the cache is purely time-windowed (TTL): within
+    // max_age serve the cached `data` with no network call; otherwise re-POST.
+    // Keyed by query + variables. Reuses the REST cache map (etag stays None).
+    let cache_key = format!(
+        "graphql:{}|{}",
+        query,
+        variables.as_ref().map(|v| v.to_string()).unwrap_or_default(),
+    );
+    if !force {
+        let cache = github_cache().lock().unwrap();
+        if let Some(entry) = cache.get(&cache_key) {
+            if cache_is_fresh(entry.fetched_at.elapsed(), max_age_secs, false) {
+                return Ok(entry.body.clone());
+            }
+        }
+    }
+
     let client = reqwest::Client::new();
     let mut body = serde_json::json!({ "query": query });
     if let Some(vars) = variables {
@@ -670,7 +690,12 @@ async fn github_graphql(
             return Err(format!("GraphQL error: {}", msg));
         }
     }
-    Ok(json["data"].clone())
+    let data = json["data"].clone();
+    github_cache().lock().unwrap().insert(
+        cache_key,
+        CachedGet { etag: None, body: data.clone(), fetched_at: std::time::Instant::now() },
+    );
+    Ok(data)
 }
 
 #[tauri::command]

@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, type ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
-import { githubRequest } from "../../lib/github";
+import { githubRequest, githubGraphql } from "../../lib/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "./burndown";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -139,11 +138,8 @@ function useProjectsSummaryData() {
     const login = githubUser.login;
     setLoading(true);
 
-    const projectsP = invoke<{ viewer: { projectsV2: { nodes: GhProject[] } } }>("github_graphql", {
-      token: githubToken,
-      query: PROJECTS_SUMMARY_QUERY,
-      variables: null,
-    }).then(d => d?.viewer?.projectsV2?.nodes ?? []).catch((): GhProject[] => []);
+    const projectsP = githubGraphql<{ viewer: { projectsV2: { nodes: GhProject[] } } }>(PROJECTS_SUMMARY_QUERY, null)
+      .then(d => d?.viewer?.projectsV2?.nodes ?? []).catch((): GhProject[] => []);
 
     const eventsP = githubRequest<GHEvent[]>(`users/${login}/events?per_page=100`).catch((): GHEvent[] => []);
 
@@ -157,11 +153,7 @@ function useProjectsSummaryData() {
       // its Iteration/Status fields + items and resolve the current iteration.
       const lead = projArr.find(p => !p.closed && p.items.totalCount > 0);
       if (lead) {
-        invoke<{ node: ProjectIterationNode | null }>("github_graphql", {
-          token: githubToken,
-          query: PROJECT_ITERATION_QUERY,
-          variables: { projectId: lead.id },
-        })
+        githubGraphql<{ node: ProjectIterationNode | null }>(PROJECT_ITERATION_QUERY, { projectId: lead.id })
           .then(d => setBurndown(parseProjectIteration(d?.node ?? null, Date.now())))
           .catch(() => setBurndown({ status: "no-field" }));
       } else {
