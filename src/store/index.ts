@@ -82,6 +82,10 @@ interface AppStore {
   // Navigation
   activeScreen: Screen;
   setScreen: (screen: Screen) => void;
+  // True once the async persisted state has rehydrated (transient — NOT persisted).
+  // The app shell holds its first paint until this flips, to avoid a defaults flash.
+  hasHydrated: boolean;
+  setHasHydrated: (v: boolean) => void;
 
   // Console — tabs & panes
   tabs: Tab[];
@@ -323,6 +327,8 @@ export const useAppStore = create<AppStore>()(
     (set, get) => ({
       activeScreen: "console",
       setScreen: (screen) => set({ activeScreen: screen }),
+      hasHydrated: false,
+      setHasHydrated: (v) => set({ hasHydrated: v }),
 
       tabs: [],
       activeTabIdx: 0,
@@ -898,6 +904,15 @@ export const useAppStore = create<AppStore>()(
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
       }),
+      // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
+      // first render. Flip hasHydrated here so the shell can hold its first paint
+      // until the persisted state is in — otherwise screens flash from defaults
+      // (e.g. GitHub "not connected" → connected) on every load.
+      onRehydrateStorage: () => (state) => {
+        // Release the gate once hydration settles — on success or error — so the
+        // shell never hangs on a blank canvas (on error the store keeps defaults).
+        (state ?? useAppStore.getState()).setHasHydrated(true);
+      },
     }
   )
 );
