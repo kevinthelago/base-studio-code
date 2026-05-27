@@ -133,6 +133,7 @@ export default function App() {
     settingsSection,
     projectsView, activeProjectName, projectsBoardTab,
     setBscBaseDir,
+    hasHydrated,
   } = useAppStore();
 
   // Mount the Knowledge Store (and spawn its claude session) lazily on first
@@ -260,6 +261,11 @@ export default function App() {
   const activeSessionCount = pendingTab
     ? /* placeholder until real session tracking */ 1
     : 0;
+
+  // Hold the first paint until the async-persisted state has hydrated, so screens
+  // don't flash from store defaults (e.g. GitHub "not connected" → connected) on
+  // load. Hydration is a fast local read — a brief blank-canvas frame, not a wait.
+  if (!hasHydrated) return <div className="app" />;
 
   return (
     <div className="app">
