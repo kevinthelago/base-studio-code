@@ -1,74 +1,82 @@
 import { describe, it, expect } from "vitest";
-import { enqueue, removeFromQueue, nextInCycle, reconcileQueue } from "../lib/focusQueue";
+import { enqueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
+
+const p = (tab: number, pane: number): QueuedPane => ({ tab, pane });
 
 describe("enqueue", () => {
   it("appends a new pane in FIFO order", () => {
-    expect(enqueue([1, 2], 3)).toEqual([1, 2, 3]);
+    expect(enqueue([p(0, 1), p(0, 2)], p(0, 3))).toEqual([p(0, 1), p(0, 2), p(0, 3)]);
   });
 
   it("de-duplicates an already-queued pane (same reference)", () => {
-    const q = [1, 2];
-    expect(enqueue(q, 2)).toBe(q);
+    const q = [p(0, 1), p(0, 2)];
+    expect(enqueue(q, p(0, 2))).toBe(q);
   });
 
-  it("skips the excluded pane (the one you're on)", () => {
-    expect(enqueue([1], 4, 4)).toEqual([1]);
+  it("treats the same pane index on different tabs as distinct", () => {
+    expect(enqueue([p(0, 2)], p(1, 2))).toEqual([p(0, 2), p(1, 2)]);
   });
 
-  it("ignores negative indices", () => {
-    const q = [1];
-    expect(enqueue(q, -1)).toBe(q);
+  it("ignores negative pane indices", () => {
+    const q = [p(0, 1)];
+    expect(enqueue(q, p(0, -1))).toBe(q);
   });
 });
 
 describe("removeFromQueue", () => {
   it("removes a queued pane", () => {
-    expect(removeFromQueue([1, 2, 3], 2)).toEqual([1, 3]);
+    expect(removeFromQueue([p(0, 1), p(0, 2), p(0, 3)], p(0, 2))).toEqual([p(0, 1), p(0, 3)]);
   });
 
   it("is a no-op (same reference) for an absent pane", () => {
-    const q = [1, 2];
-    expect(removeFromQueue(q, 9)).toBe(q);
+    const q = [p(0, 1), p(0, 2)];
+    expect(removeFromQueue(q, p(0, 9))).toBe(q);
+    expect(removeFromQueue(q, p(1, 1))).toBe(q); // same index, different tab
   });
 });
 
 describe("nextInCycle", () => {
   it("moves to the next waiting pane after the current one", () => {
-    expect(nextInCycle([5, 6, 7], 5)).toBe(6);
+    expect(nextInCycle([p(0, 5), p(0, 6), p(0, 7)], p(0, 5))).toEqual(p(0, 6));
   });
 
   it("wraps around to the front", () => {
-    expect(nextInCycle([5, 6, 7], 7)).toBe(5);
+    expect(nextInCycle([p(0, 5), p(0, 6), p(0, 7)], p(0, 7))).toEqual(p(0, 5));
+  });
+
+  it("returns a waiting pane on another tab", () => {
+    expect(nextInCycle([p(0, 5), p(1, 2)], p(0, 5))).toEqual(p(1, 2));
   });
 
   it("starts at the front when the current pane isn't queued", () => {
-    expect(nextInCycle([5, 6, 7], 9)).toBe(5);
+    expect(nextInCycle([p(0, 5), p(0, 6), p(0, 7)], p(0, 9))).toEqual(p(0, 5));
   });
 
   it("returns null when the only queued pane is the current one", () => {
-    expect(nextInCycle([5], 5)).toBeNull();
+    expect(nextInCycle([p(0, 5)], p(0, 5))).toBeNull();
   });
 
   it("returns null for an empty queue", () => {
-    expect(nextInCycle([], 3)).toBeNull();
+    expect(nextInCycle([], p(0, 3))).toBeNull();
   });
 });
 
 describe("reconcileQueue", () => {
-  it("drops panes that are no longer waiting", () => {
-    expect(reconcileQueue([1, 2, 3], [1, 3])).toEqual([1, 3]);
+  it("drops the active tab's panes that are no longer waiting", () => {
+    expect(reconcileQueue([p(0, 1), p(0, 2), p(0, 3)], 0, [1, 3])).toEqual([p(0, 1), p(0, 3)]);
   });
 
-  it("preserves queue order, not the waiting-set order", () => {
-    expect(reconcileQueue([3, 1, 2], [2, 1, 3])).toEqual([3, 1, 2]);
+  it("leaves other tabs' entries untouched", () => {
+    const q = [p(0, 1), p(1, 2), p(0, 3)];
+    expect(reconcileQueue(q, 0, [1])).toEqual([p(0, 1), p(1, 2)]); // p(0,3) pruned; p(1,2) kept
   });
 
   it("returns the same reference when nothing is pruned", () => {
-    const q = [1, 2];
-    expect(reconcileQueue(q, [1, 2, 5])).toBe(q);
+    const q = [p(0, 1), p(0, 2)];
+    expect(reconcileQueue(q, 0, [1, 2])).toBe(q);
   });
 
-  it("empties when nothing is waiting", () => {
-    expect(reconcileQueue([1, 2], [])).toEqual([]);
+  it("empties when nothing on the active tab is waiting", () => {
+    expect(reconcileQueue([p(0, 1), p(0, 2)], 0, [])).toEqual([]);
   });
 });

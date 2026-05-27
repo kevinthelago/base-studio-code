@@ -6,7 +6,7 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
-import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue } from "../lib/focusQueue";
+import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
 import { projectRepoCwd } from "../lib/projectPaths";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
@@ -86,16 +86,18 @@ interface AppStore {
   fullscreenPaneIdx: number; // transient — NOT persisted
   consoleBroadcast: boolean; // transient — NOT persisted
   setConsoleBroadcast: (v: boolean) => void;
-  // Focus queue (transient — NOT persisted): active-tab pane indices that
-  // finished a turn and await attention, FIFO. Stepped through with Ctrl+Shift+N
-  // (advanceFocus); cleared on tab change since indices are tab-relative.
-  focusQueue: number[];
-  enqueueFocus: (idx: number, skip?: number) => void;
-  removeFocus: (idx: number) => void;
+  // Focus queue (transient — NOT persisted): panes (across all tabs) that finished
+  // a turn and await attention, FIFO. Stepped through with Ctrl+Shift+N
+  // (advanceFocus), which switches tabs when the next pane lives on another tab.
+  // Persists across tab switches; enqueue/remove/reconcile target the active tab.
+  focusQueue: QueuedPane[];
+  enqueueFocus: (pane: number) => void;
+  removeFocus: (pane: number) => void;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
-  // Prune the queue to just the still-idle panes (passed in). A session stays
-  // queued only while idle; this sweep self-heals any desync.
+  // Prune the active tab's queued panes to just the still-idle ones (passed in).
+  // A session stays queued only while idle; this sweep self-heals any desync.
+  // Other tabs' entries are left untouched (their live status isn't tracked here).
   reconcileFocusQueue: (waiting: number[]) => void;
   // Global terminal font size (px), shared by every console pane (persisted).
   // Adjusted via Ctrl++ / Ctrl+- / Ctrl+0; clamped to the legible range.
@@ -323,25 +325,36 @@ export const useAppStore = create<AppStore>()(
       consoleBroadcast: false,
       setConsoleBroadcast: (v) => set({ consoleBroadcast: v }),
       focusQueue: [],
-      enqueueFocus: (idx, skip = -1) =>
-        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, idx, skip) })),
-      removeFocus: (idx) =>
-        set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, idx) })),
+      enqueueFocus: (pane) =>
+        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, { tab: s.activeTabIdx, pane }) })),
+      removeFocus: (pane) =>
+        set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, { tab: s.activeTabIdx, pane }) })),
       clearFocusQueue: () => set({ focusQueue: [] }),
       reconcileFocusQueue: (waiting) =>
-        set((s) => ({ focusQueue: reconcileQueue(s.focusQueue, waiting) })),
+        set((s) => ({ focusQueue: reconcileQueue(s.focusQueue, s.activeTabIdx, waiting) })),
       // Cycle to the next waiting pane relative to the one you're on (maximized
-      // pane if maximized, else focused). Focuses it — and swaps the maximized
-      // pane to it so you stay full-screen. Does NOT dequeue: a pane leaves the
-      // queue only when you respond to it (see Console.handleStatusChange).
+      // pane if maximized, else focused). Focuses it — switching to its tab first
+      // when it lives on another tab — and swaps the maximized pane to it so you
+      // stay full-screen. Does NOT dequeue: a pane leaves the queue only when you
+      // respond to it (see Console.handleStatusChange).
       advanceFocus: () =>
         set((s) => {
-          const active = s.fullscreenPaneIdx >= 0 ? s.fullscreenPaneIdx : s.focusedPaneIdx;
-          const next = nextInCycle(s.focusQueue, active);
+          const pane = s.fullscreenPaneIdx >= 0 ? s.fullscreenPaneIdx : s.focusedPaneIdx;
+          const next = nextInCycle(s.focusQueue, { tab: s.activeTabIdx, pane });
           if (next === null) return {};
-          return s.fullscreenPaneIdx >= 0
-            ? { focusedPaneIdx: next, fullscreenPaneIdx: next }
-            : { focusedPaneIdx: next };
+          const maximized = s.fullscreenPaneIdx >= 0;
+          if (next.tab !== s.activeTabIdx) {
+            // Hop to the tab holding the waiting console, focusing (and re-maximizing) it.
+            return {
+              activeTabIdx: next.tab,
+              focusedPaneIdx: next.pane,
+              fullscreenPaneIdx: maximized ? next.pane : -1,
+              paneMenuOpenIdx: -1,
+            };
+          }
+          return maximized
+            ? { focusedPaneIdx: next.pane, fullscreenPaneIdx: next.pane }
+            : { focusedPaneIdx: next.pane };
         }),
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       setTerminalFontSize: (size) => set({ terminalFontSize: clampFontSize(size) }),
@@ -368,8 +381,10 @@ export const useAppStore = create<AppStore>()(
         }),
       // Switching tabs clears focus/fullscreen/menu — these are positional and
       // global, so a stale index from the previous tab would mis-target features
-      // like broadcast (excluding a console that isn't actually focused).
-      setActiveTab: (idx) => set({ activeTabIdx: idx, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: -1, focusQueue: [] }),
+      // like broadcast (excluding a console that isn't actually focused). The focus
+      // queue is NOT cleared: it spans tabs now, so waiting consoles left behind on
+      // this tab stay reachable via Ctrl+Shift+N (which hops back to them).
+      setActiveTab: (idx) => set({ activeTabIdx: idx, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: -1 }),
       addTab: (tab) =>
         set((s) => ({
           tabs: [...s.tabs, tab],
@@ -377,7 +392,6 @@ export const useAppStore = create<AppStore>()(
           focusedPaneIdx: -1,
           fullscreenPaneIdx: -1,
           paneMenuOpenIdx: -1,
-          focusQueue: [],
         })),
       closeTab: (idx) =>
         set((s) => {
