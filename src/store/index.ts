@@ -166,6 +166,7 @@ interface AppStore {
   setActiveRepo: (name: string) => void;
   setGithubConnected: (connected: boolean) => void;
   disconnectGithub: () => void;
+  markGithubTokenInvalid: () => void;
 
   // Automations
   automationsTab: "schedules" | "commands" | "history";
@@ -481,6 +482,10 @@ export const useAppStore = create<AppStore>()(
         githubRepos: [],
         activeRepoName: "",
       }),
+      // A request returned 401 (the stored token expired/was revoked). Flip to
+      // disconnected so the UI prompts a reconnect instead of silently 401-looping;
+      // the cached user/repos stay for context until the user reconnects.
+      markGithubTokenInvalid: () => set((s) => (s.githubConnected ? { githubConnected: false } : {})),
 
       automationsTab: "schedules",
       setAutomationsTab: (tab) => set({ automationsTab: tab }),

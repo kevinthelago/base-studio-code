@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
+import { githubRequest } from "../../lib/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "./burndown";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -144,10 +145,7 @@ function useProjectsSummaryData() {
       variables: null,
     }).then(d => d?.viewer?.projectsV2?.nodes ?? []).catch((): GhProject[] => []);
 
-    const eventsP = invoke<GHEvent[]>("github_request", {
-      token: githubToken,
-      path: `users/${login}/events?per_page=100`,
-    }).catch((): GHEvent[] => []);
+    const eventsP = githubRequest<GHEvent[]>(`users/${login}/events?per_page=100`).catch((): GHEvent[] => []);
 
     Promise.all([projectsP, eventsP]).then(([projs, evts]) => {
       const projArr = Array.isArray(projs) ? projs : [];
@@ -180,14 +178,12 @@ function useProjectsSummaryData() {
       const eightWeeksAgo = new Date(Date.now() - 56 * 86400000).toISOString();
 
       Promise.all(slugs.map(slug => Promise.all([
-        invoke<GhMilestone[]>("github_request", {
-          token: githubToken,
-          path: `repos/${slug}/milestones?state=open&sort=due_on&direction=asc&per_page=10`,
-        }).catch((): GhMilestone[] => []),
-        invoke<GhIssue[]>("github_request", {
-          token: githubToken,
-          path: `repos/${slug}/issues?state=all&per_page=100&sort=created&direction=desc&since=${eightWeeksAgo}`,
-        }).catch((): GhIssue[] => []),
+        githubRequest<GhMilestone[]>(
+          `repos/${slug}/milestones?state=open&sort=due_on&direction=asc&per_page=10`,
+        ).catch((): GhMilestone[] => []),
+        githubRequest<GhIssue[]>(
+          `repos/${slug}/issues?state=all&per_page=100&sort=created&direction=desc&since=${eightWeeksAgo}`,
+        ).catch((): GhIssue[] => []),
       ]))).then(results => {
         const ms: Record<string, GhMilestone[]> = {};
         const is: Record<string, GhIssue[]> = {};
