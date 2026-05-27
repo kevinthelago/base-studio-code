@@ -6,9 +6,10 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
-import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue } from "../lib/focusQueue";
+import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
-import { projectRepoCwd } from "../lib/projectPaths";
+import { projectRepoCwd, sanitizeProjectKey } from "../lib/projectPaths";
+import { checkpointDocRelpath } from "../lib/checkpoint";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 
 // Sent as the first message to each console when a project tab is opened, so the
@@ -34,7 +35,11 @@ export const TRIAGE_PROMPT =
   "Apply the matching priority label with gh issue edit <number> --add-label P0|P1|P2|P3 " +
   "(create the label first with gh label create if it does not exist). Finally, flag any " +
   "P3 issue with no activity in the last 90 days as stale by adding a stale label, and " +
-  "summarize the triage results grouped by priority when done.";
+  "summarize the triage results grouped by priority when done. " +
+  "When you finish this pass, save where you left off for next time: pipe a short " +
+  "plain-text summary (what you completed, what is in progress, and the single next " +
+  "step to take) into the bsc-checkpoint command on stdin. The next triage pass for " +
+  "this repo will begin with that summary.";
 
 export interface GithubUser {
   login: string;
@@ -86,16 +91,18 @@ interface AppStore {
   fullscreenPaneIdx: number; // transient — NOT persisted
   consoleBroadcast: boolean; // transient — NOT persisted
   setConsoleBroadcast: (v: boolean) => void;
-  // Focus queue (transient — NOT persisted): active-tab pane indices that
-  // finished a turn and await attention, FIFO. Stepped through with Ctrl+Shift+N
-  // (advanceFocus); cleared on tab change since indices are tab-relative.
-  focusQueue: number[];
-  enqueueFocus: (idx: number, skip?: number) => void;
-  removeFocus: (idx: number) => void;
+  // Focus queue (transient — NOT persisted): panes (across all tabs) that finished
+  // a turn and await attention, FIFO. Stepped through with Ctrl+Shift+N
+  // (advanceFocus), which switches tabs when the next pane lives on another tab.
+  // Persists across tab switches; enqueue/remove/reconcile target the active tab.
+  focusQueue: QueuedPane[];
+  enqueueFocus: (pane: number) => void;
+  removeFocus: (pane: number) => void;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
-  // Prune the queue to just the still-idle panes (passed in). A session stays
-  // queued only while idle; this sweep self-heals any desync.
+  // Prune the active tab's queued panes to just the still-idle ones (passed in).
+  // A session stays queued only while idle; this sweep self-heals any desync.
+  // Other tabs' entries are left untouched (their live status isn't tracked here).
   reconcileFocusQueue: (waiting: number[]) => void;
   // Global terminal font size (px), shared by every console pane (persisted).
   // Adjusted via Ctrl++ / Ctrl+- / Ctrl+0; clamped to the legible range.
@@ -116,15 +123,15 @@ interface AppStore {
   // exact text is sent to the session once Claude reaches its prompt. Used by
   // triage panes (see TRIAGE_PROMPT).
   paneStartupPromptText: Record<string, string>;
+  // paneId → unified-store relpath of the triage CHECKPOINT doc (transient — NOT
+  // persisted). The session overwrites it via the `bsc-checkpoint` shell helper;
+  // TerminalView composes its content onto the next triage launch's prompt so the
+  // pass resumes where it left off. Set for triage panes (see triageStartProject).
+  paneCheckpointDocs: Record<string, string>;
   // Per-pane flag (transient — NOT persisted): launch claude with --continue to
   // resume the repo's prior conversation rather than starting fresh. Set for
   // triage panes (see triageStartProject); read by TerminalView.
   paneContinue: Record<string, boolean>;
-  // Epoch ms when each tab's sessions launched (transient — NOT persisted), so
-  // auto-focus can be suppressed during a grid's cold-start window.
-  tabStartedAt: Record<number, number>;
-  paneGitInfo: Record<string, { repo: string; branch: string; dirty: boolean } | null>;
-  setPaneGitInfo: (paneId: string, info: { repo: string; branch: string; dirty: boolean } | null) => void;
   // Disabled panes (keyed by "t{tabIdx}p{paneIdx}") — terminal unmounted + PTY killed.
   disabledPanes: Record<string, boolean>;
   setPaneDisabled: (paneId: string, disabled: boolean) => void;
@@ -253,7 +260,6 @@ interface AppStore {
   setBscBaseDir: (dir: string) => void;
   projectLocalRepos: Record<string, string[]>;
   addProjectRepo: (projectId: string, fullName: string) => void;
-  quickStartProject: (projectName: string, repos: string[], projectId?: string) => void;
   triageStartProject: (projectName: string, repos: string[], projectId?: string) => void;
   findTriageTabIdx: (projectName: string) => number;
 
@@ -306,8 +312,6 @@ interface AppStore {
   setDeniedCommands: (commands: string[]) => void;
 
   // Console behavior
-  autoFocusOnInterrupt: boolean;
-  setAutoFocusOnInterrupt: (v: boolean) => void;
   // When a response is sent to the active console, cycle focus to the next pane
   // waiting in the focus queue (persisted; configured in Settings → Integrations).
   autoAdvanceOnReply: boolean;
@@ -328,25 +332,36 @@ export const useAppStore = create<AppStore>()(
       consoleBroadcast: false,
       setConsoleBroadcast: (v) => set({ consoleBroadcast: v }),
       focusQueue: [],
-      enqueueFocus: (idx, skip = -1) =>
-        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, idx, skip) })),
-      removeFocus: (idx) =>
-        set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, idx) })),
+      enqueueFocus: (pane) =>
+        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, { tab: s.activeTabIdx, pane }) })),
+      removeFocus: (pane) =>
+        set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, { tab: s.activeTabIdx, pane }) })),
       clearFocusQueue: () => set({ focusQueue: [] }),
       reconcileFocusQueue: (waiting) =>
-        set((s) => ({ focusQueue: reconcileQueue(s.focusQueue, waiting) })),
+        set((s) => ({ focusQueue: reconcileQueue(s.focusQueue, s.activeTabIdx, waiting) })),
       // Cycle to the next waiting pane relative to the one you're on (maximized
-      // pane if maximized, else focused). Focuses it — and swaps the maximized
-      // pane to it so you stay full-screen. Does NOT dequeue: a pane leaves the
-      // queue only when you respond to it (see Console.handleStatusChange).
+      // pane if maximized, else focused). Focuses it — switching to its tab first
+      // when it lives on another tab — and swaps the maximized pane to it so you
+      // stay full-screen. Does NOT dequeue: a pane leaves the queue only when you
+      // respond to it (see Console.handleStatusChange).
       advanceFocus: () =>
         set((s) => {
-          const active = s.fullscreenPaneIdx >= 0 ? s.fullscreenPaneIdx : s.focusedPaneIdx;
-          const next = nextInCycle(s.focusQueue, active);
+          const pane = s.fullscreenPaneIdx >= 0 ? s.fullscreenPaneIdx : s.focusedPaneIdx;
+          const next = nextInCycle(s.focusQueue, { tab: s.activeTabIdx, pane });
           if (next === null) return {};
-          return s.fullscreenPaneIdx >= 0
-            ? { focusedPaneIdx: next, fullscreenPaneIdx: next }
-            : { focusedPaneIdx: next };
+          const maximized = s.fullscreenPaneIdx >= 0;
+          if (next.tab !== s.activeTabIdx) {
+            // Hop to the tab holding the waiting console, focusing (and re-maximizing) it.
+            return {
+              activeTabIdx: next.tab,
+              focusedPaneIdx: next.pane,
+              fullscreenPaneIdx: maximized ? next.pane : -1,
+              paneMenuOpenIdx: -1,
+            };
+          }
+          return maximized
+            ? { focusedPaneIdx: next.pane, fullscreenPaneIdx: next.pane }
+            : { focusedPaneIdx: next.pane };
         }),
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       setTerminalFontSize: (size) => set({ terminalFontSize: clampFontSize(size) }),
@@ -359,12 +374,9 @@ export const useAppStore = create<AppStore>()(
       setPaneInitCmd: (paneId, cmd) =>
         set((s) => ({ paneInitCmds: { ...s.paneInitCmds, [paneId]: cmd } })),
       paneStartupPromptDocs: {},
+      paneCheckpointDocs: {},
       paneStartupPromptText: {},
       paneContinue: {},
-      tabStartedAt: {},
-      paneGitInfo: {},
-      setPaneGitInfo: (paneId, info) =>
-        set((s) => ({ paneGitInfo: { ...s.paneGitInfo, [paneId]: info } })),
       disabledPanes: {},
       setPaneDisabled: (paneId, disabled) =>
         set((s) => {
@@ -374,8 +386,10 @@ export const useAppStore = create<AppStore>()(
         }),
       // Switching tabs clears focus/fullscreen/menu — these are positional and
       // global, so a stale index from the previous tab would mis-target features
-      // like broadcast (excluding a console that isn't actually focused).
-      setActiveTab: (idx) => set({ activeTabIdx: idx, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: -1, focusQueue: [] }),
+      // like broadcast (excluding a console that isn't actually focused). The focus
+      // queue is NOT cleared: it spans tabs now, so waiting consoles left behind on
+      // this tab stay reachable via Ctrl+Shift+N (which hops back to them).
+      setActiveTab: (idx) => set({ activeTabIdx: idx, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: -1 }),
       addTab: (tab) =>
         set((s) => ({
           tabs: [...s.tabs, tab],
@@ -383,7 +397,6 @@ export const useAppStore = create<AppStore>()(
           focusedPaneIdx: -1,
           fullscreenPaneIdx: -1,
           paneMenuOpenIdx: -1,
-          focusQueue: [],
         })),
       closeTab: (idx) =>
         set((s) => {
@@ -417,20 +430,17 @@ export const useAppStore = create<AppStore>()(
           (Object.keys(tabPaneNames) as unknown as number[]).forEach((k) => {
             if (Number(k) >= newCount) delete tabPaneNames[Number(k)];
           });
-          // Trim cwds and git info keyed by "t{tabIdx}p{n}"
+          // Trim cwds keyed by "t{tabIdx}p{n}"
           const paneCwds = { ...s.paneCwds };
-          const paneGitInfo = { ...s.paneGitInfo };
           const isExcess = (key: string) => {
             const m = key.match(/^t(\d+)p(\d+)$/);
             return m && Number(m[1]) === tabIdx && Number(m[2]) >= newCount;
           };
           Object.keys(paneCwds).forEach((key) => { if (isExcess(key)) delete paneCwds[key]; });
-          Object.keys(paneGitInfo).forEach((key) => { if (isExcess(key)) delete paneGitInfo[key]; });
           return {
             tabs,
             paneNames: { ...s.paneNames, [tabIdx]: tabPaneNames },
             paneCwds,
-            paneGitInfo,
           };
         }),
       setPaneMenu:       (idx) => set({ paneMenuOpenIdx: idx }),
@@ -622,81 +632,21 @@ export const useAppStore = create<AppStore>()(
           if (existing.includes(fullName)) return {};
           return { projectLocalRepos: { ...s.projectLocalRepos, [projectId]: [...existing, fullName] } };
         }),
-      quickStartProject: (projectName, repos, projectId = "") =>
-        set((s) => {
-          if (repos.length === 0) return { activeScreen: "console" as Screen };
-          const newTabIdx = s.tabs.length;
-          const count = Math.min(repos.length, 4);
-          const layout = count <= 1 ? "1×1" : count === 2 ? "2×1" : "2×2";
-          const [cols, rows] = layout.split("×").map(Number);
-          const paneCount = cols * rows;
-          const newPaneCwds      = { ...s.paneCwds };
-          const newPaneInitCmds  = { ...s.paneInitCmds };
-          const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
-          const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
-          const newDisabledPanes = { ...s.disabledPanes };
-          const tabPaneNames: Record<number, string> = {};
-          const assignments = {
-            defaultStartupPromptDoc: s.defaultStartupPromptDoc,
-            projectStartupPromptDoc: s.projectStartupPromptDoc,
-            repoStartupPromptDoc:    s.repoStartupPromptDoc,
-          };
-          for (let i = 0; i < paneCount; i++) {
-            const pid = `t${newTabIdx}p${i}`;
-            if (i < count) {
-              const fullName = repos[i];
-              newPaneCwds[pid] = projectRepoCwd(s.bscBaseDir, projectName, fullName);
-              tabPaneNames[i] = fullName.split("/")[1] ?? fullName;
-              // claude launches with the resolved startup prompt baked in by the
-              // backend (reliable: claude submits it itself). The doc assignment
-              // is "" = the built-in plan prompt, or a relpath to a per-repo /
-              // project kickoff script. initCmd just marks this a claude pane so
-              // the launch gate engages.
-              newPaneInitCmds[pid] = "claude";
-              newPaneStartupPromptDocs[pid] = resolveStartupPromptDoc(assignments, projectId, fullName) ?? "";
-              newPaneAllowedCommands[pid] = resolveAllowedCommands(
-                s.allowedCommands,
-                s.projectAllowedCommands[projectId],
-                s.repoAllowedCommands[repoPromptKey(projectId, fullName)],
-              );
-              delete newDisabledPanes[pid];
-            } else {
-              // Empty grid cell (e.g. 3 repos in a 2×2) — start it disabled so it
-              // doesn't spawn an idle shell or add rendering load.
-              newDisabledPanes[pid] = true;
-            }
-          }
-          const newTab: Tab = { name: projectName, layout, state: "idle" };
-          return {
-            tabs: [...s.tabs, newTab],
-            activeTabIdx: newTabIdx,
-            focusedPaneIdx: -1,
-            fullscreenPaneIdx: -1,
-            paneMenuOpenIdx: -1,
-            paneCwds: newPaneCwds,
-            paneInitCmds: newPaneInitCmds,
-            paneStartupPromptDocs: newPaneStartupPromptDocs,
-            paneAllowedCommands: newPaneAllowedCommands,
-            tabStartedAt: { ...s.tabStartedAt, [newTabIdx]: Date.now() },
-            disabledPanes: newDisabledPanes,
-            paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
-            activeScreen: "console" as Screen,
-          };
-        }),
       findTriageTabIdx: (projectName) => {
         const tabName = `${projectName} · triage`;
         return get().tabs.findIndex((t) => t.name === tabName);
       },
       triageStartProject: (projectName, repos, projectId = "") =>
         set((s) => {
-          // If a triage tab for this project already exists, switch to it.
+          // A triage tab for this project may already exist (re-run): rebuild it in
+          // place at the same index. The caller kills the old panes' sessions first
+          // and the bumped runId remounts them, so pty_create launches fresh
+          // (resuming via --continue + the checkpoint) instead of reconnecting.
           const tabName = `${projectName} · triage`;
           const existingIdx = s.tabs.findIndex((t) => t.name === tabName);
-          if (existingIdx >= 0) {
-            return { activeTabIdx: existingIdx, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: -1, activeScreen: "console" as Screen };
-          }
           if (repos.length === 0) return {};
-          const newTabIdx = s.tabs.length;
+          const newTabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
+          const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
           const count = Math.min(repos.length, 16);
           const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
           const rows = Math.ceil(count / cols);
@@ -705,8 +655,12 @@ export const useAppStore = create<AppStore>()(
           const newPaneInitCmds = { ...s.paneInitCmds };
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
+          const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
+          // Checkpoint docs live beside the repo clones, under the project-name
+          // key (always present; projectId defaults to "" for ad-hoc triage).
+          const projKey = sanitizeProjectKey(projectName);
           const newDisabledPanes = { ...s.disabledPanes };
           const tabPaneNames: Record<number, string> = {};
           const paneCount = cols * rows;
@@ -745,6 +699,10 @@ export const useAppStore = create<AppStore>()(
               // Triage resumes the repo's prior conversation (claude --continue)
               // so each pass builds on the last instead of starting cold.
               newPaneContinue[key] = true;
+              // Per-repo checkpoint doc: the session writes "where we left off" to
+              // it via bsc-checkpoint; the next triage launch composes it onto the
+              // prompt. Stable per (project, repo) so successive passes accumulate.
+              newPaneCheckpointDocs[key] = checkpointDocRelpath(projKey, fullName ?? "");
               delete newDisabledPanes[key];
             } else {
               // Empty grid cell (more cells than repos) — start it disabled so it
@@ -752,9 +710,11 @@ export const useAppStore = create<AppStore>()(
               newDisabledPanes[key] = true;
             }
           }
-          const newTab: Tab = { name: `${projectName} · triage`, layout, state: "idle" };
+          const newTab: Tab = { name: `${projectName} · triage`, layout, state: "idle", runId };
           return {
-            tabs: [...s.tabs, newTab],
+            tabs: existingIdx >= 0
+              ? s.tabs.map((t, i) => (i === existingIdx ? newTab : t))
+              : [...s.tabs, newTab],
             activeTabIdx: newTabIdx,
             focusedPaneIdx: -1,
             fullscreenPaneIdx: -1,
@@ -763,9 +723,9 @@ export const useAppStore = create<AppStore>()(
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
+            paneCheckpointDocs: newPaneCheckpointDocs,
             paneContinue: newPaneContinue,
             paneAllowedCommands: newPaneAllowedCommands,
-            tabStartedAt: { ...s.tabStartedAt, [newTabIdx]: Date.now() },
             disabledPanes: newDisabledPanes,
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
             activeScreen: "console" as Screen,
@@ -893,8 +853,6 @@ export const useAppStore = create<AppStore>()(
         }),
       paneAllowedCommands: {},
 
-      autoFocusOnInterrupt: true,
-      setAutoFocusOnInterrupt: (v) => set({ autoFocusOnInterrupt: v }),
       autoAdvanceOnReply: true,
       setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v }),
     }),
@@ -927,7 +885,6 @@ export const useAppStore = create<AppStore>()(
         deniedCommands:       s.deniedCommands,
         projectAllowedCommands: s.projectAllowedCommands,
         repoAllowedCommands:    s.repoAllowedCommands,
-        autoFocusOnInterrupt: s.autoFocusOnInterrupt,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         projectLocalRepos:    s.projectLocalRepos,
         hiddenProjectIds:     s.hiddenProjectIds,

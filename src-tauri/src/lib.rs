@@ -175,6 +175,33 @@ fn claude_launch(prompt: &str, continue_session: bool) -> String {
     format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
 }
 
+/// Claude Code's on-disk directory name for a launch cwd. Conversations live at
+/// `~/.claude/projects/<dir>/<session>.jsonl`, where `<dir>` is the cwd with every
+/// non-alphanumeric character replaced by `-`
+/// (e.g. `C:\Users\Kevin\foo` → `C--Users-Kevin-foo`).
+fn claude_project_dir_name(cwd: &str) -> String {
+    cwd.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
+}
+
+/// Whether Claude has a prior conversation for `cwd`. `--continue` aborts with
+/// "No conversation found to continue" (and never delivers the baked startup
+/// prompt) when there's no history, so we only pass the flag when this is true.
+/// Fail-safe: any uncertainty (empty cwd, unreadable dir) returns `false`, which
+/// launches a fresh session so the prompt is always delivered.
+fn has_claude_history(cwd: &str) -> bool {
+    if cwd.is_empty() {
+        return false;
+    }
+    let dir = home_dir()
+        .join(".claude")
+        .join("projects")
+        .join(claude_project_dir_name(cwd));
+    let Ok(entries) = std::fs::read_dir(&dir) else { return false };
+    entries
+        .flatten()
+        .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
+}
+
 /// Resolve the shell to spawn for a session. The injected bash helpers
 /// (OSC7/OSC100, the `claude()` wrapper, `PROMPT_COMMAND`) need a real bash.
 ///
@@ -277,6 +304,7 @@ async fn pty_create(
     env: Option<std::collections::HashMap<String, String>>,
     startup_prompt: Option<String>,
     continue_session: Option<bool>,
+    checkpoint_doc: Option<String>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -316,6 +344,13 @@ async fn pty_create(
     for (k, v) in session_env(&env_map) {
         cmd.env(k, v);
     }
+    // Expose the triage checkpoint doc (resolved to an absolute, bash-style path)
+    // so the injected `bsc-checkpoint` helper can write "where we left off" to it.
+    let checkpoint_rel = checkpoint_doc.as_deref().filter(|s| !s.is_empty());
+    if let Some(rel) = checkpoint_rel {
+        let abs = bsc_base_dir().join(rel);
+        cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
+    }
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
@@ -335,8 +370,14 @@ async fn pty_create(
     // quoting keeps arbitrary content (newlines, quotes, $, backticks) on a single
     // safe line and overrides any claude launch in init_cmd. With no prompt,
     // init_cmd runs as-is.
+    // Only resume with `--continue` when Claude actually has a prior conversation
+    // for this cwd; otherwise the CLI aborts ("No conversation found to continue")
+    // and the baked startup prompt is dropped — so a fresh project would launch
+    // into nothing. When there's no history we fall back to a fresh session, which
+    // still delivers the prompt.
+    let resume = continue_session.unwrap_or(false) && has_claude_history(&cwd);
     let launch = match startup_prompt.as_deref().filter(|s| !s.is_empty()) {
-        Some(p) => Some(claude_launch(p, continue_session.unwrap_or(false))),
+        Some(p) => Some(claude_launch(p, resume)),
         None => init_cmd.as_deref().filter(|s| !s.is_empty()).map(|s| s.to_string()),
     };
     let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
@@ -347,10 +388,19 @@ async fn pty_create(
     } else {
         String::new()
     };
+    // `bsc-checkpoint`: triage sessions pipe a short "where we left off" note to it;
+    // it overwrites the per-repo checkpoint doc that the next launch composes onto
+    // the prompt. Only defined when a checkpoint doc was provided (BSC_CHECKPOINT_DOC).
+    let checkpoint_fn = if checkpoint_rel.is_some() {
+        "bsc-checkpoint() { mkdir -p \"$(dirname \"$BSC_CHECKPOINT_DOC\")\" 2>/dev/null; cat > \"$BSC_CHECKPOINT_DOC\"; }; "
+    } else {
+        ""
+    };
     let osc7 = format!(
         "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
          __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
          claude() {{ __bsc_state run; command claude \"$@\"; }}; \
+         {checkpoint_fn}\
          PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
          __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
     );
@@ -520,49 +570,6 @@ async fn pty_kill(pane_id: String, state: State<'_, PtyState>) -> Result<(), Str
     let existed = state.0.lock().unwrap().remove(&pane_id).is_some();
     log::info!("pty[{pane_id}] kill (existed={existed})");
     Ok(())
-}
-
-// ── Git info ──────────────────────────────────────────────────────────────────
-
-#[derive(serde::Serialize, Clone)]
-struct GitInfo {
-    repo: String,
-    branch: String,
-    dirty: bool,
-}
-
-#[tauri::command]
-async fn git_info(path: String) -> Option<GitInfo> {
-    let _perf = PerfSpan::new("git_info");
-    let root_out = std::process::Command::new("git")
-        .args(["-C", &path, "rev-parse", "--show-toplevel"])
-        .output()
-        .ok()?;
-    if !root_out.status.success() {
-        return None;
-    }
-    let root_str = std::str::from_utf8(&root_out.stdout).ok()?.trim();
-    let repo = std::path::Path::new(root_str)
-        .file_name()?
-        .to_string_lossy()
-        .into_owned();
-
-    let branch_out = std::process::Command::new("git")
-        .args(["-C", &path, "rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()?;
-    let branch = std::str::from_utf8(&branch_out.stdout)
-        .ok()?
-        .trim()
-        .to_string();
-
-    let status_out = std::process::Command::new("git")
-        .args(["-C", &path, "status", "--porcelain"])
-        .output()
-        .ok()?;
-    let dirty = !status_out.stdout.is_empty();
-
-    Some(GitInfo { repo, branch, dirty })
 }
 
 // ── File picker ───────────────────────────────────────────────────────────────
@@ -2320,7 +2327,6 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pick_directory,
-            git_info,
             setup_workspaces,
             setup_kb_workspace,
             clone_repo,
@@ -2361,7 +2367,7 @@ mod tests {
         assert_eq!(stripped, "/c/Users/Kevin/project");
     }
 
-    use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch};
+    use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch, claude_project_dir_name};
     use super::session_env;
     use std::collections::HashMap;
 
@@ -2401,6 +2407,20 @@ mod tests {
     fn claude_launch_adds_continue_flag() {
         // Triage resumes the repo's prior conversation instead of starting fresh.
         assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
+    }
+
+    #[test]
+    fn claude_project_dir_name_replaces_non_alnum_with_dash() {
+        // Matches the dir Claude Code creates under ~/.claude/projects.
+        assert_eq!(
+            claude_project_dir_name(r"C:\Users\Kevin\Projects\rust\base-studio-code"),
+            "C--Users-Kevin-Projects-rust-base-studio-code"
+        );
+        // Consecutive specials (\ then .) each map to their own dash.
+        assert_eq!(
+            claude_project_dir_name(r"C:\Users\Kevin\.base-studio-code\documents"),
+            "C--Users-Kevin--base-studio-code-documents"
+        );
     }
 
     #[cfg(windows)]
@@ -2639,6 +2659,7 @@ mod tests {
     // ── Document store ──────────────────────────────────────────────────────
 
     use super::{collect_documents, parse_frontmatter, read_document, write_document, bsc_base_dir};
+    use super::has_claude_history;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex as StdMutex;
 
@@ -2679,6 +2700,29 @@ mod tests {
         let (title, tags) = parse_frontmatter("# Just a heading\n\nno frontmatter");
         assert!(title.is_empty());
         assert!(tags.is_empty());
+    }
+
+    #[test]
+    fn has_claude_history_detects_jsonl_in_project_dir() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let home = temp_home("history");
+        let cwd = r"C:\Users\Kevin\Projects\demo";
+        let proj = home.join(".claude").join("projects").join(claude_project_dir_name(cwd));
+
+        // No project dir yet → fresh launch.
+        assert!(!has_claude_history(cwd));
+
+        // Dir exists but holds no conversation → still fresh.
+        std::fs::create_dir_all(&proj).unwrap();
+        write_file(&proj.join("config.json"), "{}");
+        assert!(!has_claude_history(cwd));
+
+        // A conversation transcript is present → resume is safe.
+        write_file(&proj.join("abc-123.jsonl"), "{}\n");
+        assert!(has_claude_history(cwd));
+
+        // Empty cwd is never resumable.
+        assert!(!has_claude_history(""));
     }
 
     #[test]

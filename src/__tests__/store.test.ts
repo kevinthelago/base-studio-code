@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore, TRIAGE_PROMPT } from "../store";
 import type { ViewKey } from "../components/pane/ViewTabs";
+import type { QueuedPane } from "../lib/focusQueue";
 
 const RESET_STATE = {
   tabs: [
@@ -12,12 +13,11 @@ const RESET_STATE = {
   paneMenuOpenIdx: -1,
   focusedPaneIdx: -1,
   fullscreenPaneIdx: -1,
-  focusQueue: [] as number[],
+  focusQueue: [] as QueuedPane[],
   paneViews: [] as ViewKey[],
   paneNames: {} as Record<number, Record<number, string>>,
   paneCwds: {} as Record<string, string>,
   paneInitCmds: {} as Record<string, string>,
-  paneGitInfo: {} as Record<string, { repo: string; branch: string; dirty: boolean } | null>,
   disabledPanes: {} as Record<string, boolean>,
   kbBlocks: [],
   schedules: [],
@@ -27,7 +27,6 @@ const RESET_STATE = {
   projectAllowedCommands: {} as Record<string, string[]>,
   repoAllowedCommands: {} as Record<string, string[]>,
   paneAllowedCommands: {} as Record<string, string[]>,
-  autoFocusOnInterrupt: true,
   autoAdvanceOnReply: true,
   terminalFontSize: 12,
   focusedAgentName: "",
@@ -51,9 +50,9 @@ const RESET_STATE = {
   configProfiles: [] as import("../store").ConfigProfile[],
   paneStartupPromptDocs: {} as Record<string, string>,
   paneStartupPromptText: {} as Record<string, string>,
+  paneCheckpointDocs: {} as Record<string, string>,
   paneContinue: {} as Record<string, boolean>,
   bscBaseDir: "",
-  tabStartedAt: {} as Record<number, number>,
   defaultStartupPromptDoc: null as string | null,
   projectStartupPromptDoc: {} as Record<string, string | null>,
   repoStartupPromptDoc: {} as Record<string, string | null>,
@@ -88,45 +87,60 @@ describe("terminal font zoom", () => {
 // ── Focus queue ─────────────────────────────────────────────────────────────────
 
 describe("focus queue", () => {
-  it("enqueueFocus appends (deduped) and skips the excluded pane", () => {
+  it("enqueueFocus appends (deduped) waiting panes on the active tab", () => {
     const s = useAppStore.getState();
     s.enqueueFocus(2);
     s.enqueueFocus(2);            // dup ignored
-    s.enqueueFocus(3, 3);         // skipped (the one you're on)
     s.enqueueFocus(4);
-    expect(useAppStore.getState().focusQueue).toEqual([2, 4]);
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 2 }, { tab: 0, pane: 4 }]);
   });
 
-  it("removeFocus drops a pane from the queue", () => {
-    useAppStore.setState({ focusQueue: [1, 2, 3] });
+  it("removeFocus drops a pane from the active tab's queue", () => {
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 }] });
     useAppStore.getState().removeFocus(2);
-    expect(useAppStore.getState().focusQueue).toEqual([1, 3]);
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 3 }]);
   });
 
   it("advanceFocus cycles to the next waiting pane WITHOUT dequeuing", () => {
-    useAppStore.setState({ focusQueue: [5, 6, 7], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
     useAppStore.getState().advanceFocus();
     expect(useAppStore.getState().focusedPaneIdx).toBe(6);
-    expect(useAppStore.getState().focusQueue).toEqual([5, 6, 7]); // stays queued until you respond
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }]); // stays queued until you respond
     expect(useAppStore.getState().fullscreenPaneIdx).toBe(-1);
   });
 
   it("advanceFocus starts at the front when you're not on a queued pane", () => {
-    useAppStore.setState({ focusQueue: [5, 6], focusedPaneIdx: 0, fullscreenPaneIdx: -1 });
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }], focusedPaneIdx: 0, fullscreenPaneIdx: -1 });
     useAppStore.getState().advanceFocus();
     expect(useAppStore.getState().focusedPaneIdx).toBe(5);
   });
 
   it("advanceFocus swaps the maximized pane, relative to the maximized one", () => {
-    useAppStore.setState({ focusQueue: [5, 6, 7], focusedPaneIdx: 5, fullscreenPaneIdx: 5 });
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }], focusedPaneIdx: 5, fullscreenPaneIdx: 5 });
     useAppStore.getState().advanceFocus();
     expect(useAppStore.getState().focusedPaneIdx).toBe(6);
     expect(useAppStore.getState().fullscreenPaneIdx).toBe(6);
-    expect(useAppStore.getState().focusQueue).toEqual([5, 6, 7]); // not dequeued
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }]); // not dequeued
+  });
+
+  it("advanceFocus switches tabs when the next waiting pane is on another tab", () => {
+    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 5 }, { tab: 1, pane: 2 }], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
+    useAppStore.getState().advanceFocus();
+    expect(useAppStore.getState().activeTabIdx).toBe(1);
+    expect(useAppStore.getState().focusedPaneIdx).toBe(2);
+    expect(useAppStore.getState().fullscreenPaneIdx).toBe(-1);
+  });
+
+  it("advanceFocus carries maximize across a tab switch", () => {
+    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 5 }, { tab: 1, pane: 2 }], focusedPaneIdx: 5, fullscreenPaneIdx: 5 });
+    useAppStore.getState().advanceFocus();
+    expect(useAppStore.getState().activeTabIdx).toBe(1);
+    expect(useAppStore.getState().focusedPaneIdx).toBe(2);
+    expect(useAppStore.getState().fullscreenPaneIdx).toBe(2);
   });
 
   it("advanceFocus is a no-op when there's nowhere else to go", () => {
-    useAppStore.setState({ focusQueue: [5], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
     useAppStore.getState().advanceFocus();
     expect(useAppStore.getState().focusedPaneIdx).toBe(5); // only queued pane is current
     useAppStore.setState({ focusQueue: [], focusedPaneIdx: 2 });
@@ -134,10 +148,11 @@ describe("focus queue", () => {
     expect(useAppStore.getState().focusedPaneIdx).toBe(2);
   });
 
-  it("setActiveTab clears the queue (indices are tab-relative)", () => {
-    useAppStore.setState({ focusQueue: [1, 2] });
+  it("setActiveTab preserves the cross-tab queue", () => {
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }] });
     useAppStore.getState().setActiveTab(1);
-    expect(useAppStore.getState().focusQueue).toEqual([]);
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }]);
+    expect(useAppStore.getState().focusedPaneIdx).toBe(-1); // focus still resets
   });
 
   it("setAutoAdvanceOnReply toggles the setting", () => {
@@ -146,10 +161,16 @@ describe("focus queue", () => {
     expect(useAppStore.getState().autoAdvanceOnReply).toBe(false);
   });
 
-  it("reconcileFocusQueue prunes panes that are no longer waiting", () => {
-    useAppStore.setState({ focusQueue: [1, 2, 3] });
-    useAppStore.getState().reconcileFocusQueue([1, 3]); // 2 no longer idle
-    expect(useAppStore.getState().focusQueue).toEqual([1, 3]);
+  it("reconcileFocusQueue prunes the active tab's panes that are no longer waiting", () => {
+    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 }] });
+    useAppStore.getState().reconcileFocusQueue([1, 3]); // pane 2 no longer idle
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 3 }]);
+  });
+
+  it("reconcileFocusQueue leaves other tabs' entries untouched", () => {
+    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 1 }, { tab: 1, pane: 2 }] });
+    useAppStore.getState().reconcileFocusQueue([]); // nothing waiting on the active tab
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 1, pane: 2 }]);
   });
 });
 
@@ -285,18 +306,6 @@ describe("pane state", () => {
   it("setPaneCwd stores working directory by pane ID", () => {
     useAppStore.getState().setPaneCwd("t0p0", "/home/user/project");
     expect(useAppStore.getState().paneCwds["t0p0"]).toBe("/home/user/project");
-  });
-
-  it("setPaneGitInfo stores git metadata by pane ID", () => {
-    const info = { repo: "my-repo", branch: "main", dirty: true };
-    useAppStore.getState().setPaneGitInfo("t0p1", info);
-    expect(useAppStore.getState().paneGitInfo["t0p1"]).toEqual(info);
-  });
-
-  it("setPaneGitInfo accepts null to clear git context", () => {
-    useAppStore.getState().setPaneGitInfo("t0p0", { repo: "r", branch: "b", dirty: false });
-    useAppStore.getState().setPaneGitInfo("t0p0", null);
-    expect(useAppStore.getState().paneGitInfo["t0p0"]).toBeNull();
   });
 
   it("setPaneMenu tracks which pane has the menu open", () => {
@@ -470,12 +479,6 @@ describe("allowed commands", () => {
   it("addRepoAllowedCommand scopes to a project::repo key", () => {
     useAppStore.getState().addRepoAllowedCommand("P1", "acme/web", "npm");
     expect(useAppStore.getState().repoAllowedCommands["P1::acme/web"]).toEqual(["npm"]);
-  });
-
-  it("setAutoFocusOnInterrupt toggles the setting", () => {
-    expect(useAppStore.getState().autoFocusOnInterrupt).toBe(true);
-    useAppStore.getState().setAutoFocusOnInterrupt(false);
-    expect(useAppStore.getState().autoFocusOnInterrupt).toBe(false);
   });
 });
 
@@ -653,118 +656,6 @@ describe("repository resolution", () => {
   });
 });
 
-// ── Quick start ───────────────────────────────────────────────────────────────
-
-describe("quickStartProject", () => {
-  it("creates a new tab named after the project", () => {
-    useAppStore.getState().quickStartProject("my-project", ["acme/api"]);
-    const { tabs } = useAppStore.getState();
-    expect(tabs[tabs.length - 1].name).toBe("my-project");
-  });
-
-  it("switches activeScreen to console", () => {
-    useAppStore.getState().quickStartProject("p", ["acme/api"]);
-    expect(useAppStore.getState().activeScreen).toBe("console");
-  });
-
-  it("activates the new tab", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api"]);
-    expect(useAppStore.getState().activeTabIdx).toBe(before);
-  });
-
-  it("uses 1×1 layout for 1 repo", () => {
-    useAppStore.getState().quickStartProject("p", ["acme/api"]);
-    const { tabs, activeTabIdx } = useAppStore.getState();
-    expect(tabs[activeTabIdx].layout).toBe("1×1");
-  });
-
-  it("uses 2×1 layout for 2 repos", () => {
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
-    const { tabs, activeTabIdx } = useAppStore.getState();
-    expect(tabs[activeTabIdx].layout).toBe("2×1");
-  });
-
-  it("uses 2×2 layout for 3+ repos", () => {
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui", "acme/sdk"]);
-    const { tabs, activeTabIdx } = useAppStore.getState();
-    expect(tabs[activeTabIdx].layout).toBe("2×2");
-  });
-
-  it("disables the empty grid cell when 3 repos fill a 2×2", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui", "acme/sdk"]);
-    const { disabledPanes } = useAppStore.getState();
-    // 3 real panes enabled, the 4th cell starts disabled.
-    expect(disabledPanes[`t${before}p0`]).toBeUndefined();
-    expect(disabledPanes[`t${before}p2`]).toBeUndefined();
-    expect(disabledPanes[`t${before}p3`]).toBe(true);
-  });
-
-  it("disables no cells when repos exactly fill the grid", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui", "acme/sdk", "acme/cli"]);
-    const { disabledPanes } = useAppStore.getState();
-    for (let i = 0; i < 4; i++) expect(disabledPanes[`t${before}p${i}`]).toBeUndefined();
-  });
-
-  it("pre-seeds paneCwds with computed repo paths under projects/<key>", () => {
-    useAppStore.setState({ bscBaseDir: "/base" });
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
-    const { paneCwds } = useAppStore.getState();
-    expect(paneCwds[`t${before}p0`]).toBe("/base/projects/p/api");
-    expect(paneCwds[`t${before}p1`]).toBe("/base/projects/p/ui");
-  });
-
-  it("pre-seeds paneNames with repo short names", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
-    const { paneNames } = useAppStore.getState();
-    expect(paneNames[before][0]).toBe("api");
-    expect(paneNames[before][1]).toBe("ui");
-  });
-
-  it("launches a claude pane per repo, defaulting to the built-in plan prompt", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
-    const { paneInitCmds, paneStartupPromptDocs } = useAppStore.getState();
-    // initCmd marks a claude pane; the backend bakes the resolved prompt in.
-    expect(paneInitCmds[`t${before}p0`]).toBe("claude");
-    expect(paneInitCmds[`t${before}p1`]).toBe("claude");
-    // "" = the built-in plan prompt (PROJECT_INIT_PROMPT) when nothing assigned.
-    expect(paneStartupPromptDocs[`t${before}p0`]).toBe("");
-    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("");
-  });
-
-  it("assigns each repo's resolved kickoff doc (repo override; built-in when unset)", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.setState({
-      repoStartupPromptDoc: { "P1::acme/api": "projects/P1/prompts/api-kickoff.md" },
-    });
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"], "P1");
-    const { paneInitCmds, paneStartupPromptDocs } = useAppStore.getState();
-    expect(paneInitCmds[`t${before}p0`]).toBe("claude");
-    expect(paneStartupPromptDocs[`t${before}p0`]).toBe("projects/P1/prompts/api-kickoff.md");
-    // acme/ui has no assignment → "" = built-in plan prompt.
-    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("");
-  });
-
-  it("caps layout at 2×2 even with 5+ repos", () => {
-    const repos = Array.from({ length: 5 }, (_, i) => `acme/repo${i}`);
-    useAppStore.getState().quickStartProject("p", repos);
-    const { tabs, activeTabIdx } = useAppStore.getState();
-    expect(tabs[activeTabIdx].layout).toBe("2×2");
-  });
-
-  it("does nothing but switch screen when called with empty repos", () => {
-    const tabsBefore = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", []);
-    expect(useAppStore.getState().tabs).toHaveLength(tabsBefore);
-    expect(useAppStore.getState().activeScreen).toBe("console");
-  });
-});
-
 // ── Triage ────────────────────────────────────────────────────────────────────
 
 describe("triageStartProject", () => {
@@ -796,6 +687,29 @@ describe("triageStartProject", () => {
     const { paneContinue } = useAppStore.getState();
     expect(paneContinue[`t${before}p0`]).toBe(true);
     expect(paneContinue[`t${before}p1`]).toBe(true);
+  });
+
+  it("assigns a per-repo triage checkpoint doc to each real-repo pane", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().triageStartProject("ckpt", ["o/web", "o/api"]);
+    const { paneCheckpointDocs } = useAppStore.getState();
+    expect(paneCheckpointDocs[`t${before}p0`]).toBe("projects/ckpt/prompts/web-checkpoint.md");
+    expect(paneCheckpointDocs[`t${before}p1`]).toBe("projects/ckpt/prompts/api-checkpoint.md");
+  });
+
+  it("re-runs in place: reuses the existing triage tab and bumps its runId", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().triageStartProject("rerun", ["o/a", "o/b"]);
+    const idx = useAppStore.getState().tabs.length - 1;
+    expect(idx).toBe(before);
+    expect(useAppStore.getState().tabs[idx].runId).toBe(0);
+
+    // Pressing triage again rebuilds the SAME tab (no new tab) with a bumped runId,
+    // which remounts the panes so killed sessions relaunch.
+    useAppStore.getState().triageStartProject("rerun", ["o/a", "o/b"]);
+    expect(useAppStore.getState().tabs.length).toBe(before + 1); // no new tab added
+    expect(useAppStore.getState().tabs[idx].runId).toBe(1);
+    expect(useAppStore.getState().activeTabIdx).toBe(idx);
   });
 
   it("disables no cells when the grid is exactly filled", () => {
