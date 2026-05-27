@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { githubRequest, isGithubAuthError } from "../lib/github";
+import { githubRequest, isGithubAuthError, DEFAULT_MAX_AGE_SECS } from "../lib/github";
 import { useAppStore } from "../store";
 
 const mockInvoke = vi.mocked(invoke);
@@ -32,6 +32,16 @@ describe("githubRequest", () => {
       path: "user/repos",
       maxAgeSecs: 30,
       force: true,
+    });
+  });
+
+  it("applies the default memory window when no maxAgeSecs is given", async () => {
+    await githubRequest("user/repos");
+    expect(mockInvoke).toHaveBeenCalledWith("github_request", {
+      token: "ghp_test",
+      path: "user/repos",
+      maxAgeSecs: DEFAULT_MAX_AGE_SECS,
+      force: undefined,
     });
   });
 

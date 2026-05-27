@@ -1,8 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 
+/**
+ * Default in-memory freshness window. Within this many seconds of the last fetch,
+ * a revisit is served straight from the backend cache with **no network call** —
+ * so navigating between screens doesn't refetch GitHub every time. After the
+ * window the next call revalidates cheaply (ETag → 304). `force` (manual refresh)
+ * always bypasses it; pass `maxAgeSecs: 0` to always revalidate-on-view.
+ */
+export const DEFAULT_MAX_AGE_SECS = 300;
+
 export interface GithubRequestOpts {
-  /** Serve the cached body without revalidating when it's younger than this (seconds). */
+  /** Serve the cached body without any network call when it's younger than this
+   *  (seconds). Defaults to {@link DEFAULT_MAX_AGE_SECS}; pass 0 to always revalidate. */
   maxAgeSecs?: number;
   /** Bypass the cache + ETag and force a fresh fetch (manual refresh). */
   force?: boolean;
@@ -31,7 +41,7 @@ export async function githubRequest<T>(path: string, opts: GithubRequestOpts = {
     return await invoke<T>("github_request", {
       token,
       path,
-      maxAgeSecs: opts.maxAgeSecs,
+      maxAgeSecs: opts.maxAgeSecs ?? DEFAULT_MAX_AGE_SECS,
       force: opts.force,
     });
   } catch (e) {
