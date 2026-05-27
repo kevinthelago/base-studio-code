@@ -14,7 +14,7 @@ beforeEach(() => {
 const seed = (over = {}) =>
   useAppStore.getState().addAutomation({
     name: "X", armed: false,
-    when: { every: "day", at: "09:00" },
+    when: { kind: "simple", every: "day", at: "09:00" },
     targetTab: "orchestrator", targetPaneIdx: 0,
     action: "command", command: "echo hi",
     ...over,
@@ -44,6 +44,16 @@ describe("AutomationsScreen (wired to the store)", () => {
     fireEvent.click(container.querySelector(".editor .head .toggle") as HTMLElement);
     expect(useAppStore.getState().automations[0].armed).toBe(true);
     expect(useAppStore.getState().automations[0].nextRunAt).toBeTypeOf("number");
+  });
+
+  it("switches an automation to cron recurrence", () => {
+    seed();
+    const { container } = render(<AutomationsScreen />);
+    fireEvent.click(screen.getByText("cron")); // the "cron" mode pill
+    expect(useAppStore.getState().automations[0].when.kind).toBe("cron");
+    const cronInput = Array.from(container.querySelectorAll(".editor input.input"))
+      .some(el => (el as HTMLInputElement).value === "0 9 * * *");
+    expect(cronInput).toBe(true);
   });
 
   it("shows recorded runs in History, filterable by status", () => {

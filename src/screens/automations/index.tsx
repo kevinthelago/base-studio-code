@@ -31,7 +31,7 @@ export function AutomationsScreen() {
   function createAndSelect() {
     addAutomation({
       name: "New automation", armed: false,
-      when: { every: "day" as Every, at: "09:00" },
+      when: { kind: "simple", every: "day" as Every, at: "09:00" },
       targetTab: tabs[0]?.name ?? "", targetPaneIdx: 0,
       action: "command", command: "",
     });
