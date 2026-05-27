@@ -4,6 +4,20 @@ Desktop host application for a multi-agent AI development workflow platform. Run
 
 Pairs with **mobile-studio-code**, a companion app that tunnels into the desktop session so agents can be orchestrated from anywhere.
 
+## Roadmap
+
+Building toward **1.0.0** — the first official release — one page at a time. Latest shipped: **0.5.1**.
+
+| Version | Focus |
+|---|---|
+| 0.6.0 | **Knowledge Base** — UX rework |
+| 0.7.0 | **Automations** — verify & complete end-to-end scheduling |
+| 0.8.0 | **Extensions** — agent-facing tooling via MCP (first-party in-process server + hooks) |
+| 0.9.0 | **Tunneling & mobile integration** — secure WebSocket tunnel + mobile-studio-code pairing |
+| 1.0.0 | **First official release** — GA polish + publish |
+
+Tracked as [GitHub milestones](https://github.com/kevinthelago/base-studio-code/milestones). The `0.x` series is a development preview — see [Versioning & Releases](#versioning--releases).
+
 ## Features
 
 - **Parallel agent sessions** — multiple PTY-backed console panes per workspace tab, each tied to its own Claude instance
