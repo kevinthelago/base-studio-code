@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
-import { githubRequest } from "../../lib/github";
+import { githubRequest, githubGraphql } from "../../lib/github";
 import { heatFill } from "./heatFill";
 import { quartileScale } from "./heatScale";
 
@@ -170,13 +169,9 @@ function useGitHubSummaryData() {
 
     const eventsP = githubRequest<GHEvent[]>(`users/${login}/events?per_page=100`).catch((): GHEvent[] => []);
 
-    const contribP = invoke<{
+    const contribP = githubGraphql<{
       viewer: { contributionsCollection: { contributionCalendar: { weeks: Array<{ contributionDays: Array<{ contributionCount: number; date: string; weekday: number }> }> } } }
-    }>("github_graphql", {
-      token: githubToken,
-      query: CONTRIB_QUERY,
-      variables: null,
-    }).then(d => {
+    }>(CONTRIB_QUERY, null).then(d => {
       const weeks = d?.viewer?.contributionsCollection?.contributionCalendar?.weeks ?? [];
       const days: ContribDay[] = [];
       weeks.forEach(w => w.contributionDays.forEach(cd => days.push({ date: cd.date, weekday: cd.weekday, count: cd.contributionCount })));

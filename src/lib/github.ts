@@ -50,6 +50,33 @@ export async function githubRequest<T>(path: string, opts: GithubRequestOpts = {
   }
 }
 
+/**
+ * Call the GitHub GraphQL API through the backend cache (`github_graphql`).
+ * GraphQL has no ETag, so the cache is purely time-windowed: within `maxAgeSecs`
+ * (default {@link DEFAULT_MAX_AGE_SECS}) the cached result is served with no
+ * network call; otherwise it re-POSTs. `force` bypasses. 401 → disconnect, as with
+ * {@link githubRequest}.
+ */
+export async function githubGraphql<T>(
+  query: string,
+  variables: Record<string, unknown> | null,
+  opts: GithubRequestOpts = {},
+): Promise<T> {
+  const token = useAppStore.getState().githubToken;
+  try {
+    return await invoke<T>("github_graphql", {
+      token,
+      query,
+      variables,
+      maxAgeSecs: opts.maxAgeSecs ?? DEFAULT_MAX_AGE_SECS,
+      force: opts.force,
+    });
+  } catch (e) {
+    if (isGithubAuthError(e)) useAppStore.getState().markGithubTokenInvalid();
+    throw e;
+  }
+}
+
 /** Drop the backend's cached GitHub responses (call on connect / disconnect / re-auth). */
 export function clearGithubCache(): Promise<void> {
   return invoke("github_cache_clear");

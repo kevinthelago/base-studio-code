@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { githubRequest, isGithubAuthError, DEFAULT_MAX_AGE_SECS } from "../lib/github";
+import { githubRequest, githubGraphql, isGithubAuthError, DEFAULT_MAX_AGE_SECS } from "../lib/github";
 import { useAppStore } from "../store";
 
 const mockInvoke = vi.mocked(invoke);
@@ -55,5 +55,26 @@ describe("githubRequest", () => {
     mockInvoke.mockRejectedValueOnce("GitHub API error (500): boom");
     await expect(githubRequest("user")).rejects.toBeTruthy();
     expect(useAppStore.getState().githubConnected).toBe(true);
+  });
+});
+
+describe("githubGraphql", () => {
+  it("sends token/query/variables + the default window, returns the data", async () => {
+    mockInvoke.mockResolvedValueOnce({ viewer: { login: "x" } });
+    const out = await githubGraphql<{ viewer: { login: string } }>("query{}", { id: "p1" });
+    expect(out).toEqual({ viewer: { login: "x" } });
+    expect(mockInvoke).toHaveBeenCalledWith("github_graphql", {
+      token: "ghp_test",
+      query: "query{}",
+      variables: { id: "p1" },
+      maxAgeSecs: DEFAULT_MAX_AGE_SECS,
+      force: undefined,
+    });
+  });
+
+  it("flips to disconnected on a 401", async () => {
+    mockInvoke.mockRejectedValueOnce("GitHub API error (401 Unauthorized): Bad credentials");
+    await expect(githubGraphql("query{}", null)).rejects.toBeTruthy();
+    expect(useAppStore.getState().githubConnected).toBe(false);
   });
 });
