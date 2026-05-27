@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore, TRIAGE_PROMPT } from "../store";
 import type { ViewKey } from "../components/pane/ViewTabs";
+import type { QueuedPane } from "../lib/focusQueue";
 
 const RESET_STATE = {
   tabs: [
@@ -12,7 +13,7 @@ const RESET_STATE = {
   paneMenuOpenIdx: -1,
   focusedPaneIdx: -1,
   fullscreenPaneIdx: -1,
-  focusQueue: [] as number[],
+  focusQueue: [] as QueuedPane[],
   paneViews: [] as ViewKey[],
   paneNames: {} as Record<number, Record<number, string>>,
   paneCwds: {} as Record<string, string>,
@@ -86,45 +87,60 @@ describe("terminal font zoom", () => {
 // ── Focus queue ─────────────────────────────────────────────────────────────────
 
 describe("focus queue", () => {
-  it("enqueueFocus appends (deduped) and skips the excluded pane", () => {
+  it("enqueueFocus appends (deduped) waiting panes on the active tab", () => {
     const s = useAppStore.getState();
     s.enqueueFocus(2);
     s.enqueueFocus(2);            // dup ignored
-    s.enqueueFocus(3, 3);         // skipped (the one you're on)
     s.enqueueFocus(4);
-    expect(useAppStore.getState().focusQueue).toEqual([2, 4]);
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 2 }, { tab: 0, pane: 4 }]);
   });
 
-  it("removeFocus drops a pane from the queue", () => {
-    useAppStore.setState({ focusQueue: [1, 2, 3] });
+  it("removeFocus drops a pane from the active tab's queue", () => {
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 }] });
     useAppStore.getState().removeFocus(2);
-    expect(useAppStore.getState().focusQueue).toEqual([1, 3]);
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 3 }]);
   });
 
   it("advanceFocus cycles to the next waiting pane WITHOUT dequeuing", () => {
-    useAppStore.setState({ focusQueue: [5, 6, 7], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
     useAppStore.getState().advanceFocus();
     expect(useAppStore.getState().focusedPaneIdx).toBe(6);
-    expect(useAppStore.getState().focusQueue).toEqual([5, 6, 7]); // stays queued until you respond
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }]); // stays queued until you respond
     expect(useAppStore.getState().fullscreenPaneIdx).toBe(-1);
   });
 
   it("advanceFocus starts at the front when you're not on a queued pane", () => {
-    useAppStore.setState({ focusQueue: [5, 6], focusedPaneIdx: 0, fullscreenPaneIdx: -1 });
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }], focusedPaneIdx: 0, fullscreenPaneIdx: -1 });
     useAppStore.getState().advanceFocus();
     expect(useAppStore.getState().focusedPaneIdx).toBe(5);
   });
 
   it("advanceFocus swaps the maximized pane, relative to the maximized one", () => {
-    useAppStore.setState({ focusQueue: [5, 6, 7], focusedPaneIdx: 5, fullscreenPaneIdx: 5 });
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }], focusedPaneIdx: 5, fullscreenPaneIdx: 5 });
     useAppStore.getState().advanceFocus();
     expect(useAppStore.getState().focusedPaneIdx).toBe(6);
     expect(useAppStore.getState().fullscreenPaneIdx).toBe(6);
-    expect(useAppStore.getState().focusQueue).toEqual([5, 6, 7]); // not dequeued
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }]); // not dequeued
+  });
+
+  it("advanceFocus switches tabs when the next waiting pane is on another tab", () => {
+    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 5 }, { tab: 1, pane: 2 }], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
+    useAppStore.getState().advanceFocus();
+    expect(useAppStore.getState().activeTabIdx).toBe(1);
+    expect(useAppStore.getState().focusedPaneIdx).toBe(2);
+    expect(useAppStore.getState().fullscreenPaneIdx).toBe(-1);
+  });
+
+  it("advanceFocus carries maximize across a tab switch", () => {
+    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 5 }, { tab: 1, pane: 2 }], focusedPaneIdx: 5, fullscreenPaneIdx: 5 });
+    useAppStore.getState().advanceFocus();
+    expect(useAppStore.getState().activeTabIdx).toBe(1);
+    expect(useAppStore.getState().focusedPaneIdx).toBe(2);
+    expect(useAppStore.getState().fullscreenPaneIdx).toBe(2);
   });
 
   it("advanceFocus is a no-op when there's nowhere else to go", () => {
-    useAppStore.setState({ focusQueue: [5], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
     useAppStore.getState().advanceFocus();
     expect(useAppStore.getState().focusedPaneIdx).toBe(5); // only queued pane is current
     useAppStore.setState({ focusQueue: [], focusedPaneIdx: 2 });
@@ -132,10 +148,11 @@ describe("focus queue", () => {
     expect(useAppStore.getState().focusedPaneIdx).toBe(2);
   });
 
-  it("setActiveTab clears the queue (indices are tab-relative)", () => {
-    useAppStore.setState({ focusQueue: [1, 2] });
+  it("setActiveTab preserves the cross-tab queue", () => {
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }] });
     useAppStore.getState().setActiveTab(1);
-    expect(useAppStore.getState().focusQueue).toEqual([]);
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }]);
+    expect(useAppStore.getState().focusedPaneIdx).toBe(-1); // focus still resets
   });
 
   it("setAutoAdvanceOnReply toggles the setting", () => {
@@ -144,10 +161,16 @@ describe("focus queue", () => {
     expect(useAppStore.getState().autoAdvanceOnReply).toBe(false);
   });
 
-  it("reconcileFocusQueue prunes panes that are no longer waiting", () => {
-    useAppStore.setState({ focusQueue: [1, 2, 3] });
-    useAppStore.getState().reconcileFocusQueue([1, 3]); // 2 no longer idle
-    expect(useAppStore.getState().focusQueue).toEqual([1, 3]);
+  it("reconcileFocusQueue prunes the active tab's panes that are no longer waiting", () => {
+    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 }] });
+    useAppStore.getState().reconcileFocusQueue([1, 3]); // pane 2 no longer idle
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 3 }]);
+  });
+
+  it("reconcileFocusQueue leaves other tabs' entries untouched", () => {
+    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 1 }, { tab: 1, pane: 2 }] });
+    useAppStore.getState().reconcileFocusQueue([]); // nothing waiting on the active tab
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 1, pane: 2 }]);
   });
 });
 
