@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { log } from "../lib/log";
 import { useAppStore } from "../store";
 import { filterDocuments, scopeToProject, DOC_FILTERS, kindLabel, type Doc, type DocFilter, type DocKind } from "../lib/documents";
+import { useDragResize } from "../hooks/useDragResize";
 
 const KB_PANE_ID = "kb";
 
@@ -183,6 +184,11 @@ export function KnowledgeStoreScreen() {
   const [editText, setEditText]     = useState("");
   const [saving, setSaving]         = useState(false);
   const [saveError, setSaveError]   = useState<string | null>(null);
+
+  // Resizable panels (#43): the document list width (horizontal) and, when a
+  // document is open, the preview height above the Claude terminal (vertical).
+  const list        = useDragResize({ initial: 248, min: 190, max: 480, axis: "x" });
+  const previewPane = useDragResize({ initial: 280, min: 140, max: 560, axis: "y" });
 
   const containerRef  = useRef<HTMLDivElement>(null);
   const termRef       = useRef<Terminal | null>(null);
@@ -396,7 +402,7 @@ export function KnowledgeStoreScreen() {
 
       {/* ── Document list ────────────────────────────────────────────────────── */}
       <aside style={{
-        width: 248, flex: "0 0 248px",
+        width: list.size, flex: `0 0 ${list.size}px`,
         background: "var(--bg-panel)", borderRight: "1px solid var(--border-soft)",
         display: "flex", flexDirection: "column", minHeight: 0,
       }}>
@@ -550,6 +556,9 @@ export function KnowledgeStoreScreen() {
         )}
       </aside>
 
+      {/* Drag handle — document list width */}
+      <div className="resize-x" {...list.handleProps} title="Drag to resize" />
+
       {/* ── Right side: Commands policy, or document preview + terminal ──────── */}
       {showCommands ? <CommandsPanel /> : (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
@@ -557,7 +566,7 @@ export function KnowledgeStoreScreen() {
         {/* Document preview — shown only when a document is selected */}
         {selected && (
           <div style={{
-            flex: "0 0 280px", overflow: "auto",
+            flex: `0 0 ${previewPane.size}px`, overflow: "auto",
             borderBottom: "1px solid var(--border-soft)",
             background: "var(--bg-canvas)",
           }}>
@@ -643,6 +652,9 @@ export function KnowledgeStoreScreen() {
             </div>
           </div>
         )}
+
+        {/* Drag handle — preview height (only while a document is open) */}
+        {selected && <div className="resize-y" {...previewPane.handleProps} title="Drag to resize" />}
 
         {/* Claude terminal */}
         <div style={{
