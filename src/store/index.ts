@@ -120,9 +120,6 @@ interface AppStore {
   // resume the repo's prior conversation rather than starting fresh. Set for
   // triage panes (see triageStartProject); read by TerminalView.
   paneContinue: Record<string, boolean>;
-  // Epoch ms when each tab's sessions launched (transient — NOT persisted), so
-  // auto-focus can be suppressed during a grid's cold-start window.
-  tabStartedAt: Record<number, number>;
   paneGitInfo: Record<string, { repo: string; branch: string; dirty: boolean } | null>;
   setPaneGitInfo: (paneId: string, info: { repo: string; branch: string; dirty: boolean } | null) => void;
   // Disabled panes (keyed by "t{tabIdx}p{paneIdx}") — terminal unmounted + PTY killed.
@@ -306,8 +303,6 @@ interface AppStore {
   setDeniedCommands: (commands: string[]) => void;
 
   // Console behavior
-  autoFocusOnInterrupt: boolean;
-  setAutoFocusOnInterrupt: (v: boolean) => void;
   // When a response is sent to the active console, cycle focus to the next pane
   // waiting in the focus queue (persisted; configured in Settings → Integrations).
   autoAdvanceOnReply: boolean;
@@ -361,7 +356,6 @@ export const useAppStore = create<AppStore>()(
       paneStartupPromptDocs: {},
       paneStartupPromptText: {},
       paneContinue: {},
-      tabStartedAt: {},
       paneGitInfo: {},
       setPaneGitInfo: (paneId, info) =>
         set((s) => ({ paneGitInfo: { ...s.paneGitInfo, [paneId]: info } })),
@@ -677,7 +671,6 @@ export const useAppStore = create<AppStore>()(
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneAllowedCommands: newPaneAllowedCommands,
-            tabStartedAt: { ...s.tabStartedAt, [newTabIdx]: Date.now() },
             disabledPanes: newDisabledPanes,
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
             activeScreen: "console" as Screen,
@@ -765,7 +758,6 @@ export const useAppStore = create<AppStore>()(
             paneStartupPromptText: newPaneStartupPromptText,
             paneContinue: newPaneContinue,
             paneAllowedCommands: newPaneAllowedCommands,
-            tabStartedAt: { ...s.tabStartedAt, [newTabIdx]: Date.now() },
             disabledPanes: newDisabledPanes,
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
             activeScreen: "console" as Screen,
@@ -893,8 +885,6 @@ export const useAppStore = create<AppStore>()(
         }),
       paneAllowedCommands: {},
 
-      autoFocusOnInterrupt: true,
-      setAutoFocusOnInterrupt: (v) => set({ autoFocusOnInterrupt: v }),
       autoAdvanceOnReply: true,
       setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v }),
     }),
@@ -927,7 +917,6 @@ export const useAppStore = create<AppStore>()(
         deniedCommands:       s.deniedCommands,
         projectAllowedCommands: s.projectAllowedCommands,
         repoAllowedCommands:    s.repoAllowedCommands,
-        autoFocusOnInterrupt: s.autoFocusOnInterrupt,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         projectLocalRepos:    s.projectLocalRepos,
         hiddenProjectIds:     s.hiddenProjectIds,

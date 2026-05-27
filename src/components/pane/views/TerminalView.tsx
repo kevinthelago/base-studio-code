@@ -65,7 +65,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const inClaudeRef  = useRef(false);               // true between __bsc_state run/idle
   const claudeActiveRef = useRef<"run" | "idle">("idle"); // current within-session status
   const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const QUIET_MS = 800; // ms of silence after last printable output → claude is at its prompt
+  // ms of silence after last printable output → claude is back at its prompt (idle).
+  // Kept generous: Claude pauses mid-turn (thinking, tool calls, API waits) often
+  // exceed a second, and reading those as "idle" would wrongly enqueue a pane that
+  // is still working. The cursor no longer moves on idle (the focus queue governs
+  // it), so a slightly later idle only delays when a finished agent joins the queue.
+  const QUIET_MS = 1500;
 
   // Mount terminal + spawn PTY once per paneId
   useEffect(() => {
