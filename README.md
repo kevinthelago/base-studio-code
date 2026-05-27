@@ -95,6 +95,14 @@ base-studio-code (desktop host)
 └── UI Shell             — Tauri WebView + React frontend
 ```
 
+## Versioning & Releases
+
+base-studio-code is pre-1.0 and under active development. The `0.x` series is a **development preview** — features and internals may change between releases, and builds are published as drafts for testing rather than general use.
+
+**`1.0.0` will be the first official release** — the first version considered stable and ready for general use. Until then, versions are bumped conservatively (patch bumps for fixes, minor for features) so that `1.0.0` stays a meaningful milestone rather than just the next number.
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
