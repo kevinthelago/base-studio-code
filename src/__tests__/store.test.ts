@@ -27,7 +27,6 @@ const RESET_STATE = {
   projectAllowedCommands: {} as Record<string, string[]>,
   repoAllowedCommands: {} as Record<string, string[]>,
   paneAllowedCommands: {} as Record<string, string[]>,
-  autoFocusOnInterrupt: true,
   autoAdvanceOnReply: true,
   terminalFontSize: 12,
   focusedAgentName: "",
@@ -53,7 +52,6 @@ const RESET_STATE = {
   paneStartupPromptText: {} as Record<string, string>,
   paneContinue: {} as Record<string, boolean>,
   bscBaseDir: "",
-  tabStartedAt: {} as Record<number, number>,
   defaultStartupPromptDoc: null as string | null,
   projectStartupPromptDoc: {} as Record<string, string | null>,
   repoStartupPromptDoc: {} as Record<string, string | null>,
@@ -470,12 +468,6 @@ describe("allowed commands", () => {
   it("addRepoAllowedCommand scopes to a project::repo key", () => {
     useAppStore.getState().addRepoAllowedCommand("P1", "acme/web", "npm");
     expect(useAppStore.getState().repoAllowedCommands["P1::acme/web"]).toEqual(["npm"]);
-  });
-
-  it("setAutoFocusOnInterrupt toggles the setting", () => {
-    expect(useAppStore.getState().autoFocusOnInterrupt).toBe(true);
-    useAppStore.getState().setAutoFocusOnInterrupt(false);
-    expect(useAppStore.getState().autoFocusOnInterrupt).toBe(false);
   });
 });
 
