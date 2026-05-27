@@ -18,13 +18,15 @@ Studio Code is a cross-device platform for running many AI coding agents in para
 
 ## Roadmap
 
-The finish line is **v1.0**. base-studio-code has shipped **v0.1.0 → v0.5.1**; the remaining versions bundle the work toward GA. mobile-studio-code runs its **own parallel version line** (numbered independently) and ships v1.0 in lockstep. Milestones are versions — the old cross-cutting "Phase 1–6" model is retired.
+The finish line is **v1.0**. base-studio-code has shipped **v0.1.0 → v0.6.0** (0.6.0 is a draft preview, work ongoing); the remaining versions each complete a focused concern toward GA. mobile-studio-code runs its **own parallel version line** (numbered independently) and ships v1.0 in lockstep. Milestones are versions — the old cross-cutting "Phase 1–6" model is retired.
 
 ### base-studio-code
 
 | Version | Concern | Done when |
 |---|---|---|
-| **v0.6.0** | Core features | The in-development pages are complete: Knowledge Base reworked (T-layout + embedded console, doc-assignment, resizable panes — #140, #32, #51, #43); Automations working end-to-end with real cron scheduling (#142); Extensions / agent-facing MCP tooling (#33); and multi-agent planning — choose agent count + assign each agent to issues/a feature (#154). Branch-convention docs cleanup rides along (#45). |
+| **v0.6.0** | Knowledge Base *(current)* | KB page genuinely usable: reworked UX (#140), T-layout with embedded console (#32), rethought doc-assignment (#51), resizable panes (#43). Branch-convention docs cleanup rides along (#45). Cut as a draft preview while the work completes. |
+| **v0.7.0** | Automations & multi-agent planning | Automations page works end-to-end with real cron scheduling (#142), **and** multi-agent planning lets the user choose an agent count + assign each agent to a set of issues or a feature (#154). |
+| **v0.8.0** | Extensions (MCP) | Agent-facing tooling via an in-process MCP host: management page (#33), first-party Context + Checkpoint tools, bsc-checkpoint migration, hooks. |
 | **v0.9.0** | Tunneling, mobile integration & security | Token-authed WebSocket server on base (#35), one versioned message schema exercised by a shared fixture test on both sides (#46), corrected docs (#44), a paired mobile client mirroring a desktop console with clean fallback — **and** a security pass letting the user assign repo-level credentials so a Claude session cannot perform cross-repo GitHub/filesystem actions (#158). |
 | **v1.0.0** | First official release (GA) | Every page polished (#141, #135); console hardened (#36, #52, #77); desktop installers code-signed on Windows (#108), notarized on macOS (#119), packaged for Linux (#120) with per-OS shell/PTY correctness (#118); the release pipeline cuts a tagged, non-draft v1.0 across all desktop platforms (#121). |
 
@@ -40,7 +42,7 @@ The finish line is **v1.0**. base-studio-code has shipped **v0.1.0 → v0.5.1**;
 ## Scope
 
 ### In scope — the road to v1.0
-Everything in the roadmap tables above. **v0.6.0** bundles all the in-development pages (KB, Automations, Extensions/MCP, multi-agent planning). **v0.9.0** is the central new build — the tunnel plus a security pass that scopes credentials per repo. **v1.0.0** GA folds in polish, console hardening, and all signing / cross-platform / release-pipeline work.
+Everything in the roadmap tables above, one focused concern per version: **v0.6.0** Knowledge Base (current), **v0.7.0** Automations + multi-agent planning, **v0.8.0** Extensions/MCP, **v0.9.0** the tunnel plus a security pass that scopes credentials per repo, and **v1.0.0** GA (polish, console hardening, signing / cross-platform / release pipeline).
 
 ### Out of scope (post-1.0)
 - **Additional agent-provider panes** beyond `claude` — Gemini CLI, OpenAI Codex CLI, Aider, Ollama, Amazon Q (base #38–#42).
