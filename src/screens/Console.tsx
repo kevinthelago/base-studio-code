@@ -259,7 +259,7 @@ export function ConsoleScreen() {
     const pid = paneId(activeTabIdx, i);
     return (
       <PaneAt
-        key={i}
+        key={`${activeTab.runId ?? 0}-${i}`}
         i={i}
         tabIdx={activeTabIdx}
         name={resolvePaneName(activeTabIdx, i, paneNames)}

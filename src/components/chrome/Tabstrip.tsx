@@ -6,6 +6,9 @@ export interface Tab {
   name: string;
   layout: string;
   state?: "run" | "on" | "idle";
+  // Bumped when a tab's sessions are relaunched (e.g. triage re-run) so the panes
+  // remount with fresh PTYs. Woven into ConsoleScreen's pane key; transient.
+  runId?: number;
 }
 
 const LAYOUTS = ["1×1", "2×1", "1×2", "2×2", "3×2", "3×3"] as const;
