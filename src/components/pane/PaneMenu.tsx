@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RefreshCw, Pin, FolderInput, Unlink2, X, GitBranch, Maximize2, Minimize2, Power, PowerOff } from "lucide-react";
+import { Pin, FolderInput, X, Maximize2, Minimize2, Power, PowerOff } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
 
@@ -13,8 +13,6 @@ const MODELS: Array<{ id: ModelId; tone: string; price: string }> = [
 
 interface PaneMenuProps {
   agent: string;
-  repo?: string;
-  branch?: string;
   model: ModelId;
   active: ViewKey;
   available: ViewKey[];
@@ -34,7 +32,7 @@ interface PaneMenuProps {
 }
 
 export function PaneMenu({
-  agent, repo, branch, model, active, available, maxHeight, fullscreen, disabled,
+  agent, model, active, available, maxHeight, fullscreen, disabled,
   onToggleFullscreen, onToggleDisable, onPickDirectory, onClose, onRename, onViewChange,
 }: PaneMenuProps) {
   return (
@@ -63,18 +61,6 @@ export function PaneMenu({
             onClick={onRename}
           >rename</span>
         </div>
-        {repo && (
-          <div style={{
-            fontSize: 10, color: "var(--fg-muted)", marginTop: 3,
-            display: "flex", alignItems: "center", gap: 4,
-            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          }}>
-            <GitBranch size={9} style={{ color: "var(--info)", flexShrink: 0 }} />
-            <span style={{ color: "var(--info)" }}>{branch}</span>
-            <span style={{ color: "var(--fg-dim)" }}>·</span>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{repo}</span>
-          </div>
-        )}
       </div>
 
       {/* Model */}
@@ -126,10 +112,8 @@ export function PaneMenu({
           danger={!disabled}
           onClick={() => { onToggleDisable?.(); onClose?.(); }}
         />
-        <ActionRow Icon={RefreshCw}   label="rescan repo"    sub="re-detect HEAD" />
         <ActionRow Icon={Pin}         label="pin knowledge…" sub="surface a block in context" />
         <ActionRow Icon={FolderInput} label="set cwd…"       sub="change working dir" onClick={() => { onPickDirectory?.(); onClose?.(); }} />
-        <ActionRow Icon={Unlink2}     label="unbind repo"    sub="drop git context" danger />
         <ActionRow Icon={X}           label="close pane"     sub="" danger onClick={onClose} />
       </MenuSection>
     </div>

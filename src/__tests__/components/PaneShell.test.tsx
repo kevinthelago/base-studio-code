@@ -87,25 +87,6 @@ describe("PaneShell", () => {
     expect(onToggleFullscreen).toHaveBeenCalled();
   });
 
-  it("shows repo and branch when git info is provided", () => {
-    render(
-      <PaneShell agent="test" repo="my-repo" branch="main">
-        <div>content</div>
-      </PaneShell>
-    );
-    expect(screen.getByText("main")).toBeInTheDocument();
-    expect(screen.getByText("my-repo")).toBeInTheDocument();
-  });
-
-  it("shows dirty indicator when repo is dirty", () => {
-    render(
-      <PaneShell agent="test" repo="my-repo" branch="main" dirty={true}>
-        <div>content</div>
-      </PaneShell>
-    );
-    expect(screen.getByText("●")).toBeInTheDocument();
-  });
-
   it("applies focused class when focused prop is true", () => {
     const { container } = render(
       <PaneShell agent="test" focused={true}>

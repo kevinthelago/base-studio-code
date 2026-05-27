@@ -572,49 +572,6 @@ async fn pty_kill(pane_id: String, state: State<'_, PtyState>) -> Result<(), Str
     Ok(())
 }
 
-// ── Git info ──────────────────────────────────────────────────────────────────
-
-#[derive(serde::Serialize, Clone)]
-struct GitInfo {
-    repo: String,
-    branch: String,
-    dirty: bool,
-}
-
-#[tauri::command]
-async fn git_info(path: String) -> Option<GitInfo> {
-    let _perf = PerfSpan::new("git_info");
-    let root_out = std::process::Command::new("git")
-        .args(["-C", &path, "rev-parse", "--show-toplevel"])
-        .output()
-        .ok()?;
-    if !root_out.status.success() {
-        return None;
-    }
-    let root_str = std::str::from_utf8(&root_out.stdout).ok()?.trim();
-    let repo = std::path::Path::new(root_str)
-        .file_name()?
-        .to_string_lossy()
-        .into_owned();
-
-    let branch_out = std::process::Command::new("git")
-        .args(["-C", &path, "rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()?;
-    let branch = std::str::from_utf8(&branch_out.stdout)
-        .ok()?
-        .trim()
-        .to_string();
-
-    let status_out = std::process::Command::new("git")
-        .args(["-C", &path, "status", "--porcelain"])
-        .output()
-        .ok()?;
-    let dirty = !status_out.stdout.is_empty();
-
-    Some(GitInfo { repo, branch, dirty })
-}
-
 // ── File picker ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -2370,7 +2327,6 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pick_directory,
-            git_info,
             setup_workspaces,
             setup_kb_workspace,
             clone_repo,
