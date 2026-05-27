@@ -10,7 +10,7 @@ function mkAuto(over: Partial<Automation> = {}): Automation {
   return {
     id: "a1", name: "n", armed: true,
     when: { every: "day", at: "09:00" },
-    targetTab: "T", targetPane: "P",
+    targetTab: "T", targetPaneIdx: 0,
     action: "command", command: "echo hi",
     lastRunAt: null, nextRunAt: null, runs: [],
     ...over,
@@ -69,19 +69,21 @@ describe("computeNextRun", () => {
 });
 
 describe("resolveTargetPane", () => {
-  const tabs = [{ name: "orchestrator" }, { name: "feat/tunnel" }];
-  const paneNames = { 0: { 0: "@scratch", 1: "@reviewer" }, 1: { 0: "@scratch" } };
+  const tabs = [{ name: "orchestrator", layout: "2×2" }, { name: "feat/tunnel", layout: "1×1" }];
 
-  it("resolves a live target to t{tab}p{pane}", () => {
-    expect(resolveTargetPane("orchestrator", "@reviewer", tabs, paneNames, {})).toBe("t0p1");
-    expect(resolveTargetPane("feat/tunnel", "@scratch", tabs, paneNames, {})).toBe("t1p0");
+  it("resolves a live (tab name, pane index) to t{tab}p{pane}", () => {
+    expect(resolveTargetPane("orchestrator", 3, tabs, {})).toBe("t0p3");
+    expect(resolveTargetPane("feat/tunnel", 0, tabs, {})).toBe("t1p0");
   });
-  it("returns null when the tab or pane is missing", () => {
-    expect(resolveTargetPane("nope", "@reviewer", tabs, paneNames, {})).toBeNull();
-    expect(resolveTargetPane("orchestrator", "@ghost", tabs, paneNames, {})).toBeNull();
+  it("returns null when the tab is missing", () => {
+    expect(resolveTargetPane("nope", 0, tabs, {})).toBeNull();
+  });
+  it("returns null when the pane index is outside the tab's layout", () => {
+    expect(resolveTargetPane("orchestrator", 4, tabs, {})).toBeNull(); // 2×2 → 0..3
+    expect(resolveTargetPane("feat/tunnel", 1, tabs, {})).toBeNull();  // 1×1 → only 0
   });
   it("returns null when the resolved pane is disabled", () => {
-    expect(resolveTargetPane("orchestrator", "@reviewer", tabs, paneNames, { t0p1: true })).toBeNull();
+    expect(resolveTargetPane("orchestrator", 1, tabs, { t0p1: true })).toBeNull();
   });
 });
 

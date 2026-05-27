@@ -23,9 +23,9 @@ export function useScheduler() {
       const s = useAppStore.getState();
       for (const a of dueAutomations(s.automations, Date.now())) {
         const at = Date.now();
-        const where = `${a.targetTab} › ${a.targetPane}`;
+        const where = `${a.targetTab} › pane ${a.targetPaneIdx + 1}`;
 
-        const paneId = resolveTargetPane(a.targetTab, a.targetPane, s.tabs, s.paneNames, s.disabledPanes);
+        const paneId = resolveTargetPane(a.targetTab, a.targetPaneIdx, s.tabs, s.disabledPanes);
         if (!paneId) {
           s.recordAutomationRun(a.id, { at, status: "skipped", note: `target ${where} not open` });
           continue;

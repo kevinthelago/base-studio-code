@@ -4,7 +4,7 @@ import { useAppStore } from "../store";
 const base = {
   name: "Nightly digest", armed: true,
   when: { every: "day" as const, at: "09:00" },
-  targetTab: "orchestrator", targetPane: "@scratch",
+  targetTab: "orchestrator", targetPaneIdx: 0,
   action: "command" as const, command: "echo hi",
 };
 

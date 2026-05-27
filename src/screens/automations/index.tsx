@@ -2,30 +2,47 @@ import { useState } from "react";
 import { useAppStore } from "../../store";
 import { SchedulesTab } from "./Schedules";
 import { HistoryTab } from "./History";
-import { AUTO_SCHEDULES, AUTO_HISTORY, type RunStatus } from "../../data/automations";
+import { fmtClock } from "./format";
+import type { RunStatus, Every } from "../../lib/scheduler";
 import "./automations.css";
 
 type Tab = "schedules" | "history";
 
 /**
- * Automations screen (mock, #142) — a faithful static port of
- * design/Automations.html: a Schedules tab (list + deep editor) and a History
- * tab (summary + filterable run table). Renders from src/data/automations.ts;
- * the real scheduler/runtime is future work. The active tab is mirrored into the
- * store (automationsTab) so the titlebar reflects it.
+ * Automations screen (#142) — wired to the real `automations` store slice and
+ * the scheduler engine. Schedules tab edits real automations (fired by
+ * useScheduler); History aggregates their recorded runs. Active tab is mirrored
+ * into the store so the titlebar reflects it.
  */
 export function AutomationsScreen() {
-  const { automationsTab, setAutomationsTab } = useAppStore();
+  const { automations, automationsTab, setAutomationsTab, addAutomation, tabs } = useAppStore();
   const tab: Tab = automationsTab === "history" ? "history" : "schedules";
 
-  // History filters live here so the editor's "view all →" can pre-filter.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [histStatus, setHistStatus] = useState<"all" | RunStatus>("all");
   const [histSched, setHistSched] = useState<string>("all");
 
-  const armed = AUTO_SCHEDULES.filter(s => s.on).length;
+  const armed = automations.filter(a => a.armed).length;
+  const totalRuns = automations.reduce((n, a) => n + a.runs.length, 0);
+  const nextAt = automations
+    .filter(a => a.armed && a.nextRunAt != null)
+    .reduce<number | null>((min, a) => (min == null || a.nextRunAt! < min ? a.nextRunAt! : min), null);
 
-  function viewAllHistory(sid: string) {
-    setHistSched(sid);
+  function createAndSelect() {
+    addAutomation({
+      name: "New automation", armed: false,
+      when: { every: "day" as Every, at: "09:00" },
+      targetTab: tabs[0]?.name ?? "", targetPaneIdx: 0,
+      action: "command", command: "",
+    });
+    const list = useAppStore.getState().automations;
+    const created = list[list.length - 1];
+    if (created) setSelectedId(created.id);
+    setAutomationsTab("schedules");
+  }
+
+  function viewAllHistory(id: string) {
+    setHistSched(id);
     setHistStatus("all");
     setAutomationsTab("history");
   }
@@ -35,22 +52,23 @@ export function AutomationsScreen() {
       <div className="auto-page">
         <div className="subtabs">
           <div className={"t" + (tab === "schedules" ? " on" : "")} onClick={() => setAutomationsTab("schedules")}>
-            Schedules <span className="count">{AUTO_SCHEDULES.length}</span>
-            <span className="hint-inline">· {armed} armed · next at 15:15</span>
+            Schedules <span className="count">{automations.length}</span>
+            <span className="hint-inline">· {armed} armed</span>
           </div>
           <div className={"t" + (tab === "history" ? " on" : "")} onClick={() => setAutomationsTab("history")}>
-            History <span className="count">{AUTO_HISTORY.length}</span>
+            History <span className="count">{totalRuns}</span>
           </div>
           <div className="right">
-            <span className="quick-stat"><i /> <b>14:24</b> · next run in <b>22m</b></span>
-            <button className="btn">import</button>
-            <button className="btn primary">+ New schedule</button>
+            <span className="quick-stat">
+              <i style={{ background: armed > 0 ? "var(--success)" : "var(--fg-dim)" }} /> next run <b>{fmtClock(nextAt)}</b>
+            </span>
+            <button className="btn primary" onClick={createAndSelect}>+ New schedule</button>
           </div>
         </div>
 
         <div className="auto-body">
           {tab === "schedules"
-            ? <SchedulesTab onViewAllHistory={viewAllHistory} />
+            ? <SchedulesTab selectedId={selectedId} setSelectedId={setSelectedId} onNew={createAndSelect} onViewAllHistory={viewAllHistory} />
             : <HistoryTab status={histStatus} setStatus={setHistStatus} sched={histSched} setSched={setHistSched} />}
         </div>
       </div>
