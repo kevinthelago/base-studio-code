@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { GitBranch, MoreHorizontal, Maximize2, Minimize2 } from "lucide-react";
+import { MoreHorizontal, Maximize2, Minimize2 } from "lucide-react";
 import { VIEW_DEFS, type ViewKey } from "./ViewTabs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
 
@@ -10,10 +10,6 @@ interface PaneShellProps {
   agent: string;
   status?: PaneStatus;
   meta?: string;
-  cwd?: string;
-  repo?: string;
-  branch?: string;
-  dirty?: boolean;
   model?: ModelId;
   available?: ViewKey[];
   active?: ViewKey;
@@ -37,10 +33,6 @@ interface PaneShellProps {
 export function PaneShell({
   agent,
   status = "run",
-  cwd: _cwd,
-  repo,
-  branch,
-  dirty,
   model = "sonnet-4.5",
   available = ["console", "files"],
   active = "console",
@@ -256,23 +248,8 @@ export function PaneShell({
           >{agent}</span>
         )}
 
-        {/* Repo / branch — only shown when a repo is attached */}
-        <div style={{
-          flex: 1, minWidth: 0,
-          display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6,
-          fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)",
-          whiteSpace: "nowrap", overflow: "hidden",
-        }}>
-          {repo && (
-            <>
-              <span style={{ color: "var(--info)", display: "flex", alignItems: "center", gap: 3, flex: "0 0 auto" }}>
-                <GitBranch size={10} /> {branch}
-              </span>
-              {dirty && <span style={{ color: "var(--danger)", flex: "0 0 auto" }}>●</span>}
-              <span style={{ color: "var(--fg-dim)", overflow: "hidden", textOverflow: "ellipsis" }}>{repo}</span>
-            </>
-          )}
-        </div>
+        {/* Spacer pushes the controls to the right edge */}
+        <div style={{ flex: 1, minWidth: 0 }} />
 
         {/* Maximize / minimize — one control that swaps by fullscreen state */}
         <button
@@ -322,7 +299,7 @@ export function PaneShell({
           zIndex: 1000,
         }}>
           <PaneMenu
-            agent={agent} repo={repo} branch={branch}
+            agent={agent}
             model={model} active={active} available={available}
             maxHeight={menuPos.maxHeight}
             fullscreen={fullscreen}

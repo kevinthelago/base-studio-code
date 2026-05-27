@@ -9,7 +9,7 @@ import { LogView } from "../components/pane/views/LogView";
 import { useAppStore } from "../store";
 import { recordRender } from "../lib/perf";
 import { resetLaunchGate } from "../lib/launchGate";
-import { shouldAutoFocusOnIdle, shouldAdvanceOnReply, STARTUP_GRACE_MS } from "../lib/consoleFocus";
+import { shouldAdvanceOnReply } from "../lib/consoleFocus";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 function resolvePaneName(
@@ -24,8 +24,6 @@ function paneId(tabIdx: number, paneIdx: number): string {
   return `t${tabIdx}p${paneIdx}`;
 }
 
-interface GitInfo { repo: string; branch: string; dirty: boolean }
-
 interface PaneAtProps {
   i: number;
   tabIdx: number;
@@ -34,7 +32,6 @@ interface PaneAtProps {
   status: "run" | "on" | "idle";
   cwd?: string;
   initCmd?: string;
-  gitInfo?: GitInfo | null;
   // Index-taking dispatchers, stable across ConsoleScreen renders so the memo
   // below holds; PaneAt binds its own `i` into the no-arg callbacks the chrome
   // expects.
@@ -57,7 +54,7 @@ interface PaneAtProps {
 }
 
 const PaneAt = memo(function PaneAt({
-  i, tabIdx, name, view, status, cwd, initCmd, gitInfo,
+  i, tabIdx, name, view, status, cwd, initCmd,
   onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange, onStatusChange,
   onToggleFullscreen, onToggleDisable, menuOpen, focused, fullscreen, disabled, hidden,
 }: PaneAtProps) {
@@ -73,10 +70,6 @@ const PaneAt = memo(function PaneAt({
       onPickDirectory={() => onPickDirectory(i)}
       status={disabled ? "idle" : status}
       model="sonnet-4.5"
-      cwd={gitInfo ? undefined : cwd}
-      repo={gitInfo?.repo}
-      branch={gitInfo?.branch}
-      dirty={gitInfo?.dirty}
       available={["console", "files", "branches", "changes", "log"]}
       active={view}
       menuOpen={menuOpen}
@@ -133,10 +126,9 @@ export function ConsoleScreen() {
     paneNames, setPaneName,
     paneCwds, setPaneCwd,
     paneInitCmds,
-    paneGitInfo, setPaneGitInfo,
     disabledPanes, setPaneDisabled,
     setFocusedAgentName,
-    setTabState, autoFocusOnInterrupt, autoAdvanceOnReply,
+    setTabState, autoAdvanceOnReply,
     consoleBroadcast,
     enqueueFocus, advanceFocus, reconcileFocusQueue,
   } = useAppStore();
@@ -163,39 +155,24 @@ export function ConsoleScreen() {
   // Ref so the callback passed to TerminalView always has the latest value without re-registering
   const paneStatusesRef = useRef(paneStatuses);
   useEffect(() => { paneStatusesRef.current = paneStatuses; }, [paneStatuses]);
-  // Timestamp of the last auto-focus steal — feeds the cooldown that stops two
-  // panes settling in quick succession from ping-ponging the cursor.
-  const lastAutoFocusRef = useRef(0);
 
   const handleStatusChange = useCallback((paneIdx: number, status: "run" | "idle") => {
     const pid = paneId(activeTabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
 
-    // A finished agent (run -> idle) either steals focus (grid mode, so you can
-    // reply fast) or joins the focus queue to be stepped through with Ctrl+Shift+N.
-    // The steal is suppressed during cold-start, for a cooldown after a previous
-    // steal, and while maximized (so the full-screen view isn't yanked) — in those
-    // cases the pane is queued instead. Going back to "run" clears it from the queue.
-    const now = Date.now();
-    const startedAt = useAppStore.getState().tabStartedAt[activeTabIdx] ?? 0;
-    const withinStartupGrace = startedAt > 0 && now - startedAt < STARTUP_GRACE_MS;
-    const maximized = useAppStore.getState().fullscreenPaneIdx >= 0;
+    // The focus queue governs the cursor — it never moves on its own. A finished
+    // agent (run -> idle) joins the queue to be stepped through with Ctrl+Shift+N
+    // or surfaced by auto-advance-on-reply; you choose when to visit it. Going back
+    // to "run" clears it from the queue (handled by the reconcile sweep below).
     if (status === "idle" && prev === "run") {
-      // Finished a turn → now waiting for a response: always queue it. It stays
-      // queued (even if you focus it) until you actually respond. In grid mode
-      // also jump to it so you can reply fast; the steal is suppressed when
-      // maximized, during cold-start, and on cooldown.
       enqueueFocus(paneIdx);
-      if (shouldAutoFocusOnIdle(autoFocusOnInterrupt, status, prev, withinStartupGrace, now - lastAutoFocusRef.current, maximized)) {
-        setFocusedPane(paneIdx);
-        lastAutoFocusRef.current = now;
-      }
     } else if (status === "run" && prev === "idle") {
       // A response was sent to this pane — if it's the one you're on, cycle to the
       // next waiting pane (when auto-advance is on). Dequeuing the now-non-idle
       // pane is handled by the reconcile sweep below, not here.
       // "Active" pane is the maximized one when maximized, else the focused one.
-      const activeIdx = maximized ? useAppStore.getState().fullscreenPaneIdx : useAppStore.getState().focusedPaneIdx;
+      const st = useAppStore.getState();
+      const activeIdx = st.fullscreenPaneIdx >= 0 ? st.fullscreenPaneIdx : st.focusedPaneIdx;
       if (autoAdvanceOnReply && shouldAdvanceOnReply(prev, status, paneIdx, activeIdx)) advanceFocus();
     }
 
@@ -211,7 +188,7 @@ export function ConsoleScreen() {
       setTabState(activeTabIdx, tabState);
       return next;
     });
-  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, autoAdvanceOnReply, setFocusedPane, setTabState, enqueueFocus, advanceFocus]);
+  }, [activeTabIdx, paneCount, autoAdvanceOnReply, setTabState, enqueueFocus, advanceFocus]);
 
   // Reconcile the focus queue with reality: a session stays queued only while it's
   // idle, so whenever statuses change, drop any queued pane that's no longer idle.
@@ -245,12 +222,9 @@ export function ConsoleScreen() {
     }
   }, [activeTabIdx, setPaneDisabled, setFocusedPane, setFullscreenPane]);
 
-  const handleCwdChange = useCallback(async (paneIdx: number, path: string) => {
-    const pid = paneId(activeTabIdx, paneIdx);
-    setPaneCwd(pid, path);
-    const info = await invoke<GitInfo | null>("git_info", { path }).catch(() => null);
-    setPaneGitInfo(pid, info);
-  }, [activeTabIdx, setPaneCwd, setPaneGitInfo]);
+  const handleCwdChange = useCallback((paneIdx: number, path: string) => {
+    setPaneCwd(paneId(activeTabIdx, paneIdx), path);
+  }, [activeTabIdx, setPaneCwd]);
 
   const handlePickDirectory = useCallback(async (paneIdx: number) => {
     const pid = paneId(activeTabIdx, paneIdx);
@@ -259,7 +233,7 @@ export function ConsoleScreen() {
     // cd in the running shell (bash on Windows uses forward slashes)
     const posix = dir.replace(/\\/g, "/").replace(/^([A-Z]):/, (_, d) => `/${d.toLowerCase()}`);
     await invoke("pty_write", { paneId: pid, data: `cd "${posix}"\r` });
-    await handleCwdChange(paneIdx, dir);
+    handleCwdChange(paneIdx, dir);
   }, [activeTabIdx, handleCwdChange]);
 
   const handleRename = useCallback((paneIdx: number, n: string) => setPaneName(activeTabIdx, paneIdx, n), [activeTabIdx, setPaneName]);
@@ -274,7 +248,7 @@ export function ConsoleScreen() {
     const pid = paneId(activeTabIdx, i);
     return (
       <PaneAt
-        key={i}
+        key={`${activeTab.runId ?? 0}-${i}`}
         i={i}
         tabIdx={activeTabIdx}
         name={resolvePaneName(activeTabIdx, i, paneNames)}
@@ -282,7 +256,6 @@ export function ConsoleScreen() {
         status={paneStatuses[pid] ?? "idle"}
         cwd={paneCwds[pid]}
         initCmd={paneInitCmds[pid]}
-        gitInfo={paneGitInfo[pid]}
         onRename={handleRename}
         onMenuToggle={handleMenuToggle}
         onFocus={handleFocusPane}

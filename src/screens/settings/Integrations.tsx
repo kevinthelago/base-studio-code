@@ -36,7 +36,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 }
 
 export function IntegrationsSettings() {
-  const { claudeApiKey, setClaudeApiKey, autoFocusOnInterrupt, setAutoFocusOnInterrupt, autoAdvanceOnReply, setAutoAdvanceOnReply } = useAppStore();
+  const { claudeApiKey, setClaudeApiKey, autoAdvanceOnReply, setAutoAdvanceOnReply } = useAppStore();
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Integrations</h2>
@@ -110,17 +110,6 @@ export function IntegrationsSettings() {
           <h3 style={{ margin: 0 }}>Console behavior</h3>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Toggle on={autoFocusOnInterrupt} onToggle={() => setAutoFocusOnInterrupt(!autoFocusOnInterrupt)} />
-            <div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
-                Auto-focus on interrupt
-              </div>
-              <div className="hint">
-                Automatically focus and scroll to a pane when its agent is interrupted, completes, or requests permission.
-              </div>
-            </div>
-          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Toggle on={autoAdvanceOnReply} onToggle={() => setAutoAdvanceOnReply(!autoAdvanceOnReply)} />
             <div>

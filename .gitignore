@@ -25,6 +25,9 @@ npm-debug.log*
 *.swp
 *.swo
 
+# Claude Code (local project state)
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
