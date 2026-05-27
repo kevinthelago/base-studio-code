@@ -6,12 +6,14 @@ Pairs with **mobile-studio-code**, a companion app that tunnels into the desktop
 
 ## Roadmap
 
-Everything currently in development lands in **0.6.0**; later milestones cover what comes after, on the way to **1.0.0** (the first official release). Latest shipped: **0.5.1**.
+Building toward **1.0.0** — the first official release — one focused release at a time. **0.6.0** (Knowledge Base) is the current development preview.
 
 | Version | Focus |
 |---|---|
-| 0.6.0 | **Current development** — Knowledge Base UX, Automations, Extensions (agent-facing MCP tooling), and multi-agent planning |
-| 0.9.0 | **Tunneling & mobile integration** — secure WebSocket tunnel + mobile-studio-code pairing |
+| 0.6.0 | **Knowledge Base** — UX rework, T-layout, doc-assignment, resizable panes |
+| 0.7.0 | **Automations & multi-agent planning** — end-to-end scheduling + assign agents to issues/features |
+| 0.8.0 | **Extensions** — agent-facing tooling via MCP (first-party in-process server + hooks) |
+| 0.9.0 | **Tunneling, mobile integration & security** — secure WebSocket tunnel + pairing + repo-level credential scoping |
 | 1.0.0 | **First official release** — GA polish + publish |
 
 Tracked as [GitHub milestones](https://github.com/kevinthelago/base-studio-code/milestones). The `0.x` series is a development preview — see [Versioning & Releases](#versioning--releases).
