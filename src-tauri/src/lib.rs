@@ -728,6 +728,13 @@ fn github_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String,
     CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
+/// Drop every cached GitHub response. Called when the token changes (connect /
+/// disconnect / re-auth) so a new account never sees the previous one's bodies.
+#[tauri::command]
+fn github_cache_clear() {
+    github_cache().lock().unwrap().clear();
+}
+
 /// Whether a cached entry of the given age can be served without even revalidating.
 /// `force` always revalidates; with no `max_age_secs` we always revalidate (the
 /// revalidation is a cheap conditional request, so the default is "revalidate-on-view").
@@ -2423,6 +2430,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             kb_chat,
             github_request,
+            github_cache_clear,
             github_graphql,
             github_post,
             pty_create,
