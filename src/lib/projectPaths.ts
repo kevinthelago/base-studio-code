@@ -33,3 +33,15 @@ export function projectRepoCwd(baseDir: string, projectName: string, fullName: s
   const sep = baseDir.includes("\\") ? "\\" : "/";
   return [baseDir, "projects", sanitizeProjectKey(projectName), repoShortName(fullName)].join(sep);
 }
+
+/**
+ * The project hub directory — the planner's CWD and the parent of every repo
+ * clone: `<baseDir>/projects/<sanitizeProjectKey(projectKey)>`. The fleet director
+ * session runs here so it can see all repos as subdirectories. Mirrors the Rust
+ * `project_dir`. Returns an empty string when `baseDir` is empty.
+ */
+export function projectHubCwd(baseDir: string, projectKey: string): string {
+  if (!baseDir) return "";
+  const sep = baseDir.includes("\\") ? "\\" : "/";
+  return [baseDir, "projects", sanitizeProjectKey(projectKey)].join(sep);
+}
