@@ -14,6 +14,7 @@ import { ConsoleScreen } from "./screens/Console";
 import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
 import { AutomationsScreen } from "./screens/automations";
+import { ExtensionsScreen } from "./screens/extensions";
 import { SettingsScreen } from "./screens/settings";
 import { ProjectsScreen } from "./screens/projects";
 import type { Tab } from "./components/chrome/Tabstrip";
@@ -183,6 +184,9 @@ export default function App() {
         parts.push("Automations");
         parts.push(automationsTab);
         break;
+      case "extensions":
+        parts.push("Extensions");
+        break;
       case "projects":
         parts.push("Projects");
         if (projectsView === "planning") {
@@ -313,6 +317,7 @@ export default function App() {
           </div>
           {activeScreen === "github"     && <GitHubScreen />}
           {activeScreen === "automation" && <AutomationsScreen />}
+          {activeScreen === "extensions" && <ExtensionsScreen />}
           {activeScreen === "settings"   && <SettingsScreen />}
           </div>
           <StatusBar extra={
