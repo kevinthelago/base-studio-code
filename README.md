@@ -6,13 +6,11 @@ Pairs with **mobile-studio-code**, a companion app that tunnels into the desktop
 
 ## Roadmap
 
-Building toward **1.0.0** — the first official release — one page at a time. Latest shipped: **0.5.1**.
+Everything currently in development lands in **0.6.0**; later milestones cover what comes after, on the way to **1.0.0** (the first official release). Latest shipped: **0.5.1**.
 
 | Version | Focus |
 |---|---|
-| 0.6.0 | **Knowledge Base** — UX rework |
-| 0.7.0 | **Automations** — verify & complete end-to-end scheduling |
-| 0.8.0 | **Extensions** — agent-facing tooling via MCP (first-party in-process server + hooks) |
+| 0.6.0 | **Current development** — Knowledge Base UX, Automations, Extensions (agent-facing MCP tooling), and multi-agent planning |
 | 0.9.0 | **Tunneling & mobile integration** — secure WebSocket tunnel + mobile-studio-code pairing |
 | 1.0.0 | **First official release** — GA polish + publish |
 
