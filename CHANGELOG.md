@@ -14,6 +14,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - MIT license, README, CONTRIBUTING, SECURITY docs
 - Dependabot for automated dependency updates
 
+## [0.6.0] — 2026-05-27
+
+### Added
+- Extensions screen (mock): manage MCP servers (first-party + third-party) and hooks — Installed/Catalog views, Global/Project/Console scope, per-project matrix, and a config drawer (#33)
+- Automations screen rebuilt (mock): Schedules list + deep editor (when/target/action/guard/history) and a filterable cross-schedule History tab; the old Commands tab folds into a schedule's action (#142)
+- Resizable panes on the Knowledge Base screen — drag the document-list width and the preview height above the terminal (#43)
+
 ## [0.5.1] — 2026-05-27
 
 ### Fixed
