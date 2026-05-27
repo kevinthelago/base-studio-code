@@ -175,6 +175,33 @@ fn claude_launch(prompt: &str, continue_session: bool) -> String {
     format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
 }
 
+/// Claude Code's on-disk directory name for a launch cwd. Conversations live at
+/// `~/.claude/projects/<dir>/<session>.jsonl`, where `<dir>` is the cwd with every
+/// non-alphanumeric character replaced by `-`
+/// (e.g. `C:\Users\Kevin\foo` → `C--Users-Kevin-foo`).
+fn claude_project_dir_name(cwd: &str) -> String {
+    cwd.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
+}
+
+/// Whether Claude has a prior conversation for `cwd`. `--continue` aborts with
+/// "No conversation found to continue" (and never delivers the baked startup
+/// prompt) when there's no history, so we only pass the flag when this is true.
+/// Fail-safe: any uncertainty (empty cwd, unreadable dir) returns `false`, which
+/// launches a fresh session so the prompt is always delivered.
+fn has_claude_history(cwd: &str) -> bool {
+    if cwd.is_empty() {
+        return false;
+    }
+    let dir = home_dir()
+        .join(".claude")
+        .join("projects")
+        .join(claude_project_dir_name(cwd));
+    let Ok(entries) = std::fs::read_dir(&dir) else { return false };
+    entries
+        .flatten()
+        .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
+}
+
 /// Resolve the shell to spawn for a session. The injected bash helpers
 /// (OSC7/OSC100, the `claude()` wrapper, `PROMPT_COMMAND`) need a real bash.
 ///
@@ -335,8 +362,14 @@ async fn pty_create(
     // quoting keeps arbitrary content (newlines, quotes, $, backticks) on a single
     // safe line and overrides any claude launch in init_cmd. With no prompt,
     // init_cmd runs as-is.
+    // Only resume with `--continue` when Claude actually has a prior conversation
+    // for this cwd; otherwise the CLI aborts ("No conversation found to continue")
+    // and the baked startup prompt is dropped — so a fresh project would launch
+    // into nothing. When there's no history we fall back to a fresh session, which
+    // still delivers the prompt.
+    let resume = continue_session.unwrap_or(false) && has_claude_history(&cwd);
     let launch = match startup_prompt.as_deref().filter(|s| !s.is_empty()) {
-        Some(p) => Some(claude_launch(p, continue_session.unwrap_or(false))),
+        Some(p) => Some(claude_launch(p, resume)),
         None => init_cmd.as_deref().filter(|s| !s.is_empty()).map(|s| s.to_string()),
     };
     let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
@@ -2361,7 +2394,7 @@ mod tests {
         assert_eq!(stripped, "/c/Users/Kevin/project");
     }
 
-    use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch};
+    use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch, claude_project_dir_name};
     use super::session_env;
     use std::collections::HashMap;
 
@@ -2401,6 +2434,20 @@ mod tests {
     fn claude_launch_adds_continue_flag() {
         // Triage resumes the repo's prior conversation instead of starting fresh.
         assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
+    }
+
+    #[test]
+    fn claude_project_dir_name_replaces_non_alnum_with_dash() {
+        // Matches the dir Claude Code creates under ~/.claude/projects.
+        assert_eq!(
+            claude_project_dir_name(r"C:\Users\Kevin\Projects\rust\base-studio-code"),
+            "C--Users-Kevin-Projects-rust-base-studio-code"
+        );
+        // Consecutive specials (\ then .) each map to their own dash.
+        assert_eq!(
+            claude_project_dir_name(r"C:\Users\Kevin\.base-studio-code\documents"),
+            "C--Users-Kevin--base-studio-code-documents"
+        );
     }
 
     #[cfg(windows)]
@@ -2639,6 +2686,7 @@ mod tests {
     // ── Document store ──────────────────────────────────────────────────────
 
     use super::{collect_documents, parse_frontmatter, read_document, write_document, bsc_base_dir};
+    use super::has_claude_history;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex as StdMutex;
 
@@ -2679,6 +2727,29 @@ mod tests {
         let (title, tags) = parse_frontmatter("# Just a heading\n\nno frontmatter");
         assert!(title.is_empty());
         assert!(tags.is_empty());
+    }
+
+    #[test]
+    fn has_claude_history_detects_jsonl_in_project_dir() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let home = temp_home("history");
+        let cwd = r"C:\Users\Kevin\Projects\demo";
+        let proj = home.join(".claude").join("projects").join(claude_project_dir_name(cwd));
+
+        // No project dir yet → fresh launch.
+        assert!(!has_claude_history(cwd));
+
+        // Dir exists but holds no conversation → still fresh.
+        std::fs::create_dir_all(&proj).unwrap();
+        write_file(&proj.join("config.json"), "{}");
+        assert!(!has_claude_history(cwd));
+
+        // A conversation transcript is present → resume is safe.
+        write_file(&proj.join("abc-123.jsonl"), "{}\n");
+        assert!(has_claude_history(cwd));
+
+        // Empty cwd is never resumable.
+        assert!(!has_claude_history(""));
     }
 
     #[test]
