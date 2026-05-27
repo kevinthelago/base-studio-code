@@ -345,12 +345,27 @@ async fn pty_create(
         cmd.env(k, v);
     }
     // Expose the triage checkpoint doc (resolved to an absolute, bash-style path)
-    // so the injected `bsc-checkpoint` helper can write "where we left off" to it.
+    // so the `bsc-checkpoint` helper can write "where we left off" to it, and install
+    // the helper itself. It must be reachable from the agent's OWN bash subprocesses:
+    // Claude's Bash tool runs a non-interactive `bash -c`, a child that never saw the
+    // interactive shell's functions, and the hyphenated name can't be `export -f`'d
+    // (bash won't import non-identifier function names). So we drop the helper in a
+    // stable rc file and point BASH_ENV at it — every non-interactive bash sources
+    // BASH_ENV at startup — then source the same file in the interactive shell below.
     let checkpoint_rel = checkpoint_doc.as_deref().filter(|s| !s.is_empty());
-    if let Some(rel) = checkpoint_rel {
-        let abs = bsc_base_dir().join(rel);
+    let checkpoint_rc = if let Some(rel) = checkpoint_rel {
+        let base = bsc_base_dir();
+        let abs = base.join(rel);
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
-    }
+        let _ = std::fs::create_dir_all(&base);
+        let rc = base.join("bsc-env.sh");
+        let _ = std::fs::write(&rc, BSC_CHECKPOINT_RC);
+        let rc_bash = to_bash_path(&rc.to_string_lossy());
+        cmd.env("BASH_ENV", &rc_bash);
+        Some(rc_bash)
+    } else {
+        None
+    };
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
@@ -388,13 +403,12 @@ async fn pty_create(
     } else {
         String::new()
     };
-    // `bsc-checkpoint`: triage sessions pipe a short "where we left off" note to it;
-    // it overwrites the per-repo checkpoint doc that the next launch composes onto
-    // the prompt. Only defined when a checkpoint doc was provided (BSC_CHECKPOINT_DOC).
-    let checkpoint_fn = if checkpoint_rel.is_some() {
-        "bsc-checkpoint() { mkdir -p \"$(dirname \"$BSC_CHECKPOINT_DOC\")\" 2>/dev/null; cat > \"$BSC_CHECKPOINT_DOC\"; }; "
-    } else {
-        ""
+    // Source the checkpoint helper into the interactive shell too: BASH_ENV only
+    // covers non-interactive subshells (the agent's Bash tool), so a human typing
+    // `bsc-checkpoint` in the console pane would otherwise not have it.
+    let checkpoint_fn = match &checkpoint_rc {
+        Some(rc) => format!("source \"{}\" 2>/dev/null; ", rc),
+        None => String::new(),
     };
     let osc7 = format!(
         "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
@@ -634,11 +648,31 @@ async fn github_graphql(
     token: String,
     query: String,
     variables: Option<serde_json::Value>,
+    max_age_secs: Option<u64>,
+    force: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("github_graphql");
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
+    let force = force.unwrap_or(false);
+    // GraphQL has no ETag, so the cache is purely time-windowed (TTL): within
+    // max_age serve the cached `data` with no network call; otherwise re-POST.
+    // Keyed by query + variables. Reuses the REST cache map (etag stays None).
+    let cache_key = format!(
+        "graphql:{}|{}",
+        query,
+        variables.as_ref().map(|v| v.to_string()).unwrap_or_default(),
+    );
+    if !force {
+        let cache = github_cache().lock().unwrap();
+        if let Some(entry) = cache.get(&cache_key) {
+            if cache_is_fresh(entry.fetched_at.elapsed(), max_age_secs, false) {
+                return Ok(entry.body.clone());
+            }
+        }
+    }
+
     let client = reqwest::Client::new();
     let mut body = serde_json::json!({ "query": query });
     if let Some(vars) = variables {
@@ -670,7 +704,12 @@ async fn github_graphql(
             return Err(format!("GraphQL error: {}", msg));
         }
     }
-    Ok(json["data"].clone())
+    let data = json["data"].clone();
+    github_cache().lock().unwrap().insert(
+        cache_key,
+        CachedGet { etag: None, body: data.clone(), fetched_at: std::time::Instant::now() },
+    );
+    Ok(data)
 }
 
 #[tauri::command]
@@ -708,24 +747,133 @@ async fn github_post(
     Ok(json)
 }
 
+// ── GitHub response cache (ETag-validated, in-memory) ──────────────────────────
+//
+// REST GETs are cached by endpoint path. On the next request we send the stored
+// ETag as `If-None-Match`; GitHub answers `304 Not Modified` (cheap — it doesn't
+// count against the primary rate limit) when nothing changed, and we serve the
+// cached body. This makes the frontend's refetch-on-view nearly free while staying
+// current. (GraphQL has no ETags — a separate TTL/version-probe pass covers it.)
+
+struct CachedGet {
+    etag: Option<String>,
+    body: serde_json::Value,
+    fetched_at: std::time::Instant,
+}
+
+fn github_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, CachedGet>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, CachedGet>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Drop every cached GitHub response. Called when the token changes (connect /
+/// disconnect / re-auth) so a new account never sees the previous one's bodies.
 #[tauri::command]
-async fn github_request(token: String, path: String) -> Result<serde_json::Value, String> {
+fn github_cache_clear() {
+    github_cache().lock().unwrap().clear();
+}
+
+/// Whether a cached entry of the given age can be served without even revalidating.
+/// `force` always revalidates; with no `max_age_secs` we always revalidate (the
+/// revalidation is a cheap conditional request, so the default is "revalidate-on-view").
+fn cache_is_fresh(age: std::time::Duration, max_age_secs: Option<u64>, force: bool) -> bool {
+    if force {
+        return false;
+    }
+    match max_age_secs {
+        Some(max) => age < std::time::Duration::from_secs(max),
+        None => false,
+    }
+}
+
+/// Fold a GET outcome into the cache and return the body to hand back. A 304
+/// reuses the cached entry (timestamp refreshed); otherwise the fresh `body`
+/// (with its `etag`) replaces the entry. Returns `None` only on a 304 with no
+/// cached entry (shouldn't happen) or a non-304 with no body.
+fn apply_github_response(
+    cache: &mut std::collections::HashMap<String, CachedGet>,
+    path: &str,
+    not_modified: bool,
+    etag: Option<String>,
+    body: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    if not_modified {
+        let entry = cache.get_mut(path)?;
+        entry.fetched_at = std::time::Instant::now();
+        return Some(entry.body.clone());
+    }
+    let b = body?;
+    cache.insert(
+        path.to_string(),
+        CachedGet { etag, body: b.clone(), fetched_at: std::time::Instant::now() },
+    );
+    Some(b)
+}
+
+#[tauri::command]
+async fn github_request(
+    token: String,
+    path: String,
+    max_age_secs: Option<u64>,
+    force: Option<bool>,
+) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("github_request");
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
+    let force = force.unwrap_or(false);
+
+    // Within max_age: serve the cached body with no network call. Otherwise grab
+    // the stored ETag so we can revalidate cheaply via If-None-Match.
+    let cached_etag = {
+        let cache = github_cache().lock().unwrap();
+        match cache.get(&path) {
+            Some(entry) if cache_is_fresh(entry.fetched_at.elapsed(), max_age_secs, force) => {
+                return Ok(entry.body.clone());
+            }
+            Some(entry) if !force => entry.etag.clone(),
+            _ => None,
+        }
+    };
+
     let client = reqwest::Client::new();
     let url = format!("https://api.github.com/{}", path);
-    let response = client
+    let mut req = client
         .get(&url)
         .header("Authorization", format!("Bearer {}", token))
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "base-studio-code/0.2.0")
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .header("User-Agent", "base-studio-code/0.2.0");
+    if let Some(etag) = &cached_etag {
+        req = req.header("If-None-Match", etag.clone());
+    }
+    let response = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            // Offline / transient: serve the last good body if we have one.
+            if let Some(entry) = github_cache().lock().unwrap().get(&path) {
+                log::warn!("github_request {path} request failed ({e}); serving cached body");
+                return Ok(entry.body.clone());
+            }
+            return Err(format!("Request failed: {}", e));
+        }
+    };
     let status = response.status();
+
+    // 304 Not Modified → the cached body is still current.
+    if status == reqwest::StatusCode::NOT_MODIFIED {
+        let mut cache = github_cache().lock().unwrap();
+        return apply_github_response(&mut cache, &path, true, None, None)
+            .ok_or_else(|| "GitHub returned 304 but no cached body is available".to_string());
+    }
+
+    // Capture the ETag before the body consumes the response.
+    let etag = response
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
     let json: serde_json::Value = response
         .json()
         .await
@@ -735,6 +883,8 @@ async fn github_request(token: String, path: String) -> Result<serde_json::Value
         log::warn!("github_request {path} HTTP {status}: {msg}");
         return Err(format!("GitHub API error ({}): {}", status, msg));
     }
+    let mut cache = github_cache().lock().unwrap();
+    apply_github_response(&mut cache, &path, false, etag, Some(json.clone()));
     Ok(json)
 }
 
@@ -762,6 +912,15 @@ fn home_dir() -> std::path::PathBuf {
 fn bsc_base_dir() -> std::path::PathBuf {
     home_dir().join(".base-studio-code")
 }
+
+/// The `bsc-checkpoint` helper: reads stdin and overwrites the per-repo checkpoint
+/// doc named by `$BSC_CHECKPOINT_DOC` (creating its parent dir). Installed via an rc
+/// file + `BASH_ENV` so it's reachable from the agent's non-interactive `bash -c`
+/// subshells, not just the interactive PTY shell. The hyphenated name can't be
+/// `export -f`'d — bash refuses to import functions whose names aren't valid
+/// identifiers (post-Shellshock) — so it must be *defined* in each subshell.
+const BSC_CHECKPOINT_RC: &str =
+    "bsc-checkpoint() { mkdir -p \"$(dirname \"$BSC_CHECKPOINT_DOC\")\" 2>/dev/null; cat > \"$BSC_CHECKPOINT_DOC\"; }\n";
 
 /// Serializes the app's read-modify-write of `~/.claude.json` so concurrent
 /// session launches (each `pty_create` calls `trust_claude_dir`) don't interleave
@@ -2319,6 +2478,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             kb_chat,
             github_request,
+            github_cache_clear,
             github_graphql,
             github_post,
             pty_create,
@@ -2369,7 +2529,38 @@ mod tests {
 
     use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch, claude_project_dir_name};
     use super::session_env;
+    use super::{cache_is_fresh, apply_github_response, CachedGet};
     use std::collections::HashMap;
+
+    #[test]
+    fn cache_is_fresh_only_within_max_age_and_never_when_forced() {
+        use std::time::Duration;
+        // No max_age → always revalidate (cheap conditional request).
+        assert!(!cache_is_fresh(Duration::from_secs(0), None, false));
+        // Within / beyond the max_age window.
+        assert!(cache_is_fresh(Duration::from_secs(10), Some(60), false));
+        assert!(!cache_is_fresh(Duration::from_secs(120), Some(60), false));
+        // force always revalidates, even when otherwise fresh.
+        assert!(!cache_is_fresh(Duration::from_secs(1), Some(60), true));
+    }
+
+    #[test]
+    fn apply_github_response_stores_on_200_and_reuses_on_304() {
+        let mut cache: HashMap<String, CachedGet> = HashMap::new();
+
+        // 200: stores the body + etag and returns it.
+        let body = serde_json::json!({ "n": 1 });
+        let out = apply_github_response(&mut cache, "repos/x", false, Some("etag-1".into()), Some(body.clone()));
+        assert_eq!(out.as_ref(), Some(&body));
+        assert_eq!(cache.get("repos/x").unwrap().etag.as_deref(), Some("etag-1"));
+
+        // 304: returns the cached body without a new body.
+        let reused = apply_github_response(&mut cache, "repos/x", true, None, None);
+        assert_eq!(reused.as_ref(), Some(&body));
+
+        // 304 with no cached entry → None (caller errors).
+        assert_eq!(apply_github_response(&mut cache, "repos/missing", true, None, None), None);
+    }
 
     #[test]
     fn session_env_sets_xterm_term_by_default() {
@@ -2407,6 +2598,64 @@ mod tests {
     fn claude_launch_adds_continue_flag() {
         // Triage resumes the repo's prior conversation instead of starting fresh.
         assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
+    }
+
+    #[test]
+    fn bsc_checkpoint_rc_defines_hyphenated_helper_reading_the_doc_var() {
+        // The helper keeps its hyphenated, user-facing name (so it can't be exported
+        // into subshells — it must be *defined* via the rc file) and writes whatever
+        // it gets on stdin to the doc named by $BSC_CHECKPOINT_DOC.
+        let rc = super::BSC_CHECKPOINT_RC;
+        assert!(rc.contains("bsc-checkpoint()"), "rc must define the hyphenated helper");
+        assert!(rc.contains("$BSC_CHECKPOINT_DOC"), "rc must target the doc env var");
+        assert!(rc.contains("mkdir -p"), "rc must create the doc's parent dir");
+    }
+
+    #[test]
+    fn bsc_checkpoint_helper_runs_in_a_fresh_non_interactive_subshell() {
+        // Regression: the helper was only defined in the interactive PTY shell, so the
+        // agent's own `bash -c` subprocesses (Claude's Bash tool) couldn't find it.
+        // The rc file + BASH_ENV mechanism must make a fresh, non-interactive bash able
+        // to run `bsc-checkpoint` and write the doc. Skips where bash isn't on PATH.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        // Resolve the SAME shell the PTY launches (Git Bash on Windows, never the WSL
+        // System32 stub — which can't read a /c/... BASH_ENV path). A bare `bash` would
+        // resolve via PATH and may hit that stub, failing for reasons unrelated to the fix.
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_checkpoint subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-ckpt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_CHECKPOINT_RC).unwrap();
+        // Nested path exercises the helper's `mkdir -p` of the doc's parent.
+        let doc = dir.join("nested").join("checkpoint.md");
+
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let doc_bash = super::to_bash_path(&doc.to_string_lossy());
+
+        let mut child = Command::new(&shell)
+            .arg("-c")
+            .arg("bsc-checkpoint")
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_CHECKPOINT_DOC", &doc_bash)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(b"left off: step 3\n").unwrap();
+        assert!(child.wait().unwrap().success(), "bsc-checkpoint should run in the subshell");
+
+        assert_eq!(std::fs::read_to_string(&doc).unwrap(), "left off: step 3\n");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
