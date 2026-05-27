@@ -8,6 +8,7 @@ import { StatusBar } from "./components/chrome/StatusBar";
 import { Dialog } from "./components/Dialog";
 import { useAppStore } from "./store";
 import { useHotkeys } from "./hooks/useHotkeys";
+import { useScheduler } from "./hooks/useScheduler";
 import { startPerfMonitor, recordStoreWrite } from "./lib/perf";
 import { log } from "./lib/log";
 import { ConsoleScreen } from "./screens/Console";
@@ -123,6 +124,7 @@ function ConsoleEmptyState({ onNew }: { onNew: () => void }) {
 
 export default function App() {
   useHotkeys();
+  useScheduler();
 
   const {
     activeScreen, setScreen,
