@@ -24,9 +24,9 @@ export interface Automation {
   name: string;
   armed: boolean;
   when: AutomationWhen;
-  /** Resolved at fire time by name, so it survives tab/pane reordering. */
+  /** Tab resolved at fire time by name (survives reordering); pane by index. */
   targetTab: string;
-  targetPane: string;
+  targetPaneIdx: number;
   action: AutomationActionKind;
   command?: string;   // action === "command"
   blockId?: string;   // action === "knowledge"
@@ -95,27 +95,30 @@ export function computeNextRun(when: AutomationWhen, fromMs: number): number | n
   return null;
 }
 
-export interface TabLike { name: string }
+export interface TabLike { name: string; layout: string }
+
+/** Pane count for a "C×R" layout string. */
+export function paneCount(layout: string): number {
+  const [c, r] = layout.split("×").map(n => parseInt(n, 10));
+  return (c || 0) * (r || 0);
+}
 
 /**
- * Resolve an automation's (tabName, paneName) target to a live pane id
- * `t{tabIdx}p{paneIdx}`, or null when the target tab/pane isn't open (or is
- * disabled). Matching is by name so it tracks user-renamed tabs/panes.
+ * Resolve an automation's (tab name, pane index) target to a live pane id
+ * `t{tabIdx}p{paneIdx}`, or null when the target tab is gone, the pane index is
+ * outside the tab's layout, or the pane is disabled. The tab is matched by name
+ * so it tracks renamed/reordered tabs.
  */
 export function resolveTargetPane(
   targetTab: string,
-  targetPane: string,
+  targetPaneIdx: number,
   tabs: TabLike[],
-  paneNames: Record<number, Record<number, string>>,
   disabledPanes: Record<string, boolean>,
 ): string | null {
   const tabIdx = tabs.findIndex(t => t.name === targetTab);
   if (tabIdx < 0) return null;
-  const panes = paneNames[tabIdx] ?? {};
-  const entry = Object.entries(panes).find(([, name]) => name === targetPane);
-  if (!entry) return null;
-  const paneIdx = Number(entry[0]);
-  const paneId = `t${tabIdx}p${paneIdx}`;
+  if (targetPaneIdx < 0 || targetPaneIdx >= paneCount(tabs[tabIdx].layout)) return null;
+  const paneId = `t${tabIdx}p${targetPaneIdx}`;
   if (disabledPanes[paneId]) return null;
   return paneId;
 }
