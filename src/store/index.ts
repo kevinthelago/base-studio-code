@@ -262,7 +262,6 @@ interface AppStore {
   setBscBaseDir: (dir: string) => void;
   projectLocalRepos: Record<string, string[]>;
   addProjectRepo: (projectId: string, fullName: string) => void;
-  quickStartProject: (projectName: string, repos: string[], projectId?: string) => void;
   triageStartProject: (projectName: string, repos: string[], projectId?: string) => void;
   findTriageTabIdx: (projectName: string) => number;
 
@@ -641,80 +640,21 @@ export const useAppStore = create<AppStore>()(
           if (existing.includes(fullName)) return {};
           return { projectLocalRepos: { ...s.projectLocalRepos, [projectId]: [...existing, fullName] } };
         }),
-      quickStartProject: (projectName, repos, projectId = "") =>
-        set((s) => {
-          if (repos.length === 0) return { activeScreen: "console" as Screen };
-          const newTabIdx = s.tabs.length;
-          const count = Math.min(repos.length, 4);
-          const layout = count <= 1 ? "1×1" : count === 2 ? "2×1" : "2×2";
-          const [cols, rows] = layout.split("×").map(Number);
-          const paneCount = cols * rows;
-          const newPaneCwds      = { ...s.paneCwds };
-          const newPaneInitCmds  = { ...s.paneInitCmds };
-          const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
-          const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
-          const newDisabledPanes = { ...s.disabledPanes };
-          const tabPaneNames: Record<number, string> = {};
-          const assignments = {
-            defaultStartupPromptDoc: s.defaultStartupPromptDoc,
-            projectStartupPromptDoc: s.projectStartupPromptDoc,
-            repoStartupPromptDoc:    s.repoStartupPromptDoc,
-          };
-          for (let i = 0; i < paneCount; i++) {
-            const pid = `t${newTabIdx}p${i}`;
-            if (i < count) {
-              const fullName = repos[i];
-              newPaneCwds[pid] = projectRepoCwd(s.bscBaseDir, projectName, fullName);
-              tabPaneNames[i] = fullName.split("/")[1] ?? fullName;
-              // claude launches with the resolved startup prompt baked in by the
-              // backend (reliable: claude submits it itself). The doc assignment
-              // is "" = the built-in plan prompt, or a relpath to a per-repo /
-              // project kickoff script. initCmd just marks this a claude pane so
-              // the launch gate engages.
-              newPaneInitCmds[pid] = "claude";
-              newPaneStartupPromptDocs[pid] = resolveStartupPromptDoc(assignments, projectId, fullName) ?? "";
-              newPaneAllowedCommands[pid] = resolveAllowedCommands(
-                s.allowedCommands,
-                s.projectAllowedCommands[projectId],
-                s.repoAllowedCommands[repoPromptKey(projectId, fullName)],
-              );
-              delete newDisabledPanes[pid];
-            } else {
-              // Empty grid cell (e.g. 3 repos in a 2×2) — start it disabled so it
-              // doesn't spawn an idle shell or add rendering load.
-              newDisabledPanes[pid] = true;
-            }
-          }
-          const newTab: Tab = { name: projectName, layout, state: "idle" };
-          return {
-            tabs: [...s.tabs, newTab],
-            activeTabIdx: newTabIdx,
-            focusedPaneIdx: -1,
-            fullscreenPaneIdx: -1,
-            paneMenuOpenIdx: -1,
-            paneCwds: newPaneCwds,
-            paneInitCmds: newPaneInitCmds,
-            paneStartupPromptDocs: newPaneStartupPromptDocs,
-            paneAllowedCommands: newPaneAllowedCommands,
-            disabledPanes: newDisabledPanes,
-            paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
-            activeScreen: "console" as Screen,
-          };
-        }),
       findTriageTabIdx: (projectName) => {
         const tabName = `${projectName} · triage`;
         return get().tabs.findIndex((t) => t.name === tabName);
       },
       triageStartProject: (projectName, repos, projectId = "") =>
         set((s) => {
-          // If a triage tab for this project already exists, switch to it.
+          // A triage tab for this project may already exist (re-run): rebuild it in
+          // place at the same index. The caller kills the old panes' sessions first
+          // and the bumped runId remounts them, so pty_create launches fresh
+          // (resuming via --continue + the checkpoint) instead of reconnecting.
           const tabName = `${projectName} · triage`;
           const existingIdx = s.tabs.findIndex((t) => t.name === tabName);
-          if (existingIdx >= 0) {
-            return { activeTabIdx: existingIdx, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: -1, activeScreen: "console" as Screen };
-          }
           if (repos.length === 0) return {};
-          const newTabIdx = s.tabs.length;
+          const newTabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
+          const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
           const count = Math.min(repos.length, 16);
           const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
           const rows = Math.ceil(count / cols);
@@ -778,9 +718,11 @@ export const useAppStore = create<AppStore>()(
               newDisabledPanes[key] = true;
             }
           }
-          const newTab: Tab = { name: `${projectName} · triage`, layout, state: "idle" };
+          const newTab: Tab = { name: `${projectName} · triage`, layout, state: "idle", runId };
           return {
-            tabs: [...s.tabs, newTab],
+            tabs: existingIdx >= 0
+              ? s.tabs.map((t, i) => (i === existingIdx ? newTab : t))
+              : [...s.tabs, newTab],
             activeTabIdx: newTabIdx,
             focusedPaneIdx: -1,
             fullscreenPaneIdx: -1,
