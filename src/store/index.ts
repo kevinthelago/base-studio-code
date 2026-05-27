@@ -10,6 +10,7 @@ import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQu
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
 import { projectRepoCwd, sanitizeProjectKey } from "../lib/projectPaths";
 import { checkpointDocRelpath } from "../lib/checkpoint";
+import { computeNextRun, appendRun, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 
 // Sent as the first message to each console when a project tab is opened, so the
@@ -200,6 +201,16 @@ interface AppStore {
   addCommand: () => void;
   updateCommand: (id: string, patch: Partial<Command>) => void;
   removeCommand: (id: string) => void;
+
+  // Scheduled automations (#142) — the real, fired-on-a-tick model (a frontend
+  // scheduler ticks and dispatches via pty_write). Distinct from the legacy
+  // `schedules`/`commands` above, which are planner-suggested and read by Planning.
+  automations: Automation[];
+  addAutomation: (input: Omit<Automation, "id" | "lastRunAt" | "nextRunAt" | "runs">) => void;
+  updateAutomation: (id: string, patch: Partial<Automation>) => void;
+  removeAutomation: (id: string) => void;
+  setAutomationArmed: (id: string, armed: boolean) => void;
+  recordAutomationRun: (id: string, run: AutomationRun) => void;
 
   // Projects (transient)
   projectsPageMode: "summary" | "projects";
@@ -567,6 +578,43 @@ export const useAppStore = create<AppStore>()(
       removeCommand: (id) =>
         set((s) => ({ commands: s.commands.filter(c => c.id !== id) })),
 
+      automations: [],
+      addAutomation: (input) =>
+        set((s) => {
+          const id = `auto_${Math.random().toString(36).slice(2, 8)}`;
+          const nextRunAt = input.armed ? computeNextRun(input.when, Date.now()) : null;
+          const a: Automation = { ...input, id, lastRunAt: null, nextRunAt, runs: [] };
+          return { automations: [...s.automations, a] };
+        }),
+      updateAutomation: (id, patch) =>
+        set((s) => ({
+          automations: s.automations.map(a => {
+            if (a.id !== id) return a;
+            const next = { ...a, ...patch };
+            // Editing the trigger or arming re-derives the next fire time.
+            if ("when" in patch || "armed" in patch) {
+              next.nextRunAt = next.armed ? computeNextRun(next.when, Date.now()) : null;
+            }
+            return next;
+          }),
+        })),
+      removeAutomation: (id) =>
+        set((s) => ({ automations: s.automations.filter(a => a.id !== id) })),
+      setAutomationArmed: (id, armed) =>
+        set((s) => ({
+          automations: s.automations.map(a =>
+            a.id === id
+              ? { ...a, armed, nextRunAt: armed ? computeNextRun(a.when, Date.now()) : null }
+              : a),
+        })),
+      recordAutomationRun: (id, run) =>
+        set((s) => ({
+          automations: s.automations.map(a =>
+            a.id === id
+              ? { ...a, runs: appendRun(a.runs, run), lastRunAt: run.at, nextRunAt: computeNextRun(a.when, run.at) }
+              : a),
+        })),
+
       projectsPageMode: "summary",
       setProjectsPageMode: (v) => set({ projectsPageMode: v }),
       projectsView: "list",
@@ -892,6 +940,7 @@ export const useAppStore = create<AppStore>()(
         claudeApiKey:    s.claudeApiKey,
         schedules:            s.schedules,
         commands:             s.commands,
+        automations:          s.automations,
         allowedCommands:      s.allowedCommands,
         deniedCommands:       s.deniedCommands,
         projectAllowedCommands: s.projectAllowedCommands,
