@@ -18,7 +18,6 @@ const RESET_STATE = {
   paneNames: {} as Record<number, Record<number, string>>,
   paneCwds: {} as Record<string, string>,
   paneInitCmds: {} as Record<string, string>,
-  paneGitInfo: {} as Record<string, { repo: string; branch: string; dirty: boolean } | null>,
   disabledPanes: {} as Record<string, boolean>,
   kbBlocks: [],
   schedules: [],
@@ -306,18 +305,6 @@ describe("pane state", () => {
   it("setPaneCwd stores working directory by pane ID", () => {
     useAppStore.getState().setPaneCwd("t0p0", "/home/user/project");
     expect(useAppStore.getState().paneCwds["t0p0"]).toBe("/home/user/project");
-  });
-
-  it("setPaneGitInfo stores git metadata by pane ID", () => {
-    const info = { repo: "my-repo", branch: "main", dirty: true };
-    useAppStore.getState().setPaneGitInfo("t0p1", info);
-    expect(useAppStore.getState().paneGitInfo["t0p1"]).toEqual(info);
-  });
-
-  it("setPaneGitInfo accepts null to clear git context", () => {
-    useAppStore.getState().setPaneGitInfo("t0p0", { repo: "r", branch: "b", dirty: false });
-    useAppStore.getState().setPaneGitInfo("t0p0", null);
-    expect(useAppStore.getState().paneGitInfo["t0p0"]).toBeNull();
   });
 
   it("setPaneMenu tracks which pane has the menu open", () => {

@@ -122,8 +122,6 @@ interface AppStore {
   // resume the repo's prior conversation rather than starting fresh. Set for
   // triage panes (see triageStartProject); read by TerminalView.
   paneContinue: Record<string, boolean>;
-  paneGitInfo: Record<string, { repo: string; branch: string; dirty: boolean } | null>;
-  setPaneGitInfo: (paneId: string, info: { repo: string; branch: string; dirty: boolean } | null) => void;
   // Disabled panes (keyed by "t{tabIdx}p{paneIdx}") — terminal unmounted + PTY killed.
   disabledPanes: Record<string, boolean>;
   setPaneDisabled: (paneId: string, disabled: boolean) => void;
@@ -369,9 +367,6 @@ export const useAppStore = create<AppStore>()(
       paneStartupPromptDocs: {},
       paneStartupPromptText: {},
       paneContinue: {},
-      paneGitInfo: {},
-      setPaneGitInfo: (paneId, info) =>
-        set((s) => ({ paneGitInfo: { ...s.paneGitInfo, [paneId]: info } })),
       disabledPanes: {},
       setPaneDisabled: (paneId, disabled) =>
         set((s) => {
@@ -425,20 +420,17 @@ export const useAppStore = create<AppStore>()(
           (Object.keys(tabPaneNames) as unknown as number[]).forEach((k) => {
             if (Number(k) >= newCount) delete tabPaneNames[Number(k)];
           });
-          // Trim cwds and git info keyed by "t{tabIdx}p{n}"
+          // Trim cwds keyed by "t{tabIdx}p{n}"
           const paneCwds = { ...s.paneCwds };
-          const paneGitInfo = { ...s.paneGitInfo };
           const isExcess = (key: string) => {
             const m = key.match(/^t(\d+)p(\d+)$/);
             return m && Number(m[1]) === tabIdx && Number(m[2]) >= newCount;
           };
           Object.keys(paneCwds).forEach((key) => { if (isExcess(key)) delete paneCwds[key]; });
-          Object.keys(paneGitInfo).forEach((key) => { if (isExcess(key)) delete paneGitInfo[key]; });
           return {
             tabs,
             paneNames: { ...s.paneNames, [tabIdx]: tabPaneNames },
             paneCwds,
-            paneGitInfo,
           };
         }),
       setPaneMenu:       (idx) => set({ paneMenuOpenIdx: idx }),
