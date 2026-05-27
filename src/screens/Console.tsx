@@ -24,8 +24,6 @@ function paneId(tabIdx: number, paneIdx: number): string {
   return `t${tabIdx}p${paneIdx}`;
 }
 
-interface GitInfo { repo: string; branch: string; dirty: boolean }
-
 interface PaneAtProps {
   i: number;
   tabIdx: number;
@@ -34,7 +32,6 @@ interface PaneAtProps {
   status: "run" | "on" | "idle";
   cwd?: string;
   initCmd?: string;
-  gitInfo?: GitInfo | null;
   // Index-taking dispatchers, stable across ConsoleScreen renders so the memo
   // below holds; PaneAt binds its own `i` into the no-arg callbacks the chrome
   // expects.
@@ -57,7 +54,7 @@ interface PaneAtProps {
 }
 
 const PaneAt = memo(function PaneAt({
-  i, tabIdx, name, view, status, cwd, initCmd, gitInfo,
+  i, tabIdx, name, view, status, cwd, initCmd,
   onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange, onStatusChange,
   onToggleFullscreen, onToggleDisable, menuOpen, focused, fullscreen, disabled, hidden,
 }: PaneAtProps) {
@@ -73,10 +70,6 @@ const PaneAt = memo(function PaneAt({
       onPickDirectory={() => onPickDirectory(i)}
       status={disabled ? "idle" : status}
       model="sonnet-4.5"
-      cwd={gitInfo ? undefined : cwd}
-      repo={gitInfo?.repo}
-      branch={gitInfo?.branch}
-      dirty={gitInfo?.dirty}
       available={["console", "files", "branches", "changes", "log"]}
       active={view}
       menuOpen={menuOpen}
@@ -133,7 +126,6 @@ export function ConsoleScreen() {
     paneNames, setPaneName,
     paneCwds, setPaneCwd,
     paneInitCmds,
-    paneGitInfo, setPaneGitInfo,
     disabledPanes, setPaneDisabled,
     setFocusedAgentName,
     setTabState, autoAdvanceOnReply,
@@ -230,12 +222,9 @@ export function ConsoleScreen() {
     }
   }, [activeTabIdx, setPaneDisabled, setFocusedPane, setFullscreenPane]);
 
-  const handleCwdChange = useCallback(async (paneIdx: number, path: string) => {
-    const pid = paneId(activeTabIdx, paneIdx);
-    setPaneCwd(pid, path);
-    const info = await invoke<GitInfo | null>("git_info", { path }).catch(() => null);
-    setPaneGitInfo(pid, info);
-  }, [activeTabIdx, setPaneCwd, setPaneGitInfo]);
+  const handleCwdChange = useCallback((paneIdx: number, path: string) => {
+    setPaneCwd(paneId(activeTabIdx, paneIdx), path);
+  }, [activeTabIdx, setPaneCwd]);
 
   const handlePickDirectory = useCallback(async (paneIdx: number) => {
     const pid = paneId(activeTabIdx, paneIdx);
@@ -244,7 +233,7 @@ export function ConsoleScreen() {
     // cd in the running shell (bash on Windows uses forward slashes)
     const posix = dir.replace(/\\/g, "/").replace(/^([A-Z]):/, (_, d) => `/${d.toLowerCase()}`);
     await invoke("pty_write", { paneId: pid, data: `cd "${posix}"\r` });
-    await handleCwdChange(paneIdx, dir);
+    handleCwdChange(paneIdx, dir);
   }, [activeTabIdx, handleCwdChange]);
 
   const handleRename = useCallback((paneIdx: number, n: string) => setPaneName(activeTabIdx, paneIdx, n), [activeTabIdx, setPaneName]);
@@ -267,7 +256,6 @@ export function ConsoleScreen() {
         status={paneStatuses[pid] ?? "idle"}
         cwd={paneCwds[pid]}
         initCmd={paneInitCmds[pid]}
-        gitInfo={paneGitInfo[pid]}
         onRename={handleRename}
         onMenuToggle={handleMenuToggle}
         onFocus={handleFocusPane}
