@@ -51,6 +51,7 @@ const RESET_STATE = {
   configProfiles: [] as import("../store").ConfigProfile[],
   paneStartupPromptDocs: {} as Record<string, string>,
   paneStartupPromptText: {} as Record<string, string>,
+  paneCheckpointDocs: {} as Record<string, string>,
   paneContinue: {} as Record<string, boolean>,
   bscBaseDir: "",
   defaultStartupPromptDoc: null as string | null,
@@ -811,6 +812,14 @@ describe("triageStartProject", () => {
     const { paneContinue } = useAppStore.getState();
     expect(paneContinue[`t${before}p0`]).toBe(true);
     expect(paneContinue[`t${before}p1`]).toBe(true);
+  });
+
+  it("assigns a per-repo triage checkpoint doc to each real-repo pane", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().triageStartProject("ckpt", ["o/web", "o/api"]);
+    const { paneCheckpointDocs } = useAppStore.getState();
+    expect(paneCheckpointDocs[`t${before}p0`]).toBe("projects/ckpt/prompts/web-checkpoint.md");
+    expect(paneCheckpointDocs[`t${before}p1`]).toBe("projects/ckpt/prompts/api-checkpoint.md");
   });
 
   it("disables no cells when the grid is exactly filled", () => {

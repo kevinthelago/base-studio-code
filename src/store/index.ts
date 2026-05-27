@@ -8,7 +8,8 @@ import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
-import { projectRepoCwd } from "../lib/projectPaths";
+import { projectRepoCwd, sanitizeProjectKey } from "../lib/projectPaths";
+import { checkpointDocRelpath } from "../lib/checkpoint";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 
 // Sent as the first message to each console when a project tab is opened, so the
@@ -34,7 +35,11 @@ export const TRIAGE_PROMPT =
   "Apply the matching priority label with gh issue edit <number> --add-label P0|P1|P2|P3 " +
   "(create the label first with gh label create if it does not exist). Finally, flag any " +
   "P3 issue with no activity in the last 90 days as stale by adding a stale label, and " +
-  "summarize the triage results grouped by priority when done.";
+  "summarize the triage results grouped by priority when done. " +
+  "When you finish this pass, save where you left off for next time: pipe a short " +
+  "plain-text summary (what you completed, what is in progress, and the single next " +
+  "step to take) into the bsc-checkpoint command on stdin. The next triage pass for " +
+  "this repo will begin with that summary.";
 
 export interface GithubUser {
   login: string;
@@ -118,6 +123,11 @@ interface AppStore {
   // exact text is sent to the session once Claude reaches its prompt. Used by
   // triage panes (see TRIAGE_PROMPT).
   paneStartupPromptText: Record<string, string>;
+  // paneId → unified-store relpath of the triage CHECKPOINT doc (transient — NOT
+  // persisted). The session overwrites it via the `bsc-checkpoint` shell helper;
+  // TerminalView composes its content onto the next triage launch's prompt so the
+  // pass resumes where it left off. Set for triage panes (see triageStartProject).
+  paneCheckpointDocs: Record<string, string>;
   // Per-pane flag (transient — NOT persisted): launch claude with --continue to
   // resume the repo's prior conversation rather than starting fresh. Set for
   // triage panes (see triageStartProject); read by TerminalView.
@@ -367,6 +377,7 @@ export const useAppStore = create<AppStore>()(
       setPaneInitCmd: (paneId, cmd) =>
         set((s) => ({ paneInitCmds: { ...s.paneInitCmds, [paneId]: cmd } })),
       paneStartupPromptDocs: {},
+      paneCheckpointDocs: {},
       paneStartupPromptText: {},
       paneContinue: {},
       paneGitInfo: {},
@@ -712,8 +723,12 @@ export const useAppStore = create<AppStore>()(
           const newPaneInitCmds = { ...s.paneInitCmds };
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
+          const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
+          // Checkpoint docs live beside the repo clones, under the project-name
+          // key (always present; projectId defaults to "" for ad-hoc triage).
+          const projKey = sanitizeProjectKey(projectName);
           const newDisabledPanes = { ...s.disabledPanes };
           const tabPaneNames: Record<number, string> = {};
           const paneCount = cols * rows;
@@ -752,6 +767,10 @@ export const useAppStore = create<AppStore>()(
               // Triage resumes the repo's prior conversation (claude --continue)
               // so each pass builds on the last instead of starting cold.
               newPaneContinue[key] = true;
+              // Per-repo checkpoint doc: the session writes "where we left off" to
+              // it via bsc-checkpoint; the next triage launch composes it onto the
+              // prompt. Stable per (project, repo) so successive passes accumulate.
+              newPaneCheckpointDocs[key] = checkpointDocRelpath(projKey, fullName ?? "");
               delete newDisabledPanes[key];
             } else {
               // Empty grid cell (more cells than repos) — start it disabled so it
@@ -770,6 +789,7 @@ export const useAppStore = create<AppStore>()(
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
+            paneCheckpointDocs: newPaneCheckpointDocs,
             paneContinue: newPaneContinue,
             paneAllowedCommands: newPaneAllowedCommands,
             disabledPanes: newDisabledPanes,

@@ -304,6 +304,7 @@ async fn pty_create(
     env: Option<std::collections::HashMap<String, String>>,
     startup_prompt: Option<String>,
     continue_session: Option<bool>,
+    checkpoint_doc: Option<String>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -343,6 +344,13 @@ async fn pty_create(
     for (k, v) in session_env(&env_map) {
         cmd.env(k, v);
     }
+    // Expose the triage checkpoint doc (resolved to an absolute, bash-style path)
+    // so the injected `bsc-checkpoint` helper can write "where we left off" to it.
+    let checkpoint_rel = checkpoint_doc.as_deref().filter(|s| !s.is_empty());
+    if let Some(rel) = checkpoint_rel {
+        let abs = bsc_base_dir().join(rel);
+        cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
+    }
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
@@ -380,10 +388,19 @@ async fn pty_create(
     } else {
         String::new()
     };
+    // `bsc-checkpoint`: triage sessions pipe a short "where we left off" note to it;
+    // it overwrites the per-repo checkpoint doc that the next launch composes onto
+    // the prompt. Only defined when a checkpoint doc was provided (BSC_CHECKPOINT_DOC).
+    let checkpoint_fn = if checkpoint_rel.is_some() {
+        "bsc-checkpoint() { mkdir -p \"$(dirname \"$BSC_CHECKPOINT_DOC\")\" 2>/dev/null; cat > \"$BSC_CHECKPOINT_DOC\"; }; "
+    } else {
+        ""
+    };
     let osc7 = format!(
         "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
          __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
          claude() {{ __bsc_state run; command claude \"$@\"; }}; \
+         {checkpoint_fn}\
          PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
          __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
     );

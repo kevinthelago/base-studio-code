@@ -8,6 +8,7 @@ import { log } from "../../../lib/log";
 import { recordPtyData, bumpTerminals } from "../../../lib/perf";
 import { gateClaudeLaunch } from "../../../lib/launchGate";
 import { scrollbackForPaneCount } from "../../../lib/terminal";
+import { composeStartupPrompt } from "../../../lib/checkpoint";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 
 // Hex equivalents of the oklch design tokens so xterm can use them
@@ -221,6 +222,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           }
         }
       }
+      // Triage continuity: if this pane has a checkpoint doc, fold the prior
+      // session's "where we left off" note onto the prompt. The doc is handed to
+      // the backend below so the `bsc-checkpoint` helper can update it for next time.
+      const checkpointDoc = useAppStore.getState().paneCheckpointDocs[paneId];
+      if (startupPrompt !== undefined && checkpointDoc) {
+        const note = await invoke<string>("read_document", { relpath: checkpointDoc }).catch(() => "");
+        startupPrompt = composeStartupPrompt(startupPrompt, note);
+      }
       if (destroyed) return;
 
       // Serialize `claude` cold-starts so simultaneously-mounted panes don't
@@ -257,6 +266,8 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         startupPrompt,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
+        // Per-repo triage checkpoint doc, so the bsc-checkpoint helper can write it.
+        checkpointDoc,
         env: undefined,
       }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
 
