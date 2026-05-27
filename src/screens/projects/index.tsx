@@ -27,6 +27,10 @@ export function ProjectsScreen() {
 
   const planningEverShown = useRef(false);
   if (projectsView === "planning") planningEverShown.current = true;
+  // Mount the summary once on first visit, then keep it mounted (CSS-hidden) so
+  // returning to it doesn't remount + refetch — see the summary render below.
+  const summaryEverShown = useRef(false);
+  if (projectsPageMode === "summary") summaryEverShown.current = true;
 
   // Single source of truth for the session identity, frozen at session start.
   // Remounting Planning only when this changes means publish assigning a project
@@ -46,8 +50,16 @@ export function ProjectsScreen() {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <ProjectsPageModeStrip />
 
-      {/* Summary page */}
-      {projectsPageMode === "summary" && <ProjectsSummary />}
+      {/* Summary — mounted once, then CSS-hidden, so revisiting doesn't remount +
+          refetch (matches the Planning/projects views below). */}
+      {summaryEverShown.current && (
+        <div style={{
+          display: projectsPageMode === "summary" ? "flex" : "none",
+          flex: 1, flexDirection: "column", minHeight: 0,
+        }}>
+          <ProjectsSummary />
+        </div>
+      )}
 
       {/* Projects views — kept mounted via CSS when in summary so Planning PTY survives */}
       <div style={{
