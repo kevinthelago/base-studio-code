@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { githubRequest } from "../../lib/github";
 import { useAppStore, type GithubRepo } from "../../store";
 
 interface GhWorkflow {
@@ -156,12 +156,8 @@ export function ActionsBody({ repo }: { repo: GithubRepo | null }) {
     const slug = repo.full_name;
 
     Promise.all([
-      invoke<{ total_count: number; workflows: GhWorkflow[] }>("github_request", {
-        token: githubToken, path: `repos/${slug}/actions/workflows`,
-      }),
-      invoke<{ total_count: number; workflow_runs: GhRun[] }>("github_request", {
-        token: githubToken, path: `repos/${slug}/actions/runs?per_page=30`,
-      }),
+      githubRequest<{ total_count: number; workflows: GhWorkflow[] }>(`repos/${slug}/actions/workflows`),
+      githubRequest<{ total_count: number; workflow_runs: GhRun[] }>(`repos/${slug}/actions/runs?per_page=30`),
     ])
       .then(([wfData, runData]) => {
         const wfs = Array.isArray(wfData?.workflows) ? wfData.workflows.filter(w => w.state !== "deleted") : [];
@@ -180,10 +176,7 @@ export function ActionsBody({ repo }: { repo: GithubRepo | null }) {
     if (!wf || !repo || !githubToken || viewMode !== "raw") return;
     setYamlLoading(true);
     setYamlContent(null);
-    invoke<GhFileContent>("github_request", {
-      token: githubToken,
-      path: `repos/${repo.full_name}/contents/${wf.path}`,
-    })
+    githubRequest<GhFileContent>(`repos/${repo.full_name}/contents/${wf.path}`)
       .then(data => {
         try {
           setYamlContent(atob(data.content.replace(/\n/g, "")));

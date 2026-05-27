@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { githubRequest } from "../../lib/github";
 import { useAppStore, type GithubRepo } from "../../store";
 
 interface GhCommit {
@@ -166,10 +166,9 @@ function BranchGraph({
     setBusy(true);
     Promise.all(
       featureBranches.map(b =>
-        invoke<GhCompare>("github_request", {
-          token,
-          path: `repos/${repo.full_name}/compare/${repo.default_branch}...${b.name}`,
-        }).catch(() => null)
+        githubRequest<GhCompare>(
+          `repos/${repo.full_name}/compare/${repo.default_branch}...${b.name}`,
+        ).catch(() => null)
       )
     ).then(results => {
       const comps = featureBranches
@@ -356,9 +355,9 @@ export function OverviewBody({ repo }: { repo: GithubRepo | null }) {
     const slug = repo.full_name;
 
     Promise.all([
-      invoke<GhPR[]>("github_request", { token: githubToken, path: `repos/${slug}/pulls?state=open&per_page=20` }),
-      invoke<GhCommit[]>("github_request", { token: githubToken, path: `repos/${slug}/commits?per_page=30` }),
-      invoke<GhBranch[]>("github_request", { token: githubToken, path: `repos/${slug}/branches?per_page=50` }),
+      githubRequest<GhPR[]>(`repos/${slug}/pulls?state=open&per_page=20`),
+      githubRequest<GhCommit[]>(`repos/${slug}/commits?per_page=30`),
+      githubRequest<GhBranch[]>(`repos/${slug}/branches?per_page=50`),
     ])
       .then(([prData, commitData, branchData]) => {
         setPrs(Array.isArray(prData) ? prData : []);

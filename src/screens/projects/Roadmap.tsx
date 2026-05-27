@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { githubRequest } from "../../lib/github";
 import { useAppStore } from "../../store";
 import { ProjectsHeader } from "./ProjectsHeader";
 import type { ActiveProjectInfo } from "./ProjectsHeader";
@@ -66,10 +66,9 @@ export function Roadmap() {
     if (!githubToken || !effectiveRepo) return;
     setLoading(true);
     setError(null);
-    invoke<GhMilestone[]>("github_request", {
-      token: githubToken,
-      path: `repos/${effectiveRepo}/milestones?state=all&per_page=20&sort=due_on&direction=asc`,
-    })
+    githubRequest<GhMilestone[]>(
+      `repos/${effectiveRepo}/milestones?state=all&per_page=20&sort=due_on&direction=asc`,
+    )
       .then(data => setMilestones(Array.isArray(data) ? data : []))
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
