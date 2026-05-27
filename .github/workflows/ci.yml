@@ -7,8 +7,44 @@ on:
     branches: [main, develop]
 
 jobs:
+  # Detect which parts of the tree changed so the expensive jobs below only run
+  # when they need to. Always runs (it's ~10s). The workflow file itself is in
+  # both filters, so any CI change re-runs everything. Force a full run with
+  # `[ci-all]` in the PR title or a commit message.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'src/**'
+              - 'index.html'
+              - 'package*.json'
+              - 'tsconfig.json'
+              - 'vite.config.ts'
+              - 'vitest.config.ts'
+              - 'eslint.config.js'
+              - '.github/workflows/ci.yml'
+            rust:
+              - 'src-tauri/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.github/workflows/ci.yml'
+
   frontend:
     name: Frontend (typecheck + lint)
+    needs: changes
+    if: >-
+      needs.changes.outputs.frontend == 'true'
+      || contains(github.event.pull_request.title, '[ci-all]')
+      || contains(github.event.head_commit.message, '[ci-all]')
     runs-on: ubuntu-latest
 
     steps:
@@ -40,6 +76,11 @@ jobs:
 
   rust:
     name: Rust (check + clippy + test)
+    needs: changes
+    if: >-
+      needs.changes.outputs.rust == 'true'
+      || contains(github.event.pull_request.title, '[ci-all]')
+      || contains(github.event.head_commit.message, '[ci-all]')
     runs-on: ubuntu-latest
 
     steps:
