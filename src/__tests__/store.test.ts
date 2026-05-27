@@ -64,6 +64,17 @@ beforeEach(() => {
   useAppStore.setState(RESET_STATE);
 });
 
+// ── Hydration gate ──────────────────────────────────────────────────────────────
+
+describe("hydration", () => {
+  it("setHasHydrated flips the flag (gates the first paint until persisted state loads)", () => {
+    useAppStore.setState({ hasHydrated: false });
+    expect(useAppStore.getState().hasHydrated).toBe(false);
+    useAppStore.getState().setHasHydrated(true);
+    expect(useAppStore.getState().hasHydrated).toBe(true);
+  });
+});
+
 // ── Terminal font zoom ──────────────────────────────────────────────────────────
 
 describe("terminal font zoom", () => {
