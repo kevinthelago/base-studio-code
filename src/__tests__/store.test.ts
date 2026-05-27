@@ -669,118 +669,6 @@ describe("repository resolution", () => {
   });
 });
 
-// ── Quick start ───────────────────────────────────────────────────────────────
-
-describe("quickStartProject", () => {
-  it("creates a new tab named after the project", () => {
-    useAppStore.getState().quickStartProject("my-project", ["acme/api"]);
-    const { tabs } = useAppStore.getState();
-    expect(tabs[tabs.length - 1].name).toBe("my-project");
-  });
-
-  it("switches activeScreen to console", () => {
-    useAppStore.getState().quickStartProject("p", ["acme/api"]);
-    expect(useAppStore.getState().activeScreen).toBe("console");
-  });
-
-  it("activates the new tab", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api"]);
-    expect(useAppStore.getState().activeTabIdx).toBe(before);
-  });
-
-  it("uses 1×1 layout for 1 repo", () => {
-    useAppStore.getState().quickStartProject("p", ["acme/api"]);
-    const { tabs, activeTabIdx } = useAppStore.getState();
-    expect(tabs[activeTabIdx].layout).toBe("1×1");
-  });
-
-  it("uses 2×1 layout for 2 repos", () => {
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
-    const { tabs, activeTabIdx } = useAppStore.getState();
-    expect(tabs[activeTabIdx].layout).toBe("2×1");
-  });
-
-  it("uses 2×2 layout for 3+ repos", () => {
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui", "acme/sdk"]);
-    const { tabs, activeTabIdx } = useAppStore.getState();
-    expect(tabs[activeTabIdx].layout).toBe("2×2");
-  });
-
-  it("disables the empty grid cell when 3 repos fill a 2×2", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui", "acme/sdk"]);
-    const { disabledPanes } = useAppStore.getState();
-    // 3 real panes enabled, the 4th cell starts disabled.
-    expect(disabledPanes[`t${before}p0`]).toBeUndefined();
-    expect(disabledPanes[`t${before}p2`]).toBeUndefined();
-    expect(disabledPanes[`t${before}p3`]).toBe(true);
-  });
-
-  it("disables no cells when repos exactly fill the grid", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui", "acme/sdk", "acme/cli"]);
-    const { disabledPanes } = useAppStore.getState();
-    for (let i = 0; i < 4; i++) expect(disabledPanes[`t${before}p${i}`]).toBeUndefined();
-  });
-
-  it("pre-seeds paneCwds with computed repo paths under projects/<key>", () => {
-    useAppStore.setState({ bscBaseDir: "/base" });
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
-    const { paneCwds } = useAppStore.getState();
-    expect(paneCwds[`t${before}p0`]).toBe("/base/projects/p/api");
-    expect(paneCwds[`t${before}p1`]).toBe("/base/projects/p/ui");
-  });
-
-  it("pre-seeds paneNames with repo short names", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
-    const { paneNames } = useAppStore.getState();
-    expect(paneNames[before][0]).toBe("api");
-    expect(paneNames[before][1]).toBe("ui");
-  });
-
-  it("launches a claude pane per repo, defaulting to the built-in plan prompt", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"]);
-    const { paneInitCmds, paneStartupPromptDocs } = useAppStore.getState();
-    // initCmd marks a claude pane; the backend bakes the resolved prompt in.
-    expect(paneInitCmds[`t${before}p0`]).toBe("claude");
-    expect(paneInitCmds[`t${before}p1`]).toBe("claude");
-    // "" = the built-in plan prompt (PROJECT_INIT_PROMPT) when nothing assigned.
-    expect(paneStartupPromptDocs[`t${before}p0`]).toBe("");
-    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("");
-  });
-
-  it("assigns each repo's resolved kickoff doc (repo override; built-in when unset)", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.setState({
-      repoStartupPromptDoc: { "P1::acme/api": "projects/P1/prompts/api-kickoff.md" },
-    });
-    useAppStore.getState().quickStartProject("p", ["acme/api", "acme/ui"], "P1");
-    const { paneInitCmds, paneStartupPromptDocs } = useAppStore.getState();
-    expect(paneInitCmds[`t${before}p0`]).toBe("claude");
-    expect(paneStartupPromptDocs[`t${before}p0`]).toBe("projects/P1/prompts/api-kickoff.md");
-    // acme/ui has no assignment → "" = built-in plan prompt.
-    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("");
-  });
-
-  it("caps layout at 2×2 even with 5+ repos", () => {
-    const repos = Array.from({ length: 5 }, (_, i) => `acme/repo${i}`);
-    useAppStore.getState().quickStartProject("p", repos);
-    const { tabs, activeTabIdx } = useAppStore.getState();
-    expect(tabs[activeTabIdx].layout).toBe("2×2");
-  });
-
-  it("does nothing but switch screen when called with empty repos", () => {
-    const tabsBefore = useAppStore.getState().tabs.length;
-    useAppStore.getState().quickStartProject("p", []);
-    expect(useAppStore.getState().tabs).toHaveLength(tabsBefore);
-    expect(useAppStore.getState().activeScreen).toBe("console");
-  });
-});
-
 // ── Triage ────────────────────────────────────────────────────────────────────
 
 describe("triageStartProject", () => {
@@ -820,6 +708,21 @@ describe("triageStartProject", () => {
     const { paneCheckpointDocs } = useAppStore.getState();
     expect(paneCheckpointDocs[`t${before}p0`]).toBe("projects/ckpt/prompts/web-checkpoint.md");
     expect(paneCheckpointDocs[`t${before}p1`]).toBe("projects/ckpt/prompts/api-checkpoint.md");
+  });
+
+  it("re-runs in place: reuses the existing triage tab and bumps its runId", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().triageStartProject("rerun", ["o/a", "o/b"]);
+    const idx = useAppStore.getState().tabs.length - 1;
+    expect(idx).toBe(before);
+    expect(useAppStore.getState().tabs[idx].runId).toBe(0);
+
+    // Pressing triage again rebuilds the SAME tab (no new tab) with a bumped runId,
+    // which remounts the panes so killed sessions relaunch.
+    useAppStore.getState().triageStartProject("rerun", ["o/a", "o/b"]);
+    expect(useAppStore.getState().tabs.length).toBe(before + 1); // no new tab added
+    expect(useAppStore.getState().tabs[idx].runId).toBe(1);
+    expect(useAppStore.getState().activeTabIdx).toBe(idx);
   });
 
   it("disables no cells when the grid is exactly filled", () => {
