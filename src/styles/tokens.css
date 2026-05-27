@@ -208,6 +208,17 @@ html, body {
   text-align:center;
 }
 
+/* ===== drag-to-resize splitters ===== */
+.resize-x{
+  flex:0 0 5px; align-self:stretch; cursor:col-resize;
+  background:transparent; transition:background .12s; touch-action:none;
+}
+.resize-y{
+  flex:0 0 5px; cursor:row-resize;
+  background:transparent; transition:background .12s; touch-action:none;
+}
+.resize-x:hover,.resize-y:hover,.resize-x:active,.resize-y:active{ background:var(--accent-dim); }
+
 /* ===== console grid ===== */
 .console-grid{
   flex:1; padding:10px; display:grid; gap:8px;
