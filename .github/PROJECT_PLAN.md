@@ -18,16 +18,14 @@ Studio Code is a cross-device platform for running many AI coding agents in para
 
 ## Roadmap
 
-The finish line is **v1.0**. base-studio-code has shipped **v0.1.0 → v0.5.1**; the remaining versions each **complete one page/concern**, culminating in v1.0.0 GA. mobile-studio-code runs its **own parallel version line** (numbered independently) and ships v1.0 in lockstep. Milestones are versions — the old cross-cutting "Phase 1–6" model is retired.
+The finish line is **v1.0**. base-studio-code has shipped **v0.1.0 → v0.5.1**; the remaining versions bundle the work toward GA. mobile-studio-code runs its **own parallel version line** (numbered independently) and ships v1.0 in lockstep. Milestones are versions — the old cross-cutting "Phase 1–6" model is retired.
 
 ### base-studio-code
 
 | Version | Concern | Done when |
 |---|---|---|
-| **v0.6.0** | Knowledge Base | The KB page is genuinely usable: reworked UX (#140), T-layout with an embedded Claude console for block generation (#32), rethought doc-assignment UX (#51). Near-term docs cleanup rides along: branch convention (#45), README version roadmap (#151). |
-| **v0.7.0** | Automations | The Automations page works end-to-end with real cron scheduling — define → schedule → fire → surface run history (#142). |
-| **v0.8.0** | Extensions (MCP) | Agent tooling ships via an in-process MCP host: management page (#33), first-party Context + Checkpoint tools, `bsc-checkpoint` migration, hooks. |
-| **v0.9.0** | Tunneling & mobile integration | Token-authed WebSocket server on base (#35), one versioned message schema exercised by a shared fixture test on both sides (#46), corrected docs (#44), and a paired mobile client mirroring a desktop console with clean fallback. |
+| **v0.6.0** | Core features | The in-development pages are complete: Knowledge Base reworked (T-layout + embedded console, doc-assignment, resizable panes — #140, #32, #51, #43); Automations working end-to-end with real cron scheduling (#142); Extensions / agent-facing MCP tooling (#33); and multi-agent planning — choose agent count + assign each agent to issues/a feature (#154). Branch-convention docs cleanup rides along (#45). |
+| **v0.9.0** | Tunneling, mobile integration & security | Token-authed WebSocket server on base (#35), one versioned message schema exercised by a shared fixture test on both sides (#46), corrected docs (#44), a paired mobile client mirroring a desktop console with clean fallback — **and** a security pass letting the user assign repo-level credentials so a Claude session cannot perform cross-repo GitHub/filesystem actions (#158). |
 | **v1.0.0** | First official release (GA) | Every page polished (#141, #135); console hardened (#36, #52, #77); desktop installers code-signed on Windows (#108), notarized on macOS (#119), packaged for Linux (#120) with per-OS shell/PTY correctness (#118); the release pipeline cuts a tagged, non-draft v1.0 across all desktop platforms (#121). |
 
 ### mobile-studio-code
@@ -42,11 +40,11 @@ The finish line is **v1.0**. base-studio-code has shipped **v0.1.0 → v0.5.1**;
 ## Scope
 
 ### In scope — the road to v1.0
-Everything in the roadmap tables above. KB (v0.6.0), Automations (v0.7.0), and Extensions/MCP (v0.8.0) are each a release; the tunnel (v0.9.0) is the central new build; v1.0.0 GA folds in polish, console hardening, and all signing / cross-platform / release-pipeline work.
+Everything in the roadmap tables above. **v0.6.0** bundles all the in-development pages (KB, Automations, Extensions/MCP, multi-agent planning). **v0.9.0** is the central new build — the tunnel plus a security pass that scopes credentials per repo. **v1.0.0** GA folds in polish, console hardening, and all signing / cross-platform / release-pipeline work.
 
 ### Out of scope (post-1.0)
 - **Additional agent-provider panes** beyond `claude` — Gemini CLI, OpenAI Codex CLI, Aider, Ollama, Amazon Q (base #38–#42).
-- **Resizable panes** for planning/KB screens (base #43); **console auto-fit / readability** (base #68).
+- **Console auto-fit / readability** (base #68).
 - **Multi-user / team accounts, cloud sync, or a hosted backend** — Studio Code stays local-first, single-user.
 - **Desktop app-store distribution** (Microsoft Store / Mac App Store) — direct signed installers only.
 - **Tablet / landscape layouts** on mobile; Android tablet.
@@ -60,6 +58,12 @@ Two local-first, single-user apps that operate independently and optionally conn
 **mobile-studio-code (Expo / RN):** expo-router stages (`setup → repo → tabs → settings`); core logic in `src/lib/` — `agent.ts` (tool loop), `anthropic.ts`, `contextOptimizer.ts`, `github.ts` (**all git as GitHub REST**: tree+blob clone, diff pull, `PUT /contents` push), `session.tsx`, `fs.ts`, `storage.ts`. The **tunnel client is already built** (`TunnelContext`, WS client) and awaits the server. Push via **Firebase Cloud Messaging**.
 
 **Communication:** desktop UI → `pty_create` → shell → `claude` CLI, streamed back over Tauri events; mobile chat → `agent.ts` loop → Anthropic API → tool execution; either app ↔ GitHub (desktop via the Rust proxy, mobile via REST); the tunnel (target) is mobile WS **client** ⇄ desktop WS **server** with token auth + QR pairing, versioned JSON messages, mirror of a desktop console, and clean fallback to standalone.
+
+## Security
+
+Local-first, single-user: no app-level accounts. Credentials are **user-supplied tokens** (GitHub PAT, Anthropic key) in OS-secure storage (Tauri store / keychain; `expo-secure-store` on mobile), never logged. `~/.claude.json` is hardened via atomic, mutex-guarded sanitize/trust. Command execution is checked against a zero-config allowlist exposed as an editable KB document (#57).
+
+**Repo-level credential scoping (v0.9.0, #158)** is the headline v1.0 security work: the user can assign a repo-scoped credential per project so the GitHub proxy uses it (not the global PAT) for that repo's session, a session's filesystem/git access is confined to its repo path, and a session for repo A cannot act on repo B. It is a prerequisite for safe pairing, since the tunnel lets a paired phone drive a desktop session. The tunnel itself is an authenticated WebSocket (token + QR pairing, versioned messages, clean fallback). This is a data-handling change and is reflected in the ops/runbook and legal docs when shipped.
 
 ## Per-repo detail
 
@@ -77,9 +81,9 @@ A **standalone-first mobile IDE** that also acts as the remote view+input for a 
 4. **Signing identities are a cost/procurement gate** (High/High) — acquire Apple/Play/Windows-cert/notarization credentials in parallel with the v0.6.0–v0.9.0 work so lead time doesn't block release.
 5. **Brittle coupling to the `claude` CLI and `~/.claude.json`** (Med/Med) — atomic-write + self-heal + lock already harden this; keep it unit-tested and pin a known-good `claude`.
 6. **Memory/perf under fleets of agents** (Med/Med) — output coalescing is in place; land #52 in v1.0.0 hardening; document a realistic supported concurrency target.
-7. **Finish-line gates rely on manual E2E** (Med/Med) — scripted manual checklists for the standalone (mobile v0.1.0) and pairing (v0.9.0 / mobile v0.2.0) gates, kept in-repo.
+7. **Cross-repo credential leakage** (Med/High) — a single global token + unconfined session paths let a session act on the wrong repo; mitigated by the v0.9.0 repo-level credential scoping pass (#158).
 8. **Solo-maintainer bandwidth** across 2 repos × 5 platforms × a multi-version roadmap (High/Med) — single-concern-per-version sequencing keeps each release small; resist scope creep back into v1.0.
 
 ## Considered & skipped
 
-No standalone sections for: **schema/api/auth** (local-first, single-user; no DB or server API — the only versioned contract is the v0.9.0 WS schema), **integrations/observability** (described in architecture; `tauri-plugin-log` + an `errorBus`, no external telemetry), **performance/infra/cicd** (folded into v1.0.0 release engineering and the per-repo testing sections), **data_lifecycle** (no collected data), **analytics** (out of scope for a local-first tool), **accessibility/cost** (revisit post-1.0; only spend is signing/store identities). The full record lives in the planner hub.
+No standalone sections for: **schema/api** (local-first, single-user; no DB or server API — the only versioned contract is the v0.9.0 WS schema), **auth** (no app-level accounts; credential handling is covered under Security above), **integrations/observability** (described in architecture; `tauri-plugin-log` + an `errorBus`, no external telemetry), **performance/infra/cicd** (folded into v1.0.0 release engineering and the per-repo testing sections), **data_lifecycle** (no collected data), **analytics** (out of scope for a local-first tool), **accessibility/cost** (revisit post-1.0; only spend is signing/store identities). The full record lives in the planner hub.
