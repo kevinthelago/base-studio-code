@@ -11,7 +11,6 @@ beforeEach(() => {
     activeTabIdx: 0,
     paneNames: {},
     paneCwds: {},
-    paneGitInfo: {},
   });
 });
 
@@ -77,18 +76,6 @@ describe("setTabLayout", () => {
     expect(cwds["t0p0"]).toBe("/home/user/project-0");
     for (let i = 1; i < 9; i++) {
       expect(cwds[`t0p${i}`]).toBeUndefined();
-    }
-  });
-
-  it("trims paneGitInfo for removed panes when shrinking", () => {
-    for (let i = 0; i < 4; i++) {
-      useAppStore.getState().setPaneGitInfo(`t0p${i}`, { repo: "r", branch: "main", dirty: false });
-    }
-    useAppStore.getState().setTabLayout(0, "1×1");
-    const gitInfo = useAppStore.getState().paneGitInfo;
-    expect(gitInfo["t0p0"]).toBeDefined();
-    for (let i = 1; i < 4; i++) {
-      expect(gitInfo[`t0p${i}`]).toBeUndefined();
     }
   });
 
