@@ -3,15 +3,24 @@
 // resolution, payload building) so it can be unit-tested in isolation. The tick
 // loop and PTY dispatch live in useScheduler; CRUD lives in the store.
 
+import { nextCronRun } from "./cron";
+
 export type Every = "minute" | "hour" | "day" | "weekday";
 export type AutomationActionKind = "command" | "knowledge";
 export type RunStatus = "ok" | "skipped" | "fail";
 
-export interface AutomationWhen {
+export interface SimpleWhen {
+  kind: "simple";
   every: Every;
   /** "HH:MM" for day/weekday; ":MM" or "MM" for hour; ignored for minute. */
   at: string;
 }
+export interface CronWhen {
+  kind: "cron";
+  /** Standard 5-field cron expression. */
+  expr: string;
+}
+export type AutomationWhen = SimpleWhen | CronWhen;
 
 export interface AutomationRun {
   at: number;        // epoch ms
@@ -64,6 +73,8 @@ function isWeekend(d: Date): boolean {
  * follow-up.
  */
 export function computeNextRun(when: AutomationWhen, fromMs: number): number | null {
+  if (when.kind === "cron") return nextCronRun(when.expr, fromMs);
+
   const from = new Date(fromMs);
 
   if (when.every === "minute") {

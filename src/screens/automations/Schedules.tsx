@@ -1,5 +1,6 @@
 import { useAppStore } from "../../store";
-import { paneCount, type Every, type Automation } from "../../lib/scheduler";
+import { paneCount, type Every, type Automation, type SimpleWhen } from "../../lib/scheduler";
+import { isValidCron } from "../../lib/cron";
 import { fmtStamp } from "./format";
 
 const EVERY_OPTS: Every[] = ["minute", "hour", "day", "weekday"];
@@ -52,7 +53,17 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew, onViewAllHistor
   const armedCount = automations.filter(a => a.armed).length;
   const tabIdx = tabs.findIndex(t => t.name === sel.targetTab);
   const paneOpts = tabIdx >= 0 ? Array.from({ length: paneCount(tabs[tabIdx].layout) }, (_, i) => i) : [];
-  const patchWhen = (p: Partial<Automation["when"]>) => updateAutomation(sel.id, { when: { ...sel.when, ...p } });
+  const isSimple = sel.when.kind === "simple";
+  const patchSimple = (p: Partial<SimpleWhen>) => {
+    if (sel.when.kind !== "simple") return;
+    updateAutomation(sel.id, { when: { ...sel.when, ...p } });
+  };
+  const setMode = (kind: "simple" | "cron") => {
+    if (kind === sel.when.kind) return;
+    updateAutomation(sel.id, {
+      when: kind === "cron" ? { kind: "cron", expr: "0 9 * * *" } : { kind: "simple", every: "day", at: "09:00" },
+    });
+  };
 
   return (
     <div className="sched-layout">
@@ -73,7 +84,9 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew, onViewAllHistor
               </div>
               <div className="name">{a.name}</div>
               <div className="meta">
-                <span>⏱ every {a.when.every}{a.when.every !== "minute" ? " · " + a.when.at : ""}</span>
+                <span>{a.when.kind === "simple"
+                  ? `⏱ every ${a.when.every}${a.when.every !== "minute" ? " · " + a.when.at : ""}`
+                  : `⏱ cron · ${a.when.expr}`}</span>
                 <span>{a.targetTab ? `→ ${a.targetTab} › pane ${a.targetPaneIdx + 1}` : "→ (no target)"}</span>
               </div>
             </div>
@@ -98,20 +111,35 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew, onViewAllHistor
         <div className="es"><div className="es-row">
           <div className="es-lbl accent">when</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
-              <span>every</span>
-              <select className="input" style={{ width: 120 }} value={sel.when.every} onChange={e => patchWhen({ every: e.target.value as Every })}>
-                {EVERY_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-              {sel.when.every !== "minute" && (
-                <>
-                  <span>at</span>
-                  <input className="input" style={{ width: 90 }} value={sel.when.at}
-                    placeholder={sel.when.every === "hour" ? ":MM" : "HH:MM"}
-                    onChange={e => patchWhen({ at: e.target.value })} />
-                </>
-              )}
+            <div className="pill-group">
+              <div className={"pill" + (isSimple ? " on" : "")} onClick={() => setMode("simple")}>simple</div>
+              <div className={"pill" + (!isSimple ? " on" : "")} onClick={() => setMode("cron")}>cron</div>
             </div>
+            {sel.when.kind === "simple" ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
+                <span>every</span>
+                <select className="input" style={{ width: 120 }} value={sel.when.every} onChange={e => patchSimple({ every: e.target.value as Every })}>
+                  {EVERY_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                {sel.when.every !== "minute" && (
+                  <>
+                    <span>at</span>
+                    <input className="input" style={{ width: 90 }} value={sel.when.at}
+                      placeholder={sel.when.every === "hour" ? ":MM" : "HH:MM"}
+                      onChange={e => patchSimple({ at: e.target.value })} />
+                  </>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
+                <span>cron</span>
+                <input className="input" style={{ width: 200 }} value={sel.when.expr} placeholder="0 9 * * *" spellCheck={false}
+                  onChange={e => updateAutomation(sel.id, { when: { kind: "cron", expr: e.target.value } })} />
+                {isValidCron(sel.when.expr)
+                  ? <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>min hour day-of-month month day-of-week</span>
+                  : <span style={{ color: "var(--danger)", fontSize: 10 }}>invalid expression</span>}
+              </div>
+            )}
             <div className="cron-strip">
               <span className="label">next run</span>
               <span className="expr">{sel.armed ? fmtStamp(sel.nextRunAt) : "disarmed"}</span>
