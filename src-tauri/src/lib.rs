@@ -708,24 +708,126 @@ async fn github_post(
     Ok(json)
 }
 
+// ── GitHub response cache (ETag-validated, in-memory) ──────────────────────────
+//
+// REST GETs are cached by endpoint path. On the next request we send the stored
+// ETag as `If-None-Match`; GitHub answers `304 Not Modified` (cheap — it doesn't
+// count against the primary rate limit) when nothing changed, and we serve the
+// cached body. This makes the frontend's refetch-on-view nearly free while staying
+// current. (GraphQL has no ETags — a separate TTL/version-probe pass covers it.)
+
+struct CachedGet {
+    etag: Option<String>,
+    body: serde_json::Value,
+    fetched_at: std::time::Instant,
+}
+
+fn github_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, CachedGet>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, CachedGet>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Whether a cached entry of the given age can be served without even revalidating.
+/// `force` always revalidates; with no `max_age_secs` we always revalidate (the
+/// revalidation is a cheap conditional request, so the default is "revalidate-on-view").
+fn cache_is_fresh(age: std::time::Duration, max_age_secs: Option<u64>, force: bool) -> bool {
+    if force {
+        return false;
+    }
+    match max_age_secs {
+        Some(max) => age < std::time::Duration::from_secs(max),
+        None => false,
+    }
+}
+
+/// Fold a GET outcome into the cache and return the body to hand back. A 304
+/// reuses the cached entry (timestamp refreshed); otherwise the fresh `body`
+/// (with its `etag`) replaces the entry. Returns `None` only on a 304 with no
+/// cached entry (shouldn't happen) or a non-304 with no body.
+fn apply_github_response(
+    cache: &mut std::collections::HashMap<String, CachedGet>,
+    path: &str,
+    not_modified: bool,
+    etag: Option<String>,
+    body: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    if not_modified {
+        let entry = cache.get_mut(path)?;
+        entry.fetched_at = std::time::Instant::now();
+        return Some(entry.body.clone());
+    }
+    let b = body?;
+    cache.insert(
+        path.to_string(),
+        CachedGet { etag, body: b.clone(), fetched_at: std::time::Instant::now() },
+    );
+    Some(b)
+}
+
 #[tauri::command]
-async fn github_request(token: String, path: String) -> Result<serde_json::Value, String> {
+async fn github_request(
+    token: String,
+    path: String,
+    max_age_secs: Option<u64>,
+    force: Option<bool>,
+) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("github_request");
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
+    let force = force.unwrap_or(false);
+
+    // Within max_age: serve the cached body with no network call. Otherwise grab
+    // the stored ETag so we can revalidate cheaply via If-None-Match.
+    let cached_etag = {
+        let cache = github_cache().lock().unwrap();
+        match cache.get(&path) {
+            Some(entry) if cache_is_fresh(entry.fetched_at.elapsed(), max_age_secs, force) => {
+                return Ok(entry.body.clone());
+            }
+            Some(entry) if !force => entry.etag.clone(),
+            _ => None,
+        }
+    };
+
     let client = reqwest::Client::new();
     let url = format!("https://api.github.com/{}", path);
-    let response = client
+    let mut req = client
         .get(&url)
         .header("Authorization", format!("Bearer {}", token))
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "base-studio-code/0.2.0")
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .header("User-Agent", "base-studio-code/0.2.0");
+    if let Some(etag) = &cached_etag {
+        req = req.header("If-None-Match", etag.clone());
+    }
+    let response = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            // Offline / transient: serve the last good body if we have one.
+            if let Some(entry) = github_cache().lock().unwrap().get(&path) {
+                log::warn!("github_request {path} request failed ({e}); serving cached body");
+                return Ok(entry.body.clone());
+            }
+            return Err(format!("Request failed: {}", e));
+        }
+    };
     let status = response.status();
+
+    // 304 Not Modified → the cached body is still current.
+    if status == reqwest::StatusCode::NOT_MODIFIED {
+        let mut cache = github_cache().lock().unwrap();
+        return apply_github_response(&mut cache, &path, true, None, None)
+            .ok_or_else(|| "GitHub returned 304 but no cached body is available".to_string());
+    }
+
+    // Capture the ETag before the body consumes the response.
+    let etag = response
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
     let json: serde_json::Value = response
         .json()
         .await
@@ -735,6 +837,8 @@ async fn github_request(token: String, path: String) -> Result<serde_json::Value
         log::warn!("github_request {path} HTTP {status}: {msg}");
         return Err(format!("GitHub API error ({}): {}", status, msg));
     }
+    let mut cache = github_cache().lock().unwrap();
+    apply_github_response(&mut cache, &path, false, etag, Some(json.clone()));
     Ok(json)
 }
 
@@ -2369,7 +2473,38 @@ mod tests {
 
     use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch, claude_project_dir_name};
     use super::session_env;
+    use super::{cache_is_fresh, apply_github_response, CachedGet};
     use std::collections::HashMap;
+
+    #[test]
+    fn cache_is_fresh_only_within_max_age_and_never_when_forced() {
+        use std::time::Duration;
+        // No max_age → always revalidate (cheap conditional request).
+        assert!(!cache_is_fresh(Duration::from_secs(0), None, false));
+        // Within / beyond the max_age window.
+        assert!(cache_is_fresh(Duration::from_secs(10), Some(60), false));
+        assert!(!cache_is_fresh(Duration::from_secs(120), Some(60), false));
+        // force always revalidates, even when otherwise fresh.
+        assert!(!cache_is_fresh(Duration::from_secs(1), Some(60), true));
+    }
+
+    #[test]
+    fn apply_github_response_stores_on_200_and_reuses_on_304() {
+        let mut cache: HashMap<String, CachedGet> = HashMap::new();
+
+        // 200: stores the body + etag and returns it.
+        let body = serde_json::json!({ "n": 1 });
+        let out = apply_github_response(&mut cache, "repos/x", false, Some("etag-1".into()), Some(body.clone()));
+        assert_eq!(out.as_ref(), Some(&body));
+        assert_eq!(cache.get("repos/x").unwrap().etag.as_deref(), Some("etag-1"));
+
+        // 304: returns the cached body without a new body.
+        let reused = apply_github_response(&mut cache, "repos/x", true, None, None);
+        assert_eq!(reused.as_ref(), Some(&body));
+
+        // 304 with no cached entry → None (caller errors).
+        assert_eq!(apply_github_response(&mut cache, "repos/missing", true, None, None), None);
+    }
 
     #[test]
     fn session_env_sets_xterm_term_by_default() {
