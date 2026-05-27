@@ -16,6 +16,48 @@ export const SKIPPED_KEY = "_skipped";
  *  as a plan section — synced into the per-project/repo command store instead. */
 export const COMMANDS_KEY = "commands";
 
+/** The agent-fleet config file (JSON: `fleet.json`). Surfaced by the poll like
+ *  `commands.json` — not a rendered plan section; parsed into the fleet store and
+ *  shown in its own Fleet card. See {@link parseFleetFile}. */
+export const FLEET_KEY = "fleet";
+
+/**
+ * One parallel work stream — a single Claude session with a focused role, a repo,
+ * the files/globs it OWNS (its conflict boundary), the issues it owns, the streams
+ * it must follow (interface-first), and the kickoff script that seeds it.
+ */
+export interface AgentStream {
+  id: string;
+  name: string;
+  repo: string;
+  /** Path globs this stream owns; no other stream should write inside them. */
+  owns: string[];
+  /** Issue refs this stream owns (e.g. `#12`). */
+  issues: string[];
+  /** Ids of streams that must land before this one starts. */
+  dependsOn: string[];
+  /** Relpath of the kickoff script the fleet launch seeds this session with. */
+  prompt?: string;
+}
+
+/** Optional async-integrator session that coordinates the fleet from the project root. */
+export interface FleetDirector { enabled: boolean; role?: string; }
+
+/** The full parallel-execution plan for a project (persisted as `fleet.json`). */
+export interface FleetPlan {
+  /** Optimal number of worker sessions to run concurrently. */
+  recommended: number;
+  /** Why that many — the planner's justification. */
+  reasoning: string;
+  streams: AgentStream[];
+  director: FleetDirector;
+}
+
+/** An empty fleet — the default before the planner has designed one. */
+export function emptyFleet(): FleetPlan {
+  return { recommended: 0, reasoning: "", streams: [], director: { enabled: false } };
+}
+
 /**
  * Anchor sections that are always present in the UI even before Claude drafts
  * them, because the GitHub publish flow is keyed off them:
@@ -142,7 +184,7 @@ export function groupSections(keys: string[]): {
   const project: string[] = [];
   const byRepo = new Map<string, string[]>();
   for (const key of keys) {
-    if (key === SKIPPED_KEY || key === COMMANDS_KEY) continue;
+    if (key === SKIPPED_KEY || key === COMMANDS_KEY || key === FLEET_KEY) continue;
     const info = parseSectionKey(key);
     if (info.tier === "repo" && info.repo) {
       const list = byRepo.get(info.repo) ?? [];
@@ -201,4 +243,71 @@ export function parseSkipped(content: string): SkippedItem[] {
     }
   }
   return out;
+}
+
+/** Coerce a JSON value into a string[]. Accepts an array (strings kept, others
+ *  stringified) or a single comma-separated string; anything else → []. */
+function toStringArray(v: unknown): string[] {
+  if (Array.isArray(v)) {
+    return v.map(x => (typeof x === "string" ? x : String(x))).map(s => s.trim()).filter(Boolean);
+  }
+  if (typeof v === "string") {
+    return v.split(",").map(s => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+/** Coerce a JSON value into a non-negative integer; non-numeric → 0. */
+function coerceNum(v: unknown): number {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * Parse the `fleet.json` config the planner writes (surfaced by the section poll
+ * as stem {@link FLEET_KEY}) into a {@link FleetPlan}. Tolerant of partial/malformed
+ * input: returns `null` only when the text is blank or not a JSON object; otherwise
+ * fills sensible defaults. Streams missing `id` or `repo` are dropped; `dependsOn`
+ * accepts either `dependsOn` or `depends_on`.
+ */
+export function parseFleetFile(raw: string): FleetPlan | null {
+  if (!raw || !raw.trim()) return null;
+  let obj: unknown;
+  try { obj = JSON.parse(raw); } catch { return null; }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+  const o = obj as Record<string, unknown>;
+
+  const streams: AgentStream[] = [];
+  const rawStreams = Array.isArray(o.streams) ? o.streams : [];
+  for (const s of rawStreams) {
+    if (!s || typeof s !== "object") continue;
+    const so = s as Record<string, unknown>;
+    const id   = typeof so.id === "string" ? so.id.trim() : "";
+    const repo = typeof so.repo === "string" ? so.repo.trim() : "";
+    if (!id || !repo) continue;  // id + repo are the minimum a stream needs
+    const prompt = typeof so.prompt === "string" && so.prompt.trim() ? so.prompt.trim() : undefined;
+    streams.push({
+      id,
+      name: typeof so.name === "string" && so.name.trim() ? so.name.trim() : id,
+      repo,
+      owns:      toStringArray(so.owns),
+      issues:    toStringArray(so.issues),
+      dependsOn: toStringArray(so.dependsOn ?? so.depends_on),
+      prompt,
+    });
+  }
+
+  const dir = (o.director && typeof o.director === "object" && !Array.isArray(o.director))
+    ? (o.director as Record<string, unknown>) : {};
+  const director: FleetDirector = {
+    enabled: dir.enabled === true || dir.enabled === "true",
+    role: typeof dir.role === "string" && dir.role.trim() ? dir.role.trim() : undefined,
+  };
+
+  return {
+    recommended: coerceNum(o.recommended),
+    reasoning: typeof o.reasoning === "string" ? o.reasoning : "",
+    streams,
+    director,
+  };
 }

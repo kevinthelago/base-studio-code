@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore, TRIAGE_PROMPT } from "../store";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { QueuedPane } from "../lib/focusQueue";
+import type { FleetPlan } from "../screens/projects/planSections";
 
 const RESET_STATE = {
   tabs: [
@@ -914,5 +915,72 @@ describe("github state", () => {
   it("setActiveRepo stores the selected repo name", () => {
     useAppStore.getState().setActiveRepo("kevinthelago/base-studio-code");
     expect(useAppStore.getState().activeRepoName).toBe("kevinthelago/base-studio-code");
+  });
+});
+
+describe("agent fleet store", () => {
+  const fleet: FleetPlan = {
+    recommended: 2,
+    reasoning: "r",
+    director: { enabled: true, role: "integrator" },
+    streams: [
+      { id: "auth-ui", name: "Auth UI", repo: "own/web", owns: ["src/auth/**"], issues: ["#1"], dependsOn: [], prompt: "prompts/auth-ui-kickoff.md" },
+      { id: "api", name: "API", repo: "own/api", owns: [], issues: [], dependsOn: [] },
+    ],
+  };
+
+  it("setPlanFleet / add (merge by id) / remove / setPlanDirector manage the per-project fleet", () => {
+    const s = useAppStore.getState();
+    s.setPlanFleet("p", fleet);
+    expect(useAppStore.getState().planFleet["p"].streams).toHaveLength(2);
+
+    s.addPlanAgentStream("p", { id: "auth-ui", name: "Auth UI v2", repo: "own/web", owns: [], issues: [], dependsOn: [] });
+    expect(useAppStore.getState().planFleet["p"].streams).toHaveLength(2);
+    expect(useAppStore.getState().planFleet["p"].streams.find(x => x.id === "auth-ui")!.name).toBe("Auth UI v2");
+
+    s.removePlanAgentStream("p", "api");
+    expect(useAppStore.getState().planFleet["p"].streams.map(x => x.id)).toEqual(["auth-ui"]);
+
+    s.setPlanDirector("p", false);
+    expect(useAppStore.getState().planFleet["p"].director.enabled).toBe(false);
+    expect(useAppStore.getState().planFleet["p"].director.role).toBe("integrator");
+  });
+
+  it("fleetStartProject opens a build tab with the director and worker panes", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("Proj");
+    expect(idx).toBe(3);
+    expect(st.tabs[idx].name).toBe("Proj · build");
+    expect(st.tabs[idx].layout).toBe("2×2"); // director + 2 workers = 3 panes
+
+    // pane 0 = director at the project hub, doc-based kickoff
+    expect(st.paneCwds["t3p0"]).toBe("/base/projects/proj-key");
+    expect(st.paneStartupPromptDocs["t3p0"]).toBe("projects/proj-key/prompts/director-kickoff.md");
+    expect(st.paneNames[idx][0]).toBe("director");
+
+    // pane 1 = first worker in its repo clone, planner-authored kickoff doc
+    expect(st.paneCwds["t3p1"]).toBe("/base/projects/proj-key/web");
+    expect(st.paneStartupPromptDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-kickoff.md");
+    expect(st.paneNames[idx][1]).toBe("Auth UI");
+
+    // pane 2 = second worker with no kickoff doc → generated text mentioning its name
+    expect(st.paneCwds["t3p2"]).toBe("/base/projects/proj-key/api");
+    expect(st.paneStartupPromptText["t3p2"]).toContain("API");
+
+    // empty grid cell starts disabled
+    expect(st.disabledPanes["t3p3"]).toBe(true);
+  });
+
+  it("fleetStartProject caps launched workers at the recommended count", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    useAppStore.getState().fleetStartProject("Cap", { ...fleet, recommended: 1 }, "k");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("Cap");
+    expect(st.tabs[idx].layout).toBe("2×1"); // 1 worker + director = 2 panes
+    expect(st.paneNames[idx][0]).toBe("director");
+    expect(st.paneNames[idx][1]).toBe("Auth UI");
+    expect(st.paneNames[idx][2]).toBeUndefined();
   });
 });

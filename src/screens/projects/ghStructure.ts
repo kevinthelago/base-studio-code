@@ -3,6 +3,8 @@
 // Kept free of React / xterm / Tauri imports so the derivation logic can be unit
 // tested in isolation and shared between Planning.tsx and its tests.
 
+import type { FleetPlan } from "./planSections";
+
 // The planner is dynamic: Claude documents whatever topics a project warrants,
 // so a section key is any file stem (`goal`, `security`, `data_lifecycle`, or a
 // per-repo `repo__web__api`). `goal` and `phases` remain semantically special —
@@ -40,10 +42,21 @@ export interface GhRepoNode {
   issues: GhNode[];
 }
 
+/** A fleet stream as a GitHub object: the `stream:<id>` label and the issues it owns. */
+export interface GhStreamNode {
+  /** Status-map id, namespaced `stream:<id>` (also the label name). */
+  id: string;
+  label: string;
+  repo: string;
+  /** Owned issue refs (e.g. `#12`). */
+  issues: string[];
+}
+
 export interface GhStructure {
   project: GhNode;
   milestones: GhNode[];
   repos: GhRepoNode[];
+  streams: GhStreamNode[];
 }
 
 /**
@@ -58,7 +71,12 @@ export interface GhStructure {
  * Issue ids are namespaced by repo (`issue:{fullName}:{phaseIndex}`) so the same
  * phase produces a distinct, independently-tracked issue in every repo.
  */
-export function buildGhStructure(sections: Section[], repos: string[], projectTitle: string): GhStructure {
+export function buildGhStructure(
+  sections: Section[],
+  repos: string[],
+  projectTitle: string,
+  fleet?: FleetPlan,
+): GhStructure {
   const phases = parsePhases(sections.find(s => s.k === "phases")?.content ?? "");
   return {
     project:    { id: "project", label: projectTitle },
@@ -69,6 +87,12 @@ export function buildGhStructure(sections: Section[], repos: string[], projectTi
         id:    `issue:${fullName}:${i}`,
         label: `[${ph.name}] ${projectTitle}`,
       })),
+    })),
+    streams: (fleet?.streams ?? []).map(st => ({
+      id:     `stream:${st.id}`,
+      label:  st.name,
+      repo:   st.repo,
+      issues: st.issues,
     })),
   };
 }
