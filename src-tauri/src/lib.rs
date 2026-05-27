@@ -345,12 +345,27 @@ async fn pty_create(
         cmd.env(k, v);
     }
     // Expose the triage checkpoint doc (resolved to an absolute, bash-style path)
-    // so the injected `bsc-checkpoint` helper can write "where we left off" to it.
+    // so the `bsc-checkpoint` helper can write "where we left off" to it, and install
+    // the helper itself. It must be reachable from the agent's OWN bash subprocesses:
+    // Claude's Bash tool runs a non-interactive `bash -c`, a child that never saw the
+    // interactive shell's functions, and the hyphenated name can't be `export -f`'d
+    // (bash won't import non-identifier function names). So we drop the helper in a
+    // stable rc file and point BASH_ENV at it — every non-interactive bash sources
+    // BASH_ENV at startup — then source the same file in the interactive shell below.
     let checkpoint_rel = checkpoint_doc.as_deref().filter(|s| !s.is_empty());
-    if let Some(rel) = checkpoint_rel {
-        let abs = bsc_base_dir().join(rel);
+    let checkpoint_rc = if let Some(rel) = checkpoint_rel {
+        let base = bsc_base_dir();
+        let abs = base.join(rel);
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
-    }
+        let _ = std::fs::create_dir_all(&base);
+        let rc = base.join("bsc-env.sh");
+        let _ = std::fs::write(&rc, BSC_CHECKPOINT_RC);
+        let rc_bash = to_bash_path(&rc.to_string_lossy());
+        cmd.env("BASH_ENV", &rc_bash);
+        Some(rc_bash)
+    } else {
+        None
+    };
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
@@ -388,13 +403,12 @@ async fn pty_create(
     } else {
         String::new()
     };
-    // `bsc-checkpoint`: triage sessions pipe a short "where we left off" note to it;
-    // it overwrites the per-repo checkpoint doc that the next launch composes onto
-    // the prompt. Only defined when a checkpoint doc was provided (BSC_CHECKPOINT_DOC).
-    let checkpoint_fn = if checkpoint_rel.is_some() {
-        "bsc-checkpoint() { mkdir -p \"$(dirname \"$BSC_CHECKPOINT_DOC\")\" 2>/dev/null; cat > \"$BSC_CHECKPOINT_DOC\"; }; "
-    } else {
-        ""
+    // Source the checkpoint helper into the interactive shell too: BASH_ENV only
+    // covers non-interactive subshells (the agent's Bash tool), so a human typing
+    // `bsc-checkpoint` in the console pane would otherwise not have it.
+    let checkpoint_fn = match &checkpoint_rc {
+        Some(rc) => format!("source \"{}\" 2>/dev/null; ", rc),
+        None => String::new(),
     };
     let osc7 = format!(
         "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
@@ -898,6 +912,15 @@ fn home_dir() -> std::path::PathBuf {
 fn bsc_base_dir() -> std::path::PathBuf {
     home_dir().join(".base-studio-code")
 }
+
+/// The `bsc-checkpoint` helper: reads stdin and overwrites the per-repo checkpoint
+/// doc named by `$BSC_CHECKPOINT_DOC` (creating its parent dir). Installed via an rc
+/// file + `BASH_ENV` so it's reachable from the agent's non-interactive `bash -c`
+/// subshells, not just the interactive PTY shell. The hyphenated name can't be
+/// `export -f`'d — bash refuses to import functions whose names aren't valid
+/// identifiers (post-Shellshock) — so it must be *defined* in each subshell.
+const BSC_CHECKPOINT_RC: &str =
+    "bsc-checkpoint() { mkdir -p \"$(dirname \"$BSC_CHECKPOINT_DOC\")\" 2>/dev/null; cat > \"$BSC_CHECKPOINT_DOC\"; }\n";
 
 /// Serializes the app's read-modify-write of `~/.claude.json` so concurrent
 /// session launches (each `pty_create` calls `trust_claude_dir`) don't interleave
@@ -2575,6 +2598,64 @@ mod tests {
     fn claude_launch_adds_continue_flag() {
         // Triage resumes the repo's prior conversation instead of starting fresh.
         assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
+    }
+
+    #[test]
+    fn bsc_checkpoint_rc_defines_hyphenated_helper_reading_the_doc_var() {
+        // The helper keeps its hyphenated, user-facing name (so it can't be exported
+        // into subshells — it must be *defined* via the rc file) and writes whatever
+        // it gets on stdin to the doc named by $BSC_CHECKPOINT_DOC.
+        let rc = super::BSC_CHECKPOINT_RC;
+        assert!(rc.contains("bsc-checkpoint()"), "rc must define the hyphenated helper");
+        assert!(rc.contains("$BSC_CHECKPOINT_DOC"), "rc must target the doc env var");
+        assert!(rc.contains("mkdir -p"), "rc must create the doc's parent dir");
+    }
+
+    #[test]
+    fn bsc_checkpoint_helper_runs_in_a_fresh_non_interactive_subshell() {
+        // Regression: the helper was only defined in the interactive PTY shell, so the
+        // agent's own `bash -c` subprocesses (Claude's Bash tool) couldn't find it.
+        // The rc file + BASH_ENV mechanism must make a fresh, non-interactive bash able
+        // to run `bsc-checkpoint` and write the doc. Skips where bash isn't on PATH.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        // Resolve the SAME shell the PTY launches (Git Bash on Windows, never the WSL
+        // System32 stub — which can't read a /c/... BASH_ENV path). A bare `bash` would
+        // resolve via PATH and may hit that stub, failing for reasons unrelated to the fix.
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_checkpoint subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-ckpt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_CHECKPOINT_RC).unwrap();
+        // Nested path exercises the helper's `mkdir -p` of the doc's parent.
+        let doc = dir.join("nested").join("checkpoint.md");
+
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let doc_bash = super::to_bash_path(&doc.to_string_lossy());
+
+        let mut child = Command::new(&shell)
+            .arg("-c")
+            .arg("bsc-checkpoint")
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_CHECKPOINT_DOC", &doc_bash)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(b"left off: step 3\n").unwrap();
+        assert!(child.wait().unwrap().success(), "bsc-checkpoint should run in the subshell");
+
+        assert_eq!(std::fs::read_to_string(&doc).unwrap(), "left off: step 3\n");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

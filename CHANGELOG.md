@@ -3,12 +3,25 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+> **Versioning:** the `0.x` series is a development preview. **`1.0.0` will be the
+> first official, general-availability release.** Until then, versions are bumped
+> conservatively so `1.0.0` stays a meaningful milestone.
+
 ## [Unreleased]
 
 ### Added
 - ESLint + Prettier tooling with CI enforcement
 - MIT license, README, CONTRIBUTING, SECURITY docs
 - Dependabot for automated dependency updates
+
+## [0.5.1] — 2026-05-27
+
+### Fixed
+- `bsc-checkpoint` is now reachable from agent shells, not just the interactive console
+  pane. Claude's Bash tool runs commands in non-interactive `bash -c` subprocesses that
+  never saw the interactive shell's functions, so triage sessions couldn't persist their
+  "where we left off" checkpoint. The helper is now installed via an rc file + `BASH_ENV`
+  (the hyphenated name can't be `export -f`'d), so every agent subshell can run it (#148).
 
 ## [0.2.0] — 2026-05-23
 
