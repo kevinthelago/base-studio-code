@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
+import { githubRequest, githubGraphql } from "../../lib/github";
 import { heatFill } from "./heatFill";
 import { quartileScale } from "./heatScale";
 
@@ -167,18 +167,11 @@ function useGitHubSummaryData() {
 
     setLoading(true);
 
-    const eventsP = invoke<GHEvent[]>("github_request", {
-      token: githubToken,
-      path: `users/${login}/events?per_page=100`,
-    }).catch((): GHEvent[] => []);
+    const eventsP = githubRequest<GHEvent[]>(`users/${login}/events?per_page=100`).catch((): GHEvent[] => []);
 
-    const contribP = invoke<{
+    const contribP = githubGraphql<{
       viewer: { contributionsCollection: { contributionCalendar: { weeks: Array<{ contributionDays: Array<{ contributionCount: number; date: string; weekday: number }> }> } } }
-    }>("github_graphql", {
-      token: githubToken,
-      query: CONTRIB_QUERY,
-      variables: null,
-    }).then(d => {
+    }>(CONTRIB_QUERY, null).then(d => {
       const weeks = d?.viewer?.contributionsCollection?.contributionCalendar?.weeks ?? [];
       const days: ContribDay[] = [];
       weeks.forEach(w => w.contributionDays.forEach(cd => days.push({ date: cd.date, weekday: cd.weekday, count: cd.contributionCount })));
@@ -187,22 +180,12 @@ function useGitHubSummaryData() {
 
     const repoPs = slugs.map(slug =>
       Promise.all([
-        invoke<GHPRItem[]>("github_request", {
-          token: githubToken,
-          path: `repos/${slug}/pulls?state=open&per_page=20`,
-        }).catch((): GHPRItem[] => []),
-        invoke<Record<string, number>>("github_request", {
-          token: githubToken,
-          path: `repos/${slug}/languages`,
-        }).catch((): Record<string, number> => ({})),
-        invoke<{ workflow_runs: GHRunItem[] }>("github_request", {
-          token: githubToken,
-          path: `repos/${slug}/actions/runs?per_page=30`,
-        }).catch(() => ({ workflow_runs: [] as GHRunItem[] })),
-        invoke<unknown>("github_request", {
-          token: githubToken,
-          path: `repos/${slug}/stats/contributors`,
-        }).then(d => Array.isArray(d) ? d as GHContrib[] : []).catch((): GHContrib[] => []),
+        githubRequest<GHPRItem[]>(`repos/${slug}/pulls?state=open&per_page=20`).catch((): GHPRItem[] => []),
+        githubRequest<Record<string, number>>(`repos/${slug}/languages`).catch((): Record<string, number> => ({})),
+        githubRequest<{ workflow_runs: GHRunItem[] }>(`repos/${slug}/actions/runs?per_page=30`)
+          .catch(() => ({ workflow_runs: [] as GHRunItem[] })),
+        githubRequest<unknown>(`repos/${slug}/stats/contributors`)
+          .then(d => Array.isArray(d) ? d as GHContrib[] : []).catch((): GHContrib[] => []),
       ])
     );
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, type GithubUser, type GithubRepo } from "../../store";
+import { clearGithubCache } from "../../lib/github";
 
 function ConnectCard() {
   const { setGithubToken, setGithubUser, setGithubRepos, setActiveRepo, setGithubConnected } = useAppStore();
@@ -15,6 +16,8 @@ function ConnectCard() {
     setLoading(true);
     setError(null);
     try {
+      // New token (possibly a different account) — drop any cached bodies first.
+      await clearGithubCache().catch(() => {});
       const user = await invoke<GithubUser>("github_request", { token: t, path: "user" });
       const repos = await invoke<GithubRepo[]>("github_request", {
         token: t,
@@ -148,7 +151,7 @@ export function GitHubSettings() {
                 )}
               </div>
             </div>
-            <button className="btn danger" onClick={disconnectGithub}>Disconnect</button>
+            <button className="btn danger" onClick={() => { clearGithubCache().catch(() => {}); disconnectGithub(); }}>Disconnect</button>
           </div>
 
           <div style={{ height: 18 }} />
