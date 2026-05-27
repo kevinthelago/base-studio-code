@@ -9,7 +9,7 @@ import { LogView } from "../components/pane/views/LogView";
 import { useAppStore } from "../store";
 import { recordRender } from "../lib/perf";
 import { resetLaunchGate } from "../lib/launchGate";
-import { shouldAutoFocusOnIdle, shouldAdvanceOnReply, STARTUP_GRACE_MS } from "../lib/consoleFocus";
+import { shouldAdvanceOnReply } from "../lib/consoleFocus";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 function resolvePaneName(
@@ -136,7 +136,7 @@ export function ConsoleScreen() {
     paneGitInfo, setPaneGitInfo,
     disabledPanes, setPaneDisabled,
     setFocusedAgentName,
-    setTabState, autoFocusOnInterrupt, autoAdvanceOnReply,
+    setTabState, autoAdvanceOnReply,
     consoleBroadcast,
     enqueueFocus, advanceFocus, reconcileFocusQueue,
   } = useAppStore();
@@ -163,39 +163,24 @@ export function ConsoleScreen() {
   // Ref so the callback passed to TerminalView always has the latest value without re-registering
   const paneStatusesRef = useRef(paneStatuses);
   useEffect(() => { paneStatusesRef.current = paneStatuses; }, [paneStatuses]);
-  // Timestamp of the last auto-focus steal — feeds the cooldown that stops two
-  // panes settling in quick succession from ping-ponging the cursor.
-  const lastAutoFocusRef = useRef(0);
 
   const handleStatusChange = useCallback((paneIdx: number, status: "run" | "idle") => {
     const pid = paneId(activeTabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
 
-    // A finished agent (run -> idle) either steals focus (grid mode, so you can
-    // reply fast) or joins the focus queue to be stepped through with Ctrl+Shift+N.
-    // The steal is suppressed during cold-start, for a cooldown after a previous
-    // steal, and while maximized (so the full-screen view isn't yanked) — in those
-    // cases the pane is queued instead. Going back to "run" clears it from the queue.
-    const now = Date.now();
-    const startedAt = useAppStore.getState().tabStartedAt[activeTabIdx] ?? 0;
-    const withinStartupGrace = startedAt > 0 && now - startedAt < STARTUP_GRACE_MS;
-    const maximized = useAppStore.getState().fullscreenPaneIdx >= 0;
+    // The focus queue governs the cursor — it never moves on its own. A finished
+    // agent (run -> idle) joins the queue to be stepped through with Ctrl+Shift+N
+    // or surfaced by auto-advance-on-reply; you choose when to visit it. Going back
+    // to "run" clears it from the queue (handled by the reconcile sweep below).
     if (status === "idle" && prev === "run") {
-      // Finished a turn → now waiting for a response: always queue it. It stays
-      // queued (even if you focus it) until you actually respond. In grid mode
-      // also jump to it so you can reply fast; the steal is suppressed when
-      // maximized, during cold-start, and on cooldown.
       enqueueFocus(paneIdx);
-      if (shouldAutoFocusOnIdle(autoFocusOnInterrupt, status, prev, withinStartupGrace, now - lastAutoFocusRef.current, maximized)) {
-        setFocusedPane(paneIdx);
-        lastAutoFocusRef.current = now;
-      }
     } else if (status === "run" && prev === "idle") {
       // A response was sent to this pane — if it's the one you're on, cycle to the
       // next waiting pane (when auto-advance is on). Dequeuing the now-non-idle
       // pane is handled by the reconcile sweep below, not here.
       // "Active" pane is the maximized one when maximized, else the focused one.
-      const activeIdx = maximized ? useAppStore.getState().fullscreenPaneIdx : useAppStore.getState().focusedPaneIdx;
+      const st = useAppStore.getState();
+      const activeIdx = st.fullscreenPaneIdx >= 0 ? st.fullscreenPaneIdx : st.focusedPaneIdx;
       if (autoAdvanceOnReply && shouldAdvanceOnReply(prev, status, paneIdx, activeIdx)) advanceFocus();
     }
 
@@ -211,7 +196,7 @@ export function ConsoleScreen() {
       setTabState(activeTabIdx, tabState);
       return next;
     });
-  }, [activeTabIdx, paneCount, autoFocusOnInterrupt, autoAdvanceOnReply, setFocusedPane, setTabState, enqueueFocus, advanceFocus]);
+  }, [activeTabIdx, paneCount, autoAdvanceOnReply, setTabState, enqueueFocus, advanceFocus]);
 
   // Reconcile the focus queue with reality: a session stays queued only while it's
   // idle, so whenever statuses change, drop any queued pane that's no longer idle.
