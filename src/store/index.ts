@@ -173,7 +173,7 @@ interface AppStore {
   markGithubTokenInvalid: () => void;
 
   // Automations
-  automationsTab: "schedules" | "commands" | "history";
+  automationsTab: "schedules" | "history";
   setAutomationsTab: (tab: AppStore["automationsTab"]) => void;
 
   // Settings
