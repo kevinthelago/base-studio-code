@@ -1,20 +1,38 @@
 // Terminal tuning shared across console panes.
 
 /**
- * Scrollback line budget for a pane, scaled down as the grid grows.
+ * Scrollback line budget for one pane, scaled down as the total mounted-pane
+ * count across ALL tabs grows.
  *
  * xterm retains every scrollback line in renderer memory, so N panes each
  * holding a deep buffer multiplies fast — a 4×4 triage (16 panes) at a flat
  * 10k lines is ~160k buffered lines and a prime suspect for renderer OOM.
- * Small grids keep a generous buffer; large grids trade history for memory.
+ * #187 made every tab's panes stay mounted (so xterm + scrollback survive tab
+ * switches), which means a 2-tab × 16-pane workspace is now 32 mounted panes,
+ * not 16. The buckets below preserve the single-tab budgets so existing
+ * workflows don't regress, then extend downward for the cross-tab reality.
  *
- * @param paneCount number of panes mounted in the current tab's grid.
+ * @param paneCount total panes mounted across every tab in the workspace.
  */
 export function scrollbackForPaneCount(paneCount: number): number {
-  if (paneCount <= 1) return 10000;
-  if (paneCount <= 4) return 6000;
-  if (paneCount <= 9) return 3000;
-  return 1500; // 16-pane (4×4) and beyond
+  if (paneCount <= 1)  return 10000;
+  if (paneCount <= 4)  return 6000;
+  if (paneCount <= 9)  return 3000;
+  if (paneCount <= 16) return 1500; // single 4×4 tab — unchanged
+  if (paneCount <= 32) return 1000; // ~two heavy tabs
+  return 500;                       // 33+ — large fleets across many tabs
+}
+
+/**
+ * Sum every tab's `cols × rows` so {@link scrollbackForPaneCount} can size each
+ * pane's buffer against the workspace-wide load, not just its own tab's grid.
+ * Layout values that don't parse fall back to a 1×1 cell.
+ */
+export function totalMountedPaneCount(tabs: ReadonlyArray<{ layout: string }>): number {
+  return tabs.reduce((sum, tab) => {
+    const [c, r] = tab.layout.split("×").map(Number);
+    return sum + (c || 1) * (r || 1);
+  }, 0);
 }
 
 // ── Terminal font zoom (Ctrl++ / Ctrl+- / Ctrl+0) ──────────────────────────────

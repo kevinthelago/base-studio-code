@@ -8,7 +8,7 @@ import "@xterm/xterm/css/xterm.css";
 import { log } from "../../../lib/log";
 import { recordPtyData, bumpTerminals } from "../../../lib/perf";
 import { gateClaudeLaunch } from "../../../lib/launchGate";
-import { scrollbackForPaneCount } from "../../../lib/terminal";
+import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/terminal";
 import { composeStartupPrompt } from "../../../lib/checkpoint";
 import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
 import { PendingPtyData } from "../../../lib/pendingPtyData";
@@ -96,12 +96,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     const el = containerRef.current;
     if (!el) return;
 
-    // Scale scrollback down on larger grids — 16 panes × deep buffers is a major
-    // renderer-memory cost. Derive the grid size from this pane's tab layout.
-    const tabIdx = Number(/^t(\d+)p\d+$/.exec(paneId)?.[1] ?? -1);
-    const layout = useAppStore.getState().tabs[tabIdx]?.layout ?? "1×1";
-    const [lc, lr] = layout.split("×").map(Number);
-    const scrollback = scrollbackForPaneCount((lc || 1) * (lr || 1));
+    // Scale scrollback down on heavier workspaces — every mounted pane keeps
+    // its buffer in renderer memory, and after #187 EVERY tab's panes stay
+    // mounted (not just the active tab's), so a 2-tab × 16-pane setup is 32
+    // live buffers. Use the workspace-wide total — not just this tab's grid —
+    // to keep total scrollback bounded as tabs accumulate.
+    const scrollback = scrollbackForPaneCount(
+      totalMountedPaneCount(useAppStore.getState().tabs),
+    );
 
     // (Re)mounting: re-arm the skip so the font-zoom effect doesn't fire against
     // a terminal whose PTY hasn't been created yet.
@@ -150,9 +152,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // type here and no startup race to manage.
       claudeActiveRef.current = "idle";
       onStatusChangeRef.current?.("idle");
-      // Focus is decided by ConsoleScreen (which pane to auto-focus, with a
-      // startup grace) and actuated by the focused-pane effect below — we don't
-      // focus here, so a pane finishing never steals the cursor on its own.
+      // Focus is decided by ConsoleScreen — handleStatusChange enqueues this
+      // pane on idle and the user steps through with Ctrl+Shift+N (or auto-
+      // advance-on-reply). Only first-idle ever enqueues a pane, so a cold-
+      // starting grid can't yank the cursor around. We don't focus here.
     }
 
     function armQuietTimer() {
