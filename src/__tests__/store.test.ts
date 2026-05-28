@@ -969,8 +969,41 @@ describe("agent fleet store", () => {
     expect(st.paneCwds["t3p2"]).toBe("/base/projects/proj-key/api");
     expect(st.paneStartupPromptText["t3p2"]).toContain("API");
 
+    // per-agent checkpoint docs, keyed by stream id (director gets its own)
+    expect(st.paneCheckpointDocs["t3p0"]).toBe("projects/proj-key/prompts/director-checkpoint.md");
+    expect(st.paneCheckpointDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-checkpoint.md");
+    expect(st.paneCheckpointDocs["t3p2"]).toBe("projects/proj-key/prompts/api-checkpoint.md");
+    // first launch starts fresh — no --continue
+    expect(st.paneContinue["t3p1"]).toBe(false);
+
     // empty grid cell starts disabled
     expect(st.disabledPanes["t3p3"]).toBe(true);
+  });
+
+  it("gives each agent its own checkpoint doc and skips --continue for co-located agents on re-run", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const coFleet: FleetPlan = {
+      recommended: 3, reasoning: "", director: { enabled: false },
+      streams: [
+        { id: "web-a", name: "Web A", repo: "own/web", owns: [], issues: [], dependsOn: [] },
+        { id: "web-b", name: "Web B", repo: "own/web", owns: [], issues: [], dependsOn: [] },
+        { id: "api",   name: "API",   repo: "own/api", owns: [], issues: [], dependsOn: [] },
+      ],
+    };
+    useAppStore.getState().fleetStartProject("Co", coFleet, "k");
+    const idx = useAppStore.getState().findFleetTabIdx("Co");
+    // distinct per-agent checkpoint docs — two agents in own/web don't collide
+    expect(useAppStore.getState().paneCheckpointDocs[`t${idx}p0`]).toBe("projects/k/prompts/web-a-checkpoint.md");
+    expect(useAppStore.getState().paneCheckpointDocs[`t${idx}p1`]).toBe("projects/k/prompts/web-b-checkpoint.md");
+    expect(useAppStore.getState().paneCheckpointDocs[`t${idx}p2`]).toBe("projects/k/prompts/api-checkpoint.md");
+
+    // re-run (tab exists) → resume; co-located web agents must NOT --continue (shared
+    // cwd is ambiguous), but the sole api agent does.
+    useAppStore.getState().fleetStartProject("Co", coFleet, "k");
+    const st = useAppStore.getState();
+    expect(st.paneContinue[`t${idx}p0`]).toBe(false);
+    expect(st.paneContinue[`t${idx}p1`]).toBe(false);
+    expect(st.paneContinue[`t${idx}p2`]).toBe(true);
   });
 
   it("fleetStartProject caps launched workers at the recommended count", () => {

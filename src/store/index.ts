@@ -9,7 +9,7 @@ import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
 import { projectRepoCwd, projectHubCwd, sanitizeProjectKey } from "../lib/projectPaths";
-import { checkpointDocRelpath } from "../lib/checkpoint";
+import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
 import { computeNextRun, appendRun, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
@@ -59,6 +59,7 @@ function buildStreamPrompt(stream: AgentStream): string {
     `Work autonomously and do not stop to ask: when something is underspecified, make the smallest reversible choice ` +
     `consistent with the plan goal and architecture, then record it by piping a one-line note into bsc-note on stdin. ` +
     `If you are genuinely blocked, pipe a one-line reason into bsc-blocked on stdin. ` +
+    `When you pause or finish a work session, pipe a short note of where you left off and the next step into bsc-checkpoint on stdin so your next session resumes there. ` +
     `Verify your work against the repo tests and CI rather than asking whether it is correct.`
   );
 }
@@ -869,6 +870,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
           const newPaneContinue          = { ...s.paneContinue };
+          const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newDisabledPanes         = { ...s.disabledPanes };
           const tabPaneNames: Record<number, string> = {};
@@ -876,11 +878,20 @@ export const useAppStore = create<AppStore>()(
           const safeKey = sanitizeProjectKey(projectKey);
           const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
 
+          // How many launched workers share each repo. When >1 agents sit in one
+          // repo clone they share a cwd, so `claude --continue` is ambiguous (it
+          // resumes whichever wrote last) — those agents launch fresh and rely on
+          // their own per-agent checkpoint doc instead. A repo's lone agent resumes
+          // via --continue as before.
+          const repoLaunchCount: Record<string, number> = {};
+          for (const w of workers) repoLaunchCount[w.repo] = (repoLaunchCount[w.repo] ?? 0) + 1;
+
           for (let i = 0; i < paneCount; i++) {
             const key = `t${newTabIdx}p${i}`;
-            // Clear any stale prompt wiring from a prior run of this slot.
+            // Clear any stale wiring from a prior run of this slot.
             delete newPaneStartupPromptText[key];
             delete newPaneStartupPromptDocs[key];
+            delete newPaneCheckpointDocs[key];
             if (i < count) {
               if (hasDirector && i === 0) {
                 // Director session at the project root — sees every repo as a subdir.
@@ -888,6 +899,8 @@ export const useAppStore = create<AppStore>()(
                 newPaneInitCmds[key] = "claude";
                 newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
                 newPaneAllowedCommands[key] = projectCmds;
+                newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
+                newPaneContinue[key] = resume;
                 tabPaneNames[i] = "director";
               } else {
                 const stream = workers[hasDirector ? i - 1 : i];
@@ -903,9 +916,12 @@ export const useAppStore = create<AppStore>()(
                   s.projectAllowedCommands[projectKey],
                   s.repoAllowedCommands[repoPromptKey(projectKey, stream.repo)],
                 );
+                // Per-agent checkpoint doc (keyed by stream id, not repo) so
+                // co-located agents never clobber each other's resume note.
+                newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, stream.id);
+                newPaneContinue[key] = resume && repoLaunchCount[stream.repo] <= 1;
                 tabPaneNames[i] = stream.name;
               }
-              newPaneContinue[key] = resume;
               delete newDisabledPanes[key];
             } else {
               // Empty grid cell — start disabled so it doesn't spawn an idle shell.
@@ -927,6 +943,7 @@ export const useAppStore = create<AppStore>()(
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
             paneContinue: newPaneContinue,
+            paneCheckpointDocs: newPaneCheckpointDocs,
             paneAllowedCommands: newPaneAllowedCommands,
             disabledPanes: newDisabledPanes,
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
