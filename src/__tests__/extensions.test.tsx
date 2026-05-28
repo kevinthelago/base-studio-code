@@ -98,4 +98,17 @@ describe("ExtensionsScreen", () => {
     expect(useAppStore.getState().extensions.some(e => e.id === "e2")).toBe(false);
     expect((container.querySelector(".drawer") as HTMLElement).className).not.toContain("on");
   });
+
+  it("defaults to the catalog and shows an empty-state CTA when nothing is installed", () => {
+    useAppStore.setState({ extensions: [] });
+    const { container } = render(<ExtensionsScreen />);
+    // With nothing installed, the catalog tab is active by default.
+    expect(container.querySelectorAll(".subtabs .t")[1].className).toContain("on");
+    expect(screen.getByText(EXT_CATALOG[0].name)).toBeTruthy();
+    // The installed tab shows a clear CTA back to the catalog.
+    fireEvent.click(container.querySelectorAll(".subtabs .t")[0]);
+    expect(screen.getByText("No extensions installed")).toBeTruthy();
+    fireEvent.click(screen.getByText("Browse the catalog →"));
+    expect(container.querySelectorAll(".subtabs .t")[1].className).toContain("on");
+  });
 });
