@@ -10,7 +10,15 @@ import { gateClaudeLaunch } from "../../../lib/launchGate";
 import { scrollbackForPaneCount } from "../../../lib/terminal";
 import { composeStartupPrompt } from "../../../lib/checkpoint";
 import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
+import { PendingPtyData } from "../../../lib/pendingPtyData";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
+
+// Background-pane buffer cap. While a pane is hidden we skip xterm.write
+// entirely and accumulate the PTY bytes here; on becoming visible we flush
+// them in one go. 256 KB ≈ a few thousand lines of dense output — generous for
+// realistic switch-away durations and far above what's likely useful before
+// xterm's own scrollback truncates it anyway.
+const PENDING_BYTES_CAP = 256 * 1024;
 
 // Hex equivalents of the oklch design tokens so xterm can use them
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -45,6 +53,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
+  // Visibility flag for the PTY listener: while false we buffer rather than
+  // calling term.write, so a hidden pane (different view, fullscreen-of-other-
+  // pane, etc.) pays no render cost. The ref mirrors the `visible` prop and is
+  // updated by a tiny effect below; the listener reads it synchronously.
+  const visibleRef = useRef(visible);
+  const pendingRef = useRef(new PendingPtyData(PENDING_BYTES_CAP));
   // Skips the first font-zoom effect run per (re)mount — the terminal is already
   // created at the current size, so we must not pty_resize before pty_create.
   const fontReadyRef = useRef(false);
@@ -187,7 +201,22 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       fitAddon.fit();
       const unlisten = await listen<string>(`pty_data_${paneId}`, (ev) => {
         const t0 = performance.now();
-        term.write(ev.payload);
+        // Render path: skip xterm.write entirely while the pane is hidden — the
+        // canvas/WebGL paint is the dominant render cost and a hidden pane
+        // shouldn't pay it (#52). Bytes accumulate in pendingRef and flush in
+        // one term.write when we go visible again (here or in the [visible]
+        // effect below). Flush-before-write here guarantees correct ordering
+        // even if the visibility flip and the next PTY event race.
+        if (visibleRef.current) {
+          if (pendingRef.current.size() > 0) {
+            term.write(pendingRef.current.flush());
+          }
+          term.write(ev.payload);
+        } else {
+          pendingRef.current.push(ev.payload);
+        }
+        // Status detection runs regardless of visibility — a background pane
+        // finishing should still emit "idle" / join the focus queue.
         // Reset quiet timer only for printable output — pure ANSI control sequences
         // (cursor moves, color resets after the last response line) don't count,
         // so Claude's trailing formatting doesn't keep pushing the timer out.
@@ -312,14 +341,30 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     };
   }, [paneId]);
 
-  // Re-fit when this view becomes visible again (e.g. switching back from files view)
+  // Keep visibleRef in sync with the prop so the PTY listener reads the latest
+  // value synchronously. Declared before the [visible] effect below so it runs
+  // first per React's effect-ordering rules: by the time the buffer-flush /
+  // fit / resize logic below runs, visibleRef already reflects the new value.
+  useEffect(() => { visibleRef.current = visible; }, [visible]);
+
+  // Re-fit when this view becomes visible again (e.g. switching back from
+  // files view, or coming back to a background tab). Also flush anything the
+  // listener buffered while we were hidden, in one xterm.write so the user
+  // sees what streamed in their absence. The listener already flush-before-
+  // writes on the next event after visibility flips, but if no further event
+  // arrives the user would otherwise stare at a frozen screen; this effect is
+  // the safety net for that case.
   useEffect(() => {
     if (visible) {
+      const term = termRef.current;
+      if (term && pendingRef.current.size() > 0) {
+        term.write(pendingRef.current.flush());
+      }
       requestAnimationFrame(() => {
         fitRef.current?.fit();
-        const term = termRef.current;
-        if (term) {
-          invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+        const t = termRef.current;
+        if (t) {
+          invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(console.error);
           // Don't steal focus on becoming visible — the focused-pane effect below
           // focuses only the active pane. Stealing here made every pane in a grid
           // grab focus on mount.
