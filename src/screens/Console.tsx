@@ -166,10 +166,6 @@ export function ConsoleScreen() {
     setFocusedAgentName(name);
   }, [focusedPaneIdx, activeTabIdx, paneNames, setFocusedAgentName]);
 
-  const activeTab = tabs[activeTabIdx];
-  const [cols, rows] = activeTab.layout.split("×").map(Number);
-  const paneCount = cols * rows;
-
   // Per-pane status ("run" | "idle"), keyed by paneId string.
   // Kept local — not persisted, resets on reload.
   const [paneStatuses, setPaneStatuses] = useState<Record<string, "run" | "on" | "idle">>({});
@@ -181,23 +177,18 @@ export function ConsoleScreen() {
     const pid = paneId(tabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
 
-    // Focus queue is screen-level (one cursor across the app) so it only
-    // adjusts for the active tab. Background-tab status changes still drive
-    // the tab-state rollup below — so the Tabstrip badge for that tab updates
-    // when its agent finishes — but they don't move the cursor or trigger
-    // auto-advance-on-reply on the user's currently-visible tab.
-    if (tabIdx === useAppStore.getState().activeTabIdx) {
-      // The focus queue governs the cursor — it never moves on its own. A finished
-      // agent (run -> idle) joins the queue to be stepped through with Ctrl+Shift+N
-      // or surfaced by auto-advance-on-reply; you choose when to visit it. Going back
-      // to "run" clears it from the queue (handled by the reconcile sweep below).
-      if (status === "idle" && prev === "run") {
-        enqueueFocus(paneIdx);
-      } else if (status === "run" && prev === "idle") {
-        // A response was sent to this pane — if it's the one you're on, cycle to the
-        // next waiting pane (when auto-advance is on). Dequeuing the now-non-idle
-        // pane is handled by the reconcile sweep below, not here.
-        // "Active" pane is the maximized one when maximized, else the focused one.
+    // Focus queue is screen-level (one cursor across the app), and after #77
+    // it now spans every tab — a background-tab agent finishing also joins
+    // the queue, and advanceFocus knows to hop tabs to bring you there. Going
+    // back to "run" clears it from the queue (handled by the reconcile sweep).
+    if (status === "idle" && prev === "run") {
+      enqueueFocus(tabIdx, paneIdx);
+    } else if (status === "run" && prev === "idle") {
+      // Auto-advance-on-reply stays scoped to the ACTIVE tab — only the user's
+      // foreground reply should move the cursor. A background-tab pane going
+      // run -> idle (e.g. an agent picking up after backend latency) shouldn't
+      // yank focus away from whatever the user is doing.
+      if (tabIdx === useAppStore.getState().activeTabIdx) {
         const st = useAppStore.getState();
         const activeIdx = st.fullscreenPaneIdx >= 0 ? st.fullscreenPaneIdx : st.focusedPaneIdx;
         if (autoAdvanceOnReply && shouldAdvanceOnReply(prev, status, paneIdx, activeIdx)) advanceFocus();
@@ -224,17 +215,24 @@ export function ConsoleScreen() {
     });
   }, [autoAdvanceOnReply, setTabState, enqueueFocus, advanceFocus]);
 
-  // Reconcile the focus queue with reality: a session stays queued only while it's
-  // idle, so whenever statuses change, drop any queued pane that's no longer idle.
-  // Self-heals desync (manual focus changes, a missed transition) instead of
-  // relying on catching one specific dequeue event.
+  // Reconcile the focus queue with reality: a session stays queued only while
+  // it's idle, so whenever statuses change, drop any queued pane that's no
+  // longer idle. After #77 this sweeps EVERY tab (not just the active one),
+  // since every tab's TerminalView is mounted (#187) and emits status events.
+  // Self-heals desync (manual focus changes, a missed transition).
   useEffect(() => {
-    const waiting: number[] = [];
-    for (let i = 0; i < paneCount; i++) {
-      if ((paneStatuses[paneId(activeTabIdx, i)] ?? "idle") === "idle") waiting.push(i);
+    const waitingByTab = new Map<number, Set<number>>();
+    for (let ti = 0; ti < tabs.length; ti++) {
+      const [tc, tr] = tabs[ti].layout.split("×").map(Number);
+      const count = (tc || 1) * (tr || 1);
+      const waiting = new Set<number>();
+      for (let i = 0; i < count; i++) {
+        if ((paneStatuses[paneId(ti, i)] ?? "idle") === "idle") waiting.add(i);
+      }
+      waitingByTab.set(ti, waiting);
     }
-    reconcileFocusQueue(waiting);
-  }, [paneStatuses, activeTabIdx, paneCount, reconcileFocusQueue]);
+    reconcileFocusQueue(waitingByTab);
+  }, [paneStatuses, tabs, reconcileFocusQueue]);
 
   // All per-pane handlers are stable (useCallback) so the memoized PaneAt
   // children don't re-render on every ConsoleScreen commit. Each handler takes
