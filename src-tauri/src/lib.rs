@@ -168,11 +168,50 @@ fn bash_ansi_c_quote(s: &str) -> String {
 }
 
 /// Build the shell command that launches `claude` with the baked startup prompt.
-/// Triage sessions pass `continue_session = true` to resume the repo's most recent
-/// conversation (`--continue`) instead of starting a fresh one.
+/// Triage sessions request `continue_session = true` to resume the repo's most
+/// recent conversation (`--continue`) instead of starting fresh. The caller must
+/// only pass `true` when a prior conversation actually exists (see
+/// [`has_claude_history`]); `claude --continue` aborts with "No conversation
+/// found to continue" for a cwd it has never seen, which would also swallow the
+/// baked prompt.
 fn claude_launch(prompt: &str, continue_session: bool) -> String {
     let flag = if continue_session { "--continue " } else { "" };
     format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
+}
+
+/// Encode a working directory to the folder name Claude Code stores its
+/// conversations under (`~/.claude/projects/<name>/`): every character that is
+/// not ASCII alphanumeric becomes `-` (e.g. `C:\Users\Kevin\foo` →
+/// `C--Users-Kevin-foo`). Trailing path separators are trimmed first so `foo\`
+/// and `foo` map to the same project, matching the canonical cwd Claude derives.
+fn claude_project_dir_name(cwd: &str) -> String {
+    cwd.trim_end_matches(|c| c == '/' || c == '\\')
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// True iff `projects_root/<encoded cwd>/` holds at least one `.jsonl` transcript.
+/// Split out from [`has_claude_history`] so the directory scan is unit-testable
+/// without depending on the real `~/.claude` location (cf. `bash_in_roots`).
+fn has_history_in(projects_root: &std::path::Path, cwd: &str) -> bool {
+    if cwd.is_empty() {
+        return false;
+    }
+    let dir = projects_root.join(claude_project_dir_name(cwd));
+    let Ok(entries) = std::fs::read_dir(&dir) else { return false; };
+    entries
+        .flatten()
+        .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
+}
+
+/// True iff Claude Code has at least one stored conversation for `cwd` — i.e.
+/// `~/.claude/projects/<encoded>/` exists and holds at least one `.jsonl`
+/// transcript. Drives whether `--continue` may resume a session. Fail-safe: an
+/// empty `cwd`, a missing project dir, or an unreadable directory yields `false`,
+/// so the caller launches fresh and the startup prompt is always delivered.
+fn has_claude_history(cwd: &str) -> bool {
+    has_history_in(&home_dir().join(".claude").join("projects"), cwd)
 }
 
 /// Resolve the shell to spawn for a session. The injected bash helpers
@@ -336,7 +375,13 @@ async fn pty_create(
     // safe line and overrides any claude launch in init_cmd. With no prompt,
     // init_cmd runs as-is.
     let launch = match startup_prompt.as_deref().filter(|s| !s.is_empty()) {
-        Some(p) => Some(claude_launch(p, continue_session.unwrap_or(false))),
+        Some(p) => {
+            // Only resume with `--continue` when this cwd actually has a prior
+            // conversation; a brand-new project has none, and `claude --continue`
+            // would abort and drop the prompt. When unsure, launch fresh.
+            let resume = continue_session.unwrap_or(false) && has_claude_history(&cwd);
+            Some(claude_launch(p, resume))
+        }
         None => init_cmd.as_deref().filter(|s| !s.is_empty()).map(|s| s.to_string()),
     };
     let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
@@ -2361,7 +2406,7 @@ mod tests {
         assert_eq!(stripped, "/c/Users/Kevin/project");
     }
 
-    use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch};
+    use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch, claude_project_dir_name, has_history_in};
     use super::session_env;
     use std::collections::HashMap;
 
@@ -2401,6 +2446,47 @@ mod tests {
     fn claude_launch_adds_continue_flag() {
         // Triage resumes the repo's prior conversation instead of starting fresh.
         assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
+    }
+
+    #[test]
+    fn claude_project_dir_name_dashes_non_alphanumerics() {
+        // Drive colon, separators, and dots all collapse to '-' — matching the
+        // folder name Claude Code uses under ~/.claude/projects/.
+        assert_eq!(claude_project_dir_name("C:/Users/Kevin/foo"), "C--Users-Kevin-foo");
+        assert_eq!(claude_project_dir_name(r"C:\Users\Kevin\foo"), "C--Users-Kevin-foo");
+        assert_eq!(claude_project_dir_name(r"C:\Users\Kevin\.app\proj"), "C--Users-Kevin--app-proj");
+    }
+
+    #[test]
+    fn claude_project_dir_name_trims_trailing_separators() {
+        // A trailing separator must not add a trailing dash, so `foo\` resolves to
+        // the same project as the canonical (slash-free) cwd Claude derives.
+        assert_eq!(claude_project_dir_name(r"C:\Users\Kevin\foo\"), "C--Users-Kevin-foo");
+        assert_eq!(claude_project_dir_name("C:/Users/Kevin/foo/"), "C--Users-Kevin-foo");
+    }
+
+    #[test]
+    fn has_history_gates_continue_on_a_jsonl_transcript() {
+        let root = std::env::temp_dir().join(format!("bsc-hist-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let cwd = r"C:\Users\Kevin\proj";
+        let proj = root.join(claude_project_dir_name(cwd));
+        std::fs::create_dir_all(&proj).unwrap();
+
+        // New project: dir exists but has no transcript → launch fresh.
+        assert!(!has_history_in(&root, cwd));
+        // A non-transcript file still counts as no history.
+        std::fs::write(proj.join("notes.txt"), "x").unwrap();
+        assert!(!has_history_in(&root, cwd));
+        // A .jsonl transcript means a prior conversation exists → may --continue.
+        std::fs::write(proj.join("0a1b.jsonl"), "{}").unwrap();
+        assert!(has_history_in(&root, cwd));
+        // A cwd Claude has never seen (no project dir) → no history.
+        assert!(!has_history_in(&root, r"C:\Users\Kevin\unseen"));
+        // Empty cwd is never resumable.
+        assert!(!has_history_in(&root, ""));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[cfg(windows)]
