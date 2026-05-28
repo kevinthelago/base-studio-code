@@ -119,19 +119,37 @@ function DisabledConsole({ onEnable }: { onEnable: () => void }) {
 }
 
 export function ConsoleScreen() {
-  const {
-    tabs, activeTabIdx, paneMenuOpenIdx, setPaneMenu,
-    focusedPaneIdx, setFocusedPane, fullscreenPaneIdx, setFullscreenPane,
-    paneViews, setPaneView,
-    paneNames, setPaneName,
-    paneCwds, setPaneCwd,
-    paneInitCmds,
-    disabledPanes, setPaneDisabled,
-    setFocusedAgentName,
-    setTabState, autoAdvanceOnReply,
-    consoleBroadcast,
-    enqueueFocus, advanceFocus, reconcileFocusQueue,
-  } = useAppStore();
+  // Subscribe per-slice instead of `useAppStore()`-the-whole-state, so a mutation
+  // anywhere else in the store (kbBlocks, GitHub cache, settings, planning data)
+  // no longer re-renders the entire console grid — only changes to slices this
+  // screen actually reads. Was a meaningful source of render churn on multi-pane
+  // grids per #52.
+  const tabs              = useAppStore((s) => s.tabs);
+  const activeTabIdx      = useAppStore((s) => s.activeTabIdx);
+  const paneMenuOpenIdx   = useAppStore((s) => s.paneMenuOpenIdx);
+  const focusedPaneIdx    = useAppStore((s) => s.focusedPaneIdx);
+  const fullscreenPaneIdx = useAppStore((s) => s.fullscreenPaneIdx);
+  const paneViews         = useAppStore((s) => s.paneViews);
+  const paneNames         = useAppStore((s) => s.paneNames);
+  const paneCwds          = useAppStore((s) => s.paneCwds);
+  const paneInitCmds      = useAppStore((s) => s.paneInitCmds);
+  const disabledPanes     = useAppStore((s) => s.disabledPanes);
+  const autoAdvanceOnReply = useAppStore((s) => s.autoAdvanceOnReply);
+  const consoleBroadcast  = useAppStore((s) => s.consoleBroadcast);
+  // Action references are stable across store updates, so subscribing through a
+  // selector is fine — they never trigger a re-render on their own.
+  const setPaneMenu          = useAppStore((s) => s.setPaneMenu);
+  const setFocusedPane       = useAppStore((s) => s.setFocusedPane);
+  const setFullscreenPane    = useAppStore((s) => s.setFullscreenPane);
+  const setPaneView          = useAppStore((s) => s.setPaneView);
+  const setPaneName          = useAppStore((s) => s.setPaneName);
+  const setPaneCwd           = useAppStore((s) => s.setPaneCwd);
+  const setPaneDisabled      = useAppStore((s) => s.setPaneDisabled);
+  const setFocusedAgentName  = useAppStore((s) => s.setFocusedAgentName);
+  const setTabState          = useAppStore((s) => s.setTabState);
+  const enqueueFocus         = useAppStore((s) => s.enqueueFocus);
+  const advanceFocus         = useAppStore((s) => s.advanceFocus);
+  const reconcileFocusQueue  = useAppStore((s) => s.reconcileFocusQueue);
 
   // Count every commit so the perf summary can tell a React re-render loop apart
   // from paint/render cost (no deps → runs after each render).
