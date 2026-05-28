@@ -12,6 +12,7 @@ import { scrollbackForPaneCount } from "../../../lib/terminal";
 import { composeStartupPrompt } from "../../../lib/checkpoint";
 import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
 import { PendingPtyData } from "../../../lib/pendingPtyData";
+import { resolveInitCmd } from "../../../lib/resumeClaude";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
@@ -181,6 +182,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         claudeActiveRef.current = "run";
         onStatusChangeRef.current?.("run");
         armQuietTimer();
+        // Mark this pane as a claude pane so the next app launch can resume
+        // it with `claude --continue` (#36). The setter no-ops when the
+        // flag is already on, so repeated OSC 100 "run" emissions during a
+        // session don't churn the store.
+        useAppStore.getState().setPaneWasClaude(paneId, true);
       } else if (data === "idle") {
         inClaudeRef.current = false;
         if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
@@ -315,12 +321,25 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         if (destroyed) return;
       }
 
+      // Resolve the effective init_cmd: an explicit `initCmd` prop wins,
+      // then a triage/fleet `startupPrompt` (handled by pty_create's
+      // prompt-baking path — must NOT also inject a parallel init_cmd),
+      // then the ad-hoc resume (#36): if this pane had claude running at
+      // last shutdown and auto-resume is on, mount straight into
+      // `claude --continue`.
+      const st = useAppStore.getState();
+      const effectiveInitCmd = resolveInitCmd({
+        explicit: initCmd,
+        startupPrompt,
+        paneWasClaude: !!st.paneWasClaude[paneId],
+        autoResumeClaude: st.autoResumeClaude,
+      });
       const isNew = await invoke<boolean>("pty_create", {
         paneId,
         cols: term.cols,
         rows: term.rows,
         cwd:     initialCwd ?? "",
-        initCmd: initCmd ?? "",
+        initCmd: effectiveInitCmd,
         startupPrompt,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
