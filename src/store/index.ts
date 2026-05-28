@@ -142,6 +142,12 @@ interface AppStore {
   paneNames: Record<number, Record<number, string>>;
   paneCwds: Record<string, string>;  // keyed by "t{tabIdx}p{paneIdx}"
   setPaneCwd: (paneId: string, cwd: string) => void;
+  // Per-pane flag: this pane has had `claude` running at some point this
+  // session. Persisted so that on next launch the pane can auto-resume the
+  // CLI (with `--continue`) instead of dropping the user back at a bare
+  // bash prompt (#36). Set by TerminalView when OSC 100 "run" fires.
+  paneWasClaude: Record<string, boolean>;
+  setPaneWasClaude: (paneId: string, on: boolean) => void;
   paneInitCmds: Record<string, string>; // transient — NOT persisted
   setPaneInitCmd: (paneId: string, cmd: string) => void;
   // Resolved startup-prompt document per pane (transient — NOT persisted).
@@ -384,6 +390,12 @@ interface AppStore {
   // waiting in the focus queue (persisted; configured in Settings → Integrations).
   autoAdvanceOnReply: boolean;
   setAutoAdvanceOnReply: (v: boolean) => void;
+  // When true, panes that had claude running at last shutdown auto-relaunch
+  // it with --continue on next mount (persisted; configured in Settings →
+  // Integrations). Gated per pane by paneWasClaude — off by default for
+  // panes that never used claude (#36).
+  autoResumeClaude: boolean;
+  setAutoResumeClaude: (v: boolean) => void;
 }
 
 export const useAppStore = create<AppStore>()(
@@ -438,6 +450,17 @@ export const useAppStore = create<AppStore>()(
       paneViews: [],
       paneNames: {},
       paneCwds: {},
+      paneWasClaude: {},
+      setPaneWasClaude: (paneId, on) =>
+        set((s) => {
+          const cur = s.paneWasClaude[paneId];
+          // Avoid producing a new object reference when nothing changed —
+          // OSC 100 "run" can fire many times in a session.
+          if (cur === on) return s;
+          const next = { ...s.paneWasClaude };
+          if (on) next[paneId] = true; else delete next[paneId];
+          return { paneWasClaude: next };
+        }),
       setPaneCwd: (paneId, cwd) =>
         set((s) => ({ paneCwds: { ...s.paneCwds, [paneId]: cwd } })),
       paneInitCmds: {},
@@ -1163,6 +1186,9 @@ export const useAppStore = create<AppStore>()(
 
       autoAdvanceOnReply: true,
       setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v }),
+
+      autoResumeClaude: true,
+      setAutoResumeClaude: (v) => set({ autoResumeClaude: v }),
     }),
     {
       name: "app-state",
@@ -1176,6 +1202,7 @@ export const useAppStore = create<AppStore>()(
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
         paneCwds:        s.paneCwds,
+        paneWasClaude:   s.paneWasClaude,
         disabledPanes:   s.disabledPanes,
         githubConnected: s.githubConnected,
         githubToken:     s.githubToken,
@@ -1195,6 +1222,7 @@ export const useAppStore = create<AppStore>()(
         projectAllowedCommands: s.projectAllowedCommands,
         repoAllowedCommands:    s.repoAllowedCommands,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
+        autoResumeClaude:     s.autoResumeClaude,
         projectLocalRepos:    s.projectLocalRepos,
         hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
