@@ -401,6 +401,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       term.dispose();
       termRef.current = null;
       fitRef.current  = null;
+      // Reset the open flag so a re-run of this effect opens its FRESH terminal.
+      // Without this, the next mount's openIfReady() sees a stale `true` and skips
+      // term.open() entirely — leaving a blank pane. This fires on every genuine
+      // remount (triage rebuild, app restart) and, critically, on React
+      // StrictMode's mount→cleanup→mount double-invoke in dev, where the second
+      // (live) terminal would otherwise never open (#190 regression follow-up).
+      openedRef.current = false;
       bumpTerminals(-1);
       // PTY session intentionally kept alive — reconnects on remount (tab switch).
       // Sessions are cleaned up explicitly when a tab is closed (pty_kill).
