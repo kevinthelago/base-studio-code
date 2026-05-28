@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { log } from "../../../lib/log";
 import { recordPtyData, bumpTerminals } from "../../../lib/perf";
@@ -44,6 +45,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
+  const webglRef   = useRef<WebglAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
   // Skips the first font-zoom effect run per (re)mount — the terminal is already
   // created at the current size, so we must not pty_resize before pty_create.
@@ -106,6 +108,25 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     termRef.current = term;
     fitRef.current  = fitAddon;
     bumpTerminals(1);
+
+    // GPU-accelerated renderer: moves xterm's per-frame draw off the main
+    // thread (canvas-on-CPU was the dominant residual jank source on 16-pane
+    // grids — #52). Loaded after `term.open` because the addon binds to the
+    // terminal's live canvas element. Best-effort: if WebGL is unavailable
+    // (rare — old GPU, headless test env) or the context is lost mid-session,
+    // dispose the addon and xterm transparently falls back to canvas.
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => {
+        log.warn(`console[${paneId}] WebGL context lost — falling back to canvas`);
+        webgl.dispose();
+        webglRef.current = null;
+      });
+      term.loadAddon(webgl);
+      webglRef.current = webgl;
+    } catch (e) {
+      log.warn(`console[${paneId}] WebGL renderer unavailable; using canvas: ${e}`);
+    }
 
     // Called whenever claude finishes responding (or its process exits).
     function onClaudeIdle() {
@@ -303,6 +324,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       disposeOnData.dispose();
       unlistenRef.current?.();
       ro.disconnect();
+      // Dispose the WebGL addon before the terminal so its GL context is
+      // released cleanly (it holds GPU buffers + a canvas attachment).
+      webglRef.current?.dispose();
+      webglRef.current = null;
       term.dispose();
       termRef.current = null;
       fitRef.current  = null;
