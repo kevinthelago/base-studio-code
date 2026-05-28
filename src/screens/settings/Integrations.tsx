@@ -36,7 +36,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 }
 
 export function IntegrationsSettings() {
-  const { claudeApiKey, setClaudeApiKey, autoAdvanceOnReply, setAutoAdvanceOnReply } = useAppStore();
+  const { claudeApiKey, setClaudeApiKey, autoAdvanceOnReply, setAutoAdvanceOnReply, autoResumeClaude, setAutoResumeClaude } = useAppStore();
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Integrations</h2>
@@ -118,6 +118,17 @@ export function IntegrationsSettings() {
               </div>
               <div className="hint">
                 When you send a response to a console, jump focus to the next one waiting in the queue (Ctrl+Shift+N cycles manually). Works while maximized.
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Toggle on={autoResumeClaude} onToggle={() => setAutoResumeClaude(!autoResumeClaude)} />
+            <div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
+                Auto-resume Claude on restart
+              </div>
+              <div className="hint">
+                Panes that had Claude running at last shutdown relaunch it with <code>--continue</code> when the app reopens, restoring the prior conversation. Off means panes start at a bare bash prompt; you'd type <code>claude</code> yourself.
               </div>
             </div>
           </div>
