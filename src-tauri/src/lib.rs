@@ -352,20 +352,22 @@ async fn pty_create(
     // (bash won't import non-identifier function names). So we drop the helper in a
     // stable rc file and point BASH_ENV at it — every non-interactive bash sources
     // BASH_ENV at startup — then source the same file in the interactive shell below.
-    let checkpoint_rel = checkpoint_doc.as_deref().filter(|s| !s.is_empty());
-    let checkpoint_rc = if let Some(rel) = checkpoint_rel {
-        let base = bsc_base_dir();
+    // Install the bsc-* shell helpers via an rc file pointed to by BASH_ENV (so the
+    // agent's non-interactive `bash -c` subshells get them) and sourced into the
+    // interactive shell below. The rc is universal — bsc-checkpoint (triage) and
+    // bsc-note / bsc-blocked (fleet assume-and-log) cost nothing in sessions that
+    // don't use them. Per-session doc paths the helpers read are exposed as env
+    // vars when applicable; bsc-note/bsc-blocked default to a DECISIONS.md in cwd.
+    let base = bsc_base_dir();
+    let _ = std::fs::create_dir_all(&base);
+    if let Some(rel) = checkpoint_doc.as_deref().filter(|s| !s.is_empty()) {
         let abs = base.join(rel);
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
-        let _ = std::fs::create_dir_all(&base);
-        let rc = base.join("bsc-env.sh");
-        let _ = std::fs::write(&rc, BSC_CHECKPOINT_RC);
-        let rc_bash = to_bash_path(&rc.to_string_lossy());
-        cmd.env("BASH_ENV", &rc_bash);
-        Some(rc_bash)
-    } else {
-        None
-    };
+    }
+    let rc = base.join("bsc-env.sh");
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}"));
+    let rc_bash = to_bash_path(&rc.to_string_lossy());
+    cmd.env("BASH_ENV", &rc_bash);
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
@@ -406,15 +408,12 @@ async fn pty_create(
     // Source the checkpoint helper into the interactive shell too: BASH_ENV only
     // covers non-interactive subshells (the agent's Bash tool), so a human typing
     // `bsc-checkpoint` in the console pane would otherwise not have it.
-    let checkpoint_fn = match &checkpoint_rc {
-        Some(rc) => format!("source \"{}\" 2>/dev/null; ", rc),
-        None => String::new(),
-    };
+    let helpers_src = format!("source \"{}\" 2>/dev/null; ", rc_bash);
     let osc7 = format!(
         "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
          __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
          claude() {{ __bsc_state run; command claude \"$@\"; }}; \
-         {checkpoint_fn}\
+         {helpers_src}\
          PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
          __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
     );
@@ -922,6 +921,19 @@ fn bsc_base_dir() -> std::path::PathBuf {
 const BSC_CHECKPOINT_RC: &str =
     "bsc-checkpoint() { mkdir -p \"$(dirname \"$BSC_CHECKPOINT_DOC\")\" 2>/dev/null; cat > \"$BSC_CHECKPOINT_DOC\"; }\n";
 
+/// The `bsc-note` / `bsc-blocked` helpers: append a one-line entry read from stdin
+/// to the assume-and-log journal named by `$BSC_DECISIONS_DOC` (default: a
+/// `DECISIONS.md` in the session's cwd, creating its parent dir). Fleet workers use
+/// these to record a reversible decision (note) or a genuine stop (blocked) and keep
+/// moving instead of stalling on a human. Same rc + `BASH_ENV` install path as
+/// bsc-checkpoint, so the agent's non-interactive Bash subshells can call them.
+const BSC_DECISIONS_RC: &str = concat!(
+    // `printf '%s' '- '` (not `printf '- '`): a format starting with `-` is parsed as
+    // an option flag and the prefix is silently dropped.
+    "bsc-note() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' '- '; cat; printf '\\n'; } >> \"$d\"; }\n",
+    "bsc-blocked() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' '- BLOCKED: '; cat; printf '\\n'; } >> \"$d\"; }\n",
+);
+
 /// Serializes the app's read-modify-write of `~/.claude.json` so concurrent
 /// session launches (each `pty_create` calls `trust_claude_dir`) don't interleave
 /// writes with each other.
@@ -1201,7 +1213,9 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
      `{name}/CLAUDE.md`, and emit `<repo_link full_name="{owner}/{name}" />`.
 3. **Walk the discovery checklist** using the loop above, documenting or skipping
    each dimension and capturing per-repo topics where they belong.
-4. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
+4. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
+   and set the optimal session count (see "Plan the agent fleet").
+5. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
    GitHub").
 "#;
 
@@ -1277,11 +1291,13 @@ once the user agrees. Always scan before you propose; never race ahead.
 3. **Walk the discovery checklist** using the scan→propose→confirm loop above,
    documenting or skipping each dimension and capturing per-repo topics where
    they belong. Open with a 3–5 sentence orientation on what you found.
-4. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
+4. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
+   and set the optimal session count (see "Plan the agent fleet").
+5. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
    GitHub").
 "#;
 
-const PLANNING_PROCESS_MD: &str = r#"
+const PLANNING_PROCESS_MD: &str = r##"
 ## Tools available
 
 | Tool             | What you can do                                                         |
@@ -1381,6 +1397,91 @@ For each repo `{short}`:
 Keep the scripts plain and self-contained; the session has the repo checked out
 and the plan available, but the script is what gets it moving.
 
+## Plan the agent fleet
+
+After the per-repo pass, design how multiple Claude sessions will build this project
+in parallel — the **fleet**. The goal is maximum parallelism with minimum conflict:
+several sessions working at once, each in its own lane, so they rarely touch the same
+files and rarely need a human.
+
+1. **Partition the current phase's in-scope work into streams.** A *stream* is one
+   session with a focused role ("Auth UI", "API endpoints", "DB schema"). Split by
+   concern so that two streams never write the same files.
+2. **Give each stream a non-overlapping ownership boundary** — the dirs/globs it
+   owns. No path may belong to two streams. A shared file (schema, shared types,
+   config, a contract) must be owned by exactly ONE stream; any stream that needs it
+   lists that stream in `depends_on` (interface-first: the owner lands it, then the
+   dependents build on it).
+3. **Assign each stream the issues it owns** — the deliverables from `phases`/scope
+   for its area.
+4. **Decide the optimal concurrent session count.** There is **no hard limit** on how
+   many sessions can run at once: the app shows each session as a pane, a single tab
+   holds up to **4×4 = 16** panes, and the user can open **many tabs**. So 16 is only
+   a per-tab layout limit, never a ceiling on the fleet. The real bound is how many
+   sessions the user can realistically **review and steer** — ask them, and set the
+   recommended count to that. Recommend the largest number of genuinely independent
+   (non-overlapping, dependency-free) streams they can keep up with, and explain the
+   reasoning. (The one-click launch fills one build tab with up to 16 of them; run the
+   rest from additional tabs.)
+5. **Recommend a director** when the fleet is non-trivial (2+ streams, or multiple
+   repos). The director is an *async-integrator* session at the project root: it
+   reviews/merges PRs, resolves the cross-stream decisions workers log, and keeps
+   milestones/issues/the board current. It does NOT write feature code.
+6. **Write `fleet.json`** (authoritative — the app polls it) AND emit the inline
+   `<fleet_plan>` + `<agent_assign>` tags (fast path). Keep both current as the fleet
+   firms up. Shape:
+   ```
+   {
+     "recommended": 4,
+     "reasoning": "Phase 1 splits into four non-overlapping areas; the api-client lands the contract first, the rest are independent.",
+     "director": { "enabled": true, "role": "async integrator: review/merge PRs, resolve logged decisions, keep milestones current" },
+     "streams": [
+       {"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"prompt":"prompts/auth-ui-kickoff.md"},
+       {"id":"api-client","name":"API client","repo":"owner/web","owns":["src/lib/api/**"],"issues":["#18"],"dependsOn":[],"prompt":"prompts/api-client-kickoff.md"}
+     ]
+   }
+   ```
+7. **Write a kickoff script per stream** to `prompts/{id}-kickoff.md` (and
+   `prompts/director-kickoff.md` if a director). These are the first messages those
+   sessions receive — design them for autonomy (next).
+
+**How agents run** (so you design ids + kickoffs right): at launch the app gives each
+worker its own **git worktree** of its repo, checked out to a **branch named after the
+stream `id`** — so make ids lowercase-hyphen slugs, since they become branch names.
+Workers commit on their branch and open PRs; the director merges them. Because each
+worker has its own worktree, several streams can share one repo without touching the
+same working tree. (The worktree also carries the plan: `CLAUDE.local.md` is copied in.)
+
+### Stream kickoff scripts — designed for autonomy
+
+Each kickoff is the first message a worker session gets; its job is to let that
+session run with as little human input as possible. Every worker kickoff must:
+
+- State the stream's role and that the full plan is in `CLAUDE.local.md` — read it
+  first; it is authoritative.
+- State the ownership boundary: "you own <globs>; do not modify files outside them —
+  another stream owns them; coordinate through the plan, not by editing their files."
+- State that it runs in its **own git worktree on a branch named after the stream**:
+  commit there and open a PR for the director to merge; never switch branches or edit
+  another agent's worktree. (The app creates the worktree + branch at launch.)
+- List the issues the stream owns and this phase's in-scope work for it.
+- Carry the **autonomy rule**: *Do not stop to ask. When something is underspecified,
+  make the smallest reversible choice consistent with the plan's goal and
+  architecture, then record it — pipe a one-line note into `bsc-note` on stdin (e.g.
+  `echo "used cursor pagination for /items per the api section" | bsc-note`). Only if
+  you are genuinely blocked and cannot proceed, pipe a one-line reason into
+  `bsc-blocked`. Verify against the repo's tests and CI rather than asking whether
+  your work is correct.*
+- Carry the **checkpoint rule** (so a relaunched session resumes where it left off):
+  *When you pause or finish a work session, pipe a short "where I left off + the next
+  step" into `bsc-checkpoint` on stdin.* The live conversation usually resumes too
+  (each agent has its own worktree/cwd), but the checkpoint is the reliable carry.
+
+The **director kickoff** instead tells it to watch each agent's branch/PR, the open
+issues, and each repo's `DECISIONS.md`; merge the agents' branches via PRs (resolving
+conflicts); resolve or escalate the cross-stream decisions workers log; and keep
+milestones/the board current — never writing feature code itself.
+
 ## The discovery checklist
 
 Walk these dimensions, documenting the ones that apply (project or repo tier) and
@@ -1449,8 +1550,13 @@ apply to almost every project.
   a crisp "done when", no time estimates.
 - `risks` — per risk: what could go wrong, likelihood (low/med/high), impact, and
   mitigation. Add continuously as you spot them.
-- `open_questions` — unresolved decisions shaping the plan, each with what's
-  needed to resolve it.
+- `open_questions` — unresolved decisions shaping the plan. Drive this toward
+  **zero** before the fleet launches: resolve each with the user, or record an
+  explicit default ("agent decides; default = X") so a building session never has to
+  stop and ask. Each remaining item names what's needed to resolve it.
+- `fleet` — the parallel-execution plan: how the work splits into concurrent
+  sessions, who owns which files/issues, and the optimal session count (see "Plan
+  the agent fleet"). Written as `fleet.json`, not a prose section.
 
 Document custom topics beyond this list when the project needs them — name the
 file after the topic (`feature_flags.md`, `offline_sync.md`).
@@ -1507,7 +1613,8 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
 
 After the user confirms the plan in the right panel, the **Publish** button
 creates the repositories, the project board, one milestone per phase, and one
-tracking issue per phase in each repo. You can also push detail yourself with the
+tracking issue per phase in each repo, and labels each fleet stream's owned issues
+with `stream:<id>`. You can also push detail yourself with the
 `gh` CLI — every step below is idempotent (check-then-create), so re-running is a
 safe sync. Do this in order, per linked repository:
 
@@ -1575,6 +1682,15 @@ allowed, so don't list them. Use BOTH channels — the file is authoritative:
   <allow_command repo="owner/repo" cmd="npm" />
   ```
 
+**Declare the agent fleet** (the parallel-execution plan). `fleet.json` is the
+authoritative channel; these tags are the fast path. Emit the header once, then one
+`agent_assign` per stream. List attributes (`owns`, `issues`, `depends_on`) are
+comma-separated; `depends_on` is comma-separated stream ids:
+```
+<fleet_plan recommended="4" reasoning="..." director="true" director_role="async integrator: review/merge PRs, resolve logged decisions, keep milestones current" />
+<agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" />
+```
+
 ## GitHub tools
 
 `GH_TOKEN` is pre-loaded — use `gh` for all GitHub operations. Read
@@ -1589,7 +1705,7 @@ gh api repos/owner/repo/milestones --method POST --field title="..."
 gh issue create --repo owner/repo --title "..." --body "..." --milestone N --label "a,b"
 gh repo edit owner/repo --description "..." --add-topic "..."
 ```
-"#;
+"##;
 
 /// Turns an arbitrary project key into a filesystem-safe directory name.
 /// Canonicalize a project key into a filesystem-safe slug.
@@ -1902,8 +2018,81 @@ async fn clone_repo(project: String, full_name: String) -> Result<String, String
     // settings) out of the clone's `git status`.
     git_exclude(&dest, "CLAUDE.local.md");
     git_exclude(&dest, ".claude/");
+    // The fleet assume-and-log journal (bsc-note / bsc-blocked) lives in the repo
+    // root; keep it out of the clone's `git status`.
+    git_exclude(&dest, "DECISIONS.md");
     log::info!("clone_repo: cloned {full_name} → {}", dest.display());
     Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Branch/dir slug for a fleet agent — keeps only `[A-Za-z0-9._-]`, every other
+/// char becomes `-`. Must match the frontend `worktreeSlug` so the computed
+/// worktree cwd and the on-disk worktree path agree.
+fn worktree_slug(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { c } else { '-' })
+        .collect()
+}
+
+/// Create (idempotently) a git worktree for one fleet agent: an isolated checkout
+/// of `repo` on a branch named after the agent, at
+/// `projects/<key>/.worktrees/<repoShort>--<agentSlug>`. Each agent edits and
+/// commits in its own worktree+branch, so co-located agents (several in one repo)
+/// never share a working tree; the director merges the branches via PRs.
+///
+/// The repo's main clone must already exist (cloned during planning). A worktree or
+/// branch left over from a prior run is reused. Returns the worktree's absolute path
+/// (native form — mirrors `agentWorktreeCwd` so the launched pane's cwd matches).
+#[tauri::command]
+async fn ensure_worktree(project_key: String, repo: String, agent_id: String) -> Result<String, String> {
+    let _perf = PerfSpan::new("ensure_worktree");
+    let clone = repo_dir(&project_key, &repo);
+    if !clone.join(".git").exists() {
+        return Err(format!("ensure_worktree: repo not cloned: {}", clone.display()));
+    }
+    let slug  = worktree_slug(&agent_id);
+    let short = repo.rsplit('/').next().unwrap_or(&repo);
+    let wt    = project_dir(&project_key).join(".worktrees").join(format!("{short}--{slug}"));
+    let wt_str = wt.to_string_lossy().into_owned();
+    // A worktree's `.git` is a FILE pointing into the main repo; create it only if
+    // it isn't there yet (reuse across re-runs).
+    if !wt.join(".git").exists() {
+        if let Some(parent) = wt.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let clone_str = clone.to_string_lossy().into_owned();
+        // Reuse the branch if a prior run already created it; otherwise create it.
+        let branch_exists = std::process::Command::new("git")
+            .args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")])
+            .status().map(|s| s.success()).unwrap_or(false);
+        let mut args: Vec<String> = vec!["-C".into(), clone_str, "worktree".into(), "add".into()];
+        if branch_exists {
+            args.push(wt_str.clone());
+            args.push(slug.clone());
+        } else {
+            args.push("-b".into());
+            args.push(slug.clone());
+            args.push(wt_str.clone());
+        }
+        let status = std::process::Command::new("git").args(&args).status().map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err(format!("ensure_worktree: git worktree add failed for {repo} / {agent_id}"));
+        }
+        log::info!("ensure_worktree: {repo} agent {agent_id} → {wt_str}");
+    }
+    // Carry the planner's app-managed per-repo context into the worktree. CLAUDE.local.md
+    // is UNTRACKED in the main clone (git-excluded), so a fresh worktree wouldn't have it —
+    // refresh it every launch. Copy CLAUDE.md only when the worktree lacks one, so a
+    // tracked/checked-out CLAUDE.md isn't clobbered.
+    let local = clone.join("CLAUDE.local.md");
+    if local.is_file() {
+        let _ = std::fs::copy(&local, wt.join("CLAUDE.local.md"));
+    }
+    let claude_md = clone.join("CLAUDE.md");
+    if claude_md.is_file() && !wt.join("CLAUDE.md").exists() {
+        let _ = std::fs::copy(&claude_md, wt.join("CLAUDE.md"));
+    }
+    Ok(wt_str)
 }
 
 /// Append `entry` to a clone's `.git/info/exclude` (idempotent) so app-managed
@@ -2490,6 +2679,7 @@ pub fn run() {
             setup_workspaces,
             setup_kb_workspace,
             clone_repo,
+            ensure_worktree,
             get_base_dir,
             read_claude_config,
             write_claude_config,
@@ -2656,6 +2846,72 @@ mod tests {
 
         assert_eq!(std::fs::read_to_string(&doc).unwrap(), "left off: step 3\n");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bsc_decisions_rc_defines_note_and_blocked_helpers() {
+        // The fleet assume-and-log helpers keep their hyphenated names (defined via the
+        // rc file, like bsc-checkpoint) and append to the doc named by the env var.
+        let rc = super::BSC_DECISIONS_RC;
+        assert!(rc.contains("bsc-note()"), "rc must define bsc-note");
+        assert!(rc.contains("bsc-blocked()"), "rc must define bsc-blocked");
+        assert!(rc.contains("BSC_DECISIONS_DOC"), "helpers must target the decisions doc env var");
+    }
+
+    #[test]
+    fn bsc_note_appends_bulleted_lines_in_a_fresh_non_interactive_subshell() {
+        // Like bsc-checkpoint, bsc-note must work from the agent's own `bash -c`
+        // subshells via the rc file + BASH_ENV. Each call APPENDS one bulleted line read
+        // from stdin to $BSC_DECISIONS_DOC. Skips where bash isn't on PATH.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_note subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-note-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        // The installed rc is the checkpoint + decisions helpers concatenated.
+        std::fs::write(&rc, format!("{}{}", super::BSC_CHECKPOINT_RC, super::BSC_DECISIONS_RC)).unwrap();
+        // Nested path exercises the helper's `mkdir -p` of the doc's parent.
+        let doc = dir.join("nested").join("DECISIONS.md");
+
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let doc_bash = super::to_bash_path(&doc.to_string_lossy());
+
+        let run = |msg: &str| {
+            let mut child = Command::new(&shell)
+                .arg("-c").arg("bsc-note")
+                .env("BASH_ENV", &rc_bash)
+                .env("BSC_DECISIONS_DOC", &doc_bash)
+                .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+                .spawn().unwrap();
+            child.stdin.take().unwrap().write_all(msg.as_bytes()).unwrap();
+            assert!(child.wait().unwrap().success(), "bsc-note should run in the subshell");
+        };
+        run("chose cursor pagination");
+        run("used JWT for auth");
+
+        assert_eq!(
+            std::fs::read_to_string(&doc).unwrap(),
+            "- chose cursor pagination\n- used JWT for auth\n",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn worktree_slug_keeps_only_branch_safe_chars() {
+        // The slug doubles as a git branch name + worktree dir, and must match the
+        // frontend `worktreeSlug` (replace anything outside [A-Za-z0-9._-] with '-').
+        assert_eq!(super::worktree_slug("auth-ui"), "auth-ui");
+        assert_eq!(super::worktree_slug("a.b_c-d"), "a.b_c-d");
+        assert_eq!(super::worktree_slug("API client/2"), "API-client-2");
     }
 
     #[test]

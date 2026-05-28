@@ -14,12 +14,14 @@ import {
   parsePlanFocus, stripPlanFocus, buildSectionConfirmMessage,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
   parseAllowCommands, stripAllowCommands,
+  parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
 } from "./planningSession";
 import { repoPromptKey } from "../../lib/startupPrompt";
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, titleForKey, groupSections, parseSkipped, parseSectionKey,
-  type SkippedItem,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, titleForKey, groupSections, parseSkipped, parseSectionKey,
+  parseFleetFile,
+  type SkippedItem, type FleetPlan, type AgentStream,
 } from "./planSections";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -402,6 +404,108 @@ function AutomationsCard({ automations, onRemove }: { automations: AutomationSug
   );
 }
 
+// The agent fleet: the planner's parallel-execution plan. Shows the recommended
+// concurrent session count + reasoning, a configurable director toggle, and one
+// row per work stream (its repo, owned paths, issues, and dependencies). The
+// "Launch fleet" button opens the build tab. Self-hides until a fleet is defined.
+function FleetCard({ projectId, onLaunch }: { projectId: string; onLaunch: () => void }) {
+  const { planFleet, removePlanAgentStream, setPlanDirector } = useAppStore();
+  const fleet: FleetPlan | undefined = planFleet[projectId];
+  if (!fleet || (fleet.streams.length === 0 && !fleet.director.enabled)) return null;
+
+  const recommended = fleet.recommended > 0 ? fleet.recommended : fleet.streams.length;
+
+  const StreamRow = ({ st }: { st: AgentStream }) => (
+    <div style={{
+      padding: "7px 9px", borderRadius: 5,
+      background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+      fontFamily: "var(--mono)", fontSize: 10.5,
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
+        <span style={{ color: "var(--fg)" }}>{st.name}</span>
+        <span className="tag" style={{ fontSize: 9 }}>{st.repo}</span>
+        {st.dependsOn.length > 0 && (
+          <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>after: {st.dependsOn.join(", ")}</span>
+        )}
+        <div style={{ flex: 1 }} />
+        <span
+          onClick={() => removePlanAgentStream(projectId, st.id)}
+          style={{ color: "var(--fg-dim)", cursor: "pointer", fontSize: 11 }}
+        >×</span>
+      </div>
+      {st.owns.length > 0 && (
+        <div style={{ color: "var(--fg-dim)", fontSize: 10, marginBottom: st.issues.length ? 3 : 0 }}>
+          owns <code style={{ color: "var(--accent)" }}>{st.owns.join("  ")}</code>
+        </div>
+      )}
+      {st.issues.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {st.issues.map((iss, i) => (
+            <span key={i} style={{
+              padding: "1px 6px", borderRadius: 99,
+              background: "color-mix(in oklch, var(--info), transparent 88%)",
+              border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
+              color: "var(--info)", fontSize: 9.5,
+            }}>{iss}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{
+      borderRadius: 6, border: "1px solid var(--border-soft)",
+      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0,
+    }}>
+      <div style={{
+        padding: "7px 10px", background: "var(--bg-elev)",
+        borderBottom: "1px solid var(--border-soft)",
+        display: "flex", alignItems: "center", gap: 8,
+        fontFamily: "var(--mono)", fontSize: 10.5,
+      }}>
+        <span style={{ color: "var(--fg)" }}>Agent fleet</span>
+        <div style={{ flex: 1 }} />
+        <span style={{ color: "var(--accent)", fontSize: 10 }}>
+          recommend {recommended} session{recommended === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 9 }}>
+        {fleet.reasoning && (
+          <div style={{ color: "var(--fg-muted)", fontSize: 11, lineHeight: 1.55 }}>{fleet.reasoning}</div>
+        )}
+
+        {/* Director toggle — configured here while planning. */}
+        <label style={{
+          display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
+          fontFamily: "var(--mono)", fontSize: 10.5,
+        }}>
+          <input
+            type="checkbox"
+            checked={fleet.director.enabled}
+            onChange={e => setPlanDirector(projectId, e.target.checked, fleet.director.role)}
+          />
+          <span style={{ color: "var(--fg)" }}>Director session</span>
+          {fleet.director.role
+            ? <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>· {fleet.director.role}</span>
+            : <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>· coordinates the fleet from the project root</span>}
+        </label>
+
+        {fleet.streams.map(st => <StreamRow key={st.id} st={st} />)}
+
+        <button
+          onClick={onLaunch}
+          style={{
+            marginTop: 2, padding: "6px 12px", borderRadius: 4, cursor: "pointer",
+            background: "var(--accent)", border: "none", color: "#1a120a",
+            fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, letterSpacing: "0.02em",
+          }}
+        >Launch fleet →</button>
+      </div>
+    </div>
+  );
+}
+
 // Coverage record: the dimensions Claude considered but deliberately did not
 // document, each with a reason. Collapsed by default — it's reassurance that the
 // full surface was weighed, not primary plan content.
@@ -665,6 +769,14 @@ function GitHubStructureCard({ structure, status }: { structure: GhStructure; st
       <GhGroup title="Milestones" count={structure.milestones.length} nodes={structure.milestones} status={status}
         empty="defined by the Phases section" />
       <GhReposGroup repos={structure.repos} status={status} />
+      {structure.streams.length > 0 && (
+        <GhGroup
+          title="Agents"
+          count={structure.streams.length}
+          nodes={structure.streams.map(s => ({ id: s.id, label: `${s.label} · stream:${s.id.replace(/^stream:/, "")}` }))}
+          status={status}
+        />
+      )}
     </div>
   );
 }
@@ -682,6 +794,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planSections, planConfirmedSections,
     planKbAssignments, removePlanKbAssignment,
     planAutomations,
+    planFleet,
     commands, schedules,
   } = useAppStore();
 
@@ -743,7 +856,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const sections = useMemo<Section[]>(() => {
     const keys = new Set<string>(ANCHOR_KEYS);
     for (const k of Object.keys(savedSections)) {
-      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY) keys.add(k);
+      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY) keys.add(k);
     }
     const { project, repos } = groupSections([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
@@ -778,11 +891,23 @@ export function Planning({ visible }: { visible: boolean }) {
       for (const c of list) store.addRepoAllowedCommand(effectiveProjectId, repo, c);
   }, [savedSections, effectiveProjectId]);
 
+  // Sync fleet.json (the reliable channel — surfaced by the poll as the `fleet`
+  // section) into the fleet store. Wholesale-replace, but only when the file's
+  // content changes, so a user toggle in the Fleet card isn't clobbered every poll.
+  const fleetSyncedRef = useRef("");
+  useEffect(() => {
+    const raw = savedSections[FLEET_KEY] ?? "";
+    if (raw === fleetSyncedRef.current) return;
+    fleetSyncedRef.current = raw;
+    const fleet = parseFleetFile(raw);
+    if (fleet) useAppStore.getState().setPlanFleet(effectiveProjectId, fleet);
+  }, [savedSections, effectiveProjectId]);
+
   // Title + derived GitHub object graph that the structure card renders and the
   // publish flow fills in. Kept in sync with handlePublish's own derivation.
   const goalForTitle = sections.find(s => s.k === "goal")?.content ?? "";
   const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
-  const ghStructure  = buildGhStructure(sections, publishRepos, projectTitle);
+  const ghStructure  = buildGhStructure(sections, publishRepos, projectTitle, planFleet[effectiveProjectId]);
   const [restarting, setRestarting] = useState(false);
 
   type PublishPhase = "idle" | "running" | "done" | "error";
@@ -1011,6 +1136,27 @@ export function Planning({ visible }: { visible: boolean }) {
             else        store.addProjectAllowedCommand(projIdSnap, a.cmd);
           }
           bufRef.current = stripAllowCommands(bufRef.current);
+        }
+
+        // ── <fleet_plan recommended="N" reasoning="…" director="true" … /> ─────
+        // The fleet-level header: optimal concurrent session count + reasoning +
+        // whether a director session is recommended. fleet.json is authoritative;
+        // this is the fast path for immediate display before the next poll.
+        const fleetMeta = parseFleetPlan(bufRef.current);
+        if (fleetMeta) {
+          const store = useAppStore.getState();
+          store.setPlanFleetMeta(projIdSnap, fleetMeta.recommended, fleetMeta.reasoning);
+          store.setPlanDirector(projIdSnap, fleetMeta.director, fleetMeta.directorRole);
+          bufRef.current = stripFleetPlan(bufRef.current);
+        }
+
+        // ── <agent_assign id="…" repo="…" owns="…" issues="…" … /> ────────────
+        // One per work stream. Merged by id so a re-emitted tag refines in place.
+        const agentStreams = parseAgentAssigns(bufRef.current);
+        if (agentStreams.length > 0) {
+          const store = useAppStore.getState();
+          for (const st of agentStreams) store.addPlanAgentStream(projIdSnap, st);
+          bufRef.current = stripAgentAssigns(bufRef.current);
         }
 
         // Cap buffer to prevent unbounded growth while preserving any partial
@@ -1246,6 +1392,36 @@ export function Planning({ visible }: { visible: boolean }) {
     if (activeSection === k) setActiveSection(null);
   }
 
+  // Launch the agent fleet: open (or rebuild) the "· build" tab with the director
+  // and one worker pane per stream. On re-launch, kill the existing panes first so
+  // the bumped runId relaunches each session fresh (resuming via --continue).
+  async function handleLaunchFleet() {
+    const store = useAppStore.getState();
+    const fleet = store.planFleet[effectiveProjectId];
+    if (!fleet) return;
+    // Create each worker's git worktree (idempotent) so its pane launches into an
+    // isolated checkout + branch. The director has no worktree — it runs at the hub.
+    await Promise.all(
+      fleet.streams.map(st =>
+        invoke("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
+          .catch(e => console.error(`worktree for ${st.id} failed:`, e)),
+      ),
+    );
+    // Kill any existing build-tab panes (across all "· build" tabs) so the bumped
+    // runId relaunches each session fresh.
+    const base = `${projectTitle} · build`;
+    await Promise.all(
+      store.tabs.flatMap((t, idx) => {
+        if (t.name !== base && !t.name.startsWith(`${base} `)) return [];
+        const [cols, rows] = (t.layout ?? "1×1").split("×").map(n => parseInt(n, 10) || 1);
+        return Array.from({ length: cols * rows }, (_, i) =>
+          invoke("pty_kill", { paneId: `t${idx}p${i}` }).catch(() => {}),
+        );
+      }),
+    );
+    store.fleetStartProject(projectTitle, fleet, effectiveProjectId);
+  }
+
   // Publish the plan to GitHub: repositories → project board → milestones →
   // issues. Every step is idempotent (check-then-create) so re-running acts as a
   // sync. Status is reported through ghStatus, keyed by the buildGhStructure ids,
@@ -1260,6 +1436,7 @@ export function Planning({ visible }: { visible: boolean }) {
     const goalContent = sections.find(s => s.k === "goal")?.content ?? "";
     const projectTitle = planningTitle || goalContent.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
     const projectDesc  = goalContent.split(/\n/)[0].slice(0, 350);
+    const fleet        = planFleet[effectiveProjectId];
 
     // Seed every node as "planned" so the card shows the full structure upfront.
     // Issues are namespaced per repo so each repo tracks its own phase issues.
@@ -1270,6 +1447,7 @@ export function Planning({ visible }: { visible: boolean }) {
       status[`repo:${r}`] = { status: "planned" };
       phases.forEach((_, i) => { status[`issue:${r}:${i}`] = { status: "planned" }; });
     });
+    (fleet?.streams ?? []).forEach(st => { status[`stream:${st.id}`] = { status: "planned" }; });
     setGhStatus({ ...status });
     setPublishPhase("running");
 
@@ -1475,6 +1653,32 @@ export function Planning({ visible }: { visible: boolean }) {
           } catch (e) {
             upd(id, { status: "error", detail: String(e) });
           }
+        }
+      }
+
+      // ── 5. Stream labels — tag each fleet stream's owned issues with `stream:<id>`
+      //      so ownership is visible on GitHub and the board. Ensure the label, then
+      //      apply it to each owned issue resolvable by number. Idempotent. ───────
+      for (const st of fleet?.streams ?? []) {
+        const id    = `stream:${st.id}`;
+        const label = `stream:${st.id}`;
+        upd(id, { status: "running" });
+        try {
+          // Create the label (the request 422s if it already exists — harmless).
+          await post(`repos/${st.repo}/labels`, { name: label, color: "5319e7" }).catch(() => {});
+          const nums = st.issues
+            .map(ref => parseInt(ref.replace(/[^0-9]/g, ""), 10))
+            .filter(n => Number.isFinite(n) && n > 0);
+          let applied = 0;
+          for (const n of nums) {
+            await post(`repos/${st.repo}/issues/${n}/labels`, { labels: [label] });
+            applied++;
+          }
+          upd(id, applied > 0
+            ? { status: "created", detail: `${applied} issue${applied === 1 ? "" : "s"} labeled` }
+            : { status: "exists",  detail: "label ready · no numbered issues" });
+        } catch (e) {
+          upd(id, { status: "error", detail: String(e) });
         }
       }
 
@@ -1729,6 +1933,7 @@ export function Planning({ visible }: { visible: boolean }) {
                     filtered.forEach(a => useAppStore.getState().addPlanAutomation(effectiveProjectId, a));
                   }}
                 />
+                <FleetCard projectId={effectiveProjectId} onLaunch={handleLaunchFleet} />
                 <GitHubStructureCard structure={ghStructure} status={ghStatus} />
               </div>
             </>

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore, TRIAGE_PROMPT } from "../store";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { QueuedPane } from "../lib/focusQueue";
+import type { FleetPlan } from "../screens/projects/planSections";
 
 const RESET_STATE = {
   tabs: [
@@ -914,5 +915,129 @@ describe("github state", () => {
   it("setActiveRepo stores the selected repo name", () => {
     useAppStore.getState().setActiveRepo("kevinthelago/base-studio-code");
     expect(useAppStore.getState().activeRepoName).toBe("kevinthelago/base-studio-code");
+  });
+});
+
+describe("agent fleet store", () => {
+  const fleet: FleetPlan = {
+    recommended: 2,
+    reasoning: "r",
+    director: { enabled: true, role: "integrator" },
+    streams: [
+      { id: "auth-ui", name: "Auth UI", repo: "own/web", owns: ["src/auth/**"], issues: ["#1"], dependsOn: [], prompt: "prompts/auth-ui-kickoff.md" },
+      { id: "api", name: "API", repo: "own/api", owns: [], issues: [], dependsOn: [] },
+    ],
+  };
+
+  it("setPlanFleet / add (merge by id) / remove / setPlanDirector manage the per-project fleet", () => {
+    const s = useAppStore.getState();
+    s.setPlanFleet("p", fleet);
+    expect(useAppStore.getState().planFleet["p"].streams).toHaveLength(2);
+
+    s.addPlanAgentStream("p", { id: "auth-ui", name: "Auth UI v2", repo: "own/web", owns: [], issues: [], dependsOn: [] });
+    expect(useAppStore.getState().planFleet["p"].streams).toHaveLength(2);
+    expect(useAppStore.getState().planFleet["p"].streams.find(x => x.id === "auth-ui")!.name).toBe("Auth UI v2");
+
+    s.removePlanAgentStream("p", "api");
+    expect(useAppStore.getState().planFleet["p"].streams.map(x => x.id)).toEqual(["auth-ui"]);
+
+    s.setPlanDirector("p", false);
+    expect(useAppStore.getState().planFleet["p"].director.enabled).toBe(false);
+    expect(useAppStore.getState().planFleet["p"].director.role).toBe("integrator");
+  });
+
+  it("fleetStartProject opens a build tab with the director and worker panes", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("Proj");
+    expect(idx).toBe(3);
+    expect(st.tabs[idx].name).toBe("Proj · build");
+    expect(st.tabs[idx].layout).toBe("2×2"); // director + 2 workers = 3 panes
+
+    // pane 0 = director at the project hub, doc-based kickoff
+    expect(st.paneCwds["t3p0"]).toBe("/base/projects/proj-key");
+    expect(st.paneStartupPromptDocs["t3p0"]).toBe("projects/proj-key/prompts/director-kickoff.md");
+    expect(st.paneNames[idx][0]).toBe("director");
+
+    // pane 1 = first worker in its OWN git worktree, planner-authored kickoff doc
+    expect(st.paneCwds["t3p1"]).toBe("/base/projects/proj-key/.worktrees/web--auth-ui");
+    expect(st.paneStartupPromptDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-kickoff.md");
+    expect(st.paneNames[idx][1]).toBe("Auth UI");
+
+    // pane 2 = second worker (own worktree) with no kickoff doc → generated text
+    expect(st.paneCwds["t3p2"]).toBe("/base/projects/proj-key/.worktrees/api--api");
+    expect(st.paneStartupPromptText["t3p2"]).toContain("API");
+
+    // per-agent checkpoint docs, keyed by stream id (director gets its own)
+    expect(st.paneCheckpointDocs["t3p0"]).toBe("projects/proj-key/prompts/director-checkpoint.md");
+    expect(st.paneCheckpointDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-checkpoint.md");
+    expect(st.paneCheckpointDocs["t3p2"]).toBe("projects/proj-key/prompts/api-checkpoint.md");
+    // first launch starts fresh — no --continue
+    expect(st.paneContinue["t3p1"]).toBe(false);
+
+    // empty grid cell starts disabled
+    expect(st.disabledPanes["t3p3"]).toBe(true);
+  });
+
+  it("isolates co-located agents in separate worktrees with distinct checkpoint docs", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const coFleet: FleetPlan = {
+      recommended: 3, reasoning: "", director: { enabled: false },
+      streams: [
+        { id: "web-a", name: "Web A", repo: "own/web", owns: [], issues: [], dependsOn: [] },
+        { id: "web-b", name: "Web B", repo: "own/web", owns: [], issues: [], dependsOn: [] },
+        { id: "api",   name: "API",   repo: "own/api", owns: [], issues: [], dependsOn: [] },
+      ],
+    };
+    useAppStore.getState().fleetStartProject("Co", coFleet, "k");
+    const idx = useAppStore.getState().findFleetTabIdx("Co");
+    const st1 = useAppStore.getState();
+    // Two agents in own/web get separate worktree cwds — no shared working tree.
+    expect(st1.paneCwds[`t${idx}p0`]).toBe("/base/projects/k/.worktrees/web--web-a");
+    expect(st1.paneCwds[`t${idx}p1`]).toBe("/base/projects/k/.worktrees/web--web-b");
+    expect(st1.paneCwds[`t${idx}p2`]).toBe("/base/projects/k/.worktrees/api--api");
+    // …and distinct per-agent checkpoint docs.
+    expect(st1.paneCheckpointDocs[`t${idx}p0`]).toBe("projects/k/prompts/web-a-checkpoint.md");
+    expect(st1.paneCheckpointDocs[`t${idx}p1`]).toBe("projects/k/prompts/web-b-checkpoint.md");
+    expect(st1.paneCheckpointDocs[`t${idx}p2`]).toBe("projects/k/prompts/api-checkpoint.md");
+
+    // Re-run → resume. Distinct worktree cwds make --continue unambiguous, so even
+    // co-located agents resume (no co-location exception needed any more).
+    useAppStore.getState().fleetStartProject("Co", coFleet, "k");
+    const st2 = useAppStore.getState();
+    expect(st2.paneContinue[`t${idx}p0`]).toBe(true);
+    expect(st2.paneContinue[`t${idx}p1`]).toBe(true);
+    expect(st2.paneContinue[`t${idx}p2`]).toBe(true);
+  });
+
+  it("spreads a fleet larger than one tab across multiple build tabs", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const streams = Array.from({ length: 20 }, (_, i) => ({
+      id: `s${i}`, name: `S${i}`, repo: "own/web", owns: [], issues: [], dependsOn: [],
+    }));
+    const bigFleet: FleetPlan = { recommended: 20, reasoning: "", director: { enabled: false }, streams };
+    useAppStore.getState().fleetStartProject("Big", bigFleet, "big");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("Big");
+    // 20 workers → 16 in tab 1, 4 in tab 2.
+    expect(st.tabs[idx].name).toBe("Big · build");
+    expect(st.tabs[idx].layout).toBe("4×4");
+    expect(st.tabs[idx + 1].name).toBe("Big · build 2");
+    expect(st.tabs[idx + 1].layout).toBe("2×2");
+    // tab 2's first pane is the 17th worker (s16), in its own worktree.
+    expect(st.paneNames[idx + 1][0]).toBe("S16");
+    expect(st.paneCwds[`t${idx + 1}p0`]).toBe("/base/projects/big/.worktrees/web--s16");
+  });
+
+  it("fleetStartProject caps launched workers at the recommended count", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    useAppStore.getState().fleetStartProject("Cap", { ...fleet, recommended: 1 }, "k");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("Cap");
+    expect(st.tabs[idx].layout).toBe("2×1"); // 1 worker + director = 2 panes
+    expect(st.paneNames[idx][0]).toBe("director");
+    expect(st.paneNames[idx][1]).toBe("Auth UI");
+    expect(st.paneNames[idx][2]).toBeUndefined();
   });
 });
