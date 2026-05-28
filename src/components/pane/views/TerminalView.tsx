@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { log } from "../../../lib/log";
 import { recordPtyData, bumpTerminals } from "../../../lib/perf";
@@ -54,7 +53,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
-  const webglRef   = useRef<WebglAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
   // Visibility flag for the PTY listener: while false we buffer rather than
   // calling term.write, so a hidden pane (different view, fullscreen-of-other-
@@ -62,6 +60,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // updated by a tiny effect below; the listener reads it synchronously.
   const visibleRef = useRef(visible);
   const pendingRef = useRef(new PendingPtyData(PENDING_BYTES_CAP));
+  // Whether term.open() has run. We defer opening until the container has real
+  // dimensions: the DOM renderer measures and CACHES character cell metrics at
+  // open() time, and opening inside a display:none (zero-size) container — which
+  // #187 now does for every background tab's panes at mount — caches garbage
+  // metrics that a later fit() never re-measures, so rows are miscomputed and
+  // the top lines render out of frame (#190). Until opened, output is buffered
+  // (like a hidden pane) and flushed once we open at a real size.
+  const openedRef = useRef(false);
   // Skips the first font-zoom effect run per (re)mount — the terminal is already
   // created at the current size, so we must not pty_resize before pty_create.
   const fontReadyRef = useRef(false);
@@ -121,29 +127,36 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.open(el);
     termRef.current = term;
     fitRef.current  = fitAddon;
     bumpTerminals(1);
 
-    // GPU-accelerated renderer: moves xterm's per-frame draw off the main
-    // thread (canvas-on-CPU was the dominant residual jank source on 16-pane
-    // grids — #52). Loaded after `term.open` because the addon binds to the
-    // terminal's live canvas element. Best-effort: if WebGL is unavailable
-    // (rare — old GPU, headless test env) or the context is lost mid-session,
-    // dispose the addon and xterm transparently falls back to canvas.
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => {
-        log.warn(`console[${paneId}] WebGL context lost — falling back to canvas`);
-        webgl.dispose();
-        webglRef.current = null;
-      });
-      term.loadAddon(webgl);
-      webglRef.current = webgl;
-    } catch (e) {
-      log.warn(`console[${paneId}] WebGL renderer unavailable; using canvas: ${e}`);
+    // Renderer is xterm's default (DOM/canvas). The WebGL addon was tried
+    // (PR #182, toward #52) but produced ghost-cursor flickering with claude's
+    // TUI — the renderer's glyph cache didn't always invalidate cells the
+    // cursor had moved out of, leaving stale yellow cursors painted across
+    // the screen on rapid TUI updates (#190). Canvas is the safe default;
+    // re-enabling WebGL would want to be opt-in behind a setting, and only
+    // after a stable upstream addon version that handles claude's cursor
+    // patterns cleanly.
+
+    // Open the terminal only once its container has real dimensions, so the DOM
+    // renderer measures correct cell metrics (see openedRef). Opening at zero
+    // size (a background tab mounted display:none by #187) caches bad metrics
+    // and pushes the top lines out of frame. Returns true once opened. After
+    // opening, fit to the real size and flush anything buffered while we waited.
+    function openIfReady(): boolean {
+      if (openedRef.current) return true;
+      if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return false;
+      term.open(el);
+      openedRef.current = true;
+      fitAddon.fit();
+      if (pendingRef.current.size() > 0) term.write(pendingRef.current.flush());
+      return true;
     }
+    // Visible/active tab: the container is already sized, so open right away.
+    // Hidden panes defer to the ResizeObserver / visible effect below.
+    openIfReady();
 
     // Called whenever claude finishes responding (or its process exits).
     function onClaudeIdle() {
@@ -228,16 +241,19 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // re-prints its prompt in the fresh terminal.
     requestAnimationFrame(async () => {
       if (destroyed) return;
-      fitAddon.fit();
+      // Open now if the pane became sizable between mount and this frame.
+      openIfReady();
       const unlisten = await listen<string>(`pty_data_${paneId}`, (ev) => {
         const t0 = performance.now();
-        // Render path: skip xterm.write entirely while the pane is hidden — the
-        // canvas/WebGL paint is the dominant render cost and a hidden pane
-        // shouldn't pay it (#52). Bytes accumulate in pendingRef and flush in
-        // one term.write when we go visible again (here or in the [visible]
-        // effect below). Flush-before-write here guarantees correct ordering
-        // even if the visibility flip and the next PTY event race.
-        if (visibleRef.current) {
+        // Render path: skip xterm.write while the pane is hidden OR not yet
+        // opened — the canvas paint is the dominant render cost and an unseen
+        // pane shouldn't pay it (#52), and writing before open() (deferred until
+        // the container is sized, #190) would render against bad metrics. Bytes
+        // accumulate in pendingRef and flush in one term.write when we open /
+        // become visible (here or in the [visible] effect below). Flush-before-
+        // write here keeps ordering correct even if the flip and the next PTY
+        // event race.
+        if (visibleRef.current && openedRef.current) {
           if (pendingRef.current.size() > 0) {
             term.write(pendingRef.current.flush());
           }
@@ -359,9 +375,16 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
     // Auto-resize. Guard against zero-dimension callbacks that fire when the
     // console screen is hidden via display:none — fitting a zero-size terminal
-    // would corrupt the PTY dimensions until it becomes visible again.
+    // would corrupt the PTY dimensions until it becomes visible again. This is
+    // also the primary trigger that opens a pane first mounted while hidden:
+    // the display:none → grid transition fires the observer with real
+    // dimensions, so openIfReady() runs with correct cell metrics.
     const ro = new ResizeObserver(() => {
       if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+        if (!openIfReady()) return;   // still couldn't open (raced back to 0 size)
+        // Opened-or-already-open: fit to the current size and tell the backend.
+        // (When this call is the one that opened, openIfReady already fit once;
+        // a second fit is idempotent, and the resize propagates the dims.)
         fitAddon.fit();
         invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
       }
@@ -375,10 +398,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       disposeOnData.dispose();
       unlistenRef.current?.();
       ro.disconnect();
-      // Dispose the WebGL addon before the terminal so its GL context is
-      // released cleanly (it holds GPU buffers + a canvas attachment).
-      webglRef.current?.dispose();
-      webglRef.current = null;
       term.dispose();
       termRef.current = null;
       fitRef.current  = null;
@@ -401,29 +420,42 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // writes on the next event after visibility flips, but if no further event
   // arrives the user would otherwise stare at a frozen screen; this effect is
   // the safety net for that case.
+  //
+  // Ordering matters: fit FIRST, then flush. Buffered output (especially from
+  // claude's TUI) is dense with cursor-positioning ANSI escapes (`\x1b[r;cH`
+  // etc.); writing it into a terminal that's about to resize causes the just-
+  // placed cursor moves to be reapplied against a reflowed grid, landing the
+  // cursor in unexpected positions (#190). Doing the fit first means the
+  // buffer is replayed against the dimensions claude assumed when it
+  // generated the bytes — no jump.
   useEffect(() => {
     if (visible) {
-      const term = termRef.current;
-      if (term && pendingRef.current.size() > 0) {
-        term.write(pendingRef.current.flush());
-      }
       requestAnimationFrame(() => {
-        fitRef.current?.fit();
+        // If this pane first mounted while hidden it may not be opened yet;
+        // fit() throws on an unopened terminal. The ResizeObserver opens it
+        // (and fits + flushes) on the display:none → grid transition, so just
+        // skip here — this effect is only the re-fit path for an already-open
+        // terminal becoming visible again.
+        if (!openedRef.current) return;
         const t = termRef.current;
-        if (t) {
-          invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(console.error);
-          // Don't steal focus on becoming visible — the focused-pane effect below
-          // focuses only the active pane. Stealing here made every pane in a grid
-          // grab focus on mount.
+        if (!t) return;
+        fitRef.current?.fit();
+        if (pendingRef.current.size() > 0) {
+          t.write(pendingRef.current.flush());
         }
+        invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(console.error);
+        // Don't steal focus on becoming visible — the focused-pane effect below
+        // focuses only the active pane. Stealing here made every pane in a grid
+        // grab focus on mount.
       });
     }
   }, [visible, paneId]);
 
-  // Call term.focus() whenever this pane becomes the focused one
+  // Call term.focus() whenever this pane becomes the focused one. focus() reaches
+  // into xterm's textarea, which only exists after open() — skip until opened.
   useEffect(() => {
     if (focused && visible) {
-      requestAnimationFrame(() => termRef.current?.focus());
+      requestAnimationFrame(() => { if (openedRef.current) termRef.current?.focus(); });
     }
   }, [focused, visible]);
 
@@ -436,9 +468,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     if (!term) return;
     term.options.fontSize = terminalFontSize;
     // Defer a frame so xterm remeasures the new glyph size before we fit, then
-    // resize the PTY to the recomputed rows/cols.
+    // resize the PTY to the recomputed rows/cols. fit() throws on an unopened
+    // terminal, so skip the geometry work until it's been opened (#190).
     requestAnimationFrame(() => {
-      if (!termRef.current) return;
+      if (!termRef.current || !openedRef.current) return;
       fitRef.current?.fit();
       invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
     });
