@@ -1414,10 +1414,15 @@ files and rarely need a human.
    dependents build on it).
 3. **Assign each stream the issues it owns** — the deliverables from `phases`/scope
    for its area.
-4. **Decide the optimal concurrent session count** = how many streams can run *now*
-   without overlapping ownership or unmet dependencies, tempered by the user's review
-   bandwidth (never recommend more than they can review) and a hard cap of 16. State
-   the number and explain the reasoning.
+4. **Decide the optimal concurrent session count.** There is **no hard limit** on how
+   many sessions can run at once: the app shows each session as a pane, a single tab
+   holds up to **4×4 = 16** panes, and the user can open **many tabs**. So 16 is only
+   a per-tab layout limit, never a ceiling on the fleet. The real bound is how many
+   sessions the user can realistically **review and steer** — ask them, and set the
+   recommended count to that. Recommend the largest number of genuinely independent
+   (non-overlapping, dependency-free) streams they can keep up with, and explain the
+   reasoning. (The one-click launch fills one build tab with up to 16 of them; run the
+   rest from additional tabs.)
 5. **Recommend a director** when the fleet is non-trivial (2+ streams, or multiple
    repos). The director is an *async-integrator* session at the project root: it
    reviews/merges PRs, resolves the cross-stream decisions workers log, and keeps

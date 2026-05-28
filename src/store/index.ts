@@ -841,7 +841,9 @@ export const useAppStore = create<AppStore>()(
           const hasDirector = fleet.director.enabled;
 
           // Launch independents first (the wave that can run now); the recommended
-          // count caps how many workers start. Total panes (incl. director) ≤ 16.
+          // count caps how many workers start. One build tab holds up to 16 panes
+          // (the 4×4 layout limit) incl. the director — there is no fleet-wide cap,
+          // so larger fleets are run across additional tabs.
           const ordered = [...fleet.streams].sort(
             (a, b) => (a.dependsOn.length ? 1 : 0) - (b.dependsOn.length ? 1 : 0),
           );
