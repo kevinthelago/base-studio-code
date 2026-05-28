@@ -8,10 +8,12 @@ import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
-import { projectRepoCwd, sanitizeProjectKey } from "../lib/projectPaths";
-import { checkpointDocRelpath } from "../lib/checkpoint";
+import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey } from "../lib/projectPaths";
+import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
 import { computeNextRun, appendRun, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
+import { scriptDocRelpath } from "../screens/projects/planningSession";
+import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
 
 // Sent as the first message to each console when a project tab is opened, so the
 // session starts by reading and executing the laid-out plan. Plain text only — no
@@ -41,6 +43,28 @@ export const TRIAGE_PROMPT =
   "plain-text summary (what you completed, what is in progress, and the single next " +
   "step to take) into the bsc-checkpoint command on stdin. The next triage pass for " +
   "this repo will begin with that summary.";
+
+// Fallback first message for a fleet worker whose stream has no planner-authored
+// kickoff script. Plain text only (no double quotes / $ / backticks) so it is safe
+// to pass as claude's initial-message arg. The authoritative plan lives in
+// CLAUDE.local.md; this points the session at its lane and the autonomy rules.
+function buildStreamPrompt(stream: AgentStream): string {
+  const owns   = stream.owns.length   ? stream.owns.join(", ")   : "the files for your area";
+  const issues = stream.issues.length ? stream.issues.join(", ") : "the issues assigned to your area";
+  return (
+    `You are the ${stream.name} work stream, one of several Claude sessions building this project in parallel. ` +
+    `The full project plan is in CLAUDE.local.md — read it first; it is authoritative. ` +
+    `You are working in your own git worktree on branch ${stream.id}; commit your work to that branch and open a PR ` +
+    `for the director to merge — do not switch branches or touch other worktrees. ` +
+    `Your lane: you own ${owns}. Do not modify files outside your owned paths — another session owns them; ` +
+    `coordinate through the plan instead. Your issues: ${issues}. ` +
+    `Work autonomously and do not stop to ask: when something is underspecified, make the smallest reversible choice ` +
+    `consistent with the plan goal and architecture, then record it by piping a one-line note into bsc-note on stdin. ` +
+    `If you are genuinely blocked, pipe a one-line reason into bsc-blocked on stdin. ` +
+    `When you pause or finish a work session, pipe a short note of where you left off and the next step into bsc-checkpoint on stdin so your next session resumes there. ` +
+    `Verify your work against the repo tests and CI rather than asking whether it is correct.`
+  );
+}
 
 export interface GithubUser {
   login: string;
@@ -278,6 +302,11 @@ interface AppStore {
   addProjectRepo: (projectId: string, fullName: string) => void;
   triageStartProject: (projectName: string, repos: string[], projectId?: string) => void;
   findTriageTabIdx: (projectName: string) => number;
+  // Launch the agent fleet: a "· build" tab with the director (if enabled) at the
+  // project root and one worker pane per launched stream in its repo clone. Path
+  // keys off projectKey (the planning session key — where repos/prompts live).
+  fleetStartProject: (projectName: string, fleet: FleetPlan, projectKey: string) => void;
+  findFleetTabIdx: (projectName: string) => number;
 
   // Claude config profiles (persisted)
   configProfiles: ConfigProfile[];
@@ -297,6 +326,15 @@ interface AppStore {
   planAutomations:    Record<string, AutomationSuggestion[]>;
   addPlanAutomation:  (projectId: string, a: AutomationSuggestion) => void;
   clearPlanAutomations: (projectId: string) => void;
+  // Agent fleet — the parallel-execution plan (work streams + optional director +
+  // the optimal concurrent session count). Persisted per project.
+  planFleet:             Record<string, FleetPlan>;
+  setPlanFleet:          (projectId: string, fleet: FleetPlan) => void;       // wholesale (from fleet.json poll)
+  addPlanAgentStream:    (projectId: string, stream: AgentStream) => void;    // merge-by-id (from inline tag)
+  removePlanAgentStream: (projectId: string, id: string) => void;
+  setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string) => void;
+  setPlanDirector:       (projectId: string, enabled: boolean, role?: string) => void;
+  clearPlanFleet:        (projectId: string) => void;
 
   // Agent settings — the GLOBAL allowed-command tier (auto-approved in every
   // session). Per-project / per-repo tiers below combine additively with it.
@@ -645,6 +683,7 @@ export const useAppStore = create<AppStore>()(
             planConfirmedSections:  byKey(s.planConfirmedSections),
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
+            planFleet:              byKey(s.planFleet),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             projectLocalRepos:      byKey(s.projectLocalRepos),
             projectAllowedCommands: byKey(s.projectAllowedCommands),
@@ -791,6 +830,139 @@ export const useAppStore = create<AppStore>()(
           };
         }),
 
+      findFleetTabIdx: (projectName) => {
+        const tabName = `${projectName} · build`;
+        return get().tabs.findIndex((t) => t.name === tabName);
+      },
+      fleetStartProject: (projectName, fleet, projectKey) =>
+        set((s) => {
+          // The fleet launches into "· build" tabs (plus "· build 2", "· build 3"…
+          // when it overflows a tab). A tab holds up to 16 panes (the 4×4 layout
+          // limit); there is no fleet-wide cap, so larger fleets spill into more tabs.
+          // Each (re-)launch rebuilds its tab(s) in place with a bumped runId (the
+          // caller kills the old panes first), like triageStartProject.
+          const baseTabName = `${projectName} · build`;
+          const hasDirector = fleet.director.enabled;
+
+          // Independents first so the launched wave is what can run now; the
+          // recommended count caps how many workers start (no 16 cap — we go multi-tab).
+          const ordered = [...fleet.streams].sort(
+            (a, b) => (a.dependsOn.length ? 1 : 0) - (b.dependsOn.length ? 1 : 0),
+          );
+          const rec = fleet.recommended > 0 ? fleet.recommended : ordered.length;
+          const workerCount = Math.min(ordered.length, Math.max(ordered.length ? 1 : 0, rec));
+          const workers = ordered.slice(0, workerCount);
+
+          // Flat session list, chunked into tabs of ≤16. `null` marks the director slot.
+          const sessions: (AgentStream | null)[] = [...(hasDirector ? [null] : []), ...workers];
+          if (sessions.length === 0) return {};
+
+          const CAP = 16;
+          const numTabs = Math.ceil(sessions.length / CAP);
+
+          const newPaneCwds              = { ...s.paneCwds };
+          const newPaneInitCmds          = { ...s.paneInitCmds };
+          const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
+          const newPaneStartupPromptText = { ...s.paneStartupPromptText };
+          const newPaneContinue          = { ...s.paneContinue };
+          const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
+          const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
+          const newDisabledPanes         = { ...s.disabledPanes };
+          const newPaneNames             = { ...s.paneNames };
+
+          const safeKey = sanitizeProjectKey(projectKey);
+          const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
+
+          let tabs = s.tabs;
+          let firstTabIdx = -1;
+
+          for (let t = 0; t < numTabs; t++) {
+            const chunk = sessions.slice(t * CAP, t * CAP + CAP);
+            const tabName = t === 0 ? baseTabName : `${baseTabName} ${t + 1}`;
+            const existingIdx = tabs.findIndex((tb) => tb.name === tabName);
+            const tabIdx = existingIdx >= 0 ? existingIdx : tabs.length;
+            if (firstTabIdx < 0) firstTabIdx = tabIdx;
+            const runId = existingIdx >= 0 ? (tabs[existingIdx].runId ?? 0) + 1 : 0;
+            // Resume only on re-run. Each worker has its OWN worktree (a distinct
+            // cwd), so `claude --continue` is unambiguous even for several agents in
+            // one repo — the old shared-cwd hazard is gone.
+            const resume = existingIdx >= 0;
+            const count = chunk.length;
+            const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
+            const rows = Math.ceil(count / cols);
+            const layout = `${cols}×${rows}`;
+            const paneCount = cols * rows;
+            const tabPaneNames: Record<number, string> = {};
+
+            for (let i = 0; i < paneCount; i++) {
+              const key = `t${tabIdx}p${i}`;
+              // Clear any stale wiring from a prior run of this slot.
+              delete newPaneStartupPromptText[key];
+              delete newPaneStartupPromptDocs[key];
+              delete newPaneCheckpointDocs[key];
+              if (i < count) {
+                const sess = chunk[i];
+                if (sess === null) {
+                  // Director session at the project root — sees every repo + worktree.
+                  newPaneCwds[key]     = projectHubCwd(s.bscBaseDir, projectKey);
+                  newPaneInitCmds[key] = "claude";
+                  newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
+                  newPaneAllowedCommands[key] = projectCmds;
+                  newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
+                  tabPaneNames[i] = "director";
+                } else {
+                  // Worker runs in its own git worktree on its own branch.
+                  newPaneCwds[key]     = agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
+                  newPaneInitCmds[key] = "claude";
+                  if (sess.prompt) {
+                    newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
+                  } else {
+                    newPaneStartupPromptText[key] = buildStreamPrompt(sess);
+                  }
+                  newPaneAllowedCommands[key] = resolveAllowedCommands(
+                    s.allowedCommands,
+                    s.projectAllowedCommands[projectKey],
+                    s.repoAllowedCommands[repoPromptKey(projectKey, sess.repo)],
+                  );
+                  // Per-agent checkpoint doc (keyed by stream id) so each agent keeps
+                  // its own "where we left off" note.
+                  newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
+                  tabPaneNames[i] = sess.name;
+                }
+                newPaneContinue[key] = resume;
+                delete newDisabledPanes[key];
+              } else {
+                // Empty grid cell — start disabled so it doesn't spawn an idle shell.
+                newDisabledPanes[key] = true;
+              }
+            }
+
+            const newTab: Tab = { name: tabName, layout, state: "idle", runId };
+            tabs = existingIdx >= 0
+              ? tabs.map((tb, i) => (i === existingIdx ? newTab : tb))
+              : [...tabs, newTab];
+            newPaneNames[tabIdx] = tabPaneNames;
+          }
+
+          return {
+            tabs,
+            activeTabIdx: firstTabIdx,
+            focusedPaneIdx: -1,
+            fullscreenPaneIdx: -1,
+            paneMenuOpenIdx: -1,
+            paneCwds: newPaneCwds,
+            paneInitCmds: newPaneInitCmds,
+            paneStartupPromptDocs: newPaneStartupPromptDocs,
+            paneStartupPromptText: newPaneStartupPromptText,
+            paneContinue: newPaneContinue,
+            paneCheckpointDocs: newPaneCheckpointDocs,
+            paneAllowedCommands: newPaneAllowedCommands,
+            disabledPanes: newDisabledPanes,
+            paneNames: newPaneNames,
+            activeScreen: "console" as Screen,
+          };
+        }),
+
       configProfiles: [],
       addConfigProfile: (profile) =>
         set((s) => ({
@@ -853,6 +1025,42 @@ export const useAppStore = create<AppStore>()(
         }),
       clearPlanAutomations: (projectId) =>
         set((s) => ({ planAutomations: { ...s.planAutomations, [projectId]: [] } })),
+
+      planFleet: {},
+      setPlanFleet: (projectId, fleet) =>
+        set((s) => ({ planFleet: { ...s.planFleet, [projectId]: fleet } })),
+      addPlanAgentStream: (projectId, stream) =>
+        set((s) => {
+          const cur = s.planFleet[projectId] ?? emptyFleet();
+          // Merge by id so re-emitted tags refine an existing stream in place.
+          const streams = cur.streams.some((x) => x.id === stream.id)
+            ? cur.streams.map((x) => (x.id === stream.id ? stream : x))
+            : [...cur.streams, stream];
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      removePlanAgentStream: (projectId, id) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams: cur.streams.filter((x) => x.id !== id) } } };
+        }),
+      setPlanFleetMeta: (projectId, recommended, reasoning) =>
+        set((s) => {
+          const cur = s.planFleet[projectId] ?? emptyFleet();
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, recommended, reasoning } } };
+        }),
+      setPlanDirector: (projectId, enabled, role) =>
+        set((s) => {
+          const cur = s.planFleet[projectId] ?? emptyFleet();
+          return {
+            planFleet: {
+              ...s.planFleet,
+              [projectId]: { ...cur, director: { enabled, role: role ?? cur.director.role } },
+            },
+          };
+        }),
+      clearPlanFleet: (projectId) =>
+        set((s) => ({ planFleet: { ...s.planFleet, [projectId]: emptyFleet() } })),
 
       allowedCommands: [],
       addAllowedCommand: (cmd) =>
@@ -957,6 +1165,7 @@ export const useAppStore = create<AppStore>()(
         planConfirmedSections: s.planConfirmedSections,
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
+        planFleet:             s.planFleet,
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint
