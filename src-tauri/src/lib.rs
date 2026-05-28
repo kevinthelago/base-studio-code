@@ -4,17 +4,153 @@ use std::{
     io::{Read, Write},
     sync::Mutex,
 };
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 // ── PTY state ────────────────────────────────────────────────────────────────
 
 struct PtySession {
     writer: Box<dyn Write + Send>,
     master: Box<dyn portable_pty::MasterPty + Send>,
-    _child: Box<dyn portable_pty::Child + Send + Sync>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+    /// Windows Job Object that owns the shell + its descendants. Dropping it
+    /// closes the handle, which (with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`)
+    /// terminates every still-running process in the tree — `claude`, any
+    /// `gh`/`git`/MCP child, etc. `None` only when job creation failed at spawn
+    /// time (logged; falls back to plain child kill, which leaves grandchildren
+    /// orphaned). No-op stub on non-Windows builds (#118 covers Unix tree-kill).
+    _job: Option<PtyJob>,
 }
 
 struct PtyState(Mutex<HashMap<String, PtySession>>);
+
+// ── Process tree kill (Windows Job Object) ───────────────────────────────────
+
+/// RAII wrapper around a Windows Job Object configured to kill every assigned
+/// process when the last handle closes. We give each PTY shell its own job and
+/// assign the shell's PID right after spawn, so dropping the session on
+/// `pty_kill` / app exit terminates the whole tree (shell → `claude` → any
+/// `gh`/`git`/MCP child). Without this, `portable_pty::Child::kill()` only
+/// reaches the immediate shell — observed in the field as ~28 orphan
+/// `bash`/`claude`/WebView children holding cwd locks after app exit.
+#[cfg(windows)]
+struct PtyJob {
+    handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+#[cfg(not(windows))]
+struct PtyJob;
+
+#[cfg(windows)]
+impl PtyJob {
+    /// Create a kill-on-close job. Returns `Err` if the kernel refuses; the
+    /// caller logs and proceeds without tree-kill rather than failing the spawn.
+    fn new() -> std::io::Result<Self> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::JobObjects::{
+            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+        // SAFETY: NULL attributes + NULL name is the documented anonymous-job
+        // form; the call returns a valid HANDLE or NULL on failure.
+        let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if handle.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+        // Zero-init is the documented way to start an EXTENDED_LIMIT_INFORMATION
+        // and then set only the flags we care about.
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // SAFETY: pointer + size match the JobObjectExtendedLimitInformation
+        // information class.
+        let ok = unsafe {
+            SetInformationJobObject(
+                handle,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const _,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if ok == 0 {
+            let err = std::io::Error::last_os_error();
+            // Don't leak the handle when configuration fails.
+            unsafe { CloseHandle(handle); }
+            return Err(err);
+        }
+        Ok(Self { handle })
+    }
+
+    /// Assign the process identified by `pid` to this job. The process's later
+    /// descendants inherit job membership (modern Windows nested-job default),
+    /// so the whole tree shares the job's kill-on-close fate. Opens a transient
+    /// process handle with `PROCESS_SET_QUOTA | PROCESS_TERMINATE` — the minimum
+    /// access `AssignProcessToJobObject` requires.
+    fn assign_pid(&self, pid: u32) -> std::io::Result<()> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+        };
+        // SAFETY: OpenProcess returns a valid HANDLE or NULL on failure.
+        let proc = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid) };
+        if proc.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: both handles are valid until we close `proc` below.
+        let ok = unsafe { AssignProcessToJobObject(self.handle, proc) };
+        let err = if ok == 0 { Some(std::io::Error::last_os_error()) } else { None };
+        unsafe { CloseHandle(proc); }
+        match err { Some(e) => Err(e), None => Ok(()) }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for PtyJob {
+    fn drop(&mut self) {
+        // Closing the last handle on a KILL_ON_JOB_CLOSE job terminates every
+        // process still in the job — that's the actual tree kill.
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.handle); }
+    }
+}
+
+// SAFETY: a job HANDLE is an opaque OS-side reference; the kernel handles
+// cross-thread access. We never expose the raw handle outside this module.
+#[cfg(windows)]
+unsafe impl Send for PtyJob {}
+#[cfg(windows)]
+unsafe impl Sync for PtyJob {}
+
+#[cfg(not(windows))]
+impl PtyJob {
+    /// No-op stub: Unix tree-kill via process groups / `setsid` is tracked in
+    /// #118 alongside per-OS PTY correctness.
+    fn new() -> std::io::Result<Self> { Ok(Self) }
+    #[allow(dead_code)]
+    fn assign_pid(&self, _pid: u32) -> std::io::Result<()> { Ok(()) }
+}
+
+/// Drain every active PTY session, killing each shell (which on Windows kills
+/// its whole tree via the per-session Job Object that drops with the session).
+/// Called from the Tauri `RunEvent::Exit` hook so closing the app reclaims its
+/// orphan `bash` / `claude` / WebView children and releases the cwd locks they
+/// hold on `~/.base-studio-code`.
+fn kill_all_pty_sessions(state: &PtyState) {
+    // Drain inside the lock, then kill outside — child.kill() can block (the
+    // OS may take milliseconds per process), and we don't want to stall every
+    // other PtyState consumer while shutdown rolls through N sessions.
+    let drained: Vec<(String, PtySession)> = {
+        let mut map = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        map.drain().collect()
+    };
+    let n = drained.len();
+    for (pane_id, mut session) in drained {
+        if let Err(e) = session.child.kill() {
+            log::warn!("pty[{pane_id}] exit-kill child failed: {e}");
+        }
+        // Dropping `session` runs `PtyJob::drop`, which closes the job handle
+        // and tells the kernel to terminate every descendant still in the job.
+    }
+    log::info!("killed {n} PTY session(s) on exit");
+}
 
 // ── Logging / performance ────────────────────────────────────────────────────
 
@@ -373,6 +509,21 @@ async fn pty_create(
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
     drop(pair.slave);
 
+    // Box the shell into a Windows Job Object so killing the session also
+    // terminates `claude` (and any `gh`/`git`/MCP child it spawns). Best-effort:
+    // job/assign failures log and proceed with a None job — single-process kill
+    // still works, we just lose tree-kill until the next launch.
+    let job = match PtyJob::new() {
+        Ok(j) => match child.process_id() {
+            Some(pid) => match j.assign_pid(pid) {
+                Ok(()) => Some(j),
+                Err(e) => { log::warn!("pty[{pane_id}] assign shell {pid} to job failed: {e}"); None }
+            },
+            None => { log::warn!("pty[{pane_id}] shell pid unavailable; tree-kill disabled"); None }
+        },
+        Err(e) => { log::warn!("pty[{pane_id}] create job object failed: {e}"); None }
+    };
+
     let mut writer = pair.master.take_writer()
         .map_err(|e| { log::error!("pty[{pane_id}] take_writer failed: {e}"); e.to_string() })?;
     let mut reader = pair.master.try_clone_reader()
@@ -515,7 +666,7 @@ async fn pty_create(
 
     let active = {
         let mut map = state.0.lock().unwrap();
-        map.insert(pane_id, PtySession { writer, master: pair.master, _child: child });
+        map.insert(pane_id, PtySession { writer, master: pair.master, child, _job: job });
         map.len()
     };
     // Concurrency is the dominant memory driver — each session is a claude (node)
@@ -580,8 +731,20 @@ async fn pty_resize(
 
 #[tauri::command]
 async fn pty_kill(pane_id: String, state: State<'_, PtyState>) -> Result<(), String> {
-    let existed = state.0.lock().unwrap().remove(&pane_id).is_some();
-    log::info!("pty[{pane_id}] kill (existed={existed})");
+    let session = state.0.lock().unwrap().remove(&pane_id);
+    match session {
+        Some(mut s) => {
+            // Belt-and-suspenders: ask the shell to terminate, then let the
+            // session drop. On Windows the drop closes the per-session Job
+            // Object, which kills any descendant (`claude`, `gh`, `git`, MCP
+            // children) that survived the shell — the actual orphan-leak fix.
+            if let Err(e) = s.child.kill() {
+                log::warn!("pty[{pane_id}] child kill failed: {e}");
+            }
+            log::info!("pty[{pane_id}] kill");
+        }
+        None => log::info!("pty[{pane_id}] kill (no-op; session absent)"),
+    }
     Ok(())
 }
 
@@ -2807,8 +2970,18 @@ pub fn run() {
             read_document,
             write_document,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        // Drain PtyState on app exit so the OS reclaims every shell + its
+        // descendants (`claude`, `gh`, `git`, MCP children) before the process
+        // dies. Without this, closing the app window left ~28 orphan
+        // `bash`/`claude`/WebView children holding cwd locks on
+        // `~/.base-studio-code` (#52).
+        .run(|app_handle, event| {
+            if matches!(event, RunEvent::Exit) {
+                kill_all_pty_sessions(app_handle.state::<PtyState>().inner());
+            }
+        });
 }
 
 #[cfg(test)]
@@ -2836,7 +3009,45 @@ mod tests {
     use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch, claude_project_dir_name};
     use super::session_env;
     use super::{cache_is_fresh, apply_github_response, CachedGet};
+    #[cfg(windows)]
+    use super::PtyJob;
     use std::collections::HashMap;
+
+    /// Loadbearing claim of the orphan-kill fix: dropping the job handle kills
+    /// every assigned process (and its descendants). Spawn a ~30 s `ping` —
+    /// without the kill we'd hit the deadline; with it the process exits in
+    /// milliseconds. Windows-only; the Unix branch is a no-op stub (#118).
+    #[cfg(windows)]
+    #[test]
+    fn pty_job_drop_kills_assigned_process() {
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+
+        let mut child = Command::new("cmd")
+            .args(["/c", "ping", "-n", "30", "127.0.0.1"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn ping for job-kill test");
+
+        let job = PtyJob::new().expect("create job object");
+        job.assign_pid(child.id()).expect("assign ping pid to job");
+
+        // Closing the only handle on a KILL_ON_JOB_CLOSE job must terminate
+        // every assigned process — that's the orphan kill.
+        drop(job);
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => std::thread::sleep(Duration::from_millis(25)),
+                Err(e) => panic!("try_wait failed: {e}"),
+            }
+        }
+        let _ = child.kill();
+        panic!("ping survived 2s after job drop — kill-on-close not effective");
+    }
 
     #[test]
     fn cache_is_fresh_only_within_max_age_and_never_when_forced() {

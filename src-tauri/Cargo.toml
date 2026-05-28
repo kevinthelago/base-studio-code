@@ -24,3 +24,15 @@ serde_json = "1"
 reqwest = { version = "0.12", features = ["json"] }
 portable-pty = "0.8"
 rfd = "0.14"
+
+# Windows-only: Job Object APIs so a PTY's whole process tree (shell + claude +
+# any grandchildren) dies with the session on pty_kill / app exit. Without this,
+# `portable_pty::Child::kill()` only terminates the immediate shell and leaves
+# `claude` (and any `gh`/`git` it spawned) orphaned, holding cwd locks.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
