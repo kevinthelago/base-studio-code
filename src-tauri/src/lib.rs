@@ -1445,6 +1445,13 @@ files and rarely need a human.
    `prompts/director-kickoff.md` if a director). These are the first messages those
    sessions receive — design them for autonomy (next).
 
+**How agents run** (so you design ids + kickoffs right): at launch the app gives each
+worker its own **git worktree** of its repo, checked out to a **branch named after the
+stream `id`** — so make ids lowercase-hyphen slugs, since they become branch names.
+Workers commit on their branch and open PRs; the director merges them. Because each
+worker has its own worktree, several streams can share one repo without touching the
+same working tree. (The worktree also carries the plan: `CLAUDE.local.md` is copied in.)
+
 ### Stream kickoff scripts — designed for autonomy
 
 Each kickoff is the first message a worker session gets; its job is to let that
@@ -1467,14 +1474,13 @@ session run with as little human input as possible. Every worker kickoff must:
   your work is correct.*
 - Carry the **checkpoint rule** (so a relaunched session resumes where it left off):
   *When you pause or finish a work session, pipe a short "where I left off + the next
-  step" into `bsc-checkpoint` on stdin.* This matters most when several agents share
-  one repo — each agent has its own checkpoint, but only its checkpoint (not the live
-  conversation) is guaranteed to carry across a relaunch.
+  step" into `bsc-checkpoint` on stdin.* The live conversation usually resumes too
+  (each agent has its own worktree/cwd), but the checkpoint is the reliable carry.
 
-The **director kickoff** instead tells it to watch each repo's open PRs and issues
-and each repo's `DECISIONS.md`, merge non-conflicting PRs, resolve or escalate the
-cross-stream decisions workers log, and keep milestones/the board current — never
-writing feature code itself.
+The **director kickoff** instead tells it to watch each agent's branch/PR, the open
+issues, and each repo's `DECISIONS.md`; merge the agents' branches via PRs (resolving
+conflicts); resolve or escalate the cross-stream decisions workers log; and keep
+milestones/the board current — never writing feature code itself.
 
 ## The discovery checklist
 
@@ -2048,32 +2054,44 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
     let short = repo.rsplit('/').next().unwrap_or(&repo);
     let wt    = project_dir(&project_key).join(".worktrees").join(format!("{short}--{slug}"));
     let wt_str = wt.to_string_lossy().into_owned();
-    // Already a worktree (a worktree's `.git` is a file pointing into the main repo).
-    if wt.join(".git").exists() {
-        return Ok(wt_str);
+    // A worktree's `.git` is a FILE pointing into the main repo; create it only if
+    // it isn't there yet (reuse across re-runs).
+    if !wt.join(".git").exists() {
+        if let Some(parent) = wt.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let clone_str = clone.to_string_lossy().into_owned();
+        // Reuse the branch if a prior run already created it; otherwise create it.
+        let branch_exists = std::process::Command::new("git")
+            .args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")])
+            .status().map(|s| s.success()).unwrap_or(false);
+        let mut args: Vec<String> = vec!["-C".into(), clone_str, "worktree".into(), "add".into()];
+        if branch_exists {
+            args.push(wt_str.clone());
+            args.push(slug.clone());
+        } else {
+            args.push("-b".into());
+            args.push(slug.clone());
+            args.push(wt_str.clone());
+        }
+        let status = std::process::Command::new("git").args(&args).status().map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err(format!("ensure_worktree: git worktree add failed for {repo} / {agent_id}"));
+        }
+        log::info!("ensure_worktree: {repo} agent {agent_id} → {wt_str}");
     }
-    if let Some(parent) = wt.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    // Carry the planner's app-managed per-repo context into the worktree. CLAUDE.local.md
+    // is UNTRACKED in the main clone (git-excluded), so a fresh worktree wouldn't have it —
+    // refresh it every launch. Copy CLAUDE.md only when the worktree lacks one, so a
+    // tracked/checked-out CLAUDE.md isn't clobbered.
+    let local = clone.join("CLAUDE.local.md");
+    if local.is_file() {
+        let _ = std::fs::copy(&local, wt.join("CLAUDE.local.md"));
     }
-    let clone_str = clone.to_string_lossy().into_owned();
-    // Reuse the branch if a prior run already created it; otherwise create it.
-    let branch_exists = std::process::Command::new("git")
-        .args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")])
-        .status().map(|s| s.success()).unwrap_or(false);
-    let mut args: Vec<String> = vec!["-C".into(), clone_str, "worktree".into(), "add".into()];
-    if branch_exists {
-        args.push(wt_str.clone());
-        args.push(slug.clone());
-    } else {
-        args.push("-b".into());
-        args.push(slug.clone());
-        args.push(wt_str.clone());
+    let claude_md = clone.join("CLAUDE.md");
+    if claude_md.is_file() && !wt.join("CLAUDE.md").exists() {
+        let _ = std::fs::copy(&claude_md, wt.join("CLAUDE.md"));
     }
-    let status = std::process::Command::new("git").args(&args).status().map_err(|e| e.to_string())?;
-    if !status.success() {
-        return Err(format!("ensure_worktree: git worktree add failed for {repo} / {agent_id}"));
-    }
-    log::info!("ensure_worktree: {repo} agent {agent_id} → {wt_str}");
     Ok(wt_str)
 }
 
@@ -2885,6 +2903,15 @@ mod tests {
             "- chose cursor pagination\n- used JWT for auth\n",
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn worktree_slug_keeps_only_branch_safe_chars() {
+        // The slug doubles as a git branch name + worktree dir, and must match the
+        // frontend `worktreeSlug` (replace anything outside [A-Za-z0-9._-] with '-').
+        assert_eq!(super::worktree_slug("auth-ui"), "auth-ui");
+        assert_eq!(super::worktree_slug("a.b_c-d"), "a.b_c-d");
+        assert_eq!(super::worktree_slug("API client/2"), "API-client-2");
     }
 
     #[test]
