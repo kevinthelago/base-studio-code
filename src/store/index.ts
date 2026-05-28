@@ -8,7 +8,7 @@ import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
-import { projectRepoCwd, projectHubCwd, sanitizeProjectKey } from "../lib/projectPaths";
+import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey } from "../lib/projectPaths";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
 import { computeNextRun, appendRun, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
@@ -54,6 +54,8 @@ function buildStreamPrompt(stream: AgentStream): string {
   return (
     `You are the ${stream.name} work stream, one of several Claude sessions building this project in parallel. ` +
     `The full project plan is in CLAUDE.local.md — read it first; it is authoritative. ` +
+    `You are working in your own git worktree on branch ${stream.id}; commit your work to that branch and open a PR ` +
+    `for the director to merge — do not switch branches or touch other worktrees. ` +
     `Your lane: you own ${owns}. Do not modify files outside your owned paths — another session owns them; ` +
     `coordinate through the plan instead. Your issues: ${issues}. ` +
     `Work autonomously and do not stop to ask: when something is underspecified, make the smallest reversible choice ` +
@@ -834,36 +836,29 @@ export const useAppStore = create<AppStore>()(
       },
       fleetStartProject: (projectName, fleet, projectKey) =>
         set((s) => {
-          // Re-runnable in place: a "· build" tab for this project rebuilds at the
-          // same index with a bumped runId (the caller kills the panes first), like
-          // triageStartProject.
-          const tabName = `${projectName} · build`;
-          const existingIdx = s.tabs.findIndex((t) => t.name === tabName);
+          // The fleet launches into "· build" tabs (plus "· build 2", "· build 3"…
+          // when it overflows a tab). A tab holds up to 16 panes (the 4×4 layout
+          // limit); there is no fleet-wide cap, so larger fleets spill into more tabs.
+          // Each (re-)launch rebuilds its tab(s) in place with a bumped runId (the
+          // caller kills the old panes first), like triageStartProject.
+          const baseTabName = `${projectName} · build`;
           const hasDirector = fleet.director.enabled;
 
-          // Launch independents first (the wave that can run now); the recommended
-          // count caps how many workers start. One build tab holds up to 16 panes
-          // (the 4×4 layout limit) incl. the director — there is no fleet-wide cap,
-          // so larger fleets are run across additional tabs.
+          // Independents first so the launched wave is what can run now; the
+          // recommended count caps how many workers start (no 16 cap — we go multi-tab).
           const ordered = [...fleet.streams].sort(
             (a, b) => (a.dependsOn.length ? 1 : 0) - (b.dependsOn.length ? 1 : 0),
           );
-          if (ordered.length === 0 && !hasDirector) return {};
-          const maxWorkers = Math.max(1, 16 - (hasDirector ? 1 : 0));
           const rec = fleet.recommended > 0 ? fleet.recommended : ordered.length;
-          const workerCount = Math.min(ordered.length, maxWorkers, Math.max(ordered.length ? 1 : 0, rec));
+          const workerCount = Math.min(ordered.length, Math.max(ordered.length ? 1 : 0, rec));
           const workers = ordered.slice(0, workerCount);
-          const count = workers.length + (hasDirector ? 1 : 0);
-          if (count === 0) return {};
 
-          const newTabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
-          const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
-          const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
-          const rows = Math.ceil(count / cols);
-          const layout = `${cols}×${rows}`;
-          const paneCount = cols * rows;
-          // Resume only on re-run; the first build launch starts fresh with the kickoff.
-          const resume = existingIdx >= 0;
+          // Flat session list, chunked into tabs of ≤16. `null` marks the director slot.
+          const sessions: (AgentStream | null)[] = [...(hasDirector ? [null] : []), ...workers];
+          if (sessions.length === 0) return {};
+
+          const CAP = 16;
+          const numTabs = Math.ceil(sessions.length / CAP);
 
           const newPaneCwds              = { ...s.paneCwds };
           const newPaneInitCmds          = { ...s.paneInitCmds };
@@ -873,68 +868,85 @@ export const useAppStore = create<AppStore>()(
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newDisabledPanes         = { ...s.disabledPanes };
-          const tabPaneNames: Record<number, string> = {};
+          const newPaneNames             = { ...s.paneNames };
 
           const safeKey = sanitizeProjectKey(projectKey);
           const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
 
-          // How many launched workers share each repo. When >1 agents sit in one
-          // repo clone they share a cwd, so `claude --continue` is ambiguous (it
-          // resumes whichever wrote last) — those agents launch fresh and rely on
-          // their own per-agent checkpoint doc instead. A repo's lone agent resumes
-          // via --continue as before.
-          const repoLaunchCount: Record<string, number> = {};
-          for (const w of workers) repoLaunchCount[w.repo] = (repoLaunchCount[w.repo] ?? 0) + 1;
+          let tabs = s.tabs;
+          let firstTabIdx = -1;
 
-          for (let i = 0; i < paneCount; i++) {
-            const key = `t${newTabIdx}p${i}`;
-            // Clear any stale wiring from a prior run of this slot.
-            delete newPaneStartupPromptText[key];
-            delete newPaneStartupPromptDocs[key];
-            delete newPaneCheckpointDocs[key];
-            if (i < count) {
-              if (hasDirector && i === 0) {
-                // Director session at the project root — sees every repo as a subdir.
-                newPaneCwds[key]     = projectHubCwd(s.bscBaseDir, projectKey);
-                newPaneInitCmds[key] = "claude";
-                newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
-                newPaneAllowedCommands[key] = projectCmds;
-                newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
-                newPaneContinue[key] = resume;
-                tabPaneNames[i] = "director";
-              } else {
-                const stream = workers[hasDirector ? i - 1 : i];
-                newPaneCwds[key]     = projectRepoCwd(s.bscBaseDir, projectKey, stream.repo);
-                newPaneInitCmds[key] = "claude";
-                if (stream.prompt) {
-                  newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, stream.prompt);
+          for (let t = 0; t < numTabs; t++) {
+            const chunk = sessions.slice(t * CAP, t * CAP + CAP);
+            const tabName = t === 0 ? baseTabName : `${baseTabName} ${t + 1}`;
+            const existingIdx = tabs.findIndex((tb) => tb.name === tabName);
+            const tabIdx = existingIdx >= 0 ? existingIdx : tabs.length;
+            if (firstTabIdx < 0) firstTabIdx = tabIdx;
+            const runId = existingIdx >= 0 ? (tabs[existingIdx].runId ?? 0) + 1 : 0;
+            // Resume only on re-run. Each worker has its OWN worktree (a distinct
+            // cwd), so `claude --continue` is unambiguous even for several agents in
+            // one repo — the old shared-cwd hazard is gone.
+            const resume = existingIdx >= 0;
+            const count = chunk.length;
+            const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
+            const rows = Math.ceil(count / cols);
+            const layout = `${cols}×${rows}`;
+            const paneCount = cols * rows;
+            const tabPaneNames: Record<number, string> = {};
+
+            for (let i = 0; i < paneCount; i++) {
+              const key = `t${tabIdx}p${i}`;
+              // Clear any stale wiring from a prior run of this slot.
+              delete newPaneStartupPromptText[key];
+              delete newPaneStartupPromptDocs[key];
+              delete newPaneCheckpointDocs[key];
+              if (i < count) {
+                const sess = chunk[i];
+                if (sess === null) {
+                  // Director session at the project root — sees every repo + worktree.
+                  newPaneCwds[key]     = projectHubCwd(s.bscBaseDir, projectKey);
+                  newPaneInitCmds[key] = "claude";
+                  newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
+                  newPaneAllowedCommands[key] = projectCmds;
+                  newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
+                  tabPaneNames[i] = "director";
                 } else {
-                  newPaneStartupPromptText[key] = buildStreamPrompt(stream);
+                  // Worker runs in its own git worktree on its own branch.
+                  newPaneCwds[key]     = agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
+                  newPaneInitCmds[key] = "claude";
+                  if (sess.prompt) {
+                    newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
+                  } else {
+                    newPaneStartupPromptText[key] = buildStreamPrompt(sess);
+                  }
+                  newPaneAllowedCommands[key] = resolveAllowedCommands(
+                    s.allowedCommands,
+                    s.projectAllowedCommands[projectKey],
+                    s.repoAllowedCommands[repoPromptKey(projectKey, sess.repo)],
+                  );
+                  // Per-agent checkpoint doc (keyed by stream id) so each agent keeps
+                  // its own "where we left off" note.
+                  newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
+                  tabPaneNames[i] = sess.name;
                 }
-                newPaneAllowedCommands[key] = resolveAllowedCommands(
-                  s.allowedCommands,
-                  s.projectAllowedCommands[projectKey],
-                  s.repoAllowedCommands[repoPromptKey(projectKey, stream.repo)],
-                );
-                // Per-agent checkpoint doc (keyed by stream id, not repo) so
-                // co-located agents never clobber each other's resume note.
-                newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, stream.id);
-                newPaneContinue[key] = resume && repoLaunchCount[stream.repo] <= 1;
-                tabPaneNames[i] = stream.name;
+                newPaneContinue[key] = resume;
+                delete newDisabledPanes[key];
+              } else {
+                // Empty grid cell — start disabled so it doesn't spawn an idle shell.
+                newDisabledPanes[key] = true;
               }
-              delete newDisabledPanes[key];
-            } else {
-              // Empty grid cell — start disabled so it doesn't spawn an idle shell.
-              newDisabledPanes[key] = true;
             }
+
+            const newTab: Tab = { name: tabName, layout, state: "idle", runId };
+            tabs = existingIdx >= 0
+              ? tabs.map((tb, i) => (i === existingIdx ? newTab : tb))
+              : [...tabs, newTab];
+            newPaneNames[tabIdx] = tabPaneNames;
           }
 
-          const newTab: Tab = { name: tabName, layout, state: "idle", runId };
           return {
-            tabs: existingIdx >= 0
-              ? s.tabs.map((t, i) => (i === existingIdx ? newTab : t))
-              : [...s.tabs, newTab],
-            activeTabIdx: newTabIdx,
+            tabs,
+            activeTabIdx: firstTabIdx,
             focusedPaneIdx: -1,
             fullscreenPaneIdx: -1,
             paneMenuOpenIdx: -1,
@@ -946,7 +958,7 @@ export const useAppStore = create<AppStore>()(
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneAllowedCommands: newPaneAllowedCommands,
             disabledPanes: newDisabledPanes,
-            paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
+            paneNames: newPaneNames,
             activeScreen: "console" as Screen,
           };
         }),

@@ -960,13 +960,13 @@ describe("agent fleet store", () => {
     expect(st.paneStartupPromptDocs["t3p0"]).toBe("projects/proj-key/prompts/director-kickoff.md");
     expect(st.paneNames[idx][0]).toBe("director");
 
-    // pane 1 = first worker in its repo clone, planner-authored kickoff doc
-    expect(st.paneCwds["t3p1"]).toBe("/base/projects/proj-key/web");
+    // pane 1 = first worker in its OWN git worktree, planner-authored kickoff doc
+    expect(st.paneCwds["t3p1"]).toBe("/base/projects/proj-key/.worktrees/web--auth-ui");
     expect(st.paneStartupPromptDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-kickoff.md");
     expect(st.paneNames[idx][1]).toBe("Auth UI");
 
-    // pane 2 = second worker with no kickoff doc → generated text mentioning its name
-    expect(st.paneCwds["t3p2"]).toBe("/base/projects/proj-key/api");
+    // pane 2 = second worker (own worktree) with no kickoff doc → generated text
+    expect(st.paneCwds["t3p2"]).toBe("/base/projects/proj-key/.worktrees/api--api");
     expect(st.paneStartupPromptText["t3p2"]).toContain("API");
 
     // per-agent checkpoint docs, keyed by stream id (director gets its own)
@@ -980,7 +980,7 @@ describe("agent fleet store", () => {
     expect(st.disabledPanes["t3p3"]).toBe(true);
   });
 
-  it("gives each agent its own checkpoint doc and skips --continue for co-located agents on re-run", () => {
+  it("isolates co-located agents in separate worktrees with distinct checkpoint docs", () => {
     useAppStore.setState({ bscBaseDir: "/base" });
     const coFleet: FleetPlan = {
       recommended: 3, reasoning: "", director: { enabled: false },
@@ -992,18 +992,42 @@ describe("agent fleet store", () => {
     };
     useAppStore.getState().fleetStartProject("Co", coFleet, "k");
     const idx = useAppStore.getState().findFleetTabIdx("Co");
-    // distinct per-agent checkpoint docs — two agents in own/web don't collide
-    expect(useAppStore.getState().paneCheckpointDocs[`t${idx}p0`]).toBe("projects/k/prompts/web-a-checkpoint.md");
-    expect(useAppStore.getState().paneCheckpointDocs[`t${idx}p1`]).toBe("projects/k/prompts/web-b-checkpoint.md");
-    expect(useAppStore.getState().paneCheckpointDocs[`t${idx}p2`]).toBe("projects/k/prompts/api-checkpoint.md");
+    const st1 = useAppStore.getState();
+    // Two agents in own/web get separate worktree cwds — no shared working tree.
+    expect(st1.paneCwds[`t${idx}p0`]).toBe("/base/projects/k/.worktrees/web--web-a");
+    expect(st1.paneCwds[`t${idx}p1`]).toBe("/base/projects/k/.worktrees/web--web-b");
+    expect(st1.paneCwds[`t${idx}p2`]).toBe("/base/projects/k/.worktrees/api--api");
+    // …and distinct per-agent checkpoint docs.
+    expect(st1.paneCheckpointDocs[`t${idx}p0`]).toBe("projects/k/prompts/web-a-checkpoint.md");
+    expect(st1.paneCheckpointDocs[`t${idx}p1`]).toBe("projects/k/prompts/web-b-checkpoint.md");
+    expect(st1.paneCheckpointDocs[`t${idx}p2`]).toBe("projects/k/prompts/api-checkpoint.md");
 
-    // re-run (tab exists) → resume; co-located web agents must NOT --continue (shared
-    // cwd is ambiguous), but the sole api agent does.
+    // Re-run → resume. Distinct worktree cwds make --continue unambiguous, so even
+    // co-located agents resume (no co-location exception needed any more).
     useAppStore.getState().fleetStartProject("Co", coFleet, "k");
+    const st2 = useAppStore.getState();
+    expect(st2.paneContinue[`t${idx}p0`]).toBe(true);
+    expect(st2.paneContinue[`t${idx}p1`]).toBe(true);
+    expect(st2.paneContinue[`t${idx}p2`]).toBe(true);
+  });
+
+  it("spreads a fleet larger than one tab across multiple build tabs", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const streams = Array.from({ length: 20 }, (_, i) => ({
+      id: `s${i}`, name: `S${i}`, repo: "own/web", owns: [], issues: [], dependsOn: [],
+    }));
+    const bigFleet: FleetPlan = { recommended: 20, reasoning: "", director: { enabled: false }, streams };
+    useAppStore.getState().fleetStartProject("Big", bigFleet, "big");
     const st = useAppStore.getState();
-    expect(st.paneContinue[`t${idx}p0`]).toBe(false);
-    expect(st.paneContinue[`t${idx}p1`]).toBe(false);
-    expect(st.paneContinue[`t${idx}p2`]).toBe(true);
+    const idx = st.findFleetTabIdx("Big");
+    // 20 workers → 16 in tab 1, 4 in tab 2.
+    expect(st.tabs[idx].name).toBe("Big · build");
+    expect(st.tabs[idx].layout).toBe("4×4");
+    expect(st.tabs[idx + 1].name).toBe("Big · build 2");
+    expect(st.tabs[idx + 1].layout).toBe("2×2");
+    // tab 2's first pane is the 17th worker (s16), in its own worktree.
+    expect(st.paneNames[idx + 1][0]).toBe("S16");
+    expect(st.paneCwds[`t${idx + 1}p0`]).toBe("/base/projects/big/.worktrees/web--s16");
   });
 
   it("fleetStartProject caps launched workers at the recommended count", () => {

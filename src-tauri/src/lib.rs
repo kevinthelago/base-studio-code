@@ -1454,6 +1454,9 @@ session run with as little human input as possible. Every worker kickoff must:
   first; it is authoritative.
 - State the ownership boundary: "you own <globs>; do not modify files outside them —
   another stream owns them; coordinate through the plan, not by editing their files."
+- State that it runs in its **own git worktree on a branch named after the stream**:
+  commit there and open a PR for the director to merge; never switch branches or edit
+  another agent's worktree. (The app creates the worktree + branch at launch.)
 - List the issues the stream owns and this phase's in-scope work for it.
 - Carry the **autonomy rule**: *Do not stop to ask. When something is underspecified,
   make the smallest reversible choice consistent with the plan's goal and
@@ -2014,6 +2017,64 @@ async fn clone_repo(project: String, full_name: String) -> Result<String, String
     git_exclude(&dest, "DECISIONS.md");
     log::info!("clone_repo: cloned {full_name} → {}", dest.display());
     Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Branch/dir slug for a fleet agent — keeps only `[A-Za-z0-9._-]`, every other
+/// char becomes `-`. Must match the frontend `worktreeSlug` so the computed
+/// worktree cwd and the on-disk worktree path agree.
+fn worktree_slug(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { c } else { '-' })
+        .collect()
+}
+
+/// Create (idempotently) a git worktree for one fleet agent: an isolated checkout
+/// of `repo` on a branch named after the agent, at
+/// `projects/<key>/.worktrees/<repoShort>--<agentSlug>`. Each agent edits and
+/// commits in its own worktree+branch, so co-located agents (several in one repo)
+/// never share a working tree; the director merges the branches via PRs.
+///
+/// The repo's main clone must already exist (cloned during planning). A worktree or
+/// branch left over from a prior run is reused. Returns the worktree's absolute path
+/// (native form — mirrors `agentWorktreeCwd` so the launched pane's cwd matches).
+#[tauri::command]
+async fn ensure_worktree(project_key: String, repo: String, agent_id: String) -> Result<String, String> {
+    let _perf = PerfSpan::new("ensure_worktree");
+    let clone = repo_dir(&project_key, &repo);
+    if !clone.join(".git").exists() {
+        return Err(format!("ensure_worktree: repo not cloned: {}", clone.display()));
+    }
+    let slug  = worktree_slug(&agent_id);
+    let short = repo.rsplit('/').next().unwrap_or(&repo);
+    let wt    = project_dir(&project_key).join(".worktrees").join(format!("{short}--{slug}"));
+    let wt_str = wt.to_string_lossy().into_owned();
+    // Already a worktree (a worktree's `.git` is a file pointing into the main repo).
+    if wt.join(".git").exists() {
+        return Ok(wt_str);
+    }
+    if let Some(parent) = wt.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let clone_str = clone.to_string_lossy().into_owned();
+    // Reuse the branch if a prior run already created it; otherwise create it.
+    let branch_exists = std::process::Command::new("git")
+        .args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")])
+        .status().map(|s| s.success()).unwrap_or(false);
+    let mut args: Vec<String> = vec!["-C".into(), clone_str, "worktree".into(), "add".into()];
+    if branch_exists {
+        args.push(wt_str.clone());
+        args.push(slug.clone());
+    } else {
+        args.push("-b".into());
+        args.push(slug.clone());
+        args.push(wt_str.clone());
+    }
+    let status = std::process::Command::new("git").args(&args).status().map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("ensure_worktree: git worktree add failed for {repo} / {agent_id}"));
+    }
+    log::info!("ensure_worktree: {repo} agent {agent_id} → {wt_str}");
+    Ok(wt_str)
 }
 
 /// Append `entry` to a clone's `.git/info/exclude` (idempotent) so app-managed
@@ -2600,6 +2661,7 @@ pub fn run() {
             setup_workspaces,
             setup_kb_workspace,
             clone_repo,
+            ensure_worktree,
             get_base_dir,
             read_claude_config,
             write_claude_config,
