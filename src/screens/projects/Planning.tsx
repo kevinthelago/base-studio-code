@@ -1399,15 +1399,26 @@ export function Planning({ visible }: { visible: boolean }) {
     const store = useAppStore.getState();
     const fleet = store.planFleet[effectiveProjectId];
     if (!fleet) return;
-    const idx = store.findFleetTabIdx(projectTitle);
-    if (idx >= 0) {
-      const [cols, rows] = (store.tabs[idx].layout ?? "1×1").split("×").map(n => parseInt(n, 10) || 1);
-      await Promise.all(
-        Array.from({ length: cols * rows }, (_, i) =>
+    // Create each worker's git worktree (idempotent) so its pane launches into an
+    // isolated checkout + branch. The director has no worktree — it runs at the hub.
+    await Promise.all(
+      fleet.streams.map(st =>
+        invoke("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
+          .catch(e => console.error(`worktree for ${st.id} failed:`, e)),
+      ),
+    );
+    // Kill any existing build-tab panes (across all "· build" tabs) so the bumped
+    // runId relaunches each session fresh.
+    const base = `${projectTitle} · build`;
+    await Promise.all(
+      store.tabs.flatMap((t, idx) => {
+        if (t.name !== base && !t.name.startsWith(`${base} `)) return [];
+        const [cols, rows] = (t.layout ?? "1×1").split("×").map(n => parseInt(n, 10) || 1);
+        return Array.from({ length: cols * rows }, (_, i) =>
           invoke("pty_kill", { paneId: `t${idx}p${i}` }).catch(() => {}),
-        ),
-      );
-    }
+        );
+      }),
+    );
     store.fleetStartProject(projectTitle, fleet, effectiveProjectId);
   }
 
