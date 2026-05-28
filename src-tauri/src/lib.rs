@@ -2140,16 +2140,47 @@ const DEFAULT_DENY: &[&str] = &[
     "Bash(wget *| sh)",
 ];
 
+/// One MCP server an extension contributes to a session's `.mcp.json`. Field names
+/// match the frontend `McpServerPayload`.
+#[derive(serde::Deserialize, Clone)]
+struct McpServerCfg {
+    name: String,
+    transport: String, // "stdio" | "http"
+    #[serde(default)]
+    command: Option<String>,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    env: Vec<(String, String)>,
+}
+
+/// One lifecycle hook an extension contributes to a session's settings.json.
+#[derive(serde::Deserialize, Clone)]
+struct HookCfg {
+    event: String,   // PreToolUse | PostToolUse | …
+    #[serde(default)]
+    matcher: String, // optional tool matcher; empty = all
+    command: String,
+}
+
 /// Ensure the claude session rooted at `cwd` can run shell commands without a
-/// permission prompt while blocking dangerous ones, by merging permission rules
-/// into `<cwd>/.claude/settings.json`.
+/// permission prompt while blocking dangerous ones, and apply the session's
+/// extensions (MCP servers → `.mcp.json`, hooks → settings.json), by merging into
+/// `<cwd>/.claude/settings.json` and `<cwd>/.mcp.json`.
 #[tauri::command]
 async fn ensure_session_settings(
     cwd: String,
     allowed_commands: Vec<String>,
     denied_commands: Vec<String>,
+    mcp_servers: Option<Vec<McpServerCfg>>,
+    hooks: Option<Vec<HookCfg>>,
 ) -> Result<(), String> {
-    write_session_settings(&cwd, &allowed_commands, &denied_commands)
+    write_session_settings(
+        &cwd, &allowed_commands, &denied_commands,
+        &mcp_servers.unwrap_or_default(), &hooks.unwrap_or_default(),
+    )
 }
 
 /// Synchronous core of [`ensure_session_settings`] (testable without a runtime).
@@ -2166,6 +2197,8 @@ fn write_session_settings(
     cwd: &str,
     allowed_commands: &[String],
     denied_commands: &[String],
+    mcp_servers: &[McpServerCfg],
+    hooks: &[HookCfg],
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     let root = std::path::PathBuf::from(cwd);
@@ -2202,13 +2235,96 @@ fn write_session_settings(
     merge_permission_list(&mut config, "allow", &allow_rules);
     merge_permission_list(&mut config, "deny", &deny_rules);
 
+    // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
+    // a hook extension off and relaunching drops it). MCP servers → `.mcp.json`,
+    // auto-approved for autonomous sessions via `enabledMcpjsonServers` (exactly the
+    // resolved set — servers not listed aren't trusted, which is how removal lands).
+    write_session_hooks(&mut config, hooks);
+    {
+        let obj = config.as_object_mut().unwrap();
+        if mcp_servers.is_empty() {
+            obj.remove("enabledMcpjsonServers");
+        } else {
+            obj.insert(
+                "enabledMcpjsonServers".into(),
+                serde_json::Value::Array(
+                    mcp_servers.iter().map(|m| serde_json::Value::String(m.name.clone())).collect(),
+                ),
+            );
+        }
+    }
+
     std::fs::create_dir_all(root.join(".claude")).map_err(|e| e.to_string())?;
     std::fs::write(
         &settings_path,
         serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
     ).map_err(|e| e.to_string())?;
+    write_mcp_json(&root, mcp_servers)?;
     git_exclude(&root, ".claude/");
+    git_exclude(&root, ".mcp.json");
     Ok(())
+}
+
+/// Overwrite `config.hooks` with the resolved hooks, grouped by event:
+/// `{event: [{matcher?, hooks: [{type:"command", command}]}]}`. Empty → key removed.
+fn write_session_hooks(config: &mut serde_json::Value, hooks: &[HookCfg]) {
+    let obj = config.as_object_mut().unwrap();
+    if hooks.is_empty() { obj.remove("hooks"); return; }
+    let mut by_event = serde_json::Map::new();
+    for h in hooks {
+        let inner = serde_json::json!({ "type": "command", "command": h.command });
+        let entry = if h.matcher.is_empty() {
+            serde_json::json!({ "hooks": [inner] })
+        } else {
+            serde_json::json!({ "matcher": h.matcher, "hooks": [inner] })
+        };
+        by_event
+            .entry(h.event.clone())
+            .or_insert_with(|| serde_json::json!([]))
+            .as_array_mut().unwrap()
+            .push(entry);
+    }
+    obj.insert("hooks".into(), serde_json::Value::Object(by_event));
+}
+
+/// Merge the resolved MCP servers into `<cwd>/.mcp.json` by name (preserving any
+/// repo-authored entries). Skips entirely when there are none and no file exists.
+/// `enabledMcpjsonServers` in settings.json gates which are actually active.
+fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Result<(), String> {
+    let path = root.join(".mcp.json");
+    if mcp_servers.is_empty() && !path.exists() { return Ok(()); }
+    let mut doc: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !doc.is_object() { doc = serde_json::json!({}); }
+    let servers = doc.as_object_mut().unwrap()
+        .entry("mcpServers").or_insert_with(|| serde_json::json!({}));
+    if !servers.is_object() { *servers = serde_json::json!({}); }
+    let smap = servers.as_object_mut().unwrap();
+    for m in mcp_servers {
+        smap.insert(m.name.clone(), mcp_server_value(m));
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+
+/// One MCP server's `.mcp.json` value: stdio `{command,args,env?}` or http `{type,url}`.
+fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
+    if m.transport == "http" {
+        return serde_json::json!({ "type": "http", "url": m.url.clone().unwrap_or_default() });
+    }
+    let mut v = serde_json::Map::new();
+    v.insert("command".into(), serde_json::Value::String(m.command.clone().unwrap_or_default()));
+    v.insert("args".into(), serde_json::Value::Array(
+        m.args.iter().map(|a| serde_json::Value::String(a.clone())).collect(),
+    ));
+    let env: serde_json::Map<String, serde_json::Value> = m.env.iter()
+        .filter(|(k, _)| !k.is_empty())
+        .map(|(k, val)| (k.clone(), serde_json::Value::String(val.clone())))
+        .collect();
+    if !env.is_empty() { v.insert("env".into(), serde_json::Value::Object(env)); }
+    serde_json::Value::Object(v)
 }
 
 /// Merge `rules` into `config.permissions.<key>` (an array), preserving existing
@@ -2971,6 +3087,8 @@ mod tests {
             &dir.to_string_lossy(),
             &["cargo".into(), "git".into()],
             &["scp".into()],
+            &[],
+            &[],
         ).unwrap();
 
         let v: serde_json::Value =
@@ -2993,6 +3111,49 @@ mod tests {
         assert!(deny.contains(&"Bash(sudo *)".to_string()));
         assert!(deny.contains(&"Bash(rm -rf /*)".to_string()));
         assert!(deny.contains(&"Bash(scp *)".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_session_settings_writes_mcp_servers_and_hooks() {
+        let dir = std::env::temp_dir().join(format!("bsc-ext-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mcp = vec![
+            super::McpServerCfg {
+                name: "filesystem".into(), transport: "stdio".into(),
+                command: Some("npx".into()), args: vec!["-y".into(), "@mcp/fs".into()],
+                url: None, env: vec![("ROOT".into(), "/tmp".into())],
+            },
+            super::McpServerCfg {
+                name: "sentry".into(), transport: "http".into(),
+                command: None, args: vec![], url: Some("https://mcp.sentry.dev/sse".into()), env: vec![],
+            },
+        ];
+        let hooks = vec![super::HookCfg {
+            event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
+        }];
+        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks).unwrap();
+
+        // .mcp.json carries both servers in the right transport shapes.
+        let mcp_json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".mcp.json")).unwrap()).unwrap();
+        assert_eq!(mcp_json["mcpServers"]["filesystem"]["command"], "npx");
+        assert_eq!(mcp_json["mcpServers"]["filesystem"]["args"][1], "@mcp/fs");
+        assert_eq!(mcp_json["mcpServers"]["filesystem"]["env"]["ROOT"], "/tmp");
+        assert_eq!(mcp_json["mcpServers"]["sentry"]["type"], "http");
+        assert_eq!(mcp_json["mcpServers"]["sentry"]["url"], "https://mcp.sentry.dev/sse");
+
+        // settings.json gates the servers + carries the hook grouped by event.
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let enabled: Vec<String> = settings["enabledMcpjsonServers"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(enabled.contains(&"filesystem".to_string()) && enabled.contains(&"sentry".to_string()));
+        assert_eq!(settings["hooks"]["PostToolUse"][0]["matcher"], "Write|Edit");
+        assert_eq!(settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "format.sh");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

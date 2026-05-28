@@ -9,6 +9,7 @@ import { recordPtyData, bumpTerminals } from "../../../lib/perf";
 import { gateClaudeLaunch } from "../../../lib/launchGate";
 import { scrollbackForPaneCount } from "../../../lib/terminal";
 import { composeStartupPrompt } from "../../../lib/checkpoint";
+import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 
 // Hex equivalents of the oklch design tokens so xterm can use them
@@ -252,8 +253,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         const cmds = useAppStore.getState().paneAllowedCommands[paneId]
           ?? useAppStore.getState().allowedCommands;
         const denied = useAppStore.getState().deniedCommands;
-        await invoke("ensure_session_settings", { cwd: initialCwd, allowedCommands: cmds, deniedCommands: denied })
-          .catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
+        // Extensions (MCP servers + hooks) resolved for this session — pre-resolved
+        // per pane at tab creation; fall back to globals for ad-hoc consoles.
+        const exts = useAppStore.getState().paneExtensions[paneId]
+          ?? resolveExtensions(useAppStore.getState().extensions, "");
+        const { mcp, hooks } = toSessionPayloads(exts);
+        await invoke("ensure_session_settings", {
+          cwd: initialCwd, allowedCommands: cmds, deniedCommands: denied,
+          mcpServers: mcp, hooks,
+        }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         if (destroyed) return;
       }
 
