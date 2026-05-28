@@ -32,18 +32,21 @@ interface PaneAtProps {
   status: "run" | "on" | "idle";
   cwd?: string;
   initCmd?: string;
-  // Index-taking dispatchers, stable across ConsoleScreen renders so the memo
-  // below holds; PaneAt binds its own `i` into the no-arg callbacks the chrome
-  // expects.
-  onRename: (i: number, name: string) => void;
-  onMenuToggle: (i: number) => void;
-  onFocus: (i: number) => void;
-  onViewChange: (i: number, v: ViewKey) => void;
-  onPickDirectory: (i: number) => void;
-  onCwdChange: (i: number, path: string) => void;
-  onStatusChange: (i: number, status: "run" | "idle") => void;
-  onToggleFullscreen: (i: number) => void;
-  onToggleDisable: (i: number) => void;
+  // Dispatchers take (tabIdx, paneIdx, …) so a single handler in ConsoleScreen
+  // can route events to the right tab. Stable across renders so the memo below
+  // holds; PaneAt binds its own (tabIdx, i) into the no-arg callbacks the chrome
+  // expects. Background-tab panes are mounted (display:none) so their PTY
+  // listeners stay live, and their callbacks must record against THEIR tab —
+  // not the currently-active one (#186).
+  onRename: (tabIdx: number, i: number, name: string) => void;
+  onMenuToggle: (tabIdx: number, i: number) => void;
+  onFocus: (tabIdx: number, i: number) => void;
+  onViewChange: (tabIdx: number, i: number, v: ViewKey) => void;
+  onPickDirectory: (tabIdx: number, i: number) => void;
+  onCwdChange: (tabIdx: number, i: number, path: string) => void;
+  onStatusChange: (tabIdx: number, i: number, status: "run" | "idle") => void;
+  onToggleFullscreen: (tabIdx: number, i: number) => void;
+  onToggleDisable: (tabIdx: number, i: number) => void;
   // Per-pane booleans (not the raw indices) so a focus/menu change only re-renders
   // the two panes whose flag actually flipped — not all N.
   menuOpen: boolean;
@@ -62,12 +65,12 @@ const PaneAt = memo(function PaneAt({
   return (
     <PaneShell
       agent={name}
-      onRename={(n) => onRename(i, n)}
-      onMenuToggle={() => onMenuToggle(i)}
-      onToggleFullscreen={() => onToggleFullscreen(i)}
-      onToggleDisable={() => onToggleDisable(i)}
-      onFocus={() => onFocus(i)}
-      onPickDirectory={() => onPickDirectory(i)}
+      onRename={(n) => onRename(tabIdx, i, n)}
+      onMenuToggle={() => onMenuToggle(tabIdx, i)}
+      onToggleFullscreen={() => onToggleFullscreen(tabIdx, i)}
+      onToggleDisable={() => onToggleDisable(tabIdx, i)}
+      onFocus={() => onFocus(tabIdx, i)}
+      onPickDirectory={() => onPickDirectory(tabIdx, i)}
       status={disabled ? "idle" : status}
       model="sonnet-4.5"
       available={["console", "files", "branches", "changes", "log"]}
@@ -77,22 +80,22 @@ const PaneAt = memo(function PaneAt({
       fullscreen={fullscreen}
       disabled={disabled}
       hidden={hidden}
-      onViewChange={(v) => onViewChange(i, v)}
+      onViewChange={(v) => onViewChange(tabIdx, i, v)}
     >
       {disabled ? (
-        <DisabledConsole onEnable={() => onToggleDisable(i)} />
+        <DisabledConsole onEnable={() => onToggleDisable(tabIdx, i)} />
       ) : (
       <>
       {/* Terminal stays mounted so the PTY session survives view switches */}
       <TerminalView
         paneId={pid}
-        visible={view === "console"}
+        visible={view === "console" && !hidden}
         focused={focused}
         initialCwd={cwd}
         initCmd={initCmd}
-        onCwdChange={(path) => onCwdChange(i, path)}
-        onStatusChange={(s) => onStatusChange(i, s)}
-        onFocus={() => onFocus(i)}
+        onCwdChange={(path) => onCwdChange(tabIdx, i, path)}
+        onStatusChange={(s) => onStatusChange(tabIdx, i, s)}
+        onFocus={() => onFocus(tabIdx, i)}
       />
       {view === "files"    && <FilesView    small tree={[]} cwd={cwd} />}
       {view === "branches" && <BranchesView small branches={[]} />}
@@ -156,39 +159,52 @@ export function ConsoleScreen() {
   const paneStatusesRef = useRef(paneStatuses);
   useEffect(() => { paneStatusesRef.current = paneStatuses; }, [paneStatuses]);
 
-  const handleStatusChange = useCallback((paneIdx: number, status: "run" | "idle") => {
-    const pid = paneId(activeTabIdx, paneIdx);
+  const handleStatusChange = useCallback((tabIdx: number, paneIdx: number, status: "run" | "idle") => {
+    const pid = paneId(tabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
 
-    // The focus queue governs the cursor — it never moves on its own. A finished
-    // agent (run -> idle) joins the queue to be stepped through with Ctrl+Shift+N
-    // or surfaced by auto-advance-on-reply; you choose when to visit it. Going back
-    // to "run" clears it from the queue (handled by the reconcile sweep below).
-    if (status === "idle" && prev === "run") {
-      enqueueFocus(paneIdx);
-    } else if (status === "run" && prev === "idle") {
-      // A response was sent to this pane — if it's the one you're on, cycle to the
-      // next waiting pane (when auto-advance is on). Dequeuing the now-non-idle
-      // pane is handled by the reconcile sweep below, not here.
-      // "Active" pane is the maximized one when maximized, else the focused one.
-      const st = useAppStore.getState();
-      const activeIdx = st.fullscreenPaneIdx >= 0 ? st.fullscreenPaneIdx : st.focusedPaneIdx;
-      if (autoAdvanceOnReply && shouldAdvanceOnReply(prev, status, paneIdx, activeIdx)) advanceFocus();
+    // Focus queue is screen-level (one cursor across the app) so it only
+    // adjusts for the active tab. Background-tab status changes still drive
+    // the tab-state rollup below — so the Tabstrip badge for that tab updates
+    // when its agent finishes — but they don't move the cursor or trigger
+    // auto-advance-on-reply on the user's currently-visible tab.
+    if (tabIdx === useAppStore.getState().activeTabIdx) {
+      // The focus queue governs the cursor — it never moves on its own. A finished
+      // agent (run -> idle) joins the queue to be stepped through with Ctrl+Shift+N
+      // or surfaced by auto-advance-on-reply; you choose when to visit it. Going back
+      // to "run" clears it from the queue (handled by the reconcile sweep below).
+      if (status === "idle" && prev === "run") {
+        enqueueFocus(paneIdx);
+      } else if (status === "run" && prev === "idle") {
+        // A response was sent to this pane — if it's the one you're on, cycle to the
+        // next waiting pane (when auto-advance is on). Dequeuing the now-non-idle
+        // pane is handled by the reconcile sweep below, not here.
+        // "Active" pane is the maximized one when maximized, else the focused one.
+        const st = useAppStore.getState();
+        const activeIdx = st.fullscreenPaneIdx >= 0 ? st.fullscreenPaneIdx : st.focusedPaneIdx;
+        if (autoAdvanceOnReply && shouldAdvanceOnReply(prev, status, paneIdx, activeIdx)) advanceFocus();
+      }
     }
 
     setPaneStatuses((current) => {
       const next = { ...current, [pid]: status };
-      // Aggregate to tab-level state: any "run" → run, else any "on" → on, else idle
+      // Aggregate to tab-level state: any "run" → run, else any "on" → on, else idle.
+      // Source-tab's own paneCount — background-tab rollups must not be limited by
+      // the active tab's grid size.
+      const tab = useAppStore.getState().tabs[tabIdx];
+      if (!tab) return next;
+      const [tcols, trows] = tab.layout.split("×").map(Number);
+      const tPaneCount = (tcols || 1) * (trows || 1);
       let tabState: "run" | "on" | "idle" = "idle";
-      for (let i = 0; i < paneCount; i++) {
-        const s = next[paneId(activeTabIdx, i)] ?? "idle";
+      for (let i = 0; i < tPaneCount; i++) {
+        const s = next[paneId(tabIdx, i)] ?? "idle";
         if (s === "run") { tabState = "run"; break; }
         if (s === "on") tabState = "on";
       }
-      setTabState(activeTabIdx, tabState);
+      setTabState(tabIdx, tabState);
       return next;
     });
-  }, [activeTabIdx, paneCount, autoAdvanceOnReply, setTabState, enqueueFocus, advanceFocus]);
+  }, [autoAdvanceOnReply, setTabState, enqueueFocus, advanceFocus]);
 
   // Reconcile the focus queue with reality: a session stays queued only while it's
   // idle, so whenever statuses change, drop any queued pane that's no longer idle.
@@ -203,11 +219,13 @@ export function ConsoleScreen() {
   }, [paneStatuses, activeTabIdx, paneCount, reconcileFocusQueue]);
 
   // All per-pane handlers are stable (useCallback) so the memoized PaneAt
-  // children don't re-render on every ConsoleScreen commit. Store-action refs
-  // are already stable; transient indices (focus/menu/fullscreen) are read via
-  // getState() at call time rather than captured, keeping deps minimal.
-  const handleToggleDisable = useCallback((paneIdx: number) => {
-    const pid = paneId(activeTabIdx, paneIdx);
+  // children don't re-render on every ConsoleScreen commit. Each handler takes
+  // (tabIdx, paneIdx, …) so background-tab events (#186 mounts every tab's
+  // panes) route to the right tab's state — never to whichever tab happens to
+  // be active. Transient screen-level indices (focus/menu/fullscreen) are read
+  // via getState() at call time rather than captured, keeping deps minimal.
+  const handleToggleDisable = useCallback((tabIdx: number, paneIdx: number) => {
+    const pid = paneId(tabIdx, paneIdx);
     const st = useAppStore.getState();
     const next = !st.disabledPanes[pid];
     setPaneDisabled(pid, next);
@@ -217,41 +235,60 @@ export function ConsoleScreen() {
       // Re-arm the launch gate so a later batch re-enable is serialized again.
       resetLaunchGate(pid);
       setPaneStatuses((s) => ({ ...s, [pid]: "idle" }));
-      if (st.focusedPaneIdx === paneIdx) setFocusedPane(-1);
-      if (st.fullscreenPaneIdx === paneIdx) setFullscreenPane(-1);
+      // Screen-level focus / fullscreen only matter for the active tab — only
+      // clear them when this disable came from the active tab.
+      if (tabIdx === st.activeTabIdx) {
+        if (st.focusedPaneIdx === paneIdx) setFocusedPane(-1);
+        if (st.fullscreenPaneIdx === paneIdx) setFullscreenPane(-1);
+      }
     }
-  }, [activeTabIdx, setPaneDisabled, setFocusedPane, setFullscreenPane]);
+  }, [setPaneDisabled, setFocusedPane, setFullscreenPane]);
 
-  const handleCwdChange = useCallback((paneIdx: number, path: string) => {
-    setPaneCwd(paneId(activeTabIdx, paneIdx), path);
-  }, [activeTabIdx, setPaneCwd]);
+  const handleCwdChange = useCallback((tabIdx: number, paneIdx: number, path: string) => {
+    setPaneCwd(paneId(tabIdx, paneIdx), path);
+  }, [setPaneCwd]);
 
-  const handlePickDirectory = useCallback(async (paneIdx: number) => {
-    const pid = paneId(activeTabIdx, paneIdx);
+  const handlePickDirectory = useCallback(async (tabIdx: number, paneIdx: number) => {
+    const pid = paneId(tabIdx, paneIdx);
     const dir = await invoke<string | null>("pick_directory");
     if (!dir) return;
     // cd in the running shell (bash on Windows uses forward slashes)
     const posix = dir.replace(/\\/g, "/").replace(/^([A-Z]):/, (_, d) => `/${d.toLowerCase()}`);
     await invoke("pty_write", { paneId: pid, data: `cd "${posix}"\r` });
-    handleCwdChange(paneIdx, dir);
-  }, [activeTabIdx, handleCwdChange]);
+    handleCwdChange(tabIdx, paneIdx, dir);
+  }, [handleCwdChange]);
 
-  const handleRename = useCallback((paneIdx: number, n: string) => setPaneName(activeTabIdx, paneIdx, n), [activeTabIdx, setPaneName]);
-  const handleMenuToggle = useCallback((paneIdx: number) => setPaneMenu(useAppStore.getState().paneMenuOpenIdx === paneIdx ? -1 : paneIdx), [setPaneMenu]);
-  const handleViewChange = useCallback((paneIdx: number, v: ViewKey) => setPaneView(paneIdx, v), [setPaneView]);
+  const handleRename = useCallback((tabIdx: number, paneIdx: number, n: string) =>
+    setPaneName(tabIdx, paneIdx, n), [setPaneName]);
+  const handleMenuToggle = useCallback((_tabIdx: number, paneIdx: number) =>
+    setPaneMenu(useAppStore.getState().paneMenuOpenIdx === paneIdx ? -1 : paneIdx), [setPaneMenu]);
+  // paneViews is a shared index→view map (not per-tab), so tabIdx is
+  // intentionally unused here; switching tabs preserves view selections per
+  // pane slot. Promoting paneViews to per-tab is its own concern.
+  const handleViewChange = useCallback((_tabIdx: number, paneIdx: number, v: ViewKey) =>
+    setPaneView(paneIdx, v), [setPaneView]);
   // Focusing/viewing a pane does NOT dequeue it — it stays queued until you send
   // it a response (handled in handleStatusChange on idle -> run).
-  const handleFocusPane = useCallback((paneIdx: number) => setFocusedPane(paneIdx), [setFocusedPane]);
-  const handleToggleFullscreen = useCallback((paneIdx: number) => setFullscreenPane(useAppStore.getState().fullscreenPaneIdx === paneIdx ? -1 : paneIdx), [setFullscreenPane]);
+  const handleFocusPane = useCallback((_tabIdx: number, paneIdx: number) =>
+    setFocusedPane(paneIdx), [setFocusedPane]);
+  const handleToggleFullscreen = useCallback((_tabIdx: number, paneIdx: number) =>
+    setFullscreenPane(useAppStore.getState().fullscreenPaneIdx === paneIdx ? -1 : paneIdx),
+    [setFullscreenPane]);
 
-  function renderPane(i: number) {
-    const pid = paneId(activeTabIdx, i);
+  // Per-tab pane renderer. tabIdx + isFullscreenInTab let one helper render
+  // BOTH the active tab and the (display:none) background tabs from the same
+  // code path. hidden=true covers both "background tab" (whole grid invisible)
+  // and "active tab, but a sibling pane is fullscreened over us" — the
+  // downstream visible/render-pause logic then doesn't have to distinguish.
+  function renderPane(tabIdx: number, i: number, isFullscreenInTab: boolean) {
+    const pid = paneId(tabIdx, i);
+    const isActiveTab = tabIdx === activeTabIdx;
     return (
       <PaneAt
-        key={`${activeTab.runId ?? 0}-${i}`}
+        key={`${tabs[tabIdx].runId ?? 0}-${i}`}
         i={i}
-        tabIdx={activeTabIdx}
-        name={resolvePaneName(activeTabIdx, i, paneNames)}
+        tabIdx={tabIdx}
+        name={resolvePaneName(tabIdx, i, paneNames)}
         view={paneViews[i] ?? "console"}
         status={paneStatuses[pid] ?? "idle"}
         cwd={paneCwds[pid]}
@@ -265,19 +302,15 @@ export function ConsoleScreen() {
         onStatusChange={handleStatusChange}
         onToggleFullscreen={handleToggleFullscreen}
         onToggleDisable={handleToggleDisable}
-        menuOpen={paneMenuOpenIdx === i}
-        focused={focusedPaneIdx === i}
-        fullscreen={fullscreenPaneIdx === i}
-        disabled={!!disabledPanes[paneId(activeTabIdx, i)]}
-        hidden={isFullscreen && i !== fullscreenPaneIdx}
+        // Screen-level chrome state only applies to the active tab.
+        menuOpen={isActiveTab && paneMenuOpenIdx === i}
+        focused={isActiveTab && focusedPaneIdx === i}
+        fullscreen={isActiveTab && fullscreenPaneIdx === i}
+        disabled={!!disabledPanes[pid]}
+        hidden={!isActiveTab || (isFullscreenInTab && i !== fullscreenPaneIdx)}
       />
     );
   }
-
-  // Maximize keeps EVERY pane mounted (xterm + PTY + scrollback intact); the
-  // non-maximized panes are CSS-hidden, not unmounted. Disposing/recreating 15
-  // terminals on every toggle was the lag — and made the others look stopped.
-  const isFullscreen = fullscreenPaneIdx >= 0 && fullscreenPaneIdx < paneCount;
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -293,15 +326,34 @@ export function ConsoleScreen() {
           <span style={{ color: "var(--fg-dim)" }}>· Ctrl+Shift+C to exit</span>
         </div>
       )}
-      <div
-        className="console-grid"
-        style={{
-          gridTemplateColumns: isFullscreen ? "1fr" : `repeat(${cols}, 1fr)`,
-          gridTemplateRows:    isFullscreen ? "1fr" : `repeat(${rows}, 1fr)`,
-        }}
-      >
-        {Array.from({ length: paneCount }, (_, i) => renderPane(i))}
-      </div>
+      {/* Render every tab's grid; inactive tabs are display:none so their
+          xterm instances stay mounted (PTY listener live, scrollback intact)
+          across switches. Was unmounting the previous tab's panes on switch,
+          which disposed xterm and lost everything claude streamed while you
+          were elsewhere (#186). Pairs with #185's hide-and-buffer to keep
+          background-tab paint cost at zero. */}
+      {tabs.map((tab, ti) => {
+        const [tcols, trows] = tab.layout.split("×").map(Number);
+        const tPaneCount = (tcols || 1) * (trows || 1);
+        const isActiveTab = ti === activeTabIdx;
+        // Fullscreen-of-a-pane is screen-level — only meaningful on the active
+        // tab; background tabs keep their full grid so the layout is sane the
+        // moment the user switches back.
+        const isFullscreenInTab = isActiveTab && fullscreenPaneIdx >= 0 && fullscreenPaneIdx < tPaneCount;
+        return (
+          <div
+            key={ti}
+            className="console-grid"
+            style={{
+              display: isActiveTab ? "grid" : "none",
+              gridTemplateColumns: isFullscreenInTab ? "1fr" : `repeat(${tcols || 1}, 1fr)`,
+              gridTemplateRows:    isFullscreenInTab ? "1fr" : `repeat(${trows || 1}, 1fr)`,
+            }}
+          >
+            {Array.from({ length: tPaneCount }, (_, i) => renderPane(ti, i, isFullscreenInTab))}
+          </div>
+        );
+      })}
     </div>
   );
 }
