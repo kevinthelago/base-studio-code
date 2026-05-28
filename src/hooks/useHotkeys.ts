@@ -4,6 +4,7 @@ import { useAppStore } from "../store";
 import { computeBroadcastTargets } from "../lib/broadcast";
 import { adjustFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { nextFullscreen } from "../lib/consoleFocus";
+import { CLEAR_INPUT_BYTES } from "../lib/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/paneSelect";
 import type { Screen } from "../components/chrome/Rail";
 import type { ViewKey } from "../components/pane/ViewTabs";
@@ -147,6 +148,29 @@ export function useHotkeys() {
         e.preventDefault();
         e.stopPropagation();
         advanceFocus();
+        return;
+      }
+
+      // ── Ctrl+Shift+Backspace: clear the focused pane's pending input ────────
+      // Sends Ctrl+U to the PTY — kills cursor-to-start in bash readline (the
+      // whole line when the cursor's at the end, the common case) and clears
+      // claude's TUI input box. In broadcast mode mirrors to every pane on
+      // the active tab — including the focused one, since we send the bytes
+      // directly rather than via xterm.onData, so there's no double-write to
+      // worry about (#192).
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "Backspace") {
+        if (activeScreen !== "console") return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (consoleBroadcast) {
+          const activeTab = tabs[activeTabIdx];
+          if (!activeTab) return;
+          const [c, r] = activeTab.layout.split("×").map(Number);
+          const paneIds = Array.from({ length: (c || 1) * (r || 1) }, (_, i) => `t${activeTabIdx}p${i}`);
+          invoke("pty_broadcast", { paneIds, data: CLEAR_INPUT_BYTES });
+        } else if (focusedPaneIdx >= 0) {
+          invoke("pty_write", { paneId: `t${activeTabIdx}p${focusedPaneIdx}`, data: CLEAR_INPUT_BYTES });
+        }
         return;
       }
 
