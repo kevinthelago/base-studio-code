@@ -14,6 +14,7 @@ import { computeNextRun, appendRun, type Automation, type AutomationRun } from "
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
+import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
 
 // Sent as the first message to each console when a project tab is opened, so the
 // session starts by reading and executing the laid-out plan. Plain text only — no
@@ -335,6 +336,19 @@ interface AppStore {
   setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string) => void;
   setPlanDirector:       (projectId: string, enabled: boolean, role?: string) => void;
   clearPlanFleet:        (projectId: string) => void;
+
+  // Extensions — MCP servers + hooks the user configures, each scoped via its
+  // `projects` ([] = global). Written into a launched session's .mcp.json /
+  // .claude/settings.json so the agent actually gets them. Persisted.
+  extensions: ExtensionDef[];
+  addExtension:          (def: Omit<ExtensionDef, "id">) => void;
+  updateExtension:       (id: string, patch: Partial<ExtensionDef>) => void;
+  removeExtension:       (id: string) => void;
+  toggleExtension:       (id: string) => void;
+  setExtensionProjects:  (id: string, projects: string[]) => void;
+  // Resolved per-pane extensions (transient): set at session creation, read by
+  // TerminalView before launch (mirrors paneAllowedCommands).
+  paneExtensions: Record<string, ExtensionDef[]>;
 
   // Agent settings — the GLOBAL allowed-command tier (auto-approved in every
   // session). Per-project / per-repo tiers below combine additively with it.
@@ -684,6 +698,8 @@ export const useAppStore = create<AppStore>()(
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
             planFleet:              byKey(s.planFleet),
+            // Drop the deleted project id from every extension's scope list.
+            extensions:             s.extensions.map((e) => ({ ...e, projects: e.projects.filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             projectLocalRepos:      byKey(s.projectLocalRepos),
             projectAllowedCommands: byKey(s.projectAllowedCommands),
@@ -756,6 +772,8 @@ export const useAppStore = create<AppStore>()(
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
+          const newPaneExtensions        = { ...s.paneExtensions };
+          const triageExts               = resolveExtensions(s.extensions, projectId);
           // Checkpoint docs live beside the repo clones, under the project-name
           // key (always present; projectId defaults to "" for ad-hoc triage).
           const projKey = sanitizeProjectKey(projectName);
@@ -801,6 +819,7 @@ export const useAppStore = create<AppStore>()(
               // it via bsc-checkpoint; the next triage launch composes it onto the
               // prompt. Stable per (project, repo) so successive passes accumulate.
               newPaneCheckpointDocs[key] = checkpointDocRelpath(projKey, fullName ?? "");
+              newPaneExtensions[key] = triageExts;
               delete newDisabledPanes[key];
             } else {
               // Empty grid cell (more cells than repos) — start it disabled so it
@@ -824,6 +843,7 @@ export const useAppStore = create<AppStore>()(
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneContinue: newPaneContinue,
             paneAllowedCommands: newPaneAllowedCommands,
+            paneExtensions: newPaneExtensions,
             disabledPanes: newDisabledPanes,
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
             activeScreen: "console" as Screen,
@@ -867,11 +887,14 @@ export const useAppStore = create<AppStore>()(
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
+          const newPaneExtensions        = { ...s.paneExtensions };
           const newDisabledPanes         = { ...s.disabledPanes };
           const newPaneNames             = { ...s.paneNames };
 
           const safeKey = sanitizeProjectKey(projectKey);
           const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
+          // Same resolved extensions for every pane — they share the project scope.
+          const fleetExts = resolveExtensions(s.extensions, projectKey);
 
           let tabs = s.tabs;
           let firstTabIdx = -1;
@@ -900,6 +923,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneStartupPromptText[key];
               delete newPaneStartupPromptDocs[key];
               delete newPaneCheckpointDocs[key];
+              delete newPaneExtensions[key];
               if (i < count) {
                 const sess = chunk[i];
                 if (sess === null) {
@@ -930,6 +954,7 @@ export const useAppStore = create<AppStore>()(
                   tabPaneNames[i] = sess.name;
                 }
                 newPaneContinue[key] = resume;
+                newPaneExtensions[key] = fleetExts;
                 delete newDisabledPanes[key];
               } else {
                 // Empty grid cell — start disabled so it doesn't spawn an idle shell.
@@ -957,6 +982,7 @@ export const useAppStore = create<AppStore>()(
             paneContinue: newPaneContinue,
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneAllowedCommands: newPaneAllowedCommands,
+            paneExtensions: newPaneExtensions,
             disabledPanes: newDisabledPanes,
             paneNames: newPaneNames,
             activeScreen: "console" as Screen,
@@ -1062,6 +1088,21 @@ export const useAppStore = create<AppStore>()(
       clearPlanFleet: (projectId) =>
         set((s) => ({ planFleet: { ...s.planFleet, [projectId]: emptyFleet() } })),
 
+      extensions: [],
+      addExtension: (def) =>
+        set((s) => ({
+          extensions: [...s.extensions, { ...def, id: `ext_${Math.random().toString(36).slice(2, 8)}` }],
+        })),
+      updateExtension: (id, patch) =>
+        set((s) => ({ extensions: s.extensions.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
+      removeExtension: (id) =>
+        set((s) => ({ extensions: s.extensions.filter((e) => e.id !== id) })),
+      toggleExtension: (id) =>
+        set((s) => ({ extensions: s.extensions.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)) })),
+      setExtensionProjects: (id, projects) =>
+        set((s) => ({ extensions: s.extensions.map((e) => (e.id === id ? { ...e, projects } : e)) })),
+      paneExtensions: {},
+
       allowedCommands: [],
       addAllowedCommand: (cmd) =>
         set((s) => ({
@@ -1166,6 +1207,7 @@ export const useAppStore = create<AppStore>()(
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planFleet:             s.planFleet,
+        extensions:            s.extensions,
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint

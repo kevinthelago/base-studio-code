@@ -1,0 +1,143 @@
+// Pure helpers for the Extensions feature — the ExtensionDef model, per-session
+// resolution, catalog → definition templates, and the conversion to the backend
+// payloads written into a session's `.mcp.json` / `.claude/settings.json`.
+//
+// Free of React / Tauri imports so it can be unit-tested and shared between the
+// store, the Extensions screen, and TerminalView.
+
+export type ExtKind = "mcp" | "hook";
+export type McpTransport = "stdio" | "http";
+
+/**
+ * A user-configured extension: an MCP server Claude connects to, or a lifecycle
+ * hook Claude runs. Scoped per-extension via {@link ExtensionDef.projects}.
+ */
+export interface ExtensionDef {
+  id: string;
+  kind: ExtKind;
+  name: string;
+  enabled: boolean;
+  /** `[]` = every project (global); otherwise the project ids it applies to. */
+  projects: string[];
+  // ── MCP server ──
+  transport?: McpTransport;
+  command?: string;   // stdio binary
+  args?: string;      // stdio args (space-split at write time)
+  url?: string;       // http endpoint
+  // ── Hook ──
+  event?: string;     // PreToolUse | PostToolUse | Stop | …
+  matcher?: string;   // optional tool matcher (regex)
+  hookCommand?: string;
+  // ── shared ──
+  env?: Array<[string, string]>;
+}
+
+/**
+ * The enabled extensions that apply to a session in `projectId`: a def applies when
+ * it is enabled AND either global (`projects` empty) or scoped to this project. An
+ * empty `projectId` (no project) yields only global defs.
+ */
+export function resolveExtensions(all: ExtensionDef[], projectId: string): ExtensionDef[] {
+  return all.filter(
+    e => e.enabled && (e.projects.length === 0 || (!!projectId && e.projects.includes(projectId))),
+  );
+}
+
+// ── Backend payloads ──────────────────────────────────────────────────────────
+// Shapes handed to `ensure_session_settings`; field names match the Rust structs.
+
+export interface McpServerPayload {
+  name: string;
+  transport: McpTransport;
+  command?: string;
+  args: string[];
+  url?: string;
+  env: Array<[string, string]>;
+}
+
+export interface HookPayload {
+  event: string;
+  matcher: string;
+  command: string;
+}
+
+/** An MCP `ExtensionDef` → its `.mcp.json` payload, or null if it's incomplete
+ *  (stdio without a command, http without a url, or not an MCP def). */
+export function toMcpPayload(e: ExtensionDef): McpServerPayload | null {
+  if (e.kind !== "mcp") return null;
+  if (e.transport === "http") {
+    if (!e.url) return null;
+    return { name: e.name, transport: "http", args: [], url: e.url, env: e.env ?? [] };
+  }
+  if (!e.command) return null;
+  return {
+    name: e.name,
+    transport: "stdio",
+    command: e.command,
+    args: (e.args ?? "").split(/\s+/).filter(Boolean),
+    env: e.env ?? [],
+  };
+}
+
+/** A hook `ExtensionDef` → its settings.json payload, or null if incomplete. */
+export function toHookPayload(e: ExtensionDef): HookPayload | null {
+  if (e.kind !== "hook" || !e.event || !e.hookCommand) return null;
+  return { event: e.event, matcher: e.matcher ?? "", command: e.hookCommand };
+}
+
+/** Split a resolved extension list into the two backend payload lists. */
+export function toSessionPayloads(defs: ExtensionDef[]): { mcp: McpServerPayload[]; hooks: HookPayload[] } {
+  const mcp: McpServerPayload[] = [];
+  const hooks: HookPayload[] = [];
+  for (const e of defs) {
+    const m = toMcpPayload(e);
+    if (m) { mcp.push(m); continue; }
+    const h = toHookPayload(e);
+    if (h) hooks.push(h);
+  }
+  return { mcp, hooks };
+}
+
+// ── Catalog templates ─────────────────────────────────────────────────────────
+// Pre-filled config for well-known catalog entries (keyed by catalog item name).
+// Unknown names fall back to a blank stdio MCP the user completes.
+
+const CATALOG_TEMPLATES: Record<string, Partial<ExtensionDef>> = {
+  "Postgres":     { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres", env: [["POSTGRES_CONNECTION_STRING", ""]] },
+  "SQLite":       { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-sqlite --db-path ./data.db" },
+  "Slack":        { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-slack", env: [["SLACK_BOT_TOKEN", ""], ["SLACK_TEAM_ID", ""]] },
+  "Brave Search": { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-brave-search", env: [["BRAVE_API_KEY", ""]] },
+  "Stripe":       { kind: "mcp", transport: "stdio", command: "npx", args: "-y @stripe/mcp --tools=all", env: [["STRIPE_SECRET_KEY", ""]] },
+  "Sentry":       { kind: "mcp", transport: "http", url: "https://mcp.sentry.dev/sse" },
+  "Linear":       { kind: "mcp", transport: "http", url: "https://mcp.linear.app/sse" },
+  "Notion":       { kind: "mcp", transport: "http", url: "https://mcp.notion.com/mcp" },
+  "Block PII":    { kind: "hook", event: "PreToolUse",  matcher: "Write|Edit", hookCommand: "" },
+  "Auto-format":  { kind: "hook", event: "PostToolUse", matcher: "Write|Edit", hookCommand: "" },
+};
+
+/** A ready-to-add ExtensionDef (minus id) for a catalog entry — disabled + global
+ *  by default; the caller assigns the id and the user fills any blank config. */
+export function defFromCatalog(name: string): Omit<ExtensionDef, "id"> {
+  const t = CATALOG_TEMPLATES[name] ?? { kind: "mcp" as ExtKind, transport: "stdio" as McpTransport, command: "", args: "" };
+  return {
+    kind: t.kind ?? "mcp",
+    name,
+    enabled: false,
+    projects: [],
+    transport: t.transport,
+    command: t.command,
+    args: t.args,
+    url: t.url,
+    event: t.event,
+    matcher: t.matcher,
+    hookCommand: t.hookCommand,
+    env: t.env,
+  };
+}
+
+/** A blank custom extension of the given kind, ready for the add-custom form. */
+export function blankExtension(kind: ExtKind): Omit<ExtensionDef, "id"> {
+  return kind === "hook"
+    ? { kind, name: "", enabled: false, projects: [], event: "PostToolUse", matcher: "", hookCommand: "" }
+    : { kind, name: "", enabled: false, projects: [], transport: "stdio", command: "", args: "", env: [] };
+}

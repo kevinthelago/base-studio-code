@@ -3,6 +3,7 @@ import { useAppStore, TRIAGE_PROMPT } from "../store";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { QueuedPane } from "../lib/focusQueue";
 import type { FleetPlan } from "../screens/projects/planSections";
+import type { ExtensionDef } from "../lib/extensions";
 
 const RESET_STATE = {
   tabs: [
@@ -1039,5 +1040,42 @@ describe("agent fleet store", () => {
     expect(st.paneNames[idx][0]).toBe("director");
     expect(st.paneNames[idx][1]).toBe("Auth UI");
     expect(st.paneNames[idx][2]).toBeUndefined();
+  });
+});
+
+describe("extensions store", () => {
+  it("add (assigns id) / toggle / update / setProjects / remove", () => {
+    useAppStore.setState({ extensions: [] });
+    const s = useAppStore.getState();
+    s.addExtension({ kind: "mcp", name: "fs", enabled: false, projects: [], transport: "stdio", command: "npx", args: "" });
+    const id = useAppStore.getState().extensions[0].id;
+    expect(useAppStore.getState().extensions).toHaveLength(1);
+    expect(id).toMatch(/^ext_/);
+    s.toggleExtension(id);
+    expect(useAppStore.getState().extensions[0].enabled).toBe(true);
+    s.updateExtension(id, { command: "node" });
+    expect(useAppStore.getState().extensions[0].command).toBe("node");
+    s.setExtensionProjects(id, ["P1"]);
+    expect(useAppStore.getState().extensions[0].projects).toEqual(["P1"]);
+    s.removeExtension(id);
+    expect(useAppStore.getState().extensions).toHaveLength(0);
+  });
+
+  it("fleetStartProject resolves only enabled global + this-project extensions onto panes", () => {
+    const exts: ExtensionDef[] = [
+      { id: "g",     kind: "mcp", name: "g", enabled: true,  projects: [] },
+      { id: "p",     kind: "mcp", name: "p", enabled: true,  projects: ["proj-key"] },
+      { id: "off",   kind: "mcp", name: "x", enabled: false, projects: [] },
+      { id: "other", kind: "mcp", name: "o", enabled: true,  projects: ["zzz"] },
+    ];
+    useAppStore.setState({ bscBaseDir: "/base", extensions: exts });
+    const fleet: FleetPlan = {
+      recommended: 1, reasoning: "", director: { enabled: false },
+      streams: [{ id: "s0", name: "S0", repo: "own/web", owns: [], issues: [], dependsOn: [] }],
+    };
+    useAppStore.getState().fleetStartProject("ExtP", fleet, "proj-key");
+    const idx = useAppStore.getState().findFleetTabIdx("ExtP");
+    const ids = (useAppStore.getState().paneExtensions[`t${idx}p0`] ?? []).map(e => e.id);
+    expect(ids).toEqual(["g", "p"]);
   });
 });
