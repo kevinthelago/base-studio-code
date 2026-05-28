@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   scrollbackForPaneCount,
+  totalMountedPaneCount,
   clampFontSize,
   adjustFontSize,
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -13,22 +14,45 @@ describe("scrollbackForPaneCount", () => {
     expect(scrollbackForPaneCount(1)).toBe(10000);
   });
 
-  it("scales scrollback down as the grid grows", () => {
+  it("scales scrollback down as the workspace grows", () => {
     const single = scrollbackForPaneCount(1);
     const quad   = scrollbackForPaneCount(4);
     const nine   = scrollbackForPaneCount(9);
     const grid16 = scrollbackForPaneCount(16);
+    const heavy32 = scrollbackForPaneCount(32);
+    const wide50  = scrollbackForPaneCount(50);
     expect(single).toBeGreaterThan(quad);
     expect(quad).toBeGreaterThan(nine);
     expect(nine).toBeGreaterThan(grid16);
+    expect(grid16).toBeGreaterThan(heavy32);
+    expect(heavy32).toBeGreaterThan(wide50);
   });
 
-  it("gives the 4×4 triage grid the smallest buffer", () => {
+  it("preserves the single-tab 4×4 budget (no regression for the common case)", () => {
     expect(scrollbackForPaneCount(16)).toBe(1500);
   });
 
-  it("treats pane counts beyond 16 the same as the largest tier", () => {
-    expect(scrollbackForPaneCount(25)).toBe(scrollbackForPaneCount(16));
+  it("trims further for cross-tab workspaces — 17+ panes drops below the 16-pane budget (#52 / #187)", () => {
+    // Two heavy tabs (e.g. one triage + one fleet) shouldn't double the
+    // workspace-wide scrollback budget vs. a single tab.
+    expect(scrollbackForPaneCount(17)).toBeLessThan(scrollbackForPaneCount(16));
+    // And large fleets across many tabs trim again.
+    expect(scrollbackForPaneCount(33)).toBeLessThan(scrollbackForPaneCount(32));
+  });
+});
+
+describe("totalMountedPaneCount", () => {
+  it("sums every tab's grid size", () => {
+    const tabs = [{ layout: "2×2" }, { layout: "4×4" }, { layout: "1×1" }];
+    expect(totalMountedPaneCount(tabs)).toBe(4 + 16 + 1);
+  });
+
+  it("returns 0 for no tabs", () => {
+    expect(totalMountedPaneCount([])).toBe(0);
+  });
+
+  it("falls back to 1×1 for an unparseable layout (robust against corrupt persisted state)", () => {
+    expect(totalMountedPaneCount([{ layout: "garbage" }])).toBe(1);
   });
 });
 
