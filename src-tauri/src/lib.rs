@@ -1462,6 +1462,11 @@ session run with as little human input as possible. Every worker kickoff must:
   you are genuinely blocked and cannot proceed, pipe a one-line reason into
   `bsc-blocked`. Verify against the repo's tests and CI rather than asking whether
   your work is correct.*
+- Carry the **checkpoint rule** (so a relaunched session resumes where it left off):
+  *When you pause or finish a work session, pipe a short "where I left off + the next
+  step" into `bsc-checkpoint` on stdin.* This matters most when several agents share
+  one repo — each agent has its own checkpoint, but only its checkpoint (not the live
+  conversation) is guaranteed to carry across a relaunch.
 
 The **director kickoff** instead tells it to watch each repo's open PRs and issues
 and each repo's `DECISIONS.md`, merge non-conflicting PRs, resolve or escalate the
