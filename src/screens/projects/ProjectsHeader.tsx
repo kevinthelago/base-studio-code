@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { sanitizeProjectKey, projectRepoCwd } from "../../lib/projectPaths";
-import { Dialog } from "../../components/Dialog";
 
 /** Mirror of the Rust sanitize_project_key: ASCII alnum/dash kept, else `_`, capped 80. */
 const sanitizeKey = sanitizeProjectKey;
@@ -202,7 +201,12 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   const { projectsBoardTab, setProjectsBoardTab, setProjectsView, setPlanningContext, setPlanningSession, triageStartProject, findTriageTabIdx, setActiveTab, setScreen, setKbProjectScope } = useAppStore();
   const [triaging, setTriaging] = useState(false);
-  const [rerunOpen, setRerunOpen] = useState(false);
+  // A persisted triage tab for this project means we've triaged it before:
+  // the resume primitives (per-pane cwd/startup-prompt/checkpoint/--continue) are
+  // already on disk and in the store, so a click should re-open without re-cloning
+  // or re-running setup. When false (no prior tab), the button stays "triage" and
+  // the cold-start path (clone + triageStartProject) runs (#183).
+  const hasResumable = findTriageTabIdx(project.name) >= 0;
 
   // Open the Knowledge Base scoped to this project's documents, keyed by the
   // canonical (title-derived) folder the planner writes to. We intentionally do
@@ -231,29 +235,32 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
     }
   }
 
+  // Primary button: one click. Resumes if we've triaged this project before
+  // (persisted tab → existing per-pane config + worktrees), else cold-starts.
+  // Used to gate this on a modal asking "open existing or re-run?" — the modal
+  // made re-opening feel like restarting (#183).
   function handleTriage() {
     if (!project.repos.length || triaging) return;
-    // A triage tab already exists → confirm whether to re-run or just open it
-    // (pressing triage used to silently switch, which read as "nothing happened").
-    if (findTriageTabIdx(project.name) >= 0) {
-      setRerunOpen(true);
-      return;
+    if (hasResumable) {
+      openExistingTriage();
+    } else {
+      launchTriage();
     }
-    launchTriage();
   }
 
-  // Open the existing triage tab without re-running.
+  // Open the existing triage tab — TerminalView's mount effect re-spawns each
+  // pane's PTY using the persisted cwd / startup-prompt / checkpoint /
+  // continue=true, so claude --continue resumes the prior conversation. No
+  // clone_repo, no triageStartProject — those only run on cold start.
   function openExistingTriage() {
-    setRerunOpen(false);
     const idx = findTriageTabIdx(project.name);
     if (idx >= 0) { setActiveTab(idx); setScreen("console"); }
   }
 
-  // Re-run triage on the existing tab: kill the panes' sessions so the rebuilt
-  // (runId-bumped) tab relaunches each repo's pass fresh — resuming via --continue
-  // and the per-repo checkpoint.
+  // Escape hatch: rebuild the triage tab in place (runId bump remounts panes).
+  // Kills the live sessions first so claude relaunches with the kickoff prompt
+  // again — useful when worktrees are stale or you want a clean slate.
   async function rerunTriage() {
-    setRerunOpen(false);
     const idx = findTriageTabIdx(project.name);
     if (idx < 0) return;
     const [cols, rows] = (useAppStore.getState().tabs[idx].layout).split("×").map(Number);
@@ -317,33 +324,31 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
             onClick={handlePlan}
             style={{ fontFamily: "var(--mono)", fontSize: 11 }}
           >⌘ plan →</button>
+          {/* Re-triage escape hatch — only shown when there is a prior tab to rebuild.
+              Kept as a separate ghost button so the primary stays the one-click resume. */}
+          {hasResumable && !triaging && (
+            <button
+              className="btn ghost"
+              onClick={rerunTriage}
+              title="Re-triage this project: relaunch each repo's pass fresh (resumes via --continue)"
+              style={{ fontFamily: "var(--mono)", fontSize: 11 }}
+            >↻ re-triage</button>
+          )}
           <button
             className="btn primary"
             onClick={handleTriage}
             disabled={triaging || project.repos.length === 0}
-            title={project.repos.length === 0 ? "no repos linked to this project" : undefined}
+            title={
+              project.repos.length === 0 ? "no repos linked to this project"
+              : hasResumable ? "Open the existing triage tab — sessions resume via claude --continue"
+              : undefined
+            }
             style={{ fontFamily: "var(--mono)", fontSize: 11 }}
-          >{triaging ? "setting up…" : "⚡ triage"}</button>
+          >{triaging ? "setting up…" : hasResumable ? "↗ open" : "⚡ triage"}</button>
         </div>
       </div>
 
       <RepoResolverStrip project={project} />
-
-      {rerunOpen && (
-        <Dialog
-          title="Re-run triage?"
-          onDismiss={() => setRerunOpen(false)}
-          actions={
-            <>
-              <button className="btn ghost" onClick={openExistingTriage}>Open existing</button>
-              <button className="btn primary" onClick={rerunTriage}>Re-run triage</button>
-            </>
-          }
-        >
-          A triage tab for <strong>{project.name}</strong> is already open. Re-running
-          relaunches each repo's triage pass, resuming where the last pass left off.
-        </Dialog>
-      )}
 
       <div style={{
         height: 36, marginTop: 8,
