@@ -58,7 +58,10 @@ export function ExtensionsScreen() {
   const setExtensionProjects = useAppStore(s => s.setExtensionProjects);
   const githubToken      = useAppStore(s => s.githubToken);
 
-  const [tab, setTab] = useState<Tab>("installed");
+  // Default to the catalog when nothing is installed yet — the installed tab would
+  // be empty, and the catalog is where you start. (Hydration completes before this
+  // screen mounts, so the count is reliable.)
+  const [tab, setTab] = useState<Tab>(() => (extensions.length === 0 ? "catalog" : "installed"));
   const [scope, setScope] = useState<Scope>("global");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -146,6 +149,21 @@ export function ExtensionsScreen() {
 
   // ── installed view ───────────────────────────────────────────────────────────
   function installedView() {
+    // Nothing installed yet → a clear CTA into the catalog instead of empty groups.
+    if (extensions.length === 0) {
+      return (
+        <div style={{
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          gap: 12, padding: "64px 24px", textAlign: "center",
+        }}>
+          <h3 style={{ margin: 0 }}>No extensions installed</h3>
+          <p className="hint" style={{ maxWidth: 380, margin: 0 }}>
+            Add MCP servers and hooks from the catalog to give your agents new tools and lifecycle automations.
+          </p>
+          <button className="btn primary" onClick={() => setTab("catalog")}>Browse the catalog →</button>
+        </div>
+      );
+    }
     return (
       <>
         {GROUPS.map(g => {
