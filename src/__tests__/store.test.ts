@@ -100,18 +100,23 @@ describe("terminal font zoom", () => {
 // ── Focus queue ─────────────────────────────────────────────────────────────────
 
 describe("focus queue", () => {
-  it("enqueueFocus appends (deduped) waiting panes on the active tab", () => {
+  it("enqueueFocus appends (deduped) waiting panes — explicitly per-tab (#77)", () => {
     const s = useAppStore.getState();
-    s.enqueueFocus(2);
-    s.enqueueFocus(2);            // dup ignored
-    s.enqueueFocus(4);
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 2 }, { tab: 0, pane: 4 }]);
+    s.enqueueFocus(0, 2);
+    s.enqueueFocus(0, 2);            // dup ignored
+    s.enqueueFocus(0, 4);
+    // Same pane index on a different tab is a distinct entry — the queue is
+    // global across tabs (a background-tab idle still joins).
+    s.enqueueFocus(1, 2);
+    expect(useAppStore.getState().focusQueue).toEqual([
+      { tab: 0, pane: 2 }, { tab: 0, pane: 4 }, { tab: 1, pane: 2 },
+    ]);
   });
 
-  it("removeFocus drops a pane from the active tab's queue", () => {
-    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 }] });
-    useAppStore.getState().removeFocus(2);
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 3 }]);
+  it("removeFocus targets the (tab, pane) you name — not the active tab implicitly", () => {
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 2 }, { tab: 1, pane: 2 }] });
+    useAppStore.getState().removeFocus(1, 2);
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 2 }]);
   });
 
   it("advanceFocus cycles to the next waiting pane WITHOUT dequeuing", () => {
@@ -174,15 +179,24 @@ describe("focus queue", () => {
     expect(useAppStore.getState().autoAdvanceOnReply).toBe(false);
   });
 
-  it("reconcileFocusQueue prunes the active tab's panes that are no longer waiting", () => {
-    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 }] });
-    useAppStore.getState().reconcileFocusQueue([1, 3]); // pane 2 no longer idle
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 3 }]);
+  it("reconcileFocusQueue prunes panes across every tab whose waiting set is supplied (#77)", () => {
+    useAppStore.setState({ focusQueue: [
+      { tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 },
+      { tab: 1, pane: 5 }, { tab: 1, pane: 7 },
+    ] });
+    useAppStore.getState().reconcileFocusQueue(new Map([
+      [0, new Set([1, 3])],
+      [1, new Set([5])],
+    ]));
+    expect(useAppStore.getState().focusQueue).toEqual([
+      { tab: 0, pane: 1 }, { tab: 0, pane: 3 }, { tab: 1, pane: 5 },
+    ]);
   });
 
-  it("reconcileFocusQueue leaves other tabs' entries untouched", () => {
-    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 1 }, { tab: 1, pane: 2 }] });
-    useAppStore.getState().reconcileFocusQueue([]); // nothing waiting on the active tab
+  it("reconcileFocusQueue leaves tabs absent from the map alone (no live data → no assumption)", () => {
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 1 }, { tab: 1, pane: 2 }] });
+    useAppStore.getState().reconcileFocusQueue(new Map([[0, new Set<number>()]]));
+    // Tab 0 has no waiting panes → its entries pruned. Tab 1 absent from map → kept.
     expect(useAppStore.getState().focusQueue).toEqual([{ tab: 1, pane: 2 }]);
   });
 });

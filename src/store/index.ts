@@ -126,14 +126,18 @@ interface AppStore {
   // (advanceFocus), which switches tabs when the next pane lives on another tab.
   // Persists across tab switches; enqueue/remove/reconcile target the active tab.
   focusQueue: QueuedPane[];
-  enqueueFocus: (pane: number) => void;
-  removeFocus: (pane: number) => void;
+  // Enqueue / remove take (tab, pane) so background-tab status changes can
+  // participate too — every tab's TerminalView is mounted after #187, so
+  // ConsoleScreen sees idle transitions for all panes and routes them here (#77).
+  enqueueFocus: (tab: number, pane: number) => void;
+  removeFocus: (tab: number, pane: number) => void;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
-  // Prune the active tab's queued panes to just the still-idle ones (passed in).
-  // A session stays queued only while idle; this sweep self-heals any desync.
-  // Other tabs' entries are left untouched (their live status isn't tracked here).
-  reconcileFocusQueue: (waiting: number[]) => void;
+  // Prune queued panes across every tab whose live status the caller has —
+  // dropped if their pane index isn't in that tab's waiting set. Tabs absent
+  // from the map (no live data) keep their entries, so a transient missing-tab
+  // moment can't silently drop queued panes.
+  reconcileFocusQueue: (waitingByTab: ReadonlyMap<number, ReadonlySet<number>>) => void;
   // Global terminal font size (px), shared by every console pane (persisted).
   // Adjusted via Ctrl++ / Ctrl+- / Ctrl+0; clamped to the legible range.
   terminalFontSize: number;
@@ -414,13 +418,13 @@ export const useAppStore = create<AppStore>()(
       consoleBroadcast: false,
       setConsoleBroadcast: (v) => set({ consoleBroadcast: v }),
       focusQueue: [],
-      enqueueFocus: (pane) =>
-        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, { tab: s.activeTabIdx, pane }) })),
-      removeFocus: (pane) =>
-        set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, { tab: s.activeTabIdx, pane }) })),
+      enqueueFocus: (tab, pane) =>
+        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, { tab, pane }) })),
+      removeFocus: (tab, pane) =>
+        set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, { tab, pane }) })),
       clearFocusQueue: () => set({ focusQueue: [] }),
-      reconcileFocusQueue: (waiting) =>
-        set((s) => ({ focusQueue: reconcileQueue(s.focusQueue, s.activeTabIdx, waiting) })),
+      reconcileFocusQueue: (waitingByTab) =>
+        set((s) => ({ focusQueue: reconcileQueue(s.focusQueue, waitingByTab) })),
       // Cycle to the next waiting pane relative to the one you're on (maximized
       // pane if maximized, else focused). Focuses it — switching to its tab first
       // when it lives on another tab — and swaps the maximized pane to it so you
