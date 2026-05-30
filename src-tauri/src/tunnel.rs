@@ -573,8 +573,12 @@ mod transport {
             if *shutdown_rx.borrow() {
                 break;
             }
+            log::info!("tunnel: connecting to relay (room {room})");
             match session(&app, &relay_url, &room, &static_priv, &mut shutdown_rx).await {
-                Ok(()) => backoff = 1,
+                Ok(()) => {
+                    backoff = 1;
+                    log::info!("tunnel: relay session closed cleanly");
+                }
                 Err(e) => log::warn!("tunnel: relay session ended: {e}"),
             }
             if let Some(ts) = app.try_state::<TunnelState>() {
@@ -606,16 +610,24 @@ mod transport {
             relay_url.to_string()
         };
         let url = format!("{scheme}/connect?room={room}&role=host");
-        let (ws, _) = connect_async(&url).await.map_err(|e| e.to_string())?;
+        let (ws, _) = connect_async(&url)
+            .await
+            .map_err(|e| format!("relay dial failed: {e}"))?;
         let (mut sink, mut read) = ws.split();
+        log::info!("tunnel: connected to relay as host; waiting for mobile peer (room {room})");
 
         // Noise IK responder: read the mobile's first handshake message, answer it.
         let mut hs = noise::responder(static_priv).map_err(|e| e.to_string())?;
         let mut scratch = vec![0u8; 65535];
         let msg1 = next_binary(&mut read).await?;
-        hs.read_message(&msg1, &mut scratch).map_err(|e| e.to_string())?;
-        let n = hs.write_message(&[], &mut scratch).map_err(|e| e.to_string())?;
+        log::info!("tunnel: peer joined — handshake msg1 received ({} bytes)", msg1.len());
+        hs.read_message(&msg1, &mut scratch)
+            .map_err(|e| format!("handshake msg1 read failed: {e}"))?;
+        let n = hs
+            .write_message(&[], &mut scratch)
+            .map_err(|e| format!("handshake msg2 write failed: {e}"))?;
         sink.send(Message::Binary(scratch[..n].to_vec())).await.map_err(|e| e.to_string())?;
+        log::debug!("tunnel: handshake msg2 sent ({n} bytes); awaiting auth");
         let mut noise_tx = hs.into_transport_mode().map_err(|e| e.to_string())?;
 
         // First app frame must be `auth`; validate the pairing secret.
@@ -627,8 +639,10 @@ mod transport {
                     .map(|s| s.psk())
                     .unwrap_or_default();
                 if !ct_eq(&token, &psk) {
+                    log::warn!("tunnel: auth rejected — pairing secret mismatch (stale QR or wrong desktop?)");
                     return Err("auth rejected (bad pairing secret)".into());
                 }
+                log::info!("tunnel: auth accepted");
             }
             _ => return Err("expected auth as the first frame".into()),
         }
