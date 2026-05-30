@@ -265,3 +265,44 @@ describe("wake planning + inbox view", () => {
     ]);
   });
 });
+
+describe("woke event + ready (idempotent actuation)", () => {
+  const TS = "2026-05-30T18:00:00Z";
+
+  it("parses a woke line", () => {
+    expect(parseCoordLine(`${TS}\tt2p1\twoke\t\t`)).toEqual({ type: "woke", session: "t2p1", at: Date.parse(TS) });
+  });
+
+  it("ingestCoordLog.ready holds waiters whose deps landed but have no woke ack", () => {
+    const log = [
+      `${TS}\tt2p1\tblocked\t#1`,
+      `${TS}\tx\tmerged\t#1`, // t2p1 now ready, unacked
+    ];
+    const { ready, woken } = ingestCoordLog(log);
+    expect(woken.map((w) => w.session)).toEqual(["t2p1"]);
+    expect(ready.map((w) => w.session)).toEqual(["t2p1"]);
+  });
+
+  it("a woke event removes the session from ready (no re-actuation)", () => {
+    const log = [
+      `${TS}\tt2p1\tblocked\t#1`,
+      `${TS}\tx\tmerged\t#1`,
+      `${TS}\tt2p1\twoke\t\t`, // acked → no longer ready
+    ];
+    const { ready, woken } = ingestCoordLog(log);
+    expect(woken.map((w) => w.session)).toEqual(["t2p1"]); // it did become ready once
+    expect(ready).toHaveLength(0);                          // but is acked, so not pending
+  });
+
+  it("re-blocking after a woke makes it ready again", () => {
+    const log = [
+      `${TS}\tt2p1\tblocked\t#1`,
+      `${TS}\tx\tmerged\t#1`,
+      `${TS}\tt2p1\twoke\t\t`,
+      `${TS}\tt2p1\tblocked\t#2`, // blocks again on a new dep
+      `${TS}\tx\tclosed\t#2`,      // ready again, unacked
+    ];
+    const { ready } = ingestCoordLog(log);
+    expect(ready.map((w) => w.session)).toEqual(["t2p1"]);
+  });
+});
