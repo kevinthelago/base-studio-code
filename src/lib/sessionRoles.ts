@@ -8,7 +8,11 @@
 // write-path guard on the write tool. Free of React / xterm / Tauri imports so it's
 // unit-testable in isolation (matches allowedCommands.ts).
 
-export type SessionRole = "planner" | "worker" | "director" | "triage";
+export type SessionRole =
+  | "planner" | "worker" | "director" | "triage"
+  // Pipeline-stage roles (#220): tester runs build/tests, reviewer reads + reviews,
+  // conductor sequences stages. All are least-privilege (read-only, no code writes).
+  | "tester" | "reviewer" | "conductor";
 
 /** Access to a capability: none < read < write. */
 export type AccessTier = "none" | "read" | "write";
@@ -36,6 +40,10 @@ export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = {
   worker: { role: "worker", github: "read", git: "write", code: "write", writeGlobs: [] },
   director: { role: "director", github: "write", git: "write", code: "none", writeGlobs: [] },
   triage: { role: "triage", github: "write", git: "none", code: "none", writeGlobs: [] },
+  // #220 stage roles -- least privilege: observe + report, never edit or merge.
+  tester: { role: "tester", github: "read", git: "read", code: "none", writeGlobs: [] },
+  reviewer: { role: "reviewer", github: "read", git: "read", code: "none", writeGlobs: [] },
+  conductor: { role: "conductor", github: "read", git: "read", code: "none", writeGlobs: [] },
 };
 
 /** A role capability, optionally narrowed/widened per assignment (e.g. writeGlobs). */
