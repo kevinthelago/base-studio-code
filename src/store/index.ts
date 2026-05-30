@@ -219,7 +219,7 @@ interface AppStore {
   activeRepoName: string;
   githubPageMode: "summary" | "repos";
   setGithubPageMode: (v: "summary" | "repos") => void;
-  githubActiveTab: "overview" | "actions" | "hooks";
+  githubActiveTab: "overview" | "actions";
   setGithubTab: (tab: AppStore["githubActiveTab"]) => void;
   setGithubToken: (token: string) => void;
   setGithubUser: (user: GithubUser | null) => void;
@@ -319,8 +319,8 @@ interface AppStore {
   // navigating from a project's "documents" button. Transient — NOT persisted.
   kbProjectScope: { keys: string[]; label: string } | null;
   setKbProjectScope: (scope: { keys: string[]; label: string } | null) => void;
-  projectsBoardTab: "board" | "roadmap" | "issues" | "insights";
-  setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights") => void;
+  projectsBoardTab: "board" | "roadmap" | "issues" | "insights" | "hooks";
+  setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights" | "hooks") => void;
   projectsDrawerIssue: number | null;
   setProjectsDrawerIssue: (n: number | null) => void;
   planningPitch: string;
