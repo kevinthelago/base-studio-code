@@ -5,6 +5,7 @@ import {
   registerWaiter, satisfy, fail, stalledWaiters,
   parseCoordLine, applyCoordEvent, ingestCoordLog,
   wakePromptFor, planWakes, coordinationSummary,
+  readinessAt, isFreshlyReady,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -304,5 +305,24 @@ describe("woke event + ready (idempotent actuation)", () => {
     ];
     const { ready } = ingestCoordLog(log);
     expect(ready.map((w) => w.session)).toEqual(["t2p1"]);
+  });
+});
+
+describe("auto-wake recency gate", () => {
+  const dep = { kind: "issue", number: 1 } as const;
+  const w = { session: "t0p0", deps: [dep], registeredAt: 0 };
+
+  it("readinessAt is the newest satisfy time among deps", () => {
+    let s = emptyCoordState();
+    s = satisfy(s, dep, "merged", 5000).state;
+    expect(readinessAt(w, s)).toBe(5000);
+    expect(readinessAt(w, emptyCoordState())).toBe(0);
+  });
+
+  it("isFreshlyReady is true within the window, false outside / when unsatisfied", () => {
+    const s = satisfy(emptyCoordState(), dep, "merged", 1_000_000).state;
+    expect(isFreshlyReady(w, s, 1_000_000 + 60_000, 15 * 60_000)).toBe(true);   // 1 min later
+    expect(isFreshlyReady(w, s, 1_000_000 + 20 * 60_000, 15 * 60_000)).toBe(false); // 20 min later
+    expect(isFreshlyReady(w, emptyCoordState(), 1_000_000, 15 * 60_000)).toBe(false); // never satisfied
   });
 });
