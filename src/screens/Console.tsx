@@ -14,6 +14,7 @@ import { log } from "../lib/log";
 import { buildPanePayload } from "../lib/tunnel";
 import { tunnelSetPanes, tunnelSetSessions } from "../lib/tunnelClient";
 import type { ViewKey } from "../components/pane/ViewTabs";
+import { useCoordinator } from "../lib/useCoordinator";
 
 function resolvePaneName(
   tabIdx: number,
@@ -125,6 +126,9 @@ function DisabledConsole({ onEnable }: { onEnable: () => void }) {
 }
 
 export function ConsoleScreen() {
+  // #199: the always-on coordinator — auto-wakes ready parked panes when enabled.
+  // Mounted here because ConsoleScreen stays mounted across every screen (#187).
+  useCoordinator();
   // Subscribe per-slice instead of `useAppStore()`-the-whole-state, so a mutation
   // anywhere else in the store (kbBlocks, GitHub cache, settings, planning data)
   // no longer re-renders the entire console grid — only changes to slices this

@@ -432,6 +432,9 @@ interface AppStore {
   // Integrations). Gated per pane by paneWasClaude — off by default for
   // panes that never used claude (#36).
   autoResumeClaude: boolean;
+  /** #199: auto-relaunch a parked pane when its deps land (opt-in; off by default). */
+  coordAutoWake: boolean;
+  setCoordAutoWake: (v: boolean) => void;
   setAutoResumeClaude: (v: boolean) => void;
 }
 
@@ -1283,6 +1286,8 @@ export const useAppStore = create<AppStore>()(
 
       autoResumeClaude: true,
       setAutoResumeClaude: (v) => set({ autoResumeClaude: v }),
+      coordAutoWake: false,
+      setCoordAutoWake: (v) => set({ coordAutoWake: v }),
     }),
     {
       name: "app-state",
@@ -1321,6 +1326,7 @@ export const useAppStore = create<AppStore>()(
         repoAllowedCommands:    s.repoAllowedCommands,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
+        coordAutoWake:        s.coordAutoWake,
         projectLocalRepos:    s.projectLocalRepos,
         hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
