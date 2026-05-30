@@ -154,6 +154,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       openedRef.current = true;
       fitAddon.fit();
       if (pendingRef.current.size() > 0) term.write(pendingRef.current.flush());
+      term.scrollToBottom(); // show the latest output on (re)mount, no scrolling (#68)
       return true;
     }
     // Visible/active tab: the container is already sized, so open right away.
@@ -482,6 +483,9 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         if (pendingRef.current.size() > 0) {
           t.write(pendingRef.current.flush());
         }
+        // Snap to the latest output so a pane returning to view shows the most
+        // recent claude response without the user scrolling down (#68).
+        t.scrollToBottom();
         invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(console.error);
         // Don't steal focus on becoming visible — the focused-pane effect below
         // focuses only the active pane. Stealing here made every pane in a grid
