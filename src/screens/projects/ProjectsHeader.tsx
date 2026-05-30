@@ -21,6 +21,7 @@ const TABS = [
   { k: "issues",   label: "Issues",   hint: "flat list · filter & sort" },
   { k: "insights", label: "Insights", hint: "velocity · burndown" },
   { k: "hooks",    label: "Hooks",    hint: "git hooks · per repo" },
+  { k: "coordination", label: "Coordination", hint: "blocked sessions · #199" },
 ] as const;
 
 type BoardTab = typeof TABS[number]["k"];
