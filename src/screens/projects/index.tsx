@@ -7,6 +7,7 @@ import { Roadmap } from "./Roadmap";
 import { Issues } from "./Issues";
 import { Insights } from "./Insights";
 import { HooksView } from "./Hooks";
+import { CoordinatorInbox } from "./CoordinatorInbox";
 import { Planning } from "./Planning";
 import { ProjectsSummary, ProjectsPageModeStrip } from "./ProjectsSummary";
 import { useProjectScan } from "./useProjectScan";
@@ -86,6 +87,7 @@ export function ProjectsScreen() {
           {projectsView === "board" && projectsBoardTab === "issues"   && <Issues />}
           {projectsView === "board" && projectsBoardTab === "insights" && <Insights />}
           {projectsView === "board" && projectsBoardTab === "hooks"    && <HooksView />}
+          {projectsView === "board" && projectsBoardTab === "coordination" && <CoordinatorInbox />}
           {projectsView !== "board" && <ProjectsList />}
         </div>
       </div>
