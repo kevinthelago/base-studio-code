@@ -12,6 +12,7 @@ import { composeStartupPrompt } from "../../../lib/checkpoint";
 import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
 import { PendingPtyData } from "../../../lib/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/resumeClaude";
+import { roleCapability, roleDeniedCommands } from "../../../lib/sessionRoles";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
@@ -327,7 +328,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       if (launchesClaude && (initialCwd ?? "") !== "") {
         const cmds = useAppStore.getState().paneAllowedCommands[paneId]
           ?? useAppStore.getState().allowedCommands;
-        const denied = useAppStore.getState().deniedCommands;
+        // Role gate (#219): a planner/worker/triage session has its mutating git/gh
+        // commands denied at launch (deny > the broad gh/git allow). Absent role ⇒
+        // unrestricted.
+        const role = useAppStore.getState().paneRoles[paneId];
+        const denied = role
+          ? [...useAppStore.getState().deniedCommands, ...roleDeniedCommands(roleCapability(role))]
+          : useAppStore.getState().deniedCommands;
         // Extensions (MCP servers + hooks) resolved for this session — pre-resolved
         // per pane at tab creation; fall back to globals for ad-hoc consoles.
         const exts = useAppStore.getState().paneExtensions[paneId]
