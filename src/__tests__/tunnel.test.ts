@@ -3,8 +3,38 @@ import {
   buildPanePayload,
   mapStatus,
   paneCountForLayout,
+  pairingPayload,
+  type TunnelStatus,
 } from "../lib/tunnel";
 import fixtures from "../lib/tunnelProtocol.fixtures.json";
+
+describe("pairingPayload", () => {
+  const ready: TunnelStatus = {
+    running: true,
+    relayUrl: "wss://msc-tunnel-relay.me.workers.dev",
+    room: "ROOMID0123456789",
+    hostPubKey: "aG9zdC1rZXk=",
+    psk: "0123456789abcdef",
+    clientCount: 0,
+  };
+
+  it("returns the relay payload when connected with a room + keys", () => {
+    expect(pairingPayload(ready)).toEqual({
+      relayUrl: "wss://msc-tunnel-relay.me.workers.dev",
+      room: "ROOMID0123456789",
+      hostPubKey: "aG9zdC1rZXk=",
+      psk: "0123456789abcdef",
+    });
+  });
+
+  it("returns null until every field needed to pair is present", () => {
+    expect(pairingPayload({ ...ready, running: false })).toBeNull();
+    expect(pairingPayload({ ...ready, relayUrl: null })).toBeNull();
+    expect(pairingPayload({ ...ready, room: null })).toBeNull();
+    expect(pairingPayload({ ...ready, hostPubKey: "" })).toBeNull();
+    expect(pairingPayload({ ...ready, psk: "" })).toBeNull();
+  });
+});
 
 describe("paneCountForLayout", () => {
   it("multiplies cols × rows", () => {
