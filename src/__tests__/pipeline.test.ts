@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   type Pipeline, type ItemState, type Outcome,
-  startItem, advance, PIPELINE_PRESETS, DONE, ESCALATE,
+  startItem, advance, stageCapability, PIPELINE_PRESETS, DONE, ESCALATE,
 } from "../lib/pipeline";
 
 const P = PIPELINE_PRESETS["implement-test-review-integrate"];
@@ -78,6 +78,27 @@ describe("pipeline — terminal + robustness", () => {
           expect(t === DONE || t === ESCALATE || p.stages[t] !== undefined).toBe(true);
         }
       }
+    }
+  });
+});
+
+describe("pipeline — stage capabilities (composes with #219)", () => {
+  const stages = PIPELINE_PRESETS["implement-test-review-integrate"].stages;
+
+  it("maps each stage to its role-scoped capability", () => {
+    expect(stageCapability(stages.implement).code).toBe("write");    // worker edits
+    expect(stageCapability(stages["build-test"]).code).toBe("none");  // tester can't edit
+    expect(stageCapability(stages["build-test"]).git).toBe("read");
+    expect(stageCapability(stages.review).code).toBe("none");         // reviewer can't edit
+    expect(stageCapability(stages.integrate).github).toBe("write");   // director merges
+    expect(stageCapability(stages.integrate).code).toBe("none");      // ...but writes no code
+  });
+
+  it("the read-only stage roles can neither write code nor push/merge", () => {
+    for (const name of ["build-test", "review"] as const) {
+      const cap = stageCapability(stages[name]);
+      expect(cap.code).toBe("none");
+      expect(cap.git).not.toBe("write");
     }
   });
 });
