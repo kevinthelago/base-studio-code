@@ -27,6 +27,10 @@ empty, so a session with no boundary can't write code.
   command allowlist).
 - **`canWritePath(capability, path)`** — needs `code` access AND a `writeGlobs` match
   (`matchGlob` supports `*` / `**`).
+- **`roleWriteRules(capability)`** → `{ allow, deny }` — the launch-time encoding of
+  `canWritePath` for the file-write tools (`Edit` / `Write` / `MultiEdit` / `NotebookEdit`).
+  `code: "none"` ⇒ deny all four (bare tool names); a worker with a boundary ⇒ one
+  `Tool(<glob>)` **allow** rule per tool per glob.
 
 ## Launch wiring
 
@@ -37,8 +41,16 @@ each entry as `Bash(<prefix> *)`, and a specific deny overrides the broad `gh`/`
 so a planner gets git/gh **writes** denied (`git push`, `gh issue create`, `gh api --method
 POST`, …) while reads remain. `none` tiers deny the tool outright (`triage` → no `git`).
 
-This is the launch-time **allowlist** layer. It blocks args-bearing mutating commands;
-complete subcommand-granular enforcement (incl. no-arg variants) is a `PreToolUse` **hook**
+In the same call, **`roleWriteRules(cap)`** (#238) supplies `allowToolRules` /
+`denyToolRules` — verbatim (NOT `Bash`-wrapped) permission rules for the file-write tools.
+A planner/director/triage (`code: "none"`) gets `Edit`/`Write`/`MultiEdit`/`NotebookEdit`
+denied outright, so the session can read for context but cannot edit files; a worker gets
+its boundary globs auto-approved as `Edit(<glob>)` etc. (writes outside the boundary fall
+through to the default prompt — see the hook follow-on below).
+
+This is the launch-time **allowlist** layer. It blocks args-bearing mutating commands and
+denies/scopes the write tools; complete subcommand-granular enforcement (incl. no-arg
+command variants and hard outside-boundary write blocking) is a `PreToolUse` **hook**
 (follow-on), and the authoritative publish gate is `checkCommand` at the executor call site.
 
 ## Why this gates publishing
