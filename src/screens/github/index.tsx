@@ -2,13 +2,12 @@ import { useAppStore } from "../../store";
 import { GitHubEmpty } from "./Empty";
 import { OverviewBody } from "./Overview";
 import { ActionsBody } from "./Actions";
-import { HooksBody } from "./Hooks";
 import { GitHubSummary, GitHubPageModeStrip } from "./GitHubSummary";
 
+// (Git hooks moved to the Projects board, where a project+repo maps to a real clone — #265.)
 const PAGE_TABS = [
   { k: "overview", label: "Overview", hint: "branches · commits · PRs"    },
   { k: "actions",  label: "Actions",  hint: "workflow files & recent runs" },
-  { k: "hooks",    label: "Hooks",    hint: "pre-commit · pre-push · etc." },
 ] as const;
 
 type TabKey = typeof PAGE_TABS[number]["k"];
@@ -184,7 +183,6 @@ export function GitHubScreen() {
           <section style={{ flex: 1, overflow: "auto", padding: "18px 22px", minWidth: 0 }}>
             {githubActiveTab === "overview" && <OverviewBody repo={activeRepo} />}
             {githubActiveTab === "actions"  && <ActionsBody repo={activeRepo} />}
-            {githubActiveTab === "hooks"    && <HooksBody />}
           </section>
         </div>
       </div>
