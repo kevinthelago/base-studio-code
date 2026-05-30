@@ -13,6 +13,8 @@ import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoi
 import { computeNextRun, appendRun, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import type { SessionRole } from "../lib/sessionRoles";
+import type { AgentProfile } from "../screens/agents/agentProfiles";
+import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
@@ -181,6 +183,14 @@ interface AppStore {
   // Absent ⇒ unrestricted (current behavior). Set by the planning/fleet assignment.
   paneRoles: Record<string, SessionRole>;
   setPaneRole: (paneId: string, role: SessionRole) => void;
+  // Agents (#255) — editable permission profiles + their per-pane assignment, both
+  // persisted. A pane's assigned profile is applied to its session at launch (the
+  // same gate as paneRoles). Absent ⇒ no profile (unrestricted beyond the role gate).
+  agentProfiles: AgentProfile[];
+  setAgentProfiles: (profiles: AgentProfile[]) => void;
+  updateAgentProfile: (id: string, patch: Partial<AgentProfile>) => void;
+  paneProfiles: Record<string, string>;
+  setPaneProfile: (paneId: string, profileId: string | null) => void;
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
   closeTab: (idx: number) => void;
@@ -498,6 +508,23 @@ export const useAppStore = create<AppStore>()(
       paneRoles: {},
       setPaneRole: (paneId, role) =>
         set((s) => ({ paneRoles: { ...s.paneRoles, [paneId]: role } })),
+
+      // Agents (#255): seed the editable profiles from the built-in defaults; persisted
+      // edits replace this on rehydrate. Deep-cloned so edits never mutate the defaults.
+      agentProfiles: JSON.parse(JSON.stringify(PROFILES)) as AgentProfile[],
+      setAgentProfiles: (profiles) => set({ agentProfiles: profiles }),
+      updateAgentProfile: (id, patch) =>
+        set((s) => ({
+          agentProfiles: s.agentProfiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+        })),
+      paneProfiles: {},
+      setPaneProfile: (paneId, profileId) =>
+        set((s) => {
+          const next = { ...s.paneProfiles };
+          if (profileId === null) delete next[paneId];
+          else next[paneId] = profileId;
+          return { paneProfiles: next };
+        }),
       // Switching tabs clears focus/fullscreen/menu — these are positional and
       // global, so a stale index from the previous tab would mis-target features
       // like broadcast (excluding a console that isn't actually focused). The focus
@@ -1246,6 +1273,8 @@ export const useAppStore = create<AppStore>()(
         automationsTab:  s.automationsTab,
         settingsSection: s.settingsSection,
         tunnelRelayUrl:  s.tunnelRelayUrl,
+        agentProfiles:   s.agentProfiles,
+        paneProfiles:    s.paneProfiles,
         kbBlocks:        s.kbBlocks,
         claudeApiKey:    s.claudeApiKey,
         schedules:            s.schedules,

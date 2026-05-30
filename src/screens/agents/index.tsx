@@ -1,21 +1,22 @@
-// Agents screen (#236) — permission profiles, console/pane assignments & an audit
-// feed. React port of design/Agents.html. The permission model is grounded in the
-// real backend: shell allowlists resolve additively (guaranteed ∪ profile ∪ project
-// ∪ repo), gh/git are guaranteed, and a profile layers a base policy + per-tool
-// tri-states + path/network scope on top. Editing here is local-state only for now
-// (no persistence backend yet) — the data model lives in ./agentProfiles.
-import { useState } from "react";
+// Agents screen (#236, made real in #255) — permission profiles, console/pane
+// assignments & an audit feed. Profiles + assignments are now persisted in the store
+// and ENFORCED at session launch via profileEnforcement → ensure_session_settings
+// (the same gate as the role model). Shell allowlists resolve additively (guaranteed ∪
+// profile ∪ project ∪ repo); gh/git are guaranteed; a profile layers a base policy +
+// per-tool tri-states + path scope. Data model + helpers live in ./agentProfiles.
+// (The Activity feed is still sample data — a real audit log is a follow-up.)
+import { useMemo, useState } from "react";
 import {
-  APP_ROLES, PROFILES, TOOL_DEFS, GUARANTEED, CONSOLES, ACTIVITY,
+  APP_ROLES, TOOL_DEFS, GUARANTEED, ACTIVITY,
   MODE_LABEL, resolveAllowlistFrom, paneCount, consoleCount,
 } from "./agentProfiles";
-import type { AgentProfile, ConsoleSession, Tier, ToolKey } from "./agentProfiles";
+import type { AgentProfile, ConsoleSession, ConsolePane, Tier, ToolKey } from "./agentProfiles";
+import { useAppStore } from "../../store";
 import "./agents.css";
 
 type Tab = "profiles" | "assignments" | "activity";
 type DecFilter = "all" | "allow" | "ask" | "block";
 
-const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const initialOf = (name: string) => name.replace(/[^a-z]/gi, "").slice(0, 2).toUpperCase();
 const modeColor = (m: Tier) => m === "deny" ? "var(--danger)" : m === "ask" ? "var(--accent)" : "var(--success)";
 
@@ -25,49 +26,66 @@ export function AgentsScreen() {
   const [actDecision, setActDecision] = useState<DecFilter>("all");
   const [actConsole, setActConsole] = useState("all");
 
-  // Editable copies — profile tri-states / commands and pane assignments mutate here.
-  const [roles, setRoles] = useState<AgentProfile[]>(() => clone(APP_ROLES));
-  const [profiles, setProfiles] = useState<AgentProfile[]>(() => clone(PROFILES));
-  const [consoles, setConsoles] = useState<ConsoleSession[]>(() => clone(CONSOLES));
+  // Persisted profiles + assignment (#255); console panes come from the real workspace.
+  const profiles = useAppStore((s) => s.agentProfiles);
+  const updateAgentProfile = useAppStore((s) => s.updateAgentProfile);
+  const setPaneProfile = useAppStore((s) => s.setPaneProfile);
+  const tabs = useAppStore((s) => s.tabs);
+  const paneNames = useAppStore((s) => s.paneNames);
+  const disabledPanes = useAppStore((s) => s.disabledPanes);
+  const paneProfiles = useAppStore((s) => s.paneProfiles);
+  const activeRepoName = useAppStore((s) => s.activeRepoName);
+
+  // Application roles are app-managed singletons (display-only here).
+  const roles = APP_ROLES;
+
+  // Live console/pane model derived from the real workspace tabs — each tab is a
+  // console, each live pane a row. An unassigned pane shows the safe default
+  // (Sandboxed) but is only ENFORCED once you assign it a profile.
+  const consoles = useMemo<ConsoleSession[]>(() => tabs.map((t, ti) => {
+    const [cols, rows] = t.layout.split("×").map(Number);
+    const count = (cols || 1) * (rows || 1);
+    const panes: ConsolePane[] = [];
+    for (let i = 0; i < count; i++) {
+      const pid = `t${ti}p${i}`;
+      if (disabledPanes[pid]) continue;
+      panes.push({
+        id: pid,
+        agent: paneNames[ti]?.[i] ?? `pane ${i + 1}`,
+        status: "idle",
+        profileId: paneProfiles[pid] ?? "pf_sandbox",
+      });
+    }
+    return { id: `t${ti}`, name: t.name, repo: activeRepoName ?? "—", status: "running", projectAllow: [], panes };
+  }), [tabs, paneNames, disabledPanes, paneProfiles, activeRepoName]);
 
   const find = (id: string) => [...roles, ...profiles].find((p) => p.id === id);
   const selected = find(selectedId) ?? profiles[0];
 
-  function updateProfile(id: string, fn: (p: AgentProfile) => AgentProfile) {
-    setRoles((rs) => rs.map((p) => (p.id === id ? fn(p) : p)));
-    setProfiles((ps) => ps.map((p) => (p.id === id ? fn(p) : p)));
-  }
-  function setMode(m: Tier) { updateProfile(selectedId, (p) => ({ ...p, mode: m })); }
+  // Edits persist to the store. Application-role ids won't match a stored profile, so
+  // their controls are effectively read-only (they're system-managed).
+  function setMode(m: Tier) { updateAgentProfile(selectedId, { mode: m }); }
   function setTool(t: ToolKey, v: Tier) {
-    updateProfile(selectedId, (p) => ({ ...p, tools: { ...p.tools, [t]: v } }));
+    const p = find(selectedId);
+    if (p) updateAgentProfile(selectedId, { tools: { ...p.tools, [t]: v } });
   }
   function removeCmd(c: string) {
-    updateProfile(selectedId, (p) => ({ ...p, commands: p.commands.filter((x) => x !== c) }));
+    const p = find(selectedId);
+    if (p) updateAgentProfile(selectedId, { commands: p.commands.filter((x) => x !== c) });
   }
   function addCmd() {
     const v = window.prompt("Allow which command? (e.g. cargo)");
     const k = v?.trim().toLowerCase();
-    if (!k) return;
-    updateProfile(selectedId, (p) => (p.commands.includes(k) ? p : { ...p, commands: [...p.commands, k] }));
+    const p = find(selectedId);
+    if (k && p && !p.commands.includes(k)) updateAgentProfile(selectedId, { commands: [...p.commands, k] });
   }
-  function toggleAssign(consoleId: string, paneId: string) {
-    setConsoles((cs) => cs.map((c) => c.id !== consoleId ? c : {
-      ...c,
-      panes: c.panes.map((pane) => pane.id !== paneId ? pane : {
-        ...pane,
-        profileId: pane.profileId === selectedId ? "pf_sandbox" : selectedId,
-      }),
-    }));
+  function toggleAssign(_consoleId: string, paneId: string) {
+    setPaneProfile(paneId, paneProfiles[paneId] === selectedId ? null : selectedId);
   }
-  function cycleProfile(consoleId: string, paneId: string) {
-    setConsoles((cs) => cs.map((c) => c.id !== consoleId ? c : {
-      ...c,
-      panes: c.panes.map((pane) => {
-        if (pane.id !== paneId) return pane;
-        const idx = profiles.findIndex((p) => p.id === pane.profileId);
-        return { ...pane, profileId: profiles[(idx + 1) % profiles.length].id };
-      }),
-    }));
+  function cycleProfile(_consoleId: string, paneId: string) {
+    const cur = paneProfiles[paneId] ?? "pf_sandbox";
+    const idx = profiles.findIndex((p) => p.id === cur);
+    setPaneProfile(paneId, profiles[(idx + 1) % profiles.length].id);
   }
   function openProfile(id: string) { setTab("profiles"); setSelectedId(id); }
 

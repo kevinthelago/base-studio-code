@@ -13,6 +13,7 @@ import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
 import { PendingPtyData } from "../../../lib/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/resumeClaude";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
+import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
@@ -334,19 +335,31 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // its boundary globs. Absent role ⇒ unrestricted.
         const role = useAppStore.getState().paneRoles[paneId];
         const cap = role ? roleCapability(role) : null;
-        const denied = cap
-          ? [...useAppStore.getState().deniedCommands, ...roleDeniedCommands(cap)]
-          : useAppStore.getState().deniedCommands;
         const write = cap ? roleWriteRules(cap) : { allow: [], deny: [] };
+        // Agents gate (#255): the profile assigned to this pane adds its command
+        // allowlist + per-tool/path rules on top of the role gate (deny wins for both).
+        const profileId = useAppStore.getState().paneProfiles[paneId];
+        const profile = profileId
+          ? useAppStore.getState().agentProfiles.find((p) => p.id === profileId)
+          : undefined;
+        const prof = profile ? resolveProfileSettings(profile) : null;
+        const allowedCommands = prof ? [...cmds, ...prof.allowedCommands] : cmds;
+        const denied = [
+          ...useAppStore.getState().deniedCommands,
+          ...(cap ? roleDeniedCommands(cap) : []),
+          ...(prof?.deniedCommands ?? []),
+        ];
+        const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
+        const denyToolRules = [...write.deny, ...(prof?.denyToolRules ?? [])];
         // Extensions (MCP servers + hooks) resolved for this session — pre-resolved
         // per pane at tab creation; fall back to globals for ad-hoc consoles.
         const exts = useAppStore.getState().paneExtensions[paneId]
           ?? resolveExtensions(useAppStore.getState().extensions, "");
         const { mcp, hooks } = toSessionPayloads(exts);
         await invoke("ensure_session_settings", {
-          cwd: initialCwd, allowedCommands: cmds, deniedCommands: denied,
+          cwd: initialCwd, allowedCommands, deniedCommands: denied,
           mcpServers: mcp, hooks,
-          allowToolRules: write.allow, denyToolRules: write.deny,
+          allowToolRules, denyToolRules,
         }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         if (destroyed) return;
       }
