@@ -325,3 +325,25 @@ export function coordinationSummary(s: CoordState): BlockedView[] {
     return { session: w.session, checkpoint: w.checkpoint, deps, stalled: deps.some((d) => d.status === "failed") };
   });
 }
+
+// -- Auto-wake recency gate (#199) ----------------------------------------------
+// The always-on coordinator only auto-relaunches a ready session if its deps landed
+// RECENTLY, so an app restart (which replays the whole log) can't relaunch sessions whose
+// dependencies were satisfied long ago and were never woken. The manual Wake button has
+// no such limit. Kept pure (takes `now`) so it's testable.
+
+/** Newest moment among a waiter's deps at which one became satisfied (ms epoch), or 0. */
+export function readinessAt(w: Waiter, s: CoordState): number {
+  let newest = 0;
+  for (const d of w.deps) {
+    const l = s.latches[refKey(d)];
+    if (l?.state === "satisfied" && l.at > newest) newest = l.at;
+  }
+  return newest;
+}
+
+/** Whether `w` became ready within `windowMs` of `now`. */
+export function isFreshlyReady(w: Waiter, s: CoordState, now: number, windowMs: number): boolean {
+  const at = readinessAt(w, s);
+  return at > 0 && now - at < windowMs;
+}
