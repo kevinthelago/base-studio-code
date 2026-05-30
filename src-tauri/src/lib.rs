@@ -3091,6 +3091,12 @@ async fn write_project_plan(content: String, repo_paths: Vec<String>) -> Result<
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // rustls 0.23 can't auto-determine a CryptoProvider from features at runtime, so
+    // the relay dial's TLS handshake (tokio-tungstenite) would panic the tunnel thread
+    // ("could not automatically determine the process-level CryptoProvider"). Install
+    // `ring` explicitly before any TLS; Err just means one is already installed.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
