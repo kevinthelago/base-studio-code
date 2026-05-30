@@ -18,6 +18,7 @@ import {
 } from "./planningSession";
 import { repoPromptKey } from "../../lib/startupPrompt";
 import { parseCommandsFile } from "../../lib/allowedCommands";
+import { roleCapability, roleDeniedCommands } from "../../lib/sessionRoles";
 import {
   ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, titleForKey, groupSections, parseSkipped, parseSectionKey,
   parseFleetFile,
@@ -1207,6 +1208,16 @@ export function Planning({ visible }: { visible: boolean }) {
       // without requiring the user to separately authenticate the gh CLI.
       const token = useAppStore.getState().githubToken;
       const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
+      // Role gate (#219): the planner is plan-only — write git/gh write denies into
+      // its session settings before claude launches, so it can read for context but
+      // not mutate the repo or GitHub (publishing is an explicit, separately-gated step).
+      await invoke("ensure_session_settings", {
+        cwd:             paths?.planning_dir ?? "",
+        allowedCommands: [],
+        deniedCommands:  roleDeniedCommands(roleCapability("planner")),
+        mcpServers:      null,
+        hooks:           null,
+      }).catch((e: unknown) => console.error("planner session settings failed:", e));
       await invoke("pty_create", {
         paneId:  paneId,
         cols:    term.cols,
