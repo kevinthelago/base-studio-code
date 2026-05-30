@@ -56,3 +56,10 @@ export function conduct(run: PipelineRun, outcome: Outcome, seed?: string): Cond
   if (state.status === "escalated") return { kind: "escalated", run: next, reason: state.escalation ?? "escalated" };
   return { kind: "launch", run: next, launch: launchFor(run.pipeline, state, seed) };
 }
+
+/** The launch for a run's CURRENT stage (null when terminal). Used to (re)mount the run's
+ *  pane for the stage it is now in — both the initial stage and after each advance. */
+export function currentLaunch(run: PipelineRun, seed?: string): StageLaunch | null {
+  if (run.state.status !== "active" || run.state.stage === null) return null;
+  return launchFor(run.pipeline, run.state, seed);
+}
