@@ -512,6 +512,10 @@ async fn pty_create(
     // panes whose settings install the hook actually write).
     cmd.env("BSC_AUDIT_LOG", to_bash_path(&base.join("audit.log").to_string_lossy()));
     cmd.env("BSC_AUDIT_PANE", &pane_id);
+    // Coordination log (#199): `bsc-blocked --on <ref>` appends a structured
+    // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
+    // merge/close append satisfy events later. Set for every pane; only --on writes.
+    cmd.env("BSC_COORD_LOG", to_bash_path(&base.join("coord.log").to_string_lossy()));
     // FS confinement (#158): the session's repo root (bash-style), against which the
     // `bsc-confine` hook (installed on gated panes) checks file-tool paths. The cwd is
     // the repo root. Set for every pane; only gated panes install the hook.
@@ -1142,7 +1146,10 @@ const BSC_DECISIONS_RC: &str = concat!(
     // `printf '%s' '- '` (not `printf '- '`): a format starting with `-` is parsed as
     // an option flag and the prefix is silently dropped.
     "bsc-note() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' '- '; cat; printf '\\n'; } >> \"$d\"; }\n",
-    "bsc-blocked() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' '- BLOCKED: '; cat; printf '\\n'; } >> \"$d\"; }\n",
+    // bsc-blocked also accepts `--on <ref[,ref]>` (+ optional `--checkpoint <ref>`):
+    // when present it appends a structured `blocked` event to $BSC_COORD_LOG (#199),
+    // tagged with the pane id, alongside the human note. No --on => note only.
+    r#"bsc-blocked() { on=""; cp=""; while [ $# -gt 0 ]; do case "$1" in --on) on="$2"; shift 2 ;; --checkpoint) cp="$2"; shift 2 ;; *) shift ;; esac; done; d="${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}"; mkdir -p "$(dirname "$d")" 2>/dev/null; m="$(cat)"; { printf '%s' '- BLOCKED: '; printf '%s' "$m"; [ -n "$on" ] && printf '%s' " (on $on)"; printf '\n'; } >> "$d"; l="${BSC_COORD_LOG:-}"; if [ -n "$on" ] && [ -n "$l" ]; then ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\tblocked\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$on" "$cp" >> "$l"; fi; }"#,
 );
 
 /// The `bsc-audit` helper (#257): the PreToolUse hook on a gated pane pipes Claude
@@ -1176,6 +1183,19 @@ fn read_audit_log(limit: usize) -> Vec<String> {
     let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
     lines.reverse();
     lines.truncate(limit);
+    lines
+}
+
+/// Read the coordination log (#199): up to the newest `limit` TSV lines, in
+/// chronological (oldest-first) order so the coordinator can replay them.
+#[tauri::command]
+fn read_coord_log(limit: usize) -> Vec<String> {
+    let path = bsc_base_dir().join("coord.log");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
+    if lines.len() > limit {
+        lines = lines.split_off(lines.len() - limit);
+    }
     lines
 }
 
@@ -3161,6 +3181,7 @@ pub fn run() {
             tunnel::tunnel_set_panes,
             tunnel::tunnel_set_sessions,
             read_audit_log,
+            read_coord_log,
             read_git_hooks,
         ])
         .build(tauri::generate_context!())
