@@ -1,8 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
+  # CI runs on pull requests only (not on every push/merge) -- the same gate
+  # (typecheck/lint/clippy/tests) is run locally before each push.
   pull_request:
     branches: [main, develop]
 
