@@ -25,10 +25,14 @@ does — it's a **blind pipe**:
 
 ## Deploy it (free, ~2 minutes)
 
-You need a Cloudflare account (the free plan is enough — Durable Objects + WebSockets are
-included).
+You need a Cloudflare account. The **free** Workers plan is enough — this relay uses a
+SQLite-backed Durable Object (see `wrangler.toml`), which is included on the free plan,
+plus WebSockets.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/kevinthelago/base-studio-code/tree/main/relay)
+> The one-click button points at `develop` until `relay/` is promoted to `main`. If it
+> 404s, use the CLI path below — it's the reliable one.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/kevinthelago/base-studio-code/tree/develop/relay)
 
 Or from a clone:
 
