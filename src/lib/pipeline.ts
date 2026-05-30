@@ -3,11 +3,11 @@
 // bounded failure loops. The conductor advances an item by a stage outcome; the transport
 // that parks/wakes a session between stages is #199. This module is pure (no PTY/store) so
 // it's exhaustively testable; the conductor wiring lands on top of it in a later slice.
-import type { SessionRole } from "./sessionRoles";
+import { type SessionRole, type RoleCapability, roleCapability } from "./sessionRoles";
 
-/** The role a stage runs as -- #219 roles plus the pipeline-specific ones (#220). Wiring
- *  tester/reviewer/conductor into #219's capability matrix is a later slice. */
-export type PipelineRole = SessionRole | "tester" | "reviewer" | "conductor";
+/** The role a stage runs as. The #220 stage roles (tester/reviewer/conductor) now live
+ *  in #219's SessionRole + capability matrix, so a stage maps straight to a capability. */
+export type PipelineRole = SessionRole;
 
 /** A transition target: another stage's name, or one of these terminals. */
 export const DONE = "done";
@@ -80,6 +80,13 @@ export function advance(p: Pipeline, st: ItemState, outcome: Outcome): ItemState
     return escalate(st, history, `${target} exceeded retryLimit (${next.retryLimit})`);
   }
   return { ...st, stage: target, status: "active", attempts: { ...st.attempts, [target]: n }, history };
+}
+
+/** The #219 capability a stage runs under (least-privilege per role) -- this is how a
+ *  pipeline stage composes with the role gate: the conductor launches each stage in a
+ *  session scoped to `stageCapability(stage)`. */
+export function stageCapability(stage: PipelineStage): RoleCapability {
+  return roleCapability(stage.role);
 }
 
 // -- Presets (start linear + the test-fail loop) --------------------------------
