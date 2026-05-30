@@ -5,17 +5,32 @@
 // profile ∪ project ∪ repo); gh/git are guaranteed; a profile layers a base policy +
 // per-tool tri-states + path scope. Data model + helpers live in ./agentProfiles.
 // (The Activity feed is still sample data — a real audit log is a follow-up.)
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
-  APP_ROLES, TOOL_DEFS, GUARANTEED, ACTIVITY,
+  APP_ROLES, TOOL_DEFS, GUARANTEED,
   MODE_LABEL, resolveAllowlistFrom, paneCount, consoleCount,
 } from "./agentProfiles";
 import type { AgentProfile, ConsoleSession, ConsolePane, Tier, ToolKey } from "./agentProfiles";
+import { resolveProfileSettings } from "./profileEnforcement";
+import { parseAuditLog, toRow, decideAudit, type AuditDecision, type AuditKind, type ResolvedGate } from "./auditLog";
+import { roleCapability, roleWriteRules } from "../../lib/sessionRoles";
 import { useAppStore } from "../../store";
 import "./agents.css";
 
 type Tab = "profiles" | "assignments" | "activity";
 type DecFilter = "all" | "allow" | "ask" | "block";
+
+/** A computed audit row for the Activity table. */
+interface AuditDisplayRow {
+  ts: string;
+  console: string;
+  pane: string;
+  profileId: string;
+  kind: AuditKind;
+  target: string;
+  decision: AuditDecision;
+}
 
 const initialOf = (name: string) => name.replace(/[^a-z]/gi, "").slice(0, 2).toUpperCase();
 const modeColor = (m: Tier) => m === "deny" ? "var(--danger)" : m === "ask" ? "var(--accent)" : "var(--success)";
@@ -59,6 +74,48 @@ export function AgentsScreen() {
     return { id: `t${ti}`, name: t.name, repo: activeRepoName ?? "—", status: "running", projectAllow: [], panes };
   }), [tabs, paneNames, disabledPanes, paneProfiles, activeRepoName]);
 
+  // Activity audit (#257): load the real per-pane tool log and derive each decision
+  // from the pane's resolved gate (profile ∪ role) — the same rules the launch gate
+  // applies. Refreshed while the Activity tab is open.
+  const paneRoles = useAppStore((s) => s.paneRoles);
+  const [auditRows, setAuditRows] = useState<AuditDisplayRow[]>([]);
+  useEffect(() => {
+    if (tab !== "activity") return;
+    let cancelled = false;
+    const load = async () => {
+      const lines = await invoke<string[]>("read_audit_log", { limit: 300 }).catch(() => [] as string[]);
+      const records = parseAuditLog(lines.join("\n"));
+      const rows = records.map((rec): AuditDisplayRow => {
+        const profileId = paneProfiles[rec.pane] ?? "";
+        const profile = profiles.find((p) => p.id === profileId);
+        const role = paneRoles[rec.pane];
+        const roleCap = role ? roleCapability(role) : undefined;
+        const prof = profile ? resolveProfileSettings(profile) : null;
+        const roleW = roleCap ? roleWriteRules(roleCap) : { allow: [], deny: [] };
+        const gate: ResolvedGate = {
+          allowedCommands: prof?.allowedCommands ?? [],
+          allowToolRules: [...(prof?.allowToolRules ?? []), ...roleW.allow],
+          denyToolRules: [...(prof?.denyToolRules ?? []), ...roleW.deny],
+        };
+        const r = toRow(rec);
+        const ti = Number(/^t(\d+)p/.exec(rec.pane)?.[1] ?? "-1");
+        return {
+          ts: rec.ts,
+          console: consoles.find((c) => c.id === `t${ti}`)?.name ?? "—",
+          pane: rec.pane,
+          profileId: profileId || "—",
+          kind: r.kind,
+          target: r.target,
+          decision: decideAudit(rec, gate, roleCap),
+        };
+      });
+      if (!cancelled) setAuditRows(rows);
+    };
+    load();
+    const id = setInterval(load, 3000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [tab, paneProfiles, profiles, paneRoles, consoles]);
+
   const find = (id: string) => [...roles, ...profiles].find((p) => p.id === id);
   const selected = find(selectedId) ?? profiles[0];
 
@@ -90,9 +147,9 @@ export function AgentsScreen() {
   function openProfile(id: string) { setTab("profiles"); setSelectedId(id); }
 
   const paneTotal = consoles.reduce((a, c) => a + c.panes.length, 0);
-  const allow = ACTIVITY.filter((r) => r[6] === "allow").length;
-  const ask = ACTIVITY.filter((r) => r[6] === "ask").length;
-  const block = ACTIVITY.filter((r) => r[6] === "block").length;
+  const allow = auditRows.filter((r) => r.decision === "allow").length;
+  const ask = auditRows.filter((r) => r.decision === "ask").length;
+  const block = auditRows.filter((r) => r.decision === "block").length;
 
   return (
     <div className="agents-page">
@@ -100,7 +157,7 @@ export function AgentsScreen() {
         {([
           ["profiles", "Profiles", roles.length + profiles.length, "· application + custom roles"],
           ["assignments", "Assignments", consoles.length, "· consoles & panes"],
-          ["activity", "Activity", ACTIVITY.length, ""],
+          ["activity", "Activity", auditRows.length, ""],
         ] as [Tab, string, number, string][]).map(([k, label, count, hint]) => (
           <div key={k} className={`t ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>
             {label} <span className="count">{count}</span>
@@ -139,7 +196,8 @@ export function AgentsScreen() {
         )}
         {tab === "activity" && (
           <ActivityTab
-            consoles={consoles} actDecision={actDecision} setActDecision={setActDecision}
+            rows={auditRows} consoles={consoles}
+            actDecision={actDecision} setActDecision={setActDecision}
             actConsole={actConsole} setActConsole={setActConsole}
             allow={allow} ask={ask} block={block} find={find}
           />
@@ -524,6 +582,7 @@ function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) =>
 // ── Activity tab ──────────────────────────────────────────────────────────────
 
 interface ActivityTabProps {
+  rows: AuditDisplayRow[];
   consoles: ConsoleSession[];
   actDecision: DecFilter; setActDecision: (d: DecFilter) => void;
   actConsole: string; setActConsole: (c: string) => void;
@@ -531,10 +590,15 @@ interface ActivityTabProps {
   find: (id: string) => AgentProfile | undefined;
 }
 
-function ActivityTab({ consoles, actDecision, setActDecision, actConsole, setActConsole, allow, ask, block, find }: ActivityTabProps) {
-  const rows = ACTIVITY.filter((r) => {
-    if (actDecision !== "all" && r[6] !== actDecision) return false;
-    if (actConsole !== "all" && r[1] !== actConsole) return false;
+const fmtTime = (iso: string) => {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : d.toLocaleTimeString("en-US", { hour12: false });
+};
+
+function ActivityTab({ rows, consoles, actDecision, setActDecision, actConsole, setActConsole, allow, ask, block, find }: ActivityTabProps) {
+  const shown = rows.filter((r) => {
+    if (actDecision !== "all" && r.decision !== actDecision) return false;
+    if (actConsole !== "all" && r.console !== actConsole) return false;
     return true;
   });
   const decChip = (d: DecFilter, label: string, n?: number) => (
@@ -545,7 +609,7 @@ function ActivityTab({ consoles, actDecision, setActDecision, actConsole, setAct
   return (
     <>
       <div className="summary">
-        <div className="card"><div className="k">decisions · 1h</div><div className="v">{ACTIVITY.length}</div><div className="sub">across {consoles.length} consoles</div></div>
+        <div className="card"><div className="k">decisions</div><div className="v">{rows.length}</div><div className="sub">across {consoles.length} consoles</div></div>
         <div className="card"><div className="k">auto-allowed</div><div className="v success">{allow}</div><div className="sub">ran without a prompt</div></div>
         <div className="card"><div className="k">prompted</div><div className="v accent">{ask}</div><div className="sub">you confirmed</div></div>
         <div className="card"><div className="k">blocked</div><div className="v danger">{block}</div><div className="sub">policy denied</div></div>
@@ -565,26 +629,30 @@ function ActivityTab({ consoles, actDecision, setActDecision, actConsole, setAct
           {consoles.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
         </select>
         <div className="spacer" />
-        <input className="input" placeholder="search command…" style={{ width: 200 }} />
-        <button className="btn ghost">export</button>
+        <span className="hint" style={{ fontFamily: "var(--mono)" }}>per the configured policy</span>
       </div>
 
       <div className="act-table">
         <div className="act-row head">
           <span>time</span><span>console › pane</span><span>profile</span><span>command / action</span><span>decision</span>
         </div>
-        {rows.map(([t, con, pane, prof, kind, target, dec], i) => {
-          const p = find(prof);
-          const sym = dec === "allow" ? "✓" : dec === "ask" ? "◑" : "✗";
-          const decLabel = dec === "allow" ? "allowed" : dec === "ask" ? "asked" : "blocked";
-          const kindGlyph = kind === "cmd" ? "$" : kind === "tool" ? "⚒" : kind === "net" ? "⇡" : "·";
+        {shown.length === 0 && (
+          <div style={{ padding: "18px 14px", fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-dim)" }}>
+            No activity yet. Tool attempts are logged once a pane has a profile or role assigned.
+          </div>
+        )}
+        {shown.map((r, i) => {
+          const p = find(r.profileId);
+          const sym = r.decision === "allow" ? "✓" : r.decision === "ask" ? "◑" : "✗";
+          const decLabel = r.decision === "allow" ? "allowed" : r.decision === "ask" ? "asked" : "blocked";
+          const kindGlyph = r.kind === "cmd" ? "$" : r.kind === "net" ? "⇡" : "⚒";
           return (
             <div className="act-row" key={i}>
-              <span className="when">{t}</span>
-              <span style={{ color: "var(--fg-muted)" }}>{con} <span style={{ color: "var(--fg-dim)" }}>›</span> {pane}</span>
-              <span className="prof"><span className="sw" style={{ background: p?.color }} />{p?.name}</span>
-              <span className="cmd"><span style={{ color: "var(--fg-dim)" }}>{kindGlyph}</span> {target}</span>
-              <span className={`dec ${dec}`}>{sym} {decLabel}</span>
+              <span className="when">{fmtTime(r.ts)}</span>
+              <span style={{ color: "var(--fg-muted)" }}>{r.console} <span style={{ color: "var(--fg-dim)" }}>›</span> {r.pane}</span>
+              <span className="prof">{p && <span className="sw" style={{ background: p.color }} />}{p?.name ?? r.profileId}</span>
+              <span className="cmd"><span style={{ color: "var(--fg-dim)" }}>{kindGlyph}</span> {r.target}</span>
+              <span className={`dec ${r.decision}`}>{sym} {decLabel}</span>
             </div>
           );
         })}

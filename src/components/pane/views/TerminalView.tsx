@@ -356,9 +356,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         const exts = useAppStore.getState().paneExtensions[paneId]
           ?? resolveExtensions(useAppStore.getState().extensions, "");
         const { mcp, hooks } = toSessionPayloads(exts);
+        // Agents audit (#257): on a gated pane (role or profile assigned), install a
+        // PreToolUse hook that logs each tool attempt for the Activity feed.
+        const gatedHooks = (cap || prof)
+          ? [...hooks, { event: "PreToolUse", matcher: "", command: "bsc-audit" }]
+          : hooks;
         await invoke("ensure_session_settings", {
           cwd: initialCwd, allowedCommands, deniedCommands: denied,
-          mcpServers: mcp, hooks,
+          mcpServers: mcp, hooks: gatedHooks,
           allowToolRules, denyToolRules,
         }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         if (destroyed) return;
