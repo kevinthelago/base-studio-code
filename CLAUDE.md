@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**base-studio-code** is the desktop host application for a multi-agent AI development workflow platform. It pairs with **mobile-studio-code**, a companion mobile app that tunnels into the desktop session so agents can be orchestrated from anywhere. The desktop is authoritative — it owns the agent processes, GitHub connections, and knowledge stores. Mobile is a thin client.
+**base-studio-code** is the desktop host application for a multi-agent AI development workflow platform. The desktop is authoritative — it owns the agent processes, GitHub connections, and knowledge stores. It pairs with **mobile-studio-code**, a **standalone** mobile app (its own repo, usable on its own) that can **optionally tunnel** into a desktop session — over a zero-knowledge Cloudflare relay, end-to-end encrypted (Noise IK) — so the same agents can be driven from a phone, from anywhere.
 
 The core value proposition: run many AI coding agents in parallel across multiple repositories, with standardized knowledge (prompts, GitHub Actions templates, automation recipes) injected per project based on its tech stack.
 
@@ -18,7 +18,7 @@ The core value proposition: run many AI coding agents in parallel across multipl
 | Styling | CSS custom properties (`src/styles/tokens.css`) |
 | Fonts | Inter (sans) · JetBrains Mono (mono) via Google Fonts |
 | Agent orchestration | Claude API (default: `claude-sonnet-4-6`) |
-| Mobile tunnel | WebSocket server (`crates/ws-server`) — token auth + QR pairing |
+| Mobile tunnel | Relay client (`src-tauri/src/tunnel.rs`) dialing a zero-knowledge Cloudflare Worker relay (`relay/`) — Noise IK E2E + QR pairing |
 | Storage | SQLite (`crates/kb`, `crates/orch`) |
 
 ## Testing
@@ -86,13 +86,13 @@ base-studio-code (desktop host)
 ├── Agent Orchestrator      — spawns/manages parallel Claude API sessions  (crates/orch)
 ├── GitHub Integration      — OAuth, repo selection, PR/issue access       (crates/gh)
 ├── Knowledge Store         — injectable context blocks keyed by stack tag  (crates/kb)
-├── WebSocket Server        — tunnel endpoint for mobile-studio-code       (crates/ws-server)
+├── Mobile relay client     — dials the Cloudflare relay for mobile pairing (src-tauri/src/tunnel.rs)
 └── UI Shell                — Tauri WebView running the React frontend
 ```
 
 ```
-mobile-studio-code (thin client — separate repo)
-└── WebSocket Client        → connects to desktop host tunnel
+mobile-studio-code (standalone app — separate repo; usable on its own)
+└── Relay client (optional) → tunnels into a desktop session via the relay
     └── Mirrors console grid view + basic input
 ```
 
@@ -106,7 +106,7 @@ mobile-studio-code (thin client — separate repo)
 
 **Tab** — A named workspace containing one CSS grid layout with N panes. Persists across sessions.
 
-**Tunnel** — The WebSocket bridge between desktop and mobile. Desktop runs the server (`crates/ws-server`); mobile connects as a client. Authentication is token-based with QR pairing.
+**Tunnel** — The **optional** bridge between desktop and the standalone mobile app. Both peers dial out to a **zero-knowledge Cloudflare relay** (`relay/`); the desktop runs the relay client (`src-tauri/src/tunnel.rs`) and the session is end-to-end encrypted with **Noise IK** (the relay only ever sees ciphertext). Pairing is by QR.
 
 **Automation** — A cron-triggered rule that automatically dispatches a command or loads a knowledge block into a specified console pane.
 

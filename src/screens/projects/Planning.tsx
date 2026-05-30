@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { useAppStore } from "../../store";
 import type { AutomationSuggestion } from "../../store";
 import { projectRepoCwd, sanitizeProjectKey } from "../../lib/projectPaths";
+import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
 import {
@@ -935,6 +936,8 @@ export function Planning({ visible }: { visible: boolean }) {
   const containerRef   = useRef<HTMLDivElement>(null);
   const termRef        = useRef<Terminal | null>(null);
   const fitRef         = useRef<FitAddon | null>(null);
+  // Drag-to-resize the plan-sections panel (#43; the terminal flexes to fill the rest).
+  const sectionsPanel  = useDragResize({ initial: 430, min: 300, max: 760, axis: "x", invert: true });
   const unlistenData   = useRef<UnlistenFn | null>(null);
   const unlistenExit   = useRef<UnlistenFn | null>(null);
   // Accumulated stripped output used to scan for complete <plan_update> tags
@@ -1892,8 +1895,11 @@ export function Planning({ visible }: { visible: boolean }) {
           />
         </section>
 
+        {/* Drag handle between the terminal and the plan-sections panel (#43). */}
+        <div className="resize-x" {...sectionsPanel.handleProps} title="Drag to resize" />
+
         {/* Plan sections / publish progress panel */}
-        <aside style={{ flex: "0 0 430px", display: "flex", flexDirection: "column", background: "var(--bg-panel)", minHeight: 0, overflow: "hidden" }}>
+        <aside style={{ flex: `0 0 ${sectionsPanel.size}px`, display: "flex", flexDirection: "column", background: "var(--bg-panel)", minHeight: 0, overflow: "hidden" }}>
           {publishPhase === "idle" ? (
             <>
               <div style={{
