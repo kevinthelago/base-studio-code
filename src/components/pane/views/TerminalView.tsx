@@ -357,9 +357,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           ?? resolveExtensions(useAppStore.getState().extensions, "");
         const { mcp, hooks } = toSessionPayloads(exts);
         // Agents audit (#257): on a gated pane (role or profile assigned), install a
-        // PreToolUse hook that logs each tool attempt for the Activity feed.
+        // PreToolUse hooks: log each tool attempt for the Activity feed (bsc-audit),
+        // and confine the file tools to the session's repo root (bsc-confine, #158).
         const gatedHooks = (cap || prof)
-          ? [...hooks, { event: "PreToolUse", matcher: "", command: "bsc-audit" }]
+          ? [...hooks,
+             { event: "PreToolUse", matcher: "", command: "bsc-audit" },
+             { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" }]
           : hooks;
         await invoke("ensure_session_settings", {
           cwd: initialCwd, allowedCommands, deniedCommands: denied,
