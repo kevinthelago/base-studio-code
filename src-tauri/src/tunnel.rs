@@ -125,6 +125,9 @@ pub struct TunnelStatus {
     pub room: Option<String>,
     /// base64 of the desktop's static Noise public key — goes into the pairing QR.
     pub host_pub_key: String,
+    /// The pairing secret the mobile echoes in its `auth` frame — goes into the QR.
+    /// Empty until `tunnel_start` mints it. Carried only inside the QR, never shown.
+    pub psk: String,
     pub client_count: usize,
 }
 
@@ -291,6 +294,7 @@ impl TunnelState {
             relay_url: inner.relay_url.clone(),
             room: inner.room.clone(),
             host_pub_key: self.host_pub_key_b64(),
+            psk: inner.psk.clone(),
             client_count: inner.client_count,
         }
     }
