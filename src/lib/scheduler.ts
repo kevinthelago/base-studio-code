@@ -160,3 +160,27 @@ export function dueAutomations(automations: Automation[], nowMs: number): Automa
 export function appendRun(runs: AutomationRun[], run: AutomationRun): AutomationRun[] {
   return [run, ...runs].slice(0, MAX_RUNS);
 }
+
+/**
+ * Map a planning automation suggestion (#174) to a scheduler {@link Automation} input.
+ * A cron `schedule` becomes an **armed** cron trigger; an on-demand suggestion (no
+ * schedule) is a saved-but-**unarmed** command the user can arm or run. The command fires
+ * into `targetTab`, pane 0 (the project's launched tab).
+ */
+export function suggestionToAutomation(
+  s: { name: string; command: string; schedule?: string },
+  targetTab: string,
+): Omit<Automation, "id" | "lastRunAt" | "nextRunAt" | "runs"> {
+  const when: AutomationWhen = s.schedule
+    ? { kind: "cron", expr: s.schedule }
+    : { kind: "simple", every: "day", at: "09:00" };
+  return {
+    name: s.name,
+    armed: !!s.schedule,
+    when,
+    targetTab,
+    targetPaneIdx: 0,
+    action: "command",
+    command: s.command,
+  };
+}

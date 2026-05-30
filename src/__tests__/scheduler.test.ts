@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  computeNextRun, resolveTargetPane, dispatchPayload, dueAutomations, appendRun, MAX_RUNS,
+  computeNextRun, resolveTargetPane, dispatchPayload, dueAutomations, appendRun, MAX_RUNS, suggestionToAutomation,
   type Automation, type AutomationRun,
 } from "../lib/scheduler";
 
@@ -130,5 +130,30 @@ describe("appendRun", () => {
     for (let i = 0; i < MAX_RUNS + 5; i++) runs = appendRun(runs, { at: i, status: "ok", note: String(i) });
     expect(runs.length).toBe(MAX_RUNS);
     expect(runs[0].note).toBe(String(MAX_RUNS + 4)); // newest first
+  });
+});
+
+describe("suggestionToAutomation (#174)", () => {
+  it("a scheduled suggestion becomes an armed cron automation targeting the tab", () => {
+    const a = suggestionToAutomation(
+      { name: "Daily audit", command: "npm audit", schedule: "0 9 * * 1-5" },
+      "proj · triage",
+    );
+    expect(a).toMatchObject({
+      name: "Daily audit",
+      armed: true,
+      when: { kind: "cron", expr: "0 9 * * 1-5" },
+      targetTab: "proj · triage",
+      targetPaneIdx: 0,
+      action: "command",
+      command: "npm audit",
+    });
+  });
+
+  it("an on-demand suggestion (no schedule) is saved unarmed", () => {
+    const a = suggestionToAutomation({ name: "Typecheck", command: "npm run typecheck" }, "proj · build");
+    expect(a.armed).toBe(false);
+    expect(a.when.kind).toBe("simple");
+    expect(a.command).toBe("npm run typecheck");
   });
 });

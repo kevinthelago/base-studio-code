@@ -10,7 +10,7 @@ import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQu
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
 import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey } from "../lib/projectPaths";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
-import { computeNextRun, appendRun, type Automation, type AutomationRun } from "../lib/scheduler";
+import { computeNextRun, appendRun, suggestionToAutomation, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import type { SessionRole } from "../lib/sessionRoles";
 import { PIPELINE_PRESETS } from "../lib/pipeline";
@@ -452,6 +452,30 @@ interface AppStore {
 // `pipeline · <item>` tab whose pane is a fresh, role-scoped claude session seeded
 // with the stage prompt. A runId bump remounts it; the caller pty_kills first on a
 // relaunch so it spawns fresh. Terminal runs (done/escalated) just persist.
+// #174: promote a project's planning-assigned automations into the real scheduler on
+// launch. Idempotent (skips ones already present by name+command); scheduled (cron)
+// suggestions arm, on-demand ones are saved unarmed. Each fires into `targetTab`.
+function activateAutomations(s: AppStore, projectId: string, targetTab: string): Automation[] {
+  const suggestions = projectId ? s.planAutomations[projectId] ?? [] : [];
+  if (suggestions.length === 0) return [];
+  const have = new Set(s.automations.map((a) => `${a.name} ${a.command ?? ""}`));
+  const added: Automation[] = [];
+  for (const sug of suggestions) {
+    const k = `${sug.name} ${sug.command}`;
+    if (have.has(k)) continue;
+    have.add(k);
+    const input = suggestionToAutomation(sug, targetTab);
+    added.push({
+      ...input,
+      id: `auto_${Math.random().toString(36).slice(2, 8)}`,
+      lastRunAt: null,
+      nextRunAt: input.armed ? computeNextRun(input.when, Date.now()) : null,
+      runs: [],
+    });
+  }
+  return added;
+}
+
 function mountState(s: AppStore, item: string, run: PipelineRun) {
   const launch = currentLaunch(run);
   if (!launch) return { pipelineRuns: { ...s.pipelineRuns, [item]: run } };
@@ -937,6 +961,7 @@ export const useAppStore = create<AppStore>()(
           if (repos.length === 0) return {};
           const newTabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
           const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
+          const addedAutos = activateAutomations(s, projectId, tabName);
           const count = Math.min(repos.length, 16);
           const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
           const rows = Math.ceil(count / cols);
@@ -1025,6 +1050,7 @@ export const useAppStore = create<AppStore>()(
             paneRoles: newPaneRoles,
             disabledPanes: newDisabledPanes,
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
+            automations: [...s.automations, ...addedAutos],
             activeScreen: "console" as Screen,
           };
         }),
@@ -1151,9 +1177,11 @@ export const useAppStore = create<AppStore>()(
             newPaneNames[tabIdx] = tabPaneNames;
           }
 
+          const addedAutos = activateAutomations(s, s.activeProjectId ?? "", baseTabName);
           return {
             tabs,
             activeTabIdx: firstTabIdx,
+            automations: [...s.automations, ...addedAutos],
             focusedPaneIdx: -1,
             fullscreenPaneIdx: -1,
             paneMenuOpenIdx: -1,
