@@ -503,7 +503,7 @@ async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_CONFINE_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -512,6 +512,12 @@ async fn pty_create(
     // panes whose settings install the hook actually write).
     cmd.env("BSC_AUDIT_LOG", to_bash_path(&base.join("audit.log").to_string_lossy()));
     cmd.env("BSC_AUDIT_PANE", &pane_id);
+    // FS confinement (#158): the session's repo root (bash-style), against which the
+    // `bsc-confine` hook (installed on gated panes) checks file-tool paths. The cwd is
+    // the repo root. Set for every pane; only gated panes install the hook.
+    if !cwd.is_empty() {
+        cmd.env("BSC_REPO_ROOT", to_bash_path(&cwd));
+    }
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
@@ -1147,6 +1153,18 @@ const BSC_DECISIONS_RC: &str = concat!(
 /// 0 so it never blocks a tool. A raw string keeps the embedded quotes/regex readable.
 const BSC_AUDIT_RC: &str = concat!(
     r#"bsc-audit() { l="${BSC_AUDIT_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; tn="$(printf '%s' "$j" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; tg="$(printf '%s' "$j" | grep -oE '"(command|file_path|notebook_path|url|query|pattern|path|description)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | tr '\t\n' '  ' | cut -c1-160)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$tn" "$tg" >> "$l"; return 0; }"#,
+    "\n",
+);
+
+/// The `bsc-confine` helper (#158): a PreToolUse hook for the file tools on a gated
+/// pane. It reads Claude Code's tool JSON, extracts the target `file_path` /
+/// `notebook_path`, and BLOCKS (return 2 + stderr) when the path escapes the session's
+/// repo root (`$BSC_REPO_ROOT`) — any `..` segment, or an absolute path not under the
+/// root. Mirrors `src/lib/fsConfine.ts` (the unit-tested decision). String-based + no
+/// realpath so it's portable; `return 2` (not `exit`) so it never kills a shell that
+/// sources it. Covers the AI's file tools only — Bash needs OS-level sandboxing.
+const BSC_CONFINE_RC: &str = concat!(
+    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; case "$fp" in ..|../*|*/../*|*/..) echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
     "\n",
 );
 
