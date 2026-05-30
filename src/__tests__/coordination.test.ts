@@ -4,6 +4,7 @@ import {
   emptyCoordState, refKey, parseRef, isSatisfied, isReady,
   registerWaiter, satisfy, fail, stalledWaiters,
   parseCoordLine, applyCoordEvent, ingestCoordLog,
+  wakePromptFor, planWakes, coordinationSummary,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -209,5 +210,58 @@ describe("event ingestion — applyCoordEvent + ingestCoordLog", () => {
     const r = applyCoordEvent(s, { type: "failed", ref: { kind: "issue", number: 9 }, reason: "red", at: 2 });
     expect(r.woken).toHaveLength(0);
     expect(r.stalled.map((w) => w.session)).toEqual(["C"]);
+  });
+});
+
+describe("wake planning + inbox view", () => {
+  const issue1 = { kind: "issue", number: 1 } as const;
+  const contractY = { kind: "contract", name: "Y" } as const;
+
+  it("wakePromptFor names landed deps (with source) + the checkpoint", () => {
+    let s = emptyCoordState();
+    s = satisfy(s, issue1, "merged", 1).state;
+    s = satisfy(s, contractY, "landed", 2).state;
+    const prompt = wakePromptFor(
+      { session: "B", deps: [issue1, contractY], checkpoint: ".bsc/cp/B.md", registeredAt: 0 },
+      s,
+    );
+    expect(prompt).toContain("dependencies have landed");
+    expect(prompt).toContain("#1 (merged)");
+    expect(prompt).toContain("contract:Y (landed)");
+    expect(prompt).toContain(".bsc/cp/B.md");
+  });
+
+  it("wakePromptFor uses singular phrasing + omits checkpoint when absent", () => {
+    const s = satisfy(emptyCoordState(), issue1, "closed", 1).state;
+    const prompt = wakePromptFor({ session: "A", deps: [issue1], registeredAt: 0 }, s);
+    expect(prompt).toContain("dependency has landed");
+    expect(prompt).not.toContain("checkpoint");
+  });
+
+  it("planWakes maps woken waiters from a satisfy into actions", () => {
+    let s = registerWaiter(emptyCoordState(), { session: "A", deps: [issue1], checkpoint: "cp", registeredAt: 0 }).state;
+    const { woken, state } = satisfy(s, issue1, "merged", 1);
+    s = state;
+    const actions = planWakes(woken, s);
+    expect(actions).toHaveLength(1);
+    expect(actions[0].session).toBe("A");
+    expect(actions[0].prompt).toContain("#1 (merged)");
+  });
+
+  it("coordinationSummary reports per-dep status + the stalled flag", () => {
+    let s = emptyCoordState();
+    s = registerWaiter(s, { session: "A", deps: [issue1, contractY], registeredAt: 0 }).state;
+    s = registerWaiter(s, { session: "B", deps: [issue1], registeredAt: 0 }).state;
+    s = satisfy(s, issue1, "merged", 1).state;  // wakes B; A still waits on Y
+    s = fail(s, contractY, "broke", 2).state;    // A now stalled
+
+    const view = coordinationSummary(s);
+    expect(view.map((v) => v.session)).toEqual(["A"]); // B was woken + removed
+    const a = view[0];
+    expect(a.stalled).toBe(true);
+    expect(a.deps).toEqual([
+      { ref: "#1", status: "satisfied" },
+      { ref: "contract:Y", status: "failed" },
+    ]);
   });
 });

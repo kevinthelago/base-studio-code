@@ -503,7 +503,7 @@ async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_CONFINE_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -1174,6 +1174,19 @@ const BSC_CONFINE_RC: &str = concat!(
     r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; case "$fp" in ..|../*|*/../*|*/..) echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
     "\n",
 );
+
+/// Satisfy / failure emitters for $BSC_COORD_LOG (#199): the director (or a producer
+/// session) marks a dependency done (landed/merged/closed) or failed so parked
+/// waiters can be woken. One TSV line per call, tagged with the pane id -- symmetric
+/// to `bsc-blocked --on`. Quote `#`-refs (`bsc-merged '#42'`) so the shell doesn't
+/// treat them as comments; a bare number works too. `bsc-failed` reads the reason
+/// from stdin. A real newline separates each function inside the raw string.
+const BSC_COORD_EMIT_RC: &str = r#"__bsc_coord() { l="${BSC_COORD_LOG:-}"; [ -z "$l" ] && return 0; mkdir -p "$(dirname "$l")" 2>/dev/null; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; printf '%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" "$2" "$3" >> "$l"; }
+bsc-landed() { __bsc_coord landed "$1" ""; }
+bsc-merged() { __bsc_coord merged "$1" ""; }
+bsc-closed() { __bsc_coord closed "$1" ""; }
+bsc-failed() { r="$(cat)"; __bsc_coord failed "$1" "$r"; }
+"#;
 
 /// Read the Agents audit log (#257): the newest `limit` TSV lines, newest first.
 #[tauri::command]
