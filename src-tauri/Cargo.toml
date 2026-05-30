@@ -28,12 +28,15 @@ rfd = "0.14"
 # Mobile tunnel (#242): the desktop ⇄ mobile bridge runs over a zero-knowledge
 # relay (#241), end-to-end encrypted with Noise IK so the relay only ever sees
 # ciphertext. `snow` is the Noise implementation (pure-Rust default resolver — no
-# system crypto toolchain); `tokio` sync primitives fan PTY output out to the
-# relay transport; `base64` encodes the static public key for the pairing QR. The
-# relay dial-out client (tokio-tungstenite) lands with the transport in #242b.
+# system crypto toolchain); `tokio` runs the relay client; `tokio-tungstenite`
+# dials the relay over real (CA-signed) TLS via rustls + webpki roots; `base64`
+# encodes the static public key for the pairing QR; `rand` mints room ids + PSKs.
 snow = "0.9"
 base64 = "0.22"
-tokio = { version = "1", features = ["sync", "rt", "macros", "time"] }
+rand = "0.8"
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "time", "net", "io-util"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 
 # Windows-only: Job Object APIs so a PTY's whole process tree (shell + claude +
 # any grandchildren) dies with the session on pty_kill / app exit. Without this,

@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
 use tokio::sync::{broadcast, watch};
 
 // ── Wire protocol ───────────────────────────────────────────────────────────────
@@ -173,6 +173,9 @@ struct Inner {
     running: bool,
     relay_url: Option<String>,
     room: Option<String>,
+    /// Pre-shared pairing secret (the `token` the mobile sends in its `auth` frame,
+    /// carried in the QR). Minted on `tunnel_start`; validated inside the Noise session.
+    psk: String,
     panes: Vec<PaneDescriptor>,
     sessions: HashMap<String, SessionMeta>,
     client_count: usize,
@@ -214,6 +217,7 @@ impl TunnelState {
                 running: false,
                 relay_url: None,
                 room: None,
+                psk: String::new(),
                 panes: Vec::new(),
                 sessions: HashMap::new(),
                 client_count: 0,
@@ -226,12 +230,6 @@ impl TunnelState {
         }
     }
 
-    /// The desktop's static private key (used by the relay transport's responder, #242b).
-    #[allow(dead_code)]
-    pub(crate) fn static_private_key(&self) -> &[u8] {
-        &self.static_priv
-    }
-
     /// base64 of the static public key — embedded in the pairing QR (#243).
     pub fn host_pub_key_b64(&self) -> String {
         use base64::Engine;
@@ -239,14 +237,12 @@ impl TunnelState {
     }
 
     /// Subscribe to the PTY-output fan-out (the relay transport calls this per client).
-    #[allow(dead_code)]
-    pub(crate) fn subscribe_output(&self) -> broadcast::Receiver<PaneOutput> {
+    fn subscribe_output(&self) -> broadcast::Receiver<PaneOutput> {
         self.output_tx.subscribe()
     }
 
     /// Subscribe to control events (pane_list / session_state / user_request).
-    #[allow(dead_code)]
-    pub(crate) fn subscribe_events(&self) -> broadcast::Receiver<ServerMsg> {
+    fn subscribe_events(&self) -> broadcast::Receiver<ServerMsg> {
         self.event_tx.subscribe()
     }
 
@@ -271,6 +267,22 @@ impl TunnelState {
         }
         inner.running = false;
         inner.client_count = 0;
+    }
+
+    /// The current pairing secret (validated against the mobile's `auth` token).
+    fn psk(&self) -> String {
+        self.inner.lock().unwrap().psk.clone()
+    }
+
+    /// Snapshot the pane list + session metadata to replay to a freshly-paired client.
+    fn snapshot(&self) -> (Vec<PaneDescriptor>, Vec<SessionMeta>) {
+        let inner = self.inner.lock().unwrap();
+        (inner.panes.clone(), inner.sessions.values().cloned().collect())
+    }
+
+    /// Record how many mobile clients are connected (for the settings card).
+    fn set_client_count(&self, n: usize) {
+        self.inner.lock().unwrap().client_count = n;
     }
 
     fn status_locked(&self, inner: &Inner) -> TunnelStatus {
@@ -355,6 +367,346 @@ pub fn tunnel_set_sessions(sessions: Vec<SessionMeta>, state: State<'_, TunnelSt
     for (pane_id, prompt) in newly_awaiting {
         let _ = state.event_tx.send(ServerMsg::UserRequest { pane_id, prompt });
     }
+}
+
+/// Start the relay transport: mint a room id + pairing secret, mark running, and spawn
+/// the dial-out client on its own tokio runtime. Idempotent (returns the current status
+/// if already running). The QR (#243) reads `room` + `hostPubKey` + the psk from status.
+#[tauri::command]
+pub fn tunnel_start(
+    app: AppHandle,
+    relay_url: String,
+    state: State<'_, TunnelState>,
+) -> Result<TunnelStatus, String> {
+    {
+        let inner = state.inner.lock().unwrap();
+        if inner.running {
+            return Ok(state.status_locked(&inner));
+        }
+    }
+    let relay_url = relay_url.trim().trim_end_matches('/').to_string();
+    if relay_url.is_empty() {
+        return Err("a relay URL is required".into());
+    }
+    let room = transport::generate_room_id();
+    let psk = transport::generate_psk();
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    {
+        let mut inner = state.inner.lock().unwrap();
+        inner.running = true;
+        inner.relay_url = Some(relay_url.clone());
+        inner.room = Some(room.clone());
+        inner.psk = psk;
+        inner.shutdown_tx = Some(shutdown_tx);
+    }
+
+    // Dedicated multi-thread runtime on its own OS thread so the tunnel never depends
+    // on Tauri's runtime having the IO driver enabled, and so stopping it is a clean
+    // watch-signal rather than reaching into Tauri internals.
+    let static_priv = state.static_priv.clone();
+    let app_task = app.clone();
+    let room_task = room.clone();
+    let relay_task = relay_url.clone();
+    std::thread::Builder::new()
+        .name("tunnel-relay".into())
+        .spawn(move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    log::error!("tunnel: runtime build failed: {e}");
+                    return;
+                }
+            };
+            rt.block_on(transport::run(app_task, relay_task, room_task, static_priv, shutdown_rx));
+        })
+        .map_err(|e| format!("could not spawn tunnel thread: {e}"))?;
+
+    log::info!("tunnel: dialing relay {relay_url} (room {room})");
+    let inner = state.inner.lock().unwrap();
+    Ok(state.status_locked(&inner))
+}
+
+/// Stop the relay transport: signal the client task to close and clear the pairing.
+#[tauri::command]
+pub fn tunnel_stop(state: State<'_, TunnelState>) -> TunnelStatus {
+    let mut inner = state.inner.lock().unwrap();
+    if let Some(tx) = inner.shutdown_tx.take() {
+        let _ = tx.send(true);
+    }
+    inner.running = false;
+    inner.room = None;
+    inner.client_count = 0;
+    log::info!("tunnel: stopped");
+    state.status_locked(&inner)
+}
+
+// ── Relay dial-out transport ────────────────────────────────────────────────────
+// The desktop dials the relay (#241), registers a room as host, completes a Noise IK
+// handshake with the mobile peer (relayed end-to-end), then pumps the bus: PTY output
+// + control events out (Noise-encrypted), mobile input/resize/focus in. Reconnects
+// with backoff. The relay only ever sees ciphertext.
+
+mod transport {
+    use super::{
+        decode_room_msg, noise, ClientMsg, PaneOutput, ServerMsg, SessionMeta, TunnelState,
+    };
+    use futures_util::stream::{SplitSink, SplitStream};
+    use futures_util::{SinkExt, StreamExt};
+    use rand::RngCore;
+    use serde::Serialize;
+    use std::time::Duration;
+    use tauri::{AppHandle, Manager};
+    use tokio::net::TcpStream;
+    use tokio::sync::{broadcast, watch};
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+
+    type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
+    type WsSink = SplitSink<Ws, Message>;
+    type WsStream = SplitStream<Ws>;
+
+    /// Noise transport messages cap at 65535 bytes; keep app-plaintext well under that
+    /// (the JSON wrapper + AEAD tag add overhead), splitting large PTY output into
+    /// several `pane_output` frames.
+    const MAX_PLAINTEXT: usize = 48 * 1024;
+
+    /// A high-entropy, URL-safe room id matching the relay's `validateRoomId`
+    /// (`[A-Za-z0-9_-]{16,64}`) — 24 random bytes → 32 base64url chars.
+    pub fn generate_room_id() -> String {
+        use base64::Engine;
+        let mut bytes = [0u8; 24];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    }
+
+    /// A pre-shared pairing secret (hex of 32 random bytes) — the mobile sends it back
+    /// inside the Noise session as its `auth` token.
+    pub fn generate_psk() -> String {
+        let mut bytes = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// Split a string into ≤ `max`-byte pieces on char boundaries (never mid-codepoint).
+    pub fn split_utf8(s: &str, max: usize) -> Vec<&str> {
+        if s.len() <= max {
+            return if s.is_empty() { vec![] } else { vec![s] };
+        }
+        let mut out = Vec::new();
+        let mut start = 0;
+        while start < s.len() {
+            let mut end = (start + max).min(s.len());
+            while end > start && !s.is_char_boundary(end) {
+                end -= 1;
+            }
+            out.push(&s[start..end]);
+            start = end;
+        }
+        out
+    }
+
+    /// Constant-time string compare for the pairing secret.
+    fn ct_eq(a: &str, b: &str) -> bool {
+        let (a, b) = (a.as_bytes(), b.as_bytes());
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut diff = 0u8;
+        for (x, y) in a.iter().zip(b.iter()) {
+            diff |= x ^ y;
+        }
+        diff == 0
+    }
+
+    /// Encrypt a JSON-serialized message into one Noise transport frame.
+    pub fn encode<T: Serialize>(tx: &mut snow::TransportState, msg: &T) -> Result<Vec<u8>, String> {
+        let json = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
+        let mut buf = vec![0u8; json.len() + 16];
+        let n = tx.write_message(&json, &mut buf).map_err(|e| e.to_string())?;
+        buf.truncate(n);
+        Ok(buf)
+    }
+
+    async fn send_msg(sink: &mut WsSink, tx: &mut snow::TransportState, msg: &ServerMsg) -> Result<(), String> {
+        let frame = encode(tx, msg)?;
+        sink.send(Message::Binary(frame)).await.map_err(|e| e.to_string())
+    }
+
+    async fn send_output(sink: &mut WsSink, tx: &mut snow::TransportState, po: &PaneOutput) -> Result<(), String> {
+        for chunk in split_utf8(&po.data, MAX_PLAINTEXT) {
+            let msg = ServerMsg::PaneOutput {
+                pane_id: po.pane_id.clone(),
+                data: chunk.to_string(),
+                coarse: false,
+            };
+            send_msg(sink, tx, &msg).await?;
+        }
+        Ok(())
+    }
+
+    /// Read the next binary WebSocket frame, skipping text/ping/pong; `Err` on close.
+    async fn next_binary(read: &mut WsStream) -> Result<Vec<u8>, String> {
+        loop {
+            match read.next().await {
+                Some(Ok(Message::Binary(b))) => return Ok(b),
+                Some(Ok(Message::Close(_))) | None => return Err("connection closed".into()),
+                Some(Ok(_)) => continue,
+                Some(Err(e)) => return Err(e.to_string()),
+            }
+        }
+    }
+
+    /// Reconnect loop: dial the relay, run one session, back off, repeat until shutdown.
+    pub async fn run(
+        app: AppHandle,
+        relay_url: String,
+        room: String,
+        static_priv: Vec<u8>,
+        mut shutdown_rx: watch::Receiver<bool>,
+    ) {
+        let mut backoff = 1u64;
+        loop {
+            if *shutdown_rx.borrow() {
+                break;
+            }
+            match session(&app, &relay_url, &room, &static_priv, &mut shutdown_rx).await {
+                Ok(()) => backoff = 1,
+                Err(e) => log::warn!("tunnel: relay session ended: {e}"),
+            }
+            if let Some(ts) = app.try_state::<TunnelState>() {
+                ts.set_client_count(0);
+            }
+            if *shutdown_rx.borrow() {
+                break;
+            }
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(backoff)) => {}
+                _ = shutdown_rx.changed() => {}
+            }
+            backoff = (backoff * 2).min(30);
+        }
+        log::info!("tunnel: relay client stopped");
+    }
+
+    /// One relay session: dial, Noise handshake (responder), authenticate, replay, pump.
+    async fn session(
+        app: &AppHandle,
+        relay_url: &str,
+        room: &str,
+        static_priv: &[u8],
+        shutdown_rx: &mut watch::Receiver<bool>,
+    ) -> Result<(), String> {
+        let scheme = if relay_url.starts_with("http") {
+            relay_url.replacen("http", "ws", 1)
+        } else {
+            relay_url.to_string()
+        };
+        let url = format!("{scheme}/connect?room={room}&role=host");
+        let (ws, _) = connect_async(&url).await.map_err(|e| e.to_string())?;
+        let (mut sink, mut read) = ws.split();
+
+        // Noise IK responder: read the mobile's first handshake message, answer it.
+        let mut hs = noise::responder(static_priv).map_err(|e| e.to_string())?;
+        let mut scratch = vec![0u8; 65535];
+        let msg1 = next_binary(&mut read).await?;
+        hs.read_message(&msg1, &mut scratch).map_err(|e| e.to_string())?;
+        let n = hs.write_message(&[], &mut scratch).map_err(|e| e.to_string())?;
+        sink.send(Message::Binary(scratch[..n].to_vec())).await.map_err(|e| e.to_string())?;
+        let mut noise_tx = hs.into_transport_mode().map_err(|e| e.to_string())?;
+
+        // First app frame must be `auth`; validate the pairing secret.
+        let frame = next_binary(&mut read).await?;
+        match decode_room_msg(&mut noise_tx, &frame)? {
+            ClientMsg::Auth { token, .. } => {
+                let psk = app
+                    .try_state::<TunnelState>()
+                    .map(|s| s.psk())
+                    .unwrap_or_default();
+                if !ct_eq(&token, &psk) {
+                    return Err("auth rejected (bad pairing secret)".into());
+                }
+            }
+            _ => return Err("expected auth as the first frame".into()),
+        }
+        send_msg(&mut sink, &mut noise_tx, &ServerMsg::AuthOk).await?;
+
+        // Replay current pane list + session state to the freshly-paired client.
+        let (panes, sessions): (Vec<_>, Vec<SessionMeta>) = app
+            .try_state::<TunnelState>()
+            .map(|s| s.snapshot())
+            .unwrap_or_default();
+        send_msg(&mut sink, &mut noise_tx, &ServerMsg::PaneList { panes }).await?;
+        for s in &sessions {
+            send_msg(&mut sink, &mut noise_tx, &super::session_state_msg(s)).await?;
+        }
+
+        // Subscribe AFTER replay so we don't double-send; then pump until either side closes.
+        let (mut out_rx, mut evt_rx) = match app.try_state::<TunnelState>() {
+            Some(s) => {
+                s.set_client_count(1);
+                (s.subscribe_output(), s.subscribe_events())
+            }
+            None => return Err("tunnel state missing".into()),
+        };
+        let mut focused: Option<String> = None;
+        log::info!("tunnel: mobile client paired (room {room})");
+
+        loop {
+            tokio::select! {
+                biased;
+                _ = shutdown_rx.changed() => return Ok(()),
+                inbound = next_binary(&mut read) => {
+                    let frame = inbound?;
+                    match decode_room_msg(&mut noise_tx, &frame) {
+                        Ok(msg) => handle_client_msg(app, msg, &mut focused),
+                        Err(e) => return Err(e),
+                    }
+                }
+                out = out_rx.recv() => match out {
+                    Ok(po) => {
+                        if focused.as_deref() == Some(po.pane_id.as_str()) {
+                            send_output(&mut sink, &mut noise_tx, &po).await?;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        log::warn!("tunnel: dropped {n} output chunk(s) (slow client)");
+                    }
+                    Err(broadcast::error::RecvError::Closed) => return Ok(()),
+                },
+                evt = evt_rx.recv() => match evt {
+                    Ok(msg) => send_msg(&mut sink, &mut noise_tx, &msg).await?,
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => return Ok(()),
+                },
+            }
+        }
+    }
+
+    /// Route a decrypted mobile message: keystrokes/resize to the PTY, focus to filtering.
+    fn handle_client_msg(app: &AppHandle, msg: ClientMsg, focused: &mut Option<String>) {
+        match msg {
+            ClientMsg::PaneInput { pane_id, data } => crate::tunnel_write_pty(app, &pane_id, &data),
+            ClientMsg::PaneResize { pane_id, cols, rows } => {
+                crate::tunnel_resize_pty(app, &pane_id, cols, rows)
+            }
+            ClientMsg::PaneFocus { pane_id } => *focused = Some(pane_id),
+            ClientMsg::PaneSetState { pane_id, state } => {
+                if state == "streaming" {
+                    *focused = Some(pane_id);
+                }
+            }
+            ClientMsg::Auth { .. } => {} // already authenticated for this session
+        }
+    }
+}
+
+/// Decrypt + deserialize one Noise transport frame into a client message. Kept at module
+/// scope (not in `transport`) so the tests can exercise it against the protocol types.
+fn decode_room_msg(tx: &mut snow::TransportState, frame: &[u8]) -> Result<ClientMsg, String> {
+    let mut out = vec![0u8; frame.len()];
+    let n = tx.read_message(frame, &mut out).map_err(|e| e.to_string())?;
+    out.truncate(n);
+    serde_json::from_slice(&out).map_err(|e| e.to_string())
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────────
@@ -520,5 +872,61 @@ mod tests {
         let got = rx.try_recv().unwrap();
         assert_eq!(got.pane_id, "t0p0");
         assert_eq!(got.data, "world");
+    }
+
+    #[test]
+    fn room_id_is_relay_valid() {
+        // Matches the relay's validateRoomId: [A-Za-z0-9_-]{16,64}.
+        let id = transport::generate_room_id();
+        assert_eq!(id.len(), 32);
+        assert!(id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        // Two draws differ (entropy sanity).
+        assert_ne!(transport::generate_room_id(), transport::generate_room_id());
+    }
+
+    #[test]
+    fn split_utf8_respects_size_and_char_boundaries() {
+        assert_eq!(transport::split_utf8("", 4), Vec::<&str>::new());
+        assert_eq!(transport::split_utf8("abc", 8), vec!["abc"]);
+        // Multi-byte chars must never be split mid-codepoint.
+        let s = "é".repeat(10); // each 'é' is 2 bytes → 20 bytes
+        let parts = transport::split_utf8(&s, 5);
+        assert!(parts.iter().all(|p| p.len() <= 5));
+        assert_eq!(parts.concat(), s); // lossless
+    }
+
+    /// Establish a Noise IK transport pair (host responder, mobile initiator).
+    fn handshake_pair() -> (snow::TransportState, snow::TransportState) {
+        let host = noise::generate_keypair().unwrap();
+        let mobile = noise::generate_keypair().unwrap();
+        let mut init = noise::initiator(&mobile.private, &host.public).unwrap();
+        let mut resp = noise::responder(&host.private).unwrap();
+        let mut b = [0u8; 1024];
+        let mut o = [0u8; 1024];
+        let n = init.write_message(&[], &mut b).unwrap();
+        resp.read_message(&b[..n], &mut o).unwrap();
+        let n = resp.write_message(&[], &mut b).unwrap();
+        init.read_message(&b[..n], &mut o).unwrap();
+        (resp.into_transport_mode().unwrap(), init.into_transport_mode().unwrap())
+    }
+
+    #[test]
+    fn app_messages_roundtrip_through_the_noise_session() {
+        let (mut host, mut mobile) = handshake_pair();
+
+        // desktop → mobile: encode a ServerMsg, decrypt + parse on the mobile side.
+        let frame = transport::encode(&mut host, &ServerMsg::AuthOk).unwrap();
+        let mut out = vec![0u8; frame.len()];
+        let n = mobile.read_message(&frame, &mut out).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out[..n]).unwrap();
+        assert_eq!(v, serde_json::json!({ "type": "auth_ok" }));
+
+        // mobile → desktop: a client `auth` frame decodes via decode_room_msg.
+        let cj = serde_json::to_vec(&serde_json::json!({ "type": "auth", "token": "secret" })).unwrap();
+        let mut cf = vec![0u8; cj.len() + 16];
+        let m = mobile.write_message(&cj, &mut cf).unwrap();
+        cf.truncate(m);
+        let decoded = decode_room_msg(&mut host, &cf).unwrap();
+        assert!(matches!(decoded, ClientMsg::Auth { token, .. } if token == "secret"));
     }
 }
