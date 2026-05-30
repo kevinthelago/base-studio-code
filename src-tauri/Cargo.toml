@@ -37,6 +37,10 @@ rand = "0.8"
 tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "time", "net", "io-util"] }
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+# rustls 0.23 won't auto-select a CryptoProvider at runtime unless its provider
+# feature is pinned, so the relay dial's first TLS handshake panics the tunnel
+# thread. Pin `ring` and install it as the process default at startup (lib.rs `run`).
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 # Windows-only: Job Object APIs so a PTY's whole process tree (shell + claude +
 # any grandchildren) dies with the session on pty_kill / app exit. Without this,

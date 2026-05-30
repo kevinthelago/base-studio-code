@@ -610,9 +610,15 @@ mod transport {
             relay_url.to_string()
         };
         let url = format!("{scheme}/connect?room={room}&role=host");
-        let (ws, _) = connect_async(&url)
-            .await
-            .map_err(|e| format!("relay dial failed: {e}"))?;
+        log::debug!("tunnel: dialing host websocket {url}");
+        // `connect_async` has no built-in timeout: a stalled TLS/WS upgrade would hang
+        // forever — never entering the room, never erroring, never logging. Bound it so a
+        // hang becomes a logged error + backoff reconnect instead of silent death.
+        let (ws, _) = match tokio::time::timeout(Duration::from_secs(15), connect_async(&url)).await {
+            Ok(Ok(pair)) => pair,
+            Ok(Err(e)) => return Err(format!("relay dial failed: {e}")),
+            Err(_) => return Err("relay dial timed out after 15s (no TLS/WS upgrade response)".into()),
+        };
         let (mut sink, mut read) = ws.split();
         log::info!("tunnel: connected to relay as host; waiting for mobile peer (room {room})");
 
