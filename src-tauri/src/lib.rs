@@ -503,9 +503,15 @@ async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
+    // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
+    // settings.json by the frontend) appends one redacted TSV line per tool attempt to
+    // this app-wide log, tagged with the pane id. Set for every pane (harmless — only
+    // panes whose settings install the hook actually write).
+    cmd.env("BSC_AUDIT_LOG", to_bash_path(&base.join("audit.log").to_string_lossy()));
+    cmd.env("BSC_AUDIT_PANE", &pane_id);
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
@@ -1132,6 +1138,28 @@ const BSC_DECISIONS_RC: &str = concat!(
     "bsc-note() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' '- '; cat; printf '\\n'; } >> \"$d\"; }\n",
     "bsc-blocked() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' '- BLOCKED: '; cat; printf '\\n'; } >> \"$d\"; }\n",
 );
+
+/// The `bsc-audit` helper (#257): the PreToolUse hook on a gated pane pipes Claude
+/// Code's tool JSON into this; it extracts ONLY the tool name + a short target field
+/// (never `content`/`new_string`, so file contents / secrets aren't written) and
+/// appends one TAB-separated line — `ts \t pane \t toolName \t target` — to the
+/// app-wide `$BSC_AUDIT_LOG`, tagged with `$BSC_AUDIT_PANE`. Best-effort + always exits
+/// 0 so it never blocks a tool. A raw string keeps the embedded quotes/regex readable.
+const BSC_AUDIT_RC: &str = concat!(
+    r#"bsc-audit() { l="${BSC_AUDIT_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; tn="$(printf '%s' "$j" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; tg="$(printf '%s' "$j" | grep -oE '"(command|file_path|notebook_path|url|query|pattern|path|description)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | tr '\t\n' '  ' | cut -c1-160)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$tn" "$tg" >> "$l"; return 0; }"#,
+    "\n",
+);
+
+/// Read the Agents audit log (#257): the newest `limit` TSV lines, newest first.
+#[tauri::command]
+fn read_audit_log(limit: usize) -> Vec<String> {
+    let path = bsc_base_dir().join("audit.log");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
+    lines.reverse();
+    lines.truncate(limit);
+    lines
+}
 
 /// Serializes the app's read-modify-write of `~/.claude.json` so concurrent
 /// session launches (each `pty_create` calls `trust_claude_dir`) don't interleave
@@ -3027,6 +3055,7 @@ pub fn run() {
             tunnel::tunnel_status,
             tunnel::tunnel_set_panes,
             tunnel::tunnel_set_sessions,
+            read_audit_log,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
