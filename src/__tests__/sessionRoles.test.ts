@@ -6,6 +6,7 @@ import {
   checkCommand,
   matchGlob,
   canWritePath,
+  roleDeniedCommands,
 } from "../lib/sessionRoles";
 
 describe("classifyCommand", () => {
@@ -81,5 +82,32 @@ describe("matchGlob / canWritePath", () => {
   it("the planner can write no code; a worker with no boundary writes nothing", () => {
     expect(canWritePath(roleCapability("planner"), "anything.ts")).toBe(false);
     expect(canWritePath(roleCapability("worker"), "src/x.ts")).toBe(false);
+  });
+});
+
+describe("roleDeniedCommands (launch wiring)", () => {
+  it("planner denies git + gh writes, not the tools outright", () => {
+    const denies = roleDeniedCommands(ROLE_DEFAULTS.planner);
+    expect(denies).toContain("git push");
+    expect(denies).toContain("gh issue create");
+    expect(denies).toContain("gh api --method POST");
+    expect(denies).not.toContain("git"); // reads stay
+    expect(denies).not.toContain("gh");
+  });
+
+  it("worker denies gh writes but no git writes (git is its tier)", () => {
+    const denies = roleDeniedCommands(ROLE_DEFAULTS.worker);
+    expect(denies).toContain("gh pr create");
+    expect(denies).not.toContain("git push");
+  });
+
+  it("director denies nothing", () => {
+    expect(roleDeniedCommands(ROLE_DEFAULTS.director)).toEqual([]);
+  });
+
+  it("triage denies git outright (no access) but allows gh writes", () => {
+    const denies = roleDeniedCommands(ROLE_DEFAULTS.triage);
+    expect(denies).toContain("git");
+    expect(denies).not.toContain("gh issue create");
   });
 });

@@ -149,3 +149,43 @@ export function canWritePath(cap: RoleCapability, path: string): boolean {
   if (cap.code === "none") return false;
   return cap.writeGlobs.some((g) => matchGlob(g, path));
 }
+
+// ── Launch wiring: command-allowlist denies ────────────────────────────────────
+
+/** git write subcommand prefixes (the backend wraps each as `Bash(<prefix> *)`). */
+const GIT_WRITE_DENY = [
+  "git push", "git commit", "git merge", "git rebase", "git reset", "git revert",
+  "git cherry-pick", "git tag", "git am", "git apply",
+];
+
+/** gh write command prefixes + writing `gh api` methods. */
+const GH_WRITE_DENY = [
+  "gh issue create", "gh issue edit", "gh issue close", "gh issue reopen",
+  "gh issue comment", "gh issue delete", "gh issue lock", "gh issue transfer", "gh issue pin",
+  "gh pr create", "gh pr merge", "gh pr close", "gh pr edit", "gh pr comment", "gh pr ready", "gh pr review",
+  "gh label create", "gh label edit", "gh label delete",
+  "gh release create", "gh release edit", "gh release delete",
+  "gh repo create", "gh repo edit", "gh repo delete",
+  "gh api --method POST", "gh api --method PATCH", "gh api --method PUT", "gh api --method DELETE",
+  "gh api -X POST", "gh api -X PATCH", "gh api -X PUT", "gh api -X DELETE",
+];
+
+/**
+ * Command-prefix denies to apply at session launch for a role, merged into the
+ * session's `deniedCommands` (the backend wraps each as `Bash(<prefix> *)`, and a
+ * specific deny overrides the broad `git`/`gh` allow). A first-layer gate: blocks the
+ * args-bearing mutating commands while leaving reads alone. `none` tiers deny the tool
+ * outright.
+ *
+ * This is the launch-time allowlist layer; complete subcommand-granular enforcement
+ * (incl. no-arg variants) is a PreToolUse hook (follow-on), and the authoritative
+ * publish gate is `checkCommand` at the executor call site.
+ */
+export function roleDeniedCommands(cap: RoleCapability): string[] {
+  const out: string[] = [];
+  if (cap.git === "none") out.push("git");
+  else if (cap.git === "read") out.push(...GIT_WRITE_DENY);
+  if (cap.github === "none") out.push("gh");
+  else if (cap.github === "read") out.push(...GH_WRITE_DENY);
+  return out;
+}
