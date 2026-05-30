@@ -27,10 +27,25 @@ the client.
 
 - **GraphQL** (`githubGraphql`) still uses the global token — a GraphQL query has no repo
   in its URL to scope by. Repo-scoped GraphQL is a follow-up.
-- **Filesystem / git confinement** — preventing a session's shell from traversing into
-  sibling repos under `~/.base-studio-code/projects/` — is a separate concern (the Rust
-  workspace/PTY layer) and a follow-up PR. The command/write-path gates (session-roles)
-  already bound *what* a session can run/write.
+
+## Filesystem confinement (the file-tool axis)
+
+A gated pane (one with a role or profile assigned) installs a **`bsc-confine`
+PreToolUse hook** that blocks Claude's file tools (`Read`/`Edit`/`Write`/`MultiEdit`/
+`NotebookEdit`) when their target path **escapes the session's repo root**
+(`$BSC_REPO_ROOT`, the pane's cwd): any `..` segment, or an absolute path not under the
+root, is denied (exit 2 + a reason on stderr). The decision is the unit-tested
+[`isPathConfined`](../src/lib/fsConfine.ts); the hook mirrors it in portable shell
+(string-based, no `realpath`). So a session for repo A can't read or write files in
+sibling repos via its tools.
+
+**Limits:**
+- It covers the AI's **file tools**, not arbitrary **Bash** commands — `cat ../other`
+  in a shell still works. True per-process FS jailing needs OS-level sandboxing
+  (macOS `sandbox-exec`, Linux namespaces/bubblewrap, Windows AppContainer), which is a
+  separate platform effort.
+- The confinement is conservative: any `..` (even a within-repo `src/../x`) is denied.
+- Triggered for gated panes; the cwd-rooted boundary is a launch-time value.
 
 ## Data handling
 
