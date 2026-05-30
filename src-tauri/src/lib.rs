@@ -2339,10 +2339,13 @@ async fn ensure_session_settings(
     denied_commands: Vec<String>,
     mcp_servers: Option<Vec<McpServerCfg>>,
     hooks: Option<Vec<HookCfg>>,
+    allow_tool_rules: Option<Vec<String>>,
+    deny_tool_rules: Option<Vec<String>>,
 ) -> Result<(), String> {
     write_session_settings(
         &cwd, &allowed_commands, &denied_commands,
         &mcp_servers.unwrap_or_default(), &hooks.unwrap_or_default(),
+        &allow_tool_rules.unwrap_or_default(), &deny_tool_rules.unwrap_or_default(),
     )
 }
 
@@ -2362,6 +2365,8 @@ fn write_session_settings(
     denied_commands: &[String],
     mcp_servers: &[McpServerCfg],
     hooks: &[HookCfg],
+    allow_tool_rules: &[String],
+    deny_tool_rules: &[String],
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     let root = std::path::PathBuf::from(cwd);
@@ -2393,6 +2398,17 @@ fn write_session_settings(
             let r = format!("Bash({} *)", c);
             if !deny_rules.contains(&r) { deny_rules.push(r); }
         }
+    }
+
+    // Tool-permission rules (verbatim, NOT Bash-wrapped) — the role write-path guard
+    // passes `Edit(<glob>)` / `Write` / … here to scope or deny the file-write tools.
+    for r in allow_tool_rules {
+        let r = r.trim().to_string();
+        if !r.is_empty() && !allow_rules.contains(&r) { allow_rules.push(r); }
+    }
+    for r in deny_tool_rules {
+        let r = r.trim().to_string();
+        if !r.is_empty() && !deny_rules.contains(&r) { deny_rules.push(r); }
     }
 
     merge_permission_list(&mut config, "allow", &allow_rules);
@@ -3300,6 +3316,8 @@ mod tests {
             &["scp".into()],
             &[],
             &[],
+            &[],
+            &[],
         ).unwrap();
 
         let v: serde_json::Value =
@@ -3326,6 +3344,42 @@ mod tests {
     }
 
     #[test]
+    fn write_session_settings_merges_verbatim_tool_rules() {
+        use super::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-tool-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+
+        // The role write-path guard: deny every write tool (planner/director/triage),
+        // and auto-approve a worker's boundary glob.
+        write_session_settings(
+            &dir.to_string_lossy(),
+            &[],
+            &[],
+            &[],
+            &[],
+            &["Edit(src/auth/**)".into(), "Write(src/auth/**)".into()],
+            &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
+        ).unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        let deny: Vec<String> = v["permissions"]["deny"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        // Tool rules land verbatim — NOT wrapped in Bash(...).
+        assert!(allow.contains(&"Edit(src/auth/**)".to_string()));
+        assert!(allow.contains(&"Write(src/auth/**)".to_string()));
+        assert!(!allow.iter().any(|r| r.contains("Bash(Edit")));
+        assert!(deny.contains(&"Edit".to_string()));
+        assert!(deny.contains(&"Write".to_string()));
+        assert!(deny.contains(&"MultiEdit".to_string()));
+        assert!(deny.contains(&"NotebookEdit".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn write_session_settings_writes_mcp_servers_and_hooks() {
         let dir = std::env::temp_dir().join(format!("bsc-ext-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -3345,7 +3399,7 @@ mod tests {
         let hooks = vec![super::HookCfg {
             event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
         }];
-        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks).unwrap();
+        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[]).unwrap();
 
         // .mcp.json carries both servers in the right transport shapes.
         let mcp_json: serde_json::Value =
