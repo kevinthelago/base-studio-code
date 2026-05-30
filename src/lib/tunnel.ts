@@ -31,6 +31,37 @@ export interface SessionMeta {
   prompt: string | null;
 }
 
+/** Live relay-tunnel status from the Rust client (relay-shaped — trust is via Noise,
+ *  not a pinned cert). Mirrors `tunnel::TunnelStatus`. */
+export interface TunnelStatus {
+  running: boolean;
+  /** The relay Worker URL this desktop dials (set once the transport connects). */
+  relayUrl: string | null;
+  /** The room id allocated for the current pairing. */
+  room: string | null;
+  /** base64 of the desktop's static Noise public key (mobile pins it via the QR). */
+  hostPubKey: string;
+  /** The pairing secret the mobile echoes to authenticate (carried only in the QR). */
+  psk: string;
+  clientCount: number;
+}
+
+/** The payload encoded into the pairing QR. The mobile dials `relayUrl`, joins `room`,
+ *  authenticates the desktop by `hostPubKey` (Noise IK), and echoes `psk` to pair. */
+export interface PairingPayload {
+  relayUrl: string;
+  room: string;
+  hostPubKey: string;
+  psk: string;
+}
+
+/** Build the QR/manual-entry payload from a status, or `null` if not yet pairable —
+ *  the relay must be connected and a room + keys present. Pure (no transport). */
+export function pairingPayload(s: TunnelStatus): PairingPayload | null {
+  if (!s.running || !s.relayUrl || !s.room || !s.hostPubKey || !s.psk) return null;
+  return { relayUrl: s.relayUrl, room: s.room, hostPubKey: s.hostPubKey, psk: s.psk };
+}
+
 // ── Store → wire mapping (pure) ─────────────────────────────────────────────────
 
 /** Number of panes in a tab from its `"cols×rows"` layout string. */
