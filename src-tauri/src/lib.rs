@@ -757,6 +757,33 @@ async fn pty_kill(pane_id: String, state: State<'_, PtyState>) -> Result<(), Str
     Ok(())
 }
 
+// ── Tunnel ⇄ PTY bridge (#242b) ─────────────────────────────────────────────────
+
+/// Write mobile keystrokes into a pane's PTY. Called from the tunnel's relay client
+/// task (`tunnel.rs`); keeps `PtyState`/`PtySession` private to this module. Missing
+/// panes are silently dropped (teardown race), matching `pty_write`.
+pub(crate) fn tunnel_write_pty(app: &AppHandle, pane_id: &str, data: &str) {
+    use std::io::Write;
+    let state = app.state::<PtyState>();
+    let mut sessions = state.0.lock().unwrap();
+    if let Some(s) = sessions.get_mut(pane_id) {
+        if let Err(e) = s.writer.write_all(data.as_bytes()) {
+            log::warn!("tunnel: pty[{pane_id}] write failed: {e}");
+        }
+    }
+}
+
+/// Resize a pane's PTY from a mobile client. No-op for a missing pane.
+pub(crate) fn tunnel_resize_pty(app: &AppHandle, pane_id: &str, cols: u16, rows: u16) {
+    let state = app.state::<PtyState>();
+    let sessions = state.0.lock().unwrap();
+    if let Some(s) = sessions.get(pane_id) {
+        let _ = s
+            .master
+            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
+    }
+}
+
 // ── File picker ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -2995,6 +3022,8 @@ pub fn run() {
             list_documents,
             read_document,
             write_document,
+            tunnel::tunnel_start,
+            tunnel::tunnel_stop,
             tunnel::tunnel_status,
             tunnel::tunnel_set_panes,
             tunnel::tunnel_set_sessions,

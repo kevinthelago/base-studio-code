@@ -106,7 +106,14 @@ back into the PTY.
 
 ## Status
 
-- **This PR (#240)** lands the transport-agnostic contract: the wire types, the pure
-  store→wire transforms, the shared fixture, and this doc.
-- The relay Worker is #241; the desktop relay transport + Noise is #242; the
-  relay-aware QR + Settings section is #243. See #197 for the full architecture.
+- **#240** landed the transport-agnostic contract: the wire types, the pure store→wire
+  transforms, the shared fixture, and this doc.
+- **#241** landed the relay Worker (`relay/`): the Cloudflare Worker + Durable Object
+  blind pipe.
+- **#242** landed the desktop side: the protocol serde + Noise IK crypto (#242a) and the
+  relay dial-out client transport — `tunnel_start`/`tunnel_stop`, the responder
+  handshake, auth, replay, and the bus pump (#242b). The desktop now connects to a relay
+  and serves a paired mobile client end-to-end.
+- **#243** (next) generates the pairing QR after the relay connects and adds the Settings
+  relay section. The **mobile** client (relay initiator + Noise + scan-to-pair) lives in
+  `mobile-studio-code`. See #197 for the full architecture.
