@@ -3,6 +3,7 @@ import { useAppStore } from "../../store";
 import { githubRequest, githubGraphql } from "../../lib/github";
 import { heatFill } from "./heatFill";
 import { quartileScale } from "./heatScale";
+import { languageStats } from "./languageStats";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -150,6 +151,10 @@ function mapEvent(evt: GHEvent): { action: string; target: string } | null {
 
 // ── Data hook ─────────────────────────────────────────────────────────────────
 
+/** The summary samples only the N most-recently-updated repos (GitHub returns
+ *  `user/repos` sorted `updated`). Surfaced on the cards so the sample size is honest. */
+const SUMMARY_REPO_SAMPLE = 6;
+
 function useGitHubSummaryData() {
   const { githubToken, githubUser, githubRepos } = useAppStore();
   const [loading, setLoading] = useState(false);
@@ -157,12 +162,12 @@ function useGitHubSummaryData() {
   const [repoData, setRepoData] = useState<Record<string, RepoData>>({});
   const [contribDays, setContribDays] = useState<ContribDay[]>([]);
 
-  const slugKey = githubRepos.slice(0, 6).map(r => r.full_name).join(",");
+  const slugKey = githubRepos.slice(0, SUMMARY_REPO_SAMPLE).map(r => r.full_name).join(",");
 
   useEffect(() => {
     if (!githubToken || !githubUser) return;
     const login = githubUser.login;
-    const slugs = githubRepos.slice(0, 6).map(r => r.full_name);
+    const slugs = githubRepos.slice(0, SUMMARY_REPO_SAMPLE).map(r => r.full_name);
     if (slugs.length === 0 && !login) return;
 
     setLoading(true);
@@ -382,7 +387,14 @@ function ActivityHeatmap({
 
 // ── Language mix ──────────────────────────────────────────────────────────────
 
-function LanguageMix({ langTotals, loading }: { langTotals: Record<string, number>; loading: boolean }) {
+function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
+  langTotals: Record<string, number>;
+  /** Sampled repos that contributed language data. */
+  repoCount: number;
+  /** Total connected repos (the sample is capped at SUMMARY_REPO_SAMPLE). */
+  totalRepos: number;
+  loading: boolean;
+}) {
   const entries = useMemo(() => {
     const total = Object.values(langTotals).reduce((s, b) => s + b, 0);
     if (total === 0) return [];
@@ -392,13 +404,22 @@ function LanguageMix({ langTotals, loading }: { langTotals: Record<string, numbe
       .slice(0, 6);
   }, [langTotals]);
 
-  const repoCount = Object.keys(langTotals).length;
+  // The summary only samples the most-recently-updated repos, so say so plainly:
+  // "N of M repos" when capped, "N repos" otherwise. The tooltip spells out the cap.
+  const sampled = Math.min(SUMMARY_REPO_SAMPLE, totalRepos);
+  const capped = totalRepos > SUMMARY_REPO_SAMPLE;
+  const repoLabel = capped
+    ? `${repoCount} of ${sampled} sampled repos`
+    : `${repoCount} repo${repoCount === 1 ? "" : "s"}`;
+  const title = capped
+    ? `Aggregated across the ${sampled} most-recently-updated of your ${totalRepos} repos${repoCount < sampled ? ` (${repoCount} had detected languages)` : ""}.`
+    : undefined;
 
   return (
     <div className="card" style={{ padding: "14px 16px" }}>
       <div style={{ display: "flex", alignItems: "baseline", marginBottom: 10, gap: 10 }}>
         <h3 style={{ margin: 0 }}>Languages</h3>
-        <span className="hint">{loading ? "loading…" : entries.length > 0 ? `by byte count · ${repoCount} repos` : "no data"}</span>
+        <span className="hint" title={title}>{loading ? "loading…" : entries.length > 0 ? `by byte count · ${repoLabel}` : "no data"}</span>
       </div>
       {entries.length === 0 && !loading && (
         <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No language data available.</div>
@@ -713,16 +734,11 @@ export function GitHubSummary() {
     return all.slice(0, 8);
   }, [repoData]);
 
-  // Language mix
-  const langTotals = useMemo(() => {
-    const totals: Record<string, number> = {};
-    Object.values(repoData).forEach(rd => {
-      Object.entries(rd.langBytes).forEach(([lang, bytes]) => {
-        totals[lang] = (totals[lang] ?? 0) + bytes;
-      });
-    });
-    return totals;
-  }, [repoData]);
+  // Language mix — totals per language + how many sampled repos contributed data.
+  const { totals: langTotals, repoCount: langRepoCount } = useMemo(
+    () => languageStats(repoData),
+    [repoData],
+  );
 
   // Contributors
   const contributors = useMemo(() => {
@@ -741,7 +757,7 @@ export function GitHubSummary() {
 
   // CI matrix: last 7 days per repo
   const ciMatrix = useMemo(() =>
-    githubRepos.slice(0, 6).map(r => {
+    githubRepos.slice(0, SUMMARY_REPO_SAMPLE).map(r => {
       const runs = repoData[r.full_name]?.runs ?? [];
       const name = r.full_name.split("/")[1] ?? r.full_name;
       const days = Array.from({ length: 7 }, (_, i) => {
@@ -764,7 +780,7 @@ export function GitHubSummary() {
 
   // Repo grid data
   const repoGridData = useMemo(() =>
-    githubRepos.slice(0, 6).map(r => {
+    githubRepos.slice(0, SUMMARY_REPO_SAMPLE).map(r => {
       const rd = repoData[r.full_name];
       const runs = rd?.runs ?? [];
       const latestRun = runs[0];
@@ -790,7 +806,7 @@ export function GitHubSummary() {
   const kpiOpenPRs = Object.values(repoData).reduce((s, rd) => s + rd.prs.length, 0);
   const kpiContribs = contributors.length || "—";
   const kpiCIPassing = (() => {
-    const withRuns = githubRepos.slice(0, 6).filter(r => (repoData[r.full_name]?.runs.length ?? 0) > 0);
+    const withRuns = githubRepos.slice(0, SUMMARY_REPO_SAMPLE).filter(r => (repoData[r.full_name]?.runs.length ?? 0) > 0);
     if (withRuns.length === 0) return null;
     const passing = withRuns.filter(r => repoData[r.full_name]?.runs[0]?.conclusion === "success");
     return Math.round(passing.length / withRuns.length * 100);
@@ -839,7 +855,7 @@ export function GitHubSummary() {
             <ActivityHeatmap cells={heatmapCells} rawCounts={rawCounts} rawDates={rawDates} totalContribs={totalContribs} totalMerged={totalMerged} loading={loading} />
             <CIHealthCard matrix={ciMatrix} loading={loading} />
             <ContributorsCard contributors={contributors} loading={loading} />
-            <LanguageMix langTotals={langTotals} loading={loading} />
+            <LanguageMix langTotals={langTotals} repoCount={langRepoCount} totalRepos={githubRepos.length} loading={loading} />
           </div>
         </div>
       </div>
