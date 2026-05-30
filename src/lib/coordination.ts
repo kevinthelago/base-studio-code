@@ -1,0 +1,152 @@
+// Inter-session coordination core (#199): the lost-wakeup-safe readiness model.
+//
+// The key correctness insight: readiness is **state** (a queryable latch), not an
+// edge-triggered ping. A producer that finishes *before* the waiter registers must not
+// cause a lost wakeup and a permanent hang. So a blocking session both registers as a
+// waiter AND immediately checks the latch (proceed now if already satisfied); satisfy
+// events set the latch and return the waiters whose **all** deps are now satisfied.
+//
+// This module is pure (no PTY/store/IO) so it's exhaustively unit-testable. The wiring —
+// `bsc-blocked --on` -> register, the director's merge/close -> satisfy, and waking the
+// parked pane -- lands on top of it in later slices. `failed` is deliberately NOT a
+// satisfy: dependents stay blocked and surface as a stalled chain (finished != succeeded).
+
+/** A structured dependency target -- what a session is blocked *on*, or what landed. */
+export type CoordRef =
+  | { kind: "issue"; number: number }   // #42
+  | { kind: "contract"; name: string }  // contract:TunnelState
+  | { kind: "file"; path: string }      // file:src/lib/x.ts
+  | { kind: "predicate"; expr: string }; // predicate:tests-pass
+
+/** The authoritative signal that satisfied a latch (most->least authoritative). */
+export type SatisfySource = "merged" | "closed" | "landed";
+
+/** Per-ref latch status. `satisfied` wakes dependents; `failed` holds them (a stalled
+ *  chain the director is alerted to) -- the two are distinct on purpose. */
+export type LatchStatus =
+  | { state: "satisfied"; source: SatisfySource; at: number }
+  | { state: "failed"; reason: string; at: number };
+
+/** A parked session waiting on every ref in `deps`. `checkpoint` is the compact resume
+ *  seed (a `bsc-checkpoint` ref) carried into the wake prompt. */
+export interface Waiter {
+  /** The parked session/pane id. Unique key -- re-registering replaces the entry. */
+  session: string;
+  /** All of these must be satisfied for the waiter to wake. */
+  deps: CoordRef[];
+  /** Resume seed (e.g. a checkpoint doc relpath); carried into the wake prompt. */
+  checkpoint?: string;
+  /** When the block was declared (ms epoch), passed in by the caller. */
+  registeredAt: number;
+}
+
+/** The coordinator's persistable state: the latch table + the waiter table. */
+export interface CoordState {
+  latches: Record<string, LatchStatus>;
+  waiters: Waiter[];
+}
+
+export function emptyCoordState(): CoordState {
+  return { latches: {}, waiters: [] };
+}
+
+/** Canonical string key for a ref -- the `bsc-blocked --on <token>` wire form too. */
+export function refKey(ref: CoordRef): string {
+  switch (ref.kind) {
+    case "issue": return `#${ref.number}`;
+    case "contract": return `contract:${ref.name}`;
+    case "file": return `file:${ref.path}`;
+    case "predicate": return `predicate:${ref.expr}`;
+  }
+}
+
+/** Parse a `bsc-blocked --on` token (`#42`, `contract:X`, `file:path`, `predicate:expr`)
+ *  back into a ref. Returns null for an unrecognized/empty token. A bare `42` or `#42`
+ *  is an issue; an unprefixed non-numeric token is treated as a predicate. */
+export function parseRef(token: string): CoordRef | null {
+  const t = token.trim();
+  if (!t) return null;
+  if (t.startsWith("#")) {
+    const n = Number(t.slice(1));
+    return Number.isInteger(n) && n > 0 ? { kind: "issue", number: n } : null;
+  }
+  const colon = t.indexOf(":");
+  if (colon > 0) {
+    const prefix = t.slice(0, colon);
+    const rest = t.slice(colon + 1).trim();
+    if (!rest) return null;
+    if (prefix === "contract") return { kind: "contract", name: rest };
+    if (prefix === "file") return { kind: "file", path: rest };
+    if (prefix === "predicate") return { kind: "predicate", expr: rest };
+    return null;
+  }
+  if (/^\d+$/.test(t)) return { kind: "issue", number: Number(t) };
+  return { kind: "predicate", expr: t };
+}
+
+/** Whether `ref` is satisfied (truly done -- not merely failed). */
+export function isSatisfied(s: CoordState, ref: CoordRef): boolean {
+  return s.latches[refKey(ref)]?.state === "satisfied";
+}
+
+/** Whether all of a waiter's deps are satisfied. */
+export function isReady(s: CoordState, w: Waiter): boolean {
+  return w.deps.every((d) => isSatisfied(s, d));
+}
+
+/** Waiters currently blocked on a ref that has *failed* -- a stalled chain to escalate. */
+export function stalledWaiters(s: CoordState, ref: CoordRef): Waiter[] {
+  const key = refKey(ref);
+  if (s.latches[key]?.state !== "failed") return [];
+  return s.waiters.filter((w) => w.deps.some((d) => refKey(d) === key));
+}
+
+/**
+ * Register a blocking session. Returns the next state and `ready`: whether all its deps
+ * are ALREADY satisfied (the register-then-check that defeats lost wakeups -- the caller
+ * should proceed immediately when `ready`). When already ready, the waiter is not added
+ * (nothing to wait for); otherwise it's added/replaced by `session` id (idempotent).
+ */
+export function registerWaiter(s: CoordState, w: Waiter): { state: CoordState; ready: boolean } {
+  const ready = isReady(s, w);
+  const others = s.waiters.filter((x) => x.session !== w.session);
+  const state: CoordState = {
+    latches: s.latches,
+    waiters: ready ? others : [...others, w],
+  };
+  return { state, ready };
+}
+
+/**
+ * Mark a ref satisfied (a `landed`/`merged`/`closed` event). Sets the latch and returns
+ * the waiters that are now fully ready (all deps satisfied), removing them from the
+ * table. Idempotent: re-delivering the same satisfy is harmless (readiness is state).
+ */
+export function satisfy(
+  s: CoordState,
+  ref: CoordRef,
+  source: SatisfySource,
+  at: number,
+): { state: CoordState; woken: Waiter[] } {
+  const latches = { ...s.latches, [refKey(ref)]: { state: "satisfied" as const, source, at } };
+  const probe: CoordState = { latches, waiters: s.waiters };
+  const woken = s.waiters.filter((w) => isReady(probe, w));
+  const wokenIds = new Set(woken.map((w) => w.session));
+  return { state: { latches, waiters: s.waiters.filter((w) => !wokenIds.has(w.session)) }, woken };
+}
+
+/**
+ * Mark a ref failed (a `failed` event). Does NOT satisfy the latch -- dependents stay
+ * blocked. Returns the waiters now stalled on this failed ref so the caller can raise a
+ * blocked-chain alert. Idempotent.
+ */
+export function fail(
+  s: CoordState,
+  ref: CoordRef,
+  reason: string,
+  at: number,
+): { state: CoordState; stalled: Waiter[] } {
+  const latches = { ...s.latches, [refKey(ref)]: { state: "failed" as const, reason, at } };
+  const next: CoordState = { latches, waiters: s.waiters };
+  return { state: next, stalled: stalledWaiters(next, ref) };
+}
