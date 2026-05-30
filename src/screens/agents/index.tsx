@@ -5,7 +5,7 @@
 // profile ∪ project ∪ repo); gh/git are guaranteed; a profile layers a base policy +
 // per-tool tri-states + path scope. Data model + helpers live in ./agentProfiles.
 // (The Activity feed is still sample data — a real audit log is a follow-up.)
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   APP_ROLES, TOOL_DEFS, GUARANTEED,
@@ -44,6 +44,7 @@ export function AgentsScreen() {
   // Persisted profiles + assignment (#255); console panes come from the real workspace.
   const profiles = useAppStore((s) => s.agentProfiles);
   const updateAgentProfile = useAppStore((s) => s.updateAgentProfile);
+  const setAgentProfiles = useAppStore((s) => s.setAgentProfiles);
   const setPaneProfile = useAppStore((s) => s.setPaneProfile);
   const tabs = useAppStore((s) => s.tabs);
   const paneNames = useAppStore((s) => s.paneNames);
@@ -146,6 +147,41 @@ export function AgentsScreen() {
   }
   function openProfile(id: string) { setTab("profiles"); setSelectedId(id); }
 
+  // Create a new user profile (#259): sensible defaults, persisted, then selected.
+  function createProfile() {
+    const name = window.prompt("New role name?")?.trim();
+    if (!name) return;
+    const taken = new Set(profiles.map((p) => p.id));
+    const base = "pf_" + (name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "role");
+    let id = base;
+    for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+    const colors = ["oklch(0.7 0.12 290)", "oklch(0.72 0.12 175)", "oklch(0.78 0.14 70)", "oklch(0.68 0.18 25)", "oklch(0.72 0.10 230)"];
+    const next: AgentProfile = {
+      id, name, color: colors[profiles.length % colors.length],
+      category: "user", origin: "user-defined",
+      desc: "Custom role.", mode: "ask", commands: [],
+      tools: { read: "allow", grep: "allow", glob: "allow", edit: "ask", write: "ask", bash: "ask", web: "ask", task: "ask" },
+      paths: { allow: [], deny: [] }, net: { allow: [] }, builtin: false,
+    };
+    setAgentProfiles([...profiles, next]);
+    setTab("profiles");
+    setSelectedId(id);
+  }
+
+  // Delete a custom profile (#259): drop it + any pane assignments pointing at it.
+  function deleteProfile(id: string) {
+    const p = find(id);
+    if (!p || p.category === "application" || p.builtin) return;
+    if (!window.confirm(`Delete the "${p.name}" role?`)) return;
+    setAgentProfiles(profiles.filter((x) => x.id !== id));
+    for (const [paneId, pid] of Object.entries(paneProfiles)) {
+      if (pid === id) setPaneProfile(paneId, null);
+    }
+    setSelectedId("sys_planner");
+  }
+
+  const editable = selected?.category !== "application";
+
   const paneTotal = consoles.reduce((a, c) => a + c.panes.length, 0);
   const allow = auditRows.filter((r) => r.decision === "allow").length;
   const ask = auditRows.filter((r) => r.decision === "ask").length;
@@ -167,7 +203,7 @@ export function AgentsScreen() {
         <div className="right">
           {tab === "profiles" && <>
             <span className="hint" style={{ fontFamily: "var(--mono)" }}>{roles.length} application · {profiles.length} custom roles</span>
-            <button className="btn primary">+ New role</button>
+            <button className="btn primary" onClick={createProfile}>+ New role</button>
           </>}
           {tab === "assignments" && <>
             <span className="hint" style={{ fontFamily: "var(--mono)" }}>resolved · guaranteed ∪ profile ∪ project ∪ repo</span>
@@ -186,6 +222,7 @@ export function AgentsScreen() {
             roles={roles} profiles={profiles} consoles={consoles} selected={selected}
             onSelect={setSelectedId} setMode={setMode} setTool={setTool}
             removeCmd={removeCmd} addCmd={addCmd} toggleAssign={toggleAssign} find={find}
+            editable={editable} onCreate={createProfile} onDelete={deleteProfile}
           />
         )}
         {tab === "assignments" && (
@@ -219,10 +256,13 @@ interface ProfilesTabProps {
   addCmd: () => void;
   toggleAssign: (consoleId: string, paneId: string) => void;
   find: (id: string) => AgentProfile | undefined;
+  editable: boolean;
+  onCreate: () => void;
+  onDelete: (id: string) => void;
 }
 
 function ProfilesTab(props: ProfilesTabProps) {
-  const { roles, profiles, consoles, selected, onSelect } = props;
+  const { roles, profiles, consoles, selected, onSelect, onCreate } = props;
   return (
     <div className="prof-layout">
       <div className="card prof-list">
@@ -239,7 +279,7 @@ function ProfilesTab(props: ProfilesTabProps) {
           <div className="list-label">Custom &amp; generated</div>
           {profiles.map((p) => <ProfRow key={p.id} p={p} on={p.id === selected.id} consoles={consoles} onClick={() => onSelect(p.id)} />)}
           <div style={{ padding: "12px 14px" }}>
-            <button className="btn ghost" style={{ width: "100%", justifyContent: "center" }}>+ new role</button>
+            <button className="btn ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onCreate}>+ new role</button>
           </div>
         </div>
       </div>
@@ -271,8 +311,10 @@ function ProfRow({ p, on, consoles, onClick }: { p: AgentProfile; on: boolean; c
   );
 }
 
-function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAssign, find }: ProfilesTabProps & { p: AgentProfile }) {
+function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAssign, find, editable, onDelete }: ProfilesTabProps & { p: AgentProfile }) {
   const isApp = p.category === "application";
+  // Application roles are app-managed: lock their policy editors (visually + clicks).
+  const lock: CSSProperties | undefined = editable ? undefined : { opacity: 0.55, pointerEvents: "none" };
   const originLabel = isApp ? "application · always on" : p.category === "generated" ? "generated" : (p.origin === "built-in" ? "built-in" : "user-defined");
   const allowPaths = p.paths.allow.length ? p.paths.allow : ["(none — read-only)"];
   return (
@@ -317,7 +359,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
       </div>
 
       {/* base policy */}
-      <div className="pd-sec">
+      <div className="pd-sec" style={lock}>
         <div className="h"><h4>Base policy</h4><span className="hint">applies to anything not listed below</span></div>
         <div className="seg">
           {(["deny", "ask", "allow"] as Tier[]).map((v) => (
@@ -329,7 +371,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
       </div>
 
       {/* shell commands */}
-      <div className="pd-sec">
+      <div className="pd-sec" style={lock}>
         <div className="h">
           <h4>Shell commands</h4>
           <span className="hint">allowlist — runs without a prompt</span>
@@ -353,7 +395,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
       </div>
 
       {/* tools */}
-      <div className="pd-sec">
+      <div className="pd-sec" style={lock}>
         <div className="h"><h4>Tools</h4><span className="hint">per-capability — allow runs silently, ask prompts you, deny blocks</span></div>
         <div className="tool-table">
           {TOOL_DEFS.map(([t, d]) => (
@@ -373,7 +415,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
       </div>
 
       {/* filesystem */}
-      <div className="pd-sec">
+      <div className="pd-sec" style={lock}>
         <div className="h"><h4>Filesystem scope</h4><span className="hint">globs the agent may write to / is blocked from</span></div>
         <div className="scope-list">
           {allowPaths.map((g, i) => {
@@ -398,7 +440,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
       </div>
 
       {/* network */}
-      <div className="pd-sec">
+      <div className="pd-sec" style={lock}>
         <div className="h"><h4>Network</h4><span className="hint">hosts the agent may reach (web / fetch tools)</span></div>
         {p.net.allow.length ? (
           <div className="cmd-chips">
@@ -454,7 +496,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
 
       {!(isApp || p.builtin) && (
         <div style={{ padding: "0 2px 6px" }}>
-          <button className="btn ghost danger" style={{ height: 26, fontSize: 10.5 }}>delete profile</button>
+          <button className="btn ghost danger" style={{ height: 26, fontSize: 10.5 }} onClick={() => onDelete(p.id)}>delete profile</button>
         </div>
       )}
     </>
