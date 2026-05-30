@@ -150,6 +150,43 @@ export function canWritePath(cap: RoleCapability, path: string): boolean {
   return cap.writeGlobs.some((g) => matchGlob(g, path));
 }
 
+// ── Launch wiring: write-tool permission rules ──────────────────────────────────
+
+/** The file-mutating tools gated by the write-path guard. */
+const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+
+export interface ToolPermissionRules {
+  /** Rules to auto-approve (Claude Code `permissions.allow`). */
+  allow: string[];
+  /** Rules to block (`permissions.deny`; deny wins over allow). */
+  deny: string[];
+}
+
+/**
+ * Declarative `settings.json` permission rules that encode {@link canWritePath} for
+ * the file-write tools at session launch — the write-tool counterpart to
+ * {@link roleDeniedCommands}.
+ *
+ * - `code: "none"` (planner/director/triage) — {@link canWritePath} is always false,
+ *   so deny every write tool outright (bare tool names = whole-tool deny).
+ * - `code: "write"` with a boundary — auto-approve each `writeGlob` as
+ *   `Tool(<glob>)` allow rules (exactly the paths {@link canWritePath} accepts).
+ *   Writes outside the boundary fall through to Claude Code's default prompt; a
+ *   hard outside-boundary *block* is the PreToolUse-hook follow-on.
+ * - `code: "write"` with no boundary yet — no rules (writes follow the default),
+ *   since the ownership globs aren't assigned to the pane.
+ *
+ * {@link canWritePath} stays the authoritative runtime predicate; these rules mirror
+ * it into the tools at launch.
+ */
+export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
+  if (cap.code === "none") {
+    return { allow: [], deny: [...WRITE_TOOLS] };
+  }
+  const allow = cap.writeGlobs.flatMap((g) => WRITE_TOOLS.map((t) => `${t}(${g})`));
+  return { allow, deny: [] };
+}
+
 // ── Launch wiring: command-allowlist denies ────────────────────────────────────
 
 /** git write subcommand prefixes (the backend wraps each as `Bash(<prefix> *)`). */

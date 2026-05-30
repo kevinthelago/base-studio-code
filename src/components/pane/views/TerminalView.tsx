@@ -12,7 +12,7 @@ import { composeStartupPrompt } from "../../../lib/checkpoint";
 import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
 import { PendingPtyData } from "../../../lib/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/resumeClaude";
-import { roleCapability, roleDeniedCommands } from "../../../lib/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
@@ -329,12 +329,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         const cmds = useAppStore.getState().paneAllowedCommands[paneId]
           ?? useAppStore.getState().allowedCommands;
         // Role gate (#219): a planner/worker/triage session has its mutating git/gh
-        // commands denied at launch (deny > the broad gh/git allow). Absent role ⇒
-        // unrestricted.
+        // commands denied at launch (deny > the broad gh/git allow), plus a write-tool
+        // guard (#238) that denies Write/Edit for no-code roles and scopes a worker to
+        // its boundary globs. Absent role ⇒ unrestricted.
         const role = useAppStore.getState().paneRoles[paneId];
-        const denied = role
-          ? [...useAppStore.getState().deniedCommands, ...roleDeniedCommands(roleCapability(role))]
+        const cap = role ? roleCapability(role) : null;
+        const denied = cap
+          ? [...useAppStore.getState().deniedCommands, ...roleDeniedCommands(cap)]
           : useAppStore.getState().deniedCommands;
+        const write = cap ? roleWriteRules(cap) : { allow: [], deny: [] };
         // Extensions (MCP servers + hooks) resolved for this session — pre-resolved
         // per pane at tab creation; fall back to globals for ad-hoc consoles.
         const exts = useAppStore.getState().paneExtensions[paneId]
@@ -343,6 +346,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         await invoke("ensure_session_settings", {
           cwd: initialCwd, allowedCommands: cmds, deniedCommands: denied,
           mcpServers: mcp, hooks,
+          allowToolRules: write.allow, denyToolRules: write.deny,
         }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         if (destroyed) return;
       }

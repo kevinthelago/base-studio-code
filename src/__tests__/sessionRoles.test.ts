@@ -7,6 +7,7 @@ import {
   matchGlob,
   canWritePath,
   roleDeniedCommands,
+  roleWriteRules,
 } from "../lib/sessionRoles";
 
 describe("classifyCommand", () => {
@@ -109,5 +110,44 @@ describe("roleDeniedCommands (launch wiring)", () => {
     const denies = roleDeniedCommands(ROLE_DEFAULTS.triage);
     expect(denies).toContain("git");
     expect(denies).not.toContain("gh issue create");
+  });
+});
+
+describe("roleWriteRules (write-tool guard)", () => {
+  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+
+  it("denies every write tool for no-code roles (planner/director/triage)", () => {
+    for (const role of ["planner", "director", "triage"] as const) {
+      const rules = roleWriteRules(ROLE_DEFAULTS[role]);
+      expect(rules.deny).toEqual(WRITE_TOOLS);
+      expect(rules.allow).toEqual([]);
+    }
+  });
+
+  it("scopes a worker to its boundary globs (one allow per tool per glob)", () => {
+    const worker = roleCapability("worker", { writeGlobs: ["src/api/**", "tests/**"] });
+    const rules = roleWriteRules(worker);
+    expect(rules.deny).toEqual([]);
+    expect(rules.allow).toContain("Edit(src/api/**)");
+    expect(rules.allow).toContain("Write(tests/**)");
+    expect(rules.allow).toHaveLength(WRITE_TOOLS.length * 2);
+  });
+
+  it("imposes no rules for a boundary-less worker (writes follow the default)", () => {
+    const rules = roleWriteRules(ROLE_DEFAULTS.worker);
+    expect(rules).toEqual({ allow: [], deny: [] });
+  });
+
+  it("agrees with canWritePath: deny-all ⟺ never writable; allowed globs ⟺ writable", () => {
+    // no-code role: canWritePath always false, and the rules deny all writes.
+    const planner = ROLE_DEFAULTS.planner;
+    expect(canWritePath(planner, "src/x.ts")).toBe(false);
+    expect(roleWriteRules(planner).deny).toEqual(WRITE_TOOLS);
+
+    // worker with a boundary: every allow-rule glob is exactly a canWritePath-true path.
+    const worker = roleCapability("worker", { writeGlobs: ["src/api/**"] });
+    expect(canWritePath(worker, "src/api/route.ts")).toBe(true);
+    expect(canWritePath(worker, "src/web/page.ts")).toBe(false);
+    expect(roleWriteRules(worker).allow).toContain("Edit(src/api/**)");
   });
 });
