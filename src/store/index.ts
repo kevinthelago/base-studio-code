@@ -319,8 +319,8 @@ interface AppStore {
   // navigating from a project's "documents" button. Transient — NOT persisted.
   kbProjectScope: { keys: string[]; label: string } | null;
   setKbProjectScope: (scope: { keys: string[]; label: string } | null) => void;
-  projectsBoardTab: "board" | "roadmap" | "issues" | "insights" | "hooks";
-  setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights" | "hooks") => void;
+  projectsBoardTab: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination";
+  setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination") => void;
   projectsDrawerIssue: number | null;
   setProjectsDrawerIssue: (n: number | null) => void;
   planningPitch: string;
