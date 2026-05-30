@@ -8,6 +8,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
+import { actuateWake } from "../../lib/coordinatorActuate";
 import {
   ingestCoordLog, coordinationSummary, wakePromptFor, emptyCoordState,
   type BlockedView, type Waiter, type CoordState,
@@ -21,6 +22,8 @@ function depColor(status: BlockedView["deps"][number]["status"]): string {
 
 export function CoordinatorInbox() {
   const wakePane = useAppStore((s) => s.wakePane);
+  const coordAutoWake = useAppStore((s) => s.coordAutoWake);
+  const setCoordAutoWake = useAppStore((s) => s.setCoordAutoWake);
   const [views, setViews] = useState<BlockedView[]>([]);
   const [ready, setReady] = useState<Waiter[]>([]);
   const [state, setState] = useState<CoordState>(emptyCoordState());
@@ -49,11 +52,7 @@ export function CoordinatorInbox() {
   const handleWake = useCallback(async (w: Waiter) => {
     setWaking((cur) => new Set(cur).add(w.session));
     try {
-      // Kill the parked PTY first so the runId-bump remount spawns a FRESH session
-      // (not a reconnect), then bump the tab via wakePane and record the woke event.
-      await invoke("pty_kill", { paneId: w.session }).catch(() => {});
-      const ok = wakePane(w.session, wakePromptFor(w, state));
-      if (ok) await invoke("append_coord_woke", { session: w.session }).catch(() => {});
+      await actuateWake(w.session, wakePromptFor(w, state), wakePane);
     } finally {
       setWaking((cur) => { const n = new Set(cur); n.delete(w.session); return n; });
     }
@@ -71,6 +70,14 @@ export function CoordinatorInbox() {
         {ready.length > 0 && <span className="tag green">{ready.length} ready</span>}
         {views.length > 0 && <span className="tag">{views.length} blocked</span>}
         {stalled > 0 && <span className="tag" style={{ color: "var(--danger)" }}>{stalled} stalled</span>}
+        <button
+          className="btn ghost"
+          style={{ height: 22, fontSize: 10.5, color: coordAutoWake ? "var(--accent)" : "var(--fg-muted)" }}
+          onClick={() => setCoordAutoWake(!coordAutoWake)}
+          title="When on, a parked pane is relaunched automatically as soon as its dependencies land (recently). When off, use the Wake button."
+        >
+          auto-wake {coordAutoWake ? "on" : "off"}
+        </button>
       </div>
 
       {err && (
