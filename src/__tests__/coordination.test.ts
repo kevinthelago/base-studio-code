@@ -3,6 +3,7 @@ import {
   type Waiter,
   emptyCoordState, refKey, parseRef, isSatisfied, isReady,
   registerWaiter, satisfy, fail, stalledWaiters,
+  parseCoordLine, applyCoordEvent, ingestCoordLog,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -136,5 +137,77 @@ describe("idempotency & fan-out", () => {
     const sat = satisfy(s, dep, "closed", 1);
     expect(sat.woken.map((x) => x.session).sort()).toEqual(["A", "B"]);
     expect(sat.state.waiters).toHaveLength(0);
+  });
+});
+
+describe("event ingestion — parseCoordLine", () => {
+  const TS = "2026-05-30T17:00:00Z";
+  const at = Date.parse(TS);
+
+  it("parses a blocked line with multiple deps + checkpoint", () => {
+    const line = `${TS}\tpane-3\tblocked\t#42,contract:TunnelState\t.bsc/cp/pane-3.md`;
+    expect(parseCoordLine(line)).toEqual({
+      type: "blocked",
+      session: "pane-3",
+      deps: [{ kind: "issue", number: 42 }, { kind: "contract", name: "TunnelState" }],
+      checkpoint: ".bsc/cp/pane-3.md",
+      at,
+    });
+  });
+
+  it("parses a blocked line with no checkpoint column", () => {
+    const ev = parseCoordLine(`${TS}\tpane-1\tblocked\t#7`);
+    expect(ev).toMatchObject({ type: "blocked", session: "pane-1", checkpoint: undefined });
+    expect((ev as { deps: unknown }).deps).toEqual([{ kind: "issue", number: 7 }]);
+  });
+
+  it("parses satisfy + failed lines", () => {
+    expect(parseCoordLine(`${TS}\td\tmerged\t#9`)).toEqual({ type: "merged", ref: { kind: "issue", number: 9 }, at });
+    expect(parseCoordLine(`${TS}\td\tclosed\tcontract:X`)).toEqual({ type: "closed", ref: { kind: "contract", name: "X" }, at });
+    expect(parseCoordLine(`${TS}\td\tfailed\t#9\ttests red`)).toEqual({ type: "failed", ref: { kind: "issue", number: 9 }, reason: "tests red", at });
+  });
+
+  it("rejects malformed / short / unknown-kind lines", () => {
+    expect(parseCoordLine("")).toBeNull();
+    expect(parseCoordLine("a\tb\tc")).toBeNull();           // too few columns
+    expect(parseCoordLine(`${TS}\td\tbogus\t#1`)).toBeNull(); // unknown kind
+    expect(parseCoordLine(`${TS}\td\tblocked\t`)).toBeNull(); // no valid refs
+  });
+
+  it("tolerates a bad timestamp (at -> 0) and a trailing newline", () => {
+    const ev = parseCoordLine(`not-a-date\td\tmerged\t#1\n`);
+    expect(ev).toEqual({ type: "merged", ref: { kind: "issue", number: 1 }, at: 0 });
+  });
+});
+
+describe("event ingestion — applyCoordEvent + ingestCoordLog", () => {
+  const TS = "2026-05-30T17:00:00Z";
+
+  it("a blocked event then its merged event wakes the waiter", () => {
+    let s = emptyCoordState();
+    s = applyCoordEvent(s, { type: "blocked", session: "A", deps: [{ kind: "issue", number: 1 }], at: 1 }).state;
+    const r = applyCoordEvent(s, { type: "merged", ref: { kind: "issue", number: 1 }, at: 2 });
+    expect(r.woken.map((w) => w.session)).toEqual(["A"]);
+  });
+
+  it("ingestCoordLog replays a log to final state + accumulated wakes", () => {
+    const log = [
+      `${TS}\tA\tblocked\t#1`,
+      `${TS}\tB\tblocked\t#1,#2`,
+      "garbage line — skipped",
+      `${TS}\tx\tmerged\t#1`,   // wakes A (only dep), not B (still needs #2)
+      `${TS}\tx\tclosed\t#2`,   // now wakes B
+    ];
+    const { state, woken } = ingestCoordLog(log);
+    expect(woken.map((w) => w.session)).toEqual(["A", "B"]);
+    expect(state.waiters).toHaveLength(0);
+    expect(isSatisfied(state, { kind: "issue", number: 1 })).toBe(true);
+  });
+
+  it("a failed event surfaces the stalled waiter and does not wake it", () => {
+    const s = applyCoordEvent(emptyCoordState(), { type: "blocked", session: "C", deps: [{ kind: "issue", number: 9 }], at: 1 }).state;
+    const r = applyCoordEvent(s, { type: "failed", ref: { kind: "issue", number: 9 }, reason: "red", at: 2 });
+    expect(r.woken).toHaveLength(0);
+    expect(r.stalled.map((w) => w.session)).toEqual(["C"]);
   });
 });

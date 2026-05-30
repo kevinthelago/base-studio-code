@@ -150,3 +150,94 @@ export function fail(
   const next: CoordState = { latches, waiters: s.waiters };
   return { state: next, stalled: stalledWaiters(next, ref) };
 }
+
+// -- Event ingestion (#199 slice 2) ---------------------------------------------
+// `bsc-blocked --on <refs>` appends a TSV line to $BSC_COORD_LOG; the director's
+// merge/close will append satisfy lines later. `parseCoordLine` turns one line into a
+// typed event, `applyCoordEvent` folds it into the latch state, and `ingestCoordLog`
+// replays a whole log -- so the coordinator is just "read the log -> CoordState".
+
+/** A structured coordination event (one per `$BSC_COORD_LOG` line). */
+export type CoordEvent =
+  | { type: "blocked"; session: string; deps: CoordRef[]; checkpoint?: string; at: number }
+  | { type: "landed"; ref: CoordRef; at: number }
+  | { type: "merged"; ref: CoordRef; at: number }
+  | { type: "closed"; ref: CoordRef; at: number }
+  | { type: "failed"; ref: CoordRef; reason: string; at: number };
+
+/**
+ * Parse one TSV `$BSC_COORD_LOG` line into an event, or null if unrecognized.
+ * Columns: `ts \t session \t kind \t <payload…>`.
+ * - blocked: payload = `<comma-refs> \t <checkpoint?>`
+ * - landed/merged/closed: payload = `<ref>`
+ * - failed: payload = `<ref> \t <reason>`
+ */
+export function parseCoordLine(line: string): CoordEvent | null {
+  const cols = line.replace(/\r?\n$/, "").split("\t");
+  if (cols.length < 4) return null;
+  const [ts, session, kind, ...rest] = cols;
+  const parsed = Date.parse(ts);
+  const at = Number.isFinite(parsed) ? parsed : 0;
+  switch (kind) {
+    case "blocked": {
+      const deps = (rest[0] ?? "").split(",").map(parseRef).filter((r): r is CoordRef => r !== null);
+      if (deps.length === 0) return null;
+      const checkpoint = rest[1]?.trim() || undefined;
+      return { type: "blocked", session, deps, checkpoint, at };
+    }
+    case "landed":
+    case "merged":
+    case "closed": {
+      const ref = parseRef(rest[0] ?? "");
+      return ref ? { type: kind as "landed" | "merged" | "closed", ref, at } : null;
+    }
+    case "failed": {
+      const ref = parseRef(rest[0] ?? "");
+      return ref ? { type: "failed", ref, reason: rest[1] ?? "", at } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** Fold one event into the latch state, returning what it triggered. */
+export function applyCoordEvent(s: CoordState, e: CoordEvent): {
+  state: CoordState; woken: Waiter[]; ready: boolean; stalled: Waiter[];
+} {
+  switch (e.type) {
+    case "blocked": {
+      const r = registerWaiter(s, { session: e.session, deps: e.deps, checkpoint: e.checkpoint, registeredAt: e.at });
+      return { state: r.state, woken: [], ready: r.ready, stalled: [] };
+    }
+    case "landed":
+    case "merged":
+    case "closed": {
+      const r = satisfy(s, e.ref, e.type, e.at);
+      return { state: r.state, woken: r.woken, ready: false, stalled: [] };
+    }
+    case "failed": {
+      const r = fail(s, e.ref, e.reason, e.at);
+      return { state: r.state, woken: [], ready: false, stalled: r.stalled };
+    }
+  }
+}
+
+/**
+ * Replay a whole `$BSC_COORD_LOG` (oldest-first) into latch state, collecting every
+ * waiter woken along the way -- the coordinator's rebuild-from-disk. Unparseable lines
+ * are skipped.
+ */
+export function ingestCoordLog(lines: string[], initial: CoordState = emptyCoordState()): {
+  state: CoordState; woken: Waiter[];
+} {
+  let state = initial;
+  const woken: Waiter[] = [];
+  for (const line of lines) {
+    const ev = parseCoordLine(line);
+    if (!ev) continue;
+    const r = applyCoordEvent(state, ev);
+    state = r.state;
+    woken.push(...r.woken);
+  }
+  return { state, woken };
+}
