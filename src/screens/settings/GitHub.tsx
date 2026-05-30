@@ -262,7 +262,7 @@ export function GitHubSettings() {
                       })();
                       return (
                         <div key={r.full_name} style={{
-                          display: "grid", gridTemplateColumns: "24px 1.4fr 1fr 1.6fr 90px",
+                          display: "grid", gridTemplateColumns: "24px 1.4fr 1fr 1.6fr",
                           alignItems: "center", gap: 12, padding: "11px 14px",
                           background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)",
                           fontSize: 11.5,
@@ -294,11 +294,6 @@ export function GitHubSettings() {
                             {r.language && (
                               <span style={{ marginLeft: 8 }} className="tag">{r.language.toLowerCase()}</span>
                             )}
-                          </div>
-                          <div style={{ textAlign: "right" }}>
-                            <button className="btn ghost" style={{ height: 24, padding: "0 8px", fontSize: 10.5 }}>
-                              configure
-                            </button>
                           </div>
                         </div>
                       );
