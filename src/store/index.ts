@@ -12,6 +12,7 @@ import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey } f
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
 import { computeNextRun, appendRun, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
+import type { SessionRole } from "../lib/sessionRoles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
@@ -175,6 +176,11 @@ interface AppStore {
   // Disabled panes (keyed by "t{tabIdx}p{paneIdx}") — terminal unmounted + PTY killed.
   disabledPanes: Record<string, boolean>;
   setPaneDisabled: (paneId: string, disabled: boolean) => void;
+  // Role-scoped capability per pane (#219) — transient. When set, the session's
+  // command allowlist is narrowed at launch (a planner can't run git/gh writes).
+  // Absent ⇒ unrestricted (current behavior). Set by the planning/fleet assignment.
+  paneRoles: Record<string, SessionRole>;
+  setPaneRole: (paneId: string, role: SessionRole) => void;
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
   closeTab: (idx: number) => void;
@@ -481,6 +487,9 @@ export const useAppStore = create<AppStore>()(
           if (disabled) next[paneId] = true; else delete next[paneId];
           return { disabledPanes: next };
         }),
+      paneRoles: {},
+      setPaneRole: (paneId, role) =>
+        set((s) => ({ paneRoles: { ...s.paneRoles, [paneId]: role } })),
       // Switching tabs clears focus/fullscreen/menu — these are positional and
       // global, so a stale index from the previous tab would mis-target features
       // like broadcast (excluding a console that isn't actually focused). The focus
