@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  stageRefName, parseStageRefName, emptyRegistry, startPipeline, driveOnEvent,
+  stageRefName, parseStageRefName, emptyRegistry, startPipeline, driveOnEvent, stagePrompt,
   type PipelineRegistry,
 } from "../lib/pipelineDriver";
 import { PIPELINE_PRESETS } from "../lib/pipeline";
@@ -55,5 +55,24 @@ describe("driveOnEvent", () => {
       reg = driveOnEvent(reg, ev("landed", "#1", stage)).registry;
     }
     expect(reg.runs["#1"].state.status).toBe("done");
+  });
+});
+
+describe("stagePrompt", () => {
+  it("names the stage/role and the exact bsc-landed/bsc-failed signal commands", () => {
+    const { launch } = startPipeline(emptyRegistry(), P, "#1");
+    const p = stagePrompt(launch, "#1");
+    expect(p).toContain("**implement** stage");
+    expect(p).toContain("`worker` role");
+    expect(p).toContain("bsc-landed 'contract:pipe:#1::implement'");
+    expect(p).toContain("bsc-failed 'contract:pipe:#1::implement'");
+    expect(p).not.toContain("Output from the prior stage"); // no seed on the first stage
+  });
+
+  it("includes the seed (prior output) when present", () => {
+    const launch = { item: "#1", stage: "fix", role: "worker" as const, capability: { role: "worker" as const, github: "read" as const, git: "write" as const, code: "write" as const, writeGlobs: [] }, seed: "FAIL: 2 red" };
+    const p = stagePrompt(launch, "#1");
+    expect(p).toContain("Output from the prior stage");
+    expect(p).toContain("FAIL: 2 red");
   });
 });

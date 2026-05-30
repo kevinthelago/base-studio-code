@@ -69,3 +69,41 @@ export function driveOnEvent(
   const result = conduct(run, ev.type === "landed" ? "success" : "failure");
   return { registry: { runs: { ...reg.runs, [parsed.item]: result.run } }, result };
 }
+
+// -- Stage prompt (#220 live wiring) --------------------------------------------
+// The agent-facing instruction a stage session is launched with: its role, what to do,
+// the prior stage's output (seed), and -- critically -- how to report its outcome so the
+// conductor advances the pipeline (emit a #199 event against its stage ref).
+
+const STAGE_GUIDANCE: Record<string, string> = {
+  implement: "Make the change for this work item within your ownership boundary, then commit. Do not merge.",
+  fix: "A prior build/test run failed (see below). Fix the cause, then commit. Do not merge.",
+  "build-test": "Run the build and the test suite. Report pass or fail. Do NOT edit code or merge.",
+  review: "Review the change for correctness and quality. Decide approve or request-changes. Do NOT edit or merge.",
+  integrate: "Merge the change and update the board. Do NOT write code.",
+  spike: "Explore the problem and produce a throwaway proof-of-concept + findings. Do not merge.",
+  research: "Research the problem and write up what you found. Do not edit code.",
+  plan: "Turn the research into a concrete implementation plan. Do not edit code.",
+};
+
+/** Compose the startup prompt for a stage session: role, task, seed, and the exact
+ *  `bsc-landed`/`bsc-failed` commands that signal the outcome to the conductor. */
+export function stagePrompt(launch: StageLaunch, item: string): string {
+  const ref = `contract:${stageRefName(item, launch.stage)}`;
+  const guidance = STAGE_GUIDANCE[launch.stage] ?? `Carry out the "${launch.stage}" stage for this work item.`;
+  const lines = [
+    `You are the **${launch.stage}** stage of a pipeline for work item ${item}, running as the \`${launch.role}\` role (least privilege: github=${launch.capability.github}, git=${launch.capability.git}, code=${launch.capability.code}).`,
+    "",
+    guidance,
+  ];
+  if (launch.seed) {
+    lines.push("", "Output from the prior stage:", "```", launch.seed, "```");
+  }
+  lines.push(
+    "",
+    "When you finish, signal the result so the conductor advances the pipeline:",
+    `- success: run  bsc-landed '${ref}'`,
+    `- failure: run  echo "<one-line reason>" | bsc-failed '${ref}'`,
+  );
+  return lines.join("\n");
+}
