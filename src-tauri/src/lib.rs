@@ -6,6 +6,8 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
+mod tunnel;
+
 // ── PTY state ────────────────────────────────────────────────────────────────
 
 struct PtySession {
@@ -613,6 +615,9 @@ async fn pty_create(
         const FLUSH: Duration = Duration::from_millis(16);
         const MAX_PENDING: usize = 64 * 1024;
         let evt = format!("pty_data_{}", pane_id_em);
+        // Tee PTY output to the mobile tunnel (#242) when a client is connected.
+        // Looked up once; `broadcast_output` is a no-op while nobody is paired.
+        let tunnel_state = app_em.try_state::<tunnel::TunnelState>();
         let mut pending = String::new();
         let mut last_emit = Instant::now();
         let mut total: u64 = 0;
@@ -637,7 +642,11 @@ async fn pty_create(
                 Err(RecvTimeoutError::Disconnected) => { flush_now = true; done = true; }
             }
             if flush_now && !pending.is_empty() {
-                let _ = app_em.emit(&evt, std::mem::take(&mut pending));
+                let data = std::mem::take(&mut pending);
+                if let Some(ts) = &tunnel_state {
+                    ts.broadcast_output(&pane_id_em, &data);
+                }
+                let _ = app_em.emit(&evt, data);
                 win_emits += 1;
                 last_emit = Instant::now();
             }
@@ -2959,6 +2968,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(PtyState(Mutex::new(HashMap::new())))
+        .manage(tunnel::TunnelState::new())
         .invoke_handler(tauri::generate_handler![
             kb_chat,
             github_request,
@@ -2985,6 +2995,9 @@ pub fn run() {
             list_documents,
             read_document,
             write_document,
+            tunnel::tunnel_status,
+            tunnel::tunnel_set_panes,
+            tunnel::tunnel_set_sessions,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -2995,6 +3008,8 @@ pub fn run() {
         // `~/.base-studio-code` (#52).
         .run(|app_handle, event| {
             if matches!(event, RunEvent::Exit) {
+                // Signal the tunnel transport (#242b) to close before tearing down PTYs.
+                app_handle.state::<tunnel::TunnelState>().shutdown();
                 kill_all_pty_sessions(app_handle.state::<PtyState>().inner());
             }
         });

@@ -25,6 +25,16 @@ reqwest = { version = "0.12", features = ["json"] }
 portable-pty = "0.8"
 rfd = "0.14"
 
+# Mobile tunnel (#242): the desktop ⇄ mobile bridge runs over a zero-knowledge
+# relay (#241), end-to-end encrypted with Noise IK so the relay only ever sees
+# ciphertext. `snow` is the Noise implementation (pure-Rust default resolver — no
+# system crypto toolchain); `tokio` sync primitives fan PTY output out to the
+# relay transport; `base64` encodes the static public key for the pairing QR. The
+# relay dial-out client (tokio-tungstenite) lands with the transport in #242b.
+snow = "0.9"
+base64 = "0.22"
+tokio = { version = "1", features = ["sync", "rt", "macros", "time"] }
+
 # Windows-only: Job Object APIs so a PTY's whole process tree (shell + claude +
 # any grandchildren) dies with the session on pty_kill / app exit. Without this,
 # `portable_pty::Child::kill()` only terminates the immediate shell and leaves
