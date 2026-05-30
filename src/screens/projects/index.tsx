@@ -8,6 +8,7 @@ import { Issues } from "./Issues";
 import { Insights } from "./Insights";
 import { HooksView } from "./Hooks";
 import { CoordinatorInbox } from "./CoordinatorInbox";
+import { PipelinesLane } from "./PipelinesLane";
 import { Planning } from "./Planning";
 import { ProjectsSummary, ProjectsPageModeStrip } from "./ProjectsSummary";
 import { useProjectScan } from "./useProjectScan";
@@ -88,6 +89,7 @@ export function ProjectsScreen() {
           {projectsView === "board" && projectsBoardTab === "insights" && <Insights />}
           {projectsView === "board" && projectsBoardTab === "hooks"    && <HooksView />}
           {projectsView === "board" && projectsBoardTab === "coordination" && <CoordinatorInbox />}
+          {projectsView === "board" && projectsBoardTab === "pipelines" && <PipelinesLane />}
           {projectsView !== "board" && <ProjectsList />}
         </div>
       </div>
