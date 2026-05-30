@@ -13,6 +13,8 @@ import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoi
 import { computeNextRun, appendRun, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import type { SessionRole } from "../lib/sessionRoles";
+import { PIPELINE_PRESETS } from "../lib/pipeline";
+import { startRun, type PipelineRun } from "../lib/conductor";
 import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
@@ -138,6 +140,11 @@ interface AppStore {
    *  remount its tab (runId bump). Returns false if the pane/tab is gone or disabled.
    *  The caller `pty_kill`s the pane first so the remount spawns fresh, not reconnect. */
   wakePane: (paneId: string, prompt: string) => boolean;
+  // Session pipelines (#220): in-flight runs keyed by work item. Register-only here;
+  // launching a stage as a role-scoped pane + auto-advance is the live-wiring slice.
+  pipelineRuns: Record<string, PipelineRun>;
+  pipelineStart: (presetKey: string, item: string) => void;
+  pipelineClear: (item: string) => void;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
   // Prune queued panes across every tab whose live status the caller has —
@@ -323,8 +330,8 @@ interface AppStore {
   // navigating from a project's "documents" button. Transient — NOT persisted.
   kbProjectScope: { keys: string[]; label: string } | null;
   setKbProjectScope: (scope: { keys: string[]; label: string } | null) => void;
-  projectsBoardTab: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination";
-  setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination") => void;
+  projectsBoardTab: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination" | "pipelines";
+  setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination" | "pipelines") => void;
   projectsDrawerIssue: number | null;
   setProjectsDrawerIssue: (n: number | null) => void;
   planningPitch: string;
@@ -841,6 +848,19 @@ export const useAppStore = create<AppStore>()(
         });
         return ok;
       },
+      pipelineRuns: {},
+      pipelineStart: (presetKey, item) =>
+        set((s) => {
+          const pipeline = PIPELINE_PRESETS[presetKey];
+          if (!pipeline || !item.trim()) return {};
+          return { pipelineRuns: { ...s.pipelineRuns, [item]: startRun(pipeline, item).run } };
+        }),
+      pipelineClear: (item) =>
+        set((s) => {
+          const runs = { ...s.pipelineRuns };
+          delete runs[item];
+          return { pipelineRuns: runs };
+        }),
       projectsDrawerIssue: null,
       setProjectsDrawerIssue: (n) => set({ projectsDrawerIssue: n }),
       planningPitch: "",
@@ -1327,6 +1347,7 @@ export const useAppStore = create<AppStore>()(
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         coordAutoWake:        s.coordAutoWake,
+        pipelineRuns:         s.pipelineRuns,
         projectLocalRepos:    s.projectLocalRepos,
         hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
