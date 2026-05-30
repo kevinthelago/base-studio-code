@@ -1,0 +1,18 @@
+name = "msc-tunnel-relay"
+main = "src/worker.ts"
+compatibility_date = "2025-01-01"
+
+# One Durable Object class — the per-room actor that pipes frames between peers.
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RelayRoom"
+
+# DOs must be declared in a migration the first time they're deployed.
+[[migrations]]
+tag = "v1"
+new_classes = ["RelayRoom"]
+
+# Metadata-only observability. The relay never logs frame contents (it can't read
+# them), only connection/room counters.
+[observability]
+enabled = true
