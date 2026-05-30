@@ -76,3 +76,17 @@ describe("stagePrompt", () => {
     expect(p).toContain("FAIL: 2 red");
   });
 });
+
+describe("driveOnEvent — failure seed", () => {
+  it("threads the failed event's reason into the next stage as its seed", () => {
+    let reg = startPipeline(emptyRegistry(), P, "#1").registry;
+    reg = driveOnEvent(reg, ev("landed", "#1", "implement")).registry; // → build-test
+    const failed: CoordEvent = { type: "failed", ref: { kind: "contract", name: stageRefName("#1", "build-test") }, reason: "3 tests red", at: 0 };
+    const { result } = driveOnEvent(reg, failed);
+    expect(result?.kind).toBe("launch");
+    if (result?.kind === "launch") {
+      expect(result.launch.stage).toBe("fix");
+      expect(result.launch.seed).toBe("3 tests red");
+    }
+  });
+});

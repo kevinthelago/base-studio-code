@@ -14,7 +14,8 @@ import { computeNextRun, appendRun, type Automation, type AutomationRun } from "
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import type { SessionRole } from "../lib/sessionRoles";
 import { PIPELINE_PRESETS } from "../lib/pipeline";
-import { startRun, type PipelineRun } from "../lib/conductor";
+import { startRun, currentLaunch, type PipelineRun } from "../lib/conductor";
+import { stagePrompt } from "../lib/pipelineDriver";
 import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
@@ -145,6 +146,8 @@ interface AppStore {
   pipelineRuns: Record<string, PipelineRun>;
   pipelineStart: (presetKey: string, item: string) => void;
   pipelineClear: (item: string) => void;
+  pipelineMount: (item: string) => void;
+  pipelineSetRuns: (runs: Record<string, PipelineRun>) => void;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
   // Prune queued panes across every tab whose live status the caller has —
@@ -443,6 +446,39 @@ interface AppStore {
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;
   setAutoResumeClaude: (v: boolean) => void;
+}
+
+// (Re)mount a pipeline run's pane for its CURRENT stage (#220): a single-pane
+// `pipeline · <item>` tab whose pane is a fresh, role-scoped claude session seeded
+// with the stage prompt. A runId bump remounts it; the caller pty_kills first on a
+// relaunch so it spawns fresh. Terminal runs (done/escalated) just persist.
+function mountState(s: AppStore, item: string, run: PipelineRun) {
+  const launch = currentLaunch(run);
+  if (!launch) return { pipelineRuns: { ...s.pipelineRuns, [item]: run } };
+  const tabName = `pipeline · ${item}`;
+  const existingIdx = s.tabs.findIndex((tb) => tb.name === tabName);
+  const tabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
+  const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
+  const key = `t${tabIdx}p0`;
+  const cwd = s.activeProjectName ? projectHubCwd(s.bscBaseDir, s.activeProjectName) : "";
+  const newTab: Tab = { name: tabName, layout: "1×1", state: "idle", runId };
+  const tabs = existingIdx >= 0 ? s.tabs.map((tb, i) => (i === existingIdx ? newTab : tb)) : [...s.tabs, newTab];
+  const disabledPanes = { ...s.disabledPanes };
+  delete disabledPanes[key];
+  return {
+    tabs,
+    activeTabIdx: tabIdx,
+    activeScreen: "console" as Screen,
+    focusedPaneIdx: -1,
+    paneCwds: { ...s.paneCwds, [key]: cwd },
+    paneInitCmds: { ...s.paneInitCmds, [key]: "claude" },
+    paneStartupPromptText: { ...s.paneStartupPromptText, [key]: stagePrompt(launch, item) },
+    paneContinue: { ...s.paneContinue, [key]: false },
+    paneRoles: { ...s.paneRoles, [key]: launch.role },
+    paneNames: { ...s.paneNames, [tabIdx]: { 0: launch.stage } },
+    disabledPanes,
+    pipelineRuns: { ...s.pipelineRuns, [item]: run },
+  };
 }
 
 export const useAppStore = create<AppStore>()(
@@ -852,8 +888,9 @@ export const useAppStore = create<AppStore>()(
       pipelineStart: (presetKey, item) =>
         set((s) => {
           const pipeline = PIPELINE_PRESETS[presetKey];
-          if (!pipeline || !item.trim()) return {};
-          return { pipelineRuns: { ...s.pipelineRuns, [item]: startRun(pipeline, item).run } };
+          const id = item.trim();
+          if (!pipeline || !id) return {};
+          return mountState(s, id, startRun(pipeline, id).run);
         }),
       pipelineClear: (item) =>
         set((s) => {
@@ -861,6 +898,12 @@ export const useAppStore = create<AppStore>()(
           delete runs[item];
           return { pipelineRuns: runs };
         }),
+      pipelineMount: (item) =>
+        set((s) => {
+          const run = s.pipelineRuns[item];
+          return run ? mountState(s, item, run) : {};
+        }),
+      pipelineSetRuns: (runs) => set({ pipelineRuns: runs }),
       projectsDrawerIssue: null,
       setProjectsDrawerIssue: (n) => set({ projectsDrawerIssue: n }),
       planningPitch: "",

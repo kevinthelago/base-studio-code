@@ -15,6 +15,7 @@ import { buildPanePayload } from "../lib/tunnel";
 import { tunnelSetPanes, tunnelSetSessions } from "../lib/tunnelClient";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import { useCoordinator } from "../lib/useCoordinator";
+import { usePipelineConductor } from "../lib/usePipelineConductor";
 
 function resolvePaneName(
   tabIdx: number,
@@ -129,6 +130,8 @@ export function ConsoleScreen() {
   // #199: the always-on coordinator — auto-wakes ready parked panes when enabled.
   // Mounted here because ConsoleScreen stays mounted across every screen (#187).
   useCoordinator();
+  // #220: the pipeline conductor — auto-advances pipeline runs as stages report.
+  usePipelineConductor();
   // Subscribe per-slice instead of `useAppStore()`-the-whole-state, so a mutation
   // anywhere else in the store (kbBlocks, GitHub cache, settings, planning data)
   // no longer re-renders the entire console grid — only changes to slices this

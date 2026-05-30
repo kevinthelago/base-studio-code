@@ -66,7 +66,10 @@ export function driveOnEvent(
   if (!run || run.state.status !== "active" || run.state.stage !== parsed.stage) {
     return { registry: reg };
   }
-  const result = conduct(run, ev.type === "landed" ? "success" : "failure");
+  // A failure carries the stage's one-line reason into the next stage as its seed
+  // (e.g. the test failure handed to the fix stage).
+  const seed = ev.type === "failed" ? ev.reason : undefined;
+  const result = conduct(run, ev.type === "landed" ? "success" : "failure", seed);
   return { registry: { runs: { ...reg.runs, [parsed.item]: result.run } }, result };
 }
 

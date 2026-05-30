@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { startRun, conduct } from "../lib/conductor";
+import { startRun, conduct, currentLaunch } from "../lib/conductor";
 import { PIPELINE_PRESETS } from "../lib/pipeline";
 
 const P = PIPELINE_PRESETS["implement-test-review-integrate"];
@@ -47,5 +47,15 @@ describe("conductor", () => {
     const r = conduct(startRun(P, "#1").run, "failure");
     expect(r.kind).toBe("escalated");
     if (r.kind === "escalated") expect(r.reason).toContain("implement failure");
+  });
+});
+
+describe("conductor — currentLaunch", () => {
+  it("returns the run's current-stage launch, and null when terminal", () => {
+    const { run } = startRun(P, "#1");
+    expect(currentLaunch(run)?.stage).toBe("implement");
+    let r = run;
+    for (let i = 0; i < 4; i++) r = conduct(r, "success").run; // → done
+    expect(currentLaunch(r)).toBeNull();
   });
 });
