@@ -18,6 +18,7 @@ import { AutomationsScreen } from "./screens/automations";
 import { ExtensionsScreen } from "./screens/extensions";
 import { SettingsScreen } from "./screens/settings";
 import { ProjectsScreen } from "./screens/projects";
+import { AgentsScreen } from "./screens/agents";
 import type { Tab } from "./components/chrome/Tabstrip";
 
 // ── New-tab dialog ────────────────────────────────────────────────────────────
@@ -198,6 +199,9 @@ export default function App() {
           parts.push(projectsBoardTab);
         }
         break;
+      case "agents":
+        parts.push("Agents");
+        break;
       case "settings":
         parts.push("Settings");
         parts.push(settingsSection);
@@ -320,6 +324,7 @@ export default function App() {
           {activeScreen === "github"     && <GitHubScreen />}
           {activeScreen === "automation" && <AutomationsScreen />}
           {activeScreen === "extensions" && <ExtensionsScreen />}
+          {activeScreen === "agents"     && <AgentsScreen />}
           {activeScreen === "settings"   && <SettingsScreen />}
           </div>
           <StatusBar extra={
