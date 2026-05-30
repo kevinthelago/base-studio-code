@@ -1212,6 +1212,30 @@ fn read_coord_log(limit: usize) -> Vec<String> {
     lines
 }
 
+/// Append a `woke` event to the coordination log (#199): records that a parked
+/// session was relaunched, so the coordinator won't re-wake it (idempotent across
+/// polls + restarts). Same TSV shape + ISO-8601 UTC timestamp as the shell emitters.
+#[tauri::command]
+fn append_coord_woke(session: String) -> Result<(), String> {
+    use std::io::Write;
+    let path = bsc_base_dir().join("coord.log");
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let fmt = time::macros::format_description!(
+        "[year]-[month]-[day]T[hour]:[minute]:[second]Z"
+    );
+    let ts = time::OffsetDateTime::now_utc().format(&fmt).unwrap_or_default();
+    let line = format!("{ts}	{session}	woke		
+");
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    f.write_all(line.as_bytes()).map_err(|e| e.to_string())
+}
+
 // ── Git hooks (#265) ────────────────────────────────────────────────────────────
 
 /// One git hook in a repo. `active` = the hook file is present (a `.sample` doesn't
@@ -3195,6 +3219,7 @@ pub fn run() {
             tunnel::tunnel_set_sessions,
             read_audit_log,
             read_coord_log,
+            append_coord_woke,
             read_git_hooks,
         ])
         .build(tauri::generate_context!())

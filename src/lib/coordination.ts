@@ -163,7 +163,8 @@ export type CoordEvent =
   | { type: "landed"; ref: CoordRef; at: number }
   | { type: "merged"; ref: CoordRef; at: number }
   | { type: "closed"; ref: CoordRef; at: number }
-  | { type: "failed"; ref: CoordRef; reason: string; at: number };
+  | { type: "failed"; ref: CoordRef; reason: string; at: number }
+  | { type: "woke"; session: string; at: number };
 
 /**
  * Parse one TSV `$BSC_COORD_LOG` line into an event, or null if unrecognized.
@@ -195,6 +196,8 @@ export function parseCoordLine(line: string): CoordEvent | null {
       const ref = parseRef(rest[0] ?? "");
       return ref ? { type: "failed", ref, reason: rest[1] ?? "", at } : null;
     }
+    case "woke":
+      return { type: "woke", session, at };
     default:
       return null;
   }
@@ -219,27 +222,42 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
       const r = fail(s, e.ref, e.reason, e.at);
       return { state: r.state, woken: [], ready: false, stalled: r.stalled };
     }
+    case "woke": {
+      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session) }, woken: [], ready: false, stalled: [] };
+    }
   }
 }
 
 /**
- * Replay a whole `$BSC_COORD_LOG` (oldest-first) into latch state, collecting every
- * waiter woken along the way -- the coordinator's rebuild-from-disk. Unparseable lines
- * are skipped.
+ * Replay a whole `$BSC_COORD_LOG` (oldest-first) into latch state, collecting the waiters
+ * still awaiting wake in `ready` (became ready, no `woke` ack yet) -- the coordinator's
+ * rebuild-from-disk. Unparseable lines are skipped.
  */
 export function ingestCoordLog(lines: string[], initial: CoordState = emptyCoordState()): {
-  state: CoordState; woken: Waiter[];
+  state: CoordState; woken: Waiter[]; ready: Waiter[];
 } {
   let state = initial;
   const woken: Waiter[] = [];
+  // `pending`: waiters that became ready (all deps satisfied) and have NOT yet been
+  // acknowledged by a `woke` event -- i.e. the ones still awaiting actuation. The woke
+  // event is what makes the wake idempotent across polls + app restarts.
+  const pending = new Map<string, Waiter>();
   for (const line of lines) {
     const ev = parseCoordLine(line);
     if (!ev) continue;
+    if (ev.type === "woke") {
+      pending.delete(ev.session);
+      state = applyCoordEvent(state, ev).state;
+      continue;
+    }
     const r = applyCoordEvent(state, ev);
     state = r.state;
-    woken.push(...r.woken);
+    for (const w of r.woken) {
+      woken.push(w);
+      pending.set(w.session, w);
+    }
   }
-  return { state, woken };
+  return { state, woken, ready: [...pending.values()] };
 }
 
 // -- Wake planning + inbox view (#199 slice 3) ----------------------------------

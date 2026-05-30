@@ -134,6 +134,10 @@ interface AppStore {
   // ConsoleScreen sees idle transitions for all panes and routes them here (#77).
   enqueueFocus: (tab: number, pane: number) => void;
   removeFocus: (tab: number, pane: number) => void;
+  /** Wake a parked pane (#199): seed it with `prompt` as a FRESH claude session and
+   *  remount its tab (runId bump). Returns false if the pane/tab is gone or disabled.
+   *  The caller `pty_kill`s the pane first so the remount spawns fresh, not reconnect. */
+  wakePane: (paneId: string, prompt: string) => boolean;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
   // Prune queued panes across every tab whose live status the caller has —
@@ -818,6 +822,22 @@ export const useAppStore = create<AppStore>()(
       setKbProjectScope: (scope) => set({ kbProjectScope: scope }),
       projectsBoardTab: "board",
       setProjectsBoardTab: (t) => set({ projectsBoardTab: t }),
+      wakePane: (paneId, prompt) => {
+        const m = /^t(\d+)p\d+$/.exec(paneId);
+        if (!m) return false;
+        const tabIdx = Number(m[1]);
+        let ok = false;
+        set((st) => {
+          if (tabIdx < 0 || tabIdx >= st.tabs.length || st.disabledPanes[paneId]) return {};
+          ok = true;
+          return {
+            paneStartupPromptText: { ...st.paneStartupPromptText, [paneId]: prompt },
+            paneContinue: { ...st.paneContinue, [paneId]: false },
+            tabs: st.tabs.map((t, i) => (i === tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
+          };
+        });
+        return ok;
+      },
       projectsDrawerIssue: null,
       setProjectsDrawerIssue: (n) => set({ projectsDrawerIssue: n }),
       planningPitch: "",
