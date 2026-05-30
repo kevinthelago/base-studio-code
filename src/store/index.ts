@@ -222,6 +222,14 @@ interface AppStore {
   settingsSection: string;
   setSettingsSection: (section: string) => void;
 
+  // Mobile tunnel (#243). The relay Worker URL is persisted (the user's BYO relay);
+  // `tunnelRunning` mirrors the Rust client's connected state (transient — NOT
+  // persisted) so ConsoleScreen knows whether to push live pane metadata.
+  tunnelRelayUrl: string;
+  setTunnelRelayUrl: (url: string) => void;
+  tunnelRunning: boolean;
+  setTunnelRunning: (v: boolean) => void;
+
   // Knowledge Store
   kbBlocks: KbBlock[];
   claudeApiKey: string;
@@ -597,6 +605,11 @@ export const useAppStore = create<AppStore>()(
 
       settingsSection: "github",
       setSettingsSection: (section) => set({ settingsSection: section }),
+
+      tunnelRelayUrl: "",
+      setTunnelRelayUrl: (url) => set({ tunnelRelayUrl: url }),
+      tunnelRunning: false,
+      setTunnelRunning: (v) => set({ tunnelRunning: v }),
 
       kbBlocks: [],
       claudeApiKey: "",
@@ -1232,6 +1245,7 @@ export const useAppStore = create<AppStore>()(
         githubActiveTab: s.githubActiveTab,
         automationsTab:  s.automationsTab,
         settingsSection: s.settingsSection,
+        tunnelRelayUrl:  s.tunnelRelayUrl,
         kbBlocks:        s.kbBlocks,
         claudeApiKey:    s.claudeApiKey,
         schedules:            s.schedules,
