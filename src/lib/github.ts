@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
+import { resolveGithubToken } from "./repoCredentials";
 
 /**
  * Default in-memory freshness window. Within this many seconds of the last fetch,
@@ -36,7 +37,11 @@ export function isGithubAuthError(e: unknown): boolean {
  *   silently 401-looping, then rethrows.
  */
 export async function githubRequest<T>(path: string, opts: GithubRequestOpts = {}): Promise<T> {
-  const token = useAppStore.getState().githubToken;
+  // Repo-scoped credentials (#158): a request targeting a repo with an assigned
+  // fine-grained token uses it instead of the global PAT (so a session can't reach
+  // other repos via the proxy); everything else uses the global token.
+  const s = useAppStore.getState();
+  const token = resolveGithubToken(path, s.repoGithubTokens, s.githubToken);
   try {
     return await invoke<T>("github_request", {
       token,

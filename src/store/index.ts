@@ -209,6 +209,11 @@ interface AppStore {
   // GitHub
   githubConnected: boolean;
   githubToken: string;
+  // Repo-scoped GitHub credentials (#158): per-`owner/name` fine-grained token. When
+  // set, a request targeting that repo uses it instead of the global PAT, so a session
+  // can't act on other repos via the proxy. Persisted (Tauri store), never logged.
+  repoGithubTokens: Record<string, string>;
+  setRepoGithubToken: (repo: string, token: string | null) => void;
   githubUser: GithubUser | null;
   githubRepos: GithubRepo[];
   activeRepoName: string;
@@ -603,6 +608,14 @@ export const useAppStore = create<AppStore>()(
 
       githubConnected: false,
       githubToken: "",
+      repoGithubTokens: {},
+      setRepoGithubToken: (repo, token) =>
+        set((s) => {
+          const next = { ...s.repoGithubTokens };
+          if (token && token.trim()) next[repo] = token.trim();
+          else delete next[repo];
+          return { repoGithubTokens: next };
+        }),
       githubUser: null,
       githubRepos: [],
       activeRepoName: "",
@@ -618,6 +631,7 @@ export const useAppStore = create<AppStore>()(
       disconnectGithub: () => set({
         githubConnected: false,
         githubToken: "",
+        repoGithubTokens: {},
         githubUser: null,
         githubRepos: [],
         activeRepoName: "",
@@ -1266,6 +1280,7 @@ export const useAppStore = create<AppStore>()(
         disabledPanes:   s.disabledPanes,
         githubConnected: s.githubConnected,
         githubToken:     s.githubToken,
+        repoGithubTokens: s.repoGithubTokens,
         githubUser:      s.githubUser,
         githubRepos:     s.githubRepos,
         activeRepoName:  s.activeRepoName,
