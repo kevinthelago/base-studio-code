@@ -9,12 +9,7 @@ name: Security audit
 # Tauri's Linux webview — known, non-blocking, upstream's to fix).
 
 on:
-  push:
-    branches: [main, develop]
-    paths:
-      - "Cargo.lock"
-      - "package-lock.json"
-      - ".github/workflows/security.yml"
+  # Dependency audit on pull requests + the weekly schedule (not on every push).
   pull_request:
     branches: [main, develop]
     paths:
