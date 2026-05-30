@@ -241,3 +241,69 @@ export function ingestCoordLog(lines: string[], initial: CoordState = emptyCoord
   }
   return { state, woken };
 }
+
+// -- Wake planning + inbox view (#199 slice 3) ----------------------------------
+// Pure "decide + present": given the ingested latch state, what to wake (with what
+// prompt) and what the inbox/health view shows. The store/PTY execution (relaunch the
+// pane, render the panel) is a thin layer on top of these in a later slice.
+
+export interface WakeAction {
+  /** The parked session/pane to relaunch. */
+  session: string;
+  /** The token-aware wake prompt seeded into the fresh session. */
+  prompt: string;
+  /** The deps that gated this waiter (now all satisfied). */
+  deps: CoordRef[];
+}
+
+/** A ref's latch status as a short label (for prompts + the inbox view). */
+function statusOf(s: CoordState, ref: CoordRef): "satisfied" | "failed" | "pending" {
+  const l = s.latches[refKey(ref)];
+  return l?.state === "satisfied" ? "satisfied" : l?.state === "failed" ? "failed" : "pending";
+}
+
+/**
+ * Compose the token-aware wake prompt for a woken waiter -- names the landed deps (with
+ * how they were satisfied) and points at the checkpoint, so the FRESH session resumes
+ * without re-deriving context (never `--continue` on a fat transcript; see #199).
+ */
+export function wakePromptFor(w: Waiter, s: CoordState): string {
+  const landed = w.deps
+    .map((d) => {
+      const l = s.latches[refKey(d)];
+      const via = l?.state === "satisfied" ? l.source : "ready";
+      return `${refKey(d)} (${via})`;
+    })
+    .join(", ");
+  const lines = [
+    `Your blocking ${w.deps.length === 1 ? "dependency has" : "dependencies have"} landed -- resume now.`,
+    `Satisfied: ${landed}.`,
+  ];
+  if (w.checkpoint) {
+    lines.push(`Resume from your checkpoint: ${w.checkpoint} -- read it first, then continue from where you left off.`);
+  }
+  return lines.join("\n");
+}
+
+/** Map newly-woken waiters to wake actions (the prompt-injection payloads slice 4 runs). */
+export function planWakes(woken: Waiter[], s: CoordState): WakeAction[] {
+  return woken.map((w) => ({ session: w.session, deps: w.deps, prompt: wakePromptFor(w, s) }));
+}
+
+/** One blocked session as the inbox / blocked-chain health view would show it. */
+export interface BlockedView {
+  session: string;
+  checkpoint?: string;
+  deps: { ref: string; status: "satisfied" | "failed" | "pending" }[];
+  /** True when any dep has failed -- a stalled chain to escalate. */
+  stalled: boolean;
+}
+
+/** Derive the inbox/health view from latch state: every still-parked waiter, each dep's
+ *  status, and whether the chain is stalled (a failed dep). */
+export function coordinationSummary(s: CoordState): BlockedView[] {
+  return s.waiters.map((w) => {
+    const deps = w.deps.map((d) => ({ ref: refKey(d), status: statusOf(s, d) }));
+    return { session: w.session, checkpoint: w.checkpoint, deps, stalled: deps.some((d) => d.status === "failed") };
+  });
+}
