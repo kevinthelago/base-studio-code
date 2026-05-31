@@ -15,6 +15,7 @@ import { resolveAllowedCommands } from "../lib/allowedCommands";
 import type { SessionRole } from "../lib/sessionRoles";
 import { PIPELINE_PRESETS } from "../lib/pipeline";
 import { startRun, currentLaunch, type PipelineRun } from "../lib/conductor";
+import { generateAgentProfile } from "../lib/profileGen";
 import { stagePrompt } from "../lib/pipelineDriver";
 import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
@@ -386,6 +387,11 @@ interface AppStore {
   setPlanFleet:          (projectId: string, fleet: FleetPlan) => void;       // wholesale (from fleet.json poll)
   addPlanAgentStream:    (projectId: string, stream: AgentStream) => void;    // merge-by-id (from inline tag)
   removePlanAgentStream: (projectId: string, id: string) => void;
+  /** #289: assign an AgentProfile id to a stream (null clears). */
+  setPlanAgentStreamProfile: (projectId: string, streamId: string, profileId: string | null) => void;
+  /** #289: generate + assign a least-privilege profile for each unassigned stream,
+   *  scoped to that stream's resolved toolchain. Idempotent. */
+  generateFleetProfiles: (projectId: string) => void;
   setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string) => void;
   setPlanDirector:       (projectId: string, enabled: boolean, role?: string) => void;
   clearPlanFleet:        (projectId: string) => void;
@@ -1284,6 +1290,32 @@ export const useAppStore = create<AppStore>()(
           const cur = s.planFleet[projectId];
           if (!cur) return {};
           return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams: cur.streams.filter((x) => x.id !== id) } } };
+        }),
+      setPlanAgentStreamProfile: (projectId, streamId, profileId) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) => (x.id === streamId ? { ...x, profile: profileId ?? undefined } : x));
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      generateFleetProfiles: (projectId) =>
+        set((s) => {
+          const fleet = s.planFleet[projectId];
+          if (!fleet) return {};
+          const profiles = [...s.agentProfiles];
+          const byId = new Set(profiles.map((pr) => pr.id));
+          const streams = fleet.streams.map((stream) => {
+            if (stream.profile) return stream;
+            const commands = resolveAllowedCommands(
+              s.allowedCommands,
+              s.projectAllowedCommands[projectId],
+              s.repoAllowedCommands[repoPromptKey(projectId, stream.repo)],
+            );
+            const prof = generateAgentProfile(stream, "worker", commands);
+            if (!byId.has(prof.id)) { profiles.push(prof); byId.add(prof.id); }
+            return { ...stream, profile: prof.id };
+          });
+          return { agentProfiles: profiles, planFleet: { ...s.planFleet, [projectId]: { ...fleet, streams } } };
         }),
       setPlanFleetMeta: (projectId, recommended, reasoning) =>
         set((s) => {
