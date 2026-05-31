@@ -3,7 +3,7 @@
 // composition: pane header + fleet-pulse strip + three collapsible sections —
 // Context Files, Repository · Structure, Agents · Permissions). Styling lives in
 // projectPane.css and uses the app's design tokens.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./projectPane.css";
 import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
@@ -344,9 +344,18 @@ function CtxRow({ f, onToggle }: { f: ContextFile; onToggle?: () => void }) {
 }
 
 // VARIANT A — Pinned vs Library, two sections
-function ContextA({ context = CONTEXT }: { context?: ContextFile[] }) {
+function ContextA({ context = CONTEXT, onTogglePin }: {
+  context?: ContextFile[]; onTogglePin?: (name: string) => void;
+}) {
+  // Local items give a snappy toggle; onTogglePin (when supplied) persists to the
+  // store. Re-seed from the prop when the persisted context changes so the local
+  // copy reflects store-driven pins on the next build.
   const [items, setItems] = useState(context);
-  const toggle = (name: string) => setItems(items.map((f) => f.name === name ? { ...f, pinned: !f.pinned } : f));
+  useEffect(() => { setItems(context); }, [context]);
+  const toggle = (name: string) => {
+    setItems(items.map((f) => f.name === name ? { ...f, pinned: !f.pinned } : f));
+    onTogglePin?.(name);
+  };
   const pinned = items.filter((f) => f.pinned);
   const lib = items.filter((f) => !f.pinned);
   return (
@@ -499,12 +508,30 @@ function Seg({ options, value, onChange, tiny }: {
 }
 
 // ── the shared per-agent editor (drill-in) ─────────────────────
-function AgentEditor({ a, agents = AGENTS }: { a: Agent; agents?: Agent[]; dense?: boolean }) {
+function AgentEditor({ a, agents = AGENTS, onPerm, onPreset, onFlow }: {
+  a: Agent; agents?: Agent[]; dense?: boolean;
+  onPerm?: (streamId: string, perm: Perm) => void;
+  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
+  onFlow?: (streamId: string, flow: Flow) => void;
+}) {
+  // Local state for snappy UI; the callbacks (when supplied) persist every change
+  // to the store so it survives a remount. Initialized from the agent prop so a
+  // reopened editor reflects the persisted values. Re-seed when the agent id
+  // changes (a different stream's editor reuses this component instance).
   const [perm, setPerm] = useState<Perm>(a.perm);
   const [preset, setPreset] = useState(a.preset);
   const [flow, setFlow] = useState<Flow>(a.flow);
-  const set = (k: string, v: Posture) => { setPerm({ ...perm, [k]: v }); setPreset("custom"); };
-  const applyPreset = (p: string) => { setPreset(p); setPerm({ ...PRESETS[p] }); };
+  useEffect(() => { setPerm(a.perm); setPreset(a.preset); setFlow(a.flow); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (k: string, v: Posture) => {
+    const next = { ...perm, [k]: v };
+    setPerm(next); setPreset("custom");
+    onPerm?.(a.id, next);
+  };
+  const applyPreset = (p: string) => {
+    const next = { ...PRESETS[p] };
+    setPreset(p); setPerm(next);
+    onPreset?.(a.id, p, next);
+  };
   return (
     <div className="editor">
       {/* header */}
@@ -567,17 +594,17 @@ function AgentEditor({ a, agents = AGENTS }: { a: Agent; agents?: Agent[]; dense
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>autonomy</span>
             <Seg options={["continuous", "checkpoint", "confirm"]} value={flow.autonomy}
-              onChange={(v) => setFlow({ ...flow, autonomy: v })} />
+              onChange={(v) => { const next = { ...flow, autonomy: v }; setFlow(next); onFlow?.(a.id, next); }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>push</span>
             <Seg options={["auto-PR", "push-confirm", "commit-only", "none"]} value={flow.push}
-              onChange={(v) => setFlow({ ...flow, push: v })} />
+              onChange={(v) => { const next = { ...flow, push: v }; setFlow(next); onFlow?.(a.id, next); }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>gate</span>
             <Seg options={["soft", "hard"]} value={flow.gate}
-              onChange={(v) => setFlow({ ...flow, gate: v })} />
+              onChange={(v) => { const next = { ...flow, gate: v }; setFlow(next); onFlow?.(a.id, next); }} />
             <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
               {flow.gate === "hard" ? "blocks on violation" : "warns, continues"}
             </span>
@@ -589,7 +616,12 @@ function AgentEditor({ a, agents = AGENTS }: { a: Agent; agents?: Agent[]; dense
 }
 
 // VARIANT A — Roster rows w/ inline expand
-function AgentsA({ agents = AGENTS }: { agents?: Agent[] }) {
+function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
+  agents?: Agent[];
+  onPerm?: (streamId: string, perm: Perm) => void;
+  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
+  onFlow?: (streamId: string, flow: Flow) => void;
+}) {
   const [open, setOpen] = useState<string | null>((agents.find((a) => a.focus) ?? agents[0])?.id ?? null);
   const running = agents.filter((a) => a.status === "run").length;
   return (
@@ -637,7 +669,9 @@ function AgentsA({ agents = AGENTS }: { agents?: Agent[] }) {
                   <span className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</span>
                 </div>
               </div>
-              {on && <div style={{ marginTop: 5, marginBottom: 2 }}><AgentEditor a={a} agents={agents} /></div>}
+              {on && <div style={{ marginTop: 5, marginBottom: 2 }}>
+                <AgentEditor a={a} agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+              </div>}
             </div>
           );
         })}
@@ -662,7 +696,13 @@ void repoRollup;
  * shows the full pane. The drill-in editors keep local state -- display only,
  * no write-back in this slice.
  */
-export function ProjectPane({ data }: { data?: ProjectPaneData }) {
+export function ProjectPane({ data, onPerm, onPreset, onFlow, onTogglePin }: {
+  data?: ProjectPaneData;
+  onPerm?: (streamId: string, perm: Perm) => void;
+  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
+  onFlow?: (streamId: string, flow: Flow) => void;
+  onTogglePin?: (name: string) => void;
+}) {
   const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.context.length > 0);
   const agents:    Agent[]       = hasData ? data!.agents    : AGENTS;
   const repos:     Repo[]        = hasData ? data!.repos      : REPOS;
@@ -712,13 +752,13 @@ export function ProjectPane({ data }: { data?: ProjectPaneData }) {
 
       <div className="pp-scroll">
         <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false}>
-          <ContextA context={context} />
+          <ContextA context={context} onTogglePin={onTogglePin} />
         </Sec>
         <Sec title="Repository · Structure" count={`${repos.length} repos · ${structure.length} milestones`} open={true}>
           <MergedC structure={structure} repos={repos} agents={agents} />
         </Sec>
         <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true}>
-          <AgentsA agents={agents} />
+          <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
         </Sec>
       </div>
     </div>
