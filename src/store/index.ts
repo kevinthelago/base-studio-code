@@ -14,6 +14,7 @@ import { computeNextRun, appendRun, suggestionToAutomation, type Automation, typ
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import type { SessionRole } from "../lib/sessionRoles";
 import type { AgentFlow } from "../screens/projects/agentFlow";
+import { flowKickoffText } from "../screens/projects/flowKickoff";
 import { PIPELINE_PRESETS } from "../lib/pipeline";
 import { startRun, currentLaunch, type PipelineRun } from "../lib/conductor";
 import { generateAgentProfile } from "../lib/profileGen";
@@ -60,16 +61,15 @@ export const TRIAGE_PROMPT =
 function buildStreamPrompt(stream: AgentStream): string {
   const owns   = stream.owns.length   ? stream.owns.join(", ")   : "the files for your area";
   const issues = stream.issues.length ? stream.issues.join(", ") : "the issues assigned to your area";
+  const kick = flowKickoffText(stream.flow, stream.id);
   return (
     `You are the ${stream.name} work stream, one of several Claude sessions building this project in parallel. ` +
     `The full project plan is in CLAUDE.local.md — read it first; it is authoritative. ` +
-    `You are working in your own git worktree on branch ${stream.id}; commit your work to that branch and open a PR ` +
-    `for the director to merge — do not switch branches or touch other worktrees. ` +
+    `You are working in your own git worktree on branch ${stream.id}; do not switch branches or touch other worktrees. ` +
     `Your lane: you own ${owns}. Do not modify files outside your owned paths — another session owns them; ` +
     `coordinate through the plan instead. Your issues: ${issues}. ` +
-    `Work autonomously and do not stop to ask: when something is underspecified, make the smallest reversible choice ` +
-    `consistent with the plan goal and architecture, then record it by piping a one-line note into bsc-note on stdin. ` +
-    `If you are genuinely blocked, pipe a one-line reason into bsc-blocked on stdin. ` +
+    `${kick.autonomy} ` +
+    `${kick.push} ` +
     `When you pause or finish a work session, pipe a short note of where you left off and the next step into bsc-checkpoint on stdin so your next session resumes there. ` +
     `Verify your work against the repo tests and CI rather than asking whether it is correct.`
   );
