@@ -1,0 +1,32 @@
+ repo clone. Path
+  // keys off projectKey (the planning session key — where repos/prompts live).
+  fleetStartProject: (projectName: string, fleet: FleetPlan, projectKey: string) => void;
+  findFleetTabIdx: (projectName: string) => number;
+
+  // Claude config profiles (persisted)
+  configProfiles: ConfigProfile[];
+  addConfigProfile: (profile: Omit<ConfigProfile, "id">) => void;
+  updateConfigProfile: (id: string, patch: Partial<Omit<ConfigProfile, "id">>) => void;
+  removeConfigProfile: (id: string) => void;
+
+  // Plan session data — persisted per project so navigation away doesn't lose state.
+  planSections:    Record<string, Record<string, string>>;
+  setPlanSection:  (projectId: string, key: string, content: string) => void;
+  planConfirmedSections: Record<string, string[]>;
+  confirmPlanSection:   (projectId: string, key: string) => void;
+  unconfirmPlanSection: (projectId: string, key: string) => void;
+  planKbAssignments:    Record<string, string[]>;
+  addPlanKbAssignment:  (projectId: string, blockId: string) => void;
+  removePlanKbAssignment: (projectId: string, blockId: string) => void;
+  planAutomations:    Record<string, AutomationSuggestion[]>;
+  addPlanAutomation:  (projectId: string, a: AutomationSuggestion) => void;
+  clearPlanAutomations: (projectId: string) => void;
+  // Agent fleet — the parallel-execution plan (work streams + optional director +
+  // the optimal concurrent session count). Persisted per project.
+  planFleet:             Record<string, FleetPlan>;
+  setPlanFleet:          (projectId: string, fleet: FleetPlan) => void;       // wholesale (from fleet.json poll)
+  addPlanAgentStream:    (projectId: string, stream: AgentStream) => void;    // merge-by-id (from inline tag)
+  removePlanAgentStream: (projectId: string, id: string) => void;
+  /** #289: assign an AgentProfile id to a stream (null clears). */
+  setPlanAgentStreamProfile: (projectId: string, streamId: string, profileId: string | null) => void;
+  /** #289: generate + assign a 
