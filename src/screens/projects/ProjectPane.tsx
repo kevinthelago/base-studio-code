@@ -1,396 +1,747 @@
-// ProjectPane (#335) -- the planning page right visualizer pane, restructured into
-// three collapsible sections: Project Files, Agent Permissions, and Repository.
-// Ported from design/project-pane/project-pane.jsx (Files variety C + Permissions
-// variety C + Repository variety A), skinned with the app design tokens
-// (tokens.css), not the design coral/IBM Plex palette. Slice 1 renders the faithful
-// visual with sample data; real-data wiring is a follow-up.
-import { useState, type CSSProperties, type ReactNode } from "react";
+// ProjectPane — the planning page right visualizer pane.
+// Ported faithfully from design/project-pane-v4/recommended/* (the AssembledPane
+// composition: pane header + fleet-pulse strip + three collapsible sections —
+// Context Files, Repository · Structure, Agents · Permissions). Styling lives in
+// projectPane.css and uses the app's design tokens.
+import { useState } from "react";
+import "./projectPane.css";
 
-/* -------------------------------- icons -------------------------------- */
-const ICONS: Record<string, string> = {
-  caret:    "M4 6l4 4 4-4",
-  file:     "M4 2h5l3 3v9c0 .3-.2.5-.5.5h-7c-.3 0-.5-.2-.5-.5V2.5C4 2.2 4.2 2 4.5 2z M9 2v3h3",
-  shield:   "M8 1.8l5 1.8v4c0 3.2-2.1 5.4-5 6.6-2.9-1.2-5-3.4-5-6.6v-4z",
-  github:   "M8 1.6a6.4 6.4 0 00-2 12.5c.3 0 .4-.2.4-.4v-1.3c-1.8.4-2.2-.8-2.2-.8-.3-.7-.7-.9-.7-.9-.6-.4 0-.4 0-.4.6 0 1 .7 1 .7.6 1 1.5.7 1.9.6 0-.4.2-.7.4-.9-1.4-.2-2.9-.7-2.9-3.2 0-.7.3-1.3.7-1.7 0-.2-.3-.9.1-1.8 0 0 .5-.2 1.8.7a6 6 0 013.2 0c1.3-.9 1.8-.7 1.8-.7.4.9.1 1.6.1 1.8.4.4.7 1 .7 1.7 0 2.5-1.5 3-2.9 3.2.2.2.4.6.4 1.2v1.9c0 .2.1.4.4.4A6.4 6.4 0 008 1.6z",
-  branch:   "M5 3.5v9 M11 3.5a1.6 1.6 0 100 3.2 1.6 1.6 0 000-3.2z M5 3.5a1.6 1.6 0 100 3.2 1.6 1.6 0 000-3.2z M5 12.5a1.6 1.6 0 100-3.2 1.6 1.6 0 000 3.2z M11 6.7c0 3-6 1.8-6 5.8",
-  plus:     "M8 3.5v9 M3.5 8h9",
-  star:     "M8 2l1.8 3.8 4.2.5-3.1 2.9.8 4.1L8 11.4 4.3 13.3l.8-4.1L2 6.3l4.2-.5z",
-  pencil:   "M11.5 2.6l1.9 1.9-7.4 7.4-2.4.5.5-2.4z",
-  refresh:  "M13 4.5a5.5 5.5 0 10.7 5 M13 2v3h-3",
-  external: "M6 3.5H3.5v9h9V10 M9 3.5h3.5V7 M7 9l5.2-5.2",
-  folder:   "M2 4.2c0-.6.5-1 1-1h3l1.3 1.4H13c.6 0 1 .4 1 1V12c0 .6-.5 1-1 1H3c-.6 0-1-.5-1-1z",
-  terminal: "M3.5 4.5l3 3-3 3 M8.5 11h4",
-  globe:    "M8 1.8a6.2 6.2 0 100 12.4A6.2 6.2 0 008 1.8z M2 8h12 M8 2c1.8 1.6 2.8 3.8 2.8 6S9.8 12.4 8 14 5.2 10.2 5.2 8 6.2 3.6 8 2z",
-  package:  "M8 1.8L14 5v6l-6 3.2L2 11V5z M2 5l6 3 6-3 M8 8v6.2",
-  eye:      "M1.5 8s2.4-4.2 6.5-4.2S14.5 8 14.5 8s-2.4 4.2-6.5 4.2S1.5 8 1.5 8z M8 9.8A1.8 1.8 0 108 6.2a1.8 1.8 0 000 3.6z",
-  flag:     "M4 2v12 M4 2.5h7l-1.4 2.2L11 7H4",
-  layers:   "M8 1.8L14.5 5 8 8.2 1.5 5z M2 8l6 3 6-3 M2 11l6 3 6-3",
-};
-const FILLED = new Set(["star"]);
-function Icon({ name, size = 14, color = "currentColor", style }: { name: string; size?: number; color?: string; style?: CSSProperties }) {
-  const filled = FILLED.has(name);
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden
-      style={{ flex: "0 0 auto", display: "block", ...style }}
-      fill={filled ? color : "none"} stroke={filled ? "none" : color}
-      strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-      <path d={ICONS[name] ?? ""} />
-    </svg>
-  );
+/* =================================================================
+   types
+   ================================================================= */
+type Posture = "allow" | "ask" | "deny";
+type Perm = Record<string, Posture>;
+interface Flow { autonomy: string; push: string; gate: string }
+
+interface Role { c: string; label: string }
+interface Cap { k: string; g: string; label: string }
+
+interface Agent {
+  id: string;
+  name: string;
+  role: string;
+  status: string;
+  repo: string;
+  color: string;
+  initial: string;
+  owns: string[];
+  issues: string[];
+  focus?: boolean;
+  preset: string;
+  perm: Perm;
+  flow: Flow;
+  ctx: number;
 }
 
-/* ------------------------------ primitives ----------------------------- */
-function Seg<T extends string>({ options, value, onChange }: { options: { value: T; label: string }[]; value: T; onChange: (v: T) => void }) {
-  return (
-    <div style={{ display: "flex", gap: 2, padding: 3, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8 }}>
-      {options.map((o) => {
-        const on = value === o.value;
-        return (
-          <button key={o.value} onClick={() => onChange(o.value)} style={{
-            flex: 1, border: "none", cursor: "pointer", fontFamily: "var(--sans)", fontSize: 11.5, fontWeight: 500,
-            padding: "6px 8px", borderRadius: 6, transition: ".14s", whiteSpace: "nowrap",
-            background: on ? "var(--bg-elev2)" : "transparent", color: on ? "var(--fg)" : "var(--fg-muted)",
-            boxShadow: on ? "0 1px 2px rgba(0,0,0,.25)" : "none",
-          }}>{o.label}</button>
-        );
-      })}
-    </div>
-  );
+interface RepoBranch { n: string; issue: number; state: string; ahead: number; behind: number }
+interface Repo {
+  id: string;
+  branch: string;
+  ahead: number;
+  behind: number;
+  agents: string[];
+  primary: boolean;
+  branches: RepoBranch[];
 }
 
-type Tri = "allow" | "ask" | "deny";
-const TRI: { value: Tri; label: string; color: string }[] = [
-  { value: "allow", label: "Allow", color: "var(--success)" },
-  { value: "ask",   label: "Ask",   color: "var(--accent)" },
-  { value: "deny",  label: "Deny",  color: "var(--danger)" },
-];
-function TriState({ value, onChange }: { value: Tri; onChange: (v: Tri) => void }) {
-  return (
-    <div style={{ display: "flex", gap: 2, padding: 2, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 7 }}>
-      {TRI.map((t) => {
-        const on = value === t.value;
-        return (
-          <button key={t.value} onClick={() => onChange(t.value)} style={{
-            border: "none", cursor: "pointer", fontFamily: "var(--sans)", fontSize: 10.5, fontWeight: 600,
-            padding: "4px 8px", borderRadius: 5, transition: ".14s", whiteSpace: "nowrap",
-            background: on ? `color-mix(in oklch, ${t.color}, transparent 86%)` : "transparent",
-            color: on ? t.color : "var(--fg-dim)",
-          }}>{t.label}</button>
-        );
-      })}
-    </div>
-  );
+interface SubItem { t: string; done: boolean }
+interface Issue {
+  n: number;
+  t: string;
+  state: string;
+  owner: string;
+  ac: number;
+  branch: string;
+  deps: number[];
+  sub: SubItem[];
 }
+interface Epic { id: string; title: string; pct: number; issues: Issue[] }
+interface Milestone { id: string; title: string; repo: string; pct: number; state: string; epics: Epic[] }
 
-function Group({ icon, title, count, actions, defaultOpen = true, children }: { icon: string; title: string; count?: number; actions?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div>
-      <div onClick={() => setOpen((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 14px 10px", cursor: "pointer" }}>
-        <Icon name="caret" size={13} color="var(--fg-dim)" style={{ transform: open ? "none" : "rotate(-90deg)", transition: ".15s" }} />
-        <Icon name={icon} size={15} color="var(--accent)" />
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--fg)" }}>{title}</span>
-        {count != null && <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", background: "var(--bg-elev2)", borderRadius: 20, padding: "1px 7px", fontVariantNumeric: "tabular-nums" }}>{count}</span>}
-        <span style={{ flex: 1 }} />
-        {actions && <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 2 }}>{actions}</div>}
-      </div>
-      <div style={{ display: open ? "block" : "none", paddingBottom: 8 }}>{children}</div>
-    </div>
-  );
-}
+interface ContextFile { name: string; kind: string; tok: string; pinned: boolean; scope: string }
 
-function IconBtn({ icon, title, onClick }: { icon: string; title: string; onClick?: () => void }) {
-  return (
-    <button title={title} onClick={onClick} style={{ width: 24, height: 24, display: "grid", placeItems: "center", border: "none", background: "transparent", color: "var(--fg-dim)", borderRadius: 5, cursor: "pointer" }}>
-      <Icon name={icon} size={15} />
-    </button>
-  );
-}
-const DIVIDER: CSSProperties = { height: 1, background: "var(--border-soft)", margin: "0 14px" };
-
-/* --------------------------------- data -------------------------------- */
-interface MdFile { name: string; tok: string }
-type Block = { t: "h" | "p" | "li"; s: string };
-const MD_FILES: MdFile[] = [
-  { name: "CLAUDE.md", tok: "1.2k" },
-  { name: "PLAN.md", tok: "3.0k" },
-  { name: "ARCHITECTURE.md", tok: "5.1k" },
-  { name: "README.md", tok: "1.6k" },
-  { name: "specs/auth-flow.md", tok: "1.5k" },
-  { name: "notes/decisions.md", tok: "0.7k" },
-];
-const PREVIEW: Record<string, Block[]> = {
-  "CLAUDE.md": [
-    { t: "h", s: "Project conventions" },
-    { t: "p", s: "TypeScript everywhere. Prefer composition over inheritance." },
-    { t: "li", s: "Run `pnpm check` before every commit" },
-    { t: "li", s: "No default exports in shared packages" },
-  ],
-  "PLAN.md": [
-    { t: "h", s: "Auth refactor - current milestone" },
-    { t: "li", s: "Phase 1 -- magic-link issuance + verify" },
-    { t: "li", s: "Phase 2 -- OAuth fallback (`github`, `google`)" },
-    { t: "li", s: "Phase 3 -- session migration and cutover" },
-  ],
+/* =================================================================
+   data
+   ================================================================= */
+// ── role palette ───────────────────────────────────────────────
+const ROLES: Record<string, Role> = {
+  planner:  { c: "oklch(0.72 0.10 230)", label: "planner" },
+  worker:   { c: "oklch(0.80 0.14 70)",  label: "worker" },
+  reviewer: { c: "oklch(0.70 0.12 300)", label: "reviewer" },
+  triage:   { c: "oklch(0.72 0.10 195)", label: "triage" },
+  tester:   { c: "oklch(0.72 0.13 145)", label: "tester" },
+  director: { c: "oklch(0.70 0.14 350)", label: "director" },
 };
 
-const CAPS: { k: string; label: string; icon: string }[] = [
-  { k: "read", label: "Read files", icon: "eye" },
-  { k: "edit", label: "Edit files", icon: "pencil" },
-  { k: "make", label: "Create and delete", icon: "file" },
-  { k: "cmd",  label: "Run commands", icon: "terminal" },
-  { k: "net",  label: "Network access", icon: "globe" },
-  { k: "git",  label: "Commit and push", icon: "branch" },
-  { k: "pkg",  label: "Install packages", icon: "package" },
+// ── the 7 permission capabilities (order matters; used as columns) ──
+const CAPS: Cap[] = [
+  { k: "read",   g: "R", label: "read files" },
+  { k: "edit",   g: "E", label: "edit files" },
+  { k: "create", g: "C", label: "create & delete" },
+  { k: "run",    g: "$", label: "run commands" },
+  { k: "net",    g: "N", label: "network" },
+  { k: "push",   g: "⇡", label: "commit & push" },
+  { k: "pkg",    g: "P", label: "install packages" },
 ];
-type PermState = Record<string, Tri>;
-const PRESETS: Record<string, PermState> = {
-  plan:     { read: "allow", edit: "deny",  make: "deny",  cmd: "deny",  net: "deny", git: "deny",  pkg: "deny" },
-  balanced: { read: "allow", edit: "ask",   make: "ask",   cmd: "ask",   net: "deny", git: "ask",   pkg: "deny" },
-  trusted:  { read: "allow", edit: "allow", make: "allow", cmd: "allow", net: "ask",  git: "allow", pkg: "ask" },
+
+// presets → per-cap posture
+const PRESETS: Record<string, Perm> = {
+  Plan:   { read: "allow", edit: "deny",  create: "deny",  run: "ask",   net: "ask",   push: "deny",  pkg: "deny" },
+  Build:  { read: "allow", edit: "allow", create: "allow", run: "allow", net: "ask",   push: "ask",   pkg: "ask" },
+  Review: { read: "allow", edit: "deny",  create: "deny",  run: "allow", net: "deny",  push: "deny",  pkg: "deny" },
+  Triage: { read: "allow", edit: "deny",  create: "ask",   run: "deny",  net: "allow", push: "deny",  pkg: "deny" },
+  Full:   { read: "allow", edit: "allow", create: "allow", run: "allow", net: "allow", push: "allow", pkg: "allow" },
 };
 
-interface TreeNode { type: "dir" | "file"; name: string; git?: string; children?: TreeNode[] }
-const REPO_TREE: TreeNode[] = [
-  { type: "dir", name: "src", children: [
-    { type: "dir", name: "auth", children: [
-      { type: "file", name: "session.ts", git: "M" },
-      { type: "file", name: "oauth.ts", git: "A" },
-      { type: "file", name: "magic-link.ts" },
+// ── the fleet ──────────────────────────────────────────────────
+const AGENTS: Agent[] = [
+  { id: "planner", name: "@planner", role: "planner", status: "wait", repo: "acme/payments",
+    color: "oklch(0.72 0.10 230)", initial: "P",
+    owns: ["docs/**", "specs/**"], issues: ["M1", "M2"],
+    preset: "Plan", perm: { ...PRESETS.Plan },
+    flow: { autonomy: "confirm", push: "none", gate: "soft" }, ctx: 3 },
+
+  { id: "framer", name: "@framer", role: "worker", status: "run", repo: "acme/payments",
+    color: "oklch(0.80 0.14 70)", initial: "F",
+    owns: ["crates/ws-server/**"], issues: ["#418", "#416"], focus: true,
+    preset: "Build", perm: { ...PRESETS.Build },
+    flow: { autonomy: "checkpoint", push: "push-confirm", gate: "hard" }, ctx: 4 },
+
+  { id: "auth", name: "@auth", role: "worker", status: "run", repo: "acme/payments",
+    color: "oklch(0.78 0.13 50)", initial: "A",
+    owns: ["crates/auth/**", "crates/gh/**"], issues: ["#417", "#413"],
+    preset: "Build", perm: { ...PRESETS.Build, push: "allow" },
+    flow: { autonomy: "continuous", push: "auto-PR", gate: "hard" }, ctx: 5 },
+
+  { id: "tester", name: "@tester", role: "tester", status: "on", repo: "acme/payments",
+    color: "oklch(0.72 0.13 145)", initial: "T",
+    owns: ["tests/**"], issues: ["#408"],
+    preset: "Review", perm: { ...PRESETS.Review, run: "allow" },
+    flow: { autonomy: "continuous", push: "commit-only", gate: "hard" }, ctx: 2 },
+
+  { id: "triage", name: "@triage", role: "triage", status: "on", repo: "both",
+    color: "oklch(0.72 0.10 195)", initial: "Δ",
+    owns: ["— issues only"], issues: ["board"],
+    preset: "Triage", perm: { ...PRESETS.Triage },
+    flow: { autonomy: "continuous", push: "none", gate: "soft" }, ctx: 1 },
+
+  { id: "reviewer", name: "@reviewer", role: "reviewer", status: "idle", repo: "acme/web-dashboard",
+    color: "oklch(0.70 0.12 300)", initial: "R",
+    owns: ["src/**"], issues: ["#414"],
+    preset: "Review", perm: { ...PRESETS.Review },
+    flow: { autonomy: "checkpoint", push: "commit-only", gate: "hard" }, ctx: 2 },
+];
+
+// ── repos ──────────────────────────────────────────────────────
+const REPOS: Repo[] = [
+  { id: "acme/payments", branch: "main", ahead: 2, behind: 0,
+    agents: ["planner", "framer", "auth", "tester"], primary: true,
+    branches: [
+      { n: "feat/framing-v2",      issue: 418, state: "active", ahead: 5, behind: 2 },
+      { n: "feat/webhook-emitter", issue: 416, state: "draft",  ahead: 0, behind: 0 },
+      { n: "feat/hmac-mw",         issue: 417, state: "active", ahead: 3, behind: 0 },
+      { n: "fix/token-revocation", issue: 413, state: "review", ahead: 2, behind: 1 },
     ] },
-    { type: "dir", name: "components", children: [
-      { type: "file", name: "ProjectPane.tsx", git: "M" },
-      { type: "file", name: "FileTree.tsx" },
+  { id: "acme/web-dashboard", branch: "main", ahead: 0, behind: 0,
+    agents: ["reviewer", "triage"], primary: false,
+    branches: [
+      { n: "feat/live-updates", issue: 414, state: "review", ahead: 3, behind: 1 },
+      { n: "feat/cutover-flag", issue: 420, state: "draft",  ahead: 0, behind: 0 },
     ] },
-    { type: "file", name: "index.ts" },
-  ] },
-  { type: "dir", name: "docs", children: [
-    { type: "file", name: "PLAN.md" },
-    { type: "file", name: "ARCHITECTURE.md" },
-  ] },
-  { type: "file", name: "package.json", git: "M" },
-  { type: "file", name: "README.md" },
 ];
-const EXT_COLOR: Record<string, string> = { ts: "var(--info)", tsx: "var(--info)", js: "var(--accent)", json: "var(--accent)", md: "var(--accent)", css: "var(--info)" };
-const extOf = (n: string) => n.slice(n.lastIndexOf(".") + 1);
 
-/* ------------------------------ 1. Files ------------------------------- */
-function FileName({ name }: { name: string }) {
-  const i = name.lastIndexOf("/");
-  const dir = i >= 0 ? name.slice(0, i + 1) : "";
-  const base = i >= 0 ? name.slice(i + 1) : name;
-  return <span style={{ fontSize: 13, color: "var(--fg)", fontWeight: 500 }}><span style={{ color: "var(--fg-dim)", fontWeight: 400 }}>{dir}</span>{base}</span>;
-}
-function renderInline(s: string) {
-  const html = s.replace(/`([^`]+)`/g, `<code style="font-family:var(--mono);font-size:10.5px;background:var(--bg-canvas);padding:1px 4px;border-radius:3px;color:var(--fg)">$1</code>`);
-  return <span dangerouslySetInnerHTML={{ __html: html }} />;
-}
-function SubHead({ label, n }: { label: string; n: number }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px 5px" }}>
-      <span style={{ fontFamily: "var(--mono)", fontSize: 10, fontWeight: 500, letterSpacing: ".13em", textTransform: "uppercase", color: "var(--fg-dim)" }}>{label}</span>
-      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{n}</span>
-    </div>
-  );
-}
-function FilesSection() {
-  const [open, setOpen] = useState<string | null>("CLAUDE.md");
-  const pinned = MD_FILES.slice(0, 3);
-  const library = MD_FILES.slice(3);
-  const FileRow = (f: MdFile, pin: boolean) => {
-    const isOpen = open === f.name;
-    return (
-      <div key={f.name}>
-        <div onClick={() => setOpen(isOpen ? null : f.name)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 14px", cursor: "pointer", background: isOpen ? "var(--bg-elev)" : undefined }}>
-          <Icon name="caret" size={13} color="var(--fg-dim)" style={{ transform: isOpen ? "none" : "rotate(-90deg)", transition: ".15s" }} />
-          <span style={{ fontFamily: "var(--mono)", fontSize: 9, fontWeight: 600, letterSpacing: ".04em", width: 26, height: 18, flex: "0 0 auto", display: "grid", placeItems: "center", borderRadius: 4, color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 86%)", border: "1px solid color-mix(in oklch, var(--accent), transparent 70%)" }}>MD</span>
-          <FileName name={f.name} />
-          <span style={{ flex: 1 }} />
-          {pin && <Icon name="star" size={12} color="var(--accent)" />}
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", fontVariantNumeric: "tabular-nums" }}>{f.tok}</span>
-        </div>
-        {isOpen && PREVIEW[f.name] && (
-          <div style={{ margin: "2px 14px 10px 40px", padding: "12px 14px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8 }}>
-            {PREVIEW[f.name].map((b, i) => b.t === "h"
-              ? <div key={i} style={{ fontSize: 12.5, fontWeight: 700, color: "var(--fg)", marginBottom: 6 }}>{b.s}</div>
-              : b.t === "p"
-              ? <div key={i} style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.5, marginBottom: 7 }}>{renderInline(b.s)}</div>
-              : <div key={i} style={{ display: "flex", gap: 8, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.5, marginBottom: 4 }}>
-                  <span style={{ color: "var(--accent)" }}>-</span>{renderInline(b.s)}
-                </div>)}
-            <button style={{ marginTop: 8, padding: "4px 9px", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", color: "var(--fg-muted)", border: "1px solid var(--border)", borderRadius: 5, cursor: "pointer", fontFamily: "var(--sans)" }}>
-              <Icon name="pencil" size={11} />Edit
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-  return (
-    <Group icon="file" title="Project Files" count={MD_FILES.length} actions={<IconBtn icon="plus" title="New file" />}>
-      <SubHead label="Pinned to context" n={pinned.length} />
-      {pinned.map((f) => FileRow(f, true))}
-      <div style={{ ...DIVIDER, margin: "6px 14px" }} />
-      <SubHead label="Library" n={library.length} />
-      {library.map((f) => FileRow(f, false))}
-    </Group>
-  );
+// ── github structure: milestone → epic → issue → sub-issue ─────
+const STRUCTURE: Milestone[] = [
+  { id: "M1", title: "Publisher MVP", repo: "acme/payments", pct: 0.72, state: "doing",
+    epics: [
+      { id: "E1", title: "Framing v2", pct: 0.7, issues: [
+        { n: 418, t: "net: framing v2 + schema regen", state: "doing", owner: "framer",
+          ac: 3, branch: "feat/framing-v2", deps: [], sub: [
+            { t: "spec the v2 frame shape", done: true },
+            { t: "encoder + round-trip tests", done: false },
+            { t: "regen schema.json on build", done: false },
+          ] },
+        { n: 416, t: "worker → webhook emitter", state: "doing", owner: "framer",
+          ac: 2, branch: "feat/webhook-emitter", deps: [418], sub: [
+            { t: "emit on settlement event", done: false },
+            { t: "backpressure + retry", done: false },
+          ] },
+      ] },
+      { id: "E2", title: "Auth surface", pct: 0.5, issues: [
+        { n: 417, t: "HMAC verification middleware", state: "doing", owner: "auth",
+          ac: 4, branch: "feat/hmac-mw", deps: [], sub: [
+            { t: "verify signature header", done: true },
+            { t: "timing-safe compare", done: false },
+            { t: "key rotation hook", done: false },
+          ] },
+        { n: 413, t: "tokenized webhook path + revocation", state: "review", owner: "auth",
+          ac: 2, branch: "fix/token-revocation", deps: [417], sub: [] },
+      ] },
+    ] },
+  { id: "M2", title: "Dashboard live-update", repo: "acme/web-dashboard", pct: 0.32, state: "doing",
+    epics: [
+      { id: "E3", title: "Live updates", pct: 0.3, issues: [
+        { n: 414, t: "subscribe + render live deliveries", state: "review", owner: "reviewer",
+          ac: 3, branch: "feat/live-updates", deps: [], sub: [
+            { t: "websocket client hook", done: true },
+            { t: "optimistic row updates", done: false },
+          ] },
+        { n: 420, t: "cutover plan + flag wiring", state: "backlog", owner: "planner",
+          ac: 1, branch: "feat/cutover-flag", deps: [413, 414], sub: [] },
+      ] },
+    ] },
+];
+
+// helper: the milestones planned for a given repo
+function structFor(repoId: string): Milestone[] {
+  return STRUCTURE.filter((m) => m.repo === repoId);
 }
 
-/* ---------------------------- 2. Permissions --------------------------- */
-function PermissionsSection() {
-  const [preset, setPreset] = useState("balanced");
-  const [state, setState] = useState<PermState>(PRESETS.balanced);
-  const apply = (p: string) => { setPreset(p); if (PRESETS[p]) setState(PRESETS[p]); };
-  const set = (k: string, v: Tri) => { setState((s) => ({ ...s, [k]: v })); setPreset("custom"); };
+// ── context files ──────────────────────────────────────────────
+const CONTEXT: ContextFile[] = [
+  { name: "settlement-webhooks.spec.md", kind: "spec",   tok: "4.1k", pinned: true,  scope: "project" },
+  { name: "CLAUDE.md",                   kind: "claude", tok: "1.2k", pinned: true,  scope: "global" },
+  { name: "blk_71fe · framing v2",       kind: "kb",     tok: "0.8k", pinned: true,  scope: "project" },
+  { name: "blk_2199 · sqlite>lmdb",      kind: "kb",     tok: "0.6k", pinned: true,  scope: "project" },
+  { name: "acme/payments · CLAUDE.md",   kind: "claude", tok: "0.9k", pinned: false, scope: "repo" },
+  { name: "docs/architecture.md",        kind: "doc",    tok: "3.4k", pinned: false, scope: "repo" },
+  { name: "blk_44a1 · retry policy",     kind: "kb",     tok: "0.5k", pinned: false, scope: "project" },
+];
+const CTX_KIND: Record<string, string> = {
+  spec:   "oklch(0.72 0.10 230)",
+  claude: "oklch(0.80 0.14 70)",
+  kb:     "oklch(0.70 0.12 300)",
+  doc:    "oklch(0.66 0.06 200)",
+};
+
+// state dot color for issues
+const ISSUE_STATE: Record<string, string> = {
+  doing:   "var(--accent)",
+  review:  "var(--success)",
+  backlog: "var(--fg-dim)",
+  done:    "var(--fg-muted)",
+};
+
+/* =================================================================
+   primitives (pp-data.jsx)
+   ================================================================= */
+function Dot({ s }: { s: string }) {
+  return <span className={"sdot " + s} />;
+}
+
+function RoleChip({ role, mute }: { role: string; mute?: boolean }) {
+  const R = ROLES[role] || { c: "var(--fg-dim)", label: role };
   return (
-    <Group icon="shield" title="Agent Permissions">
-      <div style={{ padding: "2px 14px 10px" }}>
-        <Seg value={preset}
-          options={[{ value: "plan", label: "Plan" }, { value: "balanced", label: "Balanced" }, { value: "trusted", label: "Trusted" }, { value: "custom", label: "Custom" }]}
-          onChange={(v) => v !== "custom" && apply(v)} />
-      </div>
+    <span className="role" style={{
+      background: `color-mix(in oklch, ${R.c}, transparent ${mute ? 90 : 84}%)`,
+      color: R.c, border: `1px solid color-mix(in oklch, ${R.c}, transparent 72%)`,
+    }}>
+      <i style={{ background: R.c }} />{R.label}
+    </span>
+  );
+}
+
+function Avatar({ id, sz = 17 }: { id: string; sz?: number }) {
+  const a = AGENTS.find((x) => x.id === id);
+  const color = a ? a.color : "var(--fg-dim)";
+  const initial = a ? a.initial : "?";
+  return <span className="av" style={{ width: sz, height: sz, background: color, fontSize: sz * 0.53 }}>{initial}</span>;
+}
+
+// posture mini-bar: 7 cells
+function PostureBar({ perm }: { perm: Perm }) {
+  return (
+    <span className="posture" title="read · edit · create · run · net · push · pkg">
       {CAPS.map((c) => (
-        <div key={c.k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 14px" }}>
-          <Icon name={c.icon} size={14} color="var(--fg-muted)" />
-          <span style={{ fontSize: 12.5, color: "var(--fg)", whiteSpace: "nowrap" }}>{c.label}</span>
-          <span style={{ flex: 1 }} />
-          <TriState value={state[c.k]} onChange={(v) => set(c.k, v)} />
+        <i key={c.k} className={perm[c.k]} title={`${c.label}: ${perm[c.k]}`} />
+      ))}
+    </span>
+  );
+}
+
+// tri-state Allow/Ask/Deny
+function Tri({ value, onChange }: { value: Posture; onChange?: (v: Posture) => void }) {
+  return (
+    <span className="tri">
+      {(["allow", "ask", "deny"] as Posture[]).map((v) => (
+        <button key={v} className={(value === v ? "on " : "") + v}
+          onClick={() => onChange && onChange(v)}>
+          {v === "allow" ? "allow" : v === "ask" ? "ask" : "deny"}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+// flow badges trio
+function FlowBadges({ flow }: { flow: Flow; compact?: boolean }) {
+  return (
+    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+      <span className="fbadge" title="autonomy">{flow.autonomy}</span>
+      <span className="fbadge" title="push policy">{flow.push}</span>
+      <span className={"fbadge" + (flow.gate === "hard" ? " hard" : "")} title="enforcement gate">
+        {flow.gate} gate
+      </span>
+    </span>
+  );
+}
+
+function Track({ pct, green }: { pct: number; green?: boolean }) {
+  return <span className="track" style={{ display: "block" }}>
+    <i className={green ? "green" : ""} style={{ width: `${Math.round(pct * 100)}%` }} />
+  </span>;
+}
+
+// collapsible section shell
+function Sec({ title, count, open = true, right, children }: {
+  title: string; count?: React.ReactNode; open?: boolean; right?: React.ReactNode; children: React.ReactNode;
+}) {
+  const [o, setO] = useState(open);
+  return (
+    <div className="sec">
+      <div className="sec-head" onClick={() => setO(!o)}>
+        <span className="chev">{o ? "▼" : "▶"}</span>
+        <span className="t">{title}</span>
+        {count != null && <span className="count">{count}</span>}
+        <span className="spacer" />
+        {right}
+      </div>
+      {o && <div className="sec-body">{children}</div>}
+    </div>
+  );
+}
+
+/* =================================================================
+   pp-repo.jsx — SubList + BranchChip
+   ================================================================= */
+function BranchChip({ n, mute }: { n: string; mute?: boolean }) {
+  return <span style={{
+    display: "inline-flex", alignItems: "center", gap: 3,
+    fontFamily: "var(--mono)", fontSize: 8.5, padding: "0 5px", borderRadius: 3,
+    background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+    color: mute ? "var(--fg-dim)" : "var(--info)", whiteSpace: "nowrap",
+  }}>⎇ {n}</span>;
+}
+
+function SubList({ sub, pad = 22 }: { sub: SubItem[]; pad?: number }) {
+  if (!sub || !sub.length) return null;
+  return (
+    <div style={{ paddingLeft: pad, marginTop: 5, display: "flex", flexDirection: "column", gap: 3 }}>
+      {sub.map((s, i) => (
+        <div key={i} style={{
+          display: "flex", alignItems: "center", gap: 6,
+          fontFamily: "var(--mono)", fontSize: 9.5,
+          color: s.done ? "var(--fg-dim)" : "var(--fg-muted)",
+        }}>
+          <span style={{
+            width: 11, height: 11, borderRadius: 3, flex: "0 0 11px",
+            border: "1px solid " + (s.done ? "var(--success)" : "var(--border)"),
+            background: s.done ? "var(--success)" : "transparent", color: "#1a120a",
+            fontSize: 8, lineHeight: "10px", textAlign: "center",
+          }}>{s.done ? "✓" : ""}</span>
+          <span style={{ textDecoration: s.done ? "line-through" : "none" }}>{s.t}</span>
         </div>
       ))}
-    </Group>
-  );
-}
-
-/* ----------------------------- 3. Repository --------------------------- */
-function TreeView({ data, openInit = [] }: { data: TreeNode[]; openInit?: string[] }) {
-  const [open, setOpen] = useState<Set<string>>(new Set(openInit));
-  const toggle = (p: string) => setOpen((s) => { const n = new Set(s); if (n.has(p)) n.delete(p); else n.add(p); return n; });
-  const Node = ({ node, depth, base }: { node: TreeNode; depth: number; base: string }) => {
-    const path = base ? base + "/" + node.name : node.name;
-    const isOpen = open.has(path);
-    const isDir = node.type === "dir";
-    return (
-      <>
-        <div onClick={() => isDir && toggle(path)} style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 14px", paddingLeft: 14 + depth * 16, cursor: isDir ? "pointer" : "default", fontSize: 12.5 }}>
-          {isDir
-            ? <Icon name="caret" size={12} color="var(--fg-dim)" style={{ transform: isOpen ? "none" : "rotate(-90deg)", transition: ".15s" }} />
-            : <span style={{ width: 12, flex: "0 0 auto" }} />}
-          {isDir
-            ? <Icon name="folder" size={14} color={isOpen ? "var(--accent)" : "var(--fg-muted)"} />
-            : <span style={{ background: EXT_COLOR[extOf(node.name)] ?? "var(--fg-dim)", width: 6, height: 6, borderRadius: "50%", flex: "0 0 auto", marginLeft: 3, marginRight: 1 }} />}
-          <span style={{ fontFamily: isDir ? "var(--sans)" : "var(--mono)", fontSize: isDir ? 12.5 : 11.5, color: "var(--fg)", fontWeight: isDir ? 500 : 400 }}>{node.name}</span>
-          {node.git && <><span style={{ flex: 1 }} /><span style={{ fontFamily: "var(--mono)", fontSize: 9, fontWeight: 600, color: node.git === "M" ? "var(--accent)" : "var(--success)" }}>{node.git}</span></>}
-        </div>
-        {isDir && isOpen && node.children?.map((c) => <Node key={c.name} node={c} depth={depth + 1} base={path} />)}
-      </>
-    );
-  };
-  return <div style={{ padding: "2px 0" }}>{data.map((n) => <Node key={n.name} node={n} depth={0} base="" />)}</div>;
-}
-function RepositorySection() {
-  return (
-    <Group icon="github" title="Repository" actions={<IconBtn icon="refresh" title="Refresh" />}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 14px 12px" }}>
-        <span style={{ width: 30, height: 30, flex: "0 0 auto", borderRadius: 8, background: "var(--bg-elev2)", border: "1px solid var(--border)", display: "grid", placeItems: "center" }}>
-          <Icon name="github" size={17} color="var(--fg)" />
-        </span>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>acme<span style={{ color: "var(--fg-dim)" }}>/</span>base-studio</span>
-          <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
-            <Icon name="branch" size={11} color="var(--fg-dim)" />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>main</span>
-            <span style={{ width: 3, height: 3, borderRadius: "50%", background: "var(--success)", margin: "0 2px" }} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)" }}>synced</span>
-          </span>
-        </span>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)",
+        fontSize: 9, color: "var(--fg-dim)", cursor: "pointer",
+      }}>
+        <span style={{ width: 11, textAlign: "center" }}>+</span> sub-issue
       </div>
-      <div style={DIVIDER} />
-      <TreeView data={REPO_TREE} openInit={["src", "src/auth"]} />
-    </Group>
+    </div>
   );
 }
 
-/* --------------------------- 4. GitHub Structure ----------------------- */
-interface GhIssue { n: number; title: string; state: "open" | "closed" }
-interface GhEpic { epic: string; issues: GhIssue[] }
-interface GhMilestone { milestone: string; open: number; closed: number; epics: GhEpic[] }
-const GH_STRUCTURE: GhMilestone[] = [
-  { milestone: "Phase 1 - Auth foundation", open: 2, closed: 2, epics: [
-    { epic: "Magic-link sign-in", issues: [
-      { n: 12, title: "Issue + verify magic links", state: "open" },
-      { n: 13, title: "Email delivery + rate limit", state: "closed" },
-    ] },
-    { epic: "OAuth fallback", issues: [
-      { n: 18, title: "GitHub provider", state: "open" },
-      { n: 19, title: "Google provider", state: "closed" },
-    ] },
-  ] },
-  { milestone: "Phase 2 - Session migration", open: 2, closed: 0, epics: [
-    { epic: "Cutover", issues: [
-      { n: 24, title: "Dual-read sessions", state: "open" },
-      { n: 25, title: "Backfill and flip", state: "open" },
-    ] },
-  ] },
-];
-function GitHubStructureSection() {
-  const [open, setOpen] = useState<Set<string>>(new Set(["Phase 1 - Auth foundation"]));
-  const toggle = (k: string) => setOpen((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
-  const total = GH_STRUCTURE.reduce((a, m) => a + m.open + m.closed, 0);
+/* =================================================================
+   pp-context.jsx — KindDot, CtxRow, ContextA
+   ================================================================= */
+function KindDot({ kind }: { kind: string }) {
+  return <span style={{
+    width: 6, height: 6, borderRadius: 2, flex: "0 0 6px",
+    background: CTX_KIND[kind] || "var(--fg-dim)",
+  }} />;
+}
+
+function CtxRow({ f, onToggle }: { f: ContextFile; onToggle?: () => void }) {
   return (
-    <Group icon="flag" title="GitHub Structure" count={total} actions={<IconBtn icon="refresh" title="Refresh" />}>
-      {GH_STRUCTURE.map((m) => {
-        const mOpen = open.has(m.milestone);
-        const tot = m.open + m.closed;
-        return (
-          <div key={m.milestone}>
-            <div onClick={() => toggle(m.milestone)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 14px", cursor: "pointer" }}>
-              <Icon name="caret" size={12} color="var(--fg-dim)" style={{ transform: mOpen ? "none" : "rotate(-90deg)", transition: ".15s" }} />
-              <Icon name="flag" size={13} color="var(--accent)" />
-              <span style={{ fontSize: 12.5, color: "var(--fg)", fontWeight: 500 }}>{m.milestone}</span>
-              <span style={{ flex: 1 }} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", background: "var(--bg-elev2)", borderRadius: 20, padding: "1px 7px", fontVariantNumeric: "tabular-nums" }}>{m.closed}/{tot}</span>
+    <div style={{
+      display: "flex", alignItems: "center", gap: 7, padding: "5px 7px",
+      borderRadius: 5, background: f.pinned ? "var(--bg-canvas)" : "transparent",
+      border: "1px solid " + (f.pinned ? "var(--border-soft)" : "transparent"),
+    }}>
+      <KindDot kind={f.kind} />
+      <span style={{
+        flex: 1, fontFamily: "var(--mono)", fontSize: 10, color: f.pinned ? "var(--fg)" : "var(--fg-muted)",
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+      }}>{f.name}</span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }}>{f.tok}</span>
+      <span onClick={onToggle} style={{
+        cursor: "pointer", fontFamily: "var(--mono)", fontSize: 11,
+        color: f.pinned ? "var(--accent)" : "var(--fg-dim)", width: 14, textAlign: "center",
+      }}>
+        {f.pinned ? "✦" : "+"}
+      </span>
+    </div>
+  );
+}
+
+// VARIANT A — Pinned vs Library, two sections
+function ContextA() {
+  const [items, setItems] = useState(CONTEXT);
+  const toggle = (name: string) => setItems(items.map((f) => f.name === name ? { ...f, pinned: !f.pinned } : f));
+  const pinned = items.filter((f) => f.pinned);
+  const lib = items.filter((f) => !f.pinned);
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 2px 7px" }}>
+        <span className="ulabel">pinned to context</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)" }}>✦ {pinned.length}</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>~6.7k tok</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+        {pinned.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} />)}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 2px 7px" }}>
+        <span className="ulabel">library</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{lib.length} available</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {lib.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} />)}
+      </div>
+    </div>
+  );
+}
+
+/* =================================================================
+   pp-merged.jsx — MStateDot, repoRollup, MergedC
+   ================================================================= */
+function MStateDot({ state }: { state: string }) {
+  return <span style={{
+    width: 6, height: 6, borderRadius: "50%", flex: "0 0 6px",
+    background: ISSUE_STATE[state] || "var(--fg-dim)",
+  }} />;
+}
+
+function repoRollup(repoId: string): { ms: Milestone[]; iss: Issue[]; pct: number } {
+  const ms = structFor(repoId);
+  const iss = ms.flatMap((m) => m.epics.flatMap((e) => e.issues));
+  const pct = ms.length ? ms.reduce((a, m) => a + m.pct, 0) / ms.length : 0;
+  return { ms, iss, pct };
+}
+
+// MERGED C — Milestone-first (the project plan); repo is a tag
+function MergedC() {
+  const [openIss, setOpenIss] = useState<number | null>(417);
+  return (
+    <div>
+      <div style={{ padding: "0 2px 10px", fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+        the plan · {STRUCTURE.length} milestones across {REPOS.length} repos
+      </div>
+      <div style={{ paddingLeft: 6 }}>
+        {STRUCTURE.map((m, mi) => (
+          <div key={m.id} style={{
+            position: "relative", paddingLeft: 18,
+            borderLeft: "2px solid var(--border-soft)", paddingBottom: mi < STRUCTURE.length - 1 ? 16 : 0,
+          }}>
+            <span style={{
+              position: "absolute", left: -7, top: 1, width: 12, height: 12, borderRadius: "50%",
+              background: "var(--bg-panel)", border: "2px solid var(--accent)",
+            }} />
+            {/* milestone header with repo tag */}
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>{m.id}</span>
+              <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 11.5, color: "var(--fg)" }}>{m.title}</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{Math.round(m.pct * 100)}%</span>
             </div>
-            {mOpen && m.epics.map((ep) => {
-              const epKey = m.milestone + "/" + ep.epic;
-              const epOpen = open.has(epKey);
-              return (
-                <div key={epKey}>
-                  <div onClick={() => toggle(epKey)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 14px 5px 30px", cursor: "pointer" }}>
-                    <Icon name="caret" size={11} color="var(--fg-dim)" style={{ transform: epOpen ? "none" : "rotate(-90deg)", transition: ".15s" }} />
-                    <Icon name="layers" size={12} color="var(--info)" />
-                    <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>{ep.epic}</span>
-                    <span style={{ flex: 1 }} />
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{ep.issues.length}</span>
-                  </div>
-                  {epOpen && ep.issues.map((iss) => (
-                    <div key={iss.n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 14px 4px 50px" }}>
-                      <span style={{ width: 7, height: 7, borderRadius: "50%", flex: "0 0 auto", background: iss.state === "open" ? "var(--success)" : "var(--fg-dim)" }} />
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)" }}>#{iss.n}</span>
-                      <span style={{ fontSize: 11.5, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{iss.title}</span>
-                    </div>
-                  ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
+              <span style={{
+                fontFamily: "var(--mono)", fontSize: 8.5, padding: "0 6px", borderRadius: 3,
+                background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)",
+              }}>⎇ {m.repo.split("/")[1]}</span>
+              <span style={{ flex: 1 }}><Track pct={m.pct} /></span>
+            </div>
+            {m.epics.map((e) => (
+              <div key={e.id} style={{ marginBottom: 9 }}>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", marginBottom: 5 }}>{e.id} · {e.title}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  {e.issues.map((is) => {
+                    const io = openIss === is.n;
+                    return (
+                      <div key={is.n} style={{
+                        borderRadius: 6, background: "var(--bg-canvas)",
+                        border: "1px solid var(--border-soft)", overflow: "hidden",
+                      }}>
+                        <div onClick={() => setOpenIss(io ? null : is.n)} style={{ padding: "7px 9px", cursor: "pointer" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <MStateDot state={is.state} />
+                            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>#{is.n}</span>
+                            <span style={{
+                              flex: 1, fontFamily: "var(--sans)", fontSize: 10.5, color: "var(--fg)",
+                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                            }}>{is.t}</span>
+                            <span title={"@" + is.owner}><Avatar id={is.owner} sz={14} /></span>
+                          </div>
+                          <div style={{ display: "flex", gap: 5, marginTop: 5, paddingLeft: 20, alignItems: "center" }}>
+                            <BranchChip n={is.branch} />
+                            <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--success)" }}>✓ {is.ac} AC</span>
+                            {is.sub.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>⌱ {is.sub.length} sub</span>}
+                            {is.deps.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--accent)" }}>⇠ #{is.deps.join(" #")}</span>}
+                          </div>
+                        </div>
+                        {io && is.sub.length > 0 && (
+                          <div style={{ padding: "0 9px 8px", borderTop: "1px solid var(--border-soft)" }}>
+                            <SubList sub={is.sub} pad={4} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 8, fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)", cursor: "pointer" }}>+ milestone</div>
+    </div>
+  );
+}
+
+/* =================================================================
+   pp-agents.jsx — Seg, AgentEditor, AgentsA
+   ================================================================= */
+// small segmented control
+function Seg({ options, value, onChange, tiny }: {
+  options: string[]; value: string; onChange?: (v: string) => void; tiny?: boolean;
+}) {
+  return (
+    <span style={{
+      display: "inline-flex", border: "1px solid var(--border-soft)",
+      borderRadius: 5, overflow: "hidden", fontFamily: "var(--mono)",
+      fontSize: tiny ? 9 : 9.5,
+    }}>
+      {options.map((o, i) => {
+        const on = o === value;
+        return (
+          <button key={o} onClick={() => onChange && onChange(o)} style={{
+            border: 0, borderRight: i < options.length - 1 ? "1px solid var(--border-soft)" : 0,
+            background: on ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent",
+            color: on ? "var(--accent)" : "var(--fg-dim)",
+            padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap",
+          }}>{o}</button>
         );
       })}
-    </Group>
+    </span>
   );
 }
 
-/* ------------------------------ the pane ------------------------------- */
+// ── the shared per-agent editor (drill-in) ─────────────────────
+function AgentEditor({ a }: { a: Agent; dense?: boolean }) {
+  const [perm, setPerm] = useState<Perm>(a.perm);
+  const [preset, setPreset] = useState(a.preset);
+  const [flow, setFlow] = useState<Flow>(a.flow);
+  const set = (k: string, v: Posture) => { setPerm({ ...perm, [k]: v }); setPreset("custom"); };
+  const applyPreset = (p: string) => { setPreset(p); setPerm({ ...PRESETS[p] }); };
+  return (
+    <div className="editor">
+      {/* header */}
+      <div style={{ padding: "10px 12px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Avatar id={a.id} sz={20} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{a.name}</span>
+          <RoleChip role={a.role} />
+          <span style={{ flex: 1 }} />
+          <Dot s={a.status} />
+        </div>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 6, marginTop: 7,
+          fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)", flexWrap: "wrap",
+        }}>
+          <span style={{ color: "var(--info)" }}>⎇ {a.repo}</span>
+          <span style={{ color: "var(--fg-dim)" }}>·</span>
+          <span>owns</span>
+          {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
+          {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
+        </div>
+      </div>
+
+      {/* presets */}
+      <div style={{ padding: "9px 12px", borderBottom: "1px solid var(--border-soft)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
+          <span className="ulabel">preset</span>
+          <span style={{ flex: 1 }} />
+          {preset === "custom" && <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)" }}>● customized</span>}
+        </div>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+          {Object.keys(PRESETS).map((p) => (
+            <span key={p} className={"preset" + (preset === p ? " on" : "")}
+              onClick={() => applyPreset(p)}>{p}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* capabilities */}
+      <div style={{ padding: "6px 12px 10px" }}>
+        <div className="ulabel" style={{ padding: "5px 0 7px" }}>capabilities</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {CAPS.map((c) => (
+            <div key={c.k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{
+                width: 16, textAlign: "center", fontFamily: "var(--mono)",
+                fontSize: 11, color: "var(--fg-dim)",
+              }}>{c.g}</span>
+              <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>{c.label}</span>
+              <Tri value={perm[c.k]} onChange={(v) => set(c.k, v)} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* flow */}
+      <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
+        <div className="ulabel" style={{ marginBottom: 8 }}>flow</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>autonomy</span>
+            <Seg options={["continuous", "checkpoint", "confirm"]} value={flow.autonomy}
+              onChange={(v) => setFlow({ ...flow, autonomy: v })} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>push</span>
+            <Seg options={["auto-PR", "push-confirm", "commit-only", "none"]} value={flow.push}
+              onChange={(v) => setFlow({ ...flow, push: v })} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>gate</span>
+            <Seg options={["soft", "hard"]} value={flow.gate}
+              onChange={(v) => setFlow({ ...flow, gate: v })} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+              {flow.gate === "hard" ? "blocks on violation" : "warns, continues"}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// VARIANT A — Roster rows w/ inline expand
+function AgentsA() {
+  const [open, setOpen] = useState<string | null>("framer");
+  return (
+    <div style={{ padding: "4px 0" }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, padding: "0 2px 8px",
+        fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)",
+      }}>
+        <span>6 agents · 2 running</span>
+        <span style={{ flex: 1 }} />
+        <span className="mini">+ agent</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {AGENTS.map((a) => {
+          const on = open === a.id;
+          return (
+            <div key={a.id}>
+              <div onClick={() => setOpen(on ? null : a.id)} style={{
+                display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8,
+                alignItems: "center", padding: "7px 8px", borderRadius: 6, cursor: "pointer",
+                background: on ? "color-mix(in oklch, var(--accent), transparent 92%)" : "var(--bg-canvas)",
+                border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <Dot s={a.status} />
+                  <Avatar id={a.id} sz={18} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{a.name}</span>
+                    <RoleChip role={a.role} mute />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                    <PostureBar perm={a.perm} />
+                    <span style={{
+                      fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }}>
+                      {a.owns[0]}{a.owns.length > 1 ? ` +${a.owns.length - 1}` : ""}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-muted)" }}>{a.preset}</span>
+                  <span className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</span>
+                </div>
+              </div>
+              {on && <div style={{ marginTop: 5, marginBottom: 2 }}><AgentEditor a={a} /></div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// FlowBadges and repoRollup are ported for completeness but unused by the
+// assembled composition (it picks MergedC + AgentsA); reference them so
+// strict noUnusedLocals stays satisfied.
+void FlowBadges;
+void repoRollup;
+
+/* =================================================================
+   pp-assembled.jsx — AssembledPane → ProjectPane
+   ================================================================= */
 export function ProjectPane() {
   return (
-    <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", background: "var(--bg-panel)", overflow: "hidden", flexShrink: 0 }}>
-      <FilesSection />
-      <div style={{ ...DIVIDER, margin: "4px 14px" }} />
-      <PermissionsSection />
-      <div style={{ ...DIVIDER, margin: "4px 14px" }} />
-      <RepositorySection />
-      <div style={{ ...DIVIDER, margin: "4px 14px" }} />
-      <GitHubStructureSection />
+    <div className="pp">
+      {/* pane header */}
+      <div style={{
+        flex: "0 0 auto", padding: "10px 12px",
+        borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
+        display: "flex", alignItems: "center", gap: 8,
+      }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: 2,
+          background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
+        }} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)" }}>Settlement webhooks v2</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>prj_2fa</span>
+      </div>
+
+      {/* fleet pulse strip — always-visible glance line */}
+      <div style={{
+        flex: "0 0 auto", padding: "7px 12px", borderBottom: "1px solid var(--border-soft)",
+        display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 9,
+        color: "var(--fg-muted)", background: "var(--bg-panel)",
+      }}>
+        <span style={{ display: "flex", gap: -4 }}>
+          {AGENTS.map((a, i) => (
+            <span key={a.id} style={{ marginLeft: i ? -4 : 0, position: "relative" }}>
+              <span className="av" style={{ width: 16, height: 16, background: a.color, fontSize: 9 }}>{a.initial}</span>
+            </span>
+          ))}
+        </span>
+        <span style={{ color: "var(--accent)" }}>2 running</span>
+        <span style={{ color: "var(--fg-dim)" }}>· 3 on · 1 idle</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ color: "var(--success)" }}>● github 4m</span>
+      </div>
+
+      <div className="pp-scroll">
+        <Sec title="Context Files" count="✦ 4 pinned" open={false}>
+          <ContextA />
+        </Sec>
+        <Sec title="Repository · Structure" count="2 repos · 2 milestones" open={true}>
+          <MergedC />
+        </Sec>
+        <Sec title="Agents · Permissions" count="6 · 2 running" open={true}>
+          <AgentsA />
+        </Sec>
+      </div>
     </div>
   );
 }

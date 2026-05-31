@@ -4,28 +4,23 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import ReactMarkdown from "react-markdown";
 import { useAppStore } from "../../store";
-import type { AutomationSuggestion } from "../../store";
 import { projectRepoCwd, sanitizeProjectKey } from "../../lib/projectPaths";
 import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
 import {
-  parsePlanFocus, stripPlanFocus, buildSectionConfirmMessage,
+  parsePlanFocus, stripPlanFocus,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
   parseAllowCommands, stripAllowCommands,
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
 } from "./planningSession";
-import { repoPromptKey } from "../../lib/startupPrompt";
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, titleForKey, groupSections, parseSkipped, parseSectionKey,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, titleForKey, groupSections, parseSectionKey,
   parseFleetFile,
-  type SkippedItem, type FleetPlan, type AgentStream,
 } from "./planSections";
-import { FLOW_AUTONOMY, FLOW_PUSH, FLOW_TRIGGER, FLOW_GATE, resolveFlow, type AgentFlow } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
 import { ProjectPane } from "./ProjectPane";
 
@@ -63,122 +58,6 @@ function stripAnsi(s: string): string {
   );
 }
 
-
-function PlanSectionCard({
-  section,
-  onConfirm,
-  flashing,
-  active,
-}: {
-  section: Section;
-  onConfirm: (k: string) => void;
-  flashing: boolean;
-  active: boolean;
-}) {
-  // pending and confirmed start collapsed; drafted auto-expands when content arrives
-  const [collapsed, setCollapsed] = useState(section.state !== "drafted");
-  const cardRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (section.state === "drafted")   setCollapsed(false);
-    if (section.state === "confirmed") setCollapsed(true);
-  }, [section.state]);
-
-  // When Claude starts discussing this section, surface it: expand and scroll in.
-  useEffect(() => {
-    if (active) {
-      setCollapsed(false);
-      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-  }, [active]);
-
-  const hasContent = section.state !== "pending";
-  const isDrafted  = section.state === "drafted";
-
-  const phases = section.k === "phases" ? parsePhases(section.content) : [];
-
-  return (
-    <div ref={cardRef} style={{
-      borderRadius: 6,
-      border: "1px solid " + (active ? "var(--accent)" : isDrafted ? "var(--accent-dim)" : "var(--border-soft)"),
-      boxShadow: active ? "0 0 0 1px var(--accent)" : "none",
-      background: (active || isDrafted)
-        ? "color-mix(in oklch, var(--accent), var(--bg-canvas) 96%)"
-        : "var(--bg-canvas)",
-      // Active overrides the dimming so the in-discussion section is never faded.
-      opacity: (section.state === "pending" && !active) ? 0.45 : 1,
-      overflow: "hidden",
-      flexShrink: 0,
-      transition: "border-color 0.2s, background 0.2s, box-shadow 0.2s",
-    }}>
-      <div
-        onClick={hasContent ? () => setCollapsed(c => !c) : undefined}
-        style={{
-          padding: "7px 10px",
-          background: isDrafted ? "color-mix(in oklch, var(--accent), var(--bg-elev) 92%)" : "var(--bg-elev)",
-          borderBottom: (hasContent && !collapsed) ? "1px solid var(--border-soft)" : "none",
-          display: "flex", alignItems: "center", gap: 8,
-          fontFamily: "var(--mono)", fontSize: 10.5,
-          cursor: hasContent ? "pointer" : "default",
-          userSelect: "none",
-        }}
-      >
-        <span style={{
-          display: "inline-block", width: 10, textAlign: "center",
-          fontSize: 8, color: "var(--fg-dim)",
-          transform: hasContent && !collapsed ? "rotate(0deg)" : "rotate(-90deg)",
-          transition: "transform 0.15s",
-          opacity: hasContent ? 1 : 0.3,
-        }}>▼</span>
-        <span style={{ color: "var(--fg)" }}>{section.title}</span>
-        <div style={{ flex: 1 }} />
-        {active && section.state !== "confirmed" && (
-          <span style={{ color: "var(--accent)", fontSize: 10 }}>● in discussion</span>
-        )}
-        {section.state === "confirmed" && (
-          <span style={{ color: "var(--success)", fontSize: 10 }}>✓ confirmed</span>
-        )}
-        {section.state === "pending" && !active && (
-          <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>○ pending</span>
-        )}
-        {isDrafted && (
-          <button
-            className={flashing ? "confirm-flash" : ""}
-            onClick={(e) => { e.stopPropagation(); onConfirm(section.k); }}
-            style={{
-              padding: "3px 14px", borderRadius: 4, cursor: "pointer",
-              background: "var(--accent)", border: "none",
-              color: "#1a120a", fontFamily: "var(--mono)", fontSize: 10, fontWeight: 700,
-              letterSpacing: "0.02em",
-            }}
-          >✓ looks good</button>
-        )}
-      </div>
-      {hasContent && !collapsed && (
-        <div style={{ padding: "12px 14px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.7 }}>
-          {section.k === "phases" && phases.length > 0
-            ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {phases.map((ph, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: "var(--mono)", fontSize: 10.5 }}>
-                    <span style={{ color: "var(--accent)" }}>·</span>
-                    <span style={{ color: "var(--fg)" }}>{ph.name}</span>
-                    {ph.description && <span style={{ color: "var(--fg-dim)" }}>— {ph.description}</span>}
-                  </div>
-                ))}
-              </div>
-            )
-            : (
-              <div className="plan-md">
-                <ReactMarkdown>{section.content}</ReactMarkdown>
-              </div>
-            )
-          }
-        </div>
-      )}
-    </div>
-  );
-}
 
 interface PlanningRepoStripProps {
   projectId: string;
@@ -318,373 +197,6 @@ function PlanningRepoStrip({ projectId, repos }: PlanningRepoStripProps) {
     </div>
   );
 }
-
-function KbAssignedCard({ blockIds, onRemove }: { blockIds: string[]; onRemove: (id: string) => void }) {
-  const { kbBlocks } = useAppStore();
-  if (blockIds.length === 0) return null;
-  return (
-    <div style={{
-      borderRadius: 6, border: "1px solid var(--border-soft)",
-      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0,
-    }}>
-      <div style={{
-        padding: "7px 10px", background: "var(--bg-elev)",
-        borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 8,
-        fontFamily: "var(--mono)", fontSize: 10.5,
-      }}>
-        <span style={{ color: "var(--fg)" }}>Knowledge Blocks</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>{blockIds.length} assigned</span>
-      </div>
-      <div style={{ padding: "8px 10px", display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {blockIds.map(id => {
-          const block = kbBlocks.find(b => b.id === id);
-          return (
-            <span key={id} style={{
-              display: "inline-flex", alignItems: "center", gap: 5,
-              padding: "2px 8px", borderRadius: 99,
-              background: "color-mix(in oklch, var(--info), transparent 88%)",
-              border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
-              fontFamily: "var(--mono)", fontSize: 10, color: "var(--info)",
-            }}>
-              {block?.title ?? id}
-              <span
-                onClick={() => onRemove(id)}
-                style={{ cursor: "pointer", opacity: 0.7, lineHeight: 1 }}
-              >×</span>
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function AutomationsCard({ automations, onRemove }: { automations: AutomationSuggestion[]; onRemove: (idx: number) => void }) {
-  if (automations.length === 0) return null;
-  return (
-    <div style={{
-      borderRadius: 6, border: "1px solid var(--border-soft)",
-      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0,
-    }}>
-      <div style={{
-        padding: "7px 10px", background: "var(--bg-elev)",
-        borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 8,
-        fontFamily: "var(--mono)", fontSize: 10.5,
-      }}>
-        <span style={{ color: "var(--fg)" }}>Automations</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>{automations.length} suggested</span>
-      </div>
-      <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 7 }}>
-        {automations.map((a, i) => (
-          <div key={i} style={{
-            padding: "7px 9px", borderRadius: 5,
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-            fontFamily: "var(--mono)", fontSize: 10.5,
-          }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
-              <span style={{ color: "var(--fg)" }}>{a.name}</span>
-              {a.schedule && (
-                <span className="tag" style={{ fontSize: 9 }}>{a.schedule}</span>
-              )}
-              <div style={{ flex: 1 }} />
-              <span
-                onClick={() => onRemove(i)}
-                style={{ color: "var(--fg-dim)", cursor: "pointer", fontSize: 11 }}
-              >×</span>
-            </div>
-            <div style={{ color: "var(--fg-dim)", fontSize: 10, fontFamily: "var(--mono)" }}>
-              <code style={{ color: "var(--accent)" }}>{a.command}</code>
-            </div>
-            {a.description && (
-              <div style={{ color: "var(--fg-muted)", fontSize: 10, marginTop: 3 }}>{a.description}</div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// The agent fleet: the planner's parallel-execution plan. Shows the recommended
-// concurrent session count + reasoning, a configurable director toggle, and one
-// row per work stream (its repo, owned paths, issues, and dependencies). The
-// "Launch fleet" button opens the build tab. Self-hides until a fleet is defined.
-const FLOW_FIELDS = [
-  ["autonomy", FLOW_AUTONOMY],
-  ["push", FLOW_PUSH],
-  ["trigger", FLOW_TRIGGER],
-  ["gate", FLOW_GATE],
-] as const;
-
-function FleetCard({ projectId, onLaunch }: { projectId: string; onLaunch: () => void }) {
-  const { planFleet, removePlanAgentStream, setPlanDirector, setPlanAgentStreamProfile, setPlanAgentStreamFlow, generateFleetProfiles, agentProfiles } = useAppStore();
-  const fleet: FleetPlan | undefined = planFleet[projectId];
-  if (!fleet || (fleet.streams.length === 0 && !fleet.director.enabled)) return null;
-
-  const recommended = fleet.recommended > 0 ? fleet.recommended : fleet.streams.length;
-  const assignableProfiles = agentProfiles.filter((pr) => pr.category !== "application");
-
-  const StreamRow = ({ st }: { st: AgentStream }) => (
-    <div style={{
-      padding: "7px 9px", borderRadius: 5,
-      background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-      fontFamily: "var(--mono)", fontSize: 10.5,
-    }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
-        <span style={{ color: "var(--fg)" }}>{st.name}</span>
-        <span className="tag" style={{ fontSize: 9 }}>{st.repo}</span>
-        {st.dependsOn.length > 0 && (
-          <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>after: {st.dependsOn.join(", ")}</span>
-        )}
-        <div style={{ flex: 1 }} />
-        <span
-          onClick={() => removePlanAgentStream(projectId, st.id)}
-          style={{ color: "var(--fg-dim)", cursor: "pointer", fontSize: 11 }}
-        >×</span>
-      </div>
-      {st.owns.length > 0 && (
-        <div style={{ color: "var(--fg-dim)", fontSize: 10, marginBottom: st.issues.length ? 3 : 0 }}>
-          owns <code style={{ color: "var(--accent)" }}>{st.owns.join("  ")}</code>
-        </div>
-      )}
-      {st.issues.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-          {st.issues.map((iss, i) => (
-            <span key={i} style={{
-              padding: "1px 6px", borderRadius: 99,
-              background: "color-mix(in oklch, var(--info), transparent 88%)",
-              border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
-              color: "var(--info)", fontSize: 9.5,
-            }}>{iss}</span>
-          ))}
-        </div>
-      )}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-        <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>profile</span>
-        <select
-          value={st.profile ?? ""}
-          onChange={(e) => setPlanAgentStreamProfile(projectId, st.id, e.target.value || null)}
-          style={{ flex: 1, height: 20, fontSize: 9.5, fontFamily: "var(--mono)", background: "var(--bg-panel)", color: "var(--fg)", border: "1px solid var(--border-soft)", borderRadius: 4 }}
-        >
-          <option value="">— none (role only) —</option>
-          {assignableProfiles.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
-        </select>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
-        <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>flow</span>
-        {FLOW_FIELDS.map(([key, opts]) => (
-          <select
-            key={key}
-            title={key}
-            value={resolveFlow(st.flow)[key]}
-            onChange={(e) => setPlanAgentStreamFlow(projectId, st.id, { [key]: e.target.value } as Partial<AgentFlow>)}
-            style={{ height: 20, fontSize: 9.5, fontFamily: "var(--mono)", background: "var(--bg-panel)", color: "var(--fg)", border: "1px solid var(--border-soft)", borderRadius: 4 }}
-          >
-            {opts.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-        ))}
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{
-      borderRadius: 6, border: "1px solid var(--border-soft)",
-      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0,
-    }}>
-      <div style={{
-        padding: "7px 10px", background: "var(--bg-elev)",
-        borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 8,
-        fontFamily: "var(--mono)", fontSize: 10.5,
-      }}>
-        <span style={{ color: "var(--fg)" }}>Agent fleet</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--accent)", fontSize: 10 }}>
-          recommend {recommended} session{recommended === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 9 }}>
-        {fleet.reasoning && (
-          <div style={{ color: "var(--fg-muted)", fontSize: 11, lineHeight: 1.55 }}>{fleet.reasoning}</div>
-        )}
-
-        {/* Director toggle — configured here while planning. */}
-        <label style={{
-          display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
-          fontFamily: "var(--mono)", fontSize: 10.5,
-        }}>
-          <input
-            type="checkbox"
-            checked={fleet.director.enabled}
-            onChange={e => setPlanDirector(projectId, e.target.checked, fleet.director.role)}
-          />
-          <span style={{ color: "var(--fg)" }}>Director session</span>
-          {fleet.director.role
-            ? <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>· {fleet.director.role}</span>
-            : <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>· coordinates the fleet from the project root</span>}
-        </label>
-
-        {fleet.streams.length > 0 && (
-          <button
-            onClick={() => generateFleetProfiles(projectId)}
-            style={{
-              alignSelf: "flex-start", padding: "3px 9px", borderRadius: 4, cursor: "pointer",
-              background: "transparent", border: "1px solid var(--border-soft)", color: "var(--fg-muted)",
-              fontFamily: "var(--mono)", fontSize: 9.5,
-            }}
-            title="Create a least-privilege profile per agent from its role + owns + the project toolchain"
-          >Generate least-privilege profiles</button>
-        )}
-
-        {fleet.streams.map(st => <StreamRow key={st.id} st={st} />)}
-
-        <button
-          onClick={onLaunch}
-          style={{
-            marginTop: 2, padding: "6px 12px", borderRadius: 4, cursor: "pointer",
-            background: "var(--accent)", border: "none", color: "#1a120a",
-            fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, letterSpacing: "0.02em",
-          }}
-        >Launch fleet →</button>
-      </div>
-    </div>
-  );
-}
-
-// Coverage record: the dimensions Claude considered but deliberately did not
-// document, each with a reason. Collapsed by default — it's reassurance that the
-// full surface was weighed, not primary plan content.
-function SkippedCard({ items }: { items: SkippedItem[] }) {
-  const [collapsed, setCollapsed] = useState(true);
-  if (items.length === 0) return null;
-  return (
-    <div style={{
-      borderRadius: 6, border: "1px dashed var(--border-soft)",
-      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0, opacity: 0.85,
-    }}>
-      <div
-        onClick={() => setCollapsed(c => !c)}
-        style={{
-          padding: "7px 10px", background: "var(--bg-elev)",
-          borderBottom: collapsed ? "none" : "1px solid var(--border-soft)",
-          display: "flex", alignItems: "center", gap: 8,
-          fontFamily: "var(--mono)", fontSize: 10.5, cursor: "pointer", userSelect: "none",
-        }}
-      >
-        <span style={{
-          display: "inline-block", width: 10, textAlign: "center", fontSize: 8, color: "var(--fg-dim)",
-          transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.15s",
-        }}>▼</span>
-        <span style={{ color: "var(--fg-muted)" }}>Considered &amp; skipped</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>{items.length}</span>
-      </div>
-      {!collapsed && (
-        <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
-          {items.map((it, i) => (
-            <div key={i} style={{ fontFamily: "var(--mono)", fontSize: 10.5, lineHeight: 1.5 }}>
-              <span style={{ color: "var(--fg-dim)" }}>– </span>
-              <span style={{ color: "var(--fg-muted)" }}>{it.topic}</span>
-              {it.reason && <span style={{ color: "var(--fg-dim)" }}> — {it.reason}</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Allowed shell commands for this project's sessions, configured during planning.
-// gh/git are always auto-approved by the backend; these add to them, per project
-// and per repo. They combine additively with the global list (Settings → Agents)
-// and are written into each repo session's .claude/settings.json at launch so
-// triage/console Claude never blocks on a permission prompt.
-function AllowedCommandsCard({ projectId, repos }: { projectId: string; repos: string[] }) {
-  const {
-    allowedCommands, projectAllowedCommands, repoAllowedCommands,
-    addProjectAllowedCommand, removeProjectAllowedCommand,
-    addRepoAllowedCommand, removeRepoAllowedCommand,
-  } = useAppStore();
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const setDraft = (k: string, v: string) => setDrafts(d => ({ ...d, [k]: v }));
-
-  const chip = (label: string, onRemove?: () => void) => (
-    <span key={label} style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
-      padding: "2px 8px", borderRadius: 4,
-      background: "var(--bg-canvas)", border: "1px solid var(--border)",
-      fontFamily: "var(--mono)", fontSize: 10.5, color: onRemove ? "var(--accent)" : "var(--fg-dim)",
-    }}>
-      {label}
-      {onRemove && <span onClick={onRemove} style={{ cursor: "pointer", color: "var(--fg-dim)", lineHeight: 1 }}>×</span>}
-    </span>
-  );
-
-  // A render function (not a nested component) so the input keeps focus across renders.
-  const row = (scopeKey: string, label: string, cmds: string[], onAdd: (c: string) => void, onRemove: (c: string) => void) => {
-    const draft = drafts[scopeKey] ?? "";
-    const commit = () => { if (draft.trim()) { onAdd(draft); setDraft(scopeKey, ""); } };
-    return (
-      <div key={scopeKey} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{label}</span>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-          {cmds.length === 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", fontStyle: "italic" }}>none</span>}
-          {cmds.map(c => chip(c, () => onRemove(c)))}
-          <input
-            value={draft}
-            onChange={e => setDraft(scopeKey, e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
-            placeholder="+ cmd"
-            style={{
-              width: 64, height: 20, padding: "0 6px",
-              background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 4,
-              fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)", outline: "none",
-            }}
-          />
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div style={{
-      borderRadius: 6, border: "1px solid var(--border-soft)",
-      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0,
-    }}>
-      <div style={{
-        padding: "7px 10px", background: "var(--bg-elev)",
-        borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 8,
-        fontFamily: "var(--mono)", fontSize: 10.5,
-      }}>
-        <span style={{ color: "var(--fg)" }}>Allowed commands</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>auto-approved · gh, git always on</span>
-      </div>
-      <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 12 }}>
-        {allowedCommands.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>global (inherited)</span>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{allowedCommands.map(c => chip(c))}</div>
-          </div>
-        )}
-        {row("__project", "project", projectAllowedCommands[projectId] ?? [],
-          c => addProjectAllowedCommand(projectId, c),
-          c => removeProjectAllowedCommand(projectId, c))}
-        {repos.map(r =>
-          row(r, r.split("/")[1] ?? r, repoAllowedCommands[repoPromptKey(projectId, r)] ?? [],
-            c => addRepoAllowedCommand(projectId, r, c),
-            c => removeRepoAllowedCommand(projectId, r, c)))}
-      </div>
-    </div>
-  );
-}
-
 // ── GitHub structure card ─────────────────────────────────────────────────────
 //
 // A live map of the GitHub objects this plan produces. Each node mirrors a real
@@ -842,8 +354,6 @@ export function Planning({ visible }: { visible: boolean }) {
     activeProjectRepos,
     projectLocalRepos,
     planSections, planConfirmedSections,
-    planKbAssignments, removePlanKbAssignment,
-    planAutomations,
     planFleet,
     commands, schedules,
   } = useAppStore();
@@ -921,10 +431,6 @@ export function Planning({ visible }: { visible: boolean }) {
   const sectionByKey = useMemo(() => new Map(sections.map(s => [s.k, s])), [sections]);
   const { project: projectKeys, repos: repoGroups } =
     useMemo(() => groupSections(sections.map(s => s.k)), [sections]);
-  // Considered-but-skipped coverage record (the `_skipped.md` file).
-  const skipped = useMemo<SkippedItem[]>(
-    () => parseSkipped(savedSections[SKIPPED_KEY] ?? ""), [savedSections]);
-
   // Sync the planner's commands.json (the reliable channel — surfaced by the file
   // poll like plan sections, so it can't be lost in the PTY stream) into the
   // per-project/repo command store. Additive: file commands merge in; manual
@@ -962,7 +468,7 @@ export function Planning({ visible }: { visible: boolean }) {
 
   type PublishPhase = "idle" | "running" | "done" | "error";
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
-  const [flashConfirm, setFlashConfirm] = useState(false);
+  const [, setFlashConfirm] = useState(false);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function triggerFlash() {
@@ -979,7 +485,7 @@ export function Planning({ visible }: { visible: boolean }) {
 
   // The section Claude is currently discussing, driven by <plan_focus> tags.
   // Null until the first focus tag arrives. Highlights the matching card.
-  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [, setActiveSection] = useState<string | null>(null);
 
   const containerRef   = useRef<HTMLDivElement>(null);
   const termRef        = useRef<Terminal | null>(null);
@@ -1447,46 +953,6 @@ export function Planning({ visible }: { visible: boolean }) {
       env: ghEnv,
     }).catch(console.error);
     setRestarting(false);
-  }
-
-  function handleConfirm(k: string) {
-    // Confirming writes to the store; the derived `sections` flips this card to
-    // "confirmed" on the next render (and freezes it against further updates).
-    useAppStore.getState().confirmPlanSection(effectiveProjectId, k);
-    // Tell Claude the user approved this section so the discovery loop advances.
-    invoke("pty_write", { paneId, data: `${buildSectionConfirmMessage(titleForKey(k))}\r` }).catch(console.error);
-    // Clear the highlight; Claude will set the next active section via <plan_focus>.
-    if (activeSection === k) setActiveSection(null);
-  }
-
-  // Launch the agent fleet: open (or rebuild) the "· build" tab with the director
-  // and one worker pane per stream. On re-launch, kill the existing panes first so
-  // the bumped runId relaunches each session fresh (resuming via --continue).
-  async function handleLaunchFleet() {
-    const store = useAppStore.getState();
-    const fleet = store.planFleet[effectiveProjectId];
-    if (!fleet) return;
-    // Create each worker's git worktree (idempotent) so its pane launches into an
-    // isolated checkout + branch. The director has no worktree — it runs at the hub.
-    await Promise.all(
-      fleet.streams.map(st =>
-        invoke("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
-          .catch(e => console.error(`worktree for ${st.id} failed:`, e)),
-      ),
-    );
-    // Kill any existing build-tab panes (across all "· build" tabs) so the bumped
-    // runId relaunches each session fresh.
-    const base = `${projectTitle} · build`;
-    await Promise.all(
-      store.tabs.flatMap((t, idx) => {
-        if (t.name !== base && !t.name.startsWith(`${base} `)) return [];
-        const [cols, rows] = (t.layout ?? "1×1").split("×").map(n => parseInt(n, 10) || 1);
-        return Array.from({ length: cols * rows }, (_, i) =>
-          invoke("pty_kill", { paneId: `t${idx}p${i}` }).catch(() => {}),
-        );
-      }),
-    );
-    store.fleetStartProject(projectTitle, fleet, effectiveProjectId);
   }
 
   // Publish the plan to GitHub: repositories → project board → milestones →
@@ -1979,64 +1445,7 @@ _Auto-generated by base-studio-code planner._`,
         {/* Plan sections / publish progress panel */}
         <aside style={{ flex: `0 0 ${sectionsPanel.size}px`, display: "flex", flexDirection: "column", background: "var(--bg-panel)", minHeight: 0, overflow: "hidden" }}>
           {publishPhase === "idle" ? (
-            <>
-              <div style={{
-                padding: "10px 18px", borderBottom: "1px solid var(--border-soft)",
-                display: "flex", alignItems: "center", gap: 8,
-                fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
-              }}>
-                <span style={{ color: "var(--accent)" }}>
-                  ⌘ plan · {draftedOrConfirmed > 0 ? "building" : "waiting"}
-                </span>
-                <div style={{ flex: 1 }} />
-                <span style={{ fontSize: 10 }}>{confirmedCount}/{sections.length} confirmed</span>
-              </div>
-              <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-                {/* Project-tier sections, in checklist order. */}
-                {projectKeys.map(k => {
-                  const s = sectionByKey.get(k);
-                  return s ? (
-                    <PlanSectionCard key={k} section={s} onConfirm={handleConfirm} flashing={flashConfirm && s.state === "drafted"} active={activeSection === k} />
-                  ) : null;
-                })}
-                {/* Per-repo tier: one labelled group per repo with codebase-specific topics. */}
-                {repoGroups.map(g => (
-                  <div key={g.repo} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 6, marginTop: 4,
-                      fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase",
-                      letterSpacing: ".06em", color: "var(--fg-muted)",
-                    }}>
-                      <span style={{ color: "var(--accent)" }}>repo</span>
-                      <span>· {g.repo}</span>
-                    </div>
-                    {g.keys.map(k => {
-                      const s = sectionByKey.get(k);
-                      return s ? (
-                        <PlanSectionCard key={k} section={s} onConfirm={handleConfirm} flashing={flashConfirm && s.state === "drafted"} active={activeSection === k} />
-                      ) : null;
-                    })}
-                  </div>
-                ))}
-                <SkippedCard items={skipped} />
-                <AllowedCommandsCard projectId={effectiveProjectId} repos={publishRepos} />
-                <KbAssignedCard
-                  blockIds={planKbAssignments[effectiveProjectId] ?? []}
-                  onRemove={(id) => removePlanKbAssignment(effectiveProjectId, id)}
-                />
-                <AutomationsCard
-                  automations={planAutomations[effectiveProjectId] ?? []}
-                  onRemove={(idx) => {
-                    const current = planAutomations[effectiveProjectId] ?? [];
-                    const filtered = current.filter((_, i) => i !== idx);
-                    useAppStore.getState().clearPlanAutomations(effectiveProjectId);
-                    filtered.forEach(a => useAppStore.getState().addPlanAutomation(effectiveProjectId, a));
-                  }}
-                />
-                <FleetCard projectId={effectiveProjectId} onLaunch={handleLaunchFleet} />
-                <ProjectPane />
-              </div>
-            </>
+            <ProjectPane />
           ) : (
             <>
               {/* Publish progress header */}
