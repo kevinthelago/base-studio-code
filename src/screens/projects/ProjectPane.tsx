@@ -5,60 +5,18 @@
 // projectPane.css and uses the app's design tokens.
 import { useState } from "react";
 import "./projectPane.css";
+import type {
+  Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
+  ProjectPaneData,
+} from "./projectPaneData";
 
 /* =================================================================
-   types
+   types -- the render shapes live in projectPaneData.ts (single source of
+   truth). ProjectPane imports them so real plan data and the sample fallback
+   share one contract. Local Role/Cap describe this file's palette tables only.
    ================================================================= */
-type Posture = "allow" | "ask" | "deny";
-type Perm = Record<string, Posture>;
-interface Flow { autonomy: string; push: string; gate: string }
-
 interface Role { c: string; label: string }
 interface Cap { k: string; g: string; label: string }
-
-interface Agent {
-  id: string;
-  name: string;
-  role: string;
-  status: string;
-  repo: string;
-  color: string;
-  initial: string;
-  owns: string[];
-  issues: string[];
-  focus?: boolean;
-  preset: string;
-  perm: Perm;
-  flow: Flow;
-  ctx: number;
-}
-
-interface RepoBranch { n: string; issue: number; state: string; ahead: number; behind: number }
-interface Repo {
-  id: string;
-  branch: string;
-  ahead: number;
-  behind: number;
-  agents: string[];
-  primary: boolean;
-  branches: RepoBranch[];
-}
-
-interface SubItem { t: string; done: boolean }
-interface Issue {
-  n: number;
-  t: string;
-  state: string;
-  owner: string;
-  ac: number;
-  branch: string;
-  deps: number[];
-  sub: SubItem[];
-}
-interface Epic { id: string; title: string; pct: number; issues: Issue[] }
-interface Milestone { id: string; title: string; repo: string; pct: number; state: string; epics: Epic[] }
-
-interface ContextFile { name: string; kind: string; tok: string; pinned: boolean; scope: string }
 
 /* =================================================================
    data
@@ -193,8 +151,8 @@ const STRUCTURE: Milestone[] = [
 ];
 
 // helper: the milestones planned for a given repo
-function structFor(repoId: string): Milestone[] {
-  return STRUCTURE.filter((m) => m.repo === repoId);
+function structFor(repoId: string, structure: Milestone[] = STRUCTURE): Milestone[] {
+  return structure.filter((m) => m.repo === repoId);
 }
 
 // ── context files ──────────────────────────────────────────────
@@ -241,8 +199,8 @@ function RoleChip({ role, mute }: { role: string; mute?: boolean }) {
   );
 }
 
-function Avatar({ id, sz = 17 }: { id: string; sz?: number }) {
-  const a = AGENTS.find((x) => x.id === id);
+function Avatar({ id, sz = 17, agents = AGENTS }: { id: string; sz?: number; agents?: Agent[] }) {
+  const a = agents.find((x) => x.id === id);
   const color = a ? a.color : "var(--fg-dim)";
   const initial = a ? a.initial : "?";
   return <span className="av" style={{ width: sz, height: sz, background: color, fontSize: sz * 0.53 }}>{initial}</span>;
@@ -386,8 +344,8 @@ function CtxRow({ f, onToggle }: { f: ContextFile; onToggle?: () => void }) {
 }
 
 // VARIANT A — Pinned vs Library, two sections
-function ContextA() {
-  const [items, setItems] = useState(CONTEXT);
+function ContextA({ context = CONTEXT }: { context?: ContextFile[] }) {
+  const [items, setItems] = useState(context);
   const toggle = (name: string) => setItems(items.map((f) => f.name === name ? { ...f, pinned: !f.pinned } : f));
   const pinned = items.filter((f) => f.pinned);
   const lib = items.filter((f) => !f.pinned);
@@ -425,26 +383,28 @@ function MStateDot({ state }: { state: string }) {
   }} />;
 }
 
-function repoRollup(repoId: string): { ms: Milestone[]; iss: Issue[]; pct: number } {
-  const ms = structFor(repoId);
+function repoRollup(repoId: string, structure: Milestone[] = STRUCTURE): { ms: Milestone[]; iss: Issue[]; pct: number } {
+  const ms = structFor(repoId, structure);
   const iss = ms.flatMap((m) => m.epics.flatMap((e) => e.issues));
   const pct = ms.length ? ms.reduce((a, m) => a + m.pct, 0) / ms.length : 0;
   return { ms, iss, pct };
 }
 
 // MERGED C — Milestone-first (the project plan); repo is a tag
-function MergedC() {
-  const [openIss, setOpenIss] = useState<number | null>(417);
+function MergedC({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }: {
+  structure?: Milestone[]; repos?: Repo[]; agents?: Agent[];
+}) {
+  const [openIss, setOpenIss] = useState<number | string | null>(417);
   return (
     <div>
       <div style={{ padding: "0 2px 10px", fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
-        the plan · {STRUCTURE.length} milestones across {REPOS.length} repos
+        the plan · {structure.length} milestones across {repos.length} repos
       </div>
       <div style={{ paddingLeft: 6 }}>
-        {STRUCTURE.map((m, mi) => (
+        {structure.map((m, mi) => (
           <div key={m.id} style={{
             position: "relative", paddingLeft: 18,
-            borderLeft: "2px solid var(--border-soft)", paddingBottom: mi < STRUCTURE.length - 1 ? 16 : 0,
+            borderLeft: "2px solid var(--border-soft)", paddingBottom: mi < structure.length - 1 ? 16 : 0,
           }}>
             <span style={{
               position: "absolute", left: -7, top: 1, width: 12, height: 12, borderRadius: "50%",
@@ -482,7 +442,7 @@ function MergedC() {
                               flex: 1, fontFamily: "var(--sans)", fontSize: 10.5, color: "var(--fg)",
                               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                             }}>{is.t}</span>
-                            <span title={"@" + is.owner}><Avatar id={is.owner} sz={14} /></span>
+                            <span title={"@" + is.owner}><Avatar id={is.owner} sz={14} agents={agents} /></span>
                           </div>
                           <div style={{ display: "flex", gap: 5, marginTop: 5, paddingLeft: 20, alignItems: "center" }}>
                             <BranchChip n={is.branch} />
@@ -539,7 +499,7 @@ function Seg({ options, value, onChange, tiny }: {
 }
 
 // ── the shared per-agent editor (drill-in) ─────────────────────
-function AgentEditor({ a }: { a: Agent; dense?: boolean }) {
+function AgentEditor({ a, agents = AGENTS }: { a: Agent; agents?: Agent[]; dense?: boolean }) {
   const [perm, setPerm] = useState<Perm>(a.perm);
   const [preset, setPreset] = useState(a.preset);
   const [flow, setFlow] = useState<Flow>(a.flow);
@@ -550,7 +510,7 @@ function AgentEditor({ a }: { a: Agent; dense?: boolean }) {
       {/* header */}
       <div style={{ padding: "10px 12px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Avatar id={a.id} sz={20} />
+          <Avatar id={a.id} sz={20} agents={agents} />
           <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{a.name}</span>
           <RoleChip role={a.role} />
           <span style={{ flex: 1 }} />
@@ -629,20 +589,21 @@ function AgentEditor({ a }: { a: Agent; dense?: boolean }) {
 }
 
 // VARIANT A — Roster rows w/ inline expand
-function AgentsA() {
-  const [open, setOpen] = useState<string | null>("framer");
+function AgentsA({ agents = AGENTS }: { agents?: Agent[] }) {
+  const [open, setOpen] = useState<string | null>((agents.find((a) => a.focus) ?? agents[0])?.id ?? null);
+  const running = agents.filter((a) => a.status === "run").length;
   return (
     <div style={{ padding: "4px 0" }}>
       <div style={{
         display: "flex", alignItems: "center", gap: 8, padding: "0 2px 8px",
         fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)",
       }}>
-        <span>6 agents · 2 running</span>
+        <span>{agents.length} agents · {running} running</span>
         <span style={{ flex: 1 }} />
         <span className="mini">+ agent</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {AGENTS.map((a) => {
+        {agents.map((a) => {
           const on = open === a.id;
           return (
             <div key={a.id}>
@@ -654,7 +615,7 @@ function AgentsA() {
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                   <Dot s={a.status} />
-                  <Avatar id={a.id} sz={18} />
+                  <Avatar id={a.id} sz={18} agents={agents} />
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -676,7 +637,7 @@ function AgentsA() {
                   <span className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</span>
                 </div>
               </div>
-              {on && <div style={{ marginTop: 5, marginBottom: 2 }}><AgentEditor a={a} /></div>}
+              {on && <div style={{ marginTop: 5, marginBottom: 2 }}><AgentEditor a={a} agents={agents} /></div>}
             </div>
           );
         })}
@@ -694,7 +655,25 @@ void repoRollup;
 /* =================================================================
    pp-assembled.jsx — AssembledPane → ProjectPane
    ================================================================= */
-export function ProjectPane() {
+/**
+ * The planning-page right visualizer. Prop-driven: when `data` carries any real
+ * plan content (agents, structure, or context) it renders that; otherwise it
+ * falls back to the illustrative sample consts so an unplanned project still
+ * shows the full pane. The drill-in editors keep local state -- display only,
+ * no write-back in this slice.
+ */
+export function ProjectPane({ data }: { data?: ProjectPaneData }) {
+  const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.context.length > 0);
+  const agents:    Agent[]       = hasData ? data!.agents    : AGENTS;
+  const repos:     Repo[]        = hasData ? data!.repos      : REPOS;
+  const structure: Milestone[]   = hasData ? data!.structure  : STRUCTURE;
+  const context:   ContextFile[] = hasData ? data!.context    : CONTEXT;
+
+  const running = agents.filter((a) => a.status === "run").length;
+  const onCount = agents.filter((a) => a.status === "on").length;
+  const idleCount = agents.filter((a) => a.status === "idle").length;
+  const pinnedCount = context.filter((c) => c.pinned).length;
+
   return (
     <div className="pp">
       {/* pane header */}
@@ -719,27 +698,27 @@ export function ProjectPane() {
         color: "var(--fg-muted)", background: "var(--bg-panel)",
       }}>
         <span style={{ display: "flex", gap: -4 }}>
-          {AGENTS.map((a, i) => (
+          {agents.map((a, i) => (
             <span key={a.id} style={{ marginLeft: i ? -4 : 0, position: "relative" }}>
               <span className="av" style={{ width: 16, height: 16, background: a.color, fontSize: 9 }}>{a.initial}</span>
             </span>
           ))}
         </span>
-        <span style={{ color: "var(--accent)" }}>2 running</span>
-        <span style={{ color: "var(--fg-dim)" }}>· 3 on · 1 idle</span>
+        <span style={{ color: "var(--accent)" }}>{running} running</span>
+        <span style={{ color: "var(--fg-dim)" }}>· {onCount} on · {idleCount} idle</span>
         <span style={{ flex: 1 }} />
         <span style={{ color: "var(--success)" }}>● github 4m</span>
       </div>
 
       <div className="pp-scroll">
-        <Sec title="Context Files" count="✦ 4 pinned" open={false}>
-          <ContextA />
+        <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false}>
+          <ContextA context={context} />
         </Sec>
-        <Sec title="Repository · Structure" count="2 repos · 2 milestones" open={true}>
-          <MergedC />
+        <Sec title="Repository · Structure" count={`${repos.length} repos · ${structure.length} milestones`} open={true}>
+          <MergedC structure={structure} repos={repos} agents={agents} />
         </Sec>
-        <Sec title="Agents · Permissions" count="6 · 2 running" open={true}>
-          <AgentsA />
+        <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true}>
+          <AgentsA agents={agents} />
         </Sec>
       </div>
     </div>
