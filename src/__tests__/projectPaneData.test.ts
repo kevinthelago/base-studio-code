@@ -150,4 +150,45 @@ describe("buildProjectPaneData", () => {
     expect(goal.kind).toBe("doc");
     expect(goal.pinned).toBe(false);
   });
+
+  it("stream.perm overrides the profile-derived perm", () => {
+    const fleet = fleetWith([
+      {
+        id: "auth-ui", name: "Auth UI", repo: "acme/web", owns: [], issues: [], dependsOn: [],
+        profile: "pf_build",
+        perm: { read: "deny", edit: "deny", create: "deny", run: "deny", net: "deny", push: "deny", pkg: "deny" },
+      },
+    ]);
+    const d = buildProjectPaneData(base({ fleet }));
+    // pf_build would derive read=allow; the explicit perm wins.
+    expect(d.agents[0].perm.read).toBe("deny");
+    expect(d.agents[0].perm.push).toBe("deny");
+  });
+
+  it("stream.preset overrides the profile-derived preset", () => {
+    const fleet = fleetWith([
+      { id: "x", name: "@x", repo: "o/r", owns: [], issues: [], dependsOn: [], profile: "pf_build", preset: "custom" },
+    ]);
+    const d = buildProjectPaneData(base({ fleet }));
+    expect(d.agents[0].preset).toBe("custom");
+  });
+
+  it("an explicit pinned set drives context pinned (overriding confirmed default)", () => {
+    const sections: Section[] = [
+      { k: "claude", title: "CLAUDE", state: "confirmed", content: "x".repeat(1200) },
+      { k: "settlement_spec", title: "Settlement spec", state: "drafted", content: "y".repeat(4100) },
+    ];
+    // Pin only the spec (which is NOT confirmed); CLAUDE (confirmed) is not in the set.
+    const d = buildProjectPaneData(base({ sections, pinned: ["Settlement spec.md"] }));
+    expect(d.context.find(c => c.name === "Settlement spec.md")!.pinned).toBe(true);
+    expect(d.context.find(c => c.name === "CLAUDE.md")!.pinned).toBe(false);
+  });
+
+  it("an empty pinned set unpins everything (explicit set, no confirmed fallback)", () => {
+    const sections: Section[] = [
+      { k: "claude", title: "CLAUDE", state: "confirmed", content: "x".repeat(1200) },
+    ];
+    const d = buildProjectPaneData(base({ sections, pinned: [] }));
+    expect(d.context[0].pinned).toBe(false);
+  });
 });

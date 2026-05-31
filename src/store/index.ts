@@ -389,12 +389,22 @@ interface AppStore {
   // the optimal concurrent session count). Persisted per project.
   planFleet:             Record<string, FleetPlan>;
   setPlanFleet:          (projectId: string, fleet: FleetPlan) => void;       // wholesale (from fleet.json poll)
+  /** Per-project set of context-file names pinned in the project pane (overrides the
+   *  confirmed-section default). projectId -> pinned file names. */
+  pinnedContext:         Record<string, string[]>;
+  togglePinnedContext:   (projectId: string, name: string) => void;
   addPlanAgentStream:    (projectId: string, stream: AgentStream) => void;    // merge-by-id (from inline tag)
   removePlanAgentStream: (projectId: string, id: string) => void;
   /** #289: assign an AgentProfile id to a stream (null clears). */
   setPlanAgentStreamProfile: (projectId: string, streamId: string, profileId: string | null) => void;
   /** #297: set one or more flow fields on a stream (merged into its resolved flow). */
   setPlanAgentStreamFlow: (projectId: string, streamId: string, patch: Partial<AgentFlow>) => void;
+  /** Set a stream's per-capability permission posture from the project pane's agent
+   *  editor; also marks the stream's preset as "custom" (a hand-tuned posture). */
+  setPlanAgentStreamPerm: (projectId: string, streamId: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
+  /** Apply a named permission preset to a stream from the project pane: sets both
+   *  the preset name and the full per-capability posture it implies. */
+  setPlanAgentStreamPreset: (projectId: string, streamId: string, preset: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
   /** #289: generate + assign a least-privilege profile for each unassigned stream,
    *  scoped to that stream's resolved toolchain. Idempotent. */
   generateFleetProfiles: (projectId: string) => void;
@@ -875,6 +885,7 @@ export const useAppStore = create<AppStore>()(
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
             planFleet:              byKey(s.planFleet),
+            pinnedContext:          byKey(s.pinnedContext),
             // Drop the deleted project id from every extension's scope list.
             extensions:             s.extensions.map((e) => ({ ...e, projects: e.projects.filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
@@ -1285,6 +1296,13 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ planAutomations: { ...s.planAutomations, [projectId]: [] } })),
 
       planFleet: {},
+      pinnedContext: {},
+      togglePinnedContext: (projectId, name) =>
+        set((s) => {
+          const cur = s.pinnedContext[projectId] ?? [];
+          const next = cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name];
+          return { pinnedContext: { ...s.pinnedContext, [projectId]: next } };
+        }),
       setPlanFleet: (projectId, fleet) =>
         set((s) => ({ planFleet: { ...s.planFleet, [projectId]: fleet } })),
       addPlanAgentStream: (projectId, stream) =>
@@ -1315,6 +1333,22 @@ export const useAppStore = create<AppStore>()(
           if (!cur) return {};
           const streams = cur.streams.map((x) =>
             x.id === streamId ? { ...x, flow: normalizeFlow({ ...resolveFlow(x.flow), ...patch }) } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      setPlanAgentStreamPerm: (projectId, streamId, perm) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, perm: { ...perm }, preset: "custom" } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      setPlanAgentStreamPreset: (projectId, streamId, preset, perm) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, preset, perm: { ...perm } } : x);
           return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
         }),
       generateFleetProfiles: (projectId) =>
@@ -1487,6 +1521,7 @@ export const useAppStore = create<AppStore>()(
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planFleet:             s.planFleet,
+        pinnedContext:         s.pinnedContext,
         extensions:            s.extensions,
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
