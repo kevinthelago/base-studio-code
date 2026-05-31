@@ -125,9 +125,25 @@ describe("buildProjectPaneData", () => {
       { ref: "U1", title: "loose", phase: undefined, acceptance: [], owns: [], dependsOn: [], labels: [] },
     ];
     const d = buildProjectPaneData(base({ phases, issues }));
+    // The empty Phase 1 (no issues) is skipped; only the Unscheduled bucket remains.
+    expect(d.structure).toHaveLength(1);
+    expect(d.structure[0].title).toBe("Unscheduled");
+    expect(d.structure[0].epics[0].issues[0].n).toBe("U1");
+  });
+
+  it("milestones are grouped per repo via each issue's repo field", () => {
+    const phases = [{ name: "Phase 1" }];
+    const issues: PlanIssue[] = [
+      { ref: "A1", title: "base work",   phase: 1, acceptance: [], owns: [], dependsOn: [], labels: [], repo: "o/api" },
+      { ref: "B1", title: "mobile work", phase: 1, acceptance: [], owns: [], dependsOn: [], labels: [], repo: "o/mobile" },
+    ];
+    const d = buildProjectPaneData(base({ phases, issues, repos: ["o/api", "o/mobile"] }));
+    // One (repo, phase) milestone per repo — not one shared milestone.
     expect(d.structure).toHaveLength(2);
-    expect(d.structure[1].title).toBe("Unscheduled");
-    expect(d.structure[1].epics[0].issues[0].n).toBe("U1");
+    const api = d.structure.find(m => m.repo === "o/api")!;
+    const mob = d.structure.find(m => m.repo === "o/mobile")!;
+    expect(api.epics[0].issues.map(i => i.n)).toEqual(["A1"]);
+    expect(mob.epics[0].issues.map(i => i.n)).toEqual(["B1"]);
   });
 
   it("sections -> context files; pinned reflects confirmed state", () => {

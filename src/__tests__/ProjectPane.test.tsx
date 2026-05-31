@@ -9,10 +9,15 @@ describe("ProjectPane (v4)", () => {
     expect(screen.getByText("Context Files")).toBeTruthy();
   });
 
-  it("renders the milestone-first plan (Repository / Structure open by default)", () => {
+  it("renders the repo-first structure (repo cards; first repo open shows its milestones)", () => {
     render(<ProjectPane />);
+    // both repository cards are present as collapsible headers
+    expect(screen.getByText("acme/payments")).toBeTruthy();
+    expect(screen.getByText("acme/web-dashboard")).toBeTruthy();
+    // the first repo is open by default -> its milestone is visible; the second
+    // repo is collapsed, so its milestone is not rendered yet
     expect(screen.getByText("Publisher MVP")).toBeTruthy();
-    expect(screen.getByText("Dashboard live-update")).toBeTruthy();
+    expect(screen.queryByText("Dashboard live-update")).toBeNull();
   });
 
   it("renders the agents roster with the per-agent permission editor", () => {
