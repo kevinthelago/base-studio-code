@@ -1150,6 +1150,7 @@ const BSC_DECISIONS_RC: &str = concat!(
     // when present it appends a structured `blocked` event to $BSC_COORD_LOG (#199),
     // tagged with the pane id, alongside the human note. No --on => note only.
     r#"bsc-blocked() { on=""; cp=""; while [ $# -gt 0 ]; do case "$1" in --on) on="$2"; shift 2 ;; --checkpoint) cp="$2"; shift 2 ;; *) shift ;; esac; done; d="${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}"; mkdir -p "$(dirname "$d")" 2>/dev/null; m="$(cat)"; { printf '%s' '- BLOCKED: '; printf '%s' "$m"; [ -n "$on" ] && printf '%s' " (on $on)"; printf '\n'; } >> "$d"; l="${BSC_COORD_LOG:-}"; if [ -n "$on" ] && [ -n "$l" ]; then ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\tblocked\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$on" "$cp" >> "$l"; fi; }"#,
+    "\n",
 );
 
 /// The `bsc-audit` helper (#257): the PreToolUse hook on a gated pane pipes Claude
@@ -3468,6 +3469,44 @@ mod tests {
         assert!(rc.contains("bsc-note()"), "rc must define bsc-note");
         assert!(rc.contains("bsc-blocked()"), "rc must define bsc-blocked");
         assert!(rc.contains("BSC_DECISIONS_DOC"), "helpers must target the decisions doc env var");
+    }
+
+    #[test]
+    fn full_bsc_rc_is_syntactically_valid_bash() {
+        // Regression for the rc-glue bug: every rc constant must end with a newline so the
+        // bsc-env.sh that pty_create writes keeps each helper on its own line. A missing
+        // trailing newline glues two functions (`}bsc-audit()`) and bash reports "unexpected
+        // end of file", breaking every agent subshell. `bash -n` over the FULL concatenation
+        // (the exact format! pty_create uses) catches it; per-constant tests do not.
+        use std::process::{Command, Stdio};
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping full-rc syntax test: no usable bash ({shell})");
+            return;
+        }
+        let rc_body = format!(
+            "{}{}{}{}{}",
+            super::BSC_CHECKPOINT_RC,
+            super::BSC_DECISIONS_RC,
+            super::BSC_AUDIT_RC,
+            super::BSC_CONFINE_RC,
+            super::BSC_COORD_EMIT_RC,
+        );
+        let dir = std::env::temp_dir().join(format!("bsc-rc-syntax-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, &rc_body).unwrap();
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let out = Command::new(&shell).arg("-n").arg(&rc_bash).stderr(Stdio::piped()).output().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            out.status.success(),
+            "generated bsc-env.sh has a bash syntax error:
+{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     #[test]
