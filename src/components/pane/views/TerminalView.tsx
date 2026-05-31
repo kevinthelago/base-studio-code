@@ -14,7 +14,7 @@ import { PendingPtyData } from "../../../lib/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/resumeClaude";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
-import { flowPermissionRules } from "../../../screens/projects/flowPermissions";
+import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/projects/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 import { interpretGithubReadiness, type GithubProbe } from "../../../lib/githubReadiness";
 
@@ -351,11 +351,18 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // Per-agent flow (#297): narrow the GitHub-propagation writes per the
         // stream's push policy + gate — a hard push-confirm asks before push/PR,
         // commit-only/none deny them, auto-pr adds nothing (broad allow permits).
-        const flowRules = flowPermissionRules(useAppStore.getState().paneFlows[paneId]);
+        const paneFlow = useAppStore.getState().paneFlows[paneId];
+        const flowRules = flowPermissionRules(paneFlow);
         const allowedCommands = prof ? [...cmds, ...prof.allowedCommands] : cmds;
+        // Reconcile role gate + flow (#304): the flow owns the two GitHub-propagation
+        // writes, so lift them from the role denies when the flow permits pushing/PRing
+        // (a worker is github:read and would otherwise be blocked from opening its PR).
+        // Everything else the role denies (gh pr merge, repo delete, …) stays denied.
+        const granted = flowGrantedPushCommands(paneFlow);
+        const roleDenies = (cap ? roleDeniedCommands(cap) : []).filter((d) => !granted.includes(d));
         const denied = [
           ...useAppStore.getState().deniedCommands,
-          ...(cap ? roleDeniedCommands(cap) : []),
+          ...roleDenies,
           ...(prof?.deniedCommands ?? []),
         ];
         const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
