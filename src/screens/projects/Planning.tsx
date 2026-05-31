@@ -411,11 +411,12 @@ function AutomationsCard({ automations, onRemove }: { automations: AutomationSug
 // row per work stream (its repo, owned paths, issues, and dependencies). The
 // "Launch fleet" button opens the build tab. Self-hides until a fleet is defined.
 function FleetCard({ projectId, onLaunch }: { projectId: string; onLaunch: () => void }) {
-  const { planFleet, removePlanAgentStream, setPlanDirector } = useAppStore();
+  const { planFleet, removePlanAgentStream, setPlanDirector, setPlanAgentStreamProfile, generateFleetProfiles, agentProfiles } = useAppStore();
   const fleet: FleetPlan | undefined = planFleet[projectId];
   if (!fleet || (fleet.streams.length === 0 && !fleet.director.enabled)) return null;
 
   const recommended = fleet.recommended > 0 ? fleet.recommended : fleet.streams.length;
+  const assignableProfiles = agentProfiles.filter((pr) => pr.category !== "application");
 
   const StreamRow = ({ st }: { st: AgentStream }) => (
     <div style={{
@@ -452,6 +453,17 @@ function FleetCard({ projectId, onLaunch }: { projectId: string; onLaunch: () =>
           ))}
         </div>
       )}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+        <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>profile</span>
+        <select
+          value={st.profile ?? ""}
+          onChange={(e) => setPlanAgentStreamProfile(projectId, st.id, e.target.value || null)}
+          style={{ flex: 1, height: 20, fontSize: 9.5, fontFamily: "var(--mono)", background: "var(--bg-panel)", color: "var(--fg)", border: "1px solid var(--border-soft)", borderRadius: 4 }}
+        >
+          <option value="">— none (role only) —</option>
+          {assignableProfiles.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+        </select>
+      </div>
     </div>
   );
 
@@ -492,6 +504,18 @@ function FleetCard({ projectId, onLaunch }: { projectId: string; onLaunch: () =>
             ? <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>· {fleet.director.role}</span>
             : <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>· coordinates the fleet from the project root</span>}
         </label>
+
+        {fleet.streams.length > 0 && (
+          <button
+            onClick={() => generateFleetProfiles(projectId)}
+            style={{
+              alignSelf: "flex-start", padding: "3px 9px", borderRadius: 4, cursor: "pointer",
+              background: "transparent", border: "1px solid var(--border-soft)", color: "var(--fg-muted)",
+              fontFamily: "var(--mono)", fontSize: 9.5,
+            }}
+            title="Create a least-privilege profile per agent from its role + owns + the project toolchain"
+          >Generate least-privilege profiles</button>
+        )}
 
         {fleet.streams.map(st => <StreamRow key={st.id} st={st} />)}
 
