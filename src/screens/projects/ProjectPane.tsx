@@ -23,6 +23,8 @@ const ICONS: Record<string, string> = {
   globe:    "M8 1.8a6.2 6.2 0 100 12.4A6.2 6.2 0 008 1.8z M2 8h12 M8 2c1.8 1.6 2.8 3.8 2.8 6S9.8 12.4 8 14 5.2 10.2 5.2 8 6.2 3.6 8 2z",
   package:  "M8 1.8L14 5v6l-6 3.2L2 11V5z M2 5l6 3 6-3 M8 8v6.2",
   eye:      "M1.5 8s2.4-4.2 6.5-4.2S14.5 8 14.5 8s-2.4 4.2-6.5 4.2S1.5 8 1.5 8z M8 9.8A1.8 1.8 0 108 6.2a1.8 1.8 0 000 3.6z",
+  flag:     "M4 2v12 M4 2.5h7l-1.4 2.2L11 7H4",
+  layers:   "M8 1.8L14.5 5 8 8.2 1.5 5z M2 8l6 3 6-3 M2 11l6 3 6-3",
 };
 const FILLED = new Set(["star"]);
 function Icon({ name, size = 14, color = "currentColor", style }: { name: string; size?: number; color?: string; style?: CSSProperties }) {
@@ -309,6 +311,75 @@ function RepositorySection() {
   );
 }
 
+/* --------------------------- 4. GitHub Structure ----------------------- */
+interface GhIssue { n: number; title: string; state: "open" | "closed" }
+interface GhEpic { epic: string; issues: GhIssue[] }
+interface GhMilestone { milestone: string; open: number; closed: number; epics: GhEpic[] }
+const GH_STRUCTURE: GhMilestone[] = [
+  { milestone: "Phase 1 - Auth foundation", open: 2, closed: 2, epics: [
+    { epic: "Magic-link sign-in", issues: [
+      { n: 12, title: "Issue + verify magic links", state: "open" },
+      { n: 13, title: "Email delivery + rate limit", state: "closed" },
+    ] },
+    { epic: "OAuth fallback", issues: [
+      { n: 18, title: "GitHub provider", state: "open" },
+      { n: 19, title: "Google provider", state: "closed" },
+    ] },
+  ] },
+  { milestone: "Phase 2 - Session migration", open: 2, closed: 0, epics: [
+    { epic: "Cutover", issues: [
+      { n: 24, title: "Dual-read sessions", state: "open" },
+      { n: 25, title: "Backfill and flip", state: "open" },
+    ] },
+  ] },
+];
+function GitHubStructureSection() {
+  const [open, setOpen] = useState<Set<string>>(new Set(["Phase 1 - Auth foundation"]));
+  const toggle = (k: string) => setOpen((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const total = GH_STRUCTURE.reduce((a, m) => a + m.open + m.closed, 0);
+  return (
+    <Group icon="flag" title="GitHub Structure" count={total} actions={<IconBtn icon="refresh" title="Refresh" />}>
+      {GH_STRUCTURE.map((m) => {
+        const mOpen = open.has(m.milestone);
+        const tot = m.open + m.closed;
+        return (
+          <div key={m.milestone}>
+            <div onClick={() => toggle(m.milestone)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 14px", cursor: "pointer" }}>
+              <Icon name="caret" size={12} color="var(--fg-dim)" style={{ transform: mOpen ? "none" : "rotate(-90deg)", transition: ".15s" }} />
+              <Icon name="flag" size={13} color="var(--accent)" />
+              <span style={{ fontSize: 12.5, color: "var(--fg)", fontWeight: 500 }}>{m.milestone}</span>
+              <span style={{ flex: 1 }} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", background: "var(--bg-elev2)", borderRadius: 20, padding: "1px 7px", fontVariantNumeric: "tabular-nums" }}>{m.closed}/{tot}</span>
+            </div>
+            {mOpen && m.epics.map((ep) => {
+              const epKey = m.milestone + "/" + ep.epic;
+              const epOpen = open.has(epKey);
+              return (
+                <div key={epKey}>
+                  <div onClick={() => toggle(epKey)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 14px 5px 30px", cursor: "pointer" }}>
+                    <Icon name="caret" size={11} color="var(--fg-dim)" style={{ transform: epOpen ? "none" : "rotate(-90deg)", transition: ".15s" }} />
+                    <Icon name="layers" size={12} color="var(--info)" />
+                    <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>{ep.epic}</span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{ep.issues.length}</span>
+                  </div>
+                  {epOpen && ep.issues.map((iss) => (
+                    <div key={iss.n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 14px 4px 50px" }}>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", flex: "0 0 auto", background: iss.state === "open" ? "var(--success)" : "var(--fg-dim)" }} />
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)" }}>#{iss.n}</span>
+                      <span style={{ fontSize: 11.5, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{iss.title}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </Group>
+  );
+}
+
 /* ------------------------------ the pane ------------------------------- */
 export function ProjectPane() {
   return (
@@ -318,6 +389,8 @@ export function ProjectPane() {
       <PermissionsSection />
       <div style={{ ...DIVIDER, margin: "4px 14px" }} />
       <RepositorySection />
+      <div style={{ ...DIVIDER, margin: "4px 14px" }} />
+      <GitHubStructureSection />
     </div>
   );
 }
