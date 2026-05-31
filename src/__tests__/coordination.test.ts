@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
-  type Waiter,
+  type Waiter, type CoordRef, type ProducerOf,
   emptyCoordState, refKey, parseRef, isSatisfied, isReady,
   registerWaiter, satisfy, fail, stalledWaiters,
   parseCoordLine, applyCoordEvent, ingestCoordLog,
   wakePromptFor, planWakes, coordinationSummary,
   readinessAt, isFreshlyReady,
+  detectDeadlocks, hasDeadlock, defaultProducerOf,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -18,6 +19,7 @@ describe("refKey / parseRef", () => {
       { kind: "contract", name: "TunnelState" },
       { kind: "file", path: "src/lib/x.ts" },
       { kind: "predicate", expr: "tests-pass" },
+      { kind: "session", id: "t0p2" },
     ] as const;
     for (const r of refs) expect(parseRef(refKey(r))).toEqual(r);
   });
@@ -27,6 +29,7 @@ describe("refKey / parseRef", () => {
     expect(refKey({ kind: "contract", name: "X" })).toBe("contract:X");
     expect(refKey({ kind: "file", path: "a/b.ts" })).toBe("file:a/b.ts");
     expect(refKey({ kind: "predicate", expr: "p" })).toBe("predicate:p");
+    expect(refKey({ kind: "session", id: "t1p0" })).toBe("session:t1p0");
   });
 
   it("parses lenient issue + predicate fallbacks", () => {
@@ -324,5 +327,88 @@ describe("auto-wake recency gate", () => {
     expect(isFreshlyReady(w, s, 1_000_000 + 60_000, 15 * 60_000)).toBe(true);   // 1 min later
     expect(isFreshlyReady(w, s, 1_000_000 + 20 * 60_000, 15 * 60_000)).toBe(false); // 20 min later
     expect(isFreshlyReady(w, emptyCoordState(), 1_000_000, 15 * 60_000)).toBe(false); // never satisfied
+  });
+});
+
+describe("cycle / deadlock detection", () => {
+  const sess = (id: string): CoordRef => ({ kind: "session", id });
+  // Park `session` blocked on each of `on` (as session: refs).
+  const block = (session: string, ...on: string[]): Waiter =>
+    ({ session, deps: on.map(sess), registeredAt: 0 });
+  const state = (...waiters: Waiter[]) => ({ latches: {}, waiters });
+
+  it("parses + keys the session ref grammar", () => {
+    expect(parseRef("session:t0p2")).toEqual({ kind: "session", id: "t0p2" });
+    expect(parseRef("session:")).toBeNull();
+    expect(defaultProducerOf({ kind: "session", id: "t0p2" })).toBe("t0p2");
+    expect(defaultProducerOf({ kind: "issue", number: 1 })).toBeUndefined();
+  });
+
+  it("finds a mutual A<->B deadlock", () => {
+    const s = state(block("A", "B"), block("B", "A"));
+    const cycles = detectDeadlocks(s);
+    expect(cycles).toHaveLength(1);
+    expect([...cycles[0].cycle].sort()).toEqual(["A", "B"]);
+    expect(hasDeadlock(s)).toBe(true);
+  });
+
+  it("finds a 3-session ring A->B->C->A", () => {
+    const s = state(block("A", "B"), block("B", "C"), block("C", "A"));
+    const cycles = detectDeadlocks(s);
+    expect(cycles).toHaveLength(1);
+    expect([...cycles[0].cycle].sort()).toEqual(["A", "B", "C"]);
+  });
+
+  it("detects a self-wait (session blocked on its own output)", () => {
+    const s = state(block("A", "A"));
+    expect(detectDeadlocks(s).map((d) => d.cycle)).toEqual([["A"]]);
+  });
+
+  it("no false positive for a linear chain A->B->C", () => {
+    const s = state(block("A", "B"), block("B", "C"), block("C", "done"));
+    // C waits on session:done which is not a parked waiter -> no edge, no cycle.
+    expect(detectDeadlocks(s)).toEqual([]);
+    expect(hasDeadlock(s)).toBe(false);
+  });
+
+  it("a satisfied dep breaks the edge, so it is no longer a deadlock", () => {
+    const s = { latches: { "session:B": { state: "satisfied" as const, source: "merged" as const, at: 1 } },
+                waiters: [block("A", "B"), block("B", "A")] };
+    // B's dep on A still stands, but A's dep on B is satisfied -> A->B edge gone -> no ring.
+    expect(detectDeadlocks(s)).toEqual([]);
+  });
+
+  it("issue/contract deps yield no edge under the default resolver (no false positives)", () => {
+    const s = {
+      latches: {},
+      waiters: [
+        { session: "A", deps: [{ kind: "issue" as const, number: 2 }], registeredAt: 0 },
+        { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
+      ],
+    };
+    expect(detectDeadlocks(s)).toEqual([]);
+  });
+
+  it("a plan-derived producerOf lights up contract/issue cycles (#199 AC#7 forward-compat)", () => {
+    // A produces #1 & waits on contract:Y; B produces contract:Y & waits on #1 -> ring.
+    const s = {
+      latches: {},
+      waiters: [
+        { session: "A", deps: [{ kind: "contract" as const, name: "Y" }], registeredAt: 0 },
+        { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
+      ],
+    };
+    const producerOf: ProducerOf = (ref) =>
+      refKey(ref) === "contract:Y" ? "B" : refKey(ref) === "#1" ? "A" : undefined;
+    const cycles = detectDeadlocks(s, producerOf);
+    expect(cycles).toHaveLength(1);
+    expect([...cycles[0].cycle].sort()).toEqual(["A", "B"]);
+  });
+
+  it("coordinationSummary marks deadlocked sessions", () => {
+    const s = state(block("A", "B"), block("B", "A"), block("C", "free"));
+    const view = coordinationSummary(s);
+    const byId = Object.fromEntries(view.map((v) => [v.session, v.deadlocked]));
+    expect(byId).toEqual({ A: true, B: true, C: false });
   });
 });

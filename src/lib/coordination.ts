@@ -16,7 +16,8 @@ export type CoordRef =
   | { kind: "issue"; number: number }   // #42
   | { kind: "contract"; name: string }  // contract:TunnelState
   | { kind: "file"; path: string }      // file:src/lib/x.ts
-  | { kind: "predicate"; expr: string }; // predicate:tests-pass
+  | { kind: "predicate"; expr: string } // predicate:tests-pass
+  | { kind: "session"; id: string };    // session:t0p2 -- "blocked until pane X finishes"
 
 /** The authoritative signal that satisfied a latch (most->least authoritative). */
 export type SatisfySource = "merged" | "closed" | "landed";
@@ -57,6 +58,7 @@ export function refKey(ref: CoordRef): string {
     case "contract": return `contract:${ref.name}`;
     case "file": return `file:${ref.path}`;
     case "predicate": return `predicate:${ref.expr}`;
+    case "session": return `session:${ref.id}`;
   }
 }
 
@@ -78,6 +80,7 @@ export function parseRef(token: string): CoordRef | null {
     if (prefix === "contract") return { kind: "contract", name: rest };
     if (prefix === "file") return { kind: "file", path: rest };
     if (prefix === "predicate") return { kind: "predicate", expr: rest };
+    if (prefix === "session") return { kind: "session", id: rest };
     return null;
   }
   if (/^\d+$/.test(t)) return { kind: "issue", number: Number(t) };
@@ -315,14 +318,26 @@ export interface BlockedView {
   deps: { ref: string; status: "satisfied" | "failed" | "pending" }[];
   /** True when any dep has failed -- a stalled chain to escalate. */
   stalled: boolean;
+  /** True when this session is part of a wait-for cycle -- a deadlock to escalate
+   *  (no producer will ever satisfy it, so it would otherwise hang forever). */
+  deadlocked: boolean;
 }
 
 /** Derive the inbox/health view from latch state: every still-parked waiter, each dep's
- *  status, and whether the chain is stalled (a failed dep). */
-export function coordinationSummary(s: CoordState): BlockedView[] {
+ *  status, whether the chain is stalled (a failed dep), and whether it sits in a wait-for
+ *  cycle (a deadlock). `producerOf` resolves which session satisfies a dep (defaults to
+ *  the `session:` self-resolver -- see {@link detectDeadlocks}). */
+export function coordinationSummary(s: CoordState, producerOf: ProducerOf = defaultProducerOf): BlockedView[] {
+  const deadlocked = new Set(detectDeadlocks(s, producerOf).flatMap((d) => d.cycle));
   return s.waiters.map((w) => {
     const deps = w.deps.map((d) => ({ ref: refKey(d), status: statusOf(s, d) }));
-    return { session: w.session, checkpoint: w.checkpoint, deps, stalled: deps.some((d) => d.status === "failed") };
+    return {
+      session: w.session,
+      checkpoint: w.checkpoint,
+      deps,
+      stalled: deps.some((d) => d.status === "failed"),
+      deadlocked: deadlocked.has(w.session),
+    };
   });
 }
 
@@ -346,4 +361,102 @@ export function readinessAt(w: Waiter, s: CoordState): number {
 export function isFreshlyReady(w: Waiter, s: CoordState, now: number, windowMs: number): boolean {
   const at = readinessAt(w, s);
   return at > 0 && now - at < windowMs;
+}
+
+// -- Cycle / deadlock detection (#199 AC#5) -------------------------------------
+// "Satisfied" is monotonic, so the *only* way a parked waiter never wakes is a wait-for
+// CYCLE: A waits on something B produces while B waits on something A produces (or a
+// longer ring). No producer in the ring can move, so all of them hang. The runtime must
+// DETECT this and escalate rather than spin forever (the planning critic rejects a cyclic
+// plan up front; this is the runtime safety net for cycles that slip through).
+//
+// To build the wait-for graph we need to know which session is expected to satisfy a dep.
+// A `session:<id>` dep names that producer directly (id -> that session). Other ref kinds
+// (#issue, contract:, file:, predicate:) carry no producer in the log today, so they yield
+// NO edge under the default resolver -- zero false positives. When the plan's
+// Produces/Consumes edges are wired (#199 AC#7), pass a richer `producerOf` and the same
+// algorithm lights up for contract/issue cycles too. Pure (no IO) so it's fully testable.
+
+/** Resolves which session is expected to satisfy a dep ref, or undefined if unknown. */
+export type ProducerOf = (ref: CoordRef) => string | undefined;
+
+/** The default resolver: only a `session:<id>` dep yields a producer (itself). All other
+ *  kinds are unknown until plan-derived Produces/Consumes is supplied (#199 AC#7). */
+export function defaultProducerOf(ref: CoordRef): string | undefined {
+  return ref.kind === "session" ? ref.id : undefined;
+}
+
+/** A detected wait-for cycle: the parked sessions that mutually block, in ring order.
+ *  A single-element cycle is a session waiting (transitively) on its own output. */
+export interface Deadlock {
+  cycle: string[];
+}
+
+/**
+ * Find every wait-for cycle among the parked waiters. An edge `A -> B` means waiter A has
+ * an UNSATISFIED dep that waiter B is expected to produce (a satisfied dep imposes no wait,
+ * and an edge to a non-waiter is harmless since that producer can still finish). Cycles are
+ * the strongly-connected components of size >= 2, plus any self-loop. Idempotent + pure.
+ */
+export function detectDeadlocks(s: CoordState, producerOf: ProducerOf = defaultProducerOf): Deadlock[] {
+  const waiterIds = new Set(s.waiters.map((w) => w.session));
+  const adj = new Map<string, Set<string>>();
+  for (const w of s.waiters) {
+    const outs = new Set<string>();
+    for (const d of w.deps) {
+      if (isSatisfied(s, d)) continue;             // satisfied -> no longer blocking
+      const p = producerOf(d);
+      if (p && waiterIds.has(p)) outs.add(p);      // only an edge to another parked session
+    }
+    adj.set(w.session, outs);
+  }
+  return tarjanCycles(adj);
+}
+
+/** Whether any parked waiter sits in a wait-for cycle. */
+export function hasDeadlock(s: CoordState, producerOf: ProducerOf = defaultProducerOf): boolean {
+  return detectDeadlocks(s, producerOf).length > 0;
+}
+
+/** Tarjan's SCC -- the cyclic components (size >= 2) plus self-loops, each as a `Deadlock`.
+ *  Graphs are tiny (one node per parked pane), so recursive DFS is fine. */
+function tarjanCycles(adj: Map<string, Set<string>>): Deadlock[] {
+  let index = 0;
+  const idx = new Map<string, number>();
+  const low = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const cycles: Deadlock[] = [];
+
+  const connect = (v: string): void => {
+    idx.set(v, index);
+    low.set(v, index);
+    index++;
+    stack.push(v);
+    onStack.add(v);
+    for (const nxt of adj.get(v) ?? []) {
+      if (!idx.has(nxt)) {
+        connect(nxt);
+        low.set(v, Math.min(low.get(v)!, low.get(nxt)!));
+      } else if (onStack.has(nxt)) {
+        low.set(v, Math.min(low.get(v)!, idx.get(nxt)!));
+      }
+    }
+    if (low.get(v) === idx.get(v)) {
+      const comp: string[] = [];
+      let node: string;
+      do {
+        node = stack.pop()!;
+        onStack.delete(node);
+        comp.push(node);
+      } while (node !== v);
+      // A multi-node SCC is a ring; a lone node is a cycle only if it waits on itself.
+      if (comp.length > 1 || adj.get(comp[0])?.has(comp[0])) {
+        cycles.push({ cycle: comp.reverse() });
+      }
+    }
+  };
+
+  for (const n of adj.keys()) if (!idx.has(n)) connect(n);
+  return cycles;
 }
