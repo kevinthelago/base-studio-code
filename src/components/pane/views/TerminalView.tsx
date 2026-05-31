@@ -14,6 +14,7 @@ import { PendingPtyData } from "../../../lib/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/resumeClaude";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
+import { flowPermissionRules } from "../../../screens/projects/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 import { interpretGithubReadiness, type GithubProbe } from "../../../lib/githubReadiness";
 
@@ -347,6 +348,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           ? useAppStore.getState().agentProfiles.find((p) => p.id === profileId)
           : undefined;
         const prof = profile ? resolveProfileSettings(profile) : null;
+        // Per-agent flow (#297): narrow the GitHub-propagation writes per the
+        // stream's push policy + gate — a hard push-confirm asks before push/PR,
+        // commit-only/none deny them, auto-pr adds nothing (broad allow permits).
+        const flowRules = flowPermissionRules(useAppStore.getState().paneFlows[paneId]);
         const allowedCommands = prof ? [...cmds, ...prof.allowedCommands] : cmds;
         const denied = [
           ...useAppStore.getState().deniedCommands,
@@ -354,7 +359,8 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           ...(prof?.deniedCommands ?? []),
         ];
         const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
-        const denyToolRules = [...write.deny, ...(prof?.denyToolRules ?? [])];
+        const denyToolRules = [...write.deny, ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
+        const askToolRules = flowRules.askToolRules;
         // Extensions (MCP servers + hooks) resolved for this session — pre-resolved
         // per pane at tab creation; fall back to globals for ad-hoc consoles.
         const exts = useAppStore.getState().paneExtensions[paneId]
@@ -371,7 +377,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         await invoke("ensure_session_settings", {
           cwd: initialCwd, allowedCommands, deniedCommands: denied,
           mcpServers: mcp, hooks: gatedHooks,
-          allowToolRules, denyToolRules,
+          allowToolRules, denyToolRules, askToolRules,
         }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         if (destroyed) return;
         // GitHub-readiness probe (#297): fleet/triage agents are told to push and

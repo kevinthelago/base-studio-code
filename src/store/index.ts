@@ -13,6 +13,7 @@ import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoi
 import { computeNextRun, appendRun, suggestionToAutomation, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import type { SessionRole } from "../lib/sessionRoles";
+import type { AgentFlow } from "../screens/projects/agentFlow";
 import { PIPELINE_PRESETS } from "../lib/pipeline";
 import { startRun, currentLaunch, type PipelineRun } from "../lib/conductor";
 import { generateAgentProfile } from "../lib/profileGen";
@@ -205,6 +206,8 @@ interface AppStore {
   setAgentProfiles: (profiles: AgentProfile[]) => void;
   updateAgentProfile: (id: string, patch: Partial<AgentProfile>) => void;
   paneProfiles: Record<string, string>;
+  /** Per-agent flow (#297) for each pane, seeded at fleet launch from the stream. */
+  paneFlows: Record<string, AgentFlow>;
   setPaneProfile: (paneId: string, profileId: string | null) => void;
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
@@ -603,6 +606,7 @@ export const useAppStore = create<AppStore>()(
           agentProfiles: s.agentProfiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
         })),
       paneProfiles: {},
+      paneFlows: {},
       setPaneProfile: (paneId, profileId) =>
         set((s) => {
           const next = { ...s.paneProfiles };
@@ -1103,6 +1107,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneNames             = { ...s.paneNames };
           const newPaneRoles             = { ...s.paneRoles };
           const newPaneProfiles             = { ...s.paneProfiles };
+          const newPaneFlows                = { ...s.paneFlows };
 
           const safeKey = sanitizeProjectKey(projectKey);
           const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
@@ -1139,6 +1144,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneExtensions[key];
               delete newPaneRoles[key];
               delete newPaneProfiles[key];
+              delete newPaneFlows[key];
               if (i < count) {
                 const sess = chunk[i];
                 if (sess === null) {
@@ -1172,6 +1178,7 @@ export const useAppStore = create<AppStore>()(
                 newPaneExtensions[key] = fleetExts;
                 newPaneRoles[key] = sess === null ? "director" : "worker";
                 if (sess && sess.profile) newPaneProfiles[key] = sess.profile;
+                if (sess && sess.flow) newPaneFlows[key] = sess.flow;
                 delete newDisabledPanes[key];
               } else {
                 // Empty grid cell — start disabled so it doesn't spawn an idle shell.
@@ -1204,6 +1211,7 @@ export const useAppStore = create<AppStore>()(
             paneExtensions: newPaneExtensions,
             paneRoles: newPaneRoles,
             paneProfiles: newPaneProfiles,
+            paneFlows: newPaneFlows,
             disabledPanes: newDisabledPanes,
             paneNames: newPaneNames,
             activeScreen: "console" as Screen,
@@ -1442,6 +1450,7 @@ export const useAppStore = create<AppStore>()(
         tunnelRelayUrl:  s.tunnelRelayUrl,
         agentProfiles:   s.agentProfiles,
         paneProfiles:    s.paneProfiles,
+        paneFlows:       s.paneFlows,
         kbBlocks:        s.kbBlocks,
         claudeApiKey:    s.claudeApiKey,
         schedules:            s.schedules,
