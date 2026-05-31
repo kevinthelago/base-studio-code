@@ -14,6 +14,7 @@ import { computeNextRun, appendRun, suggestionToAutomation, type Automation, typ
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import type { SessionRole } from "../lib/sessionRoles";
 import type { AgentFlow } from "../screens/projects/agentFlow";
+import { normalizeFlow, resolveFlow } from "../screens/projects/agentFlow";
 import { flowKickoffText } from "../screens/projects/flowKickoff";
 import { PIPELINE_PRESETS } from "../lib/pipeline";
 import { startRun, currentLaunch, type PipelineRun } from "../lib/conductor";
@@ -392,6 +393,8 @@ interface AppStore {
   removePlanAgentStream: (projectId: string, id: string) => void;
   /** #289: assign an AgentProfile id to a stream (null clears). */
   setPlanAgentStreamProfile: (projectId: string, streamId: string, profileId: string | null) => void;
+  /** #297: set one or more flow fields on a stream (merged into its resolved flow). */
+  setPlanAgentStreamFlow: (projectId: string, streamId: string, patch: Partial<AgentFlow>) => void;
   /** #289: generate + assign a least-privilege profile for each unassigned stream,
    *  scoped to that stream's resolved toolchain. Idempotent. */
   generateFleetProfiles: (projectId: string) => void;
@@ -1304,6 +1307,14 @@ export const useAppStore = create<AppStore>()(
           const cur = s.planFleet[projectId];
           if (!cur) return {};
           const streams = cur.streams.map((x) => (x.id === streamId ? { ...x, profile: profileId ?? undefined } : x));
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      setPlanAgentStreamFlow: (projectId, streamId, patch) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, flow: normalizeFlow({ ...resolveFlow(x.flow), ...patch }) } : x);
           return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
         }),
       generateFleetProfiles: (projectId) =>
