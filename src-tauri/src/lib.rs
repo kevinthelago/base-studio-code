@@ -2552,6 +2552,60 @@ struct HookCfg {
 /// permission prompt while blocking dangerous ones, and apply the session's
 /// extensions (MCP servers → `.mcp.json`, hooks → settings.json), by merging into
 /// `<cwd>/.claude/settings.json` and `<cwd>/.mcp.json`.
+/// Markers the GitHub-readiness probe echoes when each check passes (#297). Plain
+/// `echo` tokens so parsing is a locale-independent substring match, not coupled to
+/// gh/git output formatting.
+const GH_PATH_MARK: &str = "BSC_GH_PATH_OK";
+const GIT_PATH_MARK: &str = "BSC_GIT_PATH_OK";
+const GH_AUTH_MARK: &str = "BSC_GH_AUTH_OK";
+
+/// Parse the probe shell's stdout into `(gh_on_path, git_on_path, gh_authed)`. Pure.
+fn parse_github_probe(stdout: &str) -> (bool, bool, bool) {
+    (
+        stdout.contains(GH_PATH_MARK),
+        stdout.contains(GIT_PATH_MARK),
+        stdout.contains(GH_AUTH_MARK),
+    )
+}
+
+/// Probe whether a session shell can actually reach GitHub (#297): is `git`/`gh`
+/// on PATH, and is `gh` authenticated. Fleet agents are told to push branches and
+/// open PRs, but a spawned shell can silently lack the tools; this lets the pane
+/// warn the user up front. Runs the checks through the SAME resolved shell and
+/// caller env (e.g. `GH_TOKEN`) the agent's `bash -c` subshells inherit, via a
+/// login shell (`-lc`) so login-profile PATH additions are reflected. Best-effort:
+/// returns all-false on spawn failure rather than erroring, so the caller can still
+/// surface an actionable warning. Field names match the frontend `GithubProbe`.
+#[tauri::command]
+async fn github_readiness(
+    cwd: String,
+    env: Option<std::collections::HashMap<String, String>>,
+) -> Result<serde_json::Value, String> {
+    let shell = resolve_shell();
+    let script = format!(
+        "command -v git >/dev/null 2>&1 && echo {GIT_PATH_MARK}; \
+         command -v gh  >/dev/null 2>&1 && echo {GH_PATH_MARK}; \
+         gh auth status >/dev/null 2>&1 && echo {GH_AUTH_MARK}",
+    );
+    let mut cmd = std::process::Command::new(&shell);
+    cmd.arg("-lc").arg(&script);
+    if !cwd.is_empty() {
+        cmd.current_dir(&cwd);
+    }
+    let env_map = env.unwrap_or_default();
+    for (k, v) in session_env(&env_map) {
+        cmd.env(k, v);
+    }
+    let (gh, git, auth) = match cmd.output() {
+        Ok(out) => parse_github_probe(&String::from_utf8_lossy(&out.stdout)),
+        Err(e) => {
+            log::warn!("github_readiness probe failed to spawn ({shell}): {e}");
+            (false, false, false)
+        }
+    };
+    Ok(serde_json::json!({ "ghOnPath": gh, "gitOnPath": git, "ghAuthed": auth }))
+}
+
 #[tauri::command]
 async fn ensure_session_settings(
     cwd: String,
@@ -3206,6 +3260,7 @@ pub fn run() {
             read_claude_config,
             write_claude_config,
             ensure_session_settings,
+            github_readiness,
             read_plan_sections,
             write_project_plan,
             delete_project_dir,
@@ -3564,6 +3619,28 @@ mod tests {
             bash_ansi_c_quote("line1\nit's $HOME `cmd` \\x"),
             "$'line1\\nit\\'s $HOME `cmd` \\\\x'"
         );
+    }
+
+    #[test]
+    fn parse_github_probe_detects_each_marker_independently() {
+        use super::{GH_AUTH_MARK, GH_PATH_MARK, GIT_PATH_MARK};
+        // All three markers present -> (gh, git, auth) all true.
+        let all = format!("{GIT_PATH_MARK}
+{GH_PATH_MARK}
+{GH_AUTH_MARK}
+");
+        assert_eq!(super::parse_github_probe(&all), (true, true, true));
+        // Empty output (probe found nothing) -> all false.
+        assert_eq!(super::parse_github_probe(""), (false, false, false));
+        // git on PATH but gh missing -> gh false, git true, auth false.
+        let git_only = format!("{GIT_PATH_MARK}
+");
+        assert_eq!(super::parse_github_probe(&git_only), (false, true, false));
+        // gh present but unauthenticated -> gh true, git true, auth false.
+        let no_auth = format!("{GIT_PATH_MARK}
+{GH_PATH_MARK}
+");
+        assert_eq!(super::parse_github_probe(&no_auth), (true, true, false));
     }
 
     #[test]
