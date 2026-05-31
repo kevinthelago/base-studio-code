@@ -51,3 +51,19 @@ export function flowPermissionRules(flow: AgentFlow | undefined): FlowPermission
       return { askToolRules: [], denyToolRules: [] };
   }
 }
+
+
+/**
+ * Command prefixes the flow GRANTS — the role gate's broader gh/git-write denies must be
+ * lifted for exactly these so the flow's GitHub intent wins (#304). A worker role is
+ * `github: "read"` and so denies `gh pr create`, but an `auto-pr` / `push-confirm` flow
+ * needs the worker to open its PR; everything else the role denies (gh pr merge, repo
+ * delete, issue mutations, …) stays denied. `commit-only` / `none` grant nothing, so the
+ * role's denies hold (consistent — both block push). Prefixes match `roleDeniedCommands`.
+ */
+export function flowGrantedPushCommands(flow: AgentFlow | undefined): string[] {
+  const f = resolveFlow(flow);
+  return f.push === "auto-pr" || f.push === "push-confirm"
+    ? ["git push", "gh pr create"]
+    : [];
+}
