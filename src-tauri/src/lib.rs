@@ -2616,6 +2616,7 @@ async fn github_readiness(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn ensure_session_settings(
     cwd: String,
     allowed_commands: Vec<String>,
@@ -2624,11 +2625,13 @@ async fn ensure_session_settings(
     hooks: Option<Vec<HookCfg>>,
     allow_tool_rules: Option<Vec<String>>,
     deny_tool_rules: Option<Vec<String>>,
+    ask_tool_rules: Option<Vec<String>>,
 ) -> Result<(), String> {
     write_session_settings(
         &cwd, &allowed_commands, &denied_commands,
         &mcp_servers.unwrap_or_default(), &hooks.unwrap_or_default(),
         &allow_tool_rules.unwrap_or_default(), &deny_tool_rules.unwrap_or_default(),
+        &ask_tool_rules.unwrap_or_default(),
     )
 }
 
@@ -2642,6 +2645,7 @@ async fn ensure_session_settings(
 /// the broad allow, and meaningful if "Bash" is ever removed to go strict.
 /// Merges into existing settings rather than clobbering; `.claude/` stays out of
 /// the repo's `git status`.
+#[allow(clippy::too_many_arguments)]
 fn write_session_settings(
     cwd: &str,
     allowed_commands: &[String],
@@ -2650,6 +2654,7 @@ fn write_session_settings(
     hooks: &[HookCfg],
     allow_tool_rules: &[String],
     deny_tool_rules: &[String],
+    ask_tool_rules: &[String],
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     let root = std::path::PathBuf::from(cwd);
@@ -2694,8 +2699,19 @@ fn write_session_settings(
         if !r.is_empty() && !deny_rules.contains(&r) { deny_rules.push(r); }
     }
 
+    // Ask: rules that PROMPT the user before the command (Claude Code precedence
+    // deny > ask > allow, so a specific ask overrides the broad Bash allow). The
+    // flow's hard push-confirm gate (#297) passes `Bash(git push *)` / `Bash(gh pr
+    // create *)` here so pushes/PRs require approval instead of auto-running.
+    let mut ask_rules: Vec<String> = Vec::new();
+    for r in ask_tool_rules {
+        let r = r.trim().to_string();
+        if !r.is_empty() && !ask_rules.contains(&r) { ask_rules.push(r); }
+    }
+
     merge_permission_list(&mut config, "allow", &allow_rules);
     merge_permission_list(&mut config, "deny", &deny_rules);
+    merge_permission_list(&mut config, "ask", &ask_rules);
 
     // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
     // a hook extension off and relaunching drops it). MCP servers → `.mcp.json`,
@@ -3711,6 +3727,7 @@ mod tests {
             &[],
             &[],
             &[],
+            &[],
         ).unwrap();
 
         let v: serde_json::Value =
@@ -3737,6 +3754,39 @@ mod tests {
     }
 
     #[test]
+    fn write_session_settings_writes_ask_tier_for_hard_push_gate() {
+        use super::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+
+        // A hard push-confirm flow (#297) asks before push/PR: the rules land in
+        // permissions.ask (deny > ask > allow), so they prompt under the broad Bash allow.
+        write_session_settings(
+            &dir.to_string_lossy(),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &["Bash(git push *)".into(), "Bash(gh pr create *)".into()],
+        ).unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let ask: Vec<String> = v["permissions"]["ask"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(ask.contains(&"Bash(git push *)".to_string()));
+        assert!(ask.contains(&"Bash(gh pr create *)".to_string()));
+        // Bash stays broadly allowed; ask only narrows the two push writes.
+        let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(allow.contains(&"Bash".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn write_session_settings_merges_verbatim_tool_rules() {
         use super::write_session_settings;
         let dir = std::env::temp_dir().join(format!("bsc-ess-tool-{}", std::process::id()));
@@ -3753,6 +3803,7 @@ mod tests {
             &[],
             &["Edit(src/auth/**)".into(), "Write(src/auth/**)".into()],
             &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
+            &[],
         ).unwrap();
 
         let v: serde_json::Value =
@@ -3792,7 +3843,7 @@ mod tests {
         let hooks = vec![super::HookCfg {
             event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
         }];
-        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[]).unwrap();
+        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[]).unwrap();
 
         // .mcp.json carries both servers in the right transport shapes.
         let mcp_json: serde_json::Value =

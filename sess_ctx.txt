@@ -1,0 +1,27 @@
+t);
+                  } else {
+                    newPaneStartupPromptText[key] = buildStreamPrompt(sess);
+                  }
+                  newPaneAllowedCommands[key] = resolveAllowedCommands(
+                    s.allowedCommands,
+                    s.projectAllowedCommands[projectKey],
+                    s.repoAllowedCommands[repoPromptKey(projectKey, sess.repo)],
+                  );
+                  // Per-agent checkpoint doc (keyed by stream id) so each agent keeps
+                  // its own "where we left off" note.
+                  newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
+                  tabPaneNames[i] = sess.name;
+                }
+                newPaneContinue[key] = resume;
+                newPaneExtensions[key] = fleetExts;
+                newPaneRoles[key] = sess === null ? "director" : "worker";
+                if (sess && sess.profile) newPaneProfiles[key] = sess.profile;
+                delete newDisabledPanes[key];
+              } else {
+                // Empty grid cell — start disabled so it doesn't spawn an idle shell.
+                newDisabledPanes[key] = true;
+              }
+            }
+
+            const newTab: Tab = { name: tabName, layout, state: "idle", runId };
+            tabs = existingIdx >= 0
