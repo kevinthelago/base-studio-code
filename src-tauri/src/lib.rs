@@ -1187,6 +1187,7 @@ bsc-landed() { __bsc_coord landed "$1" ""; }
 bsc-merged() { __bsc_coord merged "$1" ""; }
 bsc-closed() { __bsc_coord closed "$1" ""; }
 bsc-failed() { r="$(cat)"; __bsc_coord failed "$1" "$r"; }
+bsc-wait() { r="$(cat)"; __bsc_coord waiting "$r" "${BSC_CHECKPOINT_DOC:-}"; }
 "#;
 
 /// Read the Agents audit log (#257): the newest `limit` TSV lines, newest first.
