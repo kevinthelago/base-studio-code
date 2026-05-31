@@ -1824,6 +1824,12 @@ files and rarely need a human.
      ]
    }
    ```
+   Each stream may also carry **`"profile"`** — an AgentProfile id that scopes its
+   session's auto-approved commands, per-tool permissions, and write-paths (least
+   privilege, layered on top of the role). After the commands step has discovered the
+   project's toolchain, either reuse an existing profile or, in the fleet card, click
+   **Generate least-privilege profiles** to derive one per agent from its role + `owns`
+   + the project's commands; `<agent_assign … profile="…">` assigns one inline.
 7. **Write a kickoff script per stream** to `prompts/{id}-kickoff.md` (and
    `prompts/director-kickoff.md` if a director). These are the first messages those
    sessions receive — design them for autonomy (next).
@@ -2068,10 +2074,12 @@ allowed, so don't list them. Use BOTH channels — the file is authoritative:
 **Declare the agent fleet** (the parallel-execution plan). `fleet.json` is the
 authoritative channel; these tags are the fast path. Emit the header once, then one
 `agent_assign` per stream. List attributes (`owns`, `issues`, `depends_on`) are
-comma-separated; `depends_on` is comma-separated stream ids:
+comma-separated; `depends_on` is comma-separated stream ids. An optional `profile`
+attribute carries an AgentProfile id that scopes the stream's session (commands +
+tools + write-paths) — generate one per agent or reuse an existing profile:
 ```
 <fleet_plan recommended="4" reasoning="..." director="true" director_role="async integrator: review/merge PRs, resolve logged decisions, keep milestones current" />
-<agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" />
+<agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" profile="auth-ui-dev" />
 ```
 
 ## GitHub tools
