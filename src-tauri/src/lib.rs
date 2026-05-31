@@ -1939,6 +1939,15 @@ apply to almost every project.
 **Planning**
 - `phases` — the roadmap as a JSON array (see "Special sections"); each phase is
   a crisp "done when", no time estimates.
+- `issues` — decompose each phase into granular, self-contained GitHub issues
+  (see "Special sections"). **This is the most important output for execution.** A
+  building agent picks up ONE issue and must be able to finish it WITHOUT asking, so
+  each issue carries everything it needs: a concrete title, **acceptance criteria**
+  (the done-when checklist), the **files/dirs it owns** (where to work), its
+  **dependencies** (refs of issues that must land first), **labels**, and its
+  **phase** (→ milestone). Size each to a single focused session; split anything an
+  agent couldn't finish in one sitting. Don't stop at a high-level overview — the
+  plan isn't done until the work is decomposed to this level.
 - `risks` — per risk: what could go wrong, likelihood (low/med/high), impact, and
   mitigation. Add continuously as you spot them.
 - `open_questions` — unresolved decisions shaping the plan. Drive this toward
@@ -1989,6 +1998,12 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
   {"name":"Phase 2 — Production ready","description":"integration suite passes; release pipeline ships v1.0.0"}
 ]</plan_update>
 ```
+```
+<plan_update section="issues">[
+  {"ref":"F1","title":"Add POST /v1/migrations/up","phase":1,"acceptance":["applies pending migrations in order","returns 200 {applied:[{version}]}","integration test against real Postgres"],"owns":["src/api/migrations.go"],"dependsOn":[],"labels":["scope:core","area:api"],"stream":"api"},
+  {"ref":"F2","title":"Wire `status` to GET /v1/migrations/status","phase":1,"acceptance":["lists pending + applied","exit 0"],"owns":["src/cli/status.go"],"dependsOn":["F1"],"labels":["scope:core","area:cli"],"stream":"cli"}
+]</plan_update>
+```
 
 ## Special sections
 
@@ -1998,14 +2013,24 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
   objects (the inline tag carries the same JSON). Each phase needs a "done when"
   definition; never include time estimates or week numbers. The publish flow
   turns each phase into a milestone and a tracking issue per repo.
+- **`issues`** — write `issues.json` as a JSON array of issue objects:
+  `{"ref","title","phase","acceptance":[],"owns":[],"dependsOn":[],"labels":[],"stream"?,"repo"?}`.
+  `ref` is a stable planner-local id used by `dependsOn` (NOT the GitHub number,
+  which is assigned at publish); `phase` is the 1-based phase number or its name
+  (→ that milestone). The publish flow creates ONE GitHub issue per entry — title,
+  a body built from the acceptance checklist + owned paths + dependencies, pinned to
+  its milestone, with its labels and a `stream:<id>` label. A fleet stream owns its
+  issues by listing their refs. Define enough that the agent who picks one up needs
+  nothing else.
 - **`_skipped`** — the coverage record described under "Coverage" above.
 
 ## Publish to GitHub
 
 After the user confirms the plan in the right panel, the **Publish** button
 creates the repositories, the project board, one milestone per phase, and one
-tracking issue per phase in each repo, and labels each fleet stream's owned issues
-with `stream:<id>`. You can also push detail yourself with the
+GitHub issue per `issues.json` entry (pinned to its milestone, with its labels;
+falling back to a per-phase tracking issue when no issues are defined), and labels
+each fleet stream's owned issues with `stream:<id>`. You can also push detail yourself with the
 `gh` CLI — every step below is idempotent (check-then-create), so re-running is a
 safe sync. Do this in order, per linked repository:
 
