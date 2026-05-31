@@ -696,8 +696,10 @@ void repoRollup;
  * shows the full pane. The drill-in editors keep local state -- display only,
  * no write-back in this slice.
  */
-export function ProjectPane({ data, onPerm, onPreset, onFlow, onTogglePin }: {
+export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onTogglePin }: {
   data?: ProjectPaneData;
+  projectName?: string;
+  projectId?: string;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
@@ -726,9 +728,9 @@ export function ProjectPane({ data, onPerm, onPreset, onFlow, onTogglePin }: {
           width: 8, height: 8, borderRadius: 2,
           background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
         }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)" }}>Settlement webhooks v2</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)" }}>{hasData ? (projectName || "Project") : "Settlement webhooks v2"}</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>prj_2fa</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{hasData ? (projectId || "") : "prj_2fa"}</span>
       </div>
 
       {/* fleet pulse strip — always-visible glance line */}
