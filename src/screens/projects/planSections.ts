@@ -1,3 +1,5 @@
+import type { AgentFlow } from "./agentFlow";
+import { flowOrUndefined } from "./agentFlow";
 // Pure helpers for the dynamic, guided project planner.
 //
 // The planner no longer has a fixed list of sections. Claude documents whatever
@@ -40,6 +42,8 @@ export interface AgentStream {
   prompt?: string;
   /** Id of the AgentProfile this stream's session launches under (#289). */
   profile?: string;
+  /** Per-agent execution flow (#297): autonomy + GitHub push policy. Unset ⇒ DEFAULT_FLOW at launch. */
+  flow?: AgentFlow;
 }
 
 /** Optional async-integrator session that coordinates the fleet from the project root. */
@@ -296,6 +300,8 @@ export function parseFleetFile(raw: string): FleetPlan | null {
       issues:    toStringArray(so.issues),
       dependsOn: toStringArray(so.dependsOn ?? so.depends_on),
       prompt,
+      profile: typeof so.profile === "string" && so.profile.trim() ? so.profile.trim() : undefined,
+      flow: flowOrUndefined(so.flow && typeof so.flow === "object" && !Array.isArray(so.flow) ? so.flow as Record<string, unknown> : null),
     });
   }
 
