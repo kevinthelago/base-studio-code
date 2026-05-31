@@ -96,3 +96,32 @@ describe("buildGhStructure", () => {
     expect(s.repos).toEqual([]);
   });
 });
+
+describe("buildGhStructure — granular issues (#311)", () => {
+  const phases = JSON.stringify([{ name: "Phase 1", description: "x" }, { name: "Phase 2", description: "y" }]);
+
+  it("nests one node per PlanIssue under the repo when issues.json is defined", () => {
+    const issues = JSON.stringify([
+      { ref: "F1", title: "Add endpoint", phase: 1 },
+      { ref: "F2", title: "Wire UI", phase: 2, dependsOn: ["F1"] },
+    ]);
+    const st = buildGhStructure([sec("phases", phases), sec("issues", issues)], ["o/web"], "Proj");
+    expect(st.repos[0].issues.map(i => i.label)).toEqual(["Add endpoint", "Wire UI"]);
+    expect(st.repos[0].issues.map(i => i.id)).toEqual(["issue:o/web:F1", "issue:o/web:F2"]);
+  });
+
+  it("routes an issue to its declared repo, and a repo-less issue to the default (first) repo", () => {
+    const issues = JSON.stringify([
+      { ref: "A", title: "api work", repo: "o/api" },
+      { ref: "B", title: "default work" },
+    ]);
+    const st = buildGhStructure([sec("phases", phases), sec("issues", issues)], ["o/web", "o/api"], "Proj");
+    expect(st.repos.find(r => r.node.label === "o/api")!.issues.map(i => i.label)).toEqual(["api work"]);
+    expect(st.repos.find(r => r.node.label === "o/web")!.issues.map(i => i.label)).toEqual(["default work"]);
+  });
+
+  it("falls back to one tracking issue per phase when no issues are defined", () => {
+    const st = buildGhStructure([sec("phases", phases)], ["o/web"], "Proj");
+    expect(st.repos[0].issues.map(i => i.label)).toEqual(["[Phase 1] Proj", "[Phase 2] Proj"]);
+  });
+});
