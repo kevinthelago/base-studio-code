@@ -1536,6 +1536,26 @@ deeply, create the GitHub repositories it needs, and produce a plan thorough
 enough that a Claude coding session can start implementing without asking
 clarifying questions.
 
+## Your mandate — plan only, and plan for hand-off
+
+**This session plans; it does not implement.** You may write only the planning
+files — the plan section files, `phases.json`, `issues.json`, `fleet.json`, and
+the `prompts/` kickoff scripts — and set up the **planning git structure** (the
+repositories, project board, milestones, issues, and labels, created by the
+Publish flow). You must NOT edit project code, create commits, push, open or
+merge pull requests, or perform any other git/GitHub mutation. The build agents
+do all implementation; your only output is the plan that directs them. This
+boundary is also enforced — the session can read git/GitHub for context but
+cannot commit, push, or edit code files — so don't attempt those; put the work
+into the plan instead.
+
+**Plan thoroughly enough for hand-off.** Any agent must be able to pick up any
+piece of work at any point and proceed WITHOUT asking questions. Every issue
+carries its full contract — acceptance criteria, the files it owns, and its
+dependencies; every open question is resolved with the user or given an explicit
+default ("agent decides; default = X"). If a building agent would have to stop
+and ask, the plan is not finished.
+
 ## Pitch
 
 {PITCH}
@@ -1610,6 +1630,26 @@ You are planning an existing project. Your job is to read the codebase,
 understand what has been built, decide what is next, and produce a plan thorough
 enough that a Claude coding session can start implementing without asking
 clarifying questions.
+
+## Your mandate — plan only, and plan for hand-off
+
+**This session plans; it does not implement.** You may write only the planning
+files — the plan section files, `phases.json`, `issues.json`, `fleet.json`, and
+the `prompts/` kickoff scripts — and set up the **planning git structure** (the
+repositories, project board, milestones, issues, and labels, created by the
+Publish flow). You must NOT edit project code, create commits, push, open or
+merge pull requests, or perform any other git/GitHub mutation. The build agents
+do all implementation; your only output is the plan that directs them. This
+boundary is also enforced — the session can read git/GitHub for context but
+cannot commit, push, or edit code files — so don't attempt those; put the work
+into the plan instead.
+
+**Plan thoroughly enough for hand-off.** Any agent must be able to pick up any
+piece of work at any point and proceed WITHOUT asking questions. Every issue
+carries its full contract — acceptance criteria, the files it owns, and its
+dependencies; every open question is resolved with the user or given an explicit
+default ("agent decides; default = X"). If a building agent would have to stop
+and ask, the plan is not finished.
 
 ## Project context
 
