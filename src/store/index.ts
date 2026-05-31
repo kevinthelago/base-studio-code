@@ -1096,6 +1096,7 @@ export const useAppStore = create<AppStore>()(
           const newDisabledPanes         = { ...s.disabledPanes };
           const newPaneNames             = { ...s.paneNames };
           const newPaneRoles             = { ...s.paneRoles };
+          const newPaneProfiles             = { ...s.paneProfiles };
 
           const safeKey = sanitizeProjectKey(projectKey);
           const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
@@ -1131,6 +1132,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneCheckpointDocs[key];
               delete newPaneExtensions[key];
               delete newPaneRoles[key];
+              delete newPaneProfiles[key];
               if (i < count) {
                 const sess = chunk[i];
                 if (sess === null) {
@@ -1163,6 +1165,7 @@ export const useAppStore = create<AppStore>()(
                 newPaneContinue[key] = resume;
                 newPaneExtensions[key] = fleetExts;
                 newPaneRoles[key] = sess === null ? "director" : "worker";
+                if (sess && sess.profile) newPaneProfiles[key] = sess.profile;
                 delete newDisabledPanes[key];
               } else {
                 // Empty grid cell — start disabled so it doesn't spawn an idle shell.
@@ -1194,6 +1197,7 @@ export const useAppStore = create<AppStore>()(
             paneAllowedCommands: newPaneAllowedCommands,
             paneExtensions: newPaneExtensions,
             paneRoles: newPaneRoles,
+            paneProfiles: newPaneProfiles,
             disabledPanes: newDisabledPanes,
             paneNames: newPaneNames,
             activeScreen: "console" as Screen,
