@@ -3,6 +3,7 @@
 // Kept free of React / xterm / Tauri imports so the derivation logic can be unit
 // tested in isolation and shared between Planning.tsx and its tests.
 
+import { parseIssuesFile } from "./planIssues";
 import type { FleetPlan } from "./planSections";
 
 // The planner is dynamic: Claude documents whatever topics a project warrants,
@@ -78,15 +79,23 @@ export function buildGhStructure(
   fleet?: FleetPlan,
 ): GhStructure {
   const phases = parsePhases(sections.find(s => s.k === "phases")?.content ?? "");
+  const planIssues = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
   return {
     project:    { id: "project", label: projectTitle },
     milestones: phases.map((ph, i) => ({ id: `ms:${i}`, label: ph.name })),
-    repos: repos.map(fullName => ({
+    repos: repos.map((fullName, repoIdx) => ({
       node:   { id: `repo:${fullName}`, label: fullName },
-      issues: phases.map((ph, i) => ({
-        id:    `issue:${fullName}:${i}`,
-        label: `[${ph.name}] ${projectTitle}`,
-      })),
+      // Granular issues (#311) when the planner defined them: one node per
+      // PlanIssue belonging to this repo (its `repo`, or the default repo when
+      // unset). Otherwise fall back to the legacy one-tracker-per-phase nodes.
+      issues: planIssues.length
+        ? planIssues
+            .filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0)
+            .map(iss => ({ id: `issue:${fullName}:${iss.ref}`, label: iss.title }))
+        : phases.map((ph, i) => ({
+            id:    `issue:${fullName}:${i}`,
+            label: `[${ph.name}] ${projectTitle}`,
+          })),
     })),
     streams: (fleet?.streams ?? []).map(st => ({
       id:     `stream:${st.id}`,
