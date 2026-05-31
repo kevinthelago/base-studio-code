@@ -4,6 +4,7 @@
 // can be unit-tested in isolation and shared with Planning.tsx.
 
 import type { AgentStream } from "./planSections";
+import { flowOrUndefined } from "./agentFlow";
 
 // Quote-flexible class: straight ("), and curly (“ ”) so an LLM emitting smart
 // quotes doesn't silently break tag detection. Mirrors the other planner tags.
@@ -152,7 +153,8 @@ const AGENT_ASSIGN_RE = () => /<agent_assign\s+([^>]*?)\/?>/g;
 
 /**
  * Parse every `<agent_assign id="..." name="..." repo="owner/repo" owns="a,b"
- * issues="#1,#2" depends_on="other-id" prompt="prompts/x-kickoff.md" />` tag into a
+ * issues="#1,#2" depends_on="other-id" prompt="prompts/x-kickoff.md"
+ * autonomy="continuous" push="auto-pr" trigger="per-issue" gate="hard" />` tag into a
  * {@link AgentStream}. Attributes may use straight or curly quotes and any order;
  * list attributes are comma-separated. `depends_on` and `dependsOn` are both
  * accepted. Tags missing `id` or `repo` are skipped.
@@ -177,6 +179,12 @@ export function parseAgentAssigns(text: string): AgentStream[] {
       dependsOn: deps.length ? deps : tagList(attrs, "dependsOn"),
       prompt: prompt || undefined,
       profile: tagAttr(attrs, "profile")?.trim() || undefined,
+      flow: flowOrUndefined({
+        autonomy: tagAttr(attrs, "autonomy")?.trim(),
+        push:     tagAttr(attrs, "push")?.trim(),
+        trigger:  tagAttr(attrs, "trigger")?.trim(),
+        gate:     tagAttr(attrs, "gate")?.trim(),
+      }),
     });
   }
   return out;
