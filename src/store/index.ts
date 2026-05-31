@@ -353,6 +353,13 @@ interface AppStore {
   // can move the working directory out from under an active session.
   planningSessionKey: string;
   setPlanningSession: (key: string) => void;
+  // Links a GitHub Project node id to the stable folder/data key (the title
+  // slug the plan files were written under). A project opened from the board
+  // only sets `activeProjectId` (the node id); this lets the planning resolver
+  // find where the plan data actually lives instead of falling through to the
+  // node id and rendering an empty pane. First-write-wins (see setActiveProjectMeta).
+  projectKeyAlias: Record<string, string>;
+  setProjectKeyAlias: (nodeId: string, key: string) => void;
   // Repository resolution — base dir is `~/.base-studio-code` (the base); repo
   // clone paths are derived as `<base>/projects/<key>/<repo>`.
   bscBaseDir: string;
@@ -865,7 +872,16 @@ export const useAppStore = create<AppStore>()(
       activeProjectNumber: 0,
       setActiveProject: (id) => set({ activeProjectId: id }),
       setActiveProjectMeta: (id, name, repo, number, repos = []) =>
-        set({ activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos }),
+        set((s) => ({
+          activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos,
+          // First-write-wins: bind the GitHub node id to the folder/data key (the
+          // title slug the plan files live under) so a board-path open resolves to
+          // real data, not the empty node-id key. Frozen on first sighting so a
+          // later GitHub rename can't clobber a working alias.
+          projectKeyAlias: id && name && !s.projectKeyAlias[id]
+            ? { ...s.projectKeyAlias, [id]: name }
+            : s.projectKeyAlias,
+        })),
       hiddenProjectIds: [],
       dismissProject: (id) =>
         set((s) => (!id || s.hiddenProjectIds.includes(id) ? {} : { hiddenProjectIds: [...s.hiddenProjectIds, id] })),
@@ -886,6 +902,7 @@ export const useAppStore = create<AppStore>()(
             planAutomations:        byKey(s.planAutomations),
             planFleet:              byKey(s.planFleet),
             pinnedContext:          byKey(s.pinnedContext),
+            projectKeyAlias:        byKey(s.projectKeyAlias),
             // Drop the deleted project id from every extension's scope list.
             extensions:             s.extensions.map((e) => ({ ...e, projects: e.projects.filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
@@ -961,6 +978,11 @@ export const useAppStore = create<AppStore>()(
       setPlanningTitle: (title) => set({ planningTitle: title }),
       planningSessionKey: "",
       setPlanningSession: (key) => set({ planningSessionKey: key }),
+      projectKeyAlias: {},
+      setProjectKeyAlias: (nodeId, key) =>
+        set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
+          ? { projectKeyAlias: { ...s.projectKeyAlias, [nodeId]: key } }
+          : {})),
       bscBaseDir: "",
       setBscBaseDir: (dir) => set({ bscBaseDir: dir }),
       projectLocalRepos: {},
@@ -1510,6 +1532,7 @@ export const useAppStore = create<AppStore>()(
         coordAutoWake:        s.coordAutoWake,
         pipelineRuns:         s.pipelineRuns,
         projectLocalRepos:    s.projectLocalRepos,
+        projectKeyAlias:      s.projectKeyAlias,
         hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
         projectStartupPromptDoc: s.projectStartupPromptDoc,
