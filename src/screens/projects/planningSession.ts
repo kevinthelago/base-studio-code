@@ -176,6 +176,7 @@ export function parseAgentAssigns(text: string): AgentStream[] {
       issues:    tagList(attrs, "issues"),
       dependsOn: deps.length ? deps : tagList(attrs, "dependsOn"),
       prompt: prompt || undefined,
+      profile: tagAttr(attrs, "profile")?.trim() || undefined,
     });
   }
   return out;
