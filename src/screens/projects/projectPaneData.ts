@@ -74,6 +74,10 @@ export interface BuildProjectPaneInput {
   phases: { name: string; description?: string }[];
   repos: string[];
   sections: Section[];
+  /** Context-file names the project has explicitly pinned in the pane (from the
+   *  store). When present it drives each context file's `pinned` instead of the
+   *  confirmed-section default. */
+  pinned?: string[];
 }
 
 const AGENT_HUES = [230, 70, 50, 145, 195, 300, 350, 110, 20, 260];
@@ -133,8 +137,8 @@ function buildAgents(input: BuildProjectPaneInput): Agent[] {
       initial: initialFor(s.id),
       owns: s.owns,
       issues: s.issues,
-      preset: profile ? profile.name : "Custom",
-      perm: derivePerm(profile, flow.push),
+      preset: s.preset ?? (profile ? profile.name : "Custom"),
+      perm: s.perm ? { ...s.perm } : derivePerm(profile, flow.push),
       flow: { autonomy: flow.autonomy, push: mapPush(flow.push), gate: flow.gate },
       ctx: s.owns.length,
     };
@@ -210,16 +214,20 @@ function buildStructure(input: BuildProjectPaneInput): Milestone[] {
 }
 
 function buildContext(input: BuildProjectPaneInput): ContextFile[] {
+  // When the project has an explicit pinned set (user toggles in the pane),
+  // it drives `pinned`; otherwise fall back to the confirmed-section default.
+  const explicitPins = input.pinned ? new Set(input.pinned) : undefined;
   return input.sections.map(s => {
     const kind = s.k === "claude" ? "claude"
       : s.k.includes("spec") ? "spec"
       : "doc";
     const tok = (s.content.length / 1000).toFixed(1) + "k";
+    const name = (s.title || s.k) + ".md";
     return {
-      name: (s.title || s.k) + ".md",
+      name,
       kind,
       tok,
-      pinned: s.state === "confirmed",
+      pinned: explicitPins ? explicitPins.has(name) : s.state === "confirmed",
       scope: "project",
     };
   });
