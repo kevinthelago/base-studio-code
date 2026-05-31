@@ -25,6 +25,7 @@ import {
   parseFleetFile,
   type SkippedItem, type FleetPlan, type AgentStream,
 } from "./planSections";
+import { FLOW_AUTONOMY, FLOW_PUSH, FLOW_TRIGGER, FLOW_GATE, resolveFlow, type AgentFlow } from "./agentFlow";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
   background:          "#181a1f",
@@ -410,8 +411,15 @@ function AutomationsCard({ automations, onRemove }: { automations: AutomationSug
 // concurrent session count + reasoning, a configurable director toggle, and one
 // row per work stream (its repo, owned paths, issues, and dependencies). The
 // "Launch fleet" button opens the build tab. Self-hides until a fleet is defined.
+const FLOW_FIELDS = [
+  ["autonomy", FLOW_AUTONOMY],
+  ["push", FLOW_PUSH],
+  ["trigger", FLOW_TRIGGER],
+  ["gate", FLOW_GATE],
+] as const;
+
 function FleetCard({ projectId, onLaunch }: { projectId: string; onLaunch: () => void }) {
-  const { planFleet, removePlanAgentStream, setPlanDirector, setPlanAgentStreamProfile, generateFleetProfiles, agentProfiles } = useAppStore();
+  const { planFleet, removePlanAgentStream, setPlanDirector, setPlanAgentStreamProfile, setPlanAgentStreamFlow, generateFleetProfiles, agentProfiles } = useAppStore();
   const fleet: FleetPlan | undefined = planFleet[projectId];
   if (!fleet || (fleet.streams.length === 0 && !fleet.director.enabled)) return null;
 
@@ -463,6 +471,20 @@ function FleetCard({ projectId, onLaunch }: { projectId: string; onLaunch: () =>
           <option value="">— none (role only) —</option>
           {assignableProfiles.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
         </select>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+        <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>flow</span>
+        {FLOW_FIELDS.map(([key, opts]) => (
+          <select
+            key={key}
+            title={key}
+            value={resolveFlow(st.flow)[key]}
+            onChange={(e) => setPlanAgentStreamFlow(projectId, st.id, { [key]: e.target.value } as Partial<AgentFlow>)}
+            style={{ height: 20, fontSize: 9.5, fontFamily: "var(--mono)", background: "var(--bg-panel)", color: "var(--fg)", border: "1px solid var(--border-soft)", borderRadius: 4 }}
+          >
+            {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        ))}
       </div>
     </div>
   );
