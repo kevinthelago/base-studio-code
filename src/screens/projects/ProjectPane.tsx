@@ -410,7 +410,9 @@ function MergedC({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }: {
         the plan · {structure.length} milestones across {repos.length} repos
       </div>
       <div style={{ paddingLeft: 6 }}>
-        {structure.map((m, mi) => (
+        {structure.map((m, mi) => {
+            const mIssueCount = m.epics.reduce((n, e) => n + e.issues.length, 0);
+            return (
           <div key={m.id} style={{
             position: "relative", paddingLeft: 18,
             borderLeft: "2px solid var(--border-soft)", paddingBottom: mi < structure.length - 1 ? 16 : 0,
@@ -432,7 +434,12 @@ function MergedC({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }: {
               }}>⎇ {m.repo.split("/")[1]}</span>
               <span style={{ flex: 1 }}><Track pct={m.pct} /></span>
             </div>
-            {m.epics.map((e) => (
+            {mIssueCount === 0 && (
+              <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", padding: "2px 0 6px" }}>
+                no issues decomposed yet
+              </div>
+            )}
+            {m.epics.filter((e) => e.issues.length > 0).map((e) => (
               <div key={e.id} style={{ marginBottom: 9 }}>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", marginBottom: 5 }}>{e.id} · {e.title}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -472,7 +479,8 @@ function MergedC({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }: {
               </div>
             ))}
           </div>
-        ))}
+            );
+          })}
       </div>
       <div style={{ marginTop: 8, fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)", cursor: "pointer" }}>+ milestone</div>
     </div>
@@ -507,17 +515,18 @@ function Seg({ options, value, onChange, tiny }: {
   );
 }
 
-// ── the shared per-agent editor (drill-in) ─────────────────────
-function AgentEditor({ a, agents = AGENTS, onPerm, onPreset, onFlow }: {
-  a: Agent; agents?: Agent[]; dense?: boolean;
+// ── the per-agent detail body (presets · capabilities · flow) ──
+// Header-less by design: the AgentsA roster row is the single header and the
+// repo/owns/issues meta now lives there too, so the row + this body read as one
+// cohesive card instead of a row plus a second headered card.
+function AgentEditor({ a, onPerm, onPreset, onFlow }: {
+  a: Agent;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
 }) {
   // Local state for snappy UI; the callbacks (when supplied) persist every change
-  // to the store so it survives a remount. Initialized from the agent prop so a
-  // reopened editor reflects the persisted values. Re-seed when the agent id
-  // changes (a different stream's editor reuses this component instance).
+  // to the store so it survives a remount. Re-seed when the agent id changes.
   const [perm, setPerm] = useState<Perm>(a.perm);
   const [preset, setPreset] = useState(a.preset);
   const [flow, setFlow] = useState<Flow>(a.flow);
@@ -533,30 +542,9 @@ function AgentEditor({ a, agents = AGENTS, onPerm, onPreset, onFlow }: {
     onPreset?.(a.id, p, next);
   };
   return (
-    <div className="editor">
-      {/* header */}
-      <div style={{ padding: "10px 12px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Avatar id={a.id} sz={20} agents={agents} />
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{a.name}</span>
-          <RoleChip role={a.role} />
-          <span style={{ flex: 1 }} />
-          <Dot s={a.status} />
-        </div>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 6, marginTop: 7,
-          fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)", flexWrap: "wrap",
-        }}>
-          <span style={{ color: "var(--info)" }}>⎇ {a.repo}</span>
-          <span style={{ color: "var(--fg-dim)" }}>·</span>
-          <span>owns</span>
-          {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
-          {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
-        </div>
-      </div>
-
+    <>
       {/* presets */}
-      <div style={{ padding: "9px 12px", borderBottom: "1px solid var(--border-soft)" }}>
+      <div style={{ padding: "9px 12px", borderTop: "1px solid var(--border-soft)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
           <span className="ulabel">preset</span>
           <span style={{ flex: 1 }} />
@@ -571,7 +559,7 @@ function AgentEditor({ a, agents = AGENTS, onPerm, onPreset, onFlow }: {
       </div>
 
       {/* capabilities */}
-      <div style={{ padding: "6px 12px 10px" }}>
+      <div style={{ padding: "6px 12px 10px", borderTop: "1px solid var(--border-soft)" }}>
         <div className="ulabel" style={{ padding: "5px 0 7px" }}>capabilities</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {CAPS.map((c) => (
@@ -611,11 +599,13 @@ function AgentEditor({ a, agents = AGENTS, onPerm, onPreset, onFlow }: {
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
-// VARIANT A — Roster rows w/ inline expand
+// VARIANT A — Roster rows; the row IS the single header and the detail body
+// (meta + presets + capabilities + flow) expands inside the SAME card, so an
+// open agent reads as one cohesive element rather than a row + a second card.
 function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
   agents?: Agent[];
   onPerm?: (streamId: string, perm: Perm) => void;
@@ -638,12 +628,15 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
         {agents.map((a) => {
           const on = open === a.id;
           return (
-            <div key={a.id}>
+            <div key={a.id} style={{
+              borderRadius: 6, overflow: "hidden",
+              background: "var(--bg-canvas)",
+              border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
+            }}>
+              {/* header row — the single header for the whole card */}
               <div onClick={() => setOpen(on ? null : a.id)} style={{
                 display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8,
-                alignItems: "center", padding: "7px 8px", borderRadius: 6, cursor: "pointer",
-                background: on ? "color-mix(in oklch, var(--accent), transparent 92%)" : "var(--bg-canvas)",
-                border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
+                alignItems: "center", padding: "7px 8px", cursor: "pointer",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                   <Dot s={a.status} />
@@ -669,9 +662,24 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
                   <span className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</span>
                 </div>
               </div>
-              {on && <div style={{ marginTop: 5, marginBottom: 2 }}>
-                <AgentEditor a={a} agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
-              </div>}
+
+              {on && (
+                <>
+                  {/* detail meta — moved out of the old editor header so the card has ONE header */}
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+                    padding: "7px 10px", borderTop: "1px solid var(--border-soft)",
+                    fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)",
+                  }}>
+                    <span style={{ color: "var(--info)" }}>⎇ {a.repo}</span>
+                    <span style={{ color: "var(--fg-dim)" }}>·</span>
+                    <span>owns</span>
+                    {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
+                    {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
+                  </div>
+                  <AgentEditor a={a} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+                </>
+              )}
             </div>
           );
         })}
