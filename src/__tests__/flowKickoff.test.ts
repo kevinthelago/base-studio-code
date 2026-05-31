@@ -34,10 +34,12 @@ describe("flowKickoffText", () => {
 
   it("confirm autonomy asks before non-trivial decisions", () => {
     expect(flowKickoffText(flow({ autonomy: "confirm" }), "api").autonomy).toMatch(/pause and ask the user to confirm/);
+    expect(flowKickoffText(flow({ autonomy: "confirm" }), "api").autonomy).toMatch(/bsc-wait/);
   });
 
   it("checkpoint autonomy pauses at stage/PR boundaries via bsc-checkpoint", () => {
     expect(flowKickoffText(flow({ autonomy: "checkpoint" }), "api").autonomy).toMatch(/bsc-checkpoint.*wait to be resumed/);
+    expect(flowKickoffText(flow({ autonomy: "checkpoint" }), "api").autonomy).toMatch(/bsc-wait/);
   });
 
   it("the trigger phrase varies the push sentence", () => {

@@ -10,8 +10,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { actuateWake } from "../../lib/coordinatorActuate";
 import {
-  ingestCoordLog, coordinationSummary, wakePromptFor, emptyCoordState,
-  type BlockedView, type Waiter, type CoordState,
+  ingestCoordLog, coordinationSummary, wakePromptFor, waitingWakePrompt, emptyCoordState,
+  type BlockedView, type Waiter, type CoordState, type WaitingSession,
 } from "../../lib/coordination";
 
 const POLL_MS = 3000;
@@ -58,8 +58,17 @@ export function CoordinatorInbox() {
     }
   }, [wakePane, state]);
 
+  const handleWakeWaiting = useCallback(async (ws: WaitingSession) => {
+    setWaking((cur) => new Set(cur).add(ws.session));
+    try {
+      await actuateWake(ws.session, waitingWakePrompt(ws), wakePane);
+    } finally {
+      setWaking((cur) => { const n = new Set(cur); n.delete(ws.session); return n; });
+    }
+  }, [wakePane]);
+
   const stalled = views.filter((v) => v.stalled).length;
-  const nothing = ready.length === 0 && views.length === 0;
+  const nothing = ready.length === 0 && views.length === 0 && state.waiting.length === 0;
 
   return (
     <section style={{ flex: 1, overflow: "auto", padding: "18px 22px", minWidth: 0 }}>
@@ -68,6 +77,7 @@ export function CoordinatorInbox() {
         <span className="hint">parked sessions · live from the coordination log (#199)</span>
         <div style={{ flex: 1 }} />
         {ready.length > 0 && <span className="tag green">{ready.length} ready</span>}
+        {state.waiting.length > 0 && <span className="tag" style={{ color: "var(--accent)" }}>{state.waiting.length} paused</span>}
         {views.length > 0 && <span className="tag">{views.length} blocked</span>}
         {stalled > 0 && <span className="tag" style={{ color: "var(--danger)" }}>{stalled} stalled</span>}
         <button
@@ -113,6 +123,35 @@ export function CoordinatorInbox() {
                   {waking.has(w.session) ? "waking…" : "Wake"}
                 </button>
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {state.waiting.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>
+            Paused — awaiting your confirmation
+          </div>
+          {state.waiting.map((ws) => (
+            <div key={ws.session} className="card" style={{ marginBottom: 12, borderColor: "var(--accent)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{ws.session}</h3>
+                <span className="tag" style={{ fontSize: 9.5, color: "var(--accent)" }}>● paused</span>
+                <div style={{ flex: 1 }} />
+                {ws.checkpoint && <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>↺ {ws.checkpoint}</span>}
+                <button
+                  className="btn primary"
+                  style={{ height: 24, padding: "0 12px", fontSize: 11 }}
+                  disabled={waking.has(ws.session)}
+                  onClick={() => handleWakeWaiting(ws)}
+                >
+                  {waking.has(ws.session) ? "resuming…" : "Resume"}
+                </button>
+              </div>
+              {ws.reason && (
+                <div style={{ marginTop: 6, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{ws.reason}</div>
+              )}
             </div>
           ))}
         </div>

@@ -4,7 +4,7 @@ import {
   emptyCoordState, refKey, parseRef, isSatisfied, isReady,
   registerWaiter, satisfy, fail, stalledWaiters,
   parseCoordLine, applyCoordEvent, ingestCoordLog,
-  wakePromptFor, planWakes, coordinationSummary,
+  wakePromptFor, planWakes, coordinationSummary, waitingWakePrompt,
   readinessAt, isFreshlyReady,
 } from "../lib/coordination";
 
@@ -324,5 +324,62 @@ describe("auto-wake recency gate", () => {
     expect(isFreshlyReady(w, s, 1_000_000 + 60_000, 15 * 60_000)).toBe(true);   // 1 min later
     expect(isFreshlyReady(w, s, 1_000_000 + 20 * 60_000, 15 * 60_000)).toBe(false); // 20 min later
     expect(isFreshlyReady(w, emptyCoordState(), 1_000_000, 15 * 60_000)).toBe(false); // never satisfied
+  });
+});
+
+describe("waiting sessions (#297 checkpoint/confirm pauses)", () => {
+  it("parseCoordLine reads a waiting line with reason + checkpoint", () => {
+    const ev = parseCoordLine("2026-05-31T00:00:00Z\tpane-1\twaiting\tneed your OK on the schema\t.msc/cp.md");
+    expect(ev).toEqual({ type: "waiting", session: "pane-1", reason: "need your OK on the schema", checkpoint: ".msc/cp.md", at: Date.parse("2026-05-31T00:00:00Z") });
+  });
+
+  it("parseCoordLine tolerates an empty reason", () => {
+    const ev = parseCoordLine("2026-05-31T00:00:00Z\tpane-1\twaiting\t\t");
+    expect(ev).toMatchObject({ type: "waiting", session: "pane-1", reason: "", checkpoint: undefined });
+  });
+
+  it("a waiting event parks the session (manual-wake only, not in ready)", () => {
+    const r = ingestCoordLog([
+      "2026-05-31T00:00:00Z\tpane-1\twaiting\tconfirm the API shape\t",
+    ]);
+    expect(r.ready).toEqual([]);                       // never auto-woken
+    expect(r.state.waiting.map((x) => x.session)).toEqual(["pane-1"]);
+    expect(r.state.waiting[0].reason).toBe("confirm the API shape");
+  });
+
+  it("a newer waiting replaces the prior one for the same session", () => {
+    const r = ingestCoordLog([
+      "2026-05-31T00:00:00Z\tp\twaiting\tfirst\t",
+      "2026-05-31T00:01:00Z\tp\twaiting\tsecond\t",
+    ]);
+    expect(r.state.waiting).toHaveLength(1);
+    expect(r.state.waiting[0].reason).toBe("second");
+  });
+
+  it("a woke event clears the waiting session", () => {
+    const r = ingestCoordLog([
+      "2026-05-31T00:00:00Z\tp\twaiting\thold\t",
+      "2026-05-31T00:02:00Z\tp\twoke\t",
+    ]);
+    expect(r.state.waiting).toEqual([]);
+  });
+
+  it("declaring a real dependency moves the session off the manual-wait list", () => {
+    const r = ingestCoordLog([
+      "2026-05-31T00:00:00Z\tp\twaiting\thold\t",
+      "2026-05-31T00:01:00Z\tp\tblocked\t#42\t",
+    ]);
+    expect(r.state.waiting).toEqual([]);                // now a latch waiter instead
+    expect(r.state.waiters.map((x) => x.session)).toEqual(["p"]);
+  });
+
+  it("waitingWakePrompt names the reason and the checkpoint", () => {
+    const p = waitingWakePrompt({ session: "p", reason: "confirm the schema", checkpoint: ".msc/cp.md", at: 1 });
+    expect(p).toMatch(/confirm the schema/);
+    expect(p).toMatch(/Resume from your checkpoint: \.msc\/cp\.md/);
+  });
+
+  it("waitingWakePrompt has a sensible empty-reason fallback", () => {
+    expect(waitingWakePrompt({ session: "p", reason: "", at: 1 })).toMatch(/you have been resumed/i);
   });
 });

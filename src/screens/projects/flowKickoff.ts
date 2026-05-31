@@ -35,11 +35,11 @@ export function flowKickoffText(flow: AgentFlow | undefined, branch: string): Fl
   switch (f.autonomy) {
     case "checkpoint":
       autonomy =
-        "Work autonomously between checkpoints, but pause at each stage or PR boundary: pipe a short status of what you did and the next step into bsc-checkpoint on stdin, then wait to be resumed before continuing. For underspecified details make the smallest reversible choice and record it via bsc-note; if genuinely blocked, pipe a one-line reason into bsc-blocked.";
+        "Work autonomously between checkpoints, but pause at each stage or PR boundary: pipe a short status of what you did and the next step into bsc-checkpoint on stdin, then pipe a one-line status into bsc-wait on stdin so you appear in the coordination inbox, and wait to be resumed before continuing. For underspecified details make the smallest reversible choice and record it via bsc-note; if genuinely blocked, pipe a one-line reason into bsc-blocked.";
       break;
     case "confirm":
       autonomy =
-        "Before any non-trivial or irreversible decision, pause and ask the user to confirm rather than proceeding on your own. For trivial, easily reversible choices, proceed and record them by piping a one-line note into bsc-note on stdin. If you are blocked, pipe a one-line reason into bsc-blocked.";
+        "Before any non-trivial or irreversible decision, pause and ask the user to confirm rather than proceeding on your own — pipe your one-line question into bsc-wait on stdin so it surfaces in the coordination inbox and the user can resume you. For trivial, easily reversible choices, proceed and record them by piping a one-line note into bsc-note on stdin. If you are blocked, pipe a one-line reason into bsc-blocked.";
       break;
     default: // continuous
       autonomy =
