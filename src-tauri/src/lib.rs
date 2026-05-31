@@ -2077,10 +2077,24 @@ authoritative channel; these tags are the fast path. Emit the header once, then 
 `agent_assign` per stream. List attributes (`owns`, `issues`, `depends_on`) are
 comma-separated; `depends_on` is comma-separated stream ids. An optional `profile`
 attribute carries an AgentProfile id that scopes the stream's session (commands +
-tools + write-paths) — generate one per agent or reuse an existing profile:
+tools + write-paths) — generate one per agent or reuse an existing profile.
+
+Each stream also carries an optional **flow** (#297) — how it runs and pushes —
+via four attributes, all defaulting if omitted:
+- `autonomy` = `continuous` (never pause; default) | `checkpoint` (pause at stage/PR
+  boundaries and wait) | `confirm` (ask before non-trivial decisions)
+- `push` = `auto-pr` (commit+push+open PR on green; default) | `push-confirm`
+  (commit+test, then wait for the user before pushing) | `commit-only` (commit, don't
+  push) | `none` (read-only; no commit/push/PR)
+- `trigger` = `per-issue` (default) | `per-stage` | `on-green` — when a push fires
+- `gate` = `hard` (default; the push/PR command prompts for approval) | `soft` (the
+  kickoff just instructs the agent to ask). `gate` only matters for `push-confirm`.
+Default = `continuous` + `auto-pr` + `per-issue` + `hard`. Set a tighter flow for an
+agent whose work you want to review before it lands (e.g. `push=push-confirm gate=hard`),
+or `push=none` for a pure reviewer/explorer.
 ```
 <fleet_plan recommended="4" reasoning="..." director="true" director_role="async integrator: review/merge PRs, resolve logged decisions, keep milestones current" />
-<agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" profile="auth-ui-dev" />
+<agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" profile="auth-ui-dev" autonomy="continuous" push="auto-pr" trigger="per-issue" gate="hard" />
 ```
 
 ## GitHub tools
