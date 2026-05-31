@@ -26,6 +26,7 @@ import {
   type SkippedItem, type FleetPlan, type AgentStream,
 } from "./planSections";
 import { FLOW_AUTONOMY, FLOW_PUSH, FLOW_TRIGGER, FLOW_GATE, resolveFlow, type AgentFlow } from "./agentFlow";
+import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
   background:          "#181a1f",
@@ -1667,30 +1668,61 @@ export function Planning({ visible }: { visible: boolean }) {
         }
       }
 
-      // ── 4. Issues — one tracking issue per phase in EVERY repo, each pinned
-      //      to that repo's milestone and added to the project board. ─────────
-      for (const fullName of repos) {
+      // ── 4. Issues — one GitHub issue per granular PlanIssue (#311), pinned to its
+      //      milestone and added to the board, with its labels. Falls back to one
+      //      tracking issue per phase when the planner defined none. Idempotent. ──
+      const planIssues = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
+      const phaseNames = phases.map(p => p.name);
+      for (const [repoIdx, fullName] of repos.entries()) {
         // Check what already exists BEFORE creating so a re-sync never duplicates.
-        // Fail CLOSED: if we can't fetch the repo's issues, skip creating here
-        // rather than risk blindly duplicating them.
+        // Fail CLOSED: if we can't fetch the repo's issues, skip creating here.
         let existingTitles: string[];
         try {
-          const existing = await rest<{ title: string }[]>(
-            `repos/${fullName}/issues?state=all&per_page=100`,
-          );
+          const existing = await rest<{ title: string }[]>(`repos/${fullName}/issues?state=all&per_page=100`);
           existingTitles = existing.map(i => i.title);
         } catch {
-          for (let pi = 0; pi < phases.length; pi++) {
-            upd(`issue:${fullName}:${pi}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
+          if (planIssues.length) {
+            for (const iss of planIssues) upd(`issue:${fullName}:${iss.ref}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
+          } else {
+            for (let pi = 0; pi < phases.length; pi++) upd(`issue:${fullName}:${pi}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
           }
           continue;
         }
+
+        if (planIssues.length) {
+          // Issues for THIS repo: its declared `repo`, or the default (first) repo.
+          const mine = planIssues.filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0);
+          // Ensure every label this repo uses exists (422 if present — harmless).
+          for (const name of [...new Set(mine.flatMap(iss => iss.labels))]) {
+            await post(`repos/${fullName}/labels`, { name, color: "0e8a16" }).catch(() => {});
+          }
+          for (const iss of mine) {
+            const id = `issue:${fullName}:${iss.ref}`;
+            if (existingTitles.includes(iss.title)) { upd(id, { status: "exists", detail: "already exists" }); continue; }
+            upd(id, { status: "running" });
+            try {
+              const body: Record<string, unknown> = { title: iss.title, body: renderIssueBody(iss) };
+              const phIdx = resolvePhaseIndex(iss.phase, phaseNames);
+              const msNum = phIdx !== undefined ? msNumbers[fullName]?.[phIdx] : undefined;
+              if (msNum !== undefined) body.milestone = msNum;
+              if (iss.labels.length) body.labels = iss.labels;
+              const issue = await post<{ number: number; node_id: string; html_url: string }>(`repos/${fullName}/issues`, body);
+              if (projectId && issue.node_id) {
+                await gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
+              }
+              upd(id, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
+            } catch (e) {
+              upd(id, { status: "error", detail: String(e) });
+            }
+          }
+          continue;
+        }
+
+        // Legacy fallback: one tracking issue per phase.
         for (let pi = 0; pi < phases.length; pi++) {
           const ph    = phases[pi];
           const id    = `issue:${fullName}:${pi}`;
           const title = `[${ph.name}] ${projectTitle}`;
-          // Match on the stable `[phase]` prefix — the project-title suffix can
-          // change between syncs and would otherwise cause a duplicate.
           const marker = `[${ph.name}]`;
           if (existingTitles.some(t => t.startsWith(marker))) {
             upd(id, { status: "exists", detail: "already exists" });
@@ -1700,19 +1732,18 @@ export function Planning({ visible }: { visible: boolean }) {
           try {
             const body: Record<string, unknown> = {
               title,
-              body: `## ${ph.name}\n\n${ph.description ?? ""}\n\n---\n_Auto-generated by base-studio-code planner._`,
+              body: `## ${ph.name}
+
+${ph.description ?? ""}
+
+---
+_Auto-generated by base-studio-code planner._`,
             };
             const msNum = msNumbers[fullName]?.[pi];
             if (msNum !== undefined) body.milestone = msNum;
-            const issue = await post<{ number: number; node_id: string; html_url: string }>(
-              `repos/${fullName}/issues`, body,
-            );
-            // Add the issue to the project board so it shows up as a tracked item.
+            const issue = await post<{ number: number; node_id: string; html_url: string }>(`repos/${fullName}/issues`, body);
             if (projectId && issue.node_id) {
-              await gql(
-                `mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`,
-                { p: projectId, c: issue.node_id },
-              ).catch(() => { /* already on board — ignore */ });
+              await gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
             }
             upd(id, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
           } catch (e) {
