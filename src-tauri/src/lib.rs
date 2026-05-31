@@ -1172,7 +1172,7 @@ const BSC_AUDIT_RC: &str = concat!(
 /// realpath so it's portable; `return 2` (not `exit`) so it never kills a shell that
 /// sources it. Covers the AI's file tools only — Bash needs OS-level sandboxing.
 const BSC_CONFINE_RC: &str = concat!(
-    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; case "$fp" in ..|../*|*/../*|*/..) echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
+    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; case "$fp" in ..|../*|*/../*|*/..) echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
     "\n",
 );
 
@@ -1531,6 +1531,18 @@ async fn setup_kb_workspace() -> Result<String, String> {
 
 const PLANNING_NEW_INTRO: &str = r#"# base-studio-code · New Project Planner
 
+> ⚠️ **READ FIRST — who this file is for.** This is the project **planner's**
+> instruction set. It lives at the planning-workspace root, so it is also loaded as
+> ancestor context by every session launched in a child repo. **It applies ONLY to
+> the dedicated planning session** — the one started from the Planning screen, with
+> no assigned issue or task.
+>
+> **If you are any other session — a triage session, a fleet/worker session, or any
+> session launched to execute a specific issue, task, or kickoff — STOP. Ignore this
+> entire file. Follow your own repository's `CLAUDE.md` and your kickoff / triage
+> prompt instead. Do NOT plan the project, do NOT write or edit plan files, do NOT
+> run the planning workflow. Just do the work you were given.**
+
 You are planning a brand-new software project. Your job is to understand it
 deeply, create the GitHub repositories it needs, and produce a plan thorough
 enough that a Claude coding session can start implementing without asking
@@ -1630,6 +1642,18 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
 "#;
 
 const PLANNING_EXISTING_INTRO: &str = r#"# base-studio-code · Project Planner
+
+> ⚠️ **READ FIRST — who this file is for.** This is the project **planner's**
+> instruction set. It lives at the planning-workspace root, so it is also loaded as
+> ancestor context by every session launched in a child repo. **It applies ONLY to
+> the dedicated planning session** — the one started from the Planning screen, with
+> no assigned issue or task.
+>
+> **If you are any other session — a triage session, a fleet/worker session, or any
+> session launched to execute a specific issue, task, or kickoff — STOP. Ignore this
+> entire file. Follow your own repository's `CLAUDE.md` and your kickoff / triage
+> prompt instead. Do NOT plan the project, do NOT write or edit plan files, do NOT
+> run the planning workflow. Just do the work you were given.**
 
 You are planning an existing project. Your job is to read the codebase,
 understand what has been built, decide what is next, and produce a plan thorough
