@@ -38,6 +38,8 @@ export interface AgentStream {
   dependsOn: string[];
   /** Relpath of the kickoff script the fleet launch seeds this session with. */
   prompt?: string;
+  /** Id of the AgentProfile this stream's session launches under (#289). */
+  profile?: string;
 }
 
 /** Optional async-integrator session that coordinates the fleet from the project root. */

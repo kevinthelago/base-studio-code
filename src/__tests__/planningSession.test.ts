@@ -227,3 +227,12 @@ describe("stripFleetPlan", () => {
     expect(stripFleetPlan('a <fleet_plan recommended="2" /> b')).toBe("a  b");
   });
 });
+
+describe("parseAgentAssigns — profile (#289)", () => {
+  it("captures a profile attribute, omitting it when absent", () => {
+    const tag = '<agent_assign id="be" repo="o/api" owns="src/**" issues="#1" profile="backend-dev" />';
+    expect(parseAgentAssigns(tag)[0]).toMatchObject({ id: "be", repo: "o/api", profile: "backend-dev" });
+    const noProf = '<agent_assign id="fe" repo="o/web" owns="ui/**" />';
+    expect(parseAgentAssigns(noProf)[0].profile).toBeUndefined();
+  });
+});
