@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
@@ -15,6 +15,7 @@ import { resolveInitCmd } from "../../../lib/resumeClaude";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
+import { interpretGithubReadiness, type GithubProbe } from "../../../lib/githubReadiness";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -53,6 +54,8 @@ interface TerminalViewProps {
 
 export function TerminalView({ paneId, visible = true, focused, initialCwd, initCmd, onCwdChange, onStatusChange, onFocus }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // GitHub-readiness warning for this pane (#297); null = ready or not probed.
+  const [ghWarn, setGhWarn] = useState<string | null>(null);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
@@ -371,6 +374,18 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           allowToolRules, denyToolRules,
         }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         if (destroyed) return;
+        // GitHub-readiness probe (#297): fleet/triage agents are told to push and
+        // open PRs; warn in-pane up front if the spawned shell can't (gh/git off
+        // PATH or gh unauthenticated) rather than the agent hitting it mid-task.
+        try {
+          const probe = await invoke<GithubProbe>("github_readiness", { cwd: initialCwd, env: undefined });
+          const readiness = interpretGithubReadiness(probe);
+          if (!destroyed) setGhWarn(readiness.ok ? null : readiness.message);
+          if (!readiness.ok) log.warn(`console[${paneId}] github not ready (${readiness.status}): ${readiness.message}`);
+        } catch (e) {
+          log.error(`console[${paneId}] github_readiness probe failed: ${e}`);
+        }
+        if (destroyed) return;
       }
 
       // Resolve the effective init_cmd: an explicit `initCmd` prop wins,
@@ -522,13 +537,35 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
   return (
     <div
-      ref={containerRef}
       style={{
-        flex: 1, minHeight: 0, overflow: "hidden",
+        flex: 1, minHeight: 0,
         background: TERM_THEME.background as string,
         display: visible ? "flex" : "none",
-        padding: "6px 4px",
+        flexDirection: "column",
       }}
-    />
+    >
+      {ghWarn && (
+        <div
+          role="alert"
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "6px 10px", fontSize: 12, lineHeight: 1.4,
+            color: "#e5c07b", background: "#3a2f1a", borderBottom: "1px solid #5a4a28",
+          }}
+        >
+          <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>⚠ GitHub</span>
+          <span style={{ flex: 1 }}>{ghWarn}</span>
+          <button
+            onClick={() => setGhWarn(null)}
+            style={{ background: "transparent", border: "none", color: "#e5c07b", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}
+            aria-label="Dismiss GitHub warning"
+          >×</button>
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px" }}
+      />
+    </div>
   );
 }
