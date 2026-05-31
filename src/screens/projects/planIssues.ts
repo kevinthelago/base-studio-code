@@ -132,6 +132,19 @@ export function validateIssues(issues: PlanIssue[], phaseNames: string[] = []): 
 }
 
 /**
+ * Resolve a {@link PlanIssue.phase} (1-based number or a phase name) to a 0-based
+ * index into `phaseNames` — the milestone the issue pins to at publish. Returns
+ * undefined for an absent or unmatched phase (the issue lands unmilestoned). Name
+ * matching is case-insensitive, mirroring {@link validateIssues}.
+ */
+export function resolvePhaseIndex(phase: number | string | undefined, phaseNames: string[]): number | undefined {
+  if (phase === undefined) return undefined;
+  if (typeof phase === "number") return phase >= 1 && phase <= phaseNames.length ? phase - 1 : undefined;
+  const idx = phaseNames.findIndex((n) => n === phase || n.toLowerCase() === String(phase).toLowerCase());
+  return idx >= 0 ? idx : undefined;
+}
+
+/**
  * Render a {@link PlanIssue} as a GitHub issue body — the agent-facing contract:
  * the acceptance checklist, the owned paths, and the dependency list, so whoever
  * picks it up has everything without re-deriving it from the plan.
