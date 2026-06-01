@@ -8,6 +8,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
+import { injectPrompt } from "./paneInject";
 import {
   rollupChecks, isTerminalCi, ciWorkerPrompt, ciDirectorMergePrompt,
   type CheckRun, type CiState,
@@ -55,13 +56,13 @@ export function useCiWatcher(): void {
 
           inFlight.current.add(prKey);
           const writes: Promise<unknown>[] = [
-            invoke("pty_write", { paneId, data: ciWorkerPrompt(pr.number, state, failing) + "\r" }).catch(() => {}),
+            injectPrompt(paneId, ciWorkerPrompt(pr.number, state, failing)).catch(() => {}),
           ];
           if (state === "passed") {
             // The director for this worker is pane 0 of the same tab (t<n>p0).
             const directorPane = paneId.slice(0, paneId.indexOf("p")) + "p0";
             if (useAppStore.getState().paneDirectorDrive[directorPane]) {
-              writes.push(invoke("pty_write", { paneId: directorPane, data: ciDirectorMergePrompt(pr.number, pr.head.ref) + "\r" }).catch(() => {}));
+              writes.push(injectPrompt(directorPane, ciDirectorMergePrompt(pr.number, pr.head.ref)).catch(() => {}));
             }
           }
           void Promise.all(writes).finally(() => inFlight.current.delete(prKey));
