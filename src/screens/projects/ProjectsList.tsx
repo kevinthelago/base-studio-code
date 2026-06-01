@@ -252,11 +252,18 @@ export function ProjectsList() {
     ? visibleProjects.find(p => p.title.toLowerCase() === titleTrimmed.toLowerCase()) ?? null
     : null;
 
-  function handleStartPlanning() {
+  async function handleStartPlanning() {
     if (!titleTrimmed) return;
-    // New project starts as a DRAFT (#379) with a UNIQUE key so a re-used title never
-    // inherits a previous project's stale files. The key is the stable planning dir id.
-    const draftKey = `${sanitizeProjectKey(titleTrimmed)}-${Date.now().toString(36)}`;
+    // New project starts as a DRAFT (#379). The planning-dir id is the sanitized title — a
+    // clean, stable folder name (no random suffix), so the folder and the project resolve the
+    // same regardless of how it is later reopened or published. Re-using a title means
+    // replacing an earlier *unpublished* draft (the start form blocks names already on GitHub —
+    // see titleConflict), so clear that draft's folder FIRST for a stale-free start. The delete
+    // is AWAITED so the planning launch's setup_workspaces can't race it and wipe the fresh dir.
+    const draftKey = sanitizeProjectKey(titleTrimmed);
+    removeDraftProject(draftKey);
+    deleteLocalProject([draftKey]);
+    await invoke("delete_project_dir", { projectKey: draftKey }).catch(() => {});
     setPlanningTitle(titleTrimmed);
     setPlanningContext(pitch.trim(), "");
     setActiveProjectMeta(null, "", "", 0);
