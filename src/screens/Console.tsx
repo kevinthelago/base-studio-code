@@ -17,6 +17,7 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import { useCoordinator } from "../lib/useCoordinator";
 import { usePipelineConductor } from "../lib/usePipelineConductor";
 import { useDirectorPump } from "../lib/useDirectorPump";
+import { useCiWatcher } from "../lib/useCiWatcher";
 
 function resolvePaneName(
   tabIdx: number,
@@ -189,6 +190,10 @@ export function ConsoleScreen() {
   // #366: the director pump — re-prompts each launched director pane per its drive mode
   // (idle-gated), so the async-integrator session acts on worker activity instead of idling.
   useDirectorPump(paneStatusesRef);
+
+  // #373: the CI watcher — polls each worker PR's checks and, on completion, tells the
+  // worker to continue/fix and nudges the director to merge on green.
+  useCiWatcher();
 
   const handleStatusChange = useCallback((tabIdx: number, paneIdx: number, status: "run" | "idle") => {
     const pid = paneId(tabIdx, paneIdx);
