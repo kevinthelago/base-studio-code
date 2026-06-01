@@ -12,6 +12,7 @@ import type { Section } from "./ghStructure";
 import { resolvePhaseIndex } from "./planIssues";
 import { resolveFlow } from "./agentFlow";
 import { type DirectorDrive, resolveDirectorDrive } from "./directorDrive";
+import type { IntegrationStrategy } from "./integrationStrategy";
 
 export type Posture = "allow" | "ask" | "deny";
 export type Perm = Record<string, Posture>;
@@ -31,6 +32,8 @@ export interface Agent {
   preset: string;
   perm: Perm;
   flow: Flow;
+  /** Per-stream integration-strategy override (#378); undefined ⇒ inherits the fleet default. */
+  strategy?: IntegrationStrategy;
   ctx: number;
 }
 
@@ -68,6 +71,8 @@ export interface ProjectPaneData {
   context: ContextFile[];
   /** The async-integrator director config (#366), surfaced for the planning UI. */
   director: { enabled: boolean; role?: string; drive: DirectorDrive };
+  /** Project-default integration strategy (#378); undefined ⇒ DEFAULT_STRATEGY. */
+  fleetStrategy?: IntegrationStrategy;
 }
 
 export interface BuildProjectPaneInput {
@@ -143,6 +148,7 @@ function buildAgents(input: BuildProjectPaneInput): Agent[] {
       preset: s.preset ?? (profile ? profile.name : "Custom"),
       perm: s.perm ? { ...s.perm } : derivePerm(profile, flow.push),
       flow: { autonomy: flow.autonomy, push: mapPush(flow.push), gate: flow.gate },
+      strategy: s.strategy,
       ctx: s.owns.length,
     };
   });
@@ -273,5 +279,6 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
       role: input.fleet?.director.role,
       drive: resolveDirectorDrive(input.fleet?.director.drive),
     },
+    fleetStrategy: input.fleet?.strategy,
   };
 }
