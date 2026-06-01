@@ -207,6 +207,9 @@ interface AppStore {
   setAgentProfiles: (profiles: AgentProfile[]) => void;
   updateAgentProfile: (id: string, patch: Partial<AgentProfile>) => void;
   paneProfiles: Record<string, string>;
+  // Worker write boundary: the stream's owned globs, fed to the role gate as
+  // writeGlobs so a worker auto-approves edits within its lane (bsc-confine bounds the repo).
+  paneRoleGlobs: Record<string, string[]>;
   /** Per-agent flow (#297) for each pane, seeded at fleet launch from the stream. */
   paneFlows: Record<string, AgentFlow>;
   setPaneProfile: (paneId: string, profileId: string | null) => void;
@@ -628,6 +631,7 @@ export const useAppStore = create<AppStore>()(
           agentProfiles: s.agentProfiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
         })),
       paneProfiles: {},
+      paneRoleGlobs: {},
       paneFlows: {},
       setPaneProfile: (paneId, profileId) =>
         set((s) => {
@@ -1157,6 +1161,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneNames             = { ...s.paneNames };
           const newPaneRoles             = { ...s.paneRoles };
           const newPaneProfiles             = { ...s.paneProfiles };
+          const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
           const newPaneFlows                = { ...s.paneFlows };
 
           const safeKey = sanitizeProjectKey(projectKey);
@@ -1194,6 +1199,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneExtensions[key];
               delete newPaneRoles[key];
               delete newPaneProfiles[key];
+              delete newPaneRoleGlobs[key];
               delete newPaneFlows[key];
               if (i < count) {
                 const sess = chunk[i];
@@ -1228,6 +1234,9 @@ export const useAppStore = create<AppStore>()(
                 newPaneExtensions[key] = fleetExts;
                 newPaneRoles[key] = sess === null ? "director" : "worker";
                 if (sess && sess.profile) newPaneProfiles[key] = sess.profile;
+                // The worker's owned paths become its role write boundary so edits in
+                // its lane auto-approve (dir/ -> dir/** so the subtree matches).
+                if (sess && sess.owns.length) newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
                 if (sess && sess.flow) newPaneFlows[key] = sess.flow;
                 delete newDisabledPanes[key];
               } else {
@@ -1261,6 +1270,7 @@ export const useAppStore = create<AppStore>()(
             paneExtensions: newPaneExtensions,
             paneRoles: newPaneRoles,
             paneProfiles: newPaneProfiles,
+            paneRoleGlobs: newPaneRoleGlobs,
             paneFlows: newPaneFlows,
             disabledPanes: newDisabledPanes,
             paneNames: newPaneNames,
@@ -1531,6 +1541,7 @@ export const useAppStore = create<AppStore>()(
         tunnelRelayUrl:  s.tunnelRelayUrl,
         agentProfiles:   s.agentProfiles,
         paneProfiles:    s.paneProfiles,
+        paneRoleGlobs:   s.paneRoleGlobs,
         paneFlows:       s.paneFlows,
         kbBlocks:        s.kbBlocks,
         claudeApiKey:    s.claudeApiKey,
