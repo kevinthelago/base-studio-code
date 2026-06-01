@@ -1348,7 +1348,7 @@ bsc-answer() { tgt="$1"; a="$(cat | tr '\t\n' '  ')"; __bsc_coord answer "$tgt" 
 /// otherwise it returns a `block` decision that pushes the worker to keep going or defer
 /// a real question to the director via `bsc-ask` -- never to sit waiting on the user.
 const BSC_DEFER_RC: &str = concat!(
-    r#"bsc-defer() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":"Do not stop to ask the user for direction. If your owned issues are complete and your PR is open, you may stop. Otherwise keep working, and for any decision you cannot make yourself pipe a one-line question into bsc-ask so the director answers and resumes you. Never wait on the user."}'; }"#,
+    r#"bsc-defer() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":"Do not stop. Drive every owned issue to DONE and onto develop yourself: implement it, run the full local gate, then under the default self-merge policy fetch and rebase onto develop, re-run the gate, push develop, and pipe the issue into bsc-landed -- then immediately pick up your next owned issue. Keep going until EVERY owned issue is integrated into develop with the gate green and nothing remains; do not wait on the user, on CI, or on the director to merge for you. For a decision you genuinely cannot make yourself, pipe a one-line question into bsc-ask so the director answers and resumes you."}'; }"#,
     "\n",
 );
 
@@ -2090,7 +2090,7 @@ files and rarely need a human.
 **How agents run** (so you design ids + kickoffs right): at launch the app gives each
 worker its own **git worktree** of its repo, checked out to a **branch named after the
 stream `id`** — so make ids lowercase-hyphen slugs, since they become branch names.
-Workers commit on their branch and open PRs; the director merges them. Because each
+Workers commit on their branch and, under the default self-merge strategy, integrate to develop themselves (rebase + push develop); the director only watches develop CI and flags breakage. (Under the pr-ci strategy workers open PRs and the director merges them.) Because each
 worker has its own worktree, several streams can share one repo without touching the
 same working tree. (The worktree also carries the plan: `CLAUDE.local.md` is copied in.)
 
@@ -2104,7 +2104,7 @@ session run with as little human input as possible. Every worker kickoff must:
 - State the ownership boundary: "you own <globs>; do not modify files outside them —
   another stream owns them; coordinate through the plan, not by editing their files."
 - State that it runs in its **own git worktree on a branch named after the stream**:
-  commit there and open a PR for the director to merge; never switch branches or edit
+  commit there and integrate per the fleet strategy — self-merge (default): rebase onto develop and push develop yourself, do NOT open a PR; pr-ci: open a PR for the director to merge — never switch branches or edit
   another agent's worktree. (The app creates the worktree + branch at launch.)
 - List the issues the stream owns and this phase's in-scope work for it.
 - Carry the **autonomy rule**: *Do not stop to ask. When something is underspecified,
@@ -2113,15 +2113,14 @@ session run with as little human input as possible. Every worker kickoff must:
   `echo "used cursor pagination for /items per the api section" | bsc-note`). Only if
   you are genuinely blocked and cannot proceed, pipe a one-line reason into
   `bsc-blocked`. Verify against the repo's tests and CI rather than asking whether
-  your work is correct.*
+  your work is correct. Keep working through every owned issue, self-merging each to develop; do not end your turn while any owned issue remains unintegrated.*
 - Carry the **checkpoint rule** (so a relaunched session resumes where it left off):
   *When you pause or finish a work session, pipe a short "where I left off + the next
   step" into `bsc-checkpoint` on stdin.* The live conversation usually resumes too
   (each agent has its own worktree/cwd), but the checkpoint is the reliable carry.
 
 The **director kickoff** instead tells it to watch each agent's branch/PR, the open
-issues, and each repo's `DECISIONS.md`; merge the agents' branches via PRs (resolving
-conflicts); resolve or escalate the cross-stream decisions workers log; and keep
+issues, and each repo's `DECISIONS.md`; under the default self-merge strategy the director only watches develop's CI and, on red, reverts the breaking commit and pings the owning worker to fix-forward (it does NOT merge or assign work); under pr-ci it merges the agents' green branches via PRs (resolving conflicts); resolve or escalate the cross-stream decisions workers log; and keep
 milestones/the board current — never writing feature code itself.
 
 ## The discovery checklist — a quick orientation, not the main event
@@ -2811,7 +2810,7 @@ fn worktree_slug(s: &str) -> String {
 const FLEET_PROTOCOL_MD: &str = r#"
 ## Fleet coordination protocol (auto-added — do not edit)
 
-You are one of several parallel sessions building this project. Never stop and ask the user a question about what to do with your work — not for direction, not for whether your work is done, and not for whether to open a PR. Follow your push instructions; the director reviews and merges your PRs.
+You are one of several parallel sessions building this project. Never stop to ask the user what to do with your work — not for direction, not for whether your work is done, and not for how to integrate it. Under the default self-merge policy you integrate your own work to develop (full gate -> rebase onto develop -> re-gate -> push) and keep going through every owned issue; you do not open PRs and the director does not merge for you. Follow your push instruction.
 
 When you genuinely need a decision you cannot make yourself, defer to the director, not the user:
 
@@ -2844,7 +2843,7 @@ standing rules you MUST act on, not merely acknowledge:
   "[coordinator] develop CI is RED ..." message, identify the breaking commit (git log
   origin/develop), revert it to restore develop to green, then ping the owning worker via
   bsc-answer <session> (match the commit's changed paths to a stream's owned globs in
-  CLAUDE.local.md) with a one-line fix-forward instruction.
+  CLAUDE.local.md) with a one-line fix-forward instruction. You do not assign or direct work and you do not merge -- workers self-integrate; you only answer bsc-ask questions and flag develop breakage.
 - INTEGRATOR MODE (pr-ci / manual fleets). Workers open PRs (pr-ci) or commit without pushing
   (manual). Review and merge each green PR into develop (e.g. gh pr merge <n> --squash
   --delete-branch), then keep the milestones/board current.
