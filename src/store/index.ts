@@ -1404,15 +1404,19 @@ export const useAppStore = create<AppStore>()(
           const profiles = [...s.agentProfiles];
           const byId = new Set(profiles.map((pr) => pr.id));
           const streams = fleet.streams.map((stream) => {
-            if (stream.profile) return stream;
+            // Skip only if the stream already points at a profile that EXISTS. A
+            // dangling reference (the planner assigned an id we never created) is
+            // materialized here, keeping the assigned id so the reference stays stable.
+            if (stream.profile && byId.has(stream.profile)) return stream;
             const commands = resolveAllowedCommands(
               s.allowedCommands,
               s.projectAllowedCommands[projectId],
               s.repoAllowedCommands[repoPromptKey(projectId, stream.repo)],
             );
-            const prof = generateAgentProfile(stream, "worker", commands);
-            if (!byId.has(prof.id)) { profiles.push(prof); byId.add(prof.id); }
-            return { ...stream, profile: prof.id };
+            const gen = generateAgentProfile(stream, "worker", commands);
+            const id = stream.profile || gen.id;
+            if (!byId.has(id)) { profiles.push({ ...gen, id }); byId.add(id); }
+            return { ...stream, profile: id };
           });
           return { agentProfiles: profiles, planFleet: { ...s.planFleet, [projectId]: { ...fleet, streams } } };
         }),
