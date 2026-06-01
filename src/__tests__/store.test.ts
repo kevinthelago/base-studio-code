@@ -1049,6 +1049,12 @@ describe("agent fleet store", () => {
     expect(st.paneCwds["t3p2"]).toBe("/base/projects/proj-key/.worktrees/api--api");
     expect(st.paneStartupPromptText["t3p2"]).toContain("API");
 
+    // worker write boundary (#354): the stream's owned globs feed the role gate so
+    // edits in its lane auto-approve; the director (code:none) gets none.
+    expect(st.paneRoleGlobs["t3p1"]).toEqual(["src/auth/**"]);
+    expect(st.paneRoleGlobs["t3p0"]).toBeUndefined();
+    expect(st.paneRoleGlobs["t3p2"]).toBeUndefined();
+
     // per-agent checkpoint docs, keyed by stream id (director gets its own)
     expect(st.paneCheckpointDocs["t3p0"]).toBe("projects/proj-key/prompts/director-checkpoint.md");
     expect(st.paneCheckpointDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-checkpoint.md");
@@ -1058,6 +1064,19 @@ describe("agent fleet store", () => {
 
     // empty grid cell starts disabled
     expect(st.disabledPanes["t3p3"]).toBe(true);
+  });
+
+  it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const dirFleet: FleetPlan = {
+      recommended: 1, reasoning: "", director: { enabled: false },
+      streams: [{ id: "w", name: "W", repo: "o/r", owns: ["src/x/", "src/y.ts"], issues: [], dependsOn: [] }],
+    };
+    useAppStore.getState().fleetStartProject("DirN", dirFleet, "k");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("DirN");
+    // trailing-slash dir -> subtree glob; a file path is left as-is
+    expect(st.paneRoleGlobs[`t${idx}p0`]).toEqual(["src/x/**", "src/y.ts"]);
   });
 
   it("isolates co-located agents in separate worktrees with distinct checkpoint docs", () => {
