@@ -7,6 +7,7 @@ import {
   wakePromptFor, planWakes, coordinationSummary,
   readinessAt, isFreshlyReady,
   detectDeadlocks, hasDeadlock, defaultProducerOf, buildProducerOf,
+  producesFromPaneStreams,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -474,5 +475,48 @@ describe("buildProducerOf — plan-derived resolver (#199 AC#7)", () => {
     ]);
     expect(detectDeadlocks(s, producerOf)).toHaveLength(1);
     expect(detectDeadlocks(s)).toEqual([]);  // default resolver sees no edge -> no false alarm
+  });
+});
+
+describe("producesFromPaneStreams — pane-id bridge for the resolver (#199 AC#7)", () => {
+  it("keys producers by PANE id so resolved edges land on parked panes", () => {
+    // The store map: pane t0p1 ran the `api` stream, t0p2 ran `ui`. Waiters in the
+    // coord log are pane ids, so the producer's `session` must be the pane id too.
+    const paneStreams = {
+      t0p1: { id: "api", name: "API", repo: "o/r", owns: ["src/lib/**"], issues: ["#12"], dependsOn: [] },
+      t0p2: { id: "ui",  name: "UI",  repo: "o/r", owns: ["src/ui/**"],  issues: ["#20"], dependsOn: [] },
+    };
+    const p = buildProducerOf(producesFromPaneStreams(paneStreams));
+    expect(p({ kind: "file", path: "src/lib/x.ts" })).toBe("t0p1");
+    expect(p({ kind: "issue", number: 12 })).toBe("t0p1");
+    expect(p({ kind: "issue", number: 20 })).toBe("t0p2");
+    expect(p({ kind: "file", path: "src/ui/Form.tsx" })).toBe("t0p2");
+  });
+
+  it("detects a wait-for ring between two panes via their owned globs/issues", () => {
+    // t0p1 owns src/db/** and waits on a file t0p2 owns; t0p2 waits on an issue t0p1 owns.
+    const s = {
+      latches: {},
+      waiters: [
+        { session: "t0p1", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
+        { session: "t0p2", deps: [{ kind: "issue" as const, number: 7 }], registeredAt: 0 },
+      ],
+    };
+    const paneStreams = {
+      t0p1: { id: "db",  name: "DB",  repo: "o/r", owns: ["src/db/**"],  issues: ["#7"], dependsOn: [] },
+      t0p2: { id: "api", name: "API", repo: "o/r", owns: ["src/api/**"], issues: [],     dependsOn: [] },
+    };
+    const producerOf = buildProducerOf(producesFromPaneStreams(paneStreams));
+    const cycles = detectDeadlocks(s, producerOf);
+    expect(cycles).toHaveLength(1);
+    expect([...cycles[0].cycle].sort()).toEqual(["t0p1", "t0p2"]);
+  });
+
+  it("is empty for an empty map (no fleet launched -> falls back to default resolver)", () => {
+    expect(producesFromPaneStreams({})).toEqual([]);
+    // An empty producer list resolves nothing but session: refs.
+    const p = buildProducerOf(producesFromPaneStreams({}));
+    expect(p({ kind: "contract", name: "X" })).toBeUndefined();
+    expect(p({ kind: "session", id: "t0p3" })).toBe("t0p3");
   });
 });

@@ -447,6 +447,26 @@ export function buildProducerOf(producers: SessionProduces[]): ProducerOf {
   };
 }
 
+/**
+ * Project a `paneId -> launched-stream` map (the store's `fleetPaneStreams`) into the
+ * {@link SessionProduces} list {@link buildProducerOf} consumes. The producing `session`
+ * is the PANE id — the same id space waiters register under (BSC_AUDIT_PANE) — so the
+ * resolved edges land on real parked panes, not on stream slugs. Each stream's `owns`
+ * and `issues` (and any future `contracts`) become its produced refs. Structural typing:
+ * an `AgentStream` satisfies this shape, so the store passes its fleet map straight in.
+ * Pure. See `buildProducerOf(producesFromPaneStreams(map))` for the full resolver.
+ */
+export function producesFromPaneStreams(
+  paneStreams: Record<string, { owns?: string[]; issues?: (string | number)[]; contracts?: string[] }>,
+): SessionProduces[] {
+  return Object.entries(paneStreams).map(([session, s]) => ({
+    session,
+    owns: s.owns,
+    issues: s.issues,
+    contracts: s.contracts,
+  }));
+}
+
 /** A detected wait-for cycle: the parked sessions that mutually block, in ring order.
  *  A single-element cycle is a session waiting (transitively) on its own output. */
 export interface Deadlock {
