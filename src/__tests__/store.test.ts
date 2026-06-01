@@ -252,6 +252,41 @@ describe("deleteLocalProject", () => {
   });
 });
 
+// ── Project key alias ───────────────────────────────────────
+
+describe("projectKeyAlias", () => {
+  it("setActiveProjectMeta binds the GitHub node id to the title key (first-write-wins)", () => {
+    useAppStore.setState({ projectKeyAlias: {} });
+    useAppStore.getState().setActiveProjectMeta("PVT_n1", "studio-code", "o/r", 16, ["o/r"]);
+    expect(useAppStore.getState().projectKeyAlias["PVT_n1"]).toBe("studio-code");
+    // A later sighting under a renamed title must NOT clobber the working alias.
+    useAppStore.getState().setActiveProjectMeta("PVT_n1", "Studio Code Redux", "o/r", 16, ["o/r"]);
+    expect(useAppStore.getState().projectKeyAlias["PVT_n1"]).toBe("studio-code");
+  });
+
+  it("does not record an alias when there is no node id (unpublished draft)", () => {
+    useAppStore.setState({ projectKeyAlias: {} });
+    useAppStore.getState().setActiveProjectMeta(null, "", "", 0);
+    expect(useAppStore.getState().projectKeyAlias).toEqual({});
+  });
+
+  it("setProjectKeyAlias records when absent and ignores empties / overwrites", () => {
+    useAppStore.setState({ projectKeyAlias: {} });
+    useAppStore.getState().setProjectKeyAlias("PVT_a", "my-app");
+    useAppStore.getState().setProjectKeyAlias("PVT_a", "renamed"); // ignored, already set
+    useAppStore.getState().setProjectKeyAlias("", "x");           // ignored, empty id
+    expect(useAppStore.getState().projectKeyAlias).toEqual({ "PVT_a": "my-app" });
+  });
+
+  it("deleteLocalProject prunes the alias entry for the removed project", () => {
+    useAppStore.setState({ projectKeyAlias: { "PVT_gone": "gone", "PVT_keep": "keep" } });
+    useAppStore.getState().deleteLocalProject(["gone", "PVT_gone"]);
+    const a = useAppStore.getState().projectKeyAlias;
+    expect(a["PVT_gone"]).toBeUndefined();
+    expect(a["PVT_keep"]).toBe("keep");
+  });
+});
+
 // ── Tab management ────────────────────────────────────────────────────────────
 
 describe("tab management", () => {

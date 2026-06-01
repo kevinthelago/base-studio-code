@@ -357,6 +357,7 @@ export function Planning({ visible }: { visible: boolean }) {
     projectLocalRepos,
     planSections, planConfirmedSections,
     planFleet,
+    projectKeyAlias,
     pinnedContext,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
     togglePinnedContext,
@@ -369,7 +370,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // remount key in projects/index.tsx. It is frozen for the session, so the
   // publish flow assigning a GitHub Project id or a title edit cannot move the
   // working directory. The ref fallbacks keep older/in-flight sessions working.
-  const sessionKeyRef = useRef(planningSessionKey || activeProjectId || planningTitle || planningPitch);
+  // Resolve through the alias so a project reached via the board (only
+  // `activeProjectId` set = the GitHub node id) maps to the stable folder/data
+  // key its plan files live under, instead of an empty node-id key.
+  const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
+  const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
