@@ -407,6 +407,10 @@ export function Planning({ visible }: { visible: boolean }) {
   // Feeds both handlePublish and the GitHubStructureCard.
   const publishRepos = [...new Set([
     ...effectiveRepos,
+    // Repos the planner linked + auto-cloned this project, persisted under the planning
+    // session key. effectiveRepos keys off the GitHub board id (empty for a not-yet-published
+    // project), so without this the visualizer/publish lose planner-linked repos on reload.
+    ...(projectLocalRepos[effectiveProjectId] ?? []),
     ...repoLinkFullNames,
     ...(planningRepo ? [planningRepo] : []),
   ])].filter(Boolean);
