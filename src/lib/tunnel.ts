@@ -44,6 +44,9 @@ export interface TunnelStatus {
   /** The pairing secret the mobile echoes to authenticate (carried only in the QR). */
   psk: string;
   clientCount: number;
+  /** Whether the desktop has granted the paired phone input control. A freshly paired
+   *  phone is view-only (`false`) until the desktop grants input (#B-wan-viewonly). */
+  inputGranted: boolean;
 }
 
 /** The payload encoded into the pairing QR. The mobile dials `relayUrl`, joins `room`,

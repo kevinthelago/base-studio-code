@@ -129,6 +129,10 @@ pub struct TunnelStatus {
     /// Empty until `tunnel_start` mints it. Carried only inside the QR, never shown.
     pub psk: String,
     pub client_count: usize,
+    /// Whether the desktop has granted the paired phone input control. A freshly paired
+    /// phone is **view-only** (`false`): keystrokes/resizes are dropped until the desktop
+    /// flips this with `tunnel_set_input_granted` (#B-wan-viewonly).
+    pub input_granted: bool,
 }
 
 // ── Noise IK end-to-end crypto ──────────────────────────────────────────────────
@@ -182,6 +186,14 @@ struct Inner {
     panes: Vec<PaneDescriptor>,
     sessions: HashMap<String, SessionMeta>,
     client_count: usize,
+    /// View-only gate (#B-wan-viewonly): `false` until the desktop grants input. While
+    /// `false`, PTY-mutating mobile frames (keystrokes, resize) are dropped. Reset to
+    /// `false` on every `tunnel_start`/`tunnel_stop` so each pairing starts view-only.
+    input_granted: bool,
+    /// Whether we've already notified the desktop that a view-only phone tried to send
+    /// input, so the per-keystroke drop doesn't spam the frontend with prompts. Cleared
+    /// when input is (re)granted/revoked or a new session begins.
+    input_requested: bool,
     /// Send `true` to signal the relay transport task(s) to stop (#242b).
     shutdown_tx: Option<watch::Sender<bool>>,
 }
@@ -224,6 +236,8 @@ impl TunnelState {
                 panes: Vec::new(),
                 sessions: HashMap::new(),
                 client_count: 0,
+                input_granted: false,
+                input_requested: false,
                 shutdown_tx: None,
             }),
             output_tx,
@@ -277,6 +291,32 @@ impl TunnelState {
         self.inner.lock().unwrap().psk.clone()
     }
 
+    /// Whether the desktop has granted the paired phone input control (#B-wan-viewonly).
+    /// `false` (view-only) drops PTY-mutating mobile frames in `handle_client_msg`.
+    fn input_granted(&self) -> bool {
+        self.inner.lock().unwrap().input_granted
+    }
+
+    /// Grant or revoke the paired phone's input control. Resets the "input requested"
+    /// notification latch so a later view-only attempt re-prompts the desktop.
+    fn set_input_granted(&self, granted: bool) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.input_granted = granted;
+        inner.input_requested = false;
+    }
+
+    /// Latch the first view-only input attempt: returns `true` exactly once per session
+    /// (until input is granted/revoked or the session restarts), so the desktop is
+    /// prompted to grant input once rather than on every dropped keystroke.
+    fn take_input_request(&self) -> bool {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.input_requested {
+            return false;
+        }
+        inner.input_requested = true;
+        true
+    }
+
     /// Snapshot the pane list + session metadata to replay to a freshly-paired client.
     fn snapshot(&self) -> (Vec<PaneDescriptor>, Vec<SessionMeta>) {
         let inner = self.inner.lock().unwrap();
@@ -296,6 +336,7 @@ impl TunnelState {
             host_pub_key: self.host_pub_key_b64(),
             psk: inner.psk.clone(),
             client_count: inner.client_count,
+            input_granted: inner.input_granted,
         }
     }
 }
@@ -401,6 +442,10 @@ pub fn tunnel_start(
         inner.relay_url = Some(relay_url.clone());
         inner.room = Some(room.clone());
         inner.psk = psk;
+        // Every fresh pairing starts view-only (#B-wan-viewonly): the desktop must
+        // explicitly grant input before the phone can drive a pane.
+        inner.input_granted = false;
+        inner.input_requested = false;
         inner.shutdown_tx = Some(shutdown_tx);
     }
 
@@ -440,7 +485,26 @@ pub fn tunnel_stop(state: State<'_, TunnelState>) -> TunnelStatus {
     inner.running = false;
     inner.room = None;
     inner.client_count = 0;
+    inner.input_granted = false;
+    inner.input_requested = false;
     log::info!("tunnel: stopped");
+    state.status_locked(&inner)
+}
+
+/// Grant or revoke the paired phone's input control (#B-wan-viewonly). A phone is
+/// view-only until the desktop calls this with `granted = true`; revoking returns it
+/// to view-only. Returns the updated status so the settings card reflects the change.
+#[tauri::command]
+pub fn tunnel_set_input_granted(
+    granted: bool,
+    state: State<'_, TunnelState>,
+) -> TunnelStatus {
+    state.set_input_granted(granted);
+    log::info!(
+        "tunnel: input {} for paired phone",
+        if granted { "granted" } else { "revoked (view-only)" }
+    );
+    let inner = state.inner.lock().unwrap();
     state.status_locked(&inner)
 }
 
@@ -459,7 +523,7 @@ mod transport {
     use rand::RngCore;
     use serde::Serialize;
     use std::time::Duration;
-    use tauri::{AppHandle, Manager};
+    use tauri::{AppHandle, Emitter, Manager};
     use tokio::net::TcpStream;
     use tokio::sync::{broadcast, watch};
     use tokio_tungstenite::tungstenite::Message;
@@ -706,8 +770,39 @@ mod transport {
         }
     }
 
+    /// Decide whether a decrypted mobile frame may be applied to the desktop PTY given the
+    /// view-only gate (#B-wan-viewonly). Keystrokes and resizes require `input_granted`;
+    /// focus / set-state / auth frames only steer which pane's output streams back (the
+    /// read side), so they are always allowed even while the phone is view-only. Pure so
+    /// the gate is unit-testable without an `AppHandle` or a live PTY.
+    pub fn input_allowed(msg: &ClientMsg, input_granted: bool) -> bool {
+        match msg {
+            ClientMsg::PaneInput { .. } | ClientMsg::PaneResize { .. } => input_granted,
+            _ => true,
+        }
+    }
+
     /// Route a decrypted mobile message: keystrokes/resize to the PTY, focus to filtering.
+    /// While the phone is view-only (#B-wan-viewonly), PTY-mutating frames are dropped and
+    /// the desktop is prompted once to grant input.
     fn handle_client_msg(app: &AppHandle, msg: ClientMsg, focused: &mut Option<String>) {
+        let granted = app
+            .try_state::<TunnelState>()
+            .map(|s| s.input_granted())
+            .unwrap_or(false);
+        if !input_allowed(&msg, granted) {
+            // Notify the desktop once per session (not per keystroke) so it can offer to
+            // grant input; the latch is cleared whenever input is (re)granted/revoked.
+            let first = app
+                .try_state::<TunnelState>()
+                .map(|s| s.take_input_request())
+                .unwrap_or(false);
+            if first {
+                log::info!("tunnel: view-only phone requested input — awaiting desktop grant");
+                let _ = app.emit("tunnel://input-requested", ());
+            }
+            return;
+        }
         match msg {
             ClientMsg::PaneInput { pane_id, data } => crate::tunnel_write_pty(app, &pane_id, &data),
             ClientMsg::PaneResize { pane_id, cols, rows } => {
@@ -873,6 +968,52 @@ mod tests {
         // The responder can't decrypt an IK first message sealed to a different static
         // key — the handshake fails rather than establishing a session.
         assert!(resp.read_message(&buf[..n], &mut out).is_err());
+    }
+
+    /// View-only gate (#B-wan-viewonly): a paired phone cannot drive a pane until the
+    /// desktop grants input. Keystrokes/resizes are dropped while view-only and flow once
+    /// granted; focus/set-state (read-side filtering) and auth are always allowed.
+    #[test]
+    fn view_only_drops_pty_input_until_granted() {
+        let keys = ClientMsg::PaneInput { pane_id: "t0p0".into(), data: "rm -rf /\n".into() };
+        let resize = ClientMsg::PaneResize { pane_id: "t0p0".into(), cols: 80, rows: 24 };
+        let focus = ClientMsg::PaneFocus { pane_id: "t0p0".into() };
+        let set_state = ClientMsg::PaneSetState { pane_id: "t0p0".into(), state: "streaming".into() };
+
+        // View-only (not granted): PTY-mutating frames are dropped …
+        assert!(!transport::input_allowed(&keys, false));
+        assert!(!transport::input_allowed(&resize, false));
+        // … but read-side frames still steer which pane streams back.
+        assert!(transport::input_allowed(&focus, false));
+        assert!(transport::input_allowed(&set_state, false));
+
+        // After the desktop grants input, keystrokes + resize are allowed.
+        assert!(transport::input_allowed(&keys, true));
+        assert!(transport::input_allowed(&resize, true));
+    }
+
+    /// Granting/revoking input flips the gate, and the once-per-session request latch is
+    /// reset so a later view-only attempt re-prompts the desktop.
+    #[test]
+    fn input_grant_toggles_state_and_resets_request_latch() {
+        let st = TunnelState::new();
+        // Fresh state is view-only and reflected in the status card.
+        assert!(!st.input_granted());
+        assert!(!st.status_locked(&st.inner.lock().unwrap()).input_granted);
+
+        // First view-only attempt latches a single prompt; subsequent ones don't re-fire.
+        assert!(st.take_input_request());
+        assert!(!st.take_input_request());
+
+        // Granting input flips the gate and clears the latch.
+        st.set_input_granted(true);
+        assert!(st.input_granted());
+        assert!(st.status_locked(&st.inner.lock().unwrap()).input_granted);
+
+        // Revoking returns to view-only and re-arms the prompt latch.
+        st.set_input_granted(false);
+        assert!(!st.input_granted());
+        assert!(st.take_input_request());
     }
 
     #[test]

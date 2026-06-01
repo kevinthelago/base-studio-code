@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "../../store";
 import { pairingPayload, type TunnelStatus } from "../../lib/tunnel";
-import { tunnelStart, tunnelStop, tunnelStatus } from "../../lib/tunnelClient";
+import {
+  tunnelStart,
+  tunnelStop,
+  tunnelStatus,
+  tunnelSetInputGranted,
+} from "../../lib/tunnelClient";
 
 // A "Deploy to Cloudflare" link prefilled with the relay workspace, so a user can
 // stand up their own zero-knowledge relay in their own account (BYO).
@@ -17,6 +23,9 @@ export function TunnelSettings() {
   const [status, setStatus] = useState<TunnelStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Set when a view-only phone tries to send input, so the grant control is highlighted
+  // until the desktop responds (#B-wan-viewonly). Cleared once input is granted/revoked.
+  const [inputRequested, setInputRequested] = useState(false);
 
   // Mirror the Rust client's running state into the store so ConsoleScreen knows
   // whether to push live pane metadata.
@@ -41,6 +50,28 @@ export function TunnelSettings() {
     return () => clearInterval(id);
   }, [running, sync]);
 
+  // A view-only phone that tries to type fires this once; surface it so the desktop can
+  // decide to grant input. The badge clears as soon as the desktop grants or revokes.
+  useEffect(() => {
+    if (!running) return;
+    const unlisten = listen("tunnel://input-requested", () => setInputRequested(true));
+    return () => { unlisten.then((off) => off()); };
+  }, [running]);
+
+  const onToggleInput = useCallback(async () => {
+    const next = !(status?.inputGranted ?? false);
+    setBusy(true);
+    setErr(null);
+    try {
+      sync(await tunnelSetInputGranted(next));
+      setInputRequested(false);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [status, sync]);
+
   const onConnect = useCallback(async () => {
     setBusy(true);
     setErr(null);
@@ -56,6 +87,8 @@ export function TunnelSettings() {
   const payload = status ? pairingPayload(status) : null;
   const qrValue = payload ? JSON.stringify(payload) : "";
   const clients = status?.clientCount ?? 0;
+  const inputGranted = status?.inputGranted ?? false;
+  const paired = clients > 0;
   const canConnect = tunnelRelayUrl.trim().length > 0;
 
   return (
@@ -132,6 +165,34 @@ export function TunnelSettings() {
                 <div className="hint">
                   The phone pins this from the QR — it's how it knows it's talking to <i>your</i>
                   desktop, not the relay.
+                </div>
+              </div>
+              <div className="field">
+                <label>Input control</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span className={"tag " + (inputGranted ? "green" : "")}>
+                    {inputGranted ? "● input granted" : "○ view-only"}
+                  </span>
+                  <span style={{ flex: 1 }} />
+                  <button
+                    className="btn"
+                    disabled={busy || !paired}
+                    onClick={onToggleInput}
+                    style={inputRequested && !inputGranted
+                      ? { borderColor: "var(--accent)", color: "var(--accent)" }
+                      : undefined}
+                  >
+                    {inputGranted ? "revoke input" : "grant input"}
+                  </button>
+                </div>
+                <div className="hint">
+                  {!paired
+                    ? "A paired phone starts view-only — it mirrors these panes but cannot type."
+                    : inputRequested && !inputGranted
+                      ? "The paired phone is asking to send input. Grant it to let the phone drive a pane."
+                      : inputGranted
+                        ? "The paired phone can drive panes. Revoke to return it to view-only."
+                        : "The phone is view-only — keystrokes are dropped until you grant input."}
                 </div>
               </div>
               <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10.5 }}>

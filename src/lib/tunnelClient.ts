@@ -17,6 +17,11 @@ export const tunnelStop = (): Promise<TunnelStatus> => invoke("tunnel_stop");
 /** Current tunnel status (running, room, hostPubKey, client count, …). */
 export const tunnelStatus = (): Promise<TunnelStatus> => invoke("tunnel_status");
 
+/** Grant or revoke the paired phone's input control (#B-wan-viewonly). A paired phone is
+ *  view-only until granted; revoking returns it to view-only. Returns the updated status. */
+export const tunnelSetInputGranted = (granted: boolean): Promise<TunnelStatus> =>
+  invoke("tunnel_set_input_granted", { granted });
+
 /** Push the current pane list to connected clients. */
 export const tunnelSetPanes = (panes: PaneDescriptor[]): Promise<void> =>
   invoke("tunnel_set_panes", { panes });
