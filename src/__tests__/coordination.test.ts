@@ -9,6 +9,7 @@ import {
   detectDeadlocks, hasDeadlock, defaultProducerOf, buildProducerOf,
   producesFromPaneStreams,
   parsePredicate, evaluatePredicates,
+  coordNotifications,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -585,5 +586,64 @@ describe("producesFromPaneStreams — pane-id bridge for the resolver (#199 AC#7
     const p = buildProducerOf(producesFromPaneStreams({}));
     expect(p({ kind: "contract", name: "X" })).toBeUndefined();
     expect(p({ kind: "session", id: "t0p3" })).toBe("t0p3");
+  });
+});
+
+describe("coordNotifications — mobile push payloads (#366)", () => {
+  const issue = (n: number): CoordRef => ({ kind: "issue", number: n });
+  const sess = (id: string): CoordRef => ({ kind: "session", id });
+
+  it("emits a ready notification for each freshly-ready waiter", () => {
+    const ready = [w("A", [issue(1), issue(2)])];
+    const notes = coordNotifications(emptyCoordState(), ready);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].kind).toBe("ready");
+    expect(notes[0].session).toBe("A");
+    expect(notes[0].key).toBe("ready:A");
+    expect(notes[0].refs).toEqual(["#1", "#2"]);
+    expect(notes[0].summary).toMatch(/landed/);
+  });
+
+  it("emits a stalled notification for a waiter with a failed dep", () => {
+    let s = registerWaiter(emptyCoordState(), w("C", [issue(1)])).state;
+    s = fail(s, issue(1), "build broke", 5).state;
+    const notes = coordNotifications(s);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].kind).toBe("stalled");
+    expect(notes[0].session).toBe("C");
+    expect(notes[0].refs).toEqual(["#1"]);
+    expect(notes[0].key).toBe("stalled:C");
+  });
+
+  it("emits a deadlocked notification for a wait-for cycle and outranks stalled", () => {
+    // A<->B deadlock; the same refs are unsatisfied (no producer can clear them).
+    const s = { latches: {}, waiters: [w("A", [sess("B")]), w("B", [sess("A")])] };
+    const notes = coordNotifications(s);
+    expect(notes.map((n) => n.kind)).toEqual(["deadlocked", "deadlocked"]);
+    expect(notes.map((n) => n.session).sort()).toEqual(["A", "B"]);
+    expect(notes.every((n) => n.refs.length === 1)).toBe(true);
+  });
+
+  it("a deadlocked-AND-failed session reports deadlocked only (most severe wins)", () => {
+    // A waits on session:B (the deadlock edge) and on a failed issue. One notification.
+    let s = { latches: {}, waiters: [w("A", [sess("B"), issue(9)]), w("B", [sess("A")])] };
+    s = fail(s, issue(9), "nope", 1).state;
+    const notes = coordNotifications(s);
+    const byId = Object.fromEntries(notes.map((n) => [n.session, n.kind]));
+    expect(byId.A).toBe("deadlocked"); // not stalled, even though #9 failed
+    expect(notes.filter((n) => n.session === "A")).toHaveLength(1);
+  });
+
+  it("a healthy parked waiter (pending, no failure, no cycle) yields nothing", () => {
+    const s = registerWaiter(emptyCoordState(), w("A", [issue(1)])).state;
+    expect(coordNotifications(s)).toEqual([]);
+  });
+
+  it("ready and stuck sets are disjoint — both surface together", () => {
+    let s = registerWaiter(emptyCoordState(), w("C", [issue(1)])).state;
+    s = fail(s, issue(1), "broke", 1).state;        // C stalled (still parked)
+    const ready = [w("A", [issue(2)])];              // A already woken (not in s.waiters)
+    const notes = coordNotifications(s, ready);
+    expect(notes.map((n) => `${n.kind}:${n.session}`).sort()).toEqual(["ready:A", "stalled:C"]);
   });
 });
