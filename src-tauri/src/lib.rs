@@ -572,7 +572,7 @@ async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -1299,7 +1299,18 @@ bsc-merged() { __bsc_coord merged "$1" ""; }
 bsc-closed() { __bsc_coord closed "$1" ""; }
 bsc-failed() { r="$(cat)"; __bsc_coord failed "$1" "$r"; }
 bsc-wait() { r="$(cat)"; __bsc_coord waiting "$r" "${BSC_CHECKPOINT_DOC:-}"; }
+bsc-ask() { r="$(cat | tr '\t\n' '  ')"; __bsc_coord ask "$r" "${BSC_CHECKPOINT_DOC:-}"; }
+bsc-answer() { tgt="$1"; a="$(cat | tr '\t\n' '  ')"; __bsc_coord answer "$tgt" "$a"; }
 "#;
+
+/// The `bsc-defer` Stop hook (#369): fires when a fleet WORKER tries to end its turn.
+/// If it has already been re-prompted once (`stop_hook_active`), it allows the stop;
+/// otherwise it returns a `block` decision that pushes the worker to keep going or defer
+/// a real question to the director via `bsc-ask` -- never to sit waiting on the user.
+const BSC_DEFER_RC: &str = concat!(
+    r#"bsc-defer() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":"Do not stop to ask the user for direction. If your owned issues are complete and your PR is open, you may stop. Otherwise keep working, and for any decision you cannot make yourself pipe a one-line question into bsc-ask so the director answers and resumes you. Never wait on the user."}'; }"#,
+    "\n",
+);
 
 /// Read the Agents audit log (#257): the newest `limit` TSV lines, newest first.
 #[tauri::command]
@@ -2749,6 +2760,23 @@ fn worktree_slug(s: &str) -> String {
         .collect()
 }
 
+/// Coordination protocol appended to every fleet worker's CLAUDE.local.md (#369) so the
+/// defer-to-director / never-ask-the-user rules are authoritative context, not just a
+/// first-message hint. A multi-line raw string (real newlines; literal backticks/quotes).
+const FLEET_PROTOCOL_MD: &str = r#"
+## Fleet coordination protocol (auto-added — do not edit)
+
+You are one of several parallel sessions building this project. Never stop and ask the user a question about what to do with your work — not for direction, not for whether your work is done, and not for whether to open a PR. Follow your push instructions; the director reviews and merges your PRs.
+
+When you genuinely need a decision you cannot make yourself, defer to the director, not the user:
+
+- `echo "your one-line question" | bsc-ask` — parks you and routes the question to the director, which answers and resumes you automatically.
+- `bsc-blocked --on <ref>` — park until another stream's dependency lands.
+- `echo "what you decided" | bsc-note` — for small reversible choices, just pick the smallest sensible option and record it; do not ask.
+
+Only the director escalates to the user.
+"#;
+
 /// Create (idempotently) a git worktree for one fleet agent: an isolated checkout
 /// of `repo` on a branch named after the agent, at
 /// `projects/<key>/.worktrees/<repoShort>--<agentSlug>`. Each agent edits and
@@ -2806,6 +2834,13 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
     let claude_md = clone.join("CLAUDE.md");
     if claude_md.is_file() && !wt.join("CLAUDE.md").exists() {
         let _ = std::fs::copy(&claude_md, wt.join("CLAUDE.md"));
+    }
+    // Carry the coordination protocol (#369) into the worktree so the worker always has
+    // the defer-to-director / never-ask-the-user rules as authoritative context.
+    let wt_local = wt.join("CLAUDE.local.md");
+    let cur = std::fs::read_to_string(&wt_local).unwrap_or_default();
+    if !cur.contains("## Fleet coordination protocol") {
+        let _ = std::fs::write(&wt_local, format!("{cur}{FLEET_PROTOCOL_MD}"));
     }
     Ok(wt_str)
 }
@@ -3890,12 +3925,13 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}",
+            "{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
             super::BSC_CONFINE_RC,
             super::BSC_COORD_EMIT_RC,
+            super::BSC_DEFER_RC,
         );
         let dir = std::env::temp_dir().join(format!("bsc-rc-syntax-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

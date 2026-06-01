@@ -390,7 +390,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         const gatedHooks = (cap || prof)
           ? [...hooks,
              { event: "PreToolUse", matcher: "", command: "bsc-audit" },
-             { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" }]
+             { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
+             // Worker-only Stop hook (#369): when a worker tries to end its turn, bounce it
+             // once toward continuing / deferring to the director via bsc-ask instead of
+             // stopping to ask the user. `stop_hook_active` prevents an infinite loop.
+             ...(role === "worker" ? [{ event: "Stop", matcher: "", command: "bsc-defer" }] : [])]
           : hooks;
         await invoke("ensure_session_settings", {
           cwd: initialCwd, allowedCommands, deniedCommands: denied,

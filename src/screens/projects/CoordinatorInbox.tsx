@@ -77,7 +77,7 @@ export function CoordinatorInbox() {
   }, [directorPanes]);
 
   const stalled = views.filter((v) => v.stalled).length;
-  const nothing = ready.length === 0 && views.length === 0 && state.waiting.length === 0;
+  const nothing = ready.length === 0 && views.length === 0 && state.waiting.length === 0 && state.asking.length === 0;
 
   return (
     <section style={{ flex: 1, overflow: "auto", padding: "18px 22px", minWidth: 0 }}>
@@ -87,6 +87,7 @@ export function CoordinatorInbox() {
         <div style={{ flex: 1 }} />
         {ready.length > 0 && <span className="tag green">{ready.length} ready</span>}
         {state.waiting.length > 0 && <span className="tag" style={{ color: "var(--accent)" }}>{state.waiting.length} paused</span>}
+        {state.asking.length > 0 && <span className="tag" style={{ color: "var(--info)" }}>{state.asking.length} asking director</span>}
         {views.length > 0 && <span className="tag">{views.length} blocked</span>}
         {stalled > 0 && <span className="tag" style={{ color: "var(--danger)" }}>{stalled} stalled</span>}
         {Object.keys(directorPanes).length > 0 && (
@@ -171,6 +172,30 @@ export function CoordinatorInbox() {
               {ws.reason && (
                 <div style={{ marginTop: 6, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{ws.reason}</div>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {state.asking.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>
+            Asking the director — auto-resumed when answered
+          </div>
+          {state.asking.map((a) => (
+            <div key={a.session} className="card" style={{ marginBottom: 12, borderColor: "var(--info)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{a.session}</h3>
+                <span className="tag" style={{ fontSize: 9.5, color: "var(--info)" }}>● asking</span>
+                <div style={{ flex: 1 }} />
+                {a.checkpoint && <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>↺ {a.checkpoint}</span>}
+              </div>
+              {a.question && (
+                <div style={{ marginTop: 6, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{a.question}</div>
+              )}
+              <div style={{ marginTop: 6, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>
+                The director answers with <code>bsc-answer {a.session}</code>; this session then resumes automatically.
+              </div>
             </div>
           ))}
         </div>
