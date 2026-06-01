@@ -388,7 +388,9 @@ export function Planning({ visible }: { visible: boolean }) {
   const effectiveRepos: string[] = activeProjectId
     ? (activeProjectRepos.length > 0
         ? activeProjectRepos
-        : (projectLocalRepos[activeProjectId] ?? []))
+        // Fall back to the canonical (alias-resolved) key, never the raw node id, so reads
+        // and writes can't land on divergent projectLocalRepos entries (#380).
+        : (projectLocalRepos[effectiveProjectId] ?? []))
     : [];
 
   // Full_names that are both linked to this project and known to be cloned.
@@ -1033,7 +1035,7 @@ export function Planning({ visible }: { visible: boolean }) {
     try {
       await Promise.all(publishRepos.map(fullName =>
         invoke<string>("clone_repo", { project: effectiveProjectId, fullName })
-          .then(() => addProjectRepo(activeProjectId ?? effectiveProjectId, fullName))
+          .then(() => addProjectRepo(effectiveProjectId, fullName))
           .catch(e => console.error(`clone ${fullName} failed:`, e)),
       ));
       // Materialize any unassigned / dangling-reference agent profiles before

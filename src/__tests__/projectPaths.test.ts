@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeProjectKey, repoShortName, projectRepoCwd } from "../lib/projectPaths";
+import { sanitizeProjectKey, repoShortName, projectRepoCwd, isKnownPublishedKey } from "../lib/projectPaths";
 
 describe("sanitizeProjectKey", () => {
   it("replaces spaces and slashes with underscores", () => {
@@ -54,5 +54,27 @@ describe("projectRepoCwd", () => {
 
   it("returns an empty string for an empty base dir", () => {
     expect(projectRepoCwd("", "p", "o/r")).toBe("");
+  });
+});
+
+
+describe("isKnownPublishedKey (#380 — guard the draft clean-start delete)", () => {
+  const alias = {
+    "PVT_kwHOA_BZbml": "github-pretty-readme",
+    "PVT_kwHOA_BYsJC": "studio-code",
+  };
+  it("is true when a node id is aliased to the draft key", () => {
+    expect(isKnownPublishedKey("github-pretty-readme", alias)).toBe(true);
+    expect(isKnownPublishedKey("studio-code", alias)).toBe(true);
+  });
+  it("is false for a name no node id maps to (a genuine unpublished draft)", () => {
+    expect(isKnownPublishedKey("brand-new-idea", alias)).toBe(false);
+  });
+  it("is false against an empty alias map", () => {
+    expect(isKnownPublishedKey("github-pretty-readme", {})).toBe(false);
+  });
+  it("matches the published NAME, not a node id key", () => {
+    // a node id is a KEY, never a value — so passing one must not falsely match
+    expect(isKnownPublishedKey("PVT_kwHOA_BZbml", alias)).toBe(false);
   });
 });
