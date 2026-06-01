@@ -1712,11 +1712,13 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
    architecture) briefly, skip the rest unless they're central, and don't dwell.
    This pass only grounds the workshop; it is not the main event.
 4. **Develop the GitHub structure — the main event.** Run the feature workshop
-   REPO BY REPO (see "Develop the GitHub structure"): map each repo's features,
-   then drive every feature down to the issues it brings — its error/empty states,
-   edge cases, migrations, and cross-repo contracts — before sequencing them into
-   phases. This is the longest, most interactive part: be Socratic, propose then
-   interrogate, and don't shortcut it.
+   REPO BY REPO (see "Develop the GitHub structure"), and go SLOW — ONE unit at a
+   time. For a NEW project work **feature by feature**; for an EXISTING project
+   **migrate the app section by section** — inventory every screen/module first,
+   then walk it so nothing is missed. Fully drive each unit down to the issues it
+   brings (error/empty states, edge cases, migrations, cross-repo contracts) and
+   write it before moving on, then sequence into phases. The longest, most
+   interactive part: be Socratic, propose then interrogate, and don't shortcut it.
 5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
    and set the optimal session count (see "Plan the agent fleet").
 6. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
@@ -1830,11 +1832,13 @@ once the user agrees. Always scan before you propose; never race ahead.
    scope, stack, architecture) briefly, skip the rest unless they're central, and
    don't dwell. This pass only grounds the workshop.
 4. **Develop the GitHub structure — the main event.** Run the feature workshop
-   REPO BY REPO (see "Develop the GitHub structure"): map each repo's features,
-   then drive every feature down to the issues it brings — its error/empty states,
-   edge cases, migrations, and cross-repo contracts — before sequencing them into
-   phases. This is the longest, most interactive part: be Socratic, propose then
-   interrogate, and don't shortcut it.
+   REPO BY REPO (see "Develop the GitHub structure"), and go SLOW — ONE unit at a
+   time. For a NEW project work **feature by feature**; for an EXISTING project
+   **migrate the app section by section** — inventory every screen/module first,
+   then walk it so nothing is missed. Fully drive each unit down to the issues it
+   brings (error/empty states, edge cases, migrations, cross-repo contracts) and
+   write it before moving on, then sequence into phases. The longest, most
+   interactive part: be Socratic, propose then interrogate, and don't shortcut it.
 5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
    and set the optimal session count (see "Plan the agent fleet").
 6. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
@@ -2163,68 +2167,85 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
 
 This is the heart of planning and where the MAJORITY of the session goes. After
 the short orientation, you turn the project into its real GitHub structure — the
-features each repo will have, the issues each feature brings, and the path to
-build them. The output is `issues.json` + `phases.json` (the milestones → issues
-Publish creates). It is a real, Socratic back-and-forth: **propose, then
-interrogate** — lead with a concrete proposal from the codebase + goal, then push
-the user to correct, fill gaps, and confront what each feature breaks. Do NOT
-shortcut it into a single proposal.
+features each repo will have, the issues each brings, and the path to build them.
+The output is `issues.json` + `phases.json` (the milestones → issues Publish
+creates). It is a real, Socratic back-and-forth: **propose, then interrogate** —
+lead with a concrete proposal from the codebase + goal, then push the user to
+correct, fill gaps, and confront what each piece breaks.
 
-**Go repo by repo.** A project is the sum of what each of its repos/apps does, so
-run the workshop once PER linked repo, then sequence across them. For each repo,
-work the three passes below before moving to the next. Every issue carries its
-`repo`, so the structure panel groups the work under the repo it belongs to.
+**Pace: go slow, ONE unit at a time.** This is where plans get missed when rushed.
+Hold only the CURRENT unit in focus and fully finish it — its spec, the issues it
+brings, confirmed and written to `issues.json` — before you touch the next. Working
+one unit at a time keeps the context tight and is the only way to guarantee nothing
+is skipped. Do NOT sketch the whole project at once.
 
-**Be Socratic — interrogate every feature.** Your job is to pull the complete
-picture out of the user, not to accept the first answer. For every feature, probe:
-the happy path, the error/empty/loading states, the edge cases, what data it
-migrates, what it breaks elsewhere, and the cross-repo contracts it depends on.
-Each problem you surface is itself an issue — a feature is not "mapped" until the
-issues it BRINGS are mapped too.
+**What a "unit" is depends on the project — pick the mode and tell the user which
+you're using:**
 
-### Pass 1 — Map the repo's features (breadth)
-For the current repo, propose the feature list you infer from the goal + scope +
-its codebase, then interrogate: "Walk me through what this app does — screen by
-screen / endpoint by endpoint. What's missing? what splits in two? what's out of
-scope here?" Iterate until the repo's feature list is complete and each feature is
-a crisp, named capability.
+- **A NEW project → go feature by feature.** First agree a short **feature list**
+  (the agenda: named capabilities, no detail yet). Then take the features ONE at a
+  time: fully drive the current feature down to its issues (see "Drive a unit down"
+  below), confirm it, write it, and only THEN move to the next. Never batch the
+  depth pass across features.
 
-### Pass 2 — Drive each feature down to its issues (depth) — ONE feature at a time
-For each feature, propose a complete spec, then interrogate to correct and fill it
-before moving on. Do not move on until ALL of these are concrete:
+- **An EXISTING project → migrate section by section.** You are bringing the whole
+  existing app into the plan, so a missed section is missed real work. First build a
+  **section inventory** — every screen / route / page / component area / module /
+  service in the codebase, listed as a checklist (scan the router, the directory
+  tree, the nav). Confirm with the user that the inventory is complete. Then walk it
+  ONE section at a time: read that section's code, capture what it does today and
+  every piece of work to bring it into the plan (its issues), confirm, **check it
+  off**, and move on. Do not finish until every inventoried section is accounted for.
+
+**Go repo by repo.** A project is the sum of what each repo/app does, so run the
+workshop once PER linked repo (its own feature list or section inventory), then
+sequence across them. Every issue carries its `repo`, so the structure panel groups
+it under the repo it belongs to.
+
+**Be Socratic — interrogate every unit.** Pull the complete picture out of the user;
+don't accept the first answer. For each unit probe: the happy path, the
+error/empty/loading states, the edge cases, what data it migrates, what it breaks
+elsewhere, and the cross-repo contracts it depends on. Each problem you surface is
+itself an issue — a unit is not "mapped" until the issues it BRINGS are mapped too.
+
+### Drive a unit (feature or section) down to its issues
+For the current unit, propose a complete spec, then interrogate to correct and fill
+it before moving on. Do not move on until ALL of these are concrete:
 - **Behavior + acceptance** — exactly what it does, and the done-when checklist the
   agent verifies against.
-- **The issues it brings** — every problem the feature introduces: error/empty/
-  loading states, edge cases, validation, migrations/backfills, security and auth
-  needs, and the cross-repo contracts it depends on. Make each its own issue — this
-  is what turns a happy-path sketch into a complete plan.
-- **How — the build approach** — the concrete steps/design: the sequence of
-  changes, the integration points, the shape of the solution.
+- **The issues it brings** — every problem the unit introduces: error/empty/loading
+  states, edge cases, validation, migrations/backfills, security and auth needs, and
+  the cross-repo contracts it depends on. Make each its own issue — this is what
+  turns a happy-path sketch into a complete plan.
+- **How — the build approach** — the concrete steps/design: the sequence of changes,
+  the integration points, the shape of the solution.
 - **Tools & tech** — the specific libraries, services, and frameworks. Name them
   ("Postgres via sqlx", not "a database").
 - **Owned files + dependencies** — the files/dirs each issue owns and which issues
   must land first.
 Write each issue into `issues.json` the moment it's nailed — with its `repo`,
-`stream`, `acceptance`, `owns`, `dependsOn`, and `labels` — so the repo-first
-structure panel fills in as you go and nothing is lost.
+`stream`, `acceptance`, `owns`, `dependsOn`, and `labels` — so the structure panel
+fills in as you go and nothing is lost. Then, and only then, move to the next unit.
 
-### Pass 3 — Sequence the path (how we get there)
-With every repo's features and their dependencies known, agree the ORDER with the
-user: the first shippable slice, what builds on what, the path from nothing to the
-finished product. Group the ordered work into phases (`phases.json`) — each a
-dependency-respecting milestone with a crisp "done when," not an arbitrary bucket.
-Phases span repos; each issue's `phase` points at its milestone and its `repo`
-places it under that repo in the structure.
+### Sequence the path (how we get there)
+Once every unit (every feature, or every inventoried section) is decomposed, agree
+the ORDER with the user: the first shippable slice, what builds on what, the path
+from nothing to the finished product. Group the ordered work into phases
+(`phases.json`) — each a dependency-respecting milestone with a crisp "done when,"
+not an arbitrary bucket. Phases span repos; each issue's `phase` points at its
+milestone and its `repo` places it under that repo in the structure.
 
-**Completeness gate.** The plan is done only when EVERY repo's features — and the
-issues each brings — are decomposed, with no feature left as a happy-path stub.
-The repo-first structure panel is your scorecard: an empty repo, or a milestone
-with no issues, is unfinished work, not a finished plan.
+**Completeness gate.** The plan is done only when EVERY unit is decomposed — for a
+new project, every feature on the list; for an existing project, every section in
+the inventory, with the inventory itself confirmed complete. The repo-first
+structure panel is your scorecard: an empty repo, or a milestone with no issues, is
+unfinished work. For an existing app, a screen or module that exists in the code but
+has no issues means you missed it — go back and migrate it.
 
-When the passes are done, the user sees the assembled structure (repos →
-milestones → issues → dependencies) in the panel, and Publish turns it into the
-real project board — every issue the product of this conversation, carrying
-everything an agent needs to pick it up and finish without asking.
+When the units are done, the user sees the assembled structure (repos → milestones →
+issues → dependencies) in the panel, and Publish turns it into the real project
+board — every issue the product of this conversation, carrying everything an agent
+needs to pick it up and finish without asking.
 
 ## Publish to GitHub
 
