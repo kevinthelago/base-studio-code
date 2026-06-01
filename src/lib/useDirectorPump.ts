@@ -1,16 +1,23 @@
-// The director pump (#366): drives the fleet's async-integrator "director" session so it
-// does not just idle after its kickoff. Polls the coordination log and, per launched
-// director pane, asks decideDirectorAction whether to re-prompt it (event-driven on new
-// worker activity, or on a heartbeat) -- then injects that prompt into the pane via
-// pty_write while it is idle. The director acts (review/merge PRs, bsc-merged/bsc-closed),
-// which the existing useCoordinator turns into worker wake-ups. Mounted once in
-// ConsoleScreen (which stays mounted across screens). Pure decision logic lives in
-// directorDrive.ts; this is the thin Tauri/React actuator.
+// The director pump (#366, #369): drives the fleet's async-integrator "director" session so
+// it does not just idle after its kickoff. Two delivery paths, both idle-gated and injected
+// via pty_write:
+//
+//  1. PENDING WORKER QUESTIONS (state-based, #369) — unanswered `bsc-ask` questions are
+//     re-derived from the FULL coord log every tick (ingestCoordLog -> state.asking), so a
+//     question is delivered even if it was logged before the pump first saw the director or
+//     across an app restart. Each (pane, ask) is surfaced once; the key is pruned when the
+//     ask is answered/woken so a re-ask re-surfaces. This is the must-not-drop case.
+//  2. NOTIFICATIONS + HEARTBEAT (cursor-based) — landed/blocked/waiting/failed activity and
+//     the periodic sweep, via decideDirectorAction.
+//
+// Mounted once in ConsoleScreen (which stays mounted across screens). Pure logic lives in
+// directorDrive.ts + coordination.ts; this is the thin Tauri/React actuator.
 import { useEffect, useRef, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
+import { ingestCoordLog, emptyCoordState } from "./coordination";
 import {
-  decideDirectorAction, resolveDirectorDrive,
+  decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "../screens/projects/directorDrive";
 
@@ -18,13 +25,12 @@ const POLL_MS = 3000;
 
 interface PaneCursor { cursor: number; lastInjectAt: number; }
 
-/**
- * @param paneStatusesRef live per-pane Claude status ("idle" = safe to inject). Owned by
- *        ConsoleScreen; read each tick so we never interrupt a director mid-turn.
- */
 export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" | "on" | "idle">>): void {
   const cursors = useRef<Map<string, PaneCursor>>(new Map());
   const inFlight = useRef<Set<string>>(new Set());
+  // Per (pane|ask) keys already surfaced, so a pending ask is injected once — but pruned
+  // when the ask is no longer pending, so a re-ask (or a restart with it still open) re-fires.
+  const surfaced = useRef<Set<string>>(new Set());
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -36,18 +42,43 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
       if (cancelled || !lines) return;
       const now = Date.now();
       const statuses = paneStatusesRef.current ?? {};
+
+      // Pending unanswered questions, re-derived from the whole log (restart-safe).
+      const { state } = ingestCoordLog(lines, emptyCoordState());
+      const pendingAsks = state.asking;
+      const pendingKeys = new Set(pendingAsks.map(askKey));
+      for (const k of [...surfaced.current]) {
+        const bar = k.indexOf("|");
+        if (bar >= 0 && !pendingKeys.has(k.slice(bar + 1))) surfaced.current.delete(k);
+      }
+
       for (const paneId of paneIds) {
         if (inFlight.current.has(paneId)) continue;
-        // First sight of a director pane: start its cursor at the current log end so we act
-        // only on activity AFTER it launched, and stamp lastInjectAt=now so the heartbeat
-        // waits a full interval rather than firing immediately.
+        const drive = resolveDirectorDrive(drives[paneId]);
+        const idle = statuses[paneId] === "idle";
+
+        // 1) Deliver pending worker questions first — the must-not-drop case.
+        if (idle && (drive === "event" || drive === "heartbeat")) {
+          const fresh = pendingAsks.filter((a) => !surfaced.current.has(`${paneId}|${askKey(a)}`));
+          if (fresh.length > 0) {
+            for (const a of fresh) surfaced.current.add(`${paneId}|${askKey(a)}`);
+            inFlight.current.add(paneId);
+            void invoke("pty_write", { paneId, data: pendingAskPrompt(fresh) + "\r" })
+              .catch(() => {})
+              .finally(() => inFlight.current.delete(paneId));
+            continue; // one injection per pane per tick
+          }
+        }
+
+        // 2) Notifications + heartbeat (cursor-based). First sight seeds the cursor at the
+        // current end so we only NOTIFY on activity after launch (asks are handled above).
         let prev = cursors.current.get(paneId);
         if (!prev) { prev = { cursor: lines.length, lastInjectAt: now }; cursors.current.set(paneId, prev); }
         const res = decideDirectorAction({
           lines,
           cursor: prev.cursor,
-          drive: resolveDirectorDrive(drives[paneId]),
-          idle: statuses[paneId] === "idle",
+          drive,
+          idle,
           now,
           lastInjectAt: prev.lastInjectAt,
           heartbeatMs: DEFAULT_HEARTBEAT_MS,
