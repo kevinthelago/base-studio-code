@@ -4,27 +4,27 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import ReactMarkdown from "react-markdown";
 import { useAppStore } from "../../store";
-import type { AutomationSuggestion } from "../../store";
 import { projectRepoCwd, sanitizeProjectKey } from "../../lib/projectPaths";
 import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
 import {
-  parsePlanFocus, stripPlanFocus, buildSectionConfirmMessage,
+  parsePlanFocus, stripPlanFocus,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
   parseAllowCommands, stripAllowCommands,
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
 } from "./planningSession";
-import { repoPromptKey } from "../../lib/startupPrompt";
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, titleForKey, groupSections, parseSkipped, parseSectionKey,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, titleForKey, groupSections, parseSectionKey,
   parseFleetFile,
-  type SkippedItem, type FleetPlan, type AgentStream,
 } from "./planSections";
+import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
+import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
+import { ProjectPane, type SyncState } from "./ProjectPane";
+import { buildProjectPaneData } from "./projectPaneData";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
   background:          "#181a1f",
@@ -60,122 +60,6 @@ function stripAnsi(s: string): string {
   );
 }
 
-
-function PlanSectionCard({
-  section,
-  onConfirm,
-  flashing,
-  active,
-}: {
-  section: Section;
-  onConfirm: (k: string) => void;
-  flashing: boolean;
-  active: boolean;
-}) {
-  // pending and confirmed start collapsed; drafted auto-expands when content arrives
-  const [collapsed, setCollapsed] = useState(section.state !== "drafted");
-  const cardRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (section.state === "drafted")   setCollapsed(false);
-    if (section.state === "confirmed") setCollapsed(true);
-  }, [section.state]);
-
-  // When Claude starts discussing this section, surface it: expand and scroll in.
-  useEffect(() => {
-    if (active) {
-      setCollapsed(false);
-      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-  }, [active]);
-
-  const hasContent = section.state !== "pending";
-  const isDrafted  = section.state === "drafted";
-
-  const phases = section.k === "phases" ? parsePhases(section.content) : [];
-
-  return (
-    <div ref={cardRef} style={{
-      borderRadius: 6,
-      border: "1px solid " + (active ? "var(--accent)" : isDrafted ? "var(--accent-dim)" : "var(--border-soft)"),
-      boxShadow: active ? "0 0 0 1px var(--accent)" : "none",
-      background: (active || isDrafted)
-        ? "color-mix(in oklch, var(--accent), var(--bg-canvas) 96%)"
-        : "var(--bg-canvas)",
-      // Active overrides the dimming so the in-discussion section is never faded.
-      opacity: (section.state === "pending" && !active) ? 0.45 : 1,
-      overflow: "hidden",
-      flexShrink: 0,
-      transition: "border-color 0.2s, background 0.2s, box-shadow 0.2s",
-    }}>
-      <div
-        onClick={hasContent ? () => setCollapsed(c => !c) : undefined}
-        style={{
-          padding: "7px 10px",
-          background: isDrafted ? "color-mix(in oklch, var(--accent), var(--bg-elev) 92%)" : "var(--bg-elev)",
-          borderBottom: (hasContent && !collapsed) ? "1px solid var(--border-soft)" : "none",
-          display: "flex", alignItems: "center", gap: 8,
-          fontFamily: "var(--mono)", fontSize: 10.5,
-          cursor: hasContent ? "pointer" : "default",
-          userSelect: "none",
-        }}
-      >
-        <span style={{
-          display: "inline-block", width: 10, textAlign: "center",
-          fontSize: 8, color: "var(--fg-dim)",
-          transform: hasContent && !collapsed ? "rotate(0deg)" : "rotate(-90deg)",
-          transition: "transform 0.15s",
-          opacity: hasContent ? 1 : 0.3,
-        }}>▼</span>
-        <span style={{ color: "var(--fg)" }}>{section.title}</span>
-        <div style={{ flex: 1 }} />
-        {active && section.state !== "confirmed" && (
-          <span style={{ color: "var(--accent)", fontSize: 10 }}>● in discussion</span>
-        )}
-        {section.state === "confirmed" && (
-          <span style={{ color: "var(--success)", fontSize: 10 }}>✓ confirmed</span>
-        )}
-        {section.state === "pending" && !active && (
-          <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>○ pending</span>
-        )}
-        {isDrafted && (
-          <button
-            className={flashing ? "confirm-flash" : ""}
-            onClick={(e) => { e.stopPropagation(); onConfirm(section.k); }}
-            style={{
-              padding: "3px 14px", borderRadius: 4, cursor: "pointer",
-              background: "var(--accent)", border: "none",
-              color: "#1a120a", fontFamily: "var(--mono)", fontSize: 10, fontWeight: 700,
-              letterSpacing: "0.02em",
-            }}
-          >✓ looks good</button>
-        )}
-      </div>
-      {hasContent && !collapsed && (
-        <div style={{ padding: "12px 14px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.7 }}>
-          {section.k === "phases" && phases.length > 0
-            ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {phases.map((ph, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: "var(--mono)", fontSize: 10.5 }}>
-                    <span style={{ color: "var(--accent)" }}>·</span>
-                    <span style={{ color: "var(--fg)" }}>{ph.name}</span>
-                    {ph.description && <span style={{ color: "var(--fg-dim)" }}>— {ph.description}</span>}
-                  </div>
-                ))}
-              </div>
-            )
-            : (
-              <div className="plan-md">
-                <ReactMarkdown>{section.content}</ReactMarkdown>
-              </div>
-            )
-          }
-        </div>
-      )}
-    </div>
-  );
-}
 
 interface PlanningRepoStripProps {
   projectId: string;
@@ -315,352 +199,6 @@ function PlanningRepoStrip({ projectId, repos }: PlanningRepoStripProps) {
     </div>
   );
 }
-
-function KbAssignedCard({ blockIds, onRemove }: { blockIds: string[]; onRemove: (id: string) => void }) {
-  const { kbBlocks } = useAppStore();
-  if (blockIds.length === 0) return null;
-  return (
-    <div style={{
-      borderRadius: 6, border: "1px solid var(--border-soft)",
-      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0,
-    }}>
-      <div style={{
-        padding: "7px 10px", background: "var(--bg-elev)",
-        borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 8,
-        fontFamily: "var(--mono)", fontSize: 10.5,
-      }}>
-        <span style={{ color: "var(--fg)" }}>Knowledge Blocks</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>{blockIds.length} assigned</span>
-      </div>
-      <div style={{ padding: "8px 10px", display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {blockIds.map(id => {
-          const block = kbBlocks.find(b => b.id === id);
-          return (
-            <span key={id} style={{
-              display: "inline-flex", alignItems: "center", gap: 5,
-              padding: "2px 8px", borderRadius: 99,
-              background: "color-mix(in oklch, var(--info), transparent 88%)",
-              border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
-              fontFamily: "var(--mono)", fontSize: 10, color: "var(--info)",
-            }}>
-              {block?.title ?? id}
-              <span
-                onClick={() => onRemove(id)}
-                style={{ cursor: "pointer", opacity: 0.7, lineHeight: 1 }}
-              >×</span>
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function AutomationsCard({ automations, onRemove }: { automations: AutomationSuggestion[]; onRemove: (idx: number) => void }) {
-  if (automations.length === 0) return null;
-  return (
-    <div style={{
-      borderRadius: 6, border: "1px solid var(--border-soft)",
-      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0,
-    }}>
-      <div style={{
-        padding: "7px 10px", background: "var(--bg-elev)",
-        borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 8,
-        fontFamily: "var(--mono)", fontSize: 10.5,
-      }}>
-        <span style={{ color: "var(--fg)" }}>Automations</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>{automations.length} suggested</span>
-      </div>
-      <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 7 }}>
-        {automations.map((a, i) => (
-          <div key={i} style={{
-            padding: "7px 9px", borderRadius: 5,
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-            fontFamily: "var(--mono)", fontSize: 10.5,
-          }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
-              <span style={{ color: "var(--fg)" }}>{a.name}</span>
-              {a.schedule && (
-                <span className="tag" style={{ fontSize: 9 }}>{a.schedule}</span>
-              )}
-              <div style={{ flex: 1 }} />
-              <span
-                onClick={() => onRemove(i)}
-                style={{ color: "var(--fg-dim)", cursor: "pointer", fontSize: 11 }}
-              >×</span>
-            </div>
-            <div style={{ color: "var(--fg-dim)", fontSize: 10, fontFamily: "var(--mono)" }}>
-              <code style={{ color: "var(--accent)" }}>{a.command}</code>
-            </div>
-            {a.description && (
-              <div style={{ color: "var(--fg-muted)", fontSize: 10, marginTop: 3 }}>{a.description}</div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// The agent fleet: the planner's parallel-execution plan. Shows the recommended
-// concurrent session count + reasoning, a configurable director toggle, and one
-// row per work stream (its repo, owned paths, issues, and dependencies). The
-// "Launch fleet" button opens the build tab. Self-hides until a fleet is defined.
-function FleetCard({ projectId, onLaunch }: { projectId: string; onLaunch: () => void }) {
-  const { planFleet, removePlanAgentStream, setPlanDirector, setPlanAgentStreamProfile, generateFleetProfiles, agentProfiles } = useAppStore();
-  const fleet: FleetPlan | undefined = planFleet[projectId];
-  if (!fleet || (fleet.streams.length === 0 && !fleet.director.enabled)) return null;
-
-  const recommended = fleet.recommended > 0 ? fleet.recommended : fleet.streams.length;
-  const assignableProfiles = agentProfiles.filter((pr) => pr.category !== "application");
-
-  const StreamRow = ({ st }: { st: AgentStream }) => (
-    <div style={{
-      padding: "7px 9px", borderRadius: 5,
-      background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-      fontFamily: "var(--mono)", fontSize: 10.5,
-    }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
-        <span style={{ color: "var(--fg)" }}>{st.name}</span>
-        <span className="tag" style={{ fontSize: 9 }}>{st.repo}</span>
-        {st.dependsOn.length > 0 && (
-          <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>after: {st.dependsOn.join(", ")}</span>
-        )}
-        <div style={{ flex: 1 }} />
-        <span
-          onClick={() => removePlanAgentStream(projectId, st.id)}
-          style={{ color: "var(--fg-dim)", cursor: "pointer", fontSize: 11 }}
-        >×</span>
-      </div>
-      {st.owns.length > 0 && (
-        <div style={{ color: "var(--fg-dim)", fontSize: 10, marginBottom: st.issues.length ? 3 : 0 }}>
-          owns <code style={{ color: "var(--accent)" }}>{st.owns.join("  ")}</code>
-        </div>
-      )}
-      {st.issues.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-          {st.issues.map((iss, i) => (
-            <span key={i} style={{
-              padding: "1px 6px", borderRadius: 99,
-              background: "color-mix(in oklch, var(--info), transparent 88%)",
-              border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
-              color: "var(--info)", fontSize: 9.5,
-            }}>{iss}</span>
-          ))}
-        </div>
-      )}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-        <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>profile</span>
-        <select
-          value={st.profile ?? ""}
-          onChange={(e) => setPlanAgentStreamProfile(projectId, st.id, e.target.value || null)}
-          style={{ flex: 1, height: 20, fontSize: 9.5, fontFamily: "var(--mono)", background: "var(--bg-panel)", color: "var(--fg)", border: "1px solid var(--border-soft)", borderRadius: 4 }}
-        >
-          <option value="">— none (role only) —</option>
-          {assignableProfiles.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
-        </select>
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{
-      borderRadius: 6, border: "1px solid var(--border-soft)",
-      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0,
-    }}>
-      <div style={{
-        padding: "7px 10px", background: "var(--bg-elev)",
-        borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 8,
-        fontFamily: "var(--mono)", fontSize: 10.5,
-      }}>
-        <span style={{ color: "var(--fg)" }}>Agent fleet</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--accent)", fontSize: 10 }}>
-          recommend {recommended} session{recommended === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 9 }}>
-        {fleet.reasoning && (
-          <div style={{ color: "var(--fg-muted)", fontSize: 11, lineHeight: 1.55 }}>{fleet.reasoning}</div>
-        )}
-
-        {/* Director toggle — configured here while planning. */}
-        <label style={{
-          display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
-          fontFamily: "var(--mono)", fontSize: 10.5,
-        }}>
-          <input
-            type="checkbox"
-            checked={fleet.director.enabled}
-            onChange={e => setPlanDirector(projectId, e.target.checked, fleet.director.role)}
-          />
-          <span style={{ color: "var(--fg)" }}>Director session</span>
-          {fleet.director.role
-            ? <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>· {fleet.director.role}</span>
-            : <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>· coordinates the fleet from the project root</span>}
-        </label>
-
-        {fleet.streams.length > 0 && (
-          <button
-            onClick={() => generateFleetProfiles(projectId)}
-            style={{
-              alignSelf: "flex-start", padding: "3px 9px", borderRadius: 4, cursor: "pointer",
-              background: "transparent", border: "1px solid var(--border-soft)", color: "var(--fg-muted)",
-              fontFamily: "var(--mono)", fontSize: 9.5,
-            }}
-            title="Create a least-privilege profile per agent from its role + owns + the project toolchain"
-          >Generate least-privilege profiles</button>
-        )}
-
-        {fleet.streams.map(st => <StreamRow key={st.id} st={st} />)}
-
-        <button
-          onClick={onLaunch}
-          style={{
-            marginTop: 2, padding: "6px 12px", borderRadius: 4, cursor: "pointer",
-            background: "var(--accent)", border: "none", color: "#1a120a",
-            fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, letterSpacing: "0.02em",
-          }}
-        >Launch fleet →</button>
-      </div>
-    </div>
-  );
-}
-
-// Coverage record: the dimensions Claude considered but deliberately did not
-// document, each with a reason. Collapsed by default — it's reassurance that the
-// full surface was weighed, not primary plan content.
-function SkippedCard({ items }: { items: SkippedItem[] }) {
-  const [collapsed, setCollapsed] = useState(true);
-  if (items.length === 0) return null;
-  return (
-    <div style={{
-      borderRadius: 6, border: "1px dashed var(--border-soft)",
-      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0, opacity: 0.85,
-    }}>
-      <div
-        onClick={() => setCollapsed(c => !c)}
-        style={{
-          padding: "7px 10px", background: "var(--bg-elev)",
-          borderBottom: collapsed ? "none" : "1px solid var(--border-soft)",
-          display: "flex", alignItems: "center", gap: 8,
-          fontFamily: "var(--mono)", fontSize: 10.5, cursor: "pointer", userSelect: "none",
-        }}
-      >
-        <span style={{
-          display: "inline-block", width: 10, textAlign: "center", fontSize: 8, color: "var(--fg-dim)",
-          transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.15s",
-        }}>▼</span>
-        <span style={{ color: "var(--fg-muted)" }}>Considered &amp; skipped</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>{items.length}</span>
-      </div>
-      {!collapsed && (
-        <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
-          {items.map((it, i) => (
-            <div key={i} style={{ fontFamily: "var(--mono)", fontSize: 10.5, lineHeight: 1.5 }}>
-              <span style={{ color: "var(--fg-dim)" }}>– </span>
-              <span style={{ color: "var(--fg-muted)" }}>{it.topic}</span>
-              {it.reason && <span style={{ color: "var(--fg-dim)" }}> — {it.reason}</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Allowed shell commands for this project's sessions, configured during planning.
-// gh/git are always auto-approved by the backend; these add to them, per project
-// and per repo. They combine additively with the global list (Settings → Agents)
-// and are written into each repo session's .claude/settings.json at launch so
-// triage/console Claude never blocks on a permission prompt.
-function AllowedCommandsCard({ projectId, repos }: { projectId: string; repos: string[] }) {
-  const {
-    allowedCommands, projectAllowedCommands, repoAllowedCommands,
-    addProjectAllowedCommand, removeProjectAllowedCommand,
-    addRepoAllowedCommand, removeRepoAllowedCommand,
-  } = useAppStore();
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const setDraft = (k: string, v: string) => setDrafts(d => ({ ...d, [k]: v }));
-
-  const chip = (label: string, onRemove?: () => void) => (
-    <span key={label} style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
-      padding: "2px 8px", borderRadius: 4,
-      background: "var(--bg-canvas)", border: "1px solid var(--border)",
-      fontFamily: "var(--mono)", fontSize: 10.5, color: onRemove ? "var(--accent)" : "var(--fg-dim)",
-    }}>
-      {label}
-      {onRemove && <span onClick={onRemove} style={{ cursor: "pointer", color: "var(--fg-dim)", lineHeight: 1 }}>×</span>}
-    </span>
-  );
-
-  // A render function (not a nested component) so the input keeps focus across renders.
-  const row = (scopeKey: string, label: string, cmds: string[], onAdd: (c: string) => void, onRemove: (c: string) => void) => {
-    const draft = drafts[scopeKey] ?? "";
-    const commit = () => { if (draft.trim()) { onAdd(draft); setDraft(scopeKey, ""); } };
-    return (
-      <div key={scopeKey} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{label}</span>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-          {cmds.length === 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", fontStyle: "italic" }}>none</span>}
-          {cmds.map(c => chip(c, () => onRemove(c)))}
-          <input
-            value={draft}
-            onChange={e => setDraft(scopeKey, e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
-            placeholder="+ cmd"
-            style={{
-              width: 64, height: 20, padding: "0 6px",
-              background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 4,
-              fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)", outline: "none",
-            }}
-          />
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div style={{
-      borderRadius: 6, border: "1px solid var(--border-soft)",
-      background: "var(--bg-canvas)", overflow: "hidden", flexShrink: 0,
-    }}>
-      <div style={{
-        padding: "7px 10px", background: "var(--bg-elev)",
-        borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 8,
-        fontFamily: "var(--mono)", fontSize: 10.5,
-      }}>
-        <span style={{ color: "var(--fg)" }}>Allowed commands</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>auto-approved · gh, git always on</span>
-      </div>
-      <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 12 }}>
-        {allowedCommands.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>global (inherited)</span>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{allowedCommands.map(c => chip(c))}</div>
-          </div>
-        )}
-        {row("__project", "project", projectAllowedCommands[projectId] ?? [],
-          c => addProjectAllowedCommand(projectId, c),
-          c => removeProjectAllowedCommand(projectId, c))}
-        {repos.map(r =>
-          row(r, r.split("/")[1] ?? r, repoAllowedCommands[repoPromptKey(projectId, r)] ?? [],
-            c => addRepoAllowedCommand(projectId, r, c),
-            c => removeRepoAllowedCommand(projectId, r, c)))}
-      </div>
-    </div>
-  );
-}
-
 // ── GitHub structure card ─────────────────────────────────────────────────────
 //
 // A live map of the GitHub objects this plan produces. Each node mirrors a real
@@ -818,9 +356,13 @@ export function Planning({ visible }: { visible: boolean }) {
     activeProjectRepos,
     projectLocalRepos,
     planSections, planConfirmedSections,
-    planKbAssignments, removePlanKbAssignment,
-    planAutomations,
     planFleet,
+    projectKeyAlias,
+    pinnedContext,
+    setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
+    togglePinnedContext,
+    addProjectRepo, fleetStartProject,
+    agentProfiles,
     commands, schedules,
   } = useAppStore();
 
@@ -829,7 +371,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // remount key in projects/index.tsx. It is frozen for the session, so the
   // publish flow assigning a GitHub Project id or a title edit cannot move the
   // working directory. The ref fallbacks keep older/in-flight sessions working.
-  const sessionKeyRef = useRef(planningSessionKey || activeProjectId || planningTitle || planningPitch);
+  // Resolve through the alias so a project reached via the board (only
+  // `activeProjectId` set = the GitHub node id) maps to the stable folder/data
+  // key its plan files live under, instead of an empty node-id key.
+  const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
+  const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
@@ -897,10 +443,6 @@ export function Planning({ visible }: { visible: boolean }) {
   const sectionByKey = useMemo(() => new Map(sections.map(s => [s.k, s])), [sections]);
   const { project: projectKeys, repos: repoGroups } =
     useMemo(() => groupSections(sections.map(s => s.k)), [sections]);
-  // Considered-but-skipped coverage record (the `_skipped.md` file).
-  const skipped = useMemo<SkippedItem[]>(
-    () => parseSkipped(savedSections[SKIPPED_KEY] ?? ""), [savedSections]);
-
   // Sync the planner's commands.json (the reliable channel — surfaced by the file
   // poll like plan sections, so it can't be lost in the PTY stream) into the
   // per-project/repo command store. Additive: file commands merge in; manual
@@ -934,28 +476,35 @@ export function Planning({ visible }: { visible: boolean }) {
   const goalForTitle = sections.find(s => s.k === "goal")?.content ?? "";
   const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
   const ghStructure  = buildGhStructure(sections, publishRepos, projectTitle, planFleet[effectiveProjectId]);
+
+  // Real plan data for the ProjectPane (#: wire-in). Maps the fleet, agent
+  // profiles, decomposed issues, phases, repos, and sections into the pane's
+  // render shapes; the pane falls back to its sample data when this is empty.
+  const paneData = useMemo(
+    () => buildProjectPaneData({
+      fleet:    planFleet[effectiveProjectId],
+      profiles: agentProfiles,
+      issues:   parseIssuesFile(sections.find(sec => sec.k === "issues")?.content ?? ""),
+      phases:   parsePhases(sections.find(sec => sec.k === "phases")?.content ?? ""),
+      repos:    publishRepos,
+      sections,
+      pinned:   pinnedContext[effectiveProjectId],
+    }),
+    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext],
+  );
   const [restarting, setRestarting] = useState(false);
 
+  const [docsSync, setDocsSync] = useState<SyncState>("idle");
+  const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
+  const [triaging, setTriaging] = useState(false);
   type PublishPhase = "idle" | "running" | "done" | "error";
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
-  const [flashConfirm, setFlashConfirm] = useState(false);
-  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function triggerFlash() {
-    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-    setFlashConfirm(false);
-    // Force a re-render so re-adding the class restarts the animation
-    requestAnimationFrame(() => {
-      setFlashConfirm(true);
-      flashTimerRef.current = setTimeout(() => setFlashConfirm(false), 700);
-    });
-  }
   // Live status of each GitHub object, keyed by the ids in buildGhStructure.
   const [ghStatus, setGhStatus] = useState<GhStatusMap>({});
 
   // The section Claude is currently discussing, driven by <plan_focus> tags.
   // Null until the first focus tag arrives. Highlights the matching card.
-  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [, setActiveSection] = useState<string | null>(null);
 
   const containerRef   = useRef<HTMLDivElement>(null);
   const termRef        = useRef<Terminal | null>(null);
@@ -971,14 +520,6 @@ export function Planning({ visible }: { visible: boolean }) {
   const initSendTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const confirmedCount     = sections.filter(s => s.state === "confirmed").length;
-  const draftedOrConfirmed = sections.filter(s => s.state !== "pending").length;
-  // Ready to publish when every section that has content is confirmed.
-  // Sections Claude never filled stay "pending" and don't block publishing.
-  const allConfirmed = draftedOrConfirmed > 0 &&
-    sections.every(s => s.state !== "drafted");
-  // Existing projects can sync as soon as any section is confirmed.
-  // New projects must confirm everything before first publish.
-  const canPublish = isExisting ? confirmedCount > 0 : allConfirmed;
 
   // Mount xterm.js and spawn the planning PTY (once per Planning screen lifecycle).
   // pty_kill is called on unmount so navigating away ends the session cleanly.
@@ -1425,52 +966,90 @@ export function Planning({ visible }: { visible: boolean }) {
     setRestarting(false);
   }
 
-  function handleConfirm(k: string) {
-    // Confirming writes to the store; the derived `sections` flips this card to
-    // "confirmed" on the next render (and freezes it against further updates).
-    useAppStore.getState().confirmPlanSection(effectiveProjectId, k);
-    // Tell Claude the user approved this section so the discovery loop advances.
-    invoke("pty_write", { paneId, data: `${buildSectionConfirmMessage(titleForKey(k))}\r` }).catch(console.error);
-    // Clear the highlight; Claude will set the next active section via <plan_focus>.
-    if (activeSection === k) setActiveSection(null);
-  }
-
-  // Launch the agent fleet: open (or rebuild) the "· build" tab with the director
-  // and one worker pane per stream. On re-launch, kill the existing panes first so
-  // the bumped runId relaunches each session fresh (resuming via --continue).
-  async function handleLaunchFleet() {
-    const store = useAppStore.getState();
-    const fleet = store.planFleet[effectiveProjectId];
-    if (!fleet) return;
-    // Create each worker's git worktree (idempotent) so its pane launches into an
-    // isolated checkout + branch. The director has no worktree — it runs at the hub.
-    await Promise.all(
-      fleet.streams.map(st =>
-        invoke("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
-          .catch(e => console.error(`worktree for ${st.id} failed:`, e)),
-      ),
-    );
-    // Kill any existing build-tab panes (across all "· build" tabs) so the bumped
-    // runId relaunches each session fresh.
-    const base = `${projectTitle} · build`;
-    await Promise.all(
-      store.tabs.flatMap((t, idx) => {
-        if (t.name !== base && !t.name.startsWith(`${base} `)) return [];
-        const [cols, rows] = (t.layout ?? "1×1").split("×").map(n => parseInt(n, 10) || 1);
-        return Array.from({ length: cols * rows }, (_, i) =>
-          invoke("pty_kill", { paneId: `t${idx}p${i}` }).catch(() => {}),
-        );
-      }),
-    );
-    store.fleetStartProject(projectTitle, fleet, effectiveProjectId);
-  }
-
   // Publish the plan to GitHub: repositories → project board → milestones →
   // issues. Every step is idempotent (check-then-create) so re-running acts as a
   // sync. Status is reported through ghStatus, keyed by the buildGhStructure ids,
   // so the GitHubStructureCard reflects each object as it is created.
+  // Context Files → push a consolidated PROJECT_PLAN.md into every repo's .github/.
+  async function handleSyncDocs() {
+    if (!githubToken || publishRepos.length === 0) return;
+    const token = githubToken;
+    setDocsSync("running");
+    try {
+      const put = (path: string, body: unknown) => invoke("github_put", { token, path, body });
+      const rest = <T,>(path: string) => invoke<T>("github_request", { token, path });
+      const parts = [`# ${projectTitle} — Project Plan\n`];
+      for (const s of sections) parts.push(`\n## ${s.title || s.k}\n\n${s.content}\n`);
+      const content = btoa(unescape(encodeURIComponent(parts.join("\n"))));
+      for (const repo of publishRepos) {
+        const path = `repos/${repo}/contents/.github/PROJECT_PLAN.md`;
+        let sha: string | undefined;
+        try { const ex = await rest<{ sha?: string }>(path); sha = ex?.sha; } catch { /* file absent */ }
+        await put(path, { message: "docs: sync project plan", content, ...(sha ? { sha } : {}) });
+      }
+      setDocsSync("done");
+    } catch (e) {
+      console.error("sync docs failed:", e);
+      setDocsSync("error");
+    }
+  }
+
+  // Agents → ensure each fleet stream's `stream:<id>` label exists in every repo.
+  async function handleSyncLabels() {
+    if (!githubToken || publishRepos.length === 0) return;
+    const streams = planFleet[effectiveProjectId]?.streams ?? [];
+    if (streams.length === 0) { setLabelsSync("error"); return; }
+    const token = githubToken;
+    setLabelsSync("running");
+    try {
+      const post = (path: string, body: unknown) => invoke("github_post", { token, path, body });
+      for (const repo of publishRepos) {
+        for (const st of streams) {
+          // Idempotent: GitHub 422s when the label already exists — ignore it.
+          await post(`repos/${repo}/labels`, { name: `stream:${st.id}`, color: "5319e7" }).catch(() => {});
+        }
+      }
+      setLabelsSync("done");
+    } catch (e) {
+      console.error("sync labels failed:", e);
+      setLabelsSync("error");
+    }
+  }
+
+  // Header button → clone the repos and launch the planned agent fleet (recommended workers + director).
+  async function launchTriage() {
+    const fleet = planFleet[effectiveProjectId];
+    if (publishRepos.length === 0 || !fleet || fleet.streams.length === 0) return;
+    setTriaging(true);
+    try {
+      await Promise.all(publishRepos.map(fullName =>
+        invoke<string>("clone_repo", { project: effectiveProjectId, fullName })
+          .then(() => addProjectRepo(activeProjectId ?? effectiveProjectId, fullName))
+          .catch(e => console.error(`clone ${fullName} failed:`, e)),
+      ));
+      // Materialize any unassigned / dangling-reference agent profiles before
+      // launch so each worker gets its least-privilege profile (#358), then read
+      // the fleet back with the now-assigned profile ids.
+      useAppStore.getState().generateFleetProfiles(effectiveProjectId);
+      const launchPlan = useAppStore.getState().planFleet[effectiveProjectId] ?? fleet;
+      // Create each worker's git worktree (idempotent) before the panes spawn,
+      // so every agent's cwd exists and it starts in its own checkout+branch.
+      // Without this the worktree-based cwd does not exist and the agent lands
+      // in a fallback dir (#359).
+      await Promise.all(launchPlan.streams.map(st =>
+        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
+          .catch(e => console.error(`worktree ${st.id} failed:`, e)),
+      ));
+      fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
+    } catch (e) {
+      console.error("fleet launch failed:", e);
+    } finally {
+      setTriaging(false);
+    }
+  }
+
   async function handlePublish() {
-    if (!canPublish || !githubToken) return;
+    if (!githubToken || publishRepos.length === 0) return;
     const token = githubToken;
 
     const repos       = publishRepos;
@@ -1645,30 +1224,61 @@ export function Planning({ visible }: { visible: boolean }) {
         }
       }
 
-      // ── 4. Issues — one tracking issue per phase in EVERY repo, each pinned
-      //      to that repo's milestone and added to the project board. ─────────
-      for (const fullName of repos) {
+      // ── 4. Issues — one GitHub issue per granular PlanIssue (#311), pinned to its
+      //      milestone and added to the board, with its labels. Falls back to one
+      //      tracking issue per phase when the planner defined none. Idempotent. ──
+      const planIssues = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
+      const phaseNames = phases.map(p => p.name);
+      for (const [repoIdx, fullName] of repos.entries()) {
         // Check what already exists BEFORE creating so a re-sync never duplicates.
-        // Fail CLOSED: if we can't fetch the repo's issues, skip creating here
-        // rather than risk blindly duplicating them.
+        // Fail CLOSED: if we can't fetch the repo's issues, skip creating here.
         let existingTitles: string[];
         try {
-          const existing = await rest<{ title: string }[]>(
-            `repos/${fullName}/issues?state=all&per_page=100`,
-          );
+          const existing = await rest<{ title: string }[]>(`repos/${fullName}/issues?state=all&per_page=100`);
           existingTitles = existing.map(i => i.title);
         } catch {
-          for (let pi = 0; pi < phases.length; pi++) {
-            upd(`issue:${fullName}:${pi}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
+          if (planIssues.length) {
+            for (const iss of planIssues) upd(`issue:${fullName}:${iss.ref}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
+          } else {
+            for (let pi = 0; pi < phases.length; pi++) upd(`issue:${fullName}:${pi}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
           }
           continue;
         }
+
+        if (planIssues.length) {
+          // Issues for THIS repo: its declared `repo`, or the default (first) repo.
+          const mine = planIssues.filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0);
+          // Ensure every label this repo uses exists (422 if present — harmless).
+          for (const name of [...new Set(mine.flatMap(iss => iss.labels))]) {
+            await post(`repos/${fullName}/labels`, { name, color: "0e8a16" }).catch(() => {});
+          }
+          for (const iss of mine) {
+            const id = `issue:${fullName}:${iss.ref}`;
+            if (existingTitles.includes(iss.title)) { upd(id, { status: "exists", detail: "already exists" }); continue; }
+            upd(id, { status: "running" });
+            try {
+              const body: Record<string, unknown> = { title: iss.title, body: renderIssueBody(iss) };
+              const phIdx = resolvePhaseIndex(iss.phase, phaseNames);
+              const msNum = phIdx !== undefined ? msNumbers[fullName]?.[phIdx] : undefined;
+              if (msNum !== undefined) body.milestone = msNum;
+              if (iss.labels.length) body.labels = iss.labels;
+              const issue = await post<{ number: number; node_id: string; html_url: string }>(`repos/${fullName}/issues`, body);
+              if (projectId && issue.node_id) {
+                await gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
+              }
+              upd(id, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
+            } catch (e) {
+              upd(id, { status: "error", detail: String(e) });
+            }
+          }
+          continue;
+        }
+
+        // Legacy fallback: one tracking issue per phase.
         for (let pi = 0; pi < phases.length; pi++) {
           const ph    = phases[pi];
           const id    = `issue:${fullName}:${pi}`;
           const title = `[${ph.name}] ${projectTitle}`;
-          // Match on the stable `[phase]` prefix — the project-title suffix can
-          // change between syncs and would otherwise cause a duplicate.
           const marker = `[${ph.name}]`;
           if (existingTitles.some(t => t.startsWith(marker))) {
             upd(id, { status: "exists", detail: "already exists" });
@@ -1678,19 +1288,18 @@ export function Planning({ visible }: { visible: boolean }) {
           try {
             const body: Record<string, unknown> = {
               title,
-              body: `## ${ph.name}\n\n${ph.description ?? ""}\n\n---\n_Auto-generated by base-studio-code planner._`,
+              body: `## ${ph.name}
+
+${ph.description ?? ""}
+
+---
+_Auto-generated by base-studio-code planner._`,
             };
             const msNum = msNumbers[fullName]?.[pi];
             if (msNum !== undefined) body.milestone = msNum;
-            const issue = await post<{ number: number; node_id: string; html_url: string }>(
-              `repos/${fullName}/issues`, body,
-            );
-            // Add the issue to the project board so it shows up as a tracked item.
+            const issue = await post<{ number: number; node_id: string; html_url: string }>(`repos/${fullName}/issues`, body);
             if (projectId && issue.node_id) {
-              await gql(
-                `mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`,
-                { p: projectId, c: issue.node_id },
-              ).catch(() => { /* already on board — ignore */ });
+              await gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
             }
             upd(id, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
           } catch (e) {
@@ -1732,12 +1341,6 @@ export function Planning({ visible }: { visible: boolean }) {
     }
   }
 
-  // % of filled sections still needing confirmation (shown in the disabled button).
-  const unconfirmedFilled = sections.filter(s => s.state === "drafted").length;
-  const remainingPct = draftedOrConfirmed === 0 ? 100
-    : Math.round((unconfirmedFilled / draftedOrConfirmed) * 100);
-
-  const noRepoReady = !githubToken;
 
   return (
     <>
@@ -1790,52 +1393,14 @@ export function Planning({ visible }: { visible: boolean }) {
         <button className="btn ghost" onClick={() => setProjectsView(isExisting ? "board" : "list")}>
           save & exit
         </button>
-        {(() => {
-          const verb    = isExisting ? "sync" : "publish";
-          const verbCap = isExisting ? "Sync changes →" : "Publish to GitHub →";
-          const pending = isExisting
-            ? `sync to github · ${remainingPct > 0 ? `${remainingPct}% to go` : "confirm at least one section"}`
-            : `publish to github · ${remainingPct > 0 ? `${remainingPct}% to go` : "confirm all sections"}`;
-          if (publishPhase === "running") return (
-            <button className="btn primary" disabled style={{ opacity: 0.7 }}>
-              {verb}ing…
-            </button>
-          );
-          // After a successful run the flow stays re-runnable — every step is
-          // idempotent, so clicking again syncs new/changed objects to GitHub.
-          if (publishPhase === "done") return (
-            <button
-              className="btn primary"
-              onClick={handlePublish}
-              title="Re-run the publish — existing objects are skipped"
-              style={{ background: "var(--success)", borderColor: "var(--success)" }}
-            >
-              ↻ sync again
-            </button>
-          );
-          if (!canPublish) return (
-            <div onClick={triggerFlash} title="Confirm at least one section first" style={{ cursor: "pointer" }}>
-              <button className="btn primary" disabled style={{ opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }}>
-                {pending}
-              </button>
-            </div>
-          );
-          if (noRepoReady) return (
-            <button className="btn primary" disabled style={{ opacity: 0.5, cursor: "not-allowed" }}
-              title="Add a GitHub token in Settings → Integrations">
-              no github token
-            </button>
-          );
-          return (
-            <button
-              className="btn primary"
-              onClick={handlePublish}
-              style={publishPhase === "error" ? { borderColor: "var(--danger)", color: "var(--danger)", background: "transparent" } : {}}
-            >
-              {publishPhase === "error" ? `↺ retry ${verb}` : verbCap}
-            </button>
-          );
-        })()}
+        <button
+          className="btn primary"
+          onClick={launchTriage}
+          disabled={triaging || publishRepos.length === 0}
+          title={publishRepos.length === 0 ? "Link a repo first" : "Clone the repos and start a triage session"}
+        >
+          {triaging ? "starting triage…" : "Triage →"}
+        </button>
       </div>
 
       {/* Repo strip — always visible so state is clear at a glance */}
@@ -1925,64 +1490,23 @@ export function Planning({ visible }: { visible: boolean }) {
         {/* Plan sections / publish progress panel */}
         <aside style={{ flex: `0 0 ${sectionsPanel.size}px`, display: "flex", flexDirection: "column", background: "var(--bg-panel)", minHeight: 0, overflow: "hidden" }}>
           {publishPhase === "idle" ? (
-            <>
-              <div style={{
-                padding: "10px 18px", borderBottom: "1px solid var(--border-soft)",
-                display: "flex", alignItems: "center", gap: 8,
-                fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
-              }}>
-                <span style={{ color: "var(--accent)" }}>
-                  ⌘ plan · {draftedOrConfirmed > 0 ? "building" : "waiting"}
-                </span>
-                <div style={{ flex: 1 }} />
-                <span style={{ fontSize: 10 }}>{confirmedCount}/{sections.length} confirmed</span>
-              </div>
-              <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-                {/* Project-tier sections, in checklist order. */}
-                {projectKeys.map(k => {
-                  const s = sectionByKey.get(k);
-                  return s ? (
-                    <PlanSectionCard key={k} section={s} onConfirm={handleConfirm} flashing={flashConfirm && s.state === "drafted"} active={activeSection === k} />
-                  ) : null;
-                })}
-                {/* Per-repo tier: one labelled group per repo with codebase-specific topics. */}
-                {repoGroups.map(g => (
-                  <div key={g.repo} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 6, marginTop: 4,
-                      fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase",
-                      letterSpacing: ".06em", color: "var(--fg-muted)",
-                    }}>
-                      <span style={{ color: "var(--accent)" }}>repo</span>
-                      <span>· {g.repo}</span>
-                    </div>
-                    {g.keys.map(k => {
-                      const s = sectionByKey.get(k);
-                      return s ? (
-                        <PlanSectionCard key={k} section={s} onConfirm={handleConfirm} flashing={flashConfirm && s.state === "drafted"} active={activeSection === k} />
-                      ) : null;
-                    })}
-                  </div>
-                ))}
-                <SkippedCard items={skipped} />
-                <AllowedCommandsCard projectId={effectiveProjectId} repos={publishRepos} />
-                <KbAssignedCard
-                  blockIds={planKbAssignments[effectiveProjectId] ?? []}
-                  onRemove={(id) => removePlanKbAssignment(effectiveProjectId, id)}
-                />
-                <AutomationsCard
-                  automations={planAutomations[effectiveProjectId] ?? []}
-                  onRemove={(idx) => {
-                    const current = planAutomations[effectiveProjectId] ?? [];
-                    const filtered = current.filter((_, i) => i !== idx);
-                    useAppStore.getState().clearPlanAutomations(effectiveProjectId);
-                    filtered.forEach(a => useAppStore.getState().addPlanAutomation(effectiveProjectId, a));
-                  }}
-                />
-                <FleetCard projectId={effectiveProjectId} onLaunch={handleLaunchFleet} />
-                <GitHubStructureCard structure={ghStructure} status={ghStatus} />
-              </div>
-            </>
+            <ProjectPane
+              data={paneData}
+              projectName={projectTitle}
+              projectId={effectiveProjectId}
+              onPerm={(id, perm) => setPlanAgentStreamPerm(effectiveProjectId, id, perm)}
+              onPreset={(id, preset, perm) => setPlanAgentStreamPreset(effectiveProjectId, id, preset, perm)}
+              onFlow={(id, f) => setPlanAgentStreamFlow(effectiveProjectId, id, {
+                autonomy: f.autonomy as FlowAutonomy,
+                push: (f.push === "auto-PR" ? "auto-pr" : f.push) as FlowPush,
+                gate: f.gate as FlowGate,
+              })}
+              onTogglePin={(name) => togglePinnedContext(effectiveProjectId, name)}
+              onSyncStructure={githubToken && publishRepos.length > 0 ? handlePublish : undefined}
+              onSyncDocs={githubToken && publishRepos.length > 0 ? handleSyncDocs : undefined}
+              onSyncLabels={githubToken && publishRepos.length > 0 ? handleSyncLabels : undefined}
+              syncState={{ structure: "idle", docs: docsSync, labels: labelsSync }}
+            />
           ) : (
             <>
               {/* Publish progress header */}

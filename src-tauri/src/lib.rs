@@ -282,6 +282,50 @@ fn delete_project_dir(project_key: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Clear every project's plan files for a from-scratch dev reset, WITHOUT touching
+/// the cloned repos. Deletes only the top-level `.md` / `.json` plan files in each
+/// `projects/<key>/` dir (goal.md, issues.json, phases.json, fleet.json, the
+/// context docs, …) and leaves all SUBDIRECTORIES — the cloned repos, their
+/// `.worktrees`, and `prompts/` — intact. Best-effort; returns how many files were
+/// removed. Without this, the planning poll re-reads the files and a store-only
+/// clear is undone within a tick.
+#[tauri::command]
+fn clear_all_plan_files() -> Result<u32, String> {
+    let projects = bsc_base_dir().join("projects");
+    if !projects.exists() {
+        return Ok(0);
+    }
+    let mut removed = 0u32;
+    let entries = std::fs::read_dir(&projects).map_err(|e| format!("clear_all_plan_files: {e}"))?;
+    for entry in entries.flatten() {
+        let proj = entry.path();
+        if !proj.is_dir() {
+            continue;
+        }
+        let items = match std::fs::read_dir(&proj) {
+            Ok(i) => i,
+            Err(_) => continue,
+        };
+        for item in items.flatten() {
+            let p = item.path();
+            // Preserve every subdirectory (cloned repos, .worktrees, prompts, .claude).
+            if !p.is_file() {
+                continue;
+            }
+            let is_plan = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("json"))
+                .unwrap_or(false);
+            if is_plan && std::fs::remove_file(&p).is_ok() {
+                removed += 1;
+            }
+        }
+    }
+    log::info!("clear_all_plan_files: removed {removed} plan files");
+    Ok(removed)
+}
+
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
 ///
 /// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
@@ -961,6 +1005,41 @@ async fn github_post(
     Ok(json)
 }
 
+#[tauri::command]
+async fn github_put(
+    token: String,
+    path: String,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let _perf = PerfSpan::new("github_put");
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/{}", path);
+    let response = client
+        .put(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "base-studio-code/0.2.0")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    if !status.is_success() {
+        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        log::warn!("github_put {path} HTTP {status}: {msg}");
+        return Err(format!("GitHub API error ({}): {}", status, msg));
+    }
+    Ok(json)
+}
+
 // ── GitHub response cache (ETag-validated, in-memory) ──────────────────────────
 //
 // REST GETs are cached by endpoint path. On the next request we send the stored
@@ -1153,6 +1232,7 @@ const BSC_DECISIONS_RC: &str = concat!(
     // ("blocked until that pane finishes" — the form the runtime uses to detect wait-for
     // cycles between sessions; see detectDeadlocks in src/lib/coordination.ts).
     r#"bsc-blocked() { on=""; cp=""; while [ $# -gt 0 ]; do case "$1" in --on) on="$2"; shift 2 ;; --checkpoint) cp="$2"; shift 2 ;; *) shift ;; esac; done; d="${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}"; mkdir -p "$(dirname "$d")" 2>/dev/null; m="$(cat)"; { printf '%s' '- BLOCKED: '; printf '%s' "$m"; [ -n "$on" ] && printf '%s' " (on $on)"; printf '\n'; } >> "$d"; l="${BSC_COORD_LOG:-}"; if [ -n "$on" ] && [ -n "$l" ]; then ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\tblocked\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$on" "$cp" >> "$l"; fi; }"#,
+    "\n",
 );
 
 /// The `bsc-audit` helper (#257): the PreToolUse hook on a gated pane pipes Claude
@@ -1174,7 +1254,7 @@ const BSC_AUDIT_RC: &str = concat!(
 /// realpath so it's portable; `return 2` (not `exit`) so it never kills a shell that
 /// sources it. Covers the AI's file tools only — Bash needs OS-level sandboxing.
 const BSC_CONFINE_RC: &str = concat!(
-    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; case "$fp" in ..|../*|*/../*|*/..) echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
+    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; case "$fp" in ..|../*|*/../*|*/..) echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
     "\n",
 );
 
@@ -1189,6 +1269,7 @@ bsc-landed() { __bsc_coord landed "$1" ""; }
 bsc-merged() { __bsc_coord merged "$1" ""; }
 bsc-closed() { __bsc_coord closed "$1" ""; }
 bsc-failed() { r="$(cat)"; __bsc_coord failed "$1" "$r"; }
+bsc-wait() { r="$(cat)"; __bsc_coord waiting "$r" "${BSC_CHECKPOINT_DOC:-}"; }
 "#;
 
 /// Read the Agents audit log (#257): the newest `limit` TSV lines, newest first.
@@ -1532,10 +1613,42 @@ async fn setup_kb_workspace() -> Result<String, String> {
 
 const PLANNING_NEW_INTRO: &str = r#"# base-studio-code · New Project Planner
 
+> ⚠️ **READ FIRST — who this file is for.** This is the project **planner's**
+> instruction set. It lives at the planning-workspace root, so it is also loaded as
+> ancestor context by every session launched in a child repo. **It applies ONLY to
+> the dedicated planning session** — the one started from the Planning screen, with
+> no assigned issue or task.
+>
+> **If you are any other session — a triage session, a fleet/worker session, or any
+> session launched to execute a specific issue, task, or kickoff — STOP. Ignore this
+> entire file. Follow your own repository's `CLAUDE.md` and your kickoff / triage
+> prompt instead. Do NOT plan the project, do NOT write or edit plan files, do NOT
+> run the planning workflow. Just do the work you were given.**
+
 You are planning a brand-new software project. Your job is to understand it
 deeply, create the GitHub repositories it needs, and produce a plan thorough
 enough that a Claude coding session can start implementing without asking
 clarifying questions.
+
+## Your mandate — plan only, and plan for hand-off
+
+**This session plans; it does not implement.** You may write only the planning
+files — the plan section files, `phases.json`, `issues.json`, `fleet.json`, and
+the `prompts/` kickoff scripts — and set up the **planning git structure** (the
+repositories, project board, milestones, issues, and labels, created by the
+Publish flow). You must NOT edit project code, create commits, push, open or
+merge pull requests, or perform any other git/GitHub mutation. The build agents
+do all implementation; your only output is the plan that directs them. This
+boundary is also enforced — the session can read git/GitHub for context but
+cannot commit, push, or edit code files — so don't attempt those; put the work
+into the plan instead.
+
+**Plan thoroughly enough for hand-off.** Any agent must be able to pick up any
+piece of work at any point and proceed WITHOUT asking questions. Every issue
+carries its full contract — acceptance criteria, the files it owns, and its
+dependencies; every open question is resolved with the user or given an explicit
+default ("agent decides; default = X"). If a building agent would have to stop
+and ask, the plan is not finished.
 
 ## Pitch
 
@@ -1597,20 +1710,62 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
      (`gh repo create {owner}/{name} --private --description "..."`), clone it
      (`git clone https://github.com/{owner}/{name} {name}`), write an initial
      `{name}/CLAUDE.md`, and emit `<repo_link full_name="{owner}/{name}" />`.
-3. **Walk the discovery checklist** using the loop above, documenting or skipping
-   each dimension and capturing per-repo topics where they belong.
-4. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
+3. **Walk the discovery checklist as a QUICK orientation** (see "The discovery
+   checklist") — document the core dimensions (goal, users, scope, stack,
+   architecture) briefly, skip the rest unless they're central, and don't dwell.
+   This pass only grounds the workshop; it is not the main event.
+4. **Develop the GitHub structure — the main event.** Run the feature workshop
+   REPO BY REPO (see "Develop the GitHub structure"), and go SLOW — ONE unit at a
+   time. For a NEW project work **feature by feature**; for an EXISTING project
+   **migrate the app section by section** — inventory every screen/module first,
+   then walk it so nothing is missed. Fully drive each unit down to the issues it
+   brings (error/empty states, edge cases, migrations, cross-repo contracts) and
+   write it before moving on, then sequence into phases. The longest, most
+   interactive part: be Socratic, propose then interrogate, and don't shortcut it.
+5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
    and set the optimal session count (see "Plan the agent fleet").
-5. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
+6. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
    GitHub").
 "#;
 
 const PLANNING_EXISTING_INTRO: &str = r#"# base-studio-code · Project Planner
 
+> ⚠️ **READ FIRST — who this file is for.** This is the project **planner's**
+> instruction set. It lives at the planning-workspace root, so it is also loaded as
+> ancestor context by every session launched in a child repo. **It applies ONLY to
+> the dedicated planning session** — the one started from the Planning screen, with
+> no assigned issue or task.
+>
+> **If you are any other session — a triage session, a fleet/worker session, or any
+> session launched to execute a specific issue, task, or kickoff — STOP. Ignore this
+> entire file. Follow your own repository's `CLAUDE.md` and your kickoff / triage
+> prompt instead. Do NOT plan the project, do NOT write or edit plan files, do NOT
+> run the planning workflow. Just do the work you were given.**
+
 You are planning an existing project. Your job is to read the codebase,
 understand what has been built, decide what is next, and produce a plan thorough
 enough that a Claude coding session can start implementing without asking
 clarifying questions.
+
+## Your mandate — plan only, and plan for hand-off
+
+**This session plans; it does not implement.** You may write only the planning
+files — the plan section files, `phases.json`, `issues.json`, `fleet.json`, and
+the `prompts/` kickoff scripts — and set up the **planning git structure** (the
+repositories, project board, milestones, issues, and labels, created by the
+Publish flow). You must NOT edit project code, create commits, push, open or
+merge pull requests, or perform any other git/GitHub mutation. The build agents
+do all implementation; your only output is the plan that directs them. This
+boundary is also enforced — the session can read git/GitHub for context but
+cannot commit, push, or edit code files — so don't attempt those; put the work
+into the plan instead.
+
+**Plan thoroughly enough for hand-off.** Any agent must be able to pick up any
+piece of work at any point and proceed WITHOUT asking questions. Every issue
+carries its full contract — acceptance criteria, the files it owns, and its
+dependencies; every open question is resolved with the user or given an explicit
+default ("agent decides; default = X"). If a building agent would have to stop
+and ask, the plan is not finished.
 
 ## Project context
 
@@ -1674,12 +1829,22 @@ once the user agrees. Always scan before you propose; never race ahead.
 2. **Read the knowledge base.** Read `kb_index.md`, read blocks whose tags match
    the stack, and assign relevant ones with `<kb_assign id="block-id" />`. Read
    `automations.md` and suggest automations that fit.
-3. **Walk the discovery checklist** using the scan→propose→confirm loop above,
-   documenting or skipping each dimension and capturing per-repo topics where
-   they belong. Open with a 3–5 sentence orientation on what you found.
-4. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
+3. **Walk the discovery checklist as a QUICK orientation** using the
+   scan→propose→confirm loop (see "The discovery checklist") — open with a 3–5
+   sentence read of what you found, document the core dimensions (goal, users,
+   scope, stack, architecture) briefly, skip the rest unless they're central, and
+   don't dwell. This pass only grounds the workshop.
+4. **Develop the GitHub structure — the main event.** Run the feature workshop
+   REPO BY REPO (see "Develop the GitHub structure"), and go SLOW — ONE unit at a
+   time. For a NEW project work **feature by feature**; for an EXISTING project
+   **migrate the app section by section** — inventory every screen/module first,
+   then walk it so nothing is missed. Fully drive each unit down to the issues it
+   brings (error/empty states, edge cases, migrations, cross-repo contracts) and
+   write it before moving on, then sequence into phases. The longest, most
+   interactive part: be Socratic, propose then interrogate, and don't shortcut it.
+5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
    and set the optimal session count (see "Plan the agent fleet").
-5. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
+6. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
    GitHub").
 "#;
 
@@ -1827,6 +1992,12 @@ files and rarely need a human.
      ]
    }
    ```
+   Each stream may also carry **`"profile"`** — an AgentProfile id that scopes its
+   session's auto-approved commands, per-tool permissions, and write-paths (least
+   privilege, layered on top of the role). After the commands step has discovered the
+   project's toolchain, either reuse an existing profile or, in the fleet card, click
+   **Generate least-privilege profiles** to derive one per agent from its role + `owns`
+   + the project's commands; `<agent_assign … profile="…">` assigns one inline.
 7. **Write a kickoff script per stream** to `prompts/{id}-kickoff.md` (and
    `prompts/director-kickoff.md` if a director). These are the first messages those
    sessions receive — design them for autonomy (next).
@@ -1868,81 +2039,66 @@ issues, and each repo's `DECISIONS.md`; merge the agents' branches via PRs (reso
 conflicts); resolve or escalate the cross-stream decisions workers log; and keep
 milestones/the board current — never writing feature code itself.
 
-## The discovery checklist
+## The discovery checklist — a quick orientation, not the main event
 
-Walk these dimensions, documenting the ones that apply (project or repo tier) and
-recording the rest in `_skipped.md`. Each line is the **structured template** for
-that section — capture exactly what it asks for. `goal`, `phases`, and `risks`
-apply to almost every project.
+Discovery here is a SHORT grounding pass. Its only job is to give the feature
+workshop (the real work — see "Develop the GitHub structure") enough shared
+context to stand on. Document the core dimensions briefly and move on fast; do
+NOT turn this into a dozen set-piece conversations. `goal`, `phases`, `issues`,
+and `risks` apply to almost every project.
 
-**Product**
+**Core orientation — document these, briefly (each line is the template):**
 - `goal` — what it does, who it's for, and the measurable signal of success
   (2–4 sentences). Drives the GitHub project title and description.
 - `users` — primary personas, their jobs-to-be-done, and the one workflow each
-  cares most about.
+  cares most about. One tight paragraph.
 - `scope` — two lists: **In scope** (concrete deliverables) and **Out of scope**
   (explicit exclusions that prevent scope creep).
-- `ux` — key screens/flows, navigation model, and empty/error/loading states.
-  For non-UI projects, the CLI/API ergonomics instead.
-
-**Engineering**
-- `stack` — one line per layer (runtime, framework, datastore, cache/queue,
-  auth, hosting) with versions and a justification for non-obvious picks. As soon
-  as the toolchain is decided, record its build/test/run/package binaries in
-  `commands.json` and emit `<allow_command>` (see "App integration tags") so the
-  project's sessions run them without a prompt.
+- `stack` — one line per layer (runtime, framework, datastore, auth, hosting)
+  with versions and a justification for non-obvious picks. As soon as the
+  toolchain is decided, record its build/test/run/package binaries in
+  `commands.json` and emit `<allow_command>` (see "App integration tags").
 - `architecture` — named components + a one-sentence responsibility each, how
-  they communicate (protocol, sync/async), and 2–3 key flows as step-by-step
-  data paths.
-- `schema` — per entity: table/collection, key fields + types, constraints,
-  relationships, important enums; note the migrations strategy.
-- `api` — per endpoint or exported contract: method+path (or signature),
-  request/response shape, auth, the shared error format + status codes, plus
-  versioning/pagination conventions.
-- `integrations` — third-party services (payments, email, storage, LLM): purpose,
-  auth model, failure handling, sandbox vs. production.
-- `auth` — identity provider, session/token model, roles & permissions, and how
-  authorization is enforced at each layer.
+  they communicate, and the 2–3 key cross-component flows. For a multi-repo
+  project, say which repo owns what.
 
-**Quality & operations**
-- `security` — threat-model highlights, secret management, input
-  validation/encoding, dependency & supply-chain controls, and encryption at
-  rest/in transit. Note any legal-doc updates a data-handling change requires.
-- `testing` — the unit/integration/E2E split: what each covers, frameworks,
-  fixtures/mocks, the coverage target, and the CI gate that enforces it.
-- `observability` — structured logging (levels, format, correlation ids),
-  metrics/SLIs, tracing, dashboards, and alert thresholds.
-- `performance` — target latency/throughput, expected load, capacity limits,
-  caching, and the reliability budget (timeouts, retries, backpressure, graceful
-  degradation).
-- `infra` — environments (dev/staging/prod), provisioning (IaC), networking,
-  scaling model, and backups/disaster recovery.
-- `cicd` — pipeline stages per environment, deploy mechanism, secrets handling,
-  and branching/release/versioning strategy.
+**Capture only where it materially shapes the build — otherwise fold it into the
+feature that needs it, or skip:**
+- `security` — threat-model highlights, secret management, supply-chain controls,
+  encryption at rest/in transit. Note any legal-doc update a data change forces.
+- `testing` — the unit/integration/E2E split, frameworks, and the CI gate that
+  enforces it (usually one short section every repo reuses).
+- `cicd` — pipeline stages, deploy mechanism, and branching/release strategy.
 
-**Lifecycle & governance**
-- `data_lifecycle` — retention/deletion policies, PII handling, compliance
-  (e.g. GDPR), migrations/backfills, and audit logging.
-- `docs` — what docs exist and where (README, API reference, architecture,
-  runbooks) and what changes trigger an update.
-- `analytics` — product events/KPIs tracked, the tooling, and how the success
-  metric from `goal` is measured.
-- `accessibility` — the a11y target (e.g. WCAG level), keyboard/screen-reader
-  support, and i18n/l10n approach.
-- `cost` — expected cost drivers, budget guardrails, and resourcing/ownership.
+**Captured per feature in the workshop, NOT as standalone project sections:**
+`api`, `schema`, `auth`, and `integrations` — a feature's endpoints, tables,
+identity needs, and third-party calls belong to that feature's issues, where an
+agent will actually build them. Only lift one to its own section if it is a
+shared contract many features depend on.
 
-**Planning**
-- `phases` — the roadmap as a JSON array (see "Special sections"); each phase is
-  a crisp "done when", no time estimates.
+**Skip by default — one line in `_skipped.md` unless the product is centrally
+about it:** `ux`, `observability`, `performance`, `infra`, `data_lifecycle`,
+`docs`, `analytics`, `accessibility`, `cost`. Document one only when it is a
+first-class concern (e.g. `ux` for a design tool, `performance` for a database).
+
+**Planning — the real output (see "Special sections" + the feature workshop):**
+- `phases` — the roadmap as a JSON array; each phase a crisp "done when", no time
+  estimates.
+- `issues` — every feature decomposed into granular, self-contained GitHub issues,
+  each carrying a concrete title, **acceptance criteria**, the **files/dirs it
+  owns**, its **dependencies**, **labels**, its **phase** (→ milestone), and — for
+  a multi-repo project — its **`repo`** and **`stream`**. **This is the most
+  important output for execution.** A building agent picks up ONE issue and must
+  finish it WITHOUT asking. Don't stop at an overview — the plan isn't done until
+  every feature, and the problems it brings, are decomposed to this level.
 - `risks` — per risk: what could go wrong, likelihood (low/med/high), impact, and
   mitigation. Add continuously as you spot them.
-- `open_questions` — unresolved decisions shaping the plan. Drive this toward
-  **zero** before the fleet launches: resolve each with the user, or record an
-  explicit default ("agent decides; default = X") so a building session never has to
-  stop and ask. Each remaining item names what's needed to resolve it.
+- `open_questions` — unresolved decisions. Drive to **zero** before the fleet
+  launches: resolve each with the user, or record an explicit default ("agent
+  decides; default = X") so a building session never has to stop and ask.
 - `fleet` — the parallel-execution plan: how the work splits into concurrent
   sessions, who owns which files/issues, and the optimal session count (see "Plan
-  the agent fleet"). Written as `fleet.json`, not a prose section.
+  the agent fleet"). Written as `fleet.json`.
 
 Document custom topics beyond this list when the project needs them — name the
 file after the topic (`feature_flags.md`, `offline_sync.md`).
@@ -1984,6 +2140,12 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
   {"name":"Phase 2 — Production ready","description":"integration suite passes; release pipeline ships v1.0.0"}
 ]</plan_update>
 ```
+```
+<plan_update section="issues">[
+  {"ref":"F1","title":"Add POST /v1/migrations/up","phase":1,"acceptance":["applies pending migrations in order","returns 200 {applied:[{version}]}","integration test against real Postgres"],"owns":["src/api/migrations.go"],"dependsOn":[],"labels":["scope:core","area:api"],"stream":"api"},
+  {"ref":"F2","title":"Wire `status` to GET /v1/migrations/status","phase":1,"acceptance":["lists pending + applied","exit 0"],"owns":["src/cli/status.go"],"dependsOn":["F1"],"labels":["scope:core","area:cli"],"stream":"cli"}
+]</plan_update>
+```
 
 ## Special sections
 
@@ -1993,14 +2155,136 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
   objects (the inline tag carries the same JSON). Each phase needs a "done when"
   definition; never include time estimates or week numbers. The publish flow
   turns each phase into a milestone and a tracking issue per repo.
+- **`issues`** — write `issues.json` as a JSON array of issue objects:
+  `{"ref","title","phase","acceptance":[],"owns":[],"dependsOn":[],"labels":[],"stream"?,"repo"?}`.
+  `ref` is a stable planner-local id used by `dependsOn` (NOT the GitHub number,
+  which is assigned at publish); `phase` is the 1-based phase number or its name
+  (→ that milestone). The publish flow creates ONE GitHub issue per entry — title,
+  a body built from the acceptance checklist + owned paths + dependencies, pinned to
+  its milestone, with its labels and a `stream:<id>` label. A fleet stream owns its
+  issues by listing their refs. Define enough that the agent who picks one up needs
+  nothing else.
 - **`_skipped`** — the coverage record described under "Coverage" above.
+
+## Develop the GitHub structure — the feature workshop (the main event)
+
+This is the heart of planning and where the MAJORITY of the session goes. After
+the short orientation, you turn the project into its real GitHub structure — the
+features each repo will have, the issues each brings, and the path to build them.
+The output is `issues.json` + `phases.json` (the milestones → issues Publish
+creates). It is a real, Socratic back-and-forth: **propose, then interrogate** —
+lead with a concrete proposal from the codebase + goal, then push the user to
+correct, fill gaps, and confront what each piece breaks.
+
+**Pace: go slow, ONE unit at a time.** This is where plans get missed when rushed.
+Hold only the CURRENT unit in focus and fully finish it — its spec, the issues it
+brings, confirmed and written to `issues.json` — before you touch the next. Working
+one unit at a time keeps the context tight and is the only way to guarantee nothing
+is skipped. Do NOT sketch the whole project at once.
+
+**What a "unit" is depends on the project — pick the mode and tell the user which
+you're using:**
+
+- **A NEW project → go feature by feature.** First agree a short **feature list**
+  (the agenda: named capabilities, no detail yet). Then take the features ONE at a
+  time: fully drive the current feature down to its issues (see "Drive a unit down"
+  below), confirm it, write it, and only THEN move to the next. Never batch the
+  depth pass across features.
+
+- **An EXISTING project → migrate section by section.** You are bringing the whole
+  existing app into the plan, so a missed section is missed real work. First build a
+  **section inventory** — every screen / route / page / component area / module /
+  service in the codebase, listed as a checklist (scan the router, the directory
+  tree, the nav). Confirm with the user that the inventory is complete. Then walk it
+  ONE section at a time: read that section's code, capture what it does today and
+  every piece of work to bring it into the plan (its issues), confirm, **check it
+  off**, and move on. Do not finish until every inventoried section is accounted for.
+
+**Go repo by repo.** A project is the sum of what each repo/app does, so run the
+workshop once PER linked repo (its own feature list or section inventory), then
+sequence across them. Every issue carries its `repo`, so the structure panel groups
+it under the repo it belongs to.
+
+**Be Socratic — interrogate every unit.** Pull the complete picture out of the user;
+don't accept the first answer. For each unit probe: the happy path, the
+error/empty/loading states, the edge cases, what data it migrates, what it breaks
+elsewhere, and the cross-repo contracts it depends on. Each problem you surface is
+itself an issue — a unit is not "mapped" until the issues it BRINGS are mapped too.
+
+**Hard topics — research and source before you decompose.** When a unit needs a
+non-trivial or specialized solution — a physics / protein-folding simulation, a
+neural-net architecture, 3D graphics/rendering, a novel algorithm, anything where
+"build it somehow" would leave the agent stuck — STOP and ground the approach
+before you write its issues:
+- **Name the established approach** from what you know: the standard technique, the
+  canonical library/framework, the reference architecture.
+- **Source it.** Ask the user for papers / docs / a reference implementation they
+  trust, and `WebFetch` any concrete URL you or they name (a library API page, a
+  spec, a GitHub raw file) to verify it. You can fetch a known URL but not search —
+  so ask for the link rather than guessing.
+- **Pin the specifics**: the exact library + version, the algorithm/architecture,
+  the data structures, the known pitfalls, and the perf/accuracy constraints.
+- **Fold it into the issues (preferred).** The grounded approach becomes each
+  issue's **How / build approach** and **Tools & tech** (named, not "a library"),
+  sharpens its **acceptance** (e.g. "renders 10k instances at 60 fps via
+  InstancedMesh"), and drives the **epic → sub-issue decomposition** the technique
+  implies (e.g. an epic "WebGL renderer" → sub-issues for scene graph, instancing,
+  picking). The agent building it should never have to re-derive the approach.
+- **Capture the source** so the agent inherits it: write a short reference section
+  (a `{topic}.md` plan section, e.g. `research_renderer.md`) and/or assign a
+  Knowledge Base block (`<kb_assign>`) scoped to the project so it lands in the
+  agent's prompt — preferred over a loose note; failing that, link the source in
+  the issue body.
+
+A hard unit left as a generic sketch is a happy-path stub — treat it like a missing
+issue: research, source, and decompose it before the plan is "done."
+
+### Drive a unit (feature or section) down to its issues
+For the current unit, propose a complete spec, then interrogate to correct and fill
+it before moving on. Do not move on until ALL of these are concrete:
+- **Behavior + acceptance** — exactly what it does, and the done-when checklist the
+  agent verifies against.
+- **The issues it brings** — every problem the unit introduces: error/empty/loading
+  states, edge cases, validation, migrations/backfills, security and auth needs, and
+  the cross-repo contracts it depends on. Make each its own issue — this is what
+  turns a happy-path sketch into a complete plan.
+- **How — the build approach** — the concrete steps/design: the sequence of changes,
+  the integration points, the shape of the solution.
+- **Tools & tech** — the specific libraries, services, and frameworks. Name them
+  ("Postgres via sqlx", not "a database").
+- **Owned files + dependencies** — the files/dirs each issue owns and which issues
+  must land first.
+Write each issue into `issues.json` the moment it's nailed — with its `repo`,
+`stream`, `acceptance`, `owns`, `dependsOn`, and `labels` — so the structure panel
+fills in as you go and nothing is lost. Then, and only then, move to the next unit.
+
+### Sequence the path (how we get there)
+Once every unit (every feature, or every inventoried section) is decomposed, agree
+the ORDER with the user: the first shippable slice, what builds on what, the path
+from nothing to the finished product. Group the ordered work into phases
+(`phases.json`) — each a dependency-respecting milestone with a crisp "done when,"
+not an arbitrary bucket. Phases span repos; each issue's `phase` points at its
+milestone and its `repo` places it under that repo in the structure.
+
+**Completeness gate.** The plan is done only when EVERY unit is decomposed — for a
+new project, every feature on the list; for an existing project, every section in
+the inventory, with the inventory itself confirmed complete. The repo-first
+structure panel is your scorecard: an empty repo, or a milestone with no issues, is
+unfinished work. For an existing app, a screen or module that exists in the code but
+has no issues means you missed it — go back and migrate it.
+
+When the units are done, the user sees the assembled structure (repos → milestones →
+issues → dependencies) in the panel, and Publish turns it into the real project
+board — every issue the product of this conversation, carrying everything an agent
+needs to pick it up and finish without asking.
 
 ## Publish to GitHub
 
 After the user confirms the plan in the right panel, the **Publish** button
 creates the repositories, the project board, one milestone per phase, and one
-tracking issue per phase in each repo, and labels each fleet stream's owned issues
-with `stream:<id>`. You can also push detail yourself with the
+GitHub issue per `issues.json` entry (pinned to its milestone, with its labels;
+falling back to a per-phase tracking issue when no issues are defined), and labels
+each fleet stream's owned issues with `stream:<id>`. You can also push detail yourself with the
 `gh` CLI — every step below is idempotent (check-then-create), so re-running is a
 safe sync. Do this in order, per linked repository:
 
@@ -2071,10 +2355,26 @@ allowed, so don't list them. Use BOTH channels — the file is authoritative:
 **Declare the agent fleet** (the parallel-execution plan). `fleet.json` is the
 authoritative channel; these tags are the fast path. Emit the header once, then one
 `agent_assign` per stream. List attributes (`owns`, `issues`, `depends_on`) are
-comma-separated; `depends_on` is comma-separated stream ids:
+comma-separated; `depends_on` is comma-separated stream ids. An optional `profile`
+attribute carries an AgentProfile id that scopes the stream's session (commands +
+tools + write-paths) — generate one per agent or reuse an existing profile.
+
+Each stream also carries an optional **flow** (#297) — how it runs and pushes —
+via four attributes, all defaulting if omitted:
+- `autonomy` = `continuous` (never pause; default) | `checkpoint` (pause at stage/PR
+  boundaries and wait) | `confirm` (ask before non-trivial decisions)
+- `push` = `auto-pr` (commit+push+open PR on green; default) | `push-confirm`
+  (commit+test, then wait for the user before pushing) | `commit-only` (commit, don't
+  push) | `none` (read-only; no commit/push/PR)
+- `trigger` = `per-issue` (default) | `per-stage` | `on-green` — when a push fires
+- `gate` = `hard` (default; the push/PR command prompts for approval) | `soft` (the
+  kickoff just instructs the agent to ask). `gate` only matters for `push-confirm`.
+Default = `continuous` + `auto-pr` + `per-issue` + `hard`. Set a tighter flow for an
+agent whose work you want to review before it lands (e.g. `push=push-confirm gate=hard`),
+or `push=none` for a pure reviewer/explorer.
 ```
 <fleet_plan recommended="4" reasoning="..." director="true" director_role="async integrator: review/merge PRs, resolve logged decisions, keep milestones current" />
-<agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" />
+<agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" profile="auth-ui-dev" autonomy="continuous" push="auto-pr" trigger="per-issue" gate="hard" />
 ```
 
 ## GitHub tools
@@ -2555,7 +2855,62 @@ struct HookCfg {
 /// permission prompt while blocking dangerous ones, and apply the session's
 /// extensions (MCP servers → `.mcp.json`, hooks → settings.json), by merging into
 /// `<cwd>/.claude/settings.json` and `<cwd>/.mcp.json`.
+/// Markers the GitHub-readiness probe echoes when each check passes (#297). Plain
+/// `echo` tokens so parsing is a locale-independent substring match, not coupled to
+/// gh/git output formatting.
+const GH_PATH_MARK: &str = "BSC_GH_PATH_OK";
+const GIT_PATH_MARK: &str = "BSC_GIT_PATH_OK";
+const GH_AUTH_MARK: &str = "BSC_GH_AUTH_OK";
+
+/// Parse the probe shell's stdout into `(gh_on_path, git_on_path, gh_authed)`. Pure.
+fn parse_github_probe(stdout: &str) -> (bool, bool, bool) {
+    (
+        stdout.contains(GH_PATH_MARK),
+        stdout.contains(GIT_PATH_MARK),
+        stdout.contains(GH_AUTH_MARK),
+    )
+}
+
+/// Probe whether a session shell can actually reach GitHub (#297): is `git`/`gh`
+/// on PATH, and is `gh` authenticated. Fleet agents are told to push branches and
+/// open PRs, but a spawned shell can silently lack the tools; this lets the pane
+/// warn the user up front. Runs the checks through the SAME resolved shell and
+/// caller env (e.g. `GH_TOKEN`) the agent's `bash -c` subshells inherit, via a
+/// login shell (`-lc`) so login-profile PATH additions are reflected. Best-effort:
+/// returns all-false on spawn failure rather than erroring, so the caller can still
+/// surface an actionable warning. Field names match the frontend `GithubProbe`.
 #[tauri::command]
+async fn github_readiness(
+    cwd: String,
+    env: Option<std::collections::HashMap<String, String>>,
+) -> Result<serde_json::Value, String> {
+    let shell = resolve_shell();
+    let script = format!(
+        "command -v git >/dev/null 2>&1 && echo {GIT_PATH_MARK}; \
+         command -v gh  >/dev/null 2>&1 && echo {GH_PATH_MARK}; \
+         gh auth status >/dev/null 2>&1 && echo {GH_AUTH_MARK}",
+    );
+    let mut cmd = std::process::Command::new(&shell);
+    cmd.arg("-lc").arg(&script);
+    if !cwd.is_empty() {
+        cmd.current_dir(&cwd);
+    }
+    let env_map = env.unwrap_or_default();
+    for (k, v) in session_env(&env_map) {
+        cmd.env(k, v);
+    }
+    let (gh, git, auth) = match cmd.output() {
+        Ok(out) => parse_github_probe(&String::from_utf8_lossy(&out.stdout)),
+        Err(e) => {
+            log::warn!("github_readiness probe failed to spawn ({shell}): {e}");
+            (false, false, false)
+        }
+    };
+    Ok(serde_json::json!({ "ghOnPath": gh, "gitOnPath": git, "ghAuthed": auth }))
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn ensure_session_settings(
     cwd: String,
     allowed_commands: Vec<String>,
@@ -2564,11 +2919,13 @@ async fn ensure_session_settings(
     hooks: Option<Vec<HookCfg>>,
     allow_tool_rules: Option<Vec<String>>,
     deny_tool_rules: Option<Vec<String>>,
+    ask_tool_rules: Option<Vec<String>>,
 ) -> Result<(), String> {
     write_session_settings(
         &cwd, &allowed_commands, &denied_commands,
         &mcp_servers.unwrap_or_default(), &hooks.unwrap_or_default(),
         &allow_tool_rules.unwrap_or_default(), &deny_tool_rules.unwrap_or_default(),
+        &ask_tool_rules.unwrap_or_default(),
     )
 }
 
@@ -2582,6 +2939,7 @@ async fn ensure_session_settings(
 /// the broad allow, and meaningful if "Bash" is ever removed to go strict.
 /// Merges into existing settings rather than clobbering; `.claude/` stays out of
 /// the repo's `git status`.
+#[allow(clippy::too_many_arguments)]
 fn write_session_settings(
     cwd: &str,
     allowed_commands: &[String],
@@ -2590,6 +2948,7 @@ fn write_session_settings(
     hooks: &[HookCfg],
     allow_tool_rules: &[String],
     deny_tool_rules: &[String],
+    ask_tool_rules: &[String],
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     let root = std::path::PathBuf::from(cwd);
@@ -2634,8 +2993,19 @@ fn write_session_settings(
         if !r.is_empty() && !deny_rules.contains(&r) { deny_rules.push(r); }
     }
 
+    // Ask: rules that PROMPT the user before the command (Claude Code precedence
+    // deny > ask > allow, so a specific ask overrides the broad Bash allow). The
+    // flow's hard push-confirm gate (#297) passes `Bash(git push *)` / `Bash(gh pr
+    // create *)` here so pushes/PRs require approval instead of auto-running.
+    let mut ask_rules: Vec<String> = Vec::new();
+    for r in ask_tool_rules {
+        let r = r.trim().to_string();
+        if !r.is_empty() && !ask_rules.contains(&r) { ask_rules.push(r); }
+    }
+
     merge_permission_list(&mut config, "allow", &allow_rules);
     merge_permission_list(&mut config, "deny", &deny_rules);
+    merge_permission_list(&mut config, "ask", &ask_rules);
 
     // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
     // a hook extension off and relaunching drops it). MCP servers → `.mcp.json`,
@@ -3195,6 +3565,7 @@ pub fn run() {
             github_cache_clear,
             github_graphql,
             github_post,
+            github_put,
             pty_create,
             pty_write,
             pty_broadcast,
@@ -3209,9 +3580,11 @@ pub fn run() {
             read_claude_config,
             write_claude_config,
             ensure_session_settings,
+            github_readiness,
             read_plan_sections,
             write_project_plan,
             delete_project_dir,
+            clear_all_plan_files,
             list_documents,
             read_document,
             write_document,
@@ -3474,6 +3847,44 @@ mod tests {
     }
 
     #[test]
+    fn full_bsc_rc_is_syntactically_valid_bash() {
+        // Regression for the rc-glue bug: every rc constant must end with a newline so the
+        // bsc-env.sh that pty_create writes keeps each helper on its own line. A missing
+        // trailing newline glues two functions (`}bsc-audit()`) and bash reports "unexpected
+        // end of file", breaking every agent subshell. `bash -n` over the FULL concatenation
+        // (the exact format! pty_create uses) catches it; per-constant tests do not.
+        use std::process::{Command, Stdio};
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping full-rc syntax test: no usable bash ({shell})");
+            return;
+        }
+        let rc_body = format!(
+            "{}{}{}{}{}",
+            super::BSC_CHECKPOINT_RC,
+            super::BSC_DECISIONS_RC,
+            super::BSC_AUDIT_RC,
+            super::BSC_CONFINE_RC,
+            super::BSC_COORD_EMIT_RC,
+        );
+        let dir = std::env::temp_dir().join(format!("bsc-rc-syntax-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, &rc_body).unwrap();
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let out = Command::new(&shell).arg("-n").arg(&rc_bash).stderr(Stdio::piped()).output().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            out.status.success(),
+            "generated bsc-env.sh has a bash syntax error:
+{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    #[test]
     fn bsc_note_appends_bulleted_lines_in_a_fresh_non_interactive_subshell() {
         // Like bsc-checkpoint, bsc-note must work from the agent's own `bash -c`
         // subshells via the rc file + BASH_ENV. Each call APPENDS one bulleted line read
@@ -3570,6 +3981,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_github_probe_detects_each_marker_independently() {
+        use super::{GH_AUTH_MARK, GH_PATH_MARK, GIT_PATH_MARK};
+        // All three markers present -> (gh, git, auth) all true.
+        let all = format!("{GIT_PATH_MARK}
+{GH_PATH_MARK}
+{GH_AUTH_MARK}
+");
+        assert_eq!(super::parse_github_probe(&all), (true, true, true));
+        // Empty output (probe found nothing) -> all false.
+        assert_eq!(super::parse_github_probe(""), (false, false, false));
+        // git on PATH but gh missing -> gh false, git true, auth false.
+        let git_only = format!("{GIT_PATH_MARK}
+");
+        assert_eq!(super::parse_github_probe(&git_only), (false, true, false));
+        // gh present but unauthenticated -> gh true, git true, auth false.
+        let no_auth = format!("{GIT_PATH_MARK}
+{GH_PATH_MARK}
+");
+        assert_eq!(super::parse_github_probe(&no_auth), (true, true, false));
+    }
+
+    #[test]
     fn ensure_session_settings_merges_mandatory_and_custom_commands() {
         use super::write_session_settings;
         let dir = std::env::temp_dir().join(format!("bsc-ess-{}", std::process::id()));
@@ -3586,6 +4019,7 @@ mod tests {
             &dir.to_string_lossy(),
             &["cargo".into(), "git".into()],
             &["scp".into()],
+            &[],
             &[],
             &[],
             &[],
@@ -3616,6 +4050,39 @@ mod tests {
     }
 
     #[test]
+    fn write_session_settings_writes_ask_tier_for_hard_push_gate() {
+        use super::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+
+        // A hard push-confirm flow (#297) asks before push/PR: the rules land in
+        // permissions.ask (deny > ask > allow), so they prompt under the broad Bash allow.
+        write_session_settings(
+            &dir.to_string_lossy(),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &["Bash(git push *)".into(), "Bash(gh pr create *)".into()],
+        ).unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let ask: Vec<String> = v["permissions"]["ask"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(ask.contains(&"Bash(git push *)".to_string()));
+        assert!(ask.contains(&"Bash(gh pr create *)".to_string()));
+        // Bash stays broadly allowed; ask only narrows the two push writes.
+        let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(allow.contains(&"Bash".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn write_session_settings_merges_verbatim_tool_rules() {
         use super::write_session_settings;
         let dir = std::env::temp_dir().join(format!("bsc-ess-tool-{}", std::process::id()));
@@ -3632,6 +4099,7 @@ mod tests {
             &[],
             &["Edit(src/auth/**)".into(), "Write(src/auth/**)".into()],
             &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
+            &[],
         ).unwrap();
 
         let v: serde_json::Value =
@@ -3671,7 +4139,7 @@ mod tests {
         let hooks = vec![super::HookCfg {
             event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
         }];
-        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[]).unwrap();
+        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[]).unwrap();
 
         // .mcp.json carries both servers in the right transport shapes.
         let mcp_json: serde_json::Value =

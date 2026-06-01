@@ -252,6 +252,71 @@ describe("deleteLocalProject", () => {
   });
 });
 
+// ── Project key alias ───────────────────────────────────────
+
+describe("projectKeyAlias", () => {
+  it("setActiveProjectMeta binds the GitHub node id to the title key (first-write-wins)", () => {
+    useAppStore.setState({ projectKeyAlias: {} });
+    useAppStore.getState().setActiveProjectMeta("PVT_n1", "studio-code", "o/r", 16, ["o/r"]);
+    expect(useAppStore.getState().projectKeyAlias["PVT_n1"]).toBe("studio-code");
+    // A later sighting under a renamed title must NOT clobber the working alias.
+    useAppStore.getState().setActiveProjectMeta("PVT_n1", "Studio Code Redux", "o/r", 16, ["o/r"]);
+    expect(useAppStore.getState().projectKeyAlias["PVT_n1"]).toBe("studio-code");
+  });
+
+  it("does not record an alias when there is no node id (unpublished draft)", () => {
+    useAppStore.setState({ projectKeyAlias: {} });
+    useAppStore.getState().setActiveProjectMeta(null, "", "", 0);
+    expect(useAppStore.getState().projectKeyAlias).toEqual({});
+  });
+
+  it("setProjectKeyAlias records when absent and ignores empties / overwrites", () => {
+    useAppStore.setState({ projectKeyAlias: {} });
+    useAppStore.getState().setProjectKeyAlias("PVT_a", "my-app");
+    useAppStore.getState().setProjectKeyAlias("PVT_a", "renamed"); // ignored, already set
+    useAppStore.getState().setProjectKeyAlias("", "x");           // ignored, empty id
+    expect(useAppStore.getState().projectKeyAlias).toEqual({ "PVT_a": "my-app" });
+  });
+
+  it("deleteLocalProject prunes the alias entry for the removed project", () => {
+    useAppStore.setState({ projectKeyAlias: { "PVT_gone": "gone", "PVT_keep": "keep" } });
+    useAppStore.getState().deleteLocalProject(["gone", "PVT_gone"]);
+    const a = useAppStore.getState().projectKeyAlias;
+    expect(a["PVT_gone"]).toBeUndefined();
+    expect(a["PVT_keep"]).toBe("keep");
+  });
+});
+
+// ── Dev reset ─────────────────────────
+
+describe("resetProjectData", () => {
+  it("clears project/plan state but keeps credentials", () => {
+    useAppStore.setState({
+      planSections: { P: { goal: "x" } },
+      planConfirmedSections: { P: ["goal"] },
+      projectLocalRepos: { P: ["o/r"] },
+      hiddenProjectIds: ["PVT_x"],
+      projectKeyAlias: { PVT_x: "P" },
+      activeProjectId: "PVT_x", activeProjectName: "P",
+      planningSessionKey: "P", projectsView: "planning",
+      githubToken: "tok", claudeApiKey: "key",
+    });
+    useAppStore.getState().resetProjectData();
+    const s = useAppStore.getState();
+    expect(s.planSections).toEqual({});
+    expect(s.planConfirmedSections).toEqual({});
+    expect(s.projectLocalRepos).toEqual({});
+    expect(s.hiddenProjectIds).toEqual([]);
+    expect(s.projectKeyAlias).toEqual({});
+    expect(s.activeProjectId).toBeNull();
+    expect(s.planningSessionKey).toBe("");
+    expect(s.projectsView).toBe("list");
+    // credentials are NOT a project concern -> preserved
+    expect(s.githubToken).toBe("tok");
+    expect(s.claudeApiKey).toBe("key");
+  });
+});
+
 // ── Tab management ────────────────────────────────────────────────────────────
 
 describe("tab management", () => {
@@ -984,6 +1049,12 @@ describe("agent fleet store", () => {
     expect(st.paneCwds["t3p2"]).toBe("/base/projects/proj-key/.worktrees/api--api");
     expect(st.paneStartupPromptText["t3p2"]).toContain("API");
 
+    // worker write boundary (#354): the stream's owned globs feed the role gate so
+    // edits in its lane auto-approve; the director (code:none) gets none.
+    expect(st.paneRoleGlobs["t3p1"]).toEqual(["src/auth/**"]);
+    expect(st.paneRoleGlobs["t3p0"]).toBeUndefined();
+    expect(st.paneRoleGlobs["t3p2"]).toBeUndefined();
+
     // per-agent checkpoint docs, keyed by stream id (director gets its own)
     expect(st.paneCheckpointDocs["t3p0"]).toBe("projects/proj-key/prompts/director-checkpoint.md");
     expect(st.paneCheckpointDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-checkpoint.md");
@@ -1001,6 +1072,39 @@ describe("agent fleet store", () => {
     expect(st.fleetPaneStreams["t3p2"].id).toBe("api");
     expect(st.fleetPaneStreams["t3p0"]).toBeUndefined(); // director pane
     expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
+  });
+
+  it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const dirFleet: FleetPlan = {
+      recommended: 1, reasoning: "", director: { enabled: false },
+      streams: [{ id: "w", name: "W", repo: "o/r", owns: ["src/x/", "src/y.ts"], issues: [], dependsOn: [] }],
+    };
+    useAppStore.getState().fleetStartProject("DirN", dirFleet, "k");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("DirN");
+    // trailing-slash dir -> subtree glob; a file path is left as-is
+    expect(st.paneRoleGlobs[`t${idx}p0`]).toEqual(["src/x/**", "src/y.ts"]);
+  });
+
+  it("generateFleetProfiles materializes unassigned and dangling-reference profiles", () => {
+    const f: FleetPlan = {
+      recommended: 2, reasoning: "", director: { enabled: false },
+      streams: [
+        { id: "a", name: "A", repo: "o/r", owns: ["src/a/**"], issues: [], dependsOn: [] },
+        { id: "b", name: "B", repo: "o/r", owns: ["src/b/**"], issues: [], dependsOn: [], profile: "b-dev" },
+      ],
+    };
+    useAppStore.setState({ planFleet: { gp: f } });
+    useAppStore.getState().generateFleetProfiles("gp");
+    const st = useAppStore.getState();
+    const streams = st.planFleet["gp"].streams;
+    // unassigned -> generated id + a profile whose write paths are its owns
+    expect(streams[0].profile).toBe("gen_a");
+    expect(st.agentProfiles.find((p) => p.id === "gen_a")!.paths.allow).toEqual(["src/a/**"]);
+    // dangling reference -> materialized, keeping the planner-assigned id stable
+    expect(streams[1].profile).toBe("b-dev");
+    expect(st.agentProfiles.find((p) => p.id === "b-dev")!.paths.allow).toEqual(["src/b/**"]);
   });
 
   it("isolates co-located agents in separate worktrees with distinct checkpoint docs", () => {

@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-  type Waiter, type CoordRef,
+  type Waiter, type CoordRef, type CoordState,
   emptyCoordState, refKey, parseRef, isSatisfied, isReady,
   registerWaiter, satisfy, fail, stalledWaiters,
   parseCoordLine, applyCoordEvent, ingestCoordLog,
-  wakePromptFor, planWakes, coordinationSummary,
+  wakePromptFor, planWakes, coordinationSummary, waitingWakePrompt,
   readinessAt, isFreshlyReady,
   detectDeadlocks, hasDeadlock, defaultProducerOf, buildProducerOf,
   producesFromPaneStreams,
@@ -434,7 +434,7 @@ describe("cycle / deadlock detection", () => {
   // Park `session` blocked on each of `on` (as session: refs).
   const block = (session: string, ...on: string[]): Waiter =>
     ({ session, deps: on.map(sess), registeredAt: 0 });
-  const state = (...waiters: Waiter[]) => ({ latches: {}, waiters });
+  const state = (...waiters: Waiter[]) => ({ latches: {}, waiters, waiting: [] });
 
   it("parses + keys the session ref grammar", () => {
     expect(parseRef("session:t0p2")).toEqual({ kind: "session", id: "t0p2" });
@@ -472,7 +472,7 @@ describe("cycle / deadlock detection", () => {
 
   it("a satisfied dep breaks the edge, so it is no longer a deadlock", () => {
     const s = { latches: { "session:B": { state: "satisfied" as const, source: "merged" as const, at: 1 } },
-                waiters: [block("A", "B"), block("B", "A")] };
+                waiters: [block("A", "B"), block("B", "A")], waiting: [] };
     // B's dep on A still stands, but A's dep on B is satisfied -> A->B edge gone -> no ring.
     expect(detectDeadlocks(s)).toEqual([]);
   });
@@ -484,6 +484,7 @@ describe("cycle / deadlock detection", () => {
         { session: "A", deps: [{ kind: "issue" as const, number: 2 }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
+      waiting: [],
     };
     expect(detectDeadlocks(s)).toEqual([]);
   });
@@ -496,6 +497,7 @@ describe("cycle / deadlock detection", () => {
         { session: "A", deps: [{ kind: "contract" as const, name: "Y" }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
+      waiting: [],
     };
     const producerOf = buildProducerOf([
       { session: "A", issues: ["#1"] },
@@ -566,6 +568,7 @@ describe("buildProducerOf — plan-derived resolver (#199 AC#7)", () => {
         { session: "A", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
+      waiting: [],
     };
     const producerOf = buildProducerOf([
       { session: "A", issues: ["#1"], owns: ["src/db/**"] },
@@ -599,6 +602,7 @@ describe("producesFromPaneStreams — pane-id bridge for the resolver (#199 AC#7
         { session: "t0p1", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
         { session: "t0p2", deps: [{ kind: "issue" as const, number: 7 }], registeredAt: 0 },
       ],
+      waiting: [],
     };
     const paneStreams = {
       t0p1: { id: "db",  name: "DB",  repo: "o/r", owns: ["src/db/**"],  issues: ["#7"], dependsOn: [] },
@@ -647,7 +651,7 @@ describe("coordNotifications — mobile push payloads (#366)", () => {
 
   it("emits a deadlocked notification for a wait-for cycle and outranks stalled", () => {
     // A<->B deadlock; the same refs are unsatisfied (no producer can clear them).
-    const s = { latches: {}, waiters: [w("A", [sess("B")]), w("B", [sess("A")])] };
+    const s = { latches: {}, waiters: [w("A", [sess("B")]), w("B", [sess("A")])], waiting: [] };
     const notes = coordNotifications(s);
     expect(notes.map((n) => n.kind)).toEqual(["deadlocked", "deadlocked"]);
     expect(notes.map((n) => n.session).sort()).toEqual(["A", "B"]);
@@ -656,7 +660,7 @@ describe("coordNotifications — mobile push payloads (#366)", () => {
 
   it("a deadlocked-AND-failed session reports deadlocked only (most severe wins)", () => {
     // A waits on session:B (the deadlock edge) and on a failed issue. One notification.
-    let s = { latches: {}, waiters: [w("A", [sess("B"), issue(9)]), w("B", [sess("A")])] };
+    let s: CoordState = { latches: {}, waiters: [w("A", [sess("B"), issue(9)]), w("B", [sess("A")])], waiting: [] };
     s = fail(s, issue(9), "nope", 1).state;
     const notes = coordNotifications(s);
     const byId = Object.fromEntries(notes.map((n) => [n.session, n.kind]));
@@ -675,5 +679,62 @@ describe("coordNotifications — mobile push payloads (#366)", () => {
     const ready = [w("A", [issue(2)])];              // A already woken (not in s.waiters)
     const notes = coordNotifications(s, ready);
     expect(notes.map((n) => `${n.kind}:${n.session}`).sort()).toEqual(["ready:A", "stalled:C"]);
+  });
+});
+
+describe("waiting sessions (#297 checkpoint/confirm pauses)", () => {
+  it("parseCoordLine reads a waiting line with reason + checkpoint", () => {
+    const ev = parseCoordLine("2026-05-31T00:00:00Z\tpane-1\twaiting\tneed your OK on the schema\t.msc/cp.md");
+    expect(ev).toEqual({ type: "waiting", session: "pane-1", reason: "need your OK on the schema", checkpoint: ".msc/cp.md", at: Date.parse("2026-05-31T00:00:00Z") });
+  });
+
+  it("parseCoordLine tolerates an empty reason", () => {
+    const ev = parseCoordLine("2026-05-31T00:00:00Z\tpane-1\twaiting\t\t");
+    expect(ev).toMatchObject({ type: "waiting", session: "pane-1", reason: "", checkpoint: undefined });
+  });
+
+  it("a waiting event parks the session (manual-wake only, not in ready)", () => {
+    const r = ingestCoordLog([
+      "2026-05-31T00:00:00Z\tpane-1\twaiting\tconfirm the API shape\t",
+    ]);
+    expect(r.ready).toEqual([]);                       // never auto-woken
+    expect(r.state.waiting.map((x) => x.session)).toEqual(["pane-1"]);
+    expect(r.state.waiting[0].reason).toBe("confirm the API shape");
+  });
+
+  it("a newer waiting replaces the prior one for the same session", () => {
+    const r = ingestCoordLog([
+      "2026-05-31T00:00:00Z\tp\twaiting\tfirst\t",
+      "2026-05-31T00:01:00Z\tp\twaiting\tsecond\t",
+    ]);
+    expect(r.state.waiting).toHaveLength(1);
+    expect(r.state.waiting[0].reason).toBe("second");
+  });
+
+  it("a woke event clears the waiting session", () => {
+    const r = ingestCoordLog([
+      "2026-05-31T00:00:00Z\tp\twaiting\thold\t",
+      "2026-05-31T00:02:00Z\tp\twoke\t",
+    ]);
+    expect(r.state.waiting).toEqual([]);
+  });
+
+  it("declaring a real dependency moves the session off the manual-wait list", () => {
+    const r = ingestCoordLog([
+      "2026-05-31T00:00:00Z\tp\twaiting\thold\t",
+      "2026-05-31T00:01:00Z\tp\tblocked\t#42\t",
+    ]);
+    expect(r.state.waiting).toEqual([]);                // now a latch waiter instead
+    expect(r.state.waiters.map((x) => x.session)).toEqual(["p"]);
+  });
+
+  it("waitingWakePrompt names the reason and the checkpoint", () => {
+    const p = waitingWakePrompt({ session: "p", reason: "confirm the schema", checkpoint: ".msc/cp.md", at: 1 });
+    expect(p).toMatch(/confirm the schema/);
+    expect(p).toMatch(/Resume from your checkpoint: \.msc\/cp\.md/);
+  });
+
+  it("waitingWakePrompt has a sensible empty-reason fallback", () => {
+    expect(waitingWakePrompt({ session: "p", reason: "", at: 1 })).toMatch(/you have been resumed/i);
   });
 });

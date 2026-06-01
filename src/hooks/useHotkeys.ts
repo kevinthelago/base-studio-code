@@ -199,7 +199,13 @@ export function useHotkeys() {
       // active tab, and only excludes a focus index that is actually within this
       // tab (a stale index from another tab must not skip one of these consoles).
       if (consoleBroadcast && activeScreen === "console") {
-        const bytes = keyToTermBytes(e);
+        // Navigation hotkeys (switch tab / pane / view by number) must NOT be
+        // broadcast as text — skip them here so they fall through to their handlers
+        // below and keep working in broadcast mode (e.g. while driving a fleet).
+        const isNavHotkey =
+          (e.ctrlKey && !e.altKey && !e.metaKey && /^Digit[0-9]$/.test(e.code)) ||
+          (e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-5]$/.test(e.code));
+        const bytes = isNavHotkey ? null : keyToTermBytes(e);
         if (bytes !== null) {
           const activeTab = tabs[activeTabIdx];
           if (activeTab) {

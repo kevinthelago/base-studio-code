@@ -110,6 +110,86 @@ mobile-studio-code (standalone app — separate repo; usable on its own)
 
 **Automation** — A cron-triggered rule that automatically dispatches a command or loads a knowledge block into a specified console pane.
 
+## Project Planning
+
+The flagship feature. A **dedicated, app-owned planning session** turns a pitch (new project) or an existing repo set into a complete, executable plan: the feature breakdown, the GitHub structure (milestones + granular issues), the parallel-agent fleet, and the context files every downstream session runs under. The user steers the conversation; the planner produces everything. Entry: `src/screens/projects/` (Planning.tsx, ProjectsList.tsx); backend setup: `src-tauri/src/lib.rs` (`setup_workspaces`).
+
+### The project key
+`effectiveProjectId = planningSessionKey || activeProjectId || planningTitle || planningPitch` (Planning.tsx). In practice `planningSessionKey` wins and is set to the project **title/name** when planning starts (`setPlanningSession(title)`). `sanitize_project_key` (lib.rs) slugifies it: keep `[A-Za-z0-9-]`, everything else to `_`, cap 80 chars. **WARNING: the key is title-derived, not a stable id** — renaming the project changes the key (and its on-disk paths), and two same-titled projects collide. (Open item: mint a stable id at project creation and key the workspaces off that.)
+
+### Workspace layout
+`setup_workspaces` creates the project hub at `~/.base-studio-code/projects/<key>/`:
+- `CLAUDE.md` — *currently* the planner spec (see "Session roles + the CLAUDE.md model")
+- `.claude/settings.json` — planner permissions (read/write md + WebFetch + git/gh)
+- plan **section files**, flat: `goal.md`, `scope.md`, `stack.md`, `architecture.md`, …
+- `phases.json` (milestones), `issues.json` (granular issues), `fleet.json` (streams)
+- `prompts/` — kickoff scripts the planner authors (`<stream>-kickoff.md`, `director-kickoff.md`)
+- `kb_index.md`, `automations.md`, `github_context.md`
+- linked repos cloned in as subdirs (`<key>/<repo>/`); fleet worktrees under `<key>/.worktrees/`
+
+### The planner is plan-only
+Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context and writes plan files, but cannot edit project code, commit, push, or open PRs. Publishing the GitHub structure is done by the **app** (`handlePublish`), not the planner's shell.
+
+### The planning workflow (driven by the planner CLAUDE.md template in lib.rs)
+1. Link repositories; read the Knowledge Base.
+2. **Discovery checklist** (goal, users, scope, ux, stack, architecture, schema, api, security, testing, …) — scan, propose, confirm, one topic at a time. Each becomes a section file + a `<plan_update>` tag (the right panel reveals it live).
+3. **Develop the GitHub structure — the feature workshop** (#318, the deep interactive core): map the features, drive each down (behavior + acceptance / build approach / tools / data + deps), propose-then-interrogate, one feature at a time, then sequence into phases.
+4. **Granular, agent-ready issues** (#311, `issues.json`): each `PlanIssue` carries acceptance criteria, owned files, dependencies, labels, milestone, owning stream — enough that an agent finishes without asking.
+5. **Plan the agent fleet** (`fleet.json`): non-overlapping streams (owns globs, issues, dependsOn), recommended session count, optional director.
+6. **Publish** (`handlePublish`): repos, project board, one milestone per phase, one GitHub issue per `PlanIssue` (body = acceptance + owns + deps, pinned to its milestone), `stream:<id>` labels.
+
+### Per-agent configuration set during planning
+- **Profiles** (#289, `src/screens/agents/`): a least-privilege `AgentProfile` (commands / tools / write-paths / net) per stream, applied at launch.
+- **Flows** (#297, `src/screens/projects/agentFlow.ts`): `autonomy` (continuous/checkpoint/confirm) + `push` (auto-pr/push-confirm/commit-only/none) + `trigger` + `gate` — drives each agent's git/gh permissions, kickoff prose, and pause-visibility.
+
+### Session roles + the CLAUDE.md model (and a known issue)
+Three kinds of session live around a project, each needing **different** context:
+- **Planner** — the planning spec; plan-only.
+- **Orchestrator / director** — coordinates the fleet (review/merge PRs, resolve logged decisions, keep the board current); never plans or writes feature code.
+- **Agents / workers / triage** — execute their assigned issue in a worktree, guided by their repo `CLAUDE.md` + `CLAUDE.local.md` (the plan) + their kickoff.
+
+**Current state:** the planner spec is written to `projects/<key>/CLAUDE.md`, which is the **ancestor of every execution session** (director + workers run under `projects/<key>/`). Claude Code loads `CLAUDE.md` from the cwd and every parent, so the planner spec leaks into those sessions and they get pulled toward planning. A `READ FIRST` scope guard at the top of the planner CLAUDE.md is the interim band-aid (#320/#331).
+
+**Intended architecture (in progress):** the planning session is **isolated in its own tree** (not an ancestor of the repos), `projects/<key>/CLAUDE.md` becomes the **orchestrator** spec, and the planner **generates** the orchestrator + agent context files as deliverables. Converge on this when touching `setup_workspaces` / the planning launch / `fleetStartProject`.
+
+## Console — the execution surface
+
+Where the planned work runs. A **tab** holds a CSS-grid of **panes**; each pane is a PTY session running `claude` in a repo or worktree, with swappable **views** (console chat, files, branches, changes, log). Backend: `pty_create` in lib.rs; launch wiring: `src/components/pane/views/TerminalView.tsx` + `fleetStartProject` in `src/store/index.ts`.
+
+### Session roles + the role gate (#219, `src/lib/sessionRoles.ts`)
+Every session has a role bounding its capabilities (least privilege), applied at launch via `ensure_session_settings` to `.claude/settings.json`:
+
+| Role | git | github | code |
+|---|---|---|---|
+| planner | read | read | none |
+| worker | write | read | write (owned globs only) |
+| director | write | write | none |
+| triage | none | write | none |
+| tester / reviewer / conductor | read | read | none |
+
+`roleDeniedCommands` denies the mutating git/gh commands a role cannot run; `roleWriteRules` denies/scopes the file-write tools. The session allows Bash broadly and guarantees `gh`/`git` on PATH; Claude Code precedence is **deny > ask > allow**.
+
+### The fleet (`fleetStartProject`)
+One click fills a build tab:
+- **Director** at the project hub (`projects/<key>/`), kickoff `prompts/director-kickoff.md` — sees every repo + worktree; coordinates, never writes feature code.
+- **Workers** each in their own **git worktree** (`projects/<key>/.worktrees/<repo>--<id>/`) on a **branch named after the stream id**, seeded with `CLAUDE.local.md` (the plan, copied in by `ensure_worktree`) and the stream's kickoff (`prompts/<id>-kickoff.md`, else `buildStreamPrompt`). Per-agent profile + flow applied.
+
+### Per-agent flow at launch (#297)
+Drives: which git/gh writes auto-approve vs **prompt** (the `ask` tier for a hard push-confirm gate) vs deny; the autonomy + push paragraph in the kickoff; and a coordination wake when a checkpoint/confirm agent pauses. The flow's push policy is the **authority** over `git push` / `gh pr create` and lifts the role gate's broad gh-write deny for exactly those two (#304) — so an `auto-pr` worker can open its own PR while `gh pr merge` / repo-delete stay role-denied.
+
+### Coordination (#199, `src/lib/coordination.ts`)
+Agents emit structured events to an app-wide `coord.log`: `bsc-blocked --on <ref>` (waiting on a dependency), `bsc-wait` (paused for the user, #297), and the satisfy emitters `bsc-landed/merged/closed/failed`. The **Coordination inbox** (`CoordinatorInbox`) shows blocked / paused / ready sessions; one whose deps land (or that the user resumes) is **woken** — relaunched fresh with a token-aware wake prompt. Auto-wake is opt-in (`useCoordinator`).
+
+### bsc-* shell helpers
+Installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`): `bsc-checkpoint` (resume note), `bsc-note` / `bsc-blocked` (DECISIONS.md + coord events), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters. **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this.
+
+### Pipelines (#220) and GitHub-readiness (#297 S1)
+- **Pipelines**: a staged conductor sequences build, test, review, integrate with the least-privilege tester/reviewer/conductor roles, bounded by retry limits.
+- **GitHub-readiness probe**: on launch each claude-launching pane probes `gh`/`git` on PATH + `gh auth`; if not ready it shows a dismissible amber banner in the pane so the gap surfaces before the agent hits it mid-task.
+
+### Triage
+A per-repo session that resumes the repo's prior conversation (`claude --continue`) with `prompts/<repo>-triage.md`, to work the repo's open issues by priority.
+
 ## GitHub Workflow
 
 ### Branch strategy

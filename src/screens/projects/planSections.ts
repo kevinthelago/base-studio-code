@@ -1,3 +1,5 @@
+import type { AgentFlow } from "./agentFlow";
+import { flowOrUndefined } from "./agentFlow";
 // Pure helpers for the dynamic, guided project planner.
 //
 // The planner no longer has a fixed list of sections. Claude documents whatever
@@ -40,6 +42,14 @@ export interface AgentStream {
   prompt?: string;
   /** Id of the AgentProfile this stream's session launches under (#289). */
   profile?: string;
+  /** Per-agent execution flow (#297): autonomy + GitHub push policy. Unset ⇒ DEFAULT_FLOW at launch. */
+  flow?: AgentFlow;
+  /** Per-capability permission posture chosen in the project pane's agent editor.
+   *  When present it overrides the profile-derived posture in the pane. */
+  perm?: Record<string, "allow" | "ask" | "deny">;
+  /** Permission preset name chosen in the pane (e.g. "Build"), or "custom" when a
+   *  capability was hand-tuned. When present it overrides the profile-derived preset. */
+  preset?: string;
 }
 
 /** Optional async-integrator session that coordinates the fleet from the project root. */
@@ -296,6 +306,11 @@ export function parseFleetFile(raw: string): FleetPlan | null {
       issues:    toStringArray(so.issues),
       dependsOn: toStringArray(so.dependsOn ?? so.depends_on),
       prompt,
+      profile: typeof so.profile === "string" && so.profile.trim() ? so.profile.trim() : undefined,
+      flow: flowOrUndefined(so.flow && typeof so.flow === "object" && !Array.isArray(so.flow) ? so.flow as Record<string, unknown> : null),
+      perm: (so.perm && typeof so.perm === "object" && !Array.isArray(so.perm))
+        ? (so.perm as Record<string, "allow" | "ask" | "deny">) : undefined,
+      preset: typeof so.preset === "string" && so.preset.trim() ? so.preset.trim() : undefined,
     });
   }
 

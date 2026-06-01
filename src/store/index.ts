@@ -13,6 +13,9 @@ import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoi
 import { computeNextRun, appendRun, suggestionToAutomation, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import type { SessionRole } from "../lib/sessionRoles";
+import type { AgentFlow } from "../screens/projects/agentFlow";
+import { normalizeFlow, resolveFlow } from "../screens/projects/agentFlow";
+import { flowKickoffText } from "../screens/projects/flowKickoff";
 import { PIPELINE_PRESETS } from "../lib/pipeline";
 import { startRun, currentLaunch, type PipelineRun } from "../lib/conductor";
 import { generateAgentProfile } from "../lib/profileGen";
@@ -59,16 +62,15 @@ export const TRIAGE_PROMPT =
 function buildStreamPrompt(stream: AgentStream): string {
   const owns   = stream.owns.length   ? stream.owns.join(", ")   : "the files for your area";
   const issues = stream.issues.length ? stream.issues.join(", ") : "the issues assigned to your area";
+  const kick = flowKickoffText(stream.flow, stream.id);
   return (
     `You are the ${stream.name} work stream, one of several Claude sessions building this project in parallel. ` +
     `The full project plan is in CLAUDE.local.md — read it first; it is authoritative. ` +
-    `You are working in your own git worktree on branch ${stream.id}; commit your work to that branch and open a PR ` +
-    `for the director to merge — do not switch branches or touch other worktrees. ` +
+    `You are working in your own git worktree on branch ${stream.id}; do not switch branches or touch other worktrees. ` +
     `Your lane: you own ${owns}. Do not modify files outside your owned paths — another session owns them; ` +
     `coordinate through the plan instead. Your issues: ${issues}. ` +
-    `Work autonomously and do not stop to ask: when something is underspecified, make the smallest reversible choice ` +
-    `consistent with the plan goal and architecture, then record it by piping a one-line note into bsc-note on stdin. ` +
-    `If you are genuinely blocked, pipe a one-line reason into bsc-blocked on stdin. ` +
+    `${kick.autonomy} ` +
+    `${kick.push} ` +
     `When you pause or finish a work session, pipe a short note of where you left off and the next step into bsc-checkpoint on stdin so your next session resumes there. ` +
     `Verify your work against the repo tests and CI rather than asking whether it is correct.`
   );
@@ -205,6 +207,11 @@ interface AppStore {
   setAgentProfiles: (profiles: AgentProfile[]) => void;
   updateAgentProfile: (id: string, patch: Partial<AgentProfile>) => void;
   paneProfiles: Record<string, string>;
+  // Worker write boundary: the stream's owned globs, fed to the role gate as
+  // writeGlobs so a worker auto-approves edits within its lane (bsc-confine bounds the repo).
+  paneRoleGlobs: Record<string, string[]>;
+  /** Per-agent flow (#297) for each pane, seeded at fleet launch from the stream. */
+  paneFlows: Record<string, AgentFlow>;
   setPaneProfile: (paneId: string, profileId: string | null) => void;
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
@@ -309,6 +316,8 @@ interface AppStore {
   // planning session key — the title — and the GitHub id), plus the active-project
   // meta if it matches. Pairs with the backend delete_project_dir for the on-disk hub.
   deleteLocalProject: (keys: string[]) => void;
+  // Dev reset: clears all project/plan-scoped state (keeps auth, profiles, UI).
+  resetProjectData: () => void;
   // GitHub project ids the user removed in-app (persisted). The Projects list is
   // re-fetched from GitHub on every sync, so without this a deleted-but-still-
   // returned project (closed, delete denied, or stale) would reappear. The list
@@ -349,6 +358,13 @@ interface AppStore {
   // can move the working directory out from under an active session.
   planningSessionKey: string;
   setPlanningSession: (key: string) => void;
+  // Links a GitHub Project node id to the stable folder/data key (the title
+  // slug the plan files were written under). A project opened from the board
+  // only sets `activeProjectId` (the node id); this lets the planning resolver
+  // find where the plan data actually lives instead of falling through to the
+  // node id and rendering an empty pane. First-write-wins (see setActiveProjectMeta).
+  projectKeyAlias: Record<string, string>;
+  setProjectKeyAlias: (nodeId: string, key: string) => void;
   // Repository resolution — base dir is `~/.base-studio-code` (the base); repo
   // clone paths are derived as `<base>/projects/<key>/<repo>`.
   bscBaseDir: string;
@@ -392,10 +408,22 @@ interface AppStore {
   // the optimal concurrent session count). Persisted per project.
   planFleet:             Record<string, FleetPlan>;
   setPlanFleet:          (projectId: string, fleet: FleetPlan) => void;       // wholesale (from fleet.json poll)
+  /** Per-project set of context-file names pinned in the project pane (overrides the
+   *  confirmed-section default). projectId -> pinned file names. */
+  pinnedContext:         Record<string, string[]>;
+  togglePinnedContext:   (projectId: string, name: string) => void;
   addPlanAgentStream:    (projectId: string, stream: AgentStream) => void;    // merge-by-id (from inline tag)
   removePlanAgentStream: (projectId: string, id: string) => void;
   /** #289: assign an AgentProfile id to a stream (null clears). */
   setPlanAgentStreamProfile: (projectId: string, streamId: string, profileId: string | null) => void;
+  /** #297: set one or more flow fields on a stream (merged into its resolved flow). */
+  setPlanAgentStreamFlow: (projectId: string, streamId: string, patch: Partial<AgentFlow>) => void;
+  /** Set a stream's per-capability permission posture from the project pane's agent
+   *  editor; also marks the stream's preset as "custom" (a hand-tuned posture). */
+  setPlanAgentStreamPerm: (projectId: string, streamId: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
+  /** Apply a named permission preset to a stream from the project pane: sets both
+   *  the preset name and the full per-capability posture it implies. */
+  setPlanAgentStreamPreset: (projectId: string, streamId: string, preset: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
   /** #289: generate + assign a least-privilege profile for each unassigned stream,
    *  scoped to that stream's resolved toolchain. Idempotent. */
   generateFleetProfiles: (projectId: string) => void;
@@ -610,6 +638,8 @@ export const useAppStore = create<AppStore>()(
           agentProfiles: s.agentProfiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
         })),
       paneProfiles: {},
+      paneRoleGlobs: {},
+      paneFlows: {},
       setPaneProfile: (paneId, profileId) =>
         set((s) => {
           const next = { ...s.paneProfiles };
@@ -855,7 +885,16 @@ export const useAppStore = create<AppStore>()(
       activeProjectNumber: 0,
       setActiveProject: (id) => set({ activeProjectId: id }),
       setActiveProjectMeta: (id, name, repo, number, repos = []) =>
-        set({ activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos }),
+        set((s) => ({
+          activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos,
+          // First-write-wins: bind the GitHub node id to the folder/data key (the
+          // title slug the plan files live under) so a board-path open resolves to
+          // real data, not the empty node-id key. Frozen on first sighting so a
+          // later GitHub rename can't clobber a working alias.
+          projectKeyAlias: id && name && !s.projectKeyAlias[id]
+            ? { ...s.projectKeyAlias, [id]: name }
+            : s.projectKeyAlias,
+        })),
       hiddenProjectIds: [],
       dismissProject: (id) =>
         set((s) => (!id || s.hiddenProjectIds.includes(id) ? {} : { hiddenProjectIds: [...s.hiddenProjectIds, id] })),
@@ -875,6 +914,8 @@ export const useAppStore = create<AppStore>()(
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
             planFleet:              byKey(s.planFleet),
+            pinnedContext:          byKey(s.pinnedContext),
+            projectKeyAlias:        byKey(s.projectKeyAlias),
             // Drop the deleted project id from every extension's scope list.
             extensions:             s.extensions.map((e) => ({ ...e, projects: e.projects.filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
@@ -887,6 +928,18 @@ export const useAppStore = create<AppStore>()(
               ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], projectsView: "list" as const }
               : {}),
           };
+        }),
+      resetProjectData: () =>
+        set({
+          planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
+          planAutomations: {}, planFleet: {}, pinnedContext: {},
+          projectLocalRepos: {}, projectAllowedCommands: {},
+          projectKeyAlias: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
+          repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
+          activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
+          activeProjectNumber: 0, activeProjectRepos: [],
+          planningSessionKey: "", planningTitle: "", planningPitch: "",
+          planningRepo: "", projectsView: "list",
         }),
       setActiveProjectRepos: (repos) =>
         set((s) => ({ activeProjectRepos: repos, activeProjectRepo: repos[0] ?? s.activeProjectRepo })),
@@ -951,6 +1004,11 @@ export const useAppStore = create<AppStore>()(
       setPlanningTitle: (title) => set({ planningTitle: title }),
       planningSessionKey: "",
       setPlanningSession: (key) => set({ planningSessionKey: key }),
+      projectKeyAlias: {},
+      setProjectKeyAlias: (nodeId, key) =>
+        set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
+          ? { projectKeyAlias: { ...s.projectKeyAlias, [nodeId]: key } }
+          : {})),
       bscBaseDir: "",
       setBscBaseDir: (dir) => set({ bscBaseDir: dir }),
       projectLocalRepos: {},
@@ -1112,6 +1170,8 @@ export const useAppStore = create<AppStore>()(
           const newPaneRoles             = { ...s.paneRoles };
           const newPaneProfiles             = { ...s.paneProfiles };
           const newFleetPaneStreams      = { ...s.fleetPaneStreams };
+          const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
+          const newPaneFlows                = { ...s.paneFlows };
 
           const safeKey = sanitizeProjectKey(projectKey);
           const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
@@ -1149,6 +1209,8 @@ export const useAppStore = create<AppStore>()(
               delete newPaneRoles[key];
               delete newPaneProfiles[key];
               delete newFleetPaneStreams[key];
+              delete newPaneRoleGlobs[key];
+              delete newPaneFlows[key];
               if (i < count) {
                 const sess = chunk[i];
                 if (sess === null) {
@@ -1185,6 +1247,10 @@ export const useAppStore = create<AppStore>()(
                 newPaneExtensions[key] = fleetExts;
                 newPaneRoles[key] = sess === null ? "director" : "worker";
                 if (sess && sess.profile) newPaneProfiles[key] = sess.profile;
+                // The worker's owned paths become its role write boundary so edits in
+                // its lane auto-approve (dir/ -> dir/** so the subtree matches).
+                if (sess && sess.owns.length) newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
+                if (sess && sess.flow) newPaneFlows[key] = sess.flow;
                 delete newDisabledPanes[key];
               } else {
                 // Empty grid cell — start disabled so it doesn't spawn an idle shell.
@@ -1218,6 +1284,8 @@ export const useAppStore = create<AppStore>()(
             paneRoles: newPaneRoles,
             paneProfiles: newPaneProfiles,
             fleetPaneStreams: newFleetPaneStreams,
+            paneRoleGlobs: newPaneRoleGlobs,
+            paneFlows: newPaneFlows,
             disabledPanes: newDisabledPanes,
             paneNames: newPaneNames,
             activeScreen: "console" as Screen,
@@ -1288,6 +1356,13 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ planAutomations: { ...s.planAutomations, [projectId]: [] } })),
 
       planFleet: {},
+      pinnedContext: {},
+      togglePinnedContext: (projectId, name) =>
+        set((s) => {
+          const cur = s.pinnedContext[projectId] ?? [];
+          const next = cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name];
+          return { pinnedContext: { ...s.pinnedContext, [projectId]: next } };
+        }),
       setPlanFleet: (projectId, fleet) =>
         set((s) => ({ planFleet: { ...s.planFleet, [projectId]: fleet } })),
       addPlanAgentStream: (projectId, stream) =>
@@ -1312,6 +1387,30 @@ export const useAppStore = create<AppStore>()(
           const streams = cur.streams.map((x) => (x.id === streamId ? { ...x, profile: profileId ?? undefined } : x));
           return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
         }),
+      setPlanAgentStreamFlow: (projectId, streamId, patch) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, flow: normalizeFlow({ ...resolveFlow(x.flow), ...patch }) } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      setPlanAgentStreamPerm: (projectId, streamId, perm) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, perm: { ...perm }, preset: "custom" } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      setPlanAgentStreamPreset: (projectId, streamId, preset, perm) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, preset, perm: { ...perm } } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
       generateFleetProfiles: (projectId) =>
         set((s) => {
           const fleet = s.planFleet[projectId];
@@ -1319,15 +1418,19 @@ export const useAppStore = create<AppStore>()(
           const profiles = [...s.agentProfiles];
           const byId = new Set(profiles.map((pr) => pr.id));
           const streams = fleet.streams.map((stream) => {
-            if (stream.profile) return stream;
+            // Skip only if the stream already points at a profile that EXISTS. A
+            // dangling reference (the planner assigned an id we never created) is
+            // materialized here, keeping the assigned id so the reference stays stable.
+            if (stream.profile && byId.has(stream.profile)) return stream;
             const commands = resolveAllowedCommands(
               s.allowedCommands,
               s.projectAllowedCommands[projectId],
               s.repoAllowedCommands[repoPromptKey(projectId, stream.repo)],
             );
-            const prof = generateAgentProfile(stream, "worker", commands);
-            if (!byId.has(prof.id)) { profiles.push(prof); byId.add(prof.id); }
-            return { ...stream, profile: prof.id };
+            const gen = generateAgentProfile(stream, "worker", commands);
+            const id = stream.profile || gen.id;
+            if (!byId.has(id)) { profiles.push({ ...gen, id }); byId.add(id); }
+            return { ...stream, profile: id };
           });
           return { agentProfiles: profiles, planFleet: { ...s.planFleet, [projectId]: { ...fleet, streams } } };
         }),
@@ -1456,6 +1559,8 @@ export const useAppStore = create<AppStore>()(
         tunnelRelayUrl:  s.tunnelRelayUrl,
         agentProfiles:   s.agentProfiles,
         paneProfiles:    s.paneProfiles,
+        paneRoleGlobs:   s.paneRoleGlobs,
+        paneFlows:       s.paneFlows,
         kbBlocks:        s.kbBlocks,
         claudeApiKey:    s.claudeApiKey,
         schedules:            s.schedules,
@@ -1471,6 +1576,7 @@ export const useAppStore = create<AppStore>()(
         fleetPaneStreams:     s.fleetPaneStreams,
         pipelineRuns:         s.pipelineRuns,
         projectLocalRepos:    s.projectLocalRepos,
+        projectKeyAlias:      s.projectKeyAlias,
         hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
         projectStartupPromptDoc: s.projectStartupPromptDoc,
@@ -1482,6 +1588,7 @@ export const useAppStore = create<AppStore>()(
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planFleet:             s.planFleet,
+        pinnedContext:         s.pinnedContext,
         extensions:            s.extensions,
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the

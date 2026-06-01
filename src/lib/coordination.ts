@@ -46,10 +46,25 @@ export interface Waiter {
 export interface CoordState {
   latches: Record<string, LatchStatus>;
   waiters: Waiter[];
+  /** Sessions paused for the user (#297 checkpoint/confirm flow) — woken manually. */
+  waiting: WaitingSession[];
+}
+
+/** A session paused for the USER, not blocked on a dependency latch (#297). It carries
+ *  no deps, never participates in auto-wake, and is resumed only from the inbox. */
+export interface WaitingSession {
+  /** The parked session/pane id. Unique key — a newer wait replaces the entry. */
+  session: string;
+  /** Why it paused (the `bsc-wait` note); may be empty. */
+  reason: string;
+  /** Resume seed (e.g. a checkpoint doc relpath); carried into the wake prompt. */
+  checkpoint?: string;
+  /** When the pause was declared (ms epoch), passed in by the caller. */
+  at: number;
 }
 
 export function emptyCoordState(): CoordState {
-  return { latches: {}, waiters: [] };
+  return { latches: {}, waiters: [], waiting: [] };
 }
 
 /** Canonical string key for a ref -- the `bsc-blocked --on <token>` wire form too. */
@@ -117,6 +132,7 @@ export function registerWaiter(s: CoordState, w: Waiter): { state: CoordState; r
   const state: CoordState = {
     latches: s.latches,
     waiters: ready ? others : [...others, w],
+    waiting: s.waiting,
   };
   return { state, ready };
 }
@@ -133,10 +149,10 @@ export function satisfy(
   at: number,
 ): { state: CoordState; woken: Waiter[] } {
   const latches = { ...s.latches, [refKey(ref)]: { state: "satisfied" as const, source, at } };
-  const probe: CoordState = { latches, waiters: s.waiters };
+  const probe: CoordState = { latches, waiters: s.waiters, waiting: s.waiting };
   const woken = s.waiters.filter((w) => isReady(probe, w));
   const wokenIds = new Set(woken.map((w) => w.session));
-  return { state: { latches, waiters: s.waiters.filter((w) => !wokenIds.has(w.session)) }, woken };
+  return { state: { latches, waiters: s.waiters.filter((w) => !wokenIds.has(w.session)), waiting: s.waiting }, woken };
 }
 
 /**
@@ -151,7 +167,7 @@ export function fail(
   at: number,
 ): { state: CoordState; stalled: Waiter[] } {
   const latches = { ...s.latches, [refKey(ref)]: { state: "failed" as const, reason, at } };
-  const next: CoordState = { latches, waiters: s.waiters };
+  const next: CoordState = { latches, waiters: s.waiters, waiting: s.waiting };
   return { state: next, stalled: stalledWaiters(next, ref) };
 }
 
@@ -168,7 +184,8 @@ export type CoordEvent =
   | { type: "merged"; ref: CoordRef; at: number }
   | { type: "closed"; ref: CoordRef; at: number }
   | { type: "failed"; ref: CoordRef; reason: string; at: number }
-  | { type: "woke"; session: string; at: number };
+  | { type: "woke"; session: string; at: number }
+  | { type: "waiting"; session: string; reason: string; checkpoint?: string; at: number };
 
 /**
  * Parse one TSV `$BSC_COORD_LOG` line into an event, or null if unrecognized.
@@ -200,6 +217,8 @@ export function parseCoordLine(line: string): CoordEvent | null {
       const ref = parseRef(rest[0] ?? "");
       return ref ? { type: "failed", ref, reason: rest[1] ?? "", at } : null;
     }
+    case "waiting":
+      return { type: "waiting", session, reason: rest[0] ?? "", checkpoint: rest[1]?.trim() || undefined, at };
     case "woke":
       return { type: "woke", session, at };
     default:
@@ -214,7 +233,16 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
   switch (e.type) {
     case "blocked": {
       const r = registerWaiter(s, { session: e.session, deps: e.deps, checkpoint: e.checkpoint, registeredAt: e.at });
-      return { state: r.state, woken: [], ready: r.ready, stalled: [] };
+      // A session that now declares a real dependency leaves the manual-wait list.
+      const state = { ...r.state, waiting: r.state.waiting.filter((w) => w.session !== e.session) };
+      return { state, woken: [], ready: r.ready, stalled: [] };
+    }
+    case "waiting": {
+      const waiting = [
+        ...s.waiting.filter((w) => w.session !== e.session),
+        { session: e.session, reason: e.reason, checkpoint: e.checkpoint, at: e.at },
+      ];
+      return { state: { ...s, waiting }, woken: [], ready: false, stalled: [] };
     }
     case "landed":
     case "merged":
@@ -227,7 +255,7 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
       return { state: r.state, woken: [], ready: false, stalled: r.stalled };
     }
     case "woke": {
-      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session) }, woken: [], ready: false, stalled: [] };
+      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session) }, woken: [], ready: false, stalled: [] };
     }
   }
 }
@@ -303,6 +331,24 @@ export function wakePromptFor(w: Waiter, s: CoordState): string {
   ];
   if (w.checkpoint) {
     lines.push(`Resume from your checkpoint: ${w.checkpoint} -- read it first, then continue from where you left off.`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Compose the wake prompt for a session that paused for the USER (#297 checkpoint/
+ * confirm flow) — names the reason it paused and points at the checkpoint so the
+ * fresh session resumes in context. Unlike {@link wakePromptFor}, there are no deps
+ * to report; the user has decided to resume it.
+ */
+export function waitingWakePrompt(w: WaitingSession): string {
+  const lines = [
+    w.reason.trim()
+      ? `You paused for confirmation: ${w.reason.trim()} — the user has resumed you; proceed.`
+      : "You paused for the user — you have been resumed; proceed.",
+  ];
+  if (w.checkpoint) {
+    lines.push(`Resume from your checkpoint: ${w.checkpoint} — read it first, then continue from where you left off.`);
   }
   return lines.join("\n");
 }

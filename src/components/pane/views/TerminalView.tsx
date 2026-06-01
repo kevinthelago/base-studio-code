@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
@@ -14,7 +14,9 @@ import { PendingPtyData } from "../../../lib/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/resumeClaude";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
+import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/projects/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
+import { interpretGithubReadiness, type GithubProbe } from "../../../lib/githubReadiness";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -53,6 +55,8 @@ interface TerminalViewProps {
 
 export function TerminalView({ paneId, visible = true, focused, initialCwd, initCmd, onCwdChange, onStatusChange, onFocus }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // GitHub-readiness warning for this pane (#297); null = ready or not probed.
+  const [ghWarn, setGhWarn] = useState<string | null>(null);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
@@ -327,6 +331,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // a permission prompt mid-task. Allowed commands are the resolved
       // global+project+repo set; denied are the user's global blocks (the backend
       // always adds its dangerous defaults).
+      // Authenticate gh / git-over-https in the agent shell: export the app's
+      // GitHub token as GH_TOKEN into the PTY (and the readiness probe), so a worker
+      // can push its branch and open a PR. Without it gh is unauthenticated and
+      // gh pr create / https push fail (#362).
+      const ghToken = useAppStore.getState().githubToken;
+      const agentEnv = ghToken ? { GH_TOKEN: ghToken } : undefined;
       if (launchesClaude && (initialCwd ?? "") !== "") {
         const cmds = useAppStore.getState().paneAllowedCommands[paneId]
           ?? useAppStore.getState().allowedCommands;
@@ -335,7 +345,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // guard (#238) that denies Write/Edit for no-code roles and scopes a worker to
         // its boundary globs. Absent role ⇒ unrestricted.
         const role = useAppStore.getState().paneRoles[paneId];
-        const cap = role ? roleCapability(role) : null;
+        // The worker's write boundary (its owned globs, set at fleet launch) makes
+        // roleWriteRules auto-approve Edit/Write within its lane; without it a
+        // worker (code:write, empty writeGlobs) prompts on every edit.
+        const roleGlobs = useAppStore.getState().paneRoleGlobs[paneId] ?? [];
+        const cap = role ? roleCapability(role, { writeGlobs: roleGlobs }) : null;
         const write = cap ? roleWriteRules(cap) : { allow: [], deny: [] };
         // Agents gate (#255): the profile assigned to this pane adds its command
         // allowlist + per-tool/path rules on top of the role gate (deny wins for both).
@@ -344,14 +358,26 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           ? useAppStore.getState().agentProfiles.find((p) => p.id === profileId)
           : undefined;
         const prof = profile ? resolveProfileSettings(profile) : null;
+        // Per-agent flow (#297): narrow the GitHub-propagation writes per the
+        // stream's push policy + gate — a hard push-confirm asks before push/PR,
+        // commit-only/none deny them, auto-pr adds nothing (broad allow permits).
+        const paneFlow = useAppStore.getState().paneFlows[paneId];
+        const flowRules = flowPermissionRules(paneFlow);
         const allowedCommands = prof ? [...cmds, ...prof.allowedCommands] : cmds;
+        // Reconcile role gate + flow (#304): the flow owns the two GitHub-propagation
+        // writes, so lift them from the role denies when the flow permits pushing/PRing
+        // (a worker is github:read and would otherwise be blocked from opening its PR).
+        // Everything else the role denies (gh pr merge, repo delete, …) stays denied.
+        const granted = flowGrantedPushCommands(paneFlow);
+        const roleDenies = (cap ? roleDeniedCommands(cap) : []).filter((d) => !granted.includes(d));
         const denied = [
           ...useAppStore.getState().deniedCommands,
-          ...(cap ? roleDeniedCommands(cap) : []),
+          ...roleDenies,
           ...(prof?.deniedCommands ?? []),
         ];
         const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
-        const denyToolRules = [...write.deny, ...(prof?.denyToolRules ?? [])];
+        const denyToolRules = [...write.deny, ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
+        const askToolRules = flowRules.askToolRules;
         // Extensions (MCP servers + hooks) resolved for this session — pre-resolved
         // per pane at tab creation; fall back to globals for ad-hoc consoles.
         const exts = useAppStore.getState().paneExtensions[paneId]
@@ -368,8 +394,20 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         await invoke("ensure_session_settings", {
           cwd: initialCwd, allowedCommands, deniedCommands: denied,
           mcpServers: mcp, hooks: gatedHooks,
-          allowToolRules, denyToolRules,
+          allowToolRules, denyToolRules, askToolRules,
         }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
+        if (destroyed) return;
+        // GitHub-readiness probe (#297): fleet/triage agents are told to push and
+        // open PRs; warn in-pane up front if the spawned shell can't (gh/git off
+        // PATH or gh unauthenticated) rather than the agent hitting it mid-task.
+        try {
+          const probe = await invoke<GithubProbe>("github_readiness", { cwd: initialCwd, env: agentEnv });
+          const readiness = interpretGithubReadiness(probe);
+          if (!destroyed) setGhWarn(readiness.ok ? null : readiness.message);
+          if (!readiness.ok) log.warn(`console[${paneId}] github not ready (${readiness.status}): ${readiness.message}`);
+        } catch (e) {
+          log.error(`console[${paneId}] github_readiness probe failed: ${e}`);
+        }
         if (destroyed) return;
       }
 
@@ -397,7 +435,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
         // Per-repo triage checkpoint doc, so the bsc-checkpoint helper can write it.
         checkpointDoc,
-        env: undefined,
+        env: agentEnv,
       }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
 
       if (!isNew) {
@@ -522,13 +560,35 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
   return (
     <div
-      ref={containerRef}
       style={{
-        flex: 1, minHeight: 0, overflow: "hidden",
+        flex: 1, minHeight: 0,
         background: TERM_THEME.background as string,
         display: visible ? "flex" : "none",
-        padding: "6px 4px",
+        flexDirection: "column",
       }}
-    />
+    >
+      {ghWarn && (
+        <div
+          role="alert"
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "6px 10px", fontSize: 12, lineHeight: 1.4,
+            color: "#e5c07b", background: "#3a2f1a", borderBottom: "1px solid #5a4a28",
+          }}
+        >
+          <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>⚠ GitHub</span>
+          <span style={{ flex: 1 }}>{ghWarn}</span>
+          <button
+            onClick={() => setGhWarn(null)}
+            style={{ background: "transparent", border: "none", color: "#e5c07b", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}
+            aria-label="Dismiss GitHub warning"
+          >×</button>
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px" }}
+      />
+    </div>
   );
 }
