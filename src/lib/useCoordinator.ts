@@ -9,7 +9,7 @@ import { useAppStore } from "../store";
 import { ingestCoordLog, wakePromptFor, answerWakePrompt, isFreshlyReady, emptyCoordState } from "./coordination";
 import { injectWake } from "./coordinatorActuate";
 
-const POLL_MS = 3000;
+const POLL_MS = 1000;  // snappy: a director answer should wake the worker within ~1s
 const FRESH_MS = 15 * 60 * 1000;
 
 export function useCoordinator(): void {
