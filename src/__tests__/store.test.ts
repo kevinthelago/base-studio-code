@@ -761,16 +761,20 @@ describe("triageStartProject", () => {
     const { tabs, activeTabIdx, paneCwds, paneInitCmds, disabledPanes } = useAppStore.getState();
     expect(tabs[activeTabIdx].layout).toBe("3×2");
 
+    const { paneRepos } = useAppStore.getState();
     // The 5 real repos are wired up (clone path) and left enabled.
     for (let i = 0; i < repos.length; i++) {
       const key = `t${before}p${i}`;
       expect(paneCwds[key]).toBe(`/base/projects/proj/${repos[i].split("/")[1]}`);
       expect(paneInitCmds[key]).toContain("claude");
       expect(disabledPanes[key]).toBeUndefined();
+      // Bound to its repo so the triage session's GH_TOKEN is repo-scoped (#158).
+      expect(paneRepos[key]).toBe(repos[i]);
     }
     // The single empty cell starts disabled (no shell spawned).
     expect(disabledPanes[`t${before}p5`]).toBe(true);
     expect(paneCwds[`t${before}p5`]).toBeUndefined();
+    expect(paneRepos[`t${before}p5`]).toBeUndefined();
   });
 
   it("marks each real-repo pane to resume its prior conversation (--continue)", () => {
@@ -1054,6 +1058,13 @@ describe("agent fleet store", () => {
     expect(st.paneRoleGlobs["t3p1"]).toEqual(["src/auth/**"]);
     expect(st.paneRoleGlobs["t3p0"]).toBeUndefined();
     expect(st.paneRoleGlobs["t3p2"]).toBeUndefined();
+
+    // repo-scoped session credentials (#158): each worker pane is bound to its repo
+    // so TerminalView scopes its GH_TOKEN to that repo; the director spans every repo
+    // and stays on the global token (no binding).
+    expect(st.paneRepos["t3p1"]).toBe("own/web");
+    expect(st.paneRepos["t3p2"]).toBe("own/api");
+    expect(st.paneRepos["t3p0"]).toBeUndefined();
 
     // per-agent checkpoint docs, keyed by stream id (director gets its own)
     expect(st.paneCheckpointDocs["t3p0"]).toBe("projects/proj-key/prompts/director-checkpoint.md");
