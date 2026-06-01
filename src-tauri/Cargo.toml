@@ -42,6 +42,15 @@ futures-util = { version = "0.3", default-features = false, features = ["std", "
 # thread. Pin `ring` and install it as the process default at startup (lib.rs `run`).
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
+# Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any
+# grandchildren) dies with the session on pty_kill / app exit. portable-pty calls
+# `setsid()` in the spawned shell, so the shell leads a process group whose pgid ==
+# its pid; `killpg(pgid, SIGKILL)` reaches every descendant that didn't re-setsid.
+# Without it, `portable_pty::Child::kill()` only terminates the immediate shell and
+# leaves `claude` (and any `gh`/`git` it spawned) orphaned, holding cwd locks.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # Windows-only: Job Object APIs so a PTY's whole process tree (shell + claude +
 # any grandchildren) dies with the session on pty_kill / app exit. Without this,
 # `portable_pty::Child::kill()` only terminates the immediate shell and leaves

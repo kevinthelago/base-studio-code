@@ -14,12 +14,12 @@ struct PtySession {
     writer: Box<dyn Write + Send>,
     master: Box<dyn portable_pty::MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
-    /// Windows Job Object that owns the shell + its descendants. Dropping it
-    /// closes the handle, which (with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`)
-    /// terminates every still-running process in the tree — `claude`, any
-    /// `gh`/`git`/MCP child, etc. `None` only when job creation failed at spawn
-    /// time (logged; falls back to plain child kill, which leaves grandchildren
-    /// orphaned). No-op stub on non-Windows builds (#118 covers Unix tree-kill).
+    /// Owns the shell + its descendants so dropping the session reclaims the
+    /// whole tree — `claude`, any `gh`/`git`/MCP child, etc. On Windows this is a
+    /// kill-on-close Job Object; on Unix it is the shell's process-group id, which
+    /// `killpg(pgid, SIGKILL)` reaps on drop (#118). `None` only when setup failed
+    /// at spawn time (logged; falls back to plain child kill, which leaves
+    /// grandchildren orphaned).
     _job: Option<PtyJob>,
 }
 
@@ -39,8 +39,18 @@ struct PtyJob {
     handle: windows_sys::Win32::Foundation::HANDLE,
 }
 
+/// Unix counterpart of the Job Object: the process-group id of the PTY shell.
+/// `portable_pty` runs `setsid()` in the spawned shell, so the shell leads a new
+/// session and a process group whose pgid equals the shell's pid. Every child it
+/// spawns (`claude`, `gh`, `git`, MCP servers) stays in that group unless it
+/// re-`setsid`s, so `killpg(pgid, SIGKILL)` on drop terminates the whole tree —
+/// the same orphan-leak fix the Windows job provides. Stored in an atomic so
+/// `assign_pid(&self, …)` can record the pid through the shared `new()`/
+/// `assign_pid` call site without `&mut`; `PtyJob` stays `Send + Sync`.
 #[cfg(not(windows))]
-struct PtyJob;
+struct PtyJob {
+    pgid: std::sync::atomic::AtomicI32,
+}
 
 #[cfg(windows)]
 impl PtyJob {
@@ -123,11 +133,38 @@ unsafe impl Sync for PtyJob {}
 
 #[cfg(not(windows))]
 impl PtyJob {
-    /// No-op stub: Unix tree-kill via process groups / `setsid` is tracked in
-    /// #118 alongside per-OS PTY correctness.
-    fn new() -> std::io::Result<Self> { Ok(Self) }
-    #[allow(dead_code)]
-    fn assign_pid(&self, _pid: u32) -> std::io::Result<()> { Ok(()) }
+    /// Create an unbound job. The shell's process group isn't known until after
+    /// spawn, so `pgid` starts at 0 (no-op on drop) and is filled by `assign_pid`.
+    /// Infallible — the `Result` mirrors the Windows signature for a shared call
+    /// site.
+    fn new() -> std::io::Result<Self> {
+        Ok(Self { pgid: std::sync::atomic::AtomicI32::new(0) })
+    }
+
+    /// Record the shell's pid as the group to reap. Because `portable_pty`
+    /// `setsid`s the child, the shell IS its group leader, so pgid == pid — no
+    /// `getpgid` round-trip (which could race the child's `setsid`). Infallible;
+    /// the `Result` mirrors the Windows signature.
+    fn assign_pid(&self, pid: u32) -> std::io::Result<()> {
+        self.pgid.store(pid as i32, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+impl Drop for PtyJob {
+    fn drop(&mut self) {
+        let pgid = self.pgid.load(std::sync::atomic::Ordering::Relaxed);
+        if pgid > 0 {
+            // SAFETY: `killpg` takes a pgid + signal and has no memory effects.
+            // A negative-or-zero pgid is excluded above; ESRCH (group already
+            // gone — every member exited and was reaped) is the benign no-op
+            // case, so we ignore the return value. SIGKILL (not SIGTERM) matches
+            // the Windows job's unconditional kill-on-close and can't be trapped,
+            // guaranteeing no surviving `claude`/`gh`/`git` descendants.
+            unsafe { libc::killpg(pgid, libc::SIGKILL); }
+        }
+    }
 }
 
 /// Drain every active PTY session, killing each shell (which on Windows kills
@@ -3667,14 +3704,15 @@ mod tests {
     use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch, claude_project_dir_name};
     use super::session_env;
     use super::{cache_is_fresh, apply_github_response, CachedGet};
-    #[cfg(windows)]
+    #[cfg(any(windows, unix))]
     use super::PtyJob;
     use std::collections::HashMap;
 
     /// Loadbearing claim of the orphan-kill fix: dropping the job handle kills
     /// every assigned process (and its descendants). Spawn a ~30 s `ping` —
     /// without the kill we'd hit the deadline; with it the process exits in
-    /// milliseconds. Windows-only; the Unix branch is a no-op stub (#118).
+    /// milliseconds. Windows-only; the Unix tree-kill is covered by
+    /// `pty_job_drop_kills_process_group` below.
     #[cfg(windows)]
     #[test]
     fn pty_job_drop_kills_assigned_process() {
@@ -3695,16 +3733,99 @@ mod tests {
         // every assigned process — that's the orphan kill.
         drop(job);
 
+        let mut exited = false;
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
             match child.try_wait() {
-                Ok(Some(_)) => return,
+                Ok(Some(_)) => {
+                    exited = true;
+                    break;
+                }
                 Ok(None) => std::thread::sleep(Duration::from_millis(25)),
                 Err(e) => panic!("try_wait failed: {e}"),
             }
         }
+        // Always reap before asserting so the test never leaks a Child handle
+        // (satisfies clippy::zombie_processes); kill() is a harmless no-op once
+        // the job already terminated it.
         let _ = child.kill();
-        panic!("ping survived 2s after job drop — kill-on-close not effective");
+        let _ = child.wait();
+        assert!(
+            exited,
+            "ping survived 2s after job drop — kill-on-close not effective"
+        );
+    }
+
+    /// Loadbearing claim of the Unix orphan-kill fix (#118): dropping the job
+    /// must reap the shell's WHOLE process group, not just the immediate child —
+    /// otherwise `claude`/`gh`/`git` grandchildren leak and hold cwd locks. Mimic
+    /// the real spawn: a shell that `setsid`s (so pgid == its pid, exactly what
+    /// `portable_pty` does) and backgrounds a 30 s `sleep` GRANDCHILD in that same
+    /// group. After `assign_pid` + drop, the grandchild — which `Child::kill()`
+    /// alone would never reach — must be gone well inside its 30 s sleep.
+    #[cfg(unix)]
+    #[test]
+    fn pty_job_drop_kills_process_group() {
+        use std::io::{BufRead, BufReader};
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+
+        // `echo $!` prints the backgrounded sleep's pid (the grandchild), then the
+        // shell `wait`s so it stays group leader while we operate on the group.
+        let mut child = {
+            let mut c = Command::new("sh");
+            c.args(["-c", "sleep 30 & echo $!; wait"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null());
+            // SAFETY: pre_exec runs in the forked child before exec; `setsid` only
+            // creates a new session/process group and has no async-signal-unsafe
+            // allocation. This reproduces portable_pty's child setup so pgid == pid.
+            unsafe {
+                c.pre_exec(|| {
+                    if libc::setsid() == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            c.spawn().expect("spawn sh for group-kill test")
+        };
+
+        let grandchild: i32 = {
+            let stdout = child.stdout.take().expect("piped stdout");
+            let mut line = String::new();
+            BufReader::new(stdout)
+                .read_line(&mut line)
+                .expect("read grandchild pid");
+            line.trim().parse().expect("parse grandchild pid")
+        };
+
+        let job = PtyJob::new().expect("create job");
+        job.assign_pid(child.id()).expect("assign shell pid to job");
+
+        // Drop must `killpg(pgid, SIGKILL)` the whole group — shell AND the
+        // backgrounded sleep grandchild.
+        drop(job);
+        // Reap the direct child so it doesn't linger as a zombie; the grandchild
+        // is reparented to init, which reaps it once SIGKILL lands.
+        let _ = child.wait();
+
+        // SAFETY: `kill(pid, 0)` performs only an existence/permission check, no
+        // signal delivery; returns 0 while the process exists (incl. zombie) and
+        // -1/ESRCH once it's gone. Poll until the grandchild disappears.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if unsafe { libc::kill(grandchild, 0) } == -1
+                && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+            {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        // Best-effort cleanup before failing so we don't leak a 30 s sleep.
+        unsafe { libc::kill(grandchild, libc::SIGKILL); }
+        panic!("grandchild {grandchild} survived job drop — process-group kill not effective");
     }
 
     #[test]
