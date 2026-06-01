@@ -2208,6 +2208,34 @@ error/empty/loading states, the edge cases, what data it migrates, what it break
 elsewhere, and the cross-repo contracts it depends on. Each problem you surface is
 itself an issue — a unit is not "mapped" until the issues it BRINGS are mapped too.
 
+**Hard topics — research and source before you decompose.** When a unit needs a
+non-trivial or specialized solution — a physics / protein-folding simulation, a
+neural-net architecture, 3D graphics/rendering, a novel algorithm, anything where
+"build it somehow" would leave the agent stuck — STOP and ground the approach
+before you write its issues:
+- **Name the established approach** from what you know: the standard technique, the
+  canonical library/framework, the reference architecture.
+- **Source it.** Ask the user for papers / docs / a reference implementation they
+  trust, and `WebFetch` any concrete URL you or they name (a library API page, a
+  spec, a GitHub raw file) to verify it. You can fetch a known URL but not search —
+  so ask for the link rather than guessing.
+- **Pin the specifics**: the exact library + version, the algorithm/architecture,
+  the data structures, the known pitfalls, and the perf/accuracy constraints.
+- **Fold it into the issues (preferred).** The grounded approach becomes each
+  issue's **How / build approach** and **Tools & tech** (named, not "a library"),
+  sharpens its **acceptance** (e.g. "renders 10k instances at 60 fps via
+  InstancedMesh"), and drives the **epic → sub-issue decomposition** the technique
+  implies (e.g. an epic "WebGL renderer" → sub-issues for scene graph, instancing,
+  picking). The agent building it should never have to re-derive the approach.
+- **Capture the source** so the agent inherits it: write a short reference section
+  (a `{topic}.md` plan section, e.g. `research_renderer.md`) and/or assign a
+  Knowledge Base block (`<kb_assign>`) scoped to the project so it lands in the
+  agent's prompt — preferred over a loose note; failing that, link the source in
+  the issue body.
+
+A hard unit left as a generic sketch is a happy-path stub — treat it like a missing
+issue: research, source, and decompose it before the plan is "done."
+
 ### Drive a unit (feature or section) down to its issues
 For the current unit, propose a complete spec, then interrogate to correct and fill
 it before moving on. Do not move on until ALL of these are concrete:
