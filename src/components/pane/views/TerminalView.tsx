@@ -339,7 +339,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // guard (#238) that denies Write/Edit for no-code roles and scopes a worker to
         // its boundary globs. Absent role ⇒ unrestricted.
         const role = useAppStore.getState().paneRoles[paneId];
-        const cap = role ? roleCapability(role) : null;
+        // The worker's write boundary (its owned globs, set at fleet launch) makes
+        // roleWriteRules auto-approve Edit/Write within its lane; without it a
+        // worker (code:write, empty writeGlobs) prompts on every edit.
+        const roleGlobs = useAppStore.getState().paneRoleGlobs[paneId] ?? [];
+        const cap = role ? roleCapability(role, { writeGlobs: roleGlobs }) : null;
         const write = cap ? roleWriteRules(cap) : { allow: [], deny: [] };
         // Agents gate (#255): the profile assigned to this pane adds its command
         // allowlist + per-tool/path rules on top of the role gate (deny wins for both).
