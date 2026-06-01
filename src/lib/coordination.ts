@@ -449,6 +449,31 @@ export function evaluatePredicates(
   return { state, woken };
 }
 
+/**
+ * The distinct, still-unsatisfied `predicate:` exprs currently gating a parked waiter -- the
+ * exact set the runtime must re-check this poll. This is the contract the host evaluator
+ * consumes: the poll loop calls this, hands the list to the host (which checks the repo and
+ * returns which now hold), then feeds the result back through {@link evaluatePredicates}.
+ * Pure and dedup'd (a predicate shared by N waiters appears once); empty when nothing is
+ * predicate-gated, so the runtime can skip the host round-trip entirely. The inner expr is
+ * returned (the part after `predicate:`), ready for {@link parsePredicate}.
+ */
+export function pendingPredicateExprs(s: CoordState): string[] {
+  const seen = new Set<string>();
+  const exprs: string[] = [];
+  for (const wtr of s.waiters) {
+    for (const d of wtr.deps) {
+      if (d.kind !== "predicate") continue;
+      if (isSatisfied(s, d)) continue;
+      const key = refKey(d);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      exprs.push(d.expr);
+    }
+  }
+  return exprs;
+}
+
 // -- Mobile-push notifications (#199 AC#5 / #366) -------------------------------
 // The coordinator must reach the human/director on their phone when a chain needs
 // attention -- a dep just LANDED (a parked session is wakeable) or a chain is STUCK

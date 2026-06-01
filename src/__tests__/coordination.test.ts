@@ -8,7 +8,7 @@ import {
   readinessAt, isFreshlyReady,
   detectDeadlocks, hasDeadlock, defaultProducerOf, buildProducerOf,
   producesFromPaneStreams,
-  parsePredicate, evaluatePredicates,
+  parsePredicate, evaluatePredicates, pendingPredicateExprs,
   coordNotifications,
 } from "../lib/coordination";
 
@@ -396,6 +396,36 @@ describe("predicate-based readiness (#365)", () => {
     const r = evaluatePredicates(s, () => true, 1); // evaluator would say yes, but no predicate dep
     expect(r.woken).toHaveLength(0);
     expect(r.state.waiters).toHaveLength(1);
+  });
+
+  describe("pendingPredicateExprs — the host-check worklist", () => {
+    it("lists distinct unsatisfied predicate exprs, deduped, ignoring non-predicate deps", () => {
+      let s = emptyCoordState();
+      s = registerWaiter(s, w("A", [pred("symbol:Foo"), { kind: "issue", number: 1 }])).state;
+      s = registerWaiter(s, w("B", [pred("symbol:Foo")])).state; // shared -> once
+      s = registerWaiter(s, w("C", [pred("tests-pass")])).state;
+      expect(pendingPredicateExprs(s).sort()).toEqual(["symbol:Foo", "tests-pass"]);
+    });
+
+    it("drops a predicate once it is satisfied (nothing left to re-check)", () => {
+      let s = registerWaiter(emptyCoordState(), w("A", [pred("tests-pass")])).state;
+      expect(pendingPredicateExprs(s)).toEqual(["tests-pass"]);
+      s = evaluatePredicates(s, () => true, 1).state;
+      expect(pendingPredicateExprs(s)).toEqual([]); // satisfied -> off the worklist
+    });
+
+    it("is empty when nothing is predicate-gated (so the runtime skips the host round-trip)", () => {
+      const s = registerWaiter(emptyCoordState(), w("A", [{ kind: "issue", number: 1 }])).state;
+      expect(pendingPredicateExprs(s)).toEqual([]);
+    });
+
+    it("round-trips through evaluatePredicates: a map keyed by the worklist wakes the waiter", () => {
+      const s = registerWaiter(emptyCoordState(), w("A", [pred("file-exists:src/lib/x.ts")])).state;
+      const holds: Record<string, boolean> = {};
+      for (const e of pendingPredicateExprs(s)) holds[e] = true; // host says all hold
+      const r = evaluatePredicates(s, (e) => holds[e], 42);
+      expect(r.woken.map((x) => x.session)).toEqual(["A"]);
+    });
   });
 });
 

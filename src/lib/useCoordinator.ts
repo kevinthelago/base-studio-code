@@ -4,6 +4,11 @@
 // in-flight set so a slow wake isn't fired twice. Mount once (ConsoleScreen stays mounted
 // across screens, so the coordinator runs regardless of the active screen).
 //
+// Each poll also runs the predicate satisfy path (#365): any still-pending `predicate:` dep
+// is re-checked against the repo via the host, and a predicate that now holds satisfies its
+// latch and unblocks its waiters -- the polled third satisfy path alongside merged/closed/
+// landed (see applyPredicates).
+//
 // It ALSO pushes coordination notifications to a paired phone (#366): a dep just landed
 // (a parked session is wakeable) or a chain is stuck (a failed dep / a wait-for deadlock).
 // Delivery reuses the existing tunnel `user_request` -> FCM path -- the affected pane is
@@ -23,7 +28,10 @@ import {
   coordNotifications,
   buildProducerOf,
   producesFromPaneStreams,
+  evaluatePredicates,
+  pendingPredicateExprs,
 } from "./coordination";
+import type { Waiter } from "./coordination";
 import type { SessionMeta } from "./tunnel";
 import { actuateWake } from "./coordinatorActuate";
 import { tunnelStatus, tunnelSetSessions } from "./tunnelClient";
@@ -43,8 +51,15 @@ export function useCoordinator(): void {
       if (cancelled) return;
       const lines = await invoke<string[]>("read_coord_log", { limit: 1000 }).catch(() => null);
       if (cancelled || !lines) return;
-      const { state, ready } = ingestCoordLog(lines, emptyCoordState());
+      const ingested = ingestCoordLog(lines, emptyCoordState());
       const now = Date.now();
+
+      // Predicate satisfy path (#365): re-check every still-pending `predicate:` dep against
+      // the repo via the host, satisfying the latches that now hold and surfacing the waiters
+      // they unblock -- the polled third satisfy path alongside merged/closed/landed. Folded
+      // into `ready` so a predicate-unblocked session notifies + auto-wakes like any other.
+      const { state, ready } = await applyPredicates(ingested.state, ingested.ready, now);
+      if (cancelled) return;
 
       // Mobile push (#366): ready/blocked alerts to a paired phone, deduped + once each.
       // Runs regardless of auto-wake so a stalled/deadlocked chain still reaches the human.
@@ -96,4 +111,28 @@ async function pushNotifications(
   }));
   await tunnelSetSessions(sessions);
   for (const n of fresh) notified.add(n.key);
+}
+
+/**
+ * Run the predicate satisfy path for this poll: ask the host to evaluate the still-pending
+ * `predicate:` deps, then satisfy the latches that now hold and merge the freshly-unblocked
+ * waiters into `ready`. The host check (`coord_eval_predicates`) inspects the repo
+ * (file-exists / symbol / tests-pass / custom) and returns a map of expr -> holds. Until that
+ * backend command exists the invoke rejects and we treat every predicate as not-yet-evaluable
+ * (left pending, retried next poll) -- a safe no-op that never falsely satisfies. The host
+ * round-trip is skipped entirely when nothing is predicate-gated.
+ */
+async function applyPredicates(
+  state: ReturnType<typeof ingestCoordLog>["state"],
+  ready: Waiter[],
+  now: number,
+): Promise<{ state: ReturnType<typeof ingestCoordLog>["state"]; ready: Waiter[] }> {
+  const exprs = pendingPredicateExprs(state);
+  if (exprs.length === 0) return { state, ready };
+  const holds = await invoke<Record<string, boolean | undefined>>("coord_eval_predicates", {
+    exprs,
+  }).catch(() => null);
+  if (!holds) return { state, ready }; // host can't evaluate yet -> defer, retry next poll
+  const { state: next, woken } = evaluatePredicates(state, (e) => holds[e], now);
+  return { state: next, ready: woken.length ? [...ready, ...woken] : ready };
 }
