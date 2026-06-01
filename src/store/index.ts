@@ -171,6 +171,9 @@ interface AppStore {
   // CLI (with `--continue`) instead of dropping the user back at a bare
   // bash prompt (#36). Set by TerminalView when OSC 100 "run" fires.
   paneWasClaude: Record<string, boolean>;
+  /** Live agent/terminal pane count (transient, not persisted) — drives the >10 easter egg (#365). */
+  liveAgents: number;
+  bumpLiveAgents: (delta: number) => void;
   setPaneWasClaude: (paneId: string, on: boolean) => void;
   paneInitCmds: Record<string, string>; // transient — NOT persisted
   setPaneInitCmd: (paneId: string, cmd: string) => void;
@@ -592,6 +595,8 @@ export const useAppStore = create<AppStore>()(
       paneNames: {},
       paneCwds: {},
       paneWasClaude: {},
+  liveAgents: 0,
+  bumpLiveAgents: (delta) => set((s) => ({ liveAgents: Math.max(0, s.liveAgents + delta) })),
       setPaneWasClaude: (paneId, on) =>
         set((s) => {
           const cur = s.paneWasClaude[paneId];
