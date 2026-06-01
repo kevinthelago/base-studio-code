@@ -24,7 +24,7 @@ import {
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "../screens/projects/directorDrive";
 
-const POLL_MS = 3000;
+const POLL_MS = 1000;
 
 interface PaneCursor { cursor: number; lastInjectAt: number; }
 

@@ -420,9 +420,20 @@ describe("ask / answer round-trip (#369)", () => {
     expect(r.state.asking).toEqual([]);
   });
 
-  it("answering an unknown (not-asking) session yields no wake", () => {
+  it("answering a BLOCKED worker resumes it and clears the block (#376)", () => {
+    const r = ingestCoordLog([
+      line("2026-06-01T00:00:00Z", "w3", "blocked", "maintainer-secrets", "cp.md"),
+      line("2026-06-01T00:01:00Z", "dir", "answer", "w3", "do not wait; pick up #351"),
+    ]);
+    expect(r.state.waiters.map((w) => w.session)).toEqual([]);  // unblocked
+    expect(r.answered).toHaveLength(1);
+    expect(r.answered[0]).toMatchObject({ session: "w3", answer: "do not wait; pick up #351", checkpoint: "cp.md" });
+  });
+
+  it("answering a session that is not parked still delivers the directive", () => {
     const r = ingestCoordLog([line("2026-06-01T00:01:00Z", "dir", "answer", "ghost", "hi")]);
-    expect(r.answered).toEqual([]);
+    expect(r.answered).toHaveLength(1);
+    expect(r.answered[0]).toMatchObject({ session: "ghost", answer: "hi" });
   });
 
   it("answerWakePrompt carries the answer and forbids asking the user", () => {
