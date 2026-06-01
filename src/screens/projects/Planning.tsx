@@ -361,7 +361,7 @@ export function Planning({ visible }: { visible: boolean }) {
     pinnedContext,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
     togglePinnedContext,
-    addProjectRepo, triageStartProject,
+    addProjectRepo, fleetStartProject,
     agentProfiles,
     commands, schedules,
   } = useAppStore();
@@ -1016,19 +1016,20 @@ export function Planning({ visible }: { visible: boolean }) {
     }
   }
 
-  // Header button → clone the repos and launch a triage session for this project.
+  // Header button → clone the repos and launch the planned agent fleet (recommended workers + director).
   async function launchTriage() {
-    if (publishRepos.length === 0) return;
+    const fleet = planFleet[effectiveProjectId];
+    if (publishRepos.length === 0 || !fleet || fleet.streams.length === 0) return;
     setTriaging(true);
     try {
       await Promise.all(publishRepos.map(fullName =>
-        invoke<string>("clone_repo", { project: projectTitle, fullName })
+        invoke<string>("clone_repo", { project: effectiveProjectId, fullName })
           .then(() => addProjectRepo(activeProjectId ?? effectiveProjectId, fullName))
           .catch(e => console.error(`clone ${fullName} failed:`, e)),
       ));
-      triageStartProject(projectTitle, publishRepos, activeProjectId ?? undefined);
+      fleetStartProject(projectTitle, fleet, effectiveProjectId);
     } catch (e) {
-      console.error("triage setup failed:", e);
+      console.error("fleet launch failed:", e);
     } finally {
       setTriaging(false);
     }
