@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   normalizeDirectorDrive, resolveDirectorDrive, decideDirectorAction,
-  eventDirectorPrompt, DEFAULT_DIRECTOR_DRIVE,
+  eventDirectorPrompt, DEFAULT_DIRECTOR_DRIVE, askKey, pendingAskPrompt,
 } from "../screens/projects/directorDrive";
 
 const TS = "2026-06-01T00:00:00Z";
@@ -113,23 +113,31 @@ describe("eventDirectorPrompt", () => {
 });
 
 
-describe("director Q&A surfacing (#369)", () => {
+describe("director Q&A surfacing (#369, state-based)", () => {
   const TAB = String.fromCharCode(9);
   const askLine = (sess: string, q: string) => ["2026-06-01T00:00:00Z", sess, "ask", q, ""].join(TAB);
 
-  it("treats an ask as director-relevant and injects when idle", () => {
+  it("does NOT surface an ask via the cursor path (handled state-based by the pump)", () => {
     const r = decideDirectorAction({
       lines: [askLine("w1", "API shape?")], cursor: 0, drive: "event", idle: true,
       now: 1_000_000, lastInjectAt: 0, heartbeatMs: 600_000, cooldownMs: 6_000,
     });
-    expect(r.inject).toContain("w1 asks");
-    expect(r.inject).toContain("bsc-answer");
+    expect(r.inject).toBeNull();   // an ask is not a landed/blocked/failed notification
+    expect(r.cursor).toBe(1);      // consumed, nothing to notify
   });
 
-  it("eventDirectorPrompt formats an ask with the answer instruction", () => {
-    const p = eventDirectorPrompt([{ type: "ask", session: "w1", question: "tabs or spaces?", at: 0 }]);
-    expect(p).toContain("w1 asks");
-    expect(p).toContain("tabs or spaces?");
-    expect(p).toMatch(/bsc-answer/);
+  it("askKey is stable per session + timestamp", () => {
+    expect(askKey({ session: "w1", at: 5 })).toBe("w1@5");
+  });
+
+  it("pendingAskPrompt lists each question with its bsc-answer instruction", () => {
+    const p = pendingAskPrompt([
+      { session: "w1", question: "tabs or spaces?", at: 1 },
+      { session: "w2", question: "which db?", at: 2 },
+    ]);
+    expect(p).toContain('w1 asks: "tabs or spaces?"');
+    expect(p).toContain("bsc-answer w1");
+    expect(p).toContain("bsc-answer w2");
+    expect(p).toMatch(/awaiting your answer/);
   });
 });
