@@ -3,7 +3,7 @@
 // kickoff, idles forever; this config + the runtime pump (useDirectorPump) decide when to
 // re-prompt it so it actually reviews/merges worker PRs and resolves coordination events.
 // Pure + unit-tested; mirrors agentFlow.ts (the per-stream flow config pattern).
-import { parseCoordLine, type CoordEvent, type CoordRef } from "../../lib/coordination";
+import { parseCoordLine, type CoordEvent, type CoordRef, type AskingSession } from "../../lib/coordination";
 
 /**
  * - `event`     -- re-prompt the director whenever workers post new coordination events
@@ -79,9 +79,26 @@ export function heartbeatDirectorPrompt(): string {
   return `[coordinator] Heartbeat -- sweep the fleet. ${DIRECTOR_ACTION}`;
 }
 
+/** Stable key for a pending ask (session + when), so the pump surfaces each ask once. */
+export function askKey(a: { session: string; at: number }): string {
+  return `${a.session}@${a.at}`;
+}
+
+/**
+ * Prompt that surfaces unanswered worker questions to the director (#369). Driven by the
+ * live `asking` table (state), not edge events, so a pending question is delivered even if
+ * it was logged before the pump saw the director or across an app restart. Single line.
+ */
+export function pendingAskPrompt(asks: AskingSession[]): string {
+  const list = asks
+    .map((a) => `${a.session} asks: "${a.question}" (answer with bsc-answer ${a.session})`)
+    .join("; ");
+  return `[coordinator] ${asks.length} worker question(s) awaiting your answer: ${list}. For each, pipe your one-line answer into bsc-answer <session> on stdin; that resumes the worker automatically. Do not leave them parked, and do not ask the user yourself.`;
+}
+
 /** Coordination events the director should act on (worker-originated asks). Its own
  *  merge/close/wake events are excluded so it is never re-prompted by its own actions. */
-const DIRECTOR_RELEVANT = new Set(["ask", "landed", "blocked", "waiting", "failed"]);
+const DIRECTOR_RELEVANT = new Set(["landed", "blocked", "waiting", "failed"]);
 
 export interface DirectorTickInput {
   /** All coord.log lines, oldest-first. */
