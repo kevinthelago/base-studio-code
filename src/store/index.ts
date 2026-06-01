@@ -219,6 +219,12 @@ interface AppStore {
   // Worker write boundary: the stream's owned globs, fed to the role gate as
   // writeGlobs so a worker auto-approves edits within its lane (bsc-confine bounds the repo).
   paneRoleGlobs: Record<string, string[]>;
+  // Per-pane `owner/name` repo binding (#158), set at fleet/triage launch. TerminalView
+  // resolves the pane's GH_TOKEN from this via tokenForRepo: a repo with an assigned
+  // fine-grained credential gets that token (scoping its gh/git to that repo), otherwise
+  // the global PAT. Absent (director, ad-hoc console) ⇒ global token. Persisted so a
+  // restored session keeps its scope.
+  paneRepos: Record<string, string>;
   /** Per-agent flow (#297) for each pane, seeded at fleet launch from the stream. */
   paneFlows: Record<string, AgentFlow>;
   setPaneProfile: (paneId: string, profileId: string | null) => void;
@@ -387,6 +393,13 @@ interface AppStore {
   // keys off projectKey (the planning session key — where repos/prompts live).
   fleetStartProject: (projectName: string, fleet: FleetPlan, projectKey: string) => void;
   findFleetTabIdx: (projectName: string) => number;
+  // Coordination (#199 AC#7): paneId ("t{tab}p{pane}") → the AgentStream launched into
+  // it. The coordination log keys waiters/producers by PANE id (BSC_AUDIT_PANE), but a
+  // stream's produced contracts/issues/owned globs live on the stream by its slug. This
+  // map bridges the two so the inbox can build a producer resolver (buildProducerOf) and
+  // light up file/issue wait-for cycles. Written at fleet launch, persisted, global
+  // (pane ids are unique across all tabs). Only worker panes are recorded.
+  fleetPaneStreams: Record<string, AgentStream>;
 
   // Claude config profiles (persisted)
   configProfiles: ConfigProfile[];
@@ -646,6 +659,7 @@ export const useAppStore = create<AppStore>()(
         })),
       paneProfiles: {},
       paneRoleGlobs: {},
+      paneRepos: {},
       paneFlows: {},
       setPaneProfile: (paneId, profileId) =>
         set((s) => {
@@ -981,6 +995,7 @@ export const useAppStore = create<AppStore>()(
         });
         return ok;
       },
+      fleetPaneStreams: {},
       pipelineRuns: {},
       pipelineStart: (presetKey, item) =>
         set((s) => {
@@ -1053,6 +1068,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newPaneExtensions        = { ...s.paneExtensions };
           const newPaneRoles             = { ...s.paneRoles };
+          const newPaneRepos             = { ...s.paneRepos };
           const triageExts               = resolveExtensions(s.extensions, projectId);
           // Checkpoint docs live beside the repo clones, under the project-name
           // key (always present; projectId defaults to "" for ad-hoc triage).
@@ -1101,11 +1117,15 @@ export const useAppStore = create<AppStore>()(
               newPaneCheckpointDocs[key] = checkpointDocRelpath(projKey, fullName ?? "");
               newPaneExtensions[key] = triageExts;
               newPaneRoles[key] = "triage";
+              // Bind the triage pane to its repo so its session GH_TOKEN is scoped to it
+              // (#158); a repo with an assigned credential triages with that token only.
+              if (fullName) newPaneRepos[key] = fullName;
               delete newDisabledPanes[key];
             } else {
               // Empty grid cell (more cells than repos) — start it disabled so it
               // doesn't spawn an idle shell or add rendering load.
               newDisabledPanes[key] = true;
+              delete newPaneRepos[key];
             }
           }
           const newTab: Tab = { name: `${projectName} · triage`, layout, state: "idle", runId };
@@ -1126,6 +1146,7 @@ export const useAppStore = create<AppStore>()(
             paneAllowedCommands: newPaneAllowedCommands,
             paneExtensions: newPaneExtensions,
             paneRoles: newPaneRoles,
+            paneRepos: newPaneRepos,
             disabledPanes: newDisabledPanes,
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
             automations: [...s.automations, ...addedAutos],
@@ -1177,7 +1198,9 @@ export const useAppStore = create<AppStore>()(
           const newPaneNames             = { ...s.paneNames };
           const newPaneRoles             = { ...s.paneRoles };
           const newPaneProfiles             = { ...s.paneProfiles };
+          const newFleetPaneStreams      = { ...s.fleetPaneStreams };
           const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
+          const newPaneRepos                = { ...s.paneRepos };
           const newPaneFlows                = { ...s.paneFlows };
 
           const safeKey = sanitizeProjectKey(projectKey);
@@ -1215,7 +1238,9 @@ export const useAppStore = create<AppStore>()(
               delete newPaneExtensions[key];
               delete newPaneRoles[key];
               delete newPaneProfiles[key];
+              delete newFleetPaneStreams[key];
               delete newPaneRoleGlobs[key];
+              delete newPaneRepos[key];
               delete newPaneFlows[key];
               delete newPaneDirectorDrive[key];
               delete newPaneStream[key];
@@ -1249,10 +1274,16 @@ export const useAppStore = create<AppStore>()(
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
                   newPaneStream[key] = { repo: sess.repo, branch: worktreeSlug(sess.id) };
                   tabPaneNames[i] = sess.name;
+                  // Bridge pane id → stream so the coordinator can resolve which pane
+                  // produces a contract/issue/file (#199 AC#7).
+                  newFleetPaneStreams[key] = sess;
                 }
                 newPaneContinue[key] = resume;
                 newPaneExtensions[key] = fleetExts;
                 newPaneRoles[key] = sess === null ? "director" : "worker";
+                // Bind the worker pane to its repo so its session GH_TOKEN is scoped to
+                // it (#158). The director spans every repo, so it keeps the global token.
+                if (sess && sess.repo) newPaneRepos[key] = sess.repo;
                 if (sess && sess.profile) newPaneProfiles[key] = sess.profile;
                 // The worker's owned paths become its role write boundary so edits in
                 // its lane auto-approve (dir/ -> dir/** so the subtree matches).
@@ -1290,7 +1321,9 @@ export const useAppStore = create<AppStore>()(
             paneExtensions: newPaneExtensions,
             paneRoles: newPaneRoles,
             paneProfiles: newPaneProfiles,
+            fleetPaneStreams: newFleetPaneStreams,
             paneRoleGlobs: newPaneRoleGlobs,
+            paneRepos: newPaneRepos,
             paneFlows: newPaneFlows,
             paneDirectorDrive: newPaneDirectorDrive,
             paneStream: newPaneStream,
@@ -1580,6 +1613,7 @@ export const useAppStore = create<AppStore>()(
         agentProfiles:   s.agentProfiles,
         paneProfiles:    s.paneProfiles,
         paneRoleGlobs:   s.paneRoleGlobs,
+        paneRepos:       s.paneRepos,
         paneFlows:       s.paneFlows,
         kbBlocks:        s.kbBlocks,
         claudeApiKey:    s.claudeApiKey,
@@ -1593,6 +1627,7 @@ export const useAppStore = create<AppStore>()(
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         coordAutoWake:        s.coordAutoWake,
+        fleetPaneStreams:     s.fleetPaneStreams,
         pipelineRuns:         s.pipelineRuns,
         projectLocalRepos:    s.projectLocalRepos,
         projectKeyAlias:      s.projectKeyAlias,

@@ -1,11 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
-  type Waiter,
+  type Waiter, type CoordRef, type CoordState,
   emptyCoordState, refKey, parseRef, isSatisfied, isReady,
   registerWaiter, satisfy, fail, stalledWaiters,
   parseCoordLine, applyCoordEvent, ingestCoordLog,
   wakePromptFor, planWakes, coordinationSummary, waitingWakePrompt, answerWakePrompt,
   readinessAt, isFreshlyReady,
+  detectDeadlocks, hasDeadlock, defaultProducerOf, buildProducerOf,
+  producesFromPaneStreams,
+  parsePredicate, evaluatePredicates, pendingPredicateExprs,
+  coordNotifications,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -18,6 +22,7 @@ describe("refKey / parseRef", () => {
       { kind: "contract", name: "TunnelState" },
       { kind: "file", path: "src/lib/x.ts" },
       { kind: "predicate", expr: "tests-pass" },
+      { kind: "session", id: "t0p2" },
     ] as const;
     for (const r of refs) expect(parseRef(refKey(r))).toEqual(r);
   });
@@ -27,6 +32,7 @@ describe("refKey / parseRef", () => {
     expect(refKey({ kind: "contract", name: "X" })).toBe("contract:X");
     expect(refKey({ kind: "file", path: "a/b.ts" })).toBe("file:a/b.ts");
     expect(refKey({ kind: "predicate", expr: "p" })).toBe("predicate:p");
+    expect(refKey({ kind: "session", id: "t1p0" })).toBe("session:t1p0");
   });
 
   it("parses lenient issue + predicate fallbacks", () => {
@@ -324,6 +330,355 @@ describe("auto-wake recency gate", () => {
     expect(isFreshlyReady(w, s, 1_000_000 + 60_000, 15 * 60_000)).toBe(true);   // 1 min later
     expect(isFreshlyReady(w, s, 1_000_000 + 20 * 60_000, 15 * 60_000)).toBe(false); // 20 min later
     expect(isFreshlyReady(w, emptyCoordState(), 1_000_000, 15 * 60_000)).toBe(false); // never satisfied
+  });
+});
+
+describe("predicate-based readiness (#365)", () => {
+  const pred = (expr: string): CoordRef => ({ kind: "predicate", expr });
+
+  it("parsePredicate dispatches every kind + falls back to custom", () => {
+    expect(parsePredicate("tests-pass")).toEqual({ kind: "tests-pass" });
+    expect(parsePredicate("tests")).toEqual({ kind: "tests-pass" });
+    expect(parsePredicate("symbol:TunnelState")).toEqual({ kind: "symbol", name: "TunnelState" });
+    expect(parsePredicate("file-exists:src/lib/x.ts")).toEqual({ kind: "file-exists", path: "src/lib/x.ts" });
+    expect(parsePredicate("file:src/lib/x.ts")).toEqual({ kind: "file-exists", path: "src/lib/x.ts" });
+    expect(parsePredicate("stub:handleFoo")).toEqual({ kind: "stub", name: "handleFoo" });
+    expect(parsePredicate("whatever the host wants")).toEqual({ kind: "custom", expr: "whatever the host wants" });
+    expect(parsePredicate("symbol:")).toEqual({ kind: "custom", expr: "symbol:" }); // headless -> custom
+  });
+
+  it("satisfies a predicate dep when the evaluator returns true, waking the waiter", () => {
+    const s = registerWaiter(emptyCoordState(), w("A", [pred("tests-pass")])).state;
+    expect(s.waiters).toHaveLength(1);
+    const r = evaluatePredicates(s, (e) => e === "tests-pass", 100);
+    expect(r.woken.map((x) => x.session)).toEqual(["A"]);
+    expect(r.state.waiters).toHaveLength(0);
+    expect(isSatisfied(r.state, pred("tests-pass"))).toBe(true);
+    expect(readinessAt(w("A", [pred("tests-pass")]), r.state)).toBe(100); // stamped for the recency gate
+  });
+
+  it("leaves the waiter parked when the predicate is false or not-yet-evaluable", () => {
+    const s = registerWaiter(emptyCoordState(), w("A", [pred("tests-pass")])).state;
+    expect(evaluatePredicates(s, () => false, 1).woken).toHaveLength(0);
+    expect(evaluatePredicates(s, () => undefined, 1).woken).toHaveLength(0);
+    expect(evaluatePredicates(s, () => false, 1).state.waiters).toHaveLength(1);
+  });
+
+  it("gates a mixed waiter: predicate alone does not wake until the other dep lands too", () => {
+    const issue1 = { kind: "issue", number: 1 } as const;
+    let s = registerWaiter(emptyCoordState(), w("B", [issue1, pred("tests-pass")])).state;
+    s = evaluatePredicates(s, () => true, 1).state; // predicate satisfied, #1 still pending
+    expect(s.waiters.map((x) => x.session)).toEqual(["B"]);
+    const sat = satisfy(s, issue1, "merged", 2);
+    expect(sat.woken.map((x) => x.session)).toEqual(["B"]); // now all deps satisfied
+  });
+
+  it("evaluates a shared predicate once and wakes every waiter on it", () => {
+    let calls = 0;
+    let s = emptyCoordState();
+    s = registerWaiter(s, w("A", [pred("symbol:Foo")])).state;
+    s = registerWaiter(s, w("B", [pred("symbol:Foo")])).state;
+    const r = evaluatePredicates(s, () => { calls++; return true; }, 1);
+    expect(calls).toBe(1); // distinct predicate evaluated a single time
+    expect(r.woken.map((x) => x.session).sort()).toEqual(["A", "B"]);
+  });
+
+  it("is idempotent: re-polling an already-satisfied predicate is a no-op", () => {
+    let s = registerWaiter(emptyCoordState(), w("A", [pred("tests-pass")])).state;
+    s = evaluatePredicates(s, () => true, 1).state;
+    const again = evaluatePredicates(s, () => true, 2);
+    expect(again.woken).toHaveLength(0);
+    expect(again.state.waiters).toHaveLength(0);
+  });
+
+  it("ignores non-predicate deps entirely", () => {
+    const s = registerWaiter(emptyCoordState(), w("A", [{ kind: "issue", number: 1 }])).state;
+    const r = evaluatePredicates(s, () => true, 1); // evaluator would say yes, but no predicate dep
+    expect(r.woken).toHaveLength(0);
+    expect(r.state.waiters).toHaveLength(1);
+  });
+
+  describe("pendingPredicateExprs — the host-check worklist", () => {
+    it("lists distinct unsatisfied predicate exprs, deduped, ignoring non-predicate deps", () => {
+      let s = emptyCoordState();
+      s = registerWaiter(s, w("A", [pred("symbol:Foo"), { kind: "issue", number: 1 }])).state;
+      s = registerWaiter(s, w("B", [pred("symbol:Foo")])).state; // shared -> once
+      s = registerWaiter(s, w("C", [pred("tests-pass")])).state;
+      expect(pendingPredicateExprs(s).sort()).toEqual(["symbol:Foo", "tests-pass"]);
+    });
+
+    it("drops a predicate once it is satisfied (nothing left to re-check)", () => {
+      let s = registerWaiter(emptyCoordState(), w("A", [pred("tests-pass")])).state;
+      expect(pendingPredicateExprs(s)).toEqual(["tests-pass"]);
+      s = evaluatePredicates(s, () => true, 1).state;
+      expect(pendingPredicateExprs(s)).toEqual([]); // satisfied -> off the worklist
+    });
+
+    it("is empty when nothing is predicate-gated (so the runtime skips the host round-trip)", () => {
+      const s = registerWaiter(emptyCoordState(), w("A", [{ kind: "issue", number: 1 }])).state;
+      expect(pendingPredicateExprs(s)).toEqual([]);
+    });
+
+    it("round-trips through evaluatePredicates: a map keyed by the worklist wakes the waiter", () => {
+      const s = registerWaiter(emptyCoordState(), w("A", [pred("file-exists:src/lib/x.ts")])).state;
+      const holds: Record<string, boolean> = {};
+      for (const e of pendingPredicateExprs(s)) holds[e] = true; // host says all hold
+      const r = evaluatePredicates(s, (e) => holds[e], 42);
+      expect(r.woken.map((x) => x.session)).toEqual(["A"]);
+    });
+  });
+});
+
+describe("cycle / deadlock detection", () => {
+  const sess = (id: string): CoordRef => ({ kind: "session", id });
+  // Park `session` blocked on each of `on` (as session: refs).
+  const block = (session: string, ...on: string[]): Waiter =>
+    ({ session, deps: on.map(sess), registeredAt: 0 });
+  const state = (...waiters: Waiter[]) => ({ latches: {}, waiters, waiting: [], asking: [] });
+
+  it("parses + keys the session ref grammar", () => {
+    expect(parseRef("session:t0p2")).toEqual({ kind: "session", id: "t0p2" });
+    expect(parseRef("session:")).toBeNull();
+    expect(defaultProducerOf({ kind: "session", id: "t0p2" })).toBe("t0p2");
+    expect(defaultProducerOf({ kind: "issue", number: 1 })).toBeUndefined();
+  });
+
+  it("finds a mutual A<->B deadlock", () => {
+    const s = state(block("A", "B"), block("B", "A"));
+    const cycles = detectDeadlocks(s);
+    expect(cycles).toHaveLength(1);
+    expect([...cycles[0].cycle].sort()).toEqual(["A", "B"]);
+    expect(hasDeadlock(s)).toBe(true);
+  });
+
+  it("finds a 3-session ring A->B->C->A", () => {
+    const s = state(block("A", "B"), block("B", "C"), block("C", "A"));
+    const cycles = detectDeadlocks(s);
+    expect(cycles).toHaveLength(1);
+    expect([...cycles[0].cycle].sort()).toEqual(["A", "B", "C"]);
+  });
+
+  it("detects a self-wait (session blocked on its own output)", () => {
+    const s = state(block("A", "A"));
+    expect(detectDeadlocks(s).map((d) => d.cycle)).toEqual([["A"]]);
+  });
+
+  it("no false positive for a linear chain A->B->C", () => {
+    const s = state(block("A", "B"), block("B", "C"), block("C", "done"));
+    // C waits on session:done which is not a parked waiter -> no edge, no cycle.
+    expect(detectDeadlocks(s)).toEqual([]);
+    expect(hasDeadlock(s)).toBe(false);
+  });
+
+  it("a satisfied dep breaks the edge, so it is no longer a deadlock", () => {
+    const s = { latches: { "session:B": { state: "satisfied" as const, source: "merged" as const, at: 1 } },
+                waiters: [block("A", "B"), block("B", "A")], waiting: [], asking: [] };
+    // B's dep on A still stands, but A's dep on B is satisfied -> A->B edge gone -> no ring.
+    expect(detectDeadlocks(s)).toEqual([]);
+  });
+
+  it("issue/contract deps yield no edge under the default resolver (no false positives)", () => {
+    const s = {
+      latches: {},
+      waiters: [
+        { session: "A", deps: [{ kind: "issue" as const, number: 2 }], registeredAt: 0 },
+        { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
+      ],
+      waiting: [], asking: [],
+    };
+    expect(detectDeadlocks(s)).toEqual([]);
+  });
+
+  it("a plan-derived producerOf lights up contract/issue cycles (#199 AC#7 forward-compat)", () => {
+    // A produces #1 & waits on contract:Y; B produces contract:Y & waits on #1 -> ring.
+    const s = {
+      latches: {},
+      waiters: [
+        { session: "A", deps: [{ kind: "contract" as const, name: "Y" }], registeredAt: 0 },
+        { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
+      ],
+      waiting: [], asking: [],
+    };
+    const producerOf = buildProducerOf([
+      { session: "A", issues: ["#1"] },
+      { session: "B", contracts: ["Y"] },
+    ]);
+    const cycles = detectDeadlocks(s, producerOf);
+    expect(cycles).toHaveLength(1);
+    expect([...cycles[0].cycle].sort()).toEqual(["A", "B"]);
+  });
+
+  it("coordinationSummary marks deadlocked sessions", () => {
+    const s = state(block("A", "B"), block("B", "A"), block("C", "free"));
+    const view = coordinationSummary(s);
+    const byId = Object.fromEntries(view.map((v) => [v.session, v.deadlocked]));
+    expect(byId).toEqual({ A: true, B: true, C: false });
+  });
+});
+
+describe("buildProducerOf — plan-derived resolver (#199 AC#7)", () => {
+  it("resolves contract / issue / file / session refs to their producing session", () => {
+    const p = buildProducerOf([
+      { session: "api", contracts: ["TunnelState"], issues: ["#12", 13], owns: ["src/lib/**"] },
+      { session: "ui", contracts: ["LoginView"], issues: ["#20"], owns: ["src/components/login/**"] },
+    ]);
+    expect(p({ kind: "contract", name: "TunnelState" })).toBe("api");
+    expect(p({ kind: "contract", name: "LoginView" })).toBe("ui");
+    expect(p({ kind: "issue", number: 12 })).toBe("api");
+    expect(p({ kind: "issue", number: 13 })).toBe("api");   // bare number issue ref
+    expect(p({ kind: "issue", number: 20 })).toBe("ui");
+    expect(p({ kind: "file", path: "src/lib/tunnel.ts" })).toBe("api");  // glob match
+    expect(p({ kind: "file", path: "src/components/login/Form.tsx" })).toBe("ui");
+    expect(p({ kind: "session", id: "whoever" })).toBe("whoever"); // session: still self-resolves
+  });
+
+  it("returns undefined for unknown refs and never resolves a predicate", () => {
+    const p = buildProducerOf([{ session: "api", contracts: ["X"], issues: ["#1"], owns: ["src/api/**"] }]);
+    expect(p({ kind: "contract", name: "Unmentioned" })).toBeUndefined();
+    expect(p({ kind: "issue", number: 999 })).toBeUndefined();
+    expect(p({ kind: "file", path: "docs/readme.md" })).toBeUndefined();
+    expect(p({ kind: "predicate", expr: "tests-pass" })).toBeUndefined();
+  });
+
+  it("first declaration wins on a duplicate contract/issue (one producer per ref)", () => {
+    const p = buildProducerOf([
+      { session: "first", contracts: ["Shared"], issues: ["#5"] },
+      { session: "second", contracts: ["Shared"], issues: ["#5"] },
+    ]);
+    expect(p({ kind: "contract", name: "Shared" })).toBe("first");
+    expect(p({ kind: "issue", number: 5 })).toBe("first");
+  });
+
+  it("tolerates malformed issue refs and empty/absent fields", () => {
+    const p = buildProducerOf([
+      { session: "a" },                                  // no fields
+      { session: "b", issues: ["#0", "#-1", "abc", ""], contracts: [""], owns: [""] },
+    ]);
+    expect(p({ kind: "issue", number: 0 })).toBeUndefined();
+    expect(p({ kind: "contract", name: "" })).toBeUndefined();
+    expect(p({ kind: "file", path: "" })).toBeUndefined();
+  });
+
+  it("drives detectDeadlocks for a file:/issue: wait-for ring (issue/file deps light up)", () => {
+    // A owns src/db/** and waits on file:src/api/x.ts; B owns src/api/** and waits on #1
+    // (which A produces) -> a real cross-kind ring that the default resolver misses.
+    const s = {
+      latches: {},
+      waiters: [
+        { session: "A", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
+        { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
+      ],
+      waiting: [], asking: [],
+    };
+    const producerOf = buildProducerOf([
+      { session: "A", issues: ["#1"], owns: ["src/db/**"] },
+      { session: "B", owns: ["src/api/**"] },
+    ]);
+    expect(detectDeadlocks(s, producerOf)).toHaveLength(1);
+    expect(detectDeadlocks(s)).toEqual([]);  // default resolver sees no edge -> no false alarm
+  });
+});
+
+describe("producesFromPaneStreams — pane-id bridge for the resolver (#199 AC#7)", () => {
+  it("keys producers by PANE id so resolved edges land on parked panes", () => {
+    // The store map: pane t0p1 ran the `api` stream, t0p2 ran `ui`. Waiters in the
+    // coord log are pane ids, so the producer's `session` must be the pane id too.
+    const paneStreams = {
+      t0p1: { id: "api", name: "API", repo: "o/r", owns: ["src/lib/**"], issues: ["#12"], dependsOn: [] },
+      t0p2: { id: "ui",  name: "UI",  repo: "o/r", owns: ["src/ui/**"],  issues: ["#20"], dependsOn: [] },
+    };
+    const p = buildProducerOf(producesFromPaneStreams(paneStreams));
+    expect(p({ kind: "file", path: "src/lib/x.ts" })).toBe("t0p1");
+    expect(p({ kind: "issue", number: 12 })).toBe("t0p1");
+    expect(p({ kind: "issue", number: 20 })).toBe("t0p2");
+    expect(p({ kind: "file", path: "src/ui/Form.tsx" })).toBe("t0p2");
+  });
+
+  it("detects a wait-for ring between two panes via their owned globs/issues", () => {
+    // t0p1 owns src/db/** and waits on a file t0p2 owns; t0p2 waits on an issue t0p1 owns.
+    const s = {
+      latches: {},
+      waiters: [
+        { session: "t0p1", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
+        { session: "t0p2", deps: [{ kind: "issue" as const, number: 7 }], registeredAt: 0 },
+      ],
+      waiting: [], asking: [],
+    };
+    const paneStreams = {
+      t0p1: { id: "db",  name: "DB",  repo: "o/r", owns: ["src/db/**"],  issues: ["#7"], dependsOn: [] },
+      t0p2: { id: "api", name: "API", repo: "o/r", owns: ["src/api/**"], issues: [],     dependsOn: [] },
+    };
+    const producerOf = buildProducerOf(producesFromPaneStreams(paneStreams));
+    const cycles = detectDeadlocks(s, producerOf);
+    expect(cycles).toHaveLength(1);
+    expect([...cycles[0].cycle].sort()).toEqual(["t0p1", "t0p2"]);
+  });
+
+  it("is empty for an empty map (no fleet launched -> falls back to default resolver)", () => {
+    expect(producesFromPaneStreams({})).toEqual([]);
+    // An empty producer list resolves nothing but session: refs.
+    const p = buildProducerOf(producesFromPaneStreams({}));
+    expect(p({ kind: "contract", name: "X" })).toBeUndefined();
+    expect(p({ kind: "session", id: "t0p3" })).toBe("t0p3");
+  });
+});
+
+describe("coordNotifications — mobile push payloads (#366)", () => {
+  const issue = (n: number): CoordRef => ({ kind: "issue", number: n });
+  const sess = (id: string): CoordRef => ({ kind: "session", id });
+
+  it("emits a ready notification for each freshly-ready waiter", () => {
+    const ready = [w("A", [issue(1), issue(2)])];
+    const notes = coordNotifications(emptyCoordState(), ready);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].kind).toBe("ready");
+    expect(notes[0].session).toBe("A");
+    expect(notes[0].key).toBe("ready:A");
+    expect(notes[0].refs).toEqual(["#1", "#2"]);
+    expect(notes[0].summary).toMatch(/landed/);
+  });
+
+  it("emits a stalled notification for a waiter with a failed dep", () => {
+    let s = registerWaiter(emptyCoordState(), w("C", [issue(1)])).state;
+    s = fail(s, issue(1), "build broke", 5).state;
+    const notes = coordNotifications(s);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].kind).toBe("stalled");
+    expect(notes[0].session).toBe("C");
+    expect(notes[0].refs).toEqual(["#1"]);
+    expect(notes[0].key).toBe("stalled:C");
+  });
+
+  it("emits a deadlocked notification for a wait-for cycle and outranks stalled", () => {
+    // A<->B deadlock; the same refs are unsatisfied (no producer can clear them).
+    const s = { latches: {}, waiters: [w("A", [sess("B")]), w("B", [sess("A")])], waiting: [], asking: [] };
+    const notes = coordNotifications(s);
+    expect(notes.map((n) => n.kind)).toEqual(["deadlocked", "deadlocked"]);
+    expect(notes.map((n) => n.session).sort()).toEqual(["A", "B"]);
+    expect(notes.every((n) => n.refs.length === 1)).toBe(true);
+  });
+
+  it("a deadlocked-AND-failed session reports deadlocked only (most severe wins)", () => {
+    // A waits on session:B (the deadlock edge) and on a failed issue. One notification.
+    let s: CoordState = { latches: {}, waiters: [w("A", [sess("B"), issue(9)]), w("B", [sess("A")])], waiting: [], asking: [] };
+    s = fail(s, issue(9), "nope", 1).state;
+    const notes = coordNotifications(s);
+    const byId = Object.fromEntries(notes.map((n) => [n.session, n.kind]));
+    expect(byId.A).toBe("deadlocked"); // not stalled, even though #9 failed
+    expect(notes.filter((n) => n.session === "A")).toHaveLength(1);
+  });
+
+  it("a healthy parked waiter (pending, no failure, no cycle) yields nothing", () => {
+    const s = registerWaiter(emptyCoordState(), w("A", [issue(1)])).state;
+    expect(coordNotifications(s)).toEqual([]);
+  });
+
+  it("ready and stuck sets are disjoint — both surface together", () => {
+    let s = registerWaiter(emptyCoordState(), w("C", [issue(1)])).state;
+    s = fail(s, issue(1), "broke", 1).state;        // C stalled (still parked)
+    const ready = [w("A", [issue(2)])];              // A already woken (not in s.waiters)
+    const notes = coordNotifications(s, ready);
+    expect(notes.map((n) => `${n.kind}:${n.session}`).sort()).toEqual(["ready:A", "stalled:C"]);
   });
 });
 

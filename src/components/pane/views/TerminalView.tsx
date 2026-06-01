@@ -17,6 +17,7 @@ import { resolveProfileSettings } from "../../../screens/agents/profileEnforceme
 import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/projects/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 import { interpretGithubReadiness, type GithubProbe } from "../../../lib/githubReadiness";
+import { tokenForRepo } from "../../../lib/repoCredentials";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -332,11 +333,18 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // a permission prompt mid-task. Allowed commands are the resolved
       // global+project+repo set; denied are the user's global blocks (the backend
       // always adds its dangerous defaults).
-      // Authenticate gh / git-over-https in the agent shell: export the app's
-      // GitHub token as GH_TOKEN into the PTY (and the readiness probe), so a worker
-      // can push its branch and open a PR. Without it gh is unauthenticated and
-      // gh pr create / https push fail (#362).
-      const ghToken = useAppStore.getState().githubToken;
+      // Authenticate gh / git-over-https in the agent shell: export a GitHub token as
+      // GH_TOKEN into the PTY (and the readiness probe), so a worker can push its branch
+      // and open a PR. Without it gh is unauthenticated and gh pr create / https push
+      // fail (#362). Repo-scoped credentials (#158): when this pane is bound to a repo
+      // with an assigned fine-grained token, use THAT token (not the global PAT), so the
+      // session's gh/git is scoped to its repo and can't act on sibling repos; otherwise
+      // fall back to the global token (director / ad-hoc console / un-scoped repo).
+      const ghToken = tokenForRepo(
+        useAppStore.getState().paneRepos[paneId],
+        useAppStore.getState().repoGithubTokens,
+        useAppStore.getState().githubToken,
+      );
       const agentEnv = ghToken ? { GH_TOKEN: ghToken } : undefined;
       if (launchesClaude && (initialCwd ?? "") !== "") {
         const cmds = useAppStore.getState().paneAllowedCommands[paneId]

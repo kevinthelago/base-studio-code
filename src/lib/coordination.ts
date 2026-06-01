@@ -10,13 +10,15 @@
 // `bsc-blocked --on` -> register, the director's merge/close -> satisfy, and waking the
 // parked pane -- lands on top of it in later slices. `failed` is deliberately NOT a
 // satisfy: dependents stay blocked and surface as a stalled chain (finished != succeeded).
+import { matchGlob } from "./sessionRoles";
 
 /** A structured dependency target -- what a session is blocked *on*, or what landed. */
 export type CoordRef =
   | { kind: "issue"; number: number }   // #42
   | { kind: "contract"; name: string }  // contract:TunnelState
   | { kind: "file"; path: string }      // file:src/lib/x.ts
-  | { kind: "predicate"; expr: string }; // predicate:tests-pass
+  | { kind: "predicate"; expr: string } // predicate:tests-pass
+  | { kind: "session"; id: string };    // session:t0p2 -- "blocked until pane X finishes"
 
 /** The authoritative signal that satisfied a latch (most->least authoritative). */
 export type SatisfySource = "merged" | "closed" | "landed";
@@ -91,6 +93,7 @@ export function refKey(ref: CoordRef): string {
     case "contract": return `contract:${ref.name}`;
     case "file": return `file:${ref.path}`;
     case "predicate": return `predicate:${ref.expr}`;
+    case "session": return `session:${ref.id}`;
   }
 }
 
@@ -112,6 +115,7 @@ export function parseRef(token: string): CoordRef | null {
     if (prefix === "contract") return { kind: "contract", name: rest };
     if (prefix === "file") return { kind: "file", path: rest };
     if (prefix === "predicate") return { kind: "predicate", expr: rest };
+    if (prefix === "session") return { kind: "session", id: rest };
     return null;
   }
   if (/^\d+$/.test(t)) return { kind: "issue", number: Number(t) };
@@ -437,14 +441,26 @@ export interface BlockedView {
   deps: { ref: string; status: "satisfied" | "failed" | "pending" }[];
   /** True when any dep has failed -- a stalled chain to escalate. */
   stalled: boolean;
+  /** True when this session is part of a wait-for cycle -- a deadlock to escalate
+   *  (no producer will ever satisfy it, so it would otherwise hang forever). */
+  deadlocked: boolean;
 }
 
 /** Derive the inbox/health view from latch state: every still-parked waiter, each dep's
- *  status, and whether the chain is stalled (a failed dep). */
-export function coordinationSummary(s: CoordState): BlockedView[] {
+ *  status, whether the chain is stalled (a failed dep), and whether it sits in a wait-for
+ *  cycle (a deadlock). `producerOf` resolves which session satisfies a dep (defaults to
+ *  the `session:` self-resolver -- see {@link detectDeadlocks}). */
+export function coordinationSummary(s: CoordState, producerOf: ProducerOf = defaultProducerOf): BlockedView[] {
+  const deadlocked = new Set(detectDeadlocks(s, producerOf).flatMap((d) => d.cycle));
   return s.waiters.map((w) => {
     const deps = w.deps.map((d) => ({ ref: refKey(d), status: statusOf(s, d) }));
-    return { session: w.session, checkpoint: w.checkpoint, deps, stalled: deps.some((d) => d.status === "failed") };
+    return {
+      session: w.session,
+      checkpoint: w.checkpoint,
+      deps,
+      stalled: deps.some((d) => d.status === "failed"),
+      deadlocked: deadlocked.has(w.session),
+    };
   });
 }
 
@@ -468,4 +484,368 @@ export function readinessAt(w: Waiter, s: CoordState): number {
 export function isFreshlyReady(w: Waiter, s: CoordState, now: number, windowMs: number): boolean {
   const at = readinessAt(w, s);
   return at > 0 && now - at < windowMs;
+}
+
+// -- Predicate-based readiness (#199 / #365) ------------------------------------
+// PR-merged / issue-closed have an authoritative emitter (the director), so they arrive
+// as explicit satisfy events. A `predicate:` dep does NOT -- "the symbol exists", "the
+// stub is implemented", "tests pass" has no one to emit it, so the coordinator POLLS it:
+// the host evaluates the predicate against the repo and, when it holds, the latch is set
+// (the third satisfy path). Kept pure -- the actual repo-checking lives in the injected
+// `evaluate`, so the readiness logic stays exhaustively unit-testable.
+
+/** A parsed `predicate:` expression -- the readiness checks the host evaluates against
+ *  the repo. The inner expr (after the `predicate:` prefix) carries an optional kind
+ *  prefix: `tests-pass`, `symbol:<Name>`, `file-exists:<path>`, `stub:<name>`; anything
+ *  else is a `custom` expr the host interprets. Lets the evaluator dispatch on kind. */
+export type Predicate =
+  | { kind: "tests-pass" }
+  | { kind: "symbol"; name: string }       // symbol:TunnelState -- a symbol exists in the tree
+  | { kind: "file-exists"; path: string }  // file-exists:src/lib/x.ts
+  | { kind: "stub"; name: string }         // stub:handleFoo -- a stub/impl landed
+  | { kind: "custom"; expr: string };      // anything else -- host-defined
+
+/** Parse a predicate's inner expr (the part after `predicate:`) into a typed {@link
+ *  Predicate}. Never throws -- an unrecognized/headless expr becomes `custom`. Pure. */
+export function parsePredicate(expr: string): Predicate {
+  const e = expr.trim();
+  if (e === "tests-pass" || e === "tests") return { kind: "tests-pass" };
+  const colon = e.indexOf(":");
+  if (colon > 0) {
+    const head = e.slice(0, colon);
+    const rest = e.slice(colon + 1).trim();
+    if (rest) {
+      if (head === "symbol") return { kind: "symbol", name: rest };
+      if (head === "file-exists" || head === "file") return { kind: "file-exists", path: rest };
+      if (head === "stub") return { kind: "stub", name: rest };
+    }
+  }
+  return { kind: "custom", expr: e };
+}
+
+/** Evaluates whether a predicate expression currently holds against the repo. Injected by
+ *  the runtime (the host runs the actual check); pure here so it's testable. Returns
+ *  `true` (holds -> satisfy), `false` (does not hold), or `undefined` (not yet evaluable
+ *  -- left pending, retried on the next poll). The arg is the predicate's inner expr (the
+ *  part after `predicate:`) -- feed it through {@link parsePredicate} to dispatch on kind. */
+export type PredicateEvaluator = (expr: string) => boolean | undefined;
+
+/**
+ * Evaluate every UNSATISFIED `predicate:` dep currently gating a parked waiter and satisfy
+ * the latches whose predicate now holds -- the polled, third satisfy path alongside
+ * merged/closed/landed (a satisfied predicate uses source `landed`: it finished, like any
+ * produced ref). Distinct refs are evaluated once each (a predicate shared by N waiters is
+ * checked one time). Returns the next state + the waiters now fully ready (all deps
+ * satisfied), removed from the table -- feed them to {@link planWakes} exactly like a
+ * satisfy event's `woken`. Pure (the repo-checking is in `evaluate`) and idempotent:
+ * re-polling an already-satisfied predicate is a no-op. `at` stamps the satisfy time so the
+ * auto-wake recency gate ({@link isFreshlyReady}) treats a polled predicate like any latch.
+ */
+export function evaluatePredicates(
+  s: CoordState,
+  evaluate: PredicateEvaluator,
+  at: number,
+): { state: CoordState; woken: Waiter[] } {
+  const seen = new Set<string>();
+  const toSatisfy: CoordRef[] = [];
+  for (const wtr of s.waiters) {
+    for (const d of wtr.deps) {
+      if (d.kind !== "predicate") continue;
+      const key = refKey(d);
+      if (seen.has(key)) continue;        // each distinct predicate evaluated once
+      seen.add(key);
+      if (isSatisfied(s, d)) continue;    // already latched -- skip
+      if (evaluate(d.expr) === true) toSatisfy.push(d);
+    }
+  }
+  let state = s;
+  const wokenIds = new Set<string>();
+  const woken: Waiter[] = [];
+  for (const ref of toSatisfy) {
+    const r = satisfy(state, ref, "landed", at);
+    state = r.state;
+    for (const wtr of r.woken) {
+      if (!wokenIds.has(wtr.session)) { wokenIds.add(wtr.session); woken.push(wtr); }
+    }
+  }
+  return { state, woken };
+}
+
+/**
+ * The distinct, still-unsatisfied `predicate:` exprs currently gating a parked waiter -- the
+ * exact set the runtime must re-check this poll. This is the contract the host evaluator
+ * consumes: the poll loop calls this, hands the list to the host (which checks the repo and
+ * returns which now hold), then feeds the result back through {@link evaluatePredicates}.
+ * Pure and dedup'd (a predicate shared by N waiters appears once); empty when nothing is
+ * predicate-gated, so the runtime can skip the host round-trip entirely. The inner expr is
+ * returned (the part after `predicate:`), ready for {@link parsePredicate}.
+ */
+export function pendingPredicateExprs(s: CoordState): string[] {
+  const seen = new Set<string>();
+  const exprs: string[] = [];
+  for (const wtr of s.waiters) {
+    for (const d of wtr.deps) {
+      if (d.kind !== "predicate") continue;
+      if (isSatisfied(s, d)) continue;
+      const key = refKey(d);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      exprs.push(d.expr);
+    }
+  }
+  return exprs;
+}
+
+// -- Mobile-push notifications (#199 AC#5 / #366) -------------------------------
+// The coordinator must reach the human/director on their phone when a chain needs
+// attention -- a dep just LANDED (a parked session is wakeable) or a chain is STUCK
+// (a failed dep, or a wait-for deadlock no producer will ever clear). Delivery rides
+// the existing tunnel `user_request` -> FCM path (a parked pane flipped to
+// awaiting_input with this summary as its prompt; see useCoordinator). Kept pure here
+// -- "which sessions alert, with what message" -- so the escalation logic is testable
+// without the tunnel. One notification per session, most-severe-wins:
+// deadlocked > stalled (both are "stuck"); `ready` comes from a disjoint set (the
+// newly-woken waiters, which are no longer parked) so it never collides.
+
+export type CoordNotificationKind = "ready" | "stalled" | "deadlocked";
+
+/** A push-worthy coordination event for one session: what happened and a mobile-facing
+ *  one-liner. `refs` are the involved dep keys (for the inbox / notification body). */
+export interface CoordNotification {
+  kind: CoordNotificationKind;
+  /** The parked/woken session (pane id) the notification is about. */
+  session: string;
+  /** A short human/mobile-facing summary -- used as the `user_request` prompt. */
+  summary: string;
+  /** The dep keys involved (landed deps for `ready`; the stuck deps otherwise). */
+  refs: string[];
+  /** A stable de-dupe key (`<kind>:<session>`) so a poll loop fires each alert once. */
+  key: string;
+}
+
+function notificationSummary(kind: CoordNotificationKind, session: string, refs: string[]): string {
+  const list = refs.join(", ");
+  switch (kind) {
+    case "ready":
+      return `${session}: ${refs.length === 1 ? "dependency" : "dependencies"} landed (${list}) -- ready to resume.`;
+    case "stalled":
+      return `${session}: blocked chain stalled -- a dependency failed (${list}). Needs attention.`;
+    case "deadlocked":
+      return `${session}: wait-for deadlock (${list}) -- no producer can clear it. Needs the director.`;
+  }
+}
+
+/**
+ * Derive the push notifications for the current coordinator state (#366): the newly-ready
+ * waiters (their gating deps just landed -- wakeable) plus every still-parked waiter whose
+ * chain is STUCK -- a failed dep (stalled) or a wait-for cycle (deadlocked). One
+ * notification per session, deadlocked taking precedence over stalled (the more severe
+ * "no producer will ever clear it"). `ready` is the disjoint list of waiters that just
+ * became ready (e.g. {@link ingestCoordLog}'s `ready`, or a satisfy/predicate event's
+ * `woken`) -- they're already removed from `s.waiters`, so the ready set and the
+ * stuck set never overlap. Pure + deterministic (no IO); the tunnel delivery is a thin
+ * layer on top in useCoordinator. `producerOf` resolves deadlock edges (see
+ * {@link detectDeadlocks}; defaults to the `session:` self-resolver).
+ */
+export function coordNotifications(
+  s: CoordState,
+  ready: Waiter[] = [],
+  producerOf: ProducerOf = defaultProducerOf,
+): CoordNotification[] {
+  const out: CoordNotification[] = [];
+  for (const w of ready) {
+    const refs = w.deps.map(refKey);
+    out.push({ kind: "ready", session: w.session, refs, summary: notificationSummary("ready", w.session, refs), key: `ready:${w.session}` });
+  }
+  const deadlocked = new Set(detectDeadlocks(s, producerOf).flatMap((d) => d.cycle));
+  for (const w of s.waiters) {
+    if (deadlocked.has(w.session)) {
+      const refs = w.deps.filter((d) => !isSatisfied(s, d)).map(refKey);
+      out.push({ kind: "deadlocked", session: w.session, refs, summary: notificationSummary("deadlocked", w.session, refs), key: `deadlocked:${w.session}` });
+      continue; // deadlocked outranks stalled -- one notification per session
+    }
+    const failedRefs = w.deps.filter((d) => s.latches[refKey(d)]?.state === "failed").map(refKey);
+    if (failedRefs.length > 0) {
+      out.push({ kind: "stalled", session: w.session, refs: failedRefs, summary: notificationSummary("stalled", w.session, failedRefs), key: `stalled:${w.session}` });
+    }
+  }
+  return out;
+}
+
+// -- Cycle / deadlock detection (#199 AC#5) -------------------------------------
+// "Satisfied" is monotonic, so the *only* way a parked waiter never wakes is a wait-for
+// CYCLE: A waits on something B produces while B waits on something A produces (or a
+// longer ring). No producer in the ring can move, so all of them hang. The runtime must
+// DETECT this and escalate rather than spin forever (the planning critic rejects a cyclic
+// plan up front; this is the runtime safety net for cycles that slip through).
+//
+// To build the wait-for graph we need to know which session is expected to satisfy a dep.
+// A `session:<id>` dep names that producer directly (id -> that session). Other ref kinds
+// (#issue, contract:, file:, predicate:) carry no producer in the log today, so they yield
+// NO edge under the default resolver -- zero false positives. Pass a plan-derived resolver
+// from {@link buildProducerOf} (fed by the fleet's Produces/Consumes + issue/file ownership)
+// and the same algorithm lights up for contract/issue/file cycles too (#199 AC#7). Pure (no
+// IO) so it's fully testable.
+
+/** Resolves which session is expected to satisfy a dep ref, or undefined if unknown. */
+export type ProducerOf = (ref: CoordRef) => string | undefined;
+
+/** The default resolver: only a `session:<id>` dep yields a producer (itself). All other
+ *  kinds are unknown until plan-derived Produces/Consumes is supplied (#199 AC#7). */
+export function defaultProducerOf(ref: CoordRef): string | undefined {
+  return ref.kind === "session" ? ref.id : undefined;
+}
+
+/** One session's declared outputs -- the plan-derived data a {@link ProducerOf} is built
+ *  from. The fields mirror what the planner already carries: `contracts` are
+ *  `FeatureContract.produces[].name`, `issues` are `AgentStream.issues`, and `owns` are
+ *  `AgentStream.owns` (file globs). `session` is the producing session id -- the SAME id
+ *  space as a waiter's `session` and a `session:<id>` ref (the launched pane id), so the
+ *  resolved edges land on real parked waiters. */
+export interface SessionProduces {
+  /** Producing session id (pane id) -- must match the waiter ids edges connect to. */
+  session: string;
+  /** Contract names it produces (resolves `contract:<name>` deps). */
+  contracts?: string[];
+  /** Issue refs it owns -- `#42`, `42`, or a number (resolves `#issue` deps). */
+  issues?: (string | number)[];
+  /** File globs it owns -- `src/lib/**` (resolves `file:<path>` deps via glob match). */
+  owns?: string[];
+}
+
+/** Parse an issue ref (`#42`, `42`, or `42`) into its number, or undefined if not one. */
+function issueNumber(ref: string | number): number | undefined {
+  const n = typeof ref === "number" ? ref : Number(String(ref).trim().replace(/^#/, ""));
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * Build a {@link ProducerOf} from the plan's Produces/Consumes data (#199 AC#7): each
+ * session declares the contracts, issues, and file globs it produces, and the resolver
+ * maps a dep ref back to the session expected to satisfy it. This is what lights up
+ * contract/issue/file wait-for cycles in {@link detectDeadlocks} — not just `session:`
+ * ones (which it still resolves, like {@link defaultProducerOf}).
+ *
+ * First declaration wins on a collision (a contract/issue should have exactly one
+ * producer; the planning critic rejects duplicate `produces`). Predicate deps never
+ * resolve to a producer (no session "produces" a predicate). Pure.
+ */
+export function buildProducerOf(producers: SessionProduces[]): ProducerOf {
+  const byContract = new Map<string, string>();
+  const byIssue = new Map<number, string>();
+  const fileOwners: { glob: string; session: string }[] = [];
+  for (const p of producers) {
+    for (const name of p.contracts ?? []) {
+      if (name && !byContract.has(name)) byContract.set(name, p.session);
+    }
+    for (const ref of p.issues ?? []) {
+      const n = issueNumber(ref);
+      if (n !== undefined && !byIssue.has(n)) byIssue.set(n, p.session);
+    }
+    for (const glob of p.owns ?? []) if (glob) fileOwners.push({ glob, session: p.session });
+  }
+  return (ref) => {
+    switch (ref.kind) {
+      case "session": return ref.id;
+      case "contract": return byContract.get(ref.name);
+      case "issue": return byIssue.get(ref.number);
+      case "file": return fileOwners.find((o) => matchGlob(o.glob, ref.path))?.session;
+      case "predicate": return undefined;
+    }
+  };
+}
+
+/**
+ * Project a `paneId -> launched-stream` map (the store's `fleetPaneStreams`) into the
+ * {@link SessionProduces} list {@link buildProducerOf} consumes. The producing `session`
+ * is the PANE id — the same id space waiters register under (BSC_AUDIT_PANE) — so the
+ * resolved edges land on real parked panes, not on stream slugs. Each stream's `owns`
+ * and `issues` (and any future `contracts`) become its produced refs. Structural typing:
+ * an `AgentStream` satisfies this shape, so the store passes its fleet map straight in.
+ * Pure. See `buildProducerOf(producesFromPaneStreams(map))` for the full resolver.
+ */
+export function producesFromPaneStreams(
+  paneStreams: Record<string, { owns?: string[]; issues?: (string | number)[]; contracts?: string[] }>,
+): SessionProduces[] {
+  return Object.entries(paneStreams).map(([session, s]) => ({
+    session,
+    owns: s.owns,
+    issues: s.issues,
+    contracts: s.contracts,
+  }));
+}
+
+/** A detected wait-for cycle: the parked sessions that mutually block, in ring order.
+ *  A single-element cycle is a session waiting (transitively) on its own output. */
+export interface Deadlock {
+  cycle: string[];
+}
+
+/**
+ * Find every wait-for cycle among the parked waiters. An edge `A -> B` means waiter A has
+ * an UNSATISFIED dep that waiter B is expected to produce (a satisfied dep imposes no wait,
+ * and an edge to a non-waiter is harmless since that producer can still finish). Cycles are
+ * the strongly-connected components of size >= 2, plus any self-loop. Idempotent + pure.
+ */
+export function detectDeadlocks(s: CoordState, producerOf: ProducerOf = defaultProducerOf): Deadlock[] {
+  const waiterIds = new Set(s.waiters.map((w) => w.session));
+  const adj = new Map<string, Set<string>>();
+  for (const w of s.waiters) {
+    const outs = new Set<string>();
+    for (const d of w.deps) {
+      if (isSatisfied(s, d)) continue;             // satisfied -> no longer blocking
+      const p = producerOf(d);
+      if (p && waiterIds.has(p)) outs.add(p);      // only an edge to another parked session
+    }
+    adj.set(w.session, outs);
+  }
+  return tarjanCycles(adj);
+}
+
+/** Whether any parked waiter sits in a wait-for cycle. */
+export function hasDeadlock(s: CoordState, producerOf: ProducerOf = defaultProducerOf): boolean {
+  return detectDeadlocks(s, producerOf).length > 0;
+}
+
+/** Tarjan's SCC -- the cyclic components (size >= 2) plus self-loops, each as a `Deadlock`.
+ *  Graphs are tiny (one node per parked pane), so recursive DFS is fine. */
+function tarjanCycles(adj: Map<string, Set<string>>): Deadlock[] {
+  let index = 0;
+  const idx = new Map<string, number>();
+  const low = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const cycles: Deadlock[] = [];
+
+  const connect = (v: string): void => {
+    idx.set(v, index);
+    low.set(v, index);
+    index++;
+    stack.push(v);
+    onStack.add(v);
+    for (const nxt of adj.get(v) ?? []) {
+      if (!idx.has(nxt)) {
+        connect(nxt);
+        low.set(v, Math.min(low.get(v)!, low.get(nxt)!));
+      } else if (onStack.has(nxt)) {
+        low.set(v, Math.min(low.get(v)!, idx.get(nxt)!));
+      }
+    }
+    if (low.get(v) === idx.get(v)) {
+      const comp: string[] = [];
+      let node: string;
+      do {
+        node = stack.pop()!;
+        onStack.delete(node);
+        comp.push(node);
+      } while (node !== v);
+      // A multi-node SCC is a ring; a lone node is a cycle only if it waits on itself.
+      if (comp.length > 1 || adj.get(comp[0])?.has(comp[0])) {
+        cycles.push({ cycle: comp.reverse() });
+      }
+    }
+  };
+
+  for (const n of adj.keys()) if (!idx.has(n)) connect(n);
+  return cycles;
 }
