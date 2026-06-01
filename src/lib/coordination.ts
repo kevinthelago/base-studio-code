@@ -291,12 +291,23 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
       return { state: { ...s, asking, waiting }, woken: [], ready: false, stalled: [], answered: [] };
     }
     case "answer": {
+      // The director is addressing a specific worker — resume it whatever its park (an
+      // ask, a dependency block, or a user-wait) and deliver the directive (#376). bsc-answer
+      // is the director's universal "unblock + tell this worker" command, not just for asks.
       const ask = s.asking.find((a) => a.session === e.target);
-      const asking = s.asking.filter((a) => a.session !== e.target);
-      const answered: AnsweredWake[] = ask
-        ? [{ session: e.target, answer: e.answer, checkpoint: ask.checkpoint, at: e.at }]
-        : [];
-      return { state: { ...s, asking }, woken: [], ready: false, stalled: [], answered };
+      const waiter = s.waiters.find((w) => w.session === e.target);
+      const waitS = s.waiting.find((w) => w.session === e.target);
+      const checkpoint = ask?.checkpoint ?? waitS?.checkpoint ?? waiter?.checkpoint;
+      const answered: AnsweredWake[] = [{ session: e.target, answer: e.answer, checkpoint, at: e.at }];
+      return {
+        state: {
+          ...s,
+          asking: s.asking.filter((a) => a.session !== e.target),
+          waiters: s.waiters.filter((w) => w.session !== e.target),
+          waiting: s.waiting.filter((w) => w.session !== e.target),
+        },
+        woken: [], ready: false, stalled: [], answered,
+      };
     }
   }
 }
@@ -406,7 +417,7 @@ export function waitingWakePrompt(w: WaitingSession): string {
  */
 export function answerWakePrompt(a: AnsweredWake): string {
   const lines = [
-    `The director answered your question: ${a.answer.trim() || "(see the director's notes)"} — proceed on that basis. Do not ask the user.`,
+    `The director responded: ${a.answer.trim() || "(see the director's notes)"} — proceed on that basis; you are no longer parked. Do not ask the user.`,
   ];
   if (a.checkpoint) {
     lines.push(`Resume from your checkpoint: ${a.checkpoint} — read it first, then continue.`);

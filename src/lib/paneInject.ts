@@ -12,7 +12,14 @@ const CR = String.fromCharCode(13);
 const PASTE_START = ESC + "[200~";
 const PASTE_END = ESC + "[201~";
 
-/** Inject `text` into a pane as one atomic bracketed paste, then submit with Enter. */
+/**
+ * Inject `text` into a pane as one atomic bracketed paste, then submit with a SEPARATE Enter.
+ * The two must be separate writes with a small gap: Claude Code debounces a paste, so a CR
+ * glued onto the same write is swallowed as content (a trailing newline) instead of being
+ * treated as the submit keypress — which left the message sitting in the input box unsent.
+ */
 export async function injectPrompt(paneId: string, text: string): Promise<void> {
-  await invoke("pty_write", { paneId, data: PASTE_START + text + PASTE_END + CR }).catch(() => {});
+  await invoke("pty_write", { paneId, data: PASTE_START + text + PASTE_END }).catch(() => {});
+  await new Promise((r) => setTimeout(r, 60));
+  await invoke("pty_write", { paneId, data: CR }).catch(() => {});
 }
