@@ -97,6 +97,9 @@ jobs:
             | Linux | `.deb` or `.AppImage` |
 
             See the assets below.
+          # Auto-generate the changelog from PRs merged since the previous tag
+          # (#121); the Downloads table above is pre-pended to those notes.
+          generateReleaseNotes: true
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
