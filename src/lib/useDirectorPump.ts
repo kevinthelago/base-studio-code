@@ -24,19 +24,15 @@ import {
 } from "../screens/projects/directorDrive";
 
 const POLL_MS = 3000;
-// If the director never trips the idle heuristic (its TUI keeps repainting), deliver a
-// pending question anyway after this long -- Claude Code queues input typed mid-turn.
-const ASK_FALLBACK_MS = 15000;
 
 interface PaneCursor { cursor: number; lastInjectAt: number; }
 
 export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" | "on" | "idle">>): void {
   const cursors = useRef<Map<string, PaneCursor>>(new Map());
   const inFlight = useRef<Set<string>>(new Set());
-  // Per (pane|ask) keys already surfaced, pruned when the ask is no longer pending.
+  // Per (pane|ask) keys already surfaced, pruned when the ask is no longer pending — so a
+  // question is injected exactly once (not re-queued every 3s) until it is answered.
   const surfaced = useRef<Set<string>>(new Set());
-  // When each (pane|ask) was first seen pending, so we can fall back past the idle gate.
-  const firstSeen = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -57,30 +53,21 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
         const bar = k.indexOf("|");
         if (bar >= 0 && !pendingKeys.has(k.slice(bar + 1))) surfaced.current.delete(k);
       }
-      for (const k of [...firstSeen.current.keys()]) {
-        const bar = k.indexOf("|");
-        if (bar >= 0 && !pendingKeys.has(k.slice(bar + 1))) firstSeen.current.delete(k);
-      }
 
       for (const paneId of paneIds) {
         if (inFlight.current.has(paneId)) continue;
         const drive = resolveDirectorDrive(drives[paneId]);
         const idle = statuses[paneId] === "idle";
 
-        // 1) Deliver pending worker questions first -- the must-not-drop case. Prefer an
-        // idle director (clean), but fall back past the idle gate after ASK_FALLBACK_MS so a
-        // question is never stranded just because the TUI never goes quiet for 1.5s.
+        // 1) Deliver pending worker questions immediately -- the must-not-drop case. No idle
+        // gate: Claude Code queues input typed mid-turn, so the question lands as the
+        // director's next message. The surfaced set keeps it to exactly one injection per ask.
         if (drive === "event" || drive === "heartbeat") {
-          const deliverable = pendingAsks.filter((a) => {
-            const key = paneId + "|" + askKey(a);
-            if (surfaced.current.has(key)) return false;
-            if (!firstSeen.current.has(key)) firstSeen.current.set(key, now);
-            return idle || now - (firstSeen.current.get(key) ?? now) >= ASK_FALLBACK_MS;
-          });
-          if (deliverable.length > 0) {
-            for (const a of deliverable) surfaced.current.add(paneId + "|" + askKey(a));
+          const fresh = pendingAsks.filter((a) => !surfaced.current.has(paneId + "|" + askKey(a)));
+          if (fresh.length > 0) {
+            for (const a of fresh) surfaced.current.add(paneId + "|" + askKey(a));
             inFlight.current.add(paneId);
-            void invoke("pty_write", { paneId, data: pendingAskPrompt(deliverable) + "\r" })
+            void invoke("pty_write", { paneId, data: pendingAskPrompt(fresh) + "\r" })
               .catch(() => {})
               .finally(() => inFlight.current.delete(paneId));
             continue; // one injection per pane per tick
