@@ -25,6 +25,7 @@ import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
+import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
 
 // Sent as the first message to each console when a project tab is opened, so the
@@ -205,6 +206,8 @@ interface AppStore {
   paneRoles: Record<string, SessionRole>;
   /** Drive mode for each launched director pane (#366) — read by useDirectorPump. */
   paneDirectorDrive: Record<string, DirectorDrive>;
+  /** Each worker pane's repo + branch (#373) — lets useCiWatcher map a PR back to it. */
+  paneStream: Record<string, { repo: string; branch: string }>;
   setPaneRole: (paneId: string, role: SessionRole) => void;
   // Agents (#255) — editable permission profiles + their per-pane assignment, both
   // persisted. A pane's assigned profile is applied to its session at launch (the
@@ -629,6 +632,7 @@ export const useAppStore = create<AppStore>()(
         }),
       paneRoles: {},
     paneDirectorDrive: {},
+    paneStream: {},
       setPaneRole: (paneId, role) =>
         set((s) => ({ paneRoles: { ...s.paneRoles, [paneId]: role } })),
 
@@ -1143,6 +1147,7 @@ export const useAppStore = create<AppStore>()(
           const baseTabName = `${projectName} · build`;
           const hasDirector = fleet.director.enabled;
           const newPaneDirectorDrive     = { ...s.paneDirectorDrive };
+          const newPaneStream            = { ...s.paneStream };
 
           // Independents first so the launched wave is what can run now; the
           // recommended count caps how many workers start (no 16 cap — we go multi-tab).
@@ -1213,6 +1218,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneRoleGlobs[key];
               delete newPaneFlows[key];
               delete newPaneDirectorDrive[key];
+              delete newPaneStream[key];
               if (i < count) {
                 const sess = chunk[i];
                 if (sess === null) {
@@ -1241,6 +1247,7 @@ export const useAppStore = create<AppStore>()(
                   // Per-agent checkpoint doc (keyed by stream id) so each agent keeps
                   // its own "where we left off" note.
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
+                  newPaneStream[key] = { repo: sess.repo, branch: worktreeSlug(sess.id) };
                   tabPaneNames[i] = sess.name;
                 }
                 newPaneContinue[key] = resume;
@@ -1286,6 +1293,7 @@ export const useAppStore = create<AppStore>()(
             paneRoleGlobs: newPaneRoleGlobs,
             paneFlows: newPaneFlows,
             paneDirectorDrive: newPaneDirectorDrive,
+            paneStream: newPaneStream,
             disabledPanes: newDisabledPanes,
             paneNames: newPaneNames,
             activeScreen: "console" as Screen,
@@ -1557,6 +1565,7 @@ export const useAppStore = create<AppStore>()(
         paneCwds:        s.paneCwds,
         paneWasClaude:   s.paneWasClaude,
         paneDirectorDrive: s.paneDirectorDrive,
+        paneStream: s.paneStream,
         disabledPanes:   s.disabledPanes,
         githubConnected: s.githubConnected,
         githubToken:     s.githubToken,
