@@ -231,6 +231,21 @@ fn to_bash_path(p: &str) -> String {
     p.to_string()
 }
 
+/// The nearest existing ancestor directory of `path` (native form), or "" if none
+/// exists. Used by `pty_create` to avoid the silent $HOME fallback when a session's
+/// configured cwd is missing — we land in the closest real directory instead (#367).
+fn nearest_existing_ancestor(path: &str) -> String {
+    let mut p = std::path::Path::new(path);
+    loop {
+        if p.as_os_str().is_empty() { return String::new(); }
+        if p.is_dir() { return p.to_string_lossy().into_owned(); }
+        match p.parent() {
+            Some(parent) => p = parent,
+            None => return String::new(),
+        }
+    }
+}
+
 /// Root of the flat, reusable document library: `~/.base-studio-code/documents`.
 /// Holds standalone markdown blocks (`*.md`) plus the library's own `CLAUDE.md`
 /// and `.claude/settings.json`. These are reusable across every project — they
@@ -513,12 +528,22 @@ async fn pty_create(
     // launches, and a no-op when the config is already valid.
     sanitize_claude_config();
 
-    if !cwd.is_empty() {
-        cmd.cwd(&cwd);
+    // Hardening (#367): never silently fall back to $HOME when a session's configured
+    // directory is missing — a failed clone/worktree or a stale persisted cwd would
+    // otherwise have the agent quietly working in the wrong place. Detect the missing
+    // dir, start in its nearest existing ancestor instead, and surface it loudly in the
+    // pane (see cd_prefix below) so a misplaced session can't go unnoticed.
+    let cwd_missing = !cwd.is_empty() && !std::path::Path::new(&cwd).is_dir();
+    if cwd_missing {
+        log::error!("pty[{pane_id}] configured cwd does not exist: {cwd} — refusing the silent home fallback");
+    }
+    let effective_cwd: String = if cwd_missing { nearest_existing_ancestor(&cwd) } else { cwd.clone() };
+    if !effective_cwd.is_empty() {
+        cmd.cwd(&effective_cwd);
         // Pre-accept Claude Code's folder-trust prompt for this directory so the
         // auto-launched `claude` starts already trusted instead of blocking on
         // the "Do you trust the files in this folder?" dialog.
-        trust_claude_dir(&cwd);
+        trust_claude_dir(&effective_cwd);
     }
     // Terminal-type defaults (so claude's TUI gets full xterm capabilities) plus
     // any caller-supplied environment (e.g. GH_TOKEN), which takes precedence.
@@ -613,10 +638,17 @@ async fn pty_create(
     let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
     // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
     // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
-    let cd_prefix = if !cwd.is_empty() {
-        format!("cd \"{}\" 2>/dev/null; ", to_bash_path(&cwd))
-    } else {
+    let cd_prefix = if cwd.is_empty() {
         String::new()
+    } else if cwd_missing {
+        // Loud, visible warning instead of a silent home fallback, then sit in the
+        // nearest existing ancestor (not $HOME) so the agent is at least near the project.
+        format!(
+            "printf '\\033[1;31m[bsc] WARNING: configured directory %s does not exist; this session did NOT start in its project directory.\\033[0m\\n' \"{disp}\"; cd \"{anc}\" 2>/dev/null; ",
+            disp = to_bash_path(&cwd), anc = to_bash_path(&effective_cwd),
+        )
+    } else {
+        format!("cd \"{}\" 2>/dev/null; ", to_bash_path(&cwd))
     };
     // Source the checkpoint helper into the interactive shell too: BASH_ENV only
     // covers non-interactive subshells (the agent's Bash tool), so a human typing
