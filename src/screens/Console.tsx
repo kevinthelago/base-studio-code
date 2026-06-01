@@ -16,6 +16,7 @@ import { tunnelSetPanes, tunnelSetSessions } from "../lib/tunnelClient";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import { useCoordinator } from "../lib/useCoordinator";
 import { usePipelineConductor } from "../lib/usePipelineConductor";
+import { useDirectorPump } from "../lib/useDirectorPump";
 
 function resolvePaneName(
   tabIdx: number,
@@ -184,6 +185,10 @@ export function ConsoleScreen() {
   // Ref so the callback passed to TerminalView always has the latest value without re-registering
   const paneStatusesRef = useRef(paneStatuses);
   useEffect(() => { paneStatusesRef.current = paneStatuses; }, [paneStatuses]);
+
+  // #366: the director pump — re-prompts each launched director pane per its drive mode
+  // (idle-gated), so the async-integrator session acts on worker activity instead of idling.
+  useDirectorPump(paneStatusesRef);
 
   const handleStatusChange = useCallback((tabIdx: number, paneIdx: number, status: "run" | "idle") => {
     const pid = paneId(tabIdx, paneIdx);

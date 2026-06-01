@@ -11,6 +11,7 @@ import type { PlanIssue } from "./planIssues";
 import type { Section } from "./ghStructure";
 import { resolvePhaseIndex } from "./planIssues";
 import { resolveFlow } from "./agentFlow";
+import { type DirectorDrive, resolveDirectorDrive } from "./directorDrive";
 
 export type Posture = "allow" | "ask" | "deny";
 export type Perm = Record<string, Posture>;
@@ -65,6 +66,8 @@ export interface ProjectPaneData {
   repos: Repo[];
   structure: Milestone[];
   context: ContextFile[];
+  /** The async-integrator director config (#366), surfaced for the planning UI. */
+  director: { enabled: boolean; role?: string; drive: DirectorDrive };
 }
 
 export interface BuildProjectPaneInput {
@@ -265,5 +268,10 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     repos: buildRepos(input),
     structure: buildStructure(input),
     context: buildContext(input),
+    director: {
+      enabled: input.fleet?.director.enabled ?? false,
+      role: input.fleet?.director.role,
+      drive: resolveDirectorDrive(input.fleet?.director.drive),
+    },
   };
 }
