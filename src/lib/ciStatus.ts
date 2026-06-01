@@ -10,6 +10,8 @@ export interface CheckRun {
   status: string;
   /** When completed: "success" | "failure" | "neutral" | "cancelled" | "timed_out" | "skipped" | "action_required" | null */
   conclusion: string | null;
+  /** The commit sha this check ran against (used by the watchdog to identify develop's head, #378). */
+  head_sha?: string;
 }
 
 export type CiState = "none" | "pending" | "passed" | "failed";
@@ -48,4 +50,10 @@ export function ciWorkerPrompt(pr: number, state: "passed" | "failed", failing: 
 /** Message injected into the DIRECTOR pane when a worker's PR turns green. Single line. */
 export function ciDirectorMergePrompt(pr: number, branch: string): string {
   return `[coordinator] PR #${pr} (branch ${branch}) is green and ready to merge. Review it and merge into develop (e.g. gh pr merge ${pr} --squash --delete-branch), then mark it with bsc-merged and keep the board/milestones current.`;
+}
+
+/** Prompt injected to a watchdog director when develop's CI goes red (#378). */
+export function ciDevelopRedPrompt(repo: string, sha: string, failing: string[]): string {
+  const jobs = failing.length ? failing.join(", ") : "one or more checks";
+  return `[coordinator] develop CI is RED in ${repo} at ${sha.slice(0, 7)} (failing: ${jobs}). A worker self-merged a breaking change. Act now: identify the breaking commit (git log origin/develop), REVERT it to restore develop to green, then ping the owning worker — match the commit's changed paths to a stream's owned globs in CLAUDE.local.md and pipe a one-line fix-forward instruction into bsc-answer <session> on stdin. Do not let develop stay red.`;
 }

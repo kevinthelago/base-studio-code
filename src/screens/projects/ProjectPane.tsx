@@ -6,6 +6,10 @@
 import { useState, useEffect } from "react";
 import "./projectPane.css";
 import { type DirectorDrive, DIRECTOR_DRIVES } from "./directorDrive";
+import {
+  type IntegrationStrategy, INTEGRATION_STRATEGIES, STRATEGY_LABEL,
+  resolveStrategy, strategySettings,
+} from "./integrationStrategy";
 import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
   ProjectPaneData,
@@ -569,18 +573,21 @@ function Seg({ options, value, onChange, tiny }: {
 // Header-less by design: the AgentsA roster row is the single header and the
 // repo/owns/issues meta now lives there too, so the row + this body read as one
 // cohesive card instead of a row plus a second headered card.
-function AgentEditor({ a, onPerm, onPreset, onFlow }: {
+function AgentEditor({ a, fleetStrategy, onPerm, onPreset, onFlow, onStrategy }: {
   a: Agent;
+  fleetStrategy?: IntegrationStrategy;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onStrategy?: (streamId: string, strategy: IntegrationStrategy | undefined) => void;
 }) {
   // Local state for snappy UI; the callbacks (when supplied) persist every change
   // to the store so it survives a remount. Re-seed when the agent id changes.
   const [perm, setPerm] = useState<Perm>(a.perm);
   const [preset, setPreset] = useState(a.preset);
   const [flow, setFlow] = useState<Flow>(a.flow);
-  useEffect(() => { setPerm(a.perm); setPreset(a.preset); setFlow(a.flow); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [strategy, setStrategy] = useState<IntegrationStrategy | undefined>(a.strategy);
+  useEffect(() => { setPerm(a.perm); setPreset(a.preset); setFlow(a.flow); setStrategy(a.strategy); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (k: string, v: Posture) => {
     const next = { ...perm, [k]: v };
     setPerm(next); setPreset("custom");
@@ -649,6 +656,37 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
           </div>
         </div>
       </div>
+
+      {/* integration strategy (#378) — resolved chip + per-stream override */}
+      <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
+        <div className="ulabel" style={{ marginBottom: 8 }}>integration</div>
+        {(() => {
+          const resolved = resolveStrategy(strategy, fleetStrategy);
+          const st = strategySettings(resolved);
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <span className="fbadge" title="resolved integration strategy">
+                strategy: {STRATEGY_LABEL[resolved]} · integrate={st.integrate} · director={st.director}
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>override</span>
+                <Seg
+                  options={["inherit", ...INTEGRATION_STRATEGIES]}
+                  value={strategy ?? "inherit"}
+                  onChange={(v) => {
+                    const next = v === "inherit" ? undefined : (v as IntegrationStrategy);
+                    setStrategy(next); onStrategy?.(a.id, next);
+                  }}
+                  tiny
+                />
+              </div>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+                {strategy ? STRATEGY_LABEL[strategy] + " (override)" : "inherits fleet default"}
+              </span>
+            </div>
+          );
+        })()}
+      </div>
     </>
   );
 }
@@ -656,11 +694,13 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
 // VARIANT A — Roster rows; the row IS the single header and the detail body
 // (meta + presets + capabilities + flow) expands inside the SAME card, so an
 // open agent reads as one cohesive element rather than a row + a second card.
-function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
+function AgentsA({ agents = AGENTS, fleetStrategy, onPerm, onPreset, onFlow, onStrategy }: {
   agents?: Agent[];
+  fleetStrategy?: IntegrationStrategy;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onStrategy?: (streamId: string, strategy: IntegrationStrategy | undefined) => void;
 }) {
   const [open, setOpen] = useState<string | null>((agents.find((a) => a.focus) ?? agents[0])?.id ?? null);
   const running = agents.filter((a) => a.status === "run").length;
@@ -710,6 +750,9 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
                   <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-muted)" }}>{a.preset}</span>
                   <span className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</span>
+                  <span className="fbadge" title={a.strategy ? "integration strategy (override)" : "integration strategy (inherited)"}>
+                    {STRATEGY_LABEL[resolveStrategy(a.strategy, fleetStrategy)]}
+                  </span>
                 </div>
               </div>
 
@@ -727,7 +770,7 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
                     {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
                     {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
                   </div>
-                  <AgentEditor a={a} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+                  <AgentEditor a={a} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />
                 </>
               )}
             </div>
@@ -753,12 +796,18 @@ const DRIVE_DESC: Record<DirectorDrive, string> = {
 
 // Director drive selector (#366) — how the async-integrator session is driven once the
 // fleet is running. Writes through onDirectorDrive to the fleet plan.
-function DirectorBar({ director, onDirectorDrive }: {
+function DirectorBar({ director, fleetStrategy, onDirectorDrive }: {
   director: { enabled: boolean; role?: string; drive: DirectorDrive };
+  fleetStrategy?: IntegrationStrategy;
   onDirectorDrive?: (drive: DirectorDrive) => void;
 }) {
+  const directorRole = strategySettings(resolveStrategy(undefined, fleetStrategy)).director;
   return (
     <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ flex: "0 0 48px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>role</span>
+        <span className="fbadge" title="director role under the fleet integration strategy">role: {directorRole}</span>
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ flex: "0 0 48px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>drive</span>
         <Seg options={DIRECTOR_DRIVES} value={director.drive}
@@ -786,7 +835,7 @@ function DirectorBar({ director, onDirectorDrive }: {
  * shows the full pane. The drill-in editors keep local state -- display only,
  * no write-back in this slice.
  */
-export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onTogglePin,
+export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onStrategy, onTogglePin,
   onDirectorDrive, onSyncStructure, onSyncDocs, onSyncLabels, syncState }: {
   data?: ProjectPaneData;
   projectName?: string;
@@ -794,6 +843,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onStrategy?: (streamId: string, strategy: IntegrationStrategy | undefined) => void;
   onTogglePin?: (name: string) => void;
   onDirectorDrive?: (drive: DirectorDrive) => void;
   onSyncStructure?: () => void;
@@ -812,6 +862,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   const idleCount = agents.filter((a) => a.status === "idle").length;
   const pinnedCount = context.filter((c) => c.pinned).length;
   const director = hasData ? data!.director : { enabled: true, drive: "event" as DirectorDrive };
+  const fleetStrategy = hasData ? data!.fleetStrategy : undefined;
 
   const [viewing, setViewing] = useState<ContextFile | null>(null);
   useEffect(() => {
@@ -865,10 +916,10 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
           <RepoStructure structure={structure} repos={repos} agents={agents} />
         </Sec>
         <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
-          <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+          <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />
         </Sec>
         <Sec title="Director · Coordination" count={director.enabled ? `drive: ${director.drive}` : "disabled"} open={false}>
-          <DirectorBar director={director} onDirectorDrive={onDirectorDrive} />
+          <DirectorBar director={director} fleetStrategy={fleetStrategy} onDirectorDrive={onDirectorDrive} />
         </Sec>
       </div>
 
