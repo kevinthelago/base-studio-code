@@ -159,7 +159,7 @@ describe("parseFleetFile", () => {
     expect(parseFleetFile(raw)).toEqual({
       recommended: 3,
       reasoning: "three independent areas",
-      director: { enabled: true, role: "integrator" },
+      director: { enabled: true, role: "integrator", drive: "event" },
       streams: [
         { id: "auth-ui", name: "Auth UI", repo: "own/web", owns: ["src/auth/**"], issues: ["#1", "#2"], dependsOn: [], prompt: "prompts/auth-ui-kickoff.md" },
         { id: "api", name: "api", repo: "own/api", owns: [], issues: [], dependsOn: [], prompt: undefined },

@@ -5,6 +5,7 @@
 // projectPane.css and uses the app's design tokens.
 import { useState, useEffect } from "react";
 import "./projectPane.css";
+import { type DirectorDrive, DIRECTOR_DRIVES } from "./directorDrive";
 import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
   ProjectPaneData,
@@ -743,6 +744,38 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
 void FlowBadges;
 void repoRollup;
 
+const DRIVE_DESC: Record<DirectorDrive, string> = {
+  event: "Re-prompts the director when workers post coordination events (landed / blocked / waiting), while it is idle.",
+  heartbeat: "Re-prompts the director on a fixed interval to sweep the fleet — review PRs, merge, unblock.",
+  manual: "Never auto-prompts; poke the director on demand from the Coordination inbox.",
+  off: "The director runs once from its kickoff and is never re-prompted.",
+};
+
+// Director drive selector (#366) — how the async-integrator session is driven once the
+// fleet is running. Writes through onDirectorDrive to the fleet plan.
+function DirectorBar({ director, onDirectorDrive }: {
+  director: { enabled: boolean; role?: string; drive: DirectorDrive };
+  onDirectorDrive?: (drive: DirectorDrive) => void;
+}) {
+  return (
+    <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ flex: "0 0 48px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>drive</span>
+        <Seg options={DIRECTOR_DRIVES} value={director.drive}
+          onChange={(v) => onDirectorDrive?.(v as DirectorDrive)} />
+      </div>
+      <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
+        {DRIVE_DESC[director.drive]}
+      </div>
+      {!director.enabled && (
+        <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--warn, var(--fg-dim))" }}>
+          No director in this fleet — enable one in the plan for the drive mode to take effect.
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* =================================================================
    pp-assembled.jsx — AssembledPane → ProjectPane
    ================================================================= */
@@ -754,7 +787,7 @@ void repoRollup;
  * no write-back in this slice.
  */
 export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onTogglePin,
-  onSyncStructure, onSyncDocs, onSyncLabels, syncState }: {
+  onDirectorDrive, onSyncStructure, onSyncDocs, onSyncLabels, syncState }: {
   data?: ProjectPaneData;
   projectName?: string;
   projectId?: string;
@@ -762,6 +795,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onTogglePin?: (name: string) => void;
+  onDirectorDrive?: (drive: DirectorDrive) => void;
   onSyncStructure?: () => void;
   onSyncDocs?: () => void;
   onSyncLabels?: () => void;
@@ -777,6 +811,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   const onCount = agents.filter((a) => a.status === "on").length;
   const idleCount = agents.filter((a) => a.status === "idle").length;
   const pinnedCount = context.filter((c) => c.pinned).length;
+  const director = hasData ? data!.director : { enabled: true, drive: "event" as DirectorDrive };
 
   const [viewing, setViewing] = useState<ContextFile | null>(null);
   useEffect(() => {
@@ -831,6 +866,9 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
         </Sec>
         <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
           <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+        </Sec>
+        <Sec title="Director · Coordination" count={director.enabled ? `drive: ${director.drive}` : "disabled"} open={false}>
+          <DirectorBar director={director} onDirectorDrive={onDirectorDrive} />
         </Sec>
       </div>
 

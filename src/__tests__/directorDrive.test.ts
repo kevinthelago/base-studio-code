@@ -1,0 +1,113 @@
+import { describe, it, expect } from "vitest";
+import {
+  normalizeDirectorDrive, resolveDirectorDrive, decideDirectorAction,
+  eventDirectorPrompt, DEFAULT_DIRECTOR_DRIVE,
+} from "../screens/projects/directorDrive";
+
+const TS = "2026-06-01T00:00:00Z";
+const line = (session: string, kind: string, a = "", b = "") => `${TS}	${session}	${kind}	${a}	${b}`;
+const HB = 600_000;
+const CD = 6_000;
+
+describe("normalizeDirectorDrive", () => {
+  it("accepts the four canonical modes", () => {
+    for (const v of ["event", "heartbeat", "manual", "off"] as const) {
+      expect(normalizeDirectorDrive(v)).toBe(v);
+    }
+  });
+  it("maps the event-driven alias to event", () => {
+    expect(normalizeDirectorDrive("event-driven")).toBe("event");
+    expect(normalizeDirectorDrive("EVENT-DRIVEN")).toBe("event");
+  });
+  it("falls back to the default for junk / non-strings", () => {
+    expect(normalizeDirectorDrive("nonsense")).toBe(DEFAULT_DIRECTOR_DRIVE);
+    expect(normalizeDirectorDrive(undefined)).toBe(DEFAULT_DIRECTOR_DRIVE);
+    expect(normalizeDirectorDrive(42)).toBe(DEFAULT_DIRECTOR_DRIVE);
+  });
+  it("resolveDirectorDrive applies the default when unset", () => {
+    expect(resolveDirectorDrive(undefined)).toBe(DEFAULT_DIRECTOR_DRIVE);
+    expect(resolveDirectorDrive("off")).toBe("off");
+  });
+});
+
+const base = { now: 1_000_000, lastInjectAt: 0, heartbeatMs: HB, cooldownMs: CD };
+
+describe("decideDirectorAction — off / manual", () => {
+  it("never injects and consumes the log", () => {
+    const lines = [line("w1", "landed", "#42")];
+    for (const drive of ["off", "manual"] as const) {
+      const r = decideDirectorAction({ lines, cursor: 0, drive, idle: true, ...base });
+      expect(r.inject).toBeNull();
+      expect(r.cursor).toBe(1);
+    }
+  });
+});
+
+describe("decideDirectorAction — heartbeat", () => {
+  it("injects when idle and the interval has elapsed", () => {
+    const r = decideDirectorAction({ lines: [], cursor: 0, drive: "heartbeat", idle: true, now: 1_000_000, lastInjectAt: 1_000_000 - HB, heartbeatMs: HB, cooldownMs: CD });
+    expect(r.inject).toContain("Heartbeat");
+    expect(r.lastInjectAt).toBe(1_000_000);
+  });
+  it("does not inject when the director is busy", () => {
+    const r = decideDirectorAction({ lines: [], cursor: 0, drive: "heartbeat", idle: false, now: 1_000_000, lastInjectAt: 0, heartbeatMs: HB, cooldownMs: CD });
+    expect(r.inject).toBeNull();
+  });
+  it("does not inject again within the interval", () => {
+    const r = decideDirectorAction({ lines: [], cursor: 0, drive: "heartbeat", idle: true, now: 1_000_000, lastInjectAt: 1_000_000 - 1000, heartbeatMs: HB, cooldownMs: CD });
+    expect(r.inject).toBeNull();
+  });
+});
+
+describe("decideDirectorAction — event-driven", () => {
+  it("injects on a new relevant event when idle and past cooldown", () => {
+    const lines = [line("w1", "landed", "#42"), line("w2", "blocked", "contract:DBSchema")];
+    const r = decideDirectorAction({ lines, cursor: 0, drive: "event", idle: true, now: 1_000_000, lastInjectAt: 0, heartbeatMs: HB, cooldownMs: CD });
+    expect(r.inject).toContain("landed");
+    expect(r.inject).toContain("#42");
+    expect(r.cursor).toBe(2);
+    expect(r.lastInjectAt).toBe(1_000_000);
+  });
+  it("holds the cursor (retries) when the director is busy", () => {
+    const lines = [line("w1", "landed", "#42")];
+    const r = decideDirectorAction({ lines, cursor: 0, drive: "event", idle: false, ...base });
+    expect(r.inject).toBeNull();
+    expect(r.cursor).toBe(0); // unconsumed so it retries when idle
+  });
+  it("holds within the cooldown even when idle", () => {
+    const lines = [line("w1", "landed", "#42")];
+    const r = decideDirectorAction({ lines, cursor: 0, drive: "event", idle: true, now: 1_000_000, lastInjectAt: 1_000_000 - 1000, heartbeatMs: HB, cooldownMs: CD });
+    expect(r.inject).toBeNull();
+    expect(r.cursor).toBe(0);
+  });
+  it("ignores the director own merge/wake events (consumes, no inject)", () => {
+    const lines = [line("dir", "merged", "#42"), line("dir", "woke", "")];
+    const r = decideDirectorAction({ lines, cursor: 0, drive: "event", idle: true, ...base });
+    expect(r.inject).toBeNull();
+    expect(r.cursor).toBe(2);
+  });
+  it("does nothing when there are no fresh lines", () => {
+    const lines = [line("w1", "landed", "#42")];
+    const r = decideDirectorAction({ lines, cursor: 1, drive: "event", idle: true, ...base });
+    expect(r.inject).toBeNull();
+    expect(r.cursor).toBe(1);
+  });
+});
+
+describe("eventDirectorPrompt", () => {
+  it("summarizes landed/blocked/waiting/failed and carries the action", () => {
+    const lines = ["landed #1", "landed #2", "blocked alpha", "waiting beta", "failed #9"];
+    void lines;
+    const p = eventDirectorPrompt([
+      { type: "landed", ref: { kind: "issue", number: 1 }, at: 0 },
+      { type: "blocked", session: "alpha", deps: [{ kind: "contract", name: "DB" }], at: 0 },
+      { type: "waiting", session: "beta", reason: "confirm?", at: 0 },
+      { type: "failed", ref: { kind: "issue", number: 9 }, reason: "x", at: 0 },
+    ]);
+    expect(p).toContain("1 landed (#1)");
+    expect(p).toContain("blocked");
+    expect(p).toContain("alpha on contract:DB");
+    expect(p).toContain("waiting");
+    expect(p).toContain("bsc-merged");
+  });
+});
