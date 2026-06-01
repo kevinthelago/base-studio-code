@@ -1079,6 +1079,26 @@ describe("agent fleet store", () => {
     expect(st.paneRoleGlobs[`t${idx}p0`]).toEqual(["src/x/**", "src/y.ts"]);
   });
 
+  it("generateFleetProfiles materializes unassigned and dangling-reference profiles", () => {
+    const f: FleetPlan = {
+      recommended: 2, reasoning: "", director: { enabled: false },
+      streams: [
+        { id: "a", name: "A", repo: "o/r", owns: ["src/a/**"], issues: [], dependsOn: [] },
+        { id: "b", name: "B", repo: "o/r", owns: ["src/b/**"], issues: [], dependsOn: [], profile: "b-dev" },
+      ],
+    };
+    useAppStore.setState({ planFleet: { gp: f } });
+    useAppStore.getState().generateFleetProfiles("gp");
+    const st = useAppStore.getState();
+    const streams = st.planFleet["gp"].streams;
+    // unassigned -> generated id + a profile whose write paths are its owns
+    expect(streams[0].profile).toBe("gen_a");
+    expect(st.agentProfiles.find((p) => p.id === "gen_a")!.paths.allow).toEqual(["src/a/**"]);
+    // dangling reference -> materialized, keeping the planner-assigned id stable
+    expect(streams[1].profile).toBe("b-dev");
+    expect(st.agentProfiles.find((p) => p.id === "b-dev")!.paths.allow).toEqual(["src/b/**"]);
+  });
+
   it("isolates co-located agents in separate worktrees with distinct checkpoint docs", () => {
     useAppStore.setState({ bscBaseDir: "/base" });
     const coFleet: FleetPlan = {
