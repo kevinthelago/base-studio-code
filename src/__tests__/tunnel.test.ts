@@ -16,6 +16,7 @@ describe("pairingPayload", () => {
     hostPubKey: "aG9zdC1rZXk=",
     psk: "0123456789abcdef",
     clientCount: 0,
+    inputGranted: false,
   };
 
   it("returns the relay payload when connected with a room + keys", () => {
