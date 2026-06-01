@@ -4,17 +4,192 @@ use std::{
     io::{Read, Write},
     sync::Mutex,
 };
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+
+mod tunnel;
 
 // ── PTY state ────────────────────────────────────────────────────────────────
 
 struct PtySession {
     writer: Box<dyn Write + Send>,
     master: Box<dyn portable_pty::MasterPty + Send>,
-    _child: Box<dyn portable_pty::Child + Send + Sync>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+    /// Owns the shell + its descendants so dropping the session reclaims the
+    /// whole tree — `claude`, any `gh`/`git`/MCP child, etc. On Windows this is a
+    /// kill-on-close Job Object; on Unix it is the shell's process-group id, which
+    /// `killpg(pgid, SIGKILL)` reaps on drop (#118). `None` only when setup failed
+    /// at spawn time (logged; falls back to plain child kill, which leaves
+    /// grandchildren orphaned).
+    _job: Option<PtyJob>,
 }
 
 struct PtyState(Mutex<HashMap<String, PtySession>>);
+
+// ── Process tree kill (Windows Job Object) ───────────────────────────────────
+
+/// RAII wrapper around a Windows Job Object configured to kill every assigned
+/// process when the last handle closes. We give each PTY shell its own job and
+/// assign the shell's PID right after spawn, so dropping the session on
+/// `pty_kill` / app exit terminates the whole tree (shell → `claude` → any
+/// `gh`/`git`/MCP child). Without this, `portable_pty::Child::kill()` only
+/// reaches the immediate shell — observed in the field as ~28 orphan
+/// `bash`/`claude`/WebView children holding cwd locks after app exit.
+#[cfg(windows)]
+struct PtyJob {
+    handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+/// Unix counterpart of the Job Object: the process-group id of the PTY shell.
+/// `portable_pty` runs `setsid()` in the spawned shell, so the shell leads a new
+/// session and a process group whose pgid equals the shell's pid. Every child it
+/// spawns (`claude`, `gh`, `git`, MCP servers) stays in that group unless it
+/// re-`setsid`s, so `killpg(pgid, SIGKILL)` on drop terminates the whole tree —
+/// the same orphan-leak fix the Windows job provides. Stored in an atomic so
+/// `assign_pid(&self, …)` can record the pid through the shared `new()`/
+/// `assign_pid` call site without `&mut`; `PtyJob` stays `Send + Sync`.
+#[cfg(not(windows))]
+struct PtyJob {
+    pgid: std::sync::atomic::AtomicI32,
+}
+
+#[cfg(windows)]
+impl PtyJob {
+    /// Create a kill-on-close job. Returns `Err` if the kernel refuses; the
+    /// caller logs and proceeds without tree-kill rather than failing the spawn.
+    fn new() -> std::io::Result<Self> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::JobObjects::{
+            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+        // SAFETY: NULL attributes + NULL name is the documented anonymous-job
+        // form; the call returns a valid HANDLE or NULL on failure.
+        let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if handle.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+        // Zero-init is the documented way to start an EXTENDED_LIMIT_INFORMATION
+        // and then set only the flags we care about.
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // SAFETY: pointer + size match the JobObjectExtendedLimitInformation
+        // information class.
+        let ok = unsafe {
+            SetInformationJobObject(
+                handle,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const _,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if ok == 0 {
+            let err = std::io::Error::last_os_error();
+            // Don't leak the handle when configuration fails.
+            unsafe { CloseHandle(handle); }
+            return Err(err);
+        }
+        Ok(Self { handle })
+    }
+
+    /// Assign the process identified by `pid` to this job. The process's later
+    /// descendants inherit job membership (modern Windows nested-job default),
+    /// so the whole tree shares the job's kill-on-close fate. Opens a transient
+    /// process handle with `PROCESS_SET_QUOTA | PROCESS_TERMINATE` — the minimum
+    /// access `AssignProcessToJobObject` requires.
+    fn assign_pid(&self, pid: u32) -> std::io::Result<()> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+        };
+        // SAFETY: OpenProcess returns a valid HANDLE or NULL on failure.
+        let proc = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid) };
+        if proc.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: both handles are valid until we close `proc` below.
+        let ok = unsafe { AssignProcessToJobObject(self.handle, proc) };
+        let err = if ok == 0 { Some(std::io::Error::last_os_error()) } else { None };
+        unsafe { CloseHandle(proc); }
+        match err { Some(e) => Err(e), None => Ok(()) }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for PtyJob {
+    fn drop(&mut self) {
+        // Closing the last handle on a KILL_ON_JOB_CLOSE job terminates every
+        // process still in the job — that's the actual tree kill.
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.handle); }
+    }
+}
+
+// SAFETY: a job HANDLE is an opaque OS-side reference; the kernel handles
+// cross-thread access. We never expose the raw handle outside this module.
+#[cfg(windows)]
+unsafe impl Send for PtyJob {}
+#[cfg(windows)]
+unsafe impl Sync for PtyJob {}
+
+#[cfg(not(windows))]
+impl PtyJob {
+    /// Create an unbound job. The shell's process group isn't known until after
+    /// spawn, so `pgid` starts at 0 (no-op on drop) and is filled by `assign_pid`.
+    /// Infallible — the `Result` mirrors the Windows signature for a shared call
+    /// site.
+    fn new() -> std::io::Result<Self> {
+        Ok(Self { pgid: std::sync::atomic::AtomicI32::new(0) })
+    }
+
+    /// Record the shell's pid as the group to reap. Because `portable_pty`
+    /// `setsid`s the child, the shell IS its group leader, so pgid == pid — no
+    /// `getpgid` round-trip (which could race the child's `setsid`). Infallible;
+    /// the `Result` mirrors the Windows signature.
+    fn assign_pid(&self, pid: u32) -> std::io::Result<()> {
+        self.pgid.store(pid as i32, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+impl Drop for PtyJob {
+    fn drop(&mut self) {
+        let pgid = self.pgid.load(std::sync::atomic::Ordering::Relaxed);
+        if pgid > 0 {
+            // SAFETY: `killpg` takes a pgid + signal and has no memory effects.
+            // A negative-or-zero pgid is excluded above; ESRCH (group already
+            // gone — every member exited and was reaped) is the benign no-op
+            // case, so we ignore the return value. SIGKILL (not SIGTERM) matches
+            // the Windows job's unconditional kill-on-close and can't be trapped,
+            // guaranteeing no surviving `claude`/`gh`/`git` descendants.
+            unsafe { libc::killpg(pgid, libc::SIGKILL); }
+        }
+    }
+}
+
+/// Drain every active PTY session, killing each shell (which on Windows kills
+/// its whole tree via the per-session Job Object that drops with the session).
+/// Called from the Tauri `RunEvent::Exit` hook so closing the app reclaims its
+/// orphan `bash` / `claude` / WebView children and releases the cwd locks they
+/// hold on `~/.base-studio-code`.
+fn kill_all_pty_sessions(state: &PtyState) {
+    // Drain inside the lock, then kill outside — child.kill() can block (the
+    // OS may take milliseconds per process), and we don't want to stall every
+    // other PtyState consumer while shutdown rolls through N sessions.
+    let drained: Vec<(String, PtySession)> = {
+        let mut map = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        map.drain().collect()
+    };
+    let n = drained.len();
+    for (pane_id, mut session) in drained {
+        if let Err(e) = session.child.kill() {
+            log::warn!("pty[{pane_id}] exit-kill child failed: {e}");
+        }
+        // Dropping `session` runs `PtyJob::drop`, which closes the job handle
+        // and tells the kernel to terminate every descendant still in the job.
+    }
+    log::info!("killed {n} PTY session(s) on exit");
+}
 
 // ── Logging / performance ────────────────────────────────────────────────────
 
@@ -93,6 +268,21 @@ fn to_bash_path(p: &str) -> String {
     p.to_string()
 }
 
+/// The nearest existing ancestor directory of `path` (native form), or "" if none
+/// exists. Used by `pty_create` to avoid the silent $HOME fallback when a session's
+/// configured cwd is missing — we land in the closest real directory instead (#367).
+fn nearest_existing_ancestor(path: &str) -> String {
+    let mut p = std::path::Path::new(path);
+    loop {
+        if p.as_os_str().is_empty() { return String::new(); }
+        if p.is_dir() { return p.to_string_lossy().into_owned(); }
+        match p.parent() {
+            Some(parent) => p = parent,
+            None => return String::new(),
+        }
+    }
+}
+
 /// Root of the flat, reusable document library: `~/.base-studio-code/documents`.
 /// Holds standalone markdown blocks (`*.md`) plus the library's own `CLAUDE.md`
 /// and `.claude/settings.json`. These are reusable across every project — they
@@ -142,6 +332,50 @@ fn delete_project_dir(project_key: String) -> Result<(), String> {
         log::info!("deleted project hub {:?}", dir);
     }
     Ok(())
+}
+
+/// Clear every project's plan files for a from-scratch dev reset, WITHOUT touching
+/// the cloned repos. Deletes only the top-level `.md` / `.json` plan files in each
+/// `projects/<key>/` dir (goal.md, issues.json, phases.json, fleet.json, the
+/// context docs, …) and leaves all SUBDIRECTORIES — the cloned repos, their
+/// `.worktrees`, and `prompts/` — intact. Best-effort; returns how many files were
+/// removed. Without this, the planning poll re-reads the files and a store-only
+/// clear is undone within a tick.
+#[tauri::command]
+fn clear_all_plan_files() -> Result<u32, String> {
+    let projects = bsc_base_dir().join("projects");
+    if !projects.exists() {
+        return Ok(0);
+    }
+    let mut removed = 0u32;
+    let entries = std::fs::read_dir(&projects).map_err(|e| format!("clear_all_plan_files: {e}"))?;
+    for entry in entries.flatten() {
+        let proj = entry.path();
+        if !proj.is_dir() {
+            continue;
+        }
+        let items = match std::fs::read_dir(&proj) {
+            Ok(i) => i,
+            Err(_) => continue,
+        };
+        for item in items.flatten() {
+            let p = item.path();
+            // Preserve every subdirectory (cloned repos, .worktrees, prompts, .claude).
+            if !p.is_file() {
+                continue;
+            }
+            let is_plan = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("json"))
+                .unwrap_or(false);
+            if is_plan && std::fs::remove_file(&p).is_ok() {
+                removed += 1;
+            }
+        }
+    }
+    log::info!("clear_all_plan_files: removed {removed} plan files");
+    Ok(removed)
 }
 
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
@@ -331,12 +565,22 @@ async fn pty_create(
     // launches, and a no-op when the config is already valid.
     sanitize_claude_config();
 
-    if !cwd.is_empty() {
-        cmd.cwd(&cwd);
+    // Hardening (#367): never silently fall back to $HOME when a session's configured
+    // directory is missing — a failed clone/worktree or a stale persisted cwd would
+    // otherwise have the agent quietly working in the wrong place. Detect the missing
+    // dir, start in its nearest existing ancestor instead, and surface it loudly in the
+    // pane (see cd_prefix below) so a misplaced session can't go unnoticed.
+    let cwd_missing = !cwd.is_empty() && !std::path::Path::new(&cwd).is_dir();
+    if cwd_missing {
+        log::error!("pty[{pane_id}] configured cwd does not exist: {cwd} — refusing the silent home fallback");
+    }
+    let effective_cwd: String = if cwd_missing { nearest_existing_ancestor(&cwd) } else { cwd.clone() };
+    if !effective_cwd.is_empty() {
+        cmd.cwd(&effective_cwd);
         // Pre-accept Claude Code's folder-trust prompt for this directory so the
         // auto-launched `claude` starts already trusted instead of blocking on
         // the "Do you trust the files in this folder?" dialog.
-        trust_claude_dir(&cwd);
+        trust_claude_dir(&effective_cwd);
     }
     // Terminal-type defaults (so claude's TUI gets full xterm capabilities) plus
     // any caller-supplied environment (e.g. GH_TOKEN), which takes precedence.
@@ -352,24 +596,57 @@ async fn pty_create(
     // (bash won't import non-identifier function names). So we drop the helper in a
     // stable rc file and point BASH_ENV at it — every non-interactive bash sources
     // BASH_ENV at startup — then source the same file in the interactive shell below.
-    let checkpoint_rel = checkpoint_doc.as_deref().filter(|s| !s.is_empty());
-    let checkpoint_rc = if let Some(rel) = checkpoint_rel {
-        let base = bsc_base_dir();
+    // Install the bsc-* shell helpers via an rc file pointed to by BASH_ENV (so the
+    // agent's non-interactive `bash -c` subshells get them) and sourced into the
+    // interactive shell below. The rc is universal — bsc-checkpoint (triage) and
+    // bsc-note / bsc-blocked (fleet assume-and-log) cost nothing in sessions that
+    // don't use them. Per-session doc paths the helpers read are exposed as env
+    // vars when applicable; bsc-note/bsc-blocked default to a DECISIONS.md in cwd.
+    let base = bsc_base_dir();
+    let _ = std::fs::create_dir_all(&base);
+    if let Some(rel) = checkpoint_doc.as_deref().filter(|s| !s.is_empty()) {
         let abs = base.join(rel);
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
-        let _ = std::fs::create_dir_all(&base);
-        let rc = base.join("bsc-env.sh");
-        let _ = std::fs::write(&rc, BSC_CHECKPOINT_RC);
-        let rc_bash = to_bash_path(&rc.to_string_lossy());
-        cmd.env("BASH_ENV", &rc_bash);
-        Some(rc_bash)
-    } else {
-        None
-    };
+    }
+    let rc = base.join("bsc-env.sh");
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}"));
+    let rc_bash = to_bash_path(&rc.to_string_lossy());
+    cmd.env("BASH_ENV", &rc_bash);
+    // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
+    // settings.json by the frontend) appends one redacted TSV line per tool attempt to
+    // this app-wide log, tagged with the pane id. Set for every pane (harmless — only
+    // panes whose settings install the hook actually write).
+    cmd.env("BSC_AUDIT_LOG", to_bash_path(&base.join("audit.log").to_string_lossy()));
+    cmd.env("BSC_AUDIT_PANE", &pane_id);
+    // Coordination log (#199): `bsc-blocked --on <ref>` appends a structured
+    // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
+    // merge/close append satisfy events later. Set for every pane; only --on writes.
+    cmd.env("BSC_COORD_LOG", to_bash_path(&base.join("coord.log").to_string_lossy()));
+    // FS confinement (#158): the session's repo root (bash-style), against which the
+    // `bsc-confine` hook (installed on gated panes) checks file-tool paths. The cwd is
+    // the repo root. Set for every pane; only gated panes install the hook.
+    if !cwd.is_empty() {
+        cmd.env("BSC_REPO_ROOT", to_bash_path(&cwd));
+    }
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
     drop(pair.slave);
+
+    // Box the shell into a Windows Job Object so killing the session also
+    // terminates `claude` (and any `gh`/`git`/MCP child it spawns). Best-effort:
+    // job/assign failures log and proceed with a None job — single-process kill
+    // still works, we just lose tree-kill until the next launch.
+    let job = match PtyJob::new() {
+        Ok(j) => match child.process_id() {
+            Some(pid) => match j.assign_pid(pid) {
+                Ok(()) => Some(j),
+                Err(e) => { log::warn!("pty[{pane_id}] assign shell {pid} to job failed: {e}"); None }
+            },
+            None => { log::warn!("pty[{pane_id}] shell pid unavailable; tree-kill disabled"); None }
+        },
+        Err(e) => { log::warn!("pty[{pane_id}] create job object failed: {e}"); None }
+    };
 
     let mut writer = pair.master.take_writer()
         .map_err(|e| { log::error!("pty[{pane_id}] take_writer failed: {e}"); e.to_string() })?;
@@ -398,23 +675,27 @@ async fn pty_create(
     let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
     // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
     // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
-    let cd_prefix = if !cwd.is_empty() {
-        format!("cd \"{}\" 2>/dev/null; ", to_bash_path(&cwd))
-    } else {
+    let cd_prefix = if cwd.is_empty() {
         String::new()
+    } else if cwd_missing {
+        // Loud, visible warning instead of a silent home fallback, then sit in the
+        // nearest existing ancestor (not $HOME) so the agent is at least near the project.
+        format!(
+            "printf '\\033[1;31m[bsc] WARNING: configured directory %s does not exist; this session did NOT start in its project directory.\\033[0m\\n' \"{disp}\"; cd \"{anc}\" 2>/dev/null; ",
+            disp = to_bash_path(&cwd), anc = to_bash_path(&effective_cwd),
+        )
+    } else {
+        format!("cd \"{}\" 2>/dev/null; ", to_bash_path(&cwd))
     };
     // Source the checkpoint helper into the interactive shell too: BASH_ENV only
     // covers non-interactive subshells (the agent's Bash tool), so a human typing
     // `bsc-checkpoint` in the console pane would otherwise not have it.
-    let checkpoint_fn = match &checkpoint_rc {
-        Some(rc) => format!("source \"{}\" 2>/dev/null; ", rc),
-        None => String::new(),
-    };
+    let helpers_src = format!("source \"{}\" 2>/dev/null; ", rc_bash);
     let osc7 = format!(
         "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
          __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
          claude() {{ __bsc_state run; command claude \"$@\"; }}; \
-         {checkpoint_fn}\
+         {helpers_src}\
          PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
          __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
     );
@@ -463,6 +744,9 @@ async fn pty_create(
         const FLUSH: Duration = Duration::from_millis(16);
         const MAX_PENDING: usize = 64 * 1024;
         let evt = format!("pty_data_{}", pane_id_em);
+        // Tee PTY output to the mobile tunnel (#242) when a client is connected.
+        // Looked up once; `broadcast_output` is a no-op while nobody is paired.
+        let tunnel_state = app_em.try_state::<tunnel::TunnelState>();
         let mut pending = String::new();
         let mut last_emit = Instant::now();
         let mut total: u64 = 0;
@@ -487,7 +771,11 @@ async fn pty_create(
                 Err(RecvTimeoutError::Disconnected) => { flush_now = true; done = true; }
             }
             if flush_now && !pending.is_empty() {
-                let _ = app_em.emit(&evt, std::mem::take(&mut pending));
+                let data = std::mem::take(&mut pending);
+                if let Some(ts) = &tunnel_state {
+                    ts.broadcast_output(&pane_id_em, &data);
+                }
+                let _ = app_em.emit(&evt, data);
                 win_emits += 1;
                 last_emit = Instant::now();
             }
@@ -516,7 +804,7 @@ async fn pty_create(
 
     let active = {
         let mut map = state.0.lock().unwrap();
-        map.insert(pane_id, PtySession { writer, master: pair.master, _child: child });
+        map.insert(pane_id, PtySession { writer, master: pair.master, child, _job: job });
         map.len()
     };
     // Concurrency is the dominant memory driver — each session is a claude (node)
@@ -581,9 +869,48 @@ async fn pty_resize(
 
 #[tauri::command]
 async fn pty_kill(pane_id: String, state: State<'_, PtyState>) -> Result<(), String> {
-    let existed = state.0.lock().unwrap().remove(&pane_id).is_some();
-    log::info!("pty[{pane_id}] kill (existed={existed})");
+    let session = state.0.lock().unwrap().remove(&pane_id);
+    match session {
+        Some(mut s) => {
+            // Belt-and-suspenders: ask the shell to terminate, then let the
+            // session drop. On Windows the drop closes the per-session Job
+            // Object, which kills any descendant (`claude`, `gh`, `git`, MCP
+            // children) that survived the shell — the actual orphan-leak fix.
+            if let Err(e) = s.child.kill() {
+                log::warn!("pty[{pane_id}] child kill failed: {e}");
+            }
+            log::info!("pty[{pane_id}] kill");
+        }
+        None => log::info!("pty[{pane_id}] kill (no-op; session absent)"),
+    }
     Ok(())
+}
+
+// ── Tunnel ⇄ PTY bridge (#242b) ─────────────────────────────────────────────────
+
+/// Write mobile keystrokes into a pane's PTY. Called from the tunnel's relay client
+/// task (`tunnel.rs`); keeps `PtyState`/`PtySession` private to this module. Missing
+/// panes are silently dropped (teardown race), matching `pty_write`.
+pub(crate) fn tunnel_write_pty(app: &AppHandle, pane_id: &str, data: &str) {
+    use std::io::Write;
+    let state = app.state::<PtyState>();
+    let mut sessions = state.0.lock().unwrap();
+    if let Some(s) = sessions.get_mut(pane_id) {
+        if let Err(e) = s.writer.write_all(data.as_bytes()) {
+            log::warn!("tunnel: pty[{pane_id}] write failed: {e}");
+        }
+    }
+}
+
+/// Resize a pane's PTY from a mobile client. No-op for a missing pane.
+pub(crate) fn tunnel_resize_pty(app: &AppHandle, pane_id: &str, cols: u16, rows: u16) {
+    let state = app.state::<PtyState>();
+    let sessions = state.0.lock().unwrap();
+    if let Some(s) = sessions.get(pane_id) {
+        let _ = s
+            .master
+            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
+    }
 }
 
 // ── File picker ───────────────────────────────────────────────────────────────
@@ -742,6 +1069,41 @@ async fn github_post(
     if !status.is_success() {
         let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
         log::warn!("github_post {path} HTTP {status}: {msg}");
+        return Err(format!("GitHub API error ({}): {}", status, msg));
+    }
+    Ok(json)
+}
+
+#[tauri::command]
+async fn github_put(
+    token: String,
+    path: String,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let _perf = PerfSpan::new("github_put");
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/{}", path);
+    let response = client
+        .put(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "base-studio-code/0.2.0")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    if !status.is_success() {
+        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        log::warn!("github_put {path} HTTP {status}: {msg}");
         return Err(format!("GitHub API error ({}): {}", status, msg));
     }
     Ok(json)
@@ -921,6 +1283,203 @@ fn bsc_base_dir() -> std::path::PathBuf {
 /// identifiers (post-Shellshock) — so it must be *defined* in each subshell.
 const BSC_CHECKPOINT_RC: &str =
     "bsc-checkpoint() { mkdir -p \"$(dirname \"$BSC_CHECKPOINT_DOC\")\" 2>/dev/null; cat > \"$BSC_CHECKPOINT_DOC\"; }\n";
+
+/// The `bsc-note` / `bsc-blocked` helpers: append a one-line entry read from stdin
+/// to the assume-and-log journal named by `$BSC_DECISIONS_DOC` (default: a
+/// `DECISIONS.md` in the session's cwd, creating its parent dir). Fleet workers use
+/// these to record a reversible decision (note) or a genuine stop (blocked) and keep
+/// moving instead of stalling on a human. Same rc + `BASH_ENV` install path as
+/// bsc-checkpoint, so the agent's non-interactive Bash subshells can call them.
+const BSC_DECISIONS_RC: &str = concat!(
+    // `printf '%s' '- '` (not `printf '- '`): a format starting with `-` is parsed as
+    // an option flag and the prefix is silently dropped.
+    "bsc-note() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' '- '; cat; printf '\\n'; } >> \"$d\"; }\n",
+    // bsc-blocked also accepts `--on <ref[,ref]>` (+ optional `--checkpoint <ref>`):
+    // when present it appends a structured `blocked` event to $BSC_COORD_LOG (#199),
+    // tagged with the pane id, alongside the human note. No --on => note only.
+    // A ref is `#42` | `contract:Name` | `file:path` | `predicate:expr` | `session:<paneId>`
+    // ("blocked until that pane finishes" — the form the runtime uses to detect wait-for
+    // cycles between sessions; see detectDeadlocks in src/lib/coordination.ts).
+    r#"bsc-blocked() { on=""; cp=""; while [ $# -gt 0 ]; do case "$1" in --on) on="$2"; shift 2 ;; --checkpoint) cp="$2"; shift 2 ;; *) shift ;; esac; done; d="${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}"; mkdir -p "$(dirname "$d")" 2>/dev/null; m="$(cat)"; { printf '%s' '- BLOCKED: '; printf '%s' "$m"; [ -n "$on" ] && printf '%s' " (on $on)"; printf '\n'; } >> "$d"; l="${BSC_COORD_LOG:-}"; if [ -n "$on" ] && [ -n "$l" ]; then ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\tblocked\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$on" "$cp" >> "$l"; fi; }"#,
+    "\n",
+);
+
+/// The `bsc-audit` helper (#257): the PreToolUse hook on a gated pane pipes Claude
+/// Code's tool JSON into this; it extracts ONLY the tool name + a short target field
+/// (never `content`/`new_string`, so file contents / secrets aren't written) and
+/// appends one TAB-separated line — `ts \t pane \t toolName \t target` — to the
+/// app-wide `$BSC_AUDIT_LOG`, tagged with `$BSC_AUDIT_PANE`. Best-effort + always exits
+/// 0 so it never blocks a tool. A raw string keeps the embedded quotes/regex readable.
+const BSC_AUDIT_RC: &str = concat!(
+    r#"bsc-audit() { l="${BSC_AUDIT_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; tn="$(printf '%s' "$j" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; tg="$(printf '%s' "$j" | grep -oE '"(command|file_path|notebook_path|url|query|pattern|path|description)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | tr '\t\n' '  ' | cut -c1-160)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$tn" "$tg" >> "$l"; return 0; }"#,
+    "\n",
+);
+
+/// The `bsc-confine` helper (#158): a PreToolUse hook for the file tools on a gated
+/// pane. It reads Claude Code's tool JSON, extracts the target `file_path` /
+/// `notebook_path`, and BLOCKS (return 2 + stderr) when the path escapes the session's
+/// repo root (`$BSC_REPO_ROOT`) — any `..` segment, or an absolute path not under the
+/// root. Mirrors `src/lib/fsConfine.ts` (the unit-tested decision). String-based + no
+/// realpath so it's portable; `return 2` (not `exit`) so it never kills a shell that
+/// sources it. Covers the AI's file tools only — Bash needs OS-level sandboxing.
+const BSC_CONFINE_RC: &str = concat!(
+    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; case "$fp" in ..|../*|*/../*|*/..) echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
+    "\n",
+);
+
+/// Satisfy / failure emitters for $BSC_COORD_LOG (#199): the director (or a producer
+/// session) marks a dependency done (landed/merged/closed) or failed so parked
+/// waiters can be woken. One TSV line per call, tagged with the pane id -- symmetric
+/// to `bsc-blocked --on`. Quote `#`-refs (`bsc-merged '#42'`) so the shell doesn't
+/// treat them as comments; a bare number works too. `bsc-failed` reads the reason
+/// from stdin. A real newline separates each function inside the raw string.
+const BSC_COORD_EMIT_RC: &str = r#"__bsc_coord() { l="${BSC_COORD_LOG:-}"; [ -z "$l" ] && return 0; mkdir -p "$(dirname "$l")" 2>/dev/null; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; printf '%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" "$2" "$3" >> "$l"; }
+bsc-landed() { __bsc_coord landed "$1" ""; }
+bsc-merged() { __bsc_coord merged "$1" ""; }
+bsc-closed() { __bsc_coord closed "$1" ""; }
+bsc-failed() { r="$(cat)"; __bsc_coord failed "$1" "$r"; }
+bsc-wait() { r="$(cat)"; __bsc_coord waiting "$r" "${BSC_CHECKPOINT_DOC:-}"; }
+bsc-ask() { r="$(cat | tr '\t\n' '  ')"; __bsc_coord ask "$r" "${BSC_CHECKPOINT_DOC:-}"; }
+bsc-answer() { tgt="$1"; a="$(cat | tr '\t\n' '  ')"; __bsc_coord answer "$tgt" "$a"; }
+"#;
+
+/// The `bsc-defer` Stop hook (#369): fires when a fleet WORKER tries to end its turn.
+/// If it has already been re-prompted once (`stop_hook_active`), it allows the stop;
+/// otherwise it returns a `block` decision that pushes the worker to keep going or defer
+/// a real question to the director via `bsc-ask` -- never to sit waiting on the user.
+const BSC_DEFER_RC: &str = concat!(
+    r#"bsc-defer() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":"Do not stop to ask the user for direction. If your owned issues are complete and your PR is open, you may stop. Otherwise keep working, and for any decision you cannot make yourself pipe a one-line question into bsc-ask so the director answers and resumes you. Never wait on the user."}'; }"#,
+    "\n",
+);
+
+/// Read the Agents audit log (#257): the newest `limit` TSV lines, newest first.
+#[tauri::command]
+fn read_audit_log(limit: usize) -> Vec<String> {
+    let path = bsc_base_dir().join("audit.log");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
+    lines.reverse();
+    lines.truncate(limit);
+    lines
+}
+
+/// Read the coordination log (#199): up to the newest `limit` TSV lines, in
+/// chronological (oldest-first) order so the coordinator can replay them.
+#[tauri::command]
+fn read_coord_log(limit: usize) -> Vec<String> {
+    let path = bsc_base_dir().join("coord.log");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
+    if lines.len() > limit {
+        lines = lines.split_off(lines.len() - limit);
+    }
+    lines
+}
+
+/// Append a `woke` event to the coordination log (#199): records that a parked
+/// session was relaunched, so the coordinator won't re-wake it (idempotent across
+/// polls + restarts). Same TSV shape + ISO-8601 UTC timestamp as the shell emitters.
+#[tauri::command]
+fn append_coord_woke(session: String) -> Result<(), String> {
+    use std::io::Write;
+    let path = bsc_base_dir().join("coord.log");
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let fmt = time::macros::format_description!(
+        "[year]-[month]-[day]T[hour]:[minute]:[second]Z"
+    );
+    let ts = time::OffsetDateTime::now_utc().format(&fmt).unwrap_or_default();
+    let line = format!("{ts}	{session}	woke		
+");
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    f.write_all(line.as_bytes()).map_err(|e| e.to_string())
+}
+
+// ── Git hooks (#265) ────────────────────────────────────────────────────────────
+
+/// One git hook in a repo. `active` = the hook file is present (a `.sample` doesn't
+/// count). `source` is where the hooks live (the default `.git/hooks` or a
+/// `core.hooksPath` like `.githooks`). `preview` is the first meaningful line.
+#[derive(serde::Serialize)]
+struct GitHook {
+    name: String,
+    active: bool,
+    source: String,
+    preview: String,
+}
+
+/// The standard git hooks we surface, in rough lifecycle order.
+const GIT_HOOK_NAMES: &[&str] = &[
+    "pre-commit", "prepare-commit-msg", "commit-msg", "post-commit",
+    "pre-rebase", "post-checkout", "post-merge", "pre-push", "post-rewrite",
+];
+
+/// Extract `hooksPath` from a `.git/config` body (git honors it under `[core]`; we
+/// accept it wherever it appears — close enough and avoids a full INI parser).
+fn parse_hooks_path(cfg: &str) -> Option<String> {
+    for line in cfg.lines() {
+        let l = line.trim();
+        if let Some(rest) = l.strip_prefix("hooksPath") {
+            let v = rest.trim_start_matches(|c: char| c == '=' || c.is_whitespace()).trim();
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// First non-shebang, non-comment, non-blank line of a hook script (truncated).
+fn hook_preview(path: &std::path::Path) -> String {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    for line in content.lines() {
+        let l = line.trim();
+        if l.is_empty() || l.starts_with("#!") || l.starts_with('#') {
+            continue;
+        }
+        return l.chars().take(120).collect();
+    }
+    String::new()
+}
+
+/// Read a repo's git hooks. Honors `core.hooksPath`, else `.git/hooks`. Returns the
+/// standard hooks with whether each is active + a one-line preview. Best-effort: a path
+/// without a `.git` directory yields an empty list (e.g. not cloned).
+#[tauri::command]
+fn read_git_hooks(repo_path: String) -> Vec<GitHook> {
+    let root = std::path::PathBuf::from(&repo_path);
+    let git_dir = root.join(".git");
+    if !git_dir.is_dir() {
+        return Vec::new();
+    }
+    let (hooks_dir, source) = std::fs::read_to_string(git_dir.join("config"))
+        .ok()
+        .and_then(|cfg| parse_hooks_path(&cfg))
+        .map(|hp| {
+            let p = if std::path::Path::new(&hp).is_absolute() {
+                std::path::PathBuf::from(&hp)
+            } else {
+                root.join(&hp)
+            };
+            (p, hp)
+        })
+        .unwrap_or_else(|| (git_dir.join("hooks"), ".git/hooks".to_string()));
+
+    GIT_HOOK_NAMES
+        .iter()
+        .map(|name| {
+            let path = hooks_dir.join(name);
+            let active = path.is_file();
+            let preview = if active { hook_preview(&path) } else { String::new() };
+            GitHook { name: (*name).to_string(), active, source: source.clone(), preview }
+        })
+        .collect()
+}
 
 /// Serializes the app's read-modify-write of `~/.claude.json` so concurrent
 /// session launches (each `pty_create` calls `trust_claude_dir`) don't interleave
@@ -1134,10 +1693,42 @@ async fn setup_kb_workspace() -> Result<String, String> {
 
 const PLANNING_NEW_INTRO: &str = r#"# base-studio-code · New Project Planner
 
+> ⚠️ **READ FIRST — who this file is for.** This is the project **planner's**
+> instruction set. It lives at the planning-workspace root, so it is also loaded as
+> ancestor context by every session launched in a child repo. **It applies ONLY to
+> the dedicated planning session** — the one started from the Planning screen, with
+> no assigned issue or task.
+>
+> **If you are any other session — a triage session, a fleet/worker session, or any
+> session launched to execute a specific issue, task, or kickoff — STOP. Ignore this
+> entire file. Follow your own repository's `CLAUDE.md` and your kickoff / triage
+> prompt instead. Do NOT plan the project, do NOT write or edit plan files, do NOT
+> run the planning workflow. Just do the work you were given.**
+
 You are planning a brand-new software project. Your job is to understand it
 deeply, create the GitHub repositories it needs, and produce a plan thorough
 enough that a Claude coding session can start implementing without asking
 clarifying questions.
+
+## Your mandate — plan only, and plan for hand-off
+
+**This session plans; it does not implement.** You may write only the planning
+files — the plan section files, `phases.json`, `issues.json`, `fleet.json`, and
+the `prompts/` kickoff scripts — and set up the **planning git structure** (the
+repositories, project board, milestones, issues, and labels, created by the
+Publish flow). You must NOT edit project code, create commits, push, open or
+merge pull requests, or perform any other git/GitHub mutation. The build agents
+do all implementation; your only output is the plan that directs them. This
+boundary is also enforced — the session can read git/GitHub for context but
+cannot commit, push, or edit code files — so don't attempt those; put the work
+into the plan instead.
+
+**Plan thoroughly enough for hand-off.** Any agent must be able to pick up any
+piece of work at any point and proceed WITHOUT asking questions. Every issue
+carries its full contract — acceptance criteria, the files it owns, and its
+dependencies; every open question is resolved with the user or given an explicit
+default ("agent decides; default = X"). If a building agent would have to stop
+and ask, the plan is not finished.
 
 ## Pitch
 
@@ -1199,18 +1790,67 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
      (`gh repo create {owner}/{name} --private --description "..."`), clone it
      (`git clone https://github.com/{owner}/{name} {name}`), write an initial
      `{name}/CLAUDE.md`, and emit `<repo_link full_name="{owner}/{name}" />`.
-3. **Walk the discovery checklist** using the loop above, documenting or skipping
-   each dimension and capturing per-repo topics where they belong.
-4. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
+   - **Also write `repos.json`** -- a JSON array of every linked `"owner/repo"`
+     (e.g. `["acme/web","acme/api"]`). This is the AUTHORITATIVE, resume-safe repo
+     registration: a `<repo_link>` tag is live-stream-only and is lost when the session
+     resumes, but `repos.json` is a file you can always (re)write, so the right pane
+     reliably shows the repos. Keep it in sync whenever you link a repo.
+3. **Walk the discovery checklist as a QUICK orientation** (see "The discovery
+   checklist") — document the core dimensions (goal, users, scope, stack,
+   architecture) briefly, skip the rest unless they're central, and don't dwell.
+   This pass only grounds the workshop; it is not the main event.
+4. **Develop the GitHub structure — the main event.** Run the feature workshop
+   REPO BY REPO (see "Develop the GitHub structure"), and go SLOW — ONE unit at a
+   time. For a NEW project work **feature by feature**; for an EXISTING project
+   **migrate the app section by section** — inventory every screen/module first,
+   then walk it so nothing is missed. Fully drive each unit down to the issues it
+   brings (error/empty states, edge cases, migrations, cross-repo contracts) and
+   write it before moving on, then sequence into phases. The longest, most
+   interactive part: be Socratic, propose then interrogate, and don't shortcut it.
+5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
+   and set the optimal session count (see "Plan the agent fleet").
+6. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
    GitHub").
 "#;
 
 const PLANNING_EXISTING_INTRO: &str = r#"# base-studio-code · Project Planner
 
+> ⚠️ **READ FIRST — who this file is for.** This is the project **planner's**
+> instruction set. It lives at the planning-workspace root, so it is also loaded as
+> ancestor context by every session launched in a child repo. **It applies ONLY to
+> the dedicated planning session** — the one started from the Planning screen, with
+> no assigned issue or task.
+>
+> **If you are any other session — a triage session, a fleet/worker session, or any
+> session launched to execute a specific issue, task, or kickoff — STOP. Ignore this
+> entire file. Follow your own repository's `CLAUDE.md` and your kickoff / triage
+> prompt instead. Do NOT plan the project, do NOT write or edit plan files, do NOT
+> run the planning workflow. Just do the work you were given.**
+
 You are planning an existing project. Your job is to read the codebase,
 understand what has been built, decide what is next, and produce a plan thorough
 enough that a Claude coding session can start implementing without asking
 clarifying questions.
+
+## Your mandate — plan only, and plan for hand-off
+
+**This session plans; it does not implement.** You may write only the planning
+files — the plan section files, `phases.json`, `issues.json`, `fleet.json`, and
+the `prompts/` kickoff scripts — and set up the **planning git structure** (the
+repositories, project board, milestones, issues, and labels, created by the
+Publish flow). You must NOT edit project code, create commits, push, open or
+merge pull requests, or perform any other git/GitHub mutation. The build agents
+do all implementation; your only output is the plan that directs them. This
+boundary is also enforced — the session can read git/GitHub for context but
+cannot commit, push, or edit code files — so don't attempt those; put the work
+into the plan instead.
+
+**Plan thoroughly enough for hand-off.** Any agent must be able to pick up any
+piece of work at any point and proceed WITHOUT asking questions. Every issue
+carries its full contract — acceptance criteria, the files it owns, and its
+dependencies; every open question is resolved with the user or given an explicit
+default ("agent decides; default = X"). If a building agent would have to stop
+and ask, the plan is not finished.
 
 ## Project context
 
@@ -1274,14 +1914,26 @@ once the user agrees. Always scan before you propose; never race ahead.
 2. **Read the knowledge base.** Read `kb_index.md`, read blocks whose tags match
    the stack, and assign relevant ones with `<kb_assign id="block-id" />`. Read
    `automations.md` and suggest automations that fit.
-3. **Walk the discovery checklist** using the scan→propose→confirm loop above,
-   documenting or skipping each dimension and capturing per-repo topics where
-   they belong. Open with a 3–5 sentence orientation on what you found.
-4. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
+3. **Walk the discovery checklist as a QUICK orientation** using the
+   scan→propose→confirm loop (see "The discovery checklist") — open with a 3–5
+   sentence read of what you found, document the core dimensions (goal, users,
+   scope, stack, architecture) briefly, skip the rest unless they're central, and
+   don't dwell. This pass only grounds the workshop.
+4. **Develop the GitHub structure — the main event.** Run the feature workshop
+   REPO BY REPO (see "Develop the GitHub structure"), and go SLOW — ONE unit at a
+   time. For a NEW project work **feature by feature**; for an EXISTING project
+   **migrate the app section by section** — inventory every screen/module first,
+   then walk it so nothing is missed. Fully drive each unit down to the issues it
+   brings (error/empty states, edge cases, migrations, cross-repo contracts) and
+   write it before moving on, then sequence into phases. The longest, most
+   interactive part: be Socratic, propose then interrogate, and don't shortcut it.
+5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
+   and set the optimal session count (see "Plan the agent fleet").
+6. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
    GitHub").
 "#;
 
-const PLANNING_PROCESS_MD: &str = r#"
+const PLANNING_PROCESS_MD: &str = r##"
 ## Tools available
 
 | Tool             | What you can do                                                         |
@@ -1381,76 +2033,157 @@ For each repo `{short}`:
 Keep the scripts plain and self-contained; the session has the repo checked out
 and the plan available, but the script is what gets it moving.
 
-## The discovery checklist
+## Plan the agent fleet
 
-Walk these dimensions, documenting the ones that apply (project or repo tier) and
-recording the rest in `_skipped.md`. Each line is the **structured template** for
-that section — capture exactly what it asks for. `goal`, `phases`, and `risks`
-apply to almost every project.
+After the per-repo pass, design how multiple Claude sessions will build this project
+in parallel — the **fleet**. The goal is maximum parallelism with minimum conflict:
+several sessions working at once, each in its own lane, so they rarely touch the same
+files and rarely need a human.
 
-**Product**
+1. **Partition the current phase's in-scope work into streams.** A *stream* is one
+   session with a focused role ("Auth UI", "API endpoints", "DB schema"). Split by
+   concern so that two streams never write the same files.
+2. **Give each stream a non-overlapping ownership boundary** — the dirs/globs it
+   owns. No path may belong to two streams. A shared file (schema, shared types,
+   config, a contract) must be owned by exactly ONE stream; any stream that needs it
+   lists that stream in `depends_on` (interface-first: the owner lands it, then the
+   dependents build on it).
+3. **Assign each stream the issues it owns** — the deliverables from `phases`/scope
+   for its area.
+4. **Decide the optimal concurrent session count.** There is **no hard limit** on how
+   many sessions can run at once: the app shows each session as a pane, a single tab
+   holds up to **4×4 = 16** panes, and the user can open **many tabs**. So 16 is only
+   a per-tab layout limit, never a ceiling on the fleet. The real bound is how many
+   sessions the user can realistically **review and steer** — ask them, and set the
+   recommended count to that. Recommend the largest number of genuinely independent
+   (non-overlapping, dependency-free) streams they can keep up with, and explain the
+   reasoning. (The one-click launch fills one build tab with up to 16 of them; run the
+   rest from additional tabs.)
+5. **Recommend a director** when the fleet is non-trivial (2+ streams, or multiple
+   repos). The director is an *async-integrator* session at the project root: it
+   reviews/merges PRs, resolves the cross-stream decisions workers log, and keeps
+   milestones/issues/the board current. It does NOT write feature code.
+6. **Write `fleet.json`** (authoritative — the app polls it) AND emit the inline
+   `<fleet_plan>` + `<agent_assign>` tags (fast path). Keep both current as the fleet
+   firms up. Shape:
+   ```
+   {
+     "recommended": 4,
+     "reasoning": "Phase 1 splits into four non-overlapping areas; the api-client lands the contract first, the rest are independent.",
+     "director": { "enabled": true, "role": "async integrator: review/merge PRs, resolve logged decisions, keep milestones current" },
+     "streams": [
+       {"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"prompt":"prompts/auth-ui-kickoff.md"},
+       {"id":"api-client","name":"API client","repo":"owner/web","owns":["src/lib/api/**"],"issues":["#18"],"dependsOn":[],"prompt":"prompts/api-client-kickoff.md"}
+     ]
+   }
+   ```
+   Each stream may also carry **`"profile"`** — an AgentProfile id that scopes its
+   session's auto-approved commands, per-tool permissions, and write-paths (least
+   privilege, layered on top of the role). After the commands step has discovered the
+   project's toolchain, either reuse an existing profile or, in the fleet card, click
+   **Generate least-privilege profiles** to derive one per agent from its role + `owns`
+   + the project's commands; `<agent_assign … profile="…">` assigns one inline.
+7. **Write a kickoff script per stream** to `prompts/{id}-kickoff.md` (and
+   `prompts/director-kickoff.md` if a director). These are the first messages those
+   sessions receive — design them for autonomy (next).
+
+**How agents run** (so you design ids + kickoffs right): at launch the app gives each
+worker its own **git worktree** of its repo, checked out to a **branch named after the
+stream `id`** — so make ids lowercase-hyphen slugs, since they become branch names.
+Workers commit on their branch and open PRs; the director merges them. Because each
+worker has its own worktree, several streams can share one repo without touching the
+same working tree. (The worktree also carries the plan: `CLAUDE.local.md` is copied in.)
+
+### Stream kickoff scripts — designed for autonomy
+
+Each kickoff is the first message a worker session gets; its job is to let that
+session run with as little human input as possible. Every worker kickoff must:
+
+- State the stream's role and that the full plan is in `CLAUDE.local.md` — read it
+  first; it is authoritative.
+- State the ownership boundary: "you own <globs>; do not modify files outside them —
+  another stream owns them; coordinate through the plan, not by editing their files."
+- State that it runs in its **own git worktree on a branch named after the stream**:
+  commit there and open a PR for the director to merge; never switch branches or edit
+  another agent's worktree. (The app creates the worktree + branch at launch.)
+- List the issues the stream owns and this phase's in-scope work for it.
+- Carry the **autonomy rule**: *Do not stop to ask. When something is underspecified,
+  make the smallest reversible choice consistent with the plan's goal and
+  architecture, then record it — pipe a one-line note into `bsc-note` on stdin (e.g.
+  `echo "used cursor pagination for /items per the api section" | bsc-note`). Only if
+  you are genuinely blocked and cannot proceed, pipe a one-line reason into
+  `bsc-blocked`. Verify against the repo's tests and CI rather than asking whether
+  your work is correct.*
+- Carry the **checkpoint rule** (so a relaunched session resumes where it left off):
+  *When you pause or finish a work session, pipe a short "where I left off + the next
+  step" into `bsc-checkpoint` on stdin.* The live conversation usually resumes too
+  (each agent has its own worktree/cwd), but the checkpoint is the reliable carry.
+
+The **director kickoff** instead tells it to watch each agent's branch/PR, the open
+issues, and each repo's `DECISIONS.md`; merge the agents' branches via PRs (resolving
+conflicts); resolve or escalate the cross-stream decisions workers log; and keep
+milestones/the board current — never writing feature code itself.
+
+## The discovery checklist — a quick orientation, not the main event
+
+Discovery here is a SHORT grounding pass. Its only job is to give the feature
+workshop (the real work — see "Develop the GitHub structure") enough shared
+context to stand on. Document the core dimensions briefly and move on fast; do
+NOT turn this into a dozen set-piece conversations. `goal`, `phases`, `issues`,
+and `risks` apply to almost every project.
+
+**Core orientation — document these, briefly (each line is the template):**
 - `goal` — what it does, who it's for, and the measurable signal of success
   (2–4 sentences). Drives the GitHub project title and description.
 - `users` — primary personas, their jobs-to-be-done, and the one workflow each
-  cares most about.
+  cares most about. One tight paragraph.
 - `scope` — two lists: **In scope** (concrete deliverables) and **Out of scope**
   (explicit exclusions that prevent scope creep).
-- `ux` — key screens/flows, navigation model, and empty/error/loading states.
-  For non-UI projects, the CLI/API ergonomics instead.
-
-**Engineering**
-- `stack` — one line per layer (runtime, framework, datastore, cache/queue,
-  auth, hosting) with versions and a justification for non-obvious picks. As soon
-  as the toolchain is decided, record its build/test/run/package binaries in
-  `commands.json` and emit `<allow_command>` (see "App integration tags") so the
-  project's sessions run them without a prompt.
+- `stack` — one line per layer (runtime, framework, datastore, auth, hosting)
+  with versions and a justification for non-obvious picks. As soon as the
+  toolchain is decided, record its build/test/run/package binaries in
+  `commands.json` and emit `<allow_command>` (see "App integration tags").
 - `architecture` — named components + a one-sentence responsibility each, how
-  they communicate (protocol, sync/async), and 2–3 key flows as step-by-step
-  data paths.
-- `schema` — per entity: table/collection, key fields + types, constraints,
-  relationships, important enums; note the migrations strategy.
-- `api` — per endpoint or exported contract: method+path (or signature),
-  request/response shape, auth, the shared error format + status codes, plus
-  versioning/pagination conventions.
-- `integrations` — third-party services (payments, email, storage, LLM): purpose,
-  auth model, failure handling, sandbox vs. production.
-- `auth` — identity provider, session/token model, roles & permissions, and how
-  authorization is enforced at each layer.
+  they communicate, and the 2–3 key cross-component flows. For a multi-repo
+  project, say which repo owns what.
 
-**Quality & operations**
-- `security` — threat-model highlights, secret management, input
-  validation/encoding, dependency & supply-chain controls, and encryption at
-  rest/in transit. Note any legal-doc updates a data-handling change requires.
-- `testing` — the unit/integration/E2E split: what each covers, frameworks,
-  fixtures/mocks, the coverage target, and the CI gate that enforces it.
-- `observability` — structured logging (levels, format, correlation ids),
-  metrics/SLIs, tracing, dashboards, and alert thresholds.
-- `performance` — target latency/throughput, expected load, capacity limits,
-  caching, and the reliability budget (timeouts, retries, backpressure, graceful
-  degradation).
-- `infra` — environments (dev/staging/prod), provisioning (IaC), networking,
-  scaling model, and backups/disaster recovery.
-- `cicd` — pipeline stages per environment, deploy mechanism, secrets handling,
-  and branching/release/versioning strategy.
+**Capture only where it materially shapes the build — otherwise fold it into the
+feature that needs it, or skip:**
+- `security` — threat-model highlights, secret management, supply-chain controls,
+  encryption at rest/in transit. Note any legal-doc update a data change forces.
+- `testing` — the unit/integration/E2E split, frameworks, and the CI gate that
+  enforces it (usually one short section every repo reuses).
+- `cicd` — pipeline stages, deploy mechanism, and branching/release strategy.
 
-**Lifecycle & governance**
-- `data_lifecycle` — retention/deletion policies, PII handling, compliance
-  (e.g. GDPR), migrations/backfills, and audit logging.
-- `docs` — what docs exist and where (README, API reference, architecture,
-  runbooks) and what changes trigger an update.
-- `analytics` — product events/KPIs tracked, the tooling, and how the success
-  metric from `goal` is measured.
-- `accessibility` — the a11y target (e.g. WCAG level), keyboard/screen-reader
-  support, and i18n/l10n approach.
-- `cost` — expected cost drivers, budget guardrails, and resourcing/ownership.
+**Captured per feature in the workshop, NOT as standalone project sections:**
+`api`, `schema`, `auth`, and `integrations` — a feature's endpoints, tables,
+identity needs, and third-party calls belong to that feature's issues, where an
+agent will actually build them. Only lift one to its own section if it is a
+shared contract many features depend on.
 
-**Planning**
-- `phases` — the roadmap as a JSON array (see "Special sections"); each phase is
-  a crisp "done when", no time estimates.
+**Skip by default — one line in `_skipped.md` unless the product is centrally
+about it:** `ux`, `observability`, `performance`, `infra`, `data_lifecycle`,
+`docs`, `analytics`, `accessibility`, `cost`. Document one only when it is a
+first-class concern (e.g. `ux` for a design tool, `performance` for a database).
+
+**Planning — the real output (see "Special sections" + the feature workshop):**
+- `phases` — the roadmap as a JSON array; each phase a crisp "done when", no time
+  estimates.
+- `issues` — every feature decomposed into granular, self-contained GitHub issues,
+  each carrying a concrete title, **acceptance criteria**, the **files/dirs it
+  owns**, its **dependencies**, **labels**, its **phase** (→ milestone), and — for
+  a multi-repo project — its **`repo`** and **`stream`**. **This is the most
+  important output for execution.** A building agent picks up ONE issue and must
+  finish it WITHOUT asking. Don't stop at an overview — the plan isn't done until
+  every feature, and the problems it brings, are decomposed to this level.
 - `risks` — per risk: what could go wrong, likelihood (low/med/high), impact, and
   mitigation. Add continuously as you spot them.
-- `open_questions` — unresolved decisions shaping the plan, each with what's
-  needed to resolve it.
+- `open_questions` — unresolved decisions. Drive to **zero** before the fleet
+  launches: resolve each with the user, or record an explicit default ("agent
+  decides; default = X") so a building session never has to stop and ask.
+- `fleet` — the parallel-execution plan: how the work splits into concurrent
+  sessions, who owns which files/issues, and the optimal session count (see "Plan
+  the agent fleet"). Written as `fleet.json`.
 
 Document custom topics beyond this list when the project needs them — name the
 file after the topic (`feature_flags.md`, `offline_sync.md`).
@@ -1492,6 +2225,12 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
   {"name":"Phase 2 — Production ready","description":"integration suite passes; release pipeline ships v1.0.0"}
 ]</plan_update>
 ```
+```
+<plan_update section="issues">[
+  {"ref":"F1","title":"Add POST /v1/migrations/up","phase":1,"acceptance":["applies pending migrations in order","returns 200 {applied:[{version}]}","integration test against real Postgres"],"owns":["src/api/migrations.go"],"dependsOn":[],"labels":["scope:core","area:api"],"stream":"api"},
+  {"ref":"F2","title":"Wire `status` to GET /v1/migrations/status","phase":1,"acceptance":["lists pending + applied","exit 0"],"owns":["src/cli/status.go"],"dependsOn":["F1"],"labels":["scope:core","area:cli"],"stream":"cli"}
+]</plan_update>
+```
 
 ## Special sections
 
@@ -1501,13 +2240,136 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
   objects (the inline tag carries the same JSON). Each phase needs a "done when"
   definition; never include time estimates or week numbers. The publish flow
   turns each phase into a milestone and a tracking issue per repo.
+- **`issues`** — write `issues.json` as a JSON array of issue objects:
+  `{"ref","title","phase","acceptance":[],"owns":[],"dependsOn":[],"labels":[],"stream"?,"repo"?}`.
+  `ref` is a stable planner-local id used by `dependsOn` (NOT the GitHub number,
+  which is assigned at publish); `phase` is the 1-based phase number or its name
+  (→ that milestone). The publish flow creates ONE GitHub issue per entry — title,
+  a body built from the acceptance checklist + owned paths + dependencies, pinned to
+  its milestone, with its labels and a `stream:<id>` label. A fleet stream owns its
+  issues by listing their refs. Define enough that the agent who picks one up needs
+  nothing else.
 - **`_skipped`** — the coverage record described under "Coverage" above.
+
+## Develop the GitHub structure — the feature workshop (the main event)
+
+This is the heart of planning and where the MAJORITY of the session goes. After
+the short orientation, you turn the project into its real GitHub structure — the
+features each repo will have, the issues each brings, and the path to build them.
+The output is `issues.json` + `phases.json` (the milestones → issues Publish
+creates). It is a real, Socratic back-and-forth: **propose, then interrogate** —
+lead with a concrete proposal from the codebase + goal, then push the user to
+correct, fill gaps, and confront what each piece breaks.
+
+**Pace: go slow, ONE unit at a time.** This is where plans get missed when rushed.
+Hold only the CURRENT unit in focus and fully finish it — its spec, the issues it
+brings, confirmed and written to `issues.json` — before you touch the next. Working
+one unit at a time keeps the context tight and is the only way to guarantee nothing
+is skipped. Do NOT sketch the whole project at once.
+
+**What a "unit" is depends on the project — pick the mode and tell the user which
+you're using:**
+
+- **A NEW project → go feature by feature.** First agree a short **feature list**
+  (the agenda: named capabilities, no detail yet). Then take the features ONE at a
+  time: fully drive the current feature down to its issues (see "Drive a unit down"
+  below), confirm it, write it, and only THEN move to the next. Never batch the
+  depth pass across features.
+
+- **An EXISTING project → migrate section by section.** You are bringing the whole
+  existing app into the plan, so a missed section is missed real work. First build a
+  **section inventory** — every screen / route / page / component area / module /
+  service in the codebase, listed as a checklist (scan the router, the directory
+  tree, the nav). Confirm with the user that the inventory is complete. Then walk it
+  ONE section at a time: read that section's code, capture what it does today and
+  every piece of work to bring it into the plan (its issues), confirm, **check it
+  off**, and move on. Do not finish until every inventoried section is accounted for.
+
+**Go repo by repo.** A project is the sum of what each repo/app does, so run the
+workshop once PER linked repo (its own feature list or section inventory), then
+sequence across them. Every issue carries its `repo`, so the structure panel groups
+it under the repo it belongs to.
+
+**Be Socratic — interrogate every unit.** Pull the complete picture out of the user;
+don't accept the first answer. For each unit probe: the happy path, the
+error/empty/loading states, the edge cases, what data it migrates, what it breaks
+elsewhere, and the cross-repo contracts it depends on. Each problem you surface is
+itself an issue — a unit is not "mapped" until the issues it BRINGS are mapped too.
+
+**Hard topics — research and source before you decompose.** When a unit needs a
+non-trivial or specialized solution — a physics / protein-folding simulation, a
+neural-net architecture, 3D graphics/rendering, a novel algorithm, anything where
+"build it somehow" would leave the agent stuck — STOP and ground the approach
+before you write its issues:
+- **Name the established approach** from what you know: the standard technique, the
+  canonical library/framework, the reference architecture.
+- **Source it.** Ask the user for papers / docs / a reference implementation they
+  trust, and `WebFetch` any concrete URL you or they name (a library API page, a
+  spec, a GitHub raw file) to verify it. You can fetch a known URL but not search —
+  so ask for the link rather than guessing.
+- **Pin the specifics**: the exact library + version, the algorithm/architecture,
+  the data structures, the known pitfalls, and the perf/accuracy constraints.
+- **Fold it into the issues (preferred).** The grounded approach becomes each
+  issue's **How / build approach** and **Tools & tech** (named, not "a library"),
+  sharpens its **acceptance** (e.g. "renders 10k instances at 60 fps via
+  InstancedMesh"), and drives the **epic → sub-issue decomposition** the technique
+  implies (e.g. an epic "WebGL renderer" → sub-issues for scene graph, instancing,
+  picking). The agent building it should never have to re-derive the approach.
+- **Capture the source** so the agent inherits it: write a short reference section
+  (a `{topic}.md` plan section, e.g. `research_renderer.md`) and/or assign a
+  Knowledge Base block (`<kb_assign>`) scoped to the project so it lands in the
+  agent's prompt — preferred over a loose note; failing that, link the source in
+  the issue body.
+
+A hard unit left as a generic sketch is a happy-path stub — treat it like a missing
+issue: research, source, and decompose it before the plan is "done."
+
+### Drive a unit (feature or section) down to its issues
+For the current unit, propose a complete spec, then interrogate to correct and fill
+it before moving on. Do not move on until ALL of these are concrete:
+- **Behavior + acceptance** — exactly what it does, and the done-when checklist the
+  agent verifies against.
+- **The issues it brings** — every problem the unit introduces: error/empty/loading
+  states, edge cases, validation, migrations/backfills, security and auth needs, and
+  the cross-repo contracts it depends on. Make each its own issue — this is what
+  turns a happy-path sketch into a complete plan.
+- **How — the build approach** — the concrete steps/design: the sequence of changes,
+  the integration points, the shape of the solution.
+- **Tools & tech** — the specific libraries, services, and frameworks. Name them
+  ("Postgres via sqlx", not "a database").
+- **Owned files + dependencies** — the files/dirs each issue owns and which issues
+  must land first.
+Write each issue into `issues.json` the moment it's nailed — with its `repo`,
+`stream`, `acceptance`, `owns`, `dependsOn`, and `labels` — so the structure panel
+fills in as you go and nothing is lost. Then, and only then, move to the next unit.
+
+### Sequence the path (how we get there)
+Once every unit (every feature, or every inventoried section) is decomposed, agree
+the ORDER with the user: the first shippable slice, what builds on what, the path
+from nothing to the finished product. Group the ordered work into phases
+(`phases.json`) — each a dependency-respecting milestone with a crisp "done when,"
+not an arbitrary bucket. Phases span repos; each issue's `phase` points at its
+milestone and its `repo` places it under that repo in the structure.
+
+**Completeness gate.** The plan is done only when EVERY unit is decomposed — for a
+new project, every feature on the list; for an existing project, every section in
+the inventory, with the inventory itself confirmed complete. The repo-first
+structure panel is your scorecard: an empty repo, or a milestone with no issues, is
+unfinished work. For an existing app, a screen or module that exists in the code but
+has no issues means you missed it — go back and migrate it.
+
+When the units are done, the user sees the assembled structure (repos → milestones →
+issues → dependencies) in the panel, and Publish turns it into the real project
+board — every issue the product of this conversation, carrying everything an agent
+needs to pick it up and finish without asking.
 
 ## Publish to GitHub
 
 After the user confirms the plan in the right panel, the **Publish** button
 creates the repositories, the project board, one milestone per phase, and one
-tracking issue per phase in each repo. You can also push detail yourself with the
+GitHub issue per `issues.json` entry (pinned to its milestone, with its labels;
+falling back to a per-phase tracking issue when no issues are defined), and labels
+each fleet stream's owned issues with `stream:<id>`. You can also push detail yourself with the
 `gh` CLI — every step below is idempotent (check-then-create), so re-running is a
 safe sync. Do this in order, per linked repository:
 
@@ -1575,6 +2437,31 @@ allowed, so don't list them. Use BOTH channels — the file is authoritative:
   <allow_command repo="owner/repo" cmd="npm" />
   ```
 
+**Declare the agent fleet** (the parallel-execution plan). `fleet.json` is the
+authoritative channel; these tags are the fast path. Emit the header once, then one
+`agent_assign` per stream. List attributes (`owns`, `issues`, `depends_on`) are
+comma-separated; `depends_on` is comma-separated stream ids. An optional `profile`
+attribute carries an AgentProfile id that scopes the stream's session (commands +
+tools + write-paths) — generate one per agent or reuse an existing profile.
+
+Each stream also carries an optional **flow** (#297) — how it runs and pushes —
+via four attributes, all defaulting if omitted:
+- `autonomy` = `continuous` (never pause; default) | `checkpoint` (pause at stage/PR
+  boundaries and wait) | `confirm` (ask before non-trivial decisions)
+- `push` = `auto-pr` (commit+push+open PR on green; default) | `push-confirm`
+  (commit+test, then wait for the user before pushing) | `commit-only` (commit, don't
+  push) | `none` (read-only; no commit/push/PR)
+- `trigger` = `per-issue` (default) | `per-stage` | `on-green` — when a push fires
+- `gate` = `hard` (default; the push/PR command prompts for approval) | `soft` (the
+  kickoff just instructs the agent to ask). `gate` only matters for `push-confirm`.
+Default = `continuous` + `auto-pr` + `per-issue` + `hard`. Set a tighter flow for an
+agent whose work you want to review before it lands (e.g. `push=push-confirm gate=hard`),
+or `push=none` for a pure reviewer/explorer.
+```
+<fleet_plan recommended="4" reasoning="..." director="true" director_role="async integrator: review/merge PRs, resolve logged decisions, keep milestones current" />
+<agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" profile="auth-ui-dev" autonomy="continuous" push="auto-pr" trigger="per-issue" gate="hard" />
+```
+
 ## GitHub tools
 
 `GH_TOKEN` is pre-loaded — use `gh` for all GitHub operations. Read
@@ -1589,7 +2476,7 @@ gh api repos/owner/repo/milestones --method POST --field title="..."
 gh issue create --repo owner/repo --title "..." --body "..." --milestone N --label "a,b"
 gh repo edit owner/repo --description "..." --add-topic "..."
 ```
-"#;
+"##;
 
 /// Turns an arbitrary project key into a filesystem-safe directory name.
 /// Canonicalize a project key into a filesystem-safe slug.
@@ -1902,8 +2789,140 @@ async fn clone_repo(project: String, full_name: String) -> Result<String, String
     // settings) out of the clone's `git status`.
     git_exclude(&dest, "CLAUDE.local.md");
     git_exclude(&dest, ".claude/");
+    // The fleet assume-and-log journal (bsc-note / bsc-blocked) lives in the repo
+    // root; keep it out of the clone's `git status`.
+    git_exclude(&dest, "DECISIONS.md");
     log::info!("clone_repo: cloned {full_name} → {}", dest.display());
     Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Branch/dir slug for a fleet agent — keeps only `[A-Za-z0-9._-]`, every other
+/// char becomes `-`. Must match the frontend `worktreeSlug` so the computed
+/// worktree cwd and the on-disk worktree path agree.
+fn worktree_slug(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { c } else { '-' })
+        .collect()
+}
+
+/// Coordination protocol appended to every fleet worker's CLAUDE.local.md (#369) so the
+/// defer-to-director / never-ask-the-user rules are authoritative context, not just a
+/// first-message hint. A multi-line raw string (real newlines; literal backticks/quotes).
+const FLEET_PROTOCOL_MD: &str = r#"
+## Fleet coordination protocol (auto-added — do not edit)
+
+You are one of several parallel sessions building this project. Never stop and ask the user a question about what to do with your work — not for direction, not for whether your work is done, and not for whether to open a PR. Follow your push instructions; the director reviews and merges your PRs.
+
+When you genuinely need a decision you cannot make yourself, defer to the director, not the user:
+
+- `echo "your one-line question" | bsc-ask` — parks you and routes the question to the director, which answers and resumes you automatically.
+- `bsc-blocked --on <ref>` — park until another stream's dependency lands.
+- `echo "what you decided" | bsc-note` — for small reversible choices, just pick the smallest sensible option and record it; do not ask.
+
+When you open a PR, stop -- CI runs and is watched for you; you will be told to continue (if it passed) or to fix the build and push (if it failed). Do not poll CI, reopen, or duplicate the PR.
+
+Only the director escalates to the user.
+"#;
+
+/// Director protocol (#375) appended to the project hub's CLAUDE.local.md so the
+/// async-integrator director always has its standing duties as authoritative context
+/// (it runs at the hub, so it never gets the worker worktree protocol).
+const DIRECTOR_PROTOCOL_MD: &str = r#"
+## Director protocol (auto-added -- do not edit)
+
+You are the async-integrator DIRECTOR for this fleet; you write no feature code. These are
+standing rules you MUST act on, not merely acknowledge:
+
+- ANSWER WORKER QUESTIONS. When a worker asks you something (it arrives as a "[coordinator]
+  <session> asks: ..." message), you MUST reply by running bsc-answer <session> with your
+  one-line answer piped on stdin -- e.g. echo "release-eng owns #158; stay out of it" |
+  bsc-answer t0p2. That command resumes the parked worker automatically. Answering only in
+  chat does NOT reach the worker: if you do not run bsc-answer, the worker stays stuck
+  forever. Decide it yourself; never punt a worker question to the user.
+- MERGE GREEN PRs. When a PR is reported green (or you find one open and passing), review and
+  merge it into develop (e.g. gh pr merge <n> --squash --delete-branch), then keep the
+  milestones/board current.
+- KEEP THE FLEET MOVING. Any worker that is blocked or waiting is yours to unblock.
+"#;
+
+/// Ensure the project hub's CLAUDE.local.md carries the director protocol (#375). Idempotent.
+#[tauri::command]
+fn ensure_director_protocol(project_key: String) -> Result<(), String> {
+    let local = project_dir(&project_key).join("CLAUDE.local.md");
+    if let Some(parent) = local.parent() { let _ = std::fs::create_dir_all(parent); }
+    let cur = std::fs::read_to_string(&local).unwrap_or_default();
+    if !cur.contains("## Director protocol") {
+        std::fs::write(&local, format!("{cur}{DIRECTOR_PROTOCOL_MD}")).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Create (idempotently) a git worktree for one fleet agent: an isolated checkout
+/// of `repo` on a branch named after the agent, at
+/// `projects/<key>/.worktrees/<repoShort>--<agentSlug>`. Each agent edits and
+/// commits in its own worktree+branch, so co-located agents (several in one repo)
+/// never share a working tree; the director merges the branches via PRs.
+///
+/// The repo's main clone must already exist (cloned during planning). A worktree or
+/// branch left over from a prior run is reused. Returns the worktree's absolute path
+/// (native form — mirrors `agentWorktreeCwd` so the launched pane's cwd matches).
+#[tauri::command]
+async fn ensure_worktree(project_key: String, repo: String, agent_id: String) -> Result<String, String> {
+    let _perf = PerfSpan::new("ensure_worktree");
+    let clone = repo_dir(&project_key, &repo);
+    if !clone.join(".git").exists() {
+        return Err(format!("ensure_worktree: repo not cloned: {}", clone.display()));
+    }
+    let slug  = worktree_slug(&agent_id);
+    let short = repo.rsplit('/').next().unwrap_or(&repo);
+    let wt    = project_dir(&project_key).join(".worktrees").join(format!("{short}--{slug}"));
+    let wt_str = wt.to_string_lossy().into_owned();
+    // A worktree's `.git` is a FILE pointing into the main repo; create it only if
+    // it isn't there yet (reuse across re-runs).
+    if !wt.join(".git").exists() {
+        if let Some(parent) = wt.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let clone_str = clone.to_string_lossy().into_owned();
+        // Reuse the branch if a prior run already created it; otherwise create it.
+        let branch_exists = std::process::Command::new("git")
+            .args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")])
+            .status().map(|s| s.success()).unwrap_or(false);
+        let mut args: Vec<String> = vec!["-C".into(), clone_str, "worktree".into(), "add".into()];
+        if branch_exists {
+            args.push(wt_str.clone());
+            args.push(slug.clone());
+        } else {
+            args.push("-b".into());
+            args.push(slug.clone());
+            args.push(wt_str.clone());
+        }
+        let status = std::process::Command::new("git").args(&args).status().map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err(format!("ensure_worktree: git worktree add failed for {repo} / {agent_id}"));
+        }
+        log::info!("ensure_worktree: {repo} agent {agent_id} → {wt_str}");
+    }
+    // Carry the planner's app-managed per-repo context into the worktree. CLAUDE.local.md
+    // is UNTRACKED in the main clone (git-excluded), so a fresh worktree wouldn't have it —
+    // refresh it every launch. Copy CLAUDE.md only when the worktree lacks one, so a
+    // tracked/checked-out CLAUDE.md isn't clobbered.
+    let local = clone.join("CLAUDE.local.md");
+    if local.is_file() {
+        let _ = std::fs::copy(&local, wt.join("CLAUDE.local.md"));
+    }
+    let claude_md = clone.join("CLAUDE.md");
+    if claude_md.is_file() && !wt.join("CLAUDE.md").exists() {
+        let _ = std::fs::copy(&claude_md, wt.join("CLAUDE.md"));
+    }
+    // Carry the coordination protocol (#369) into the worktree so the worker always has
+    // the defer-to-director / never-ask-the-user rules as authoritative context.
+    let wt_local = wt.join("CLAUDE.local.md");
+    let cur = std::fs::read_to_string(&wt_local).unwrap_or_default();
+    if !cur.contains("## Fleet coordination protocol") {
+        let _ = std::fs::write(&wt_local, format!("{cur}{FLEET_PROTOCOL_MD}"));
+    }
+    Ok(wt_str)
 }
 
 /// Append `entry` to a clone's `.git/info/exclude` (idempotent) so app-managed
@@ -1951,16 +2970,107 @@ const DEFAULT_DENY: &[&str] = &[
     "Bash(wget *| sh)",
 ];
 
+/// One MCP server an extension contributes to a session's `.mcp.json`. Field names
+/// match the frontend `McpServerPayload`.
+#[derive(serde::Deserialize, Clone)]
+struct McpServerCfg {
+    name: String,
+    transport: String, // "stdio" | "http"
+    #[serde(default)]
+    command: Option<String>,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    env: Vec<(String, String)>,
+}
+
+/// One lifecycle hook an extension contributes to a session's settings.json.
+#[derive(serde::Deserialize, Clone)]
+struct HookCfg {
+    event: String,   // PreToolUse | PostToolUse | …
+    #[serde(default)]
+    matcher: String, // optional tool matcher; empty = all
+    command: String,
+}
+
 /// Ensure the claude session rooted at `cwd` can run shell commands without a
-/// permission prompt while blocking dangerous ones, by merging permission rules
-/// into `<cwd>/.claude/settings.json`.
+/// permission prompt while blocking dangerous ones, and apply the session's
+/// extensions (MCP servers → `.mcp.json`, hooks → settings.json), by merging into
+/// `<cwd>/.claude/settings.json` and `<cwd>/.mcp.json`.
+/// Markers the GitHub-readiness probe echoes when each check passes (#297). Plain
+/// `echo` tokens so parsing is a locale-independent substring match, not coupled to
+/// gh/git output formatting.
+const GH_PATH_MARK: &str = "BSC_GH_PATH_OK";
+const GIT_PATH_MARK: &str = "BSC_GIT_PATH_OK";
+const GH_AUTH_MARK: &str = "BSC_GH_AUTH_OK";
+
+/// Parse the probe shell's stdout into `(gh_on_path, git_on_path, gh_authed)`. Pure.
+fn parse_github_probe(stdout: &str) -> (bool, bool, bool) {
+    (
+        stdout.contains(GH_PATH_MARK),
+        stdout.contains(GIT_PATH_MARK),
+        stdout.contains(GH_AUTH_MARK),
+    )
+}
+
+/// Probe whether a session shell can actually reach GitHub (#297): is `git`/`gh`
+/// on PATH, and is `gh` authenticated. Fleet agents are told to push branches and
+/// open PRs, but a spawned shell can silently lack the tools; this lets the pane
+/// warn the user up front. Runs the checks through the SAME resolved shell and
+/// caller env (e.g. `GH_TOKEN`) the agent's `bash -c` subshells inherit, via a
+/// login shell (`-lc`) so login-profile PATH additions are reflected. Best-effort:
+/// returns all-false on spawn failure rather than erroring, so the caller can still
+/// surface an actionable warning. Field names match the frontend `GithubProbe`.
 #[tauri::command]
+async fn github_readiness(
+    cwd: String,
+    env: Option<std::collections::HashMap<String, String>>,
+) -> Result<serde_json::Value, String> {
+    let shell = resolve_shell();
+    let script = format!(
+        "command -v git >/dev/null 2>&1 && echo {GIT_PATH_MARK}; \
+         command -v gh  >/dev/null 2>&1 && echo {GH_PATH_MARK}; \
+         gh auth status >/dev/null 2>&1 && echo {GH_AUTH_MARK}",
+    );
+    let mut cmd = std::process::Command::new(&shell);
+    cmd.arg("-lc").arg(&script);
+    if !cwd.is_empty() {
+        cmd.current_dir(&cwd);
+    }
+    let env_map = env.unwrap_or_default();
+    for (k, v) in session_env(&env_map) {
+        cmd.env(k, v);
+    }
+    let (gh, git, auth) = match cmd.output() {
+        Ok(out) => parse_github_probe(&String::from_utf8_lossy(&out.stdout)),
+        Err(e) => {
+            log::warn!("github_readiness probe failed to spawn ({shell}): {e}");
+            (false, false, false)
+        }
+    };
+    Ok(serde_json::json!({ "ghOnPath": gh, "gitOnPath": git, "ghAuthed": auth }))
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn ensure_session_settings(
     cwd: String,
     allowed_commands: Vec<String>,
     denied_commands: Vec<String>,
+    mcp_servers: Option<Vec<McpServerCfg>>,
+    hooks: Option<Vec<HookCfg>>,
+    allow_tool_rules: Option<Vec<String>>,
+    deny_tool_rules: Option<Vec<String>>,
+    ask_tool_rules: Option<Vec<String>>,
 ) -> Result<(), String> {
-    write_session_settings(&cwd, &allowed_commands, &denied_commands)
+    write_session_settings(
+        &cwd, &allowed_commands, &denied_commands,
+        &mcp_servers.unwrap_or_default(), &hooks.unwrap_or_default(),
+        &allow_tool_rules.unwrap_or_default(), &deny_tool_rules.unwrap_or_default(),
+        &ask_tool_rules.unwrap_or_default(),
+    )
 }
 
 /// Synchronous core of [`ensure_session_settings`] (testable without a runtime).
@@ -1973,10 +3083,16 @@ async fn ensure_session_settings(
 /// the broad allow, and meaningful if "Bash" is ever removed to go strict.
 /// Merges into existing settings rather than clobbering; `.claude/` stays out of
 /// the repo's `git status`.
+#[allow(clippy::too_many_arguments)]
 fn write_session_settings(
     cwd: &str,
     allowed_commands: &[String],
     denied_commands: &[String],
+    mcp_servers: &[McpServerCfg],
+    hooks: &[HookCfg],
+    allow_tool_rules: &[String],
+    deny_tool_rules: &[String],
+    ask_tool_rules: &[String],
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     let root = std::path::PathBuf::from(cwd);
@@ -2010,16 +3126,121 @@ fn write_session_settings(
         }
     }
 
+    // Tool-permission rules (verbatim, NOT Bash-wrapped) — the role write-path guard
+    // passes `Edit(<glob>)` / `Write` / … here to scope or deny the file-write tools.
+    for r in allow_tool_rules {
+        let r = r.trim().to_string();
+        if !r.is_empty() && !allow_rules.contains(&r) { allow_rules.push(r); }
+    }
+    for r in deny_tool_rules {
+        let r = r.trim().to_string();
+        if !r.is_empty() && !deny_rules.contains(&r) { deny_rules.push(r); }
+    }
+
+    // Ask: rules that PROMPT the user before the command (Claude Code precedence
+    // deny > ask > allow, so a specific ask overrides the broad Bash allow). The
+    // flow's hard push-confirm gate (#297) passes `Bash(git push *)` / `Bash(gh pr
+    // create *)` here so pushes/PRs require approval instead of auto-running.
+    let mut ask_rules: Vec<String> = Vec::new();
+    for r in ask_tool_rules {
+        let r = r.trim().to_string();
+        if !r.is_empty() && !ask_rules.contains(&r) { ask_rules.push(r); }
+    }
+
     merge_permission_list(&mut config, "allow", &allow_rules);
     merge_permission_list(&mut config, "deny", &deny_rules);
+    merge_permission_list(&mut config, "ask", &ask_rules);
+
+    // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
+    // a hook extension off and relaunching drops it). MCP servers → `.mcp.json`,
+    // auto-approved for autonomous sessions via `enabledMcpjsonServers` (exactly the
+    // resolved set — servers not listed aren't trusted, which is how removal lands).
+    write_session_hooks(&mut config, hooks);
+    {
+        let obj = config.as_object_mut().unwrap();
+        if mcp_servers.is_empty() {
+            obj.remove("enabledMcpjsonServers");
+        } else {
+            obj.insert(
+                "enabledMcpjsonServers".into(),
+                serde_json::Value::Array(
+                    mcp_servers.iter().map(|m| serde_json::Value::String(m.name.clone())).collect(),
+                ),
+            );
+        }
+    }
 
     std::fs::create_dir_all(root.join(".claude")).map_err(|e| e.to_string())?;
     std::fs::write(
         &settings_path,
         serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
     ).map_err(|e| e.to_string())?;
+    write_mcp_json(&root, mcp_servers)?;
     git_exclude(&root, ".claude/");
+    git_exclude(&root, ".mcp.json");
     Ok(())
+}
+
+/// Overwrite `config.hooks` with the resolved hooks, grouped by event:
+/// `{event: [{matcher?, hooks: [{type:"command", command}]}]}`. Empty → key removed.
+fn write_session_hooks(config: &mut serde_json::Value, hooks: &[HookCfg]) {
+    let obj = config.as_object_mut().unwrap();
+    if hooks.is_empty() { obj.remove("hooks"); return; }
+    let mut by_event = serde_json::Map::new();
+    for h in hooks {
+        let inner = serde_json::json!({ "type": "command", "command": h.command });
+        let entry = if h.matcher.is_empty() {
+            serde_json::json!({ "hooks": [inner] })
+        } else {
+            serde_json::json!({ "matcher": h.matcher, "hooks": [inner] })
+        };
+        by_event
+            .entry(h.event.clone())
+            .or_insert_with(|| serde_json::json!([]))
+            .as_array_mut().unwrap()
+            .push(entry);
+    }
+    obj.insert("hooks".into(), serde_json::Value::Object(by_event));
+}
+
+/// Merge the resolved MCP servers into `<cwd>/.mcp.json` by name (preserving any
+/// repo-authored entries). Skips entirely when there are none and no file exists.
+/// `enabledMcpjsonServers` in settings.json gates which are actually active.
+fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Result<(), String> {
+    let path = root.join(".mcp.json");
+    if mcp_servers.is_empty() && !path.exists() { return Ok(()); }
+    let mut doc: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !doc.is_object() { doc = serde_json::json!({}); }
+    let servers = doc.as_object_mut().unwrap()
+        .entry("mcpServers").or_insert_with(|| serde_json::json!({}));
+    if !servers.is_object() { *servers = serde_json::json!({}); }
+    let smap = servers.as_object_mut().unwrap();
+    for m in mcp_servers {
+        smap.insert(m.name.clone(), mcp_server_value(m));
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+
+/// One MCP server's `.mcp.json` value: stdio `{command,args,env?}` or http `{type,url}`.
+fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
+    if m.transport == "http" {
+        return serde_json::json!({ "type": "http", "url": m.url.clone().unwrap_or_default() });
+    }
+    let mut v = serde_json::Map::new();
+    v.insert("command".into(), serde_json::Value::String(m.command.clone().unwrap_or_default()));
+    v.insert("args".into(), serde_json::Value::Array(
+        m.args.iter().map(|a| serde_json::Value::String(a.clone())).collect(),
+    ));
+    let env: serde_json::Map<String, serde_json::Value> = m.env.iter()
+        .filter(|(k, _)| !k.is_empty())
+        .map(|(k, val)| (k.clone(), serde_json::Value::String(val.clone())))
+        .collect();
+    if !env.is_empty() { v.insert("env".into(), serde_json::Value::Object(env)); }
+    serde_json::Value::Object(v)
 }
 
 /// Merge `rules` into `config.permissions.<key>` (an array), preserving existing
@@ -2444,6 +3665,12 @@ async fn write_project_plan(content: String, repo_paths: Vec<String>) -> Result<
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // rustls 0.23 can't auto-determine a CryptoProvider from features at runtime, so
+    // the relay dial's TLS handshake (tokio-tungstenite) would panic the tunnel thread
+    // ("could not automatically determine the process-level CryptoProvider"). Install
+    // `ring` explicitly before any TLS; Err just means one is already installed.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -2475,12 +3702,14 @@ pub fn run() {
         )
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(PtyState(Mutex::new(HashMap::new())))
+        .manage(tunnel::TunnelState::new())
         .invoke_handler(tauri::generate_handler![
             kb_chat,
             github_request,
             github_cache_clear,
             github_graphql,
             github_post,
+            github_put,
             pty_create,
             pty_write,
             pty_broadcast,
@@ -2490,23 +3719,81 @@ pub fn run() {
             setup_workspaces,
             setup_kb_workspace,
             clone_repo,
+            ensure_worktree,
+            ensure_director_protocol,
             get_base_dir,
             read_claude_config,
             write_claude_config,
             ensure_session_settings,
+            github_readiness,
             read_plan_sections,
             write_project_plan,
             delete_project_dir,
+            clear_all_plan_files,
             list_documents,
             read_document,
             write_document,
+            tunnel::tunnel_start,
+            tunnel::tunnel_stop,
+            tunnel::tunnel_status,
+            tunnel::tunnel_set_input_granted,
+            tunnel::tunnel_unpair,
+            tunnel::tunnel_set_panes,
+            tunnel::tunnel_set_sessions,
+            read_audit_log,
+            read_coord_log,
+            append_coord_woke,
+            read_git_hooks,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        // Drain PtyState on app exit so the OS reclaims every shell + its
+        // descendants (`claude`, `gh`, `git`, MCP children) before the process
+        // dies. Without this, closing the app window left ~28 orphan
+        // `bash`/`claude`/WebView children holding cwd locks on
+        // `~/.base-studio-code` (#52).
+        .run(|app_handle, event| {
+            if matches!(event, RunEvent::Exit) {
+                // Signal the tunnel transport (#242b) to close before tearing down PTYs.
+                app_handle.state::<tunnel::TunnelState>().shutdown();
+                kill_all_pty_sessions(app_handle.state::<PtyState>().inner());
+            }
+        });
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn parse_hooks_path_reads_core_hookspath() {
+        assert_eq!(
+            super::parse_hooks_path("[core]\n\trepositoryformatversion = 0\n\thooksPath = .githooks\n"),
+            Some(".githooks".to_string())
+        );
+        assert_eq!(super::parse_hooks_path("[core]\n\tbare = false\n"), None);
+    }
+
+    #[test]
+    fn read_git_hooks_reports_active_hooks_and_skips_samples() {
+        let dir = std::env::temp_dir().join(format!("bsc-hooks-{}", std::process::id()));
+        let hooks = dir.join(".git").join("hooks");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&hooks).unwrap();
+        std::fs::write(hooks.join("pre-commit"), "#!/bin/sh\n# header\ncargo fmt --check\n").unwrap();
+        std::fs::write(hooks.join("pre-push.sample"), "#!/bin/sh\necho sample\n").unwrap();
+
+        let out = super::read_git_hooks(dir.to_string_lossy().to_string());
+        let pre_commit = out.iter().find(|h| h.name == "pre-commit").unwrap();
+        assert!(pre_commit.active);
+        assert_eq!(pre_commit.preview, "cargo fmt --check"); // shebang + comment skipped
+        assert_eq!(pre_commit.source, ".git/hooks");
+        // The `.sample` doesn't make pre-push active.
+        assert!(!out.iter().find(|h| h.name == "pre-push").unwrap().active);
+
+        // A path with no .git → empty.
+        assert!(super::read_git_hooks(dir.join("nope").to_string_lossy().to_string()).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn pane_id_format_matches_frontend_convention() {
         // The frontend uses `t${tabIdx}p${paneIdx}` as the pane ID key.
@@ -2530,7 +3817,129 @@ mod tests {
     use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch, claude_project_dir_name};
     use super::session_env;
     use super::{cache_is_fresh, apply_github_response, CachedGet};
+    #[cfg(any(windows, unix))]
+    use super::PtyJob;
     use std::collections::HashMap;
+
+    /// Loadbearing claim of the orphan-kill fix: dropping the job handle kills
+    /// every assigned process (and its descendants). Spawn a ~30 s `ping` —
+    /// without the kill we'd hit the deadline; with it the process exits in
+    /// milliseconds. Windows-only; the Unix tree-kill is covered by
+    /// `pty_job_drop_kills_process_group` below.
+    #[cfg(windows)]
+    #[test]
+    fn pty_job_drop_kills_assigned_process() {
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+
+        let mut child = Command::new("cmd")
+            .args(["/c", "ping", "-n", "30", "127.0.0.1"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn ping for job-kill test");
+
+        let job = PtyJob::new().expect("create job object");
+        job.assign_pid(child.id()).expect("assign ping pid to job");
+
+        // Closing the only handle on a KILL_ON_JOB_CLOSE job must terminate
+        // every assigned process — that's the orphan kill.
+        drop(job);
+
+        let mut exited = false;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(Some(_)) => {
+                    exited = true;
+                    break;
+                }
+                Ok(None) => std::thread::sleep(Duration::from_millis(25)),
+                Err(e) => panic!("try_wait failed: {e}"),
+            }
+        }
+        // Always reap before asserting so the test never leaks a Child handle
+        // (satisfies clippy::zombie_processes); kill() is a harmless no-op once
+        // the job already terminated it.
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(
+            exited,
+            "ping survived 2s after job drop — kill-on-close not effective"
+        );
+    }
+
+    /// Loadbearing claim of the Unix orphan-kill fix (#118): dropping the job
+    /// must reap the shell's WHOLE process group, not just the immediate child —
+    /// otherwise `claude`/`gh`/`git` grandchildren leak and hold cwd locks. Mimic
+    /// the real spawn: a shell that `setsid`s (so pgid == its pid, exactly what
+    /// `portable_pty` does) and backgrounds a 30 s `sleep` GRANDCHILD in that same
+    /// group. After `assign_pid` + drop, the grandchild — which `Child::kill()`
+    /// alone would never reach — must be gone well inside its 30 s sleep.
+    #[cfg(unix)]
+    #[test]
+    fn pty_job_drop_kills_process_group() {
+        use std::io::{BufRead, BufReader};
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+
+        // `echo $!` prints the backgrounded sleep's pid (the grandchild), then the
+        // shell `wait`s so it stays group leader while we operate on the group.
+        let mut child = {
+            let mut c = Command::new("sh");
+            c.args(["-c", "sleep 30 & echo $!; wait"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null());
+            // SAFETY: pre_exec runs in the forked child before exec; `setsid` only
+            // creates a new session/process group and has no async-signal-unsafe
+            // allocation. This reproduces portable_pty's child setup so pgid == pid.
+            unsafe {
+                c.pre_exec(|| {
+                    if libc::setsid() == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            c.spawn().expect("spawn sh for group-kill test")
+        };
+
+        let grandchild: i32 = {
+            let stdout = child.stdout.take().expect("piped stdout");
+            let mut line = String::new();
+            BufReader::new(stdout)
+                .read_line(&mut line)
+                .expect("read grandchild pid");
+            line.trim().parse().expect("parse grandchild pid")
+        };
+
+        let job = PtyJob::new().expect("create job");
+        job.assign_pid(child.id()).expect("assign shell pid to job");
+
+        // Drop must `killpg(pgid, SIGKILL)` the whole group — shell AND the
+        // backgrounded sleep grandchild.
+        drop(job);
+        // Reap the direct child so it doesn't linger as a zombie; the grandchild
+        // is reparented to init, which reaps it once SIGKILL lands.
+        let _ = child.wait();
+
+        // SAFETY: `kill(pid, 0)` performs only an existence/permission check, no
+        // signal delivery; returns 0 while the process exists (incl. zombie) and
+        // -1/ESRCH once it's gone. Poll until the grandchild disappears.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if unsafe { libc::kill(grandchild, 0) } == -1
+                && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+            {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        // Best-effort cleanup before failing so we don't leak a 30 s sleep.
+        unsafe { libc::kill(grandchild, libc::SIGKILL); }
+        panic!("grandchild {grandchild} survived job drop — process-group kill not effective");
+    }
 
     #[test]
     fn cache_is_fresh_only_within_max_age_and_never_when_forced() {
@@ -2659,6 +4068,111 @@ mod tests {
     }
 
     #[test]
+    fn bsc_decisions_rc_defines_note_and_blocked_helpers() {
+        // The fleet assume-and-log helpers keep their hyphenated names (defined via the
+        // rc file, like bsc-checkpoint) and append to the doc named by the env var.
+        let rc = super::BSC_DECISIONS_RC;
+        assert!(rc.contains("bsc-note()"), "rc must define bsc-note");
+        assert!(rc.contains("bsc-blocked()"), "rc must define bsc-blocked");
+        assert!(rc.contains("BSC_DECISIONS_DOC"), "helpers must target the decisions doc env var");
+    }
+
+    #[test]
+    fn full_bsc_rc_is_syntactically_valid_bash() {
+        // Regression for the rc-glue bug: every rc constant must end with a newline so the
+        // bsc-env.sh that pty_create writes keeps each helper on its own line. A missing
+        // trailing newline glues two functions (`}bsc-audit()`) and bash reports "unexpected
+        // end of file", breaking every agent subshell. `bash -n` over the FULL concatenation
+        // (the exact format! pty_create uses) catches it; per-constant tests do not.
+        use std::process::{Command, Stdio};
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping full-rc syntax test: no usable bash ({shell})");
+            return;
+        }
+        let rc_body = format!(
+            "{}{}{}{}{}{}",
+            super::BSC_CHECKPOINT_RC,
+            super::BSC_DECISIONS_RC,
+            super::BSC_AUDIT_RC,
+            super::BSC_CONFINE_RC,
+            super::BSC_COORD_EMIT_RC,
+            super::BSC_DEFER_RC,
+        );
+        let dir = std::env::temp_dir().join(format!("bsc-rc-syntax-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, &rc_body).unwrap();
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let out = Command::new(&shell).arg("-n").arg(&rc_bash).stderr(Stdio::piped()).output().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            out.status.success(),
+            "generated bsc-env.sh has a bash syntax error:
+{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    #[test]
+    fn bsc_note_appends_bulleted_lines_in_a_fresh_non_interactive_subshell() {
+        // Like bsc-checkpoint, bsc-note must work from the agent's own `bash -c`
+        // subshells via the rc file + BASH_ENV. Each call APPENDS one bulleted line read
+        // from stdin to $BSC_DECISIONS_DOC. Skips where bash isn't on PATH.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_note subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-note-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        // The installed rc is the checkpoint + decisions helpers concatenated.
+        std::fs::write(&rc, format!("{}{}", super::BSC_CHECKPOINT_RC, super::BSC_DECISIONS_RC)).unwrap();
+        // Nested path exercises the helper's `mkdir -p` of the doc's parent.
+        let doc = dir.join("nested").join("DECISIONS.md");
+
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let doc_bash = super::to_bash_path(&doc.to_string_lossy());
+
+        let run = |msg: &str| {
+            let mut child = Command::new(&shell)
+                .arg("-c").arg("bsc-note")
+                .env("BASH_ENV", &rc_bash)
+                .env("BSC_DECISIONS_DOC", &doc_bash)
+                .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+                .spawn().unwrap();
+            child.stdin.take().unwrap().write_all(msg.as_bytes()).unwrap();
+            assert!(child.wait().unwrap().success(), "bsc-note should run in the subshell");
+        };
+        run("chose cursor pagination");
+        run("used JWT for auth");
+
+        assert_eq!(
+            std::fs::read_to_string(&doc).unwrap(),
+            "- chose cursor pagination\n- used JWT for auth\n",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn worktree_slug_keeps_only_branch_safe_chars() {
+        // The slug doubles as a git branch name + worktree dir, and must match the
+        // frontend `worktreeSlug` (replace anything outside [A-Za-z0-9._-] with '-').
+        assert_eq!(super::worktree_slug("auth-ui"), "auth-ui");
+        assert_eq!(super::worktree_slug("a.b_c-d"), "a.b_c-d");
+        assert_eq!(super::worktree_slug("API client/2"), "API-client-2");
+    }
+
+    #[test]
     fn claude_project_dir_name_replaces_non_alnum_with_dash() {
         // Matches the dir Claude Code creates under ~/.claude/projects.
         assert_eq!(
@@ -2699,6 +4213,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_github_probe_detects_each_marker_independently() {
+        use super::{GH_AUTH_MARK, GH_PATH_MARK, GIT_PATH_MARK};
+        // All three markers present -> (gh, git, auth) all true.
+        let all = format!("{GIT_PATH_MARK}
+{GH_PATH_MARK}
+{GH_AUTH_MARK}
+");
+        assert_eq!(super::parse_github_probe(&all), (true, true, true));
+        // Empty output (probe found nothing) -> all false.
+        assert_eq!(super::parse_github_probe(""), (false, false, false));
+        // git on PATH but gh missing -> gh false, git true, auth false.
+        let git_only = format!("{GIT_PATH_MARK}
+");
+        assert_eq!(super::parse_github_probe(&git_only), (false, true, false));
+        // gh present but unauthenticated -> gh true, git true, auth false.
+        let no_auth = format!("{GIT_PATH_MARK}
+{GH_PATH_MARK}
+");
+        assert_eq!(super::parse_github_probe(&no_auth), (true, true, false));
+    }
+
+    #[test]
     fn ensure_session_settings_merges_mandatory_and_custom_commands() {
         use super::write_session_settings;
         let dir = std::env::temp_dir().join(format!("bsc-ess-{}", std::process::id()));
@@ -2715,6 +4251,11 @@ mod tests {
             &dir.to_string_lossy(),
             &["cargo".into(), "git".into()],
             &["scp".into()],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
         ).unwrap();
 
         let v: serde_json::Value =
@@ -2737,6 +4278,119 @@ mod tests {
         assert!(deny.contains(&"Bash(sudo *)".to_string()));
         assert!(deny.contains(&"Bash(rm -rf /*)".to_string()));
         assert!(deny.contains(&"Bash(scp *)".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_session_settings_writes_ask_tier_for_hard_push_gate() {
+        use super::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+
+        // A hard push-confirm flow (#297) asks before push/PR: the rules land in
+        // permissions.ask (deny > ask > allow), so they prompt under the broad Bash allow.
+        write_session_settings(
+            &dir.to_string_lossy(),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &["Bash(git push *)".into(), "Bash(gh pr create *)".into()],
+        ).unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let ask: Vec<String> = v["permissions"]["ask"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(ask.contains(&"Bash(git push *)".to_string()));
+        assert!(ask.contains(&"Bash(gh pr create *)".to_string()));
+        // Bash stays broadly allowed; ask only narrows the two push writes.
+        let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(allow.contains(&"Bash".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_session_settings_merges_verbatim_tool_rules() {
+        use super::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-tool-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+
+        // The role write-path guard: deny every write tool (planner/director/triage),
+        // and auto-approve a worker's boundary glob.
+        write_session_settings(
+            &dir.to_string_lossy(),
+            &[],
+            &[],
+            &[],
+            &[],
+            &["Edit(src/auth/**)".into(), "Write(src/auth/**)".into()],
+            &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
+            &[],
+        ).unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        let deny: Vec<String> = v["permissions"]["deny"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        // Tool rules land verbatim — NOT wrapped in Bash(...).
+        assert!(allow.contains(&"Edit(src/auth/**)".to_string()));
+        assert!(allow.contains(&"Write(src/auth/**)".to_string()));
+        assert!(!allow.iter().any(|r| r.contains("Bash(Edit")));
+        assert!(deny.contains(&"Edit".to_string()));
+        assert!(deny.contains(&"Write".to_string()));
+        assert!(deny.contains(&"MultiEdit".to_string()));
+        assert!(deny.contains(&"NotebookEdit".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_session_settings_writes_mcp_servers_and_hooks() {
+        let dir = std::env::temp_dir().join(format!("bsc-ext-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mcp = vec![
+            super::McpServerCfg {
+                name: "filesystem".into(), transport: "stdio".into(),
+                command: Some("npx".into()), args: vec!["-y".into(), "@mcp/fs".into()],
+                url: None, env: vec![("ROOT".into(), "/tmp".into())],
+            },
+            super::McpServerCfg {
+                name: "sentry".into(), transport: "http".into(),
+                command: None, args: vec![], url: Some("https://mcp.sentry.dev/sse".into()), env: vec![],
+            },
+        ];
+        let hooks = vec![super::HookCfg {
+            event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
+        }];
+        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[]).unwrap();
+
+        // .mcp.json carries both servers in the right transport shapes.
+        let mcp_json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".mcp.json")).unwrap()).unwrap();
+        assert_eq!(mcp_json["mcpServers"]["filesystem"]["command"], "npx");
+        assert_eq!(mcp_json["mcpServers"]["filesystem"]["args"][1], "@mcp/fs");
+        assert_eq!(mcp_json["mcpServers"]["filesystem"]["env"]["ROOT"], "/tmp");
+        assert_eq!(mcp_json["mcpServers"]["sentry"]["type"], "http");
+        assert_eq!(mcp_json["mcpServers"]["sentry"]["url"], "https://mcp.sentry.dev/sse");
+
+        // settings.json gates the servers + carries the hook grouped by event.
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let enabled: Vec<String> = settings["enabledMcpjsonServers"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(enabled.contains(&"filesystem".to_string()) && enabled.contains(&"sentry".to_string()));
+        assert_eq!(settings["hooks"]["PostToolUse"][0]["matcher"], "Write|Edit");
+        assert_eq!(settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "format.sh");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

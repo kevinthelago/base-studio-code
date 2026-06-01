@@ -1,0 +1,21 @@
+// Compact local-time formatting for automation timestamps.
+
+/** "HH:MM", or "—" for null. */
+export function fmtClock(ms: number | null): string {
+  if (ms == null) return "—";
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** "today HH:MM" / "yesterday HH:MM" / "Mon D HH:MM", or "—" for null. */
+export function fmtStamp(ms: number | null): string {
+  if (ms == null) return "—";
+  const d = new Date(ms);
+  const t = fmtClock(ms);
+  const midnight = (x: Date) => { const c = new Date(x); c.setHours(0, 0, 0, 0); return c.getTime(); };
+  const today = midnight(new Date());
+  const day = midnight(d);
+  if (day === today) return `today ${t}`;
+  if (day === today - 86_400_000) return `yesterday ${t}`;
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${t}`;
+}

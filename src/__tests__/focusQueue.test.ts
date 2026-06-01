@@ -62,21 +62,36 @@ describe("nextInCycle", () => {
 });
 
 describe("reconcileQueue", () => {
-  it("drops the active tab's panes that are no longer waiting", () => {
-    expect(reconcileQueue([p(0, 1), p(0, 2), p(0, 3)], 0, [1, 3])).toEqual([p(0, 1), p(0, 3)]);
+  // After #187 every tab is mounted, so the caller can pass live waiting sets
+  // for ALL tabs in one go. Callers from #77 wire this up so background-tab
+  // panes get pruned the same way active-tab panes do.
+  const w = (entries: Record<number, number[]>): Map<number, Set<number>> =>
+    new Map(Object.entries(entries).map(([t, panes]) => [Number(t), new Set(panes)]));
+
+  it("drops a tab's panes that are no longer waiting", () => {
+    expect(reconcileQueue([p(0, 1), p(0, 2), p(0, 3)], w({ 0: [1, 3] })))
+      .toEqual([p(0, 1), p(0, 3)]);
   });
 
-  it("leaves other tabs' entries untouched", () => {
-    const q = [p(0, 1), p(1, 2), p(0, 3)];
-    expect(reconcileQueue(q, 0, [1])).toEqual([p(0, 1), p(1, 2)]); // p(0,3) pruned; p(1,2) kept
+  it("prunes across multiple tabs in one sweep", () => {
+    // p(0,3) no longer idle on tab 0; p(1,5) no longer idle on tab 1 — both go.
+    const q = [p(0, 1), p(1, 5), p(0, 3), p(1, 2)];
+    expect(reconcileQueue(q, w({ 0: [1], 1: [2] }))).toEqual([p(0, 1), p(1, 2)]);
   });
 
   it("returns the same reference when nothing is pruned", () => {
     const q = [p(0, 1), p(0, 2)];
-    expect(reconcileQueue(q, 0, [1, 2])).toBe(q);
+    expect(reconcileQueue(q, w({ 0: [1, 2] }))).toBe(q);
   });
 
-  it("empties when nothing on the active tab is waiting", () => {
-    expect(reconcileQueue([p(0, 1), p(0, 2)], 0, [])).toEqual([]);
+  it("empties when nothing on a single-tab queue is waiting", () => {
+    expect(reconcileQueue([p(0, 1), p(0, 2)], w({ 0: [] }))).toEqual([]);
+  });
+
+  it("leaves tabs absent from the map alone (no live data → no assumption)", () => {
+    // Tab 1 not in the map → its entries survive even if the caller has no
+    // status info for them. Defensive against transient empty-state moments.
+    const q = [p(0, 1), p(1, 2)];
+    expect(reconcileQueue(q, w({ 0: [1] }))).toEqual([p(0, 1), p(1, 2)]);
   });
 });

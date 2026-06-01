@@ -49,18 +49,24 @@ export function nextInCycle(queue: QueuedPane[], current: QueuedPane): QueuedPan
 }
 
 /**
- * Prune the queue to the panes still waiting. We only know live status for the
- * active tab, so this prunes that tab's entries (a session stays queued only while
- * idle, and drops out the moment it's no longer idle) while leaving other tabs'
- * entries untouched. Run as a sweep whenever the active tab's statuses change, so
- * a missed transition or a manual focus change can't strand a handled session.
+ * Prune the queue to the panes still waiting, across every tab whose live status
+ * we have. After #187 every tab's panes stay mounted, so the caller can supply a
+ * per-tab waiting set for every tab — a queued entry stays iff its pane appears
+ * in its tab's set. Tabs absent from the map (no live data — e.g. an empty
+ * workspace mid-transition) leave their entries alone, since we don't want a
+ * temporarily-missing tab to silently drop queued panes.
  *
  * @param queue current waiting queue.
- * @param activeTab the tab whose statuses `waiting` describes.
- * @param waiting pane indices on `activeTab` that are currently idle (still waiting).
+ * @param waitingByTab live waiting indices per tab (idle panes that should stay queued).
  * @returns the pruned queue, or the same reference when nothing changed.
  */
-export function reconcileQueue(queue: QueuedPane[], activeTab: number, waiting: number[]): QueuedPane[] {
-  const pruned = queue.filter((q) => q.tab !== activeTab || waiting.includes(q.pane));
+export function reconcileQueue(
+  queue: QueuedPane[],
+  waitingByTab: ReadonlyMap<number, ReadonlySet<number>>,
+): QueuedPane[] {
+  const pruned = queue.filter((q) => {
+    const waiting = waitingByTab.get(q.tab);
+    return waiting === undefined || waiting.has(q.pane);
+  });
   return pruned.length === queue.length ? queue : pruned;
 }

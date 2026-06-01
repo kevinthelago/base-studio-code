@@ -3,6 +3,7 @@ import {
   parsePlanFocus, stripPlanFocus, buildSectionConfirmMessage,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
   parseAllowCommands, stripAllowCommands,
+  parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
 } from "../screens/projects/planningSession";
 
 describe("parsePlanFocus", () => {
@@ -158,5 +159,80 @@ describe("parseAllowCommands", () => {
 describe("stripAllowCommands", () => {
   it("removes allow_command tags", () => {
     expect(stripAllowCommands('a <allow_command cmd="gh" /> b')).toBe("a  b");
+  });
+});
+
+describe("parseAgentAssigns", () => {
+  it("parses a stream with comma-separated list attributes", () => {
+    const tag = '<agent_assign id="auth-ui" name="Auth UI" repo="own/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="api" prompt="prompts/auth-ui-kickoff.md" />';
+    expect(parseAgentAssigns(tag)).toEqual([{
+      id: "auth-ui",
+      name: "Auth UI",
+      repo: "own/web",
+      owns: ["src/auth/**", "src/components/login/**"],
+      issues: ["#12", "#15"],
+      dependsOn: ["api"],
+      prompt: "prompts/auth-ui-kickoff.md",
+    }]);
+  });
+
+  it("defaults name to id and lists to empty, and skips tags missing id or repo", () => {
+    const text = '<agent_assign id="x" repo="o/r" /> <agent_assign name="no id" repo="o/r" /> <agent_assign id="no-repo" />';
+    expect(parseAgentAssigns(text)).toEqual([
+      { id: "x", name: "x", repo: "o/r", owns: [], issues: [], dependsOn: [], prompt: undefined },
+    ]);
+  });
+
+  it("tolerates curly quotes", () => {
+    const tag = '<agent_assign id=“ui” repo=“o/web” />';
+    expect(parseAgentAssigns(tag).map(s => s.id)).toEqual(["ui"]);
+  });
+});
+
+describe("stripAgentAssigns", () => {
+  it("removes agent_assign tags", () => {
+    expect(stripAgentAssigns('a <agent_assign id="x" repo="o/r" /> b')).toBe("a  b");
+  });
+});
+
+describe("parseFleetPlan", () => {
+  it("parses the fleet header, coercing recommended and the director flag", () => {
+    const tag = '<fleet_plan recommended="4" reasoning="four areas" director="true" director_role="integrator" />';
+    expect(parseFleetPlan(tag)).toEqual({
+      recommended: 4,
+      reasoning: "four areas",
+      director: true,
+      directorRole: "integrator",
+    });
+  });
+
+  it("treats a non-true director value as disabled and missing recommended as 0", () => {
+    expect(parseFleetPlan('<fleet_plan reasoning="x" director="no" />')).toEqual({
+      recommended: 0,
+      reasoning: "x",
+      director: false,
+      directorRole: undefined,
+    });
+  });
+
+  it("returns the last tag when several are present, or null when none", () => {
+    const text = '<fleet_plan recommended="1" /> <fleet_plan recommended="3" />';
+    expect(parseFleetPlan(text)?.recommended).toBe(3);
+    expect(parseFleetPlan("no tags here")).toBeNull();
+  });
+});
+
+describe("stripFleetPlan", () => {
+  it("removes fleet_plan tags", () => {
+    expect(stripFleetPlan('a <fleet_plan recommended="2" /> b')).toBe("a  b");
+  });
+});
+
+describe("parseAgentAssigns — profile (#289)", () => {
+  it("captures a profile attribute, omitting it when absent", () => {
+    const tag = '<agent_assign id="be" repo="o/api" owns="src/**" issues="#1" profile="backend-dev" />';
+    expect(parseAgentAssigns(tag)[0]).toMatchObject({ id: "be", repo: "o/api", profile: "backend-dev" });
+    const noProf = '<agent_assign id="fe" repo="o/web" owns="ui/**" />';
+    expect(parseAgentAssigns(noProf)[0].profile).toBeUndefined();
   });
 });

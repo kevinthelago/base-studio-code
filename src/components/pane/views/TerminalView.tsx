@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
@@ -7,9 +7,24 @@ import "@xterm/xterm/css/xterm.css";
 import { log } from "../../../lib/log";
 import { recordPtyData, bumpTerminals } from "../../../lib/perf";
 import { gateClaudeLaunch } from "../../../lib/launchGate";
-import { scrollbackForPaneCount } from "../../../lib/terminal";
+import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/terminal";
 import { composeStartupPrompt } from "../../../lib/checkpoint";
+import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
+import { PendingPtyData } from "../../../lib/pendingPtyData";
+import { resolveInitCmd } from "../../../lib/resumeClaude";
+import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
+import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
+import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/projects/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
+import { interpretGithubReadiness, type GithubProbe } from "../../../lib/githubReadiness";
+import { tokenForRepo } from "../../../lib/repoCredentials";
+
+// Background-pane buffer cap. While a pane is hidden we skip xterm.write
+// entirely and accumulate the PTY bytes here; on becoming visible we flush
+// them in one go. 256 KB ≈ a few thousand lines of dense output — generous for
+// realistic switch-away durations and far above what's likely useful before
+// xterm's own scrollback truncates it anyway.
+const PENDING_BYTES_CAP = 256 * 1024;
 
 // Hex equivalents of the oklch design tokens so xterm can use them
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -41,9 +56,25 @@ interface TerminalViewProps {
 
 export function TerminalView({ paneId, visible = true, focused, initialCwd, initCmd, onCwdChange, onStatusChange, onFocus }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // GitHub-readiness warning for this pane (#297); null = ready or not probed.
+  const [ghWarn, setGhWarn] = useState<string | null>(null);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
+  // Visibility flag for the PTY listener: while false we buffer rather than
+  // calling term.write, so a hidden pane (different view, fullscreen-of-other-
+  // pane, etc.) pays no render cost. The ref mirrors the `visible` prop and is
+  // updated by a tiny effect below; the listener reads it synchronously.
+  const visibleRef = useRef(visible);
+  const pendingRef = useRef(new PendingPtyData(PENDING_BYTES_CAP));
+  // Whether term.open() has run. We defer opening until the container has real
+  // dimensions: the DOM renderer measures and CACHES character cell metrics at
+  // open() time, and opening inside a display:none (zero-size) container — which
+  // #187 now does for every background tab's panes at mount — caches garbage
+  // metrics that a later fit() never re-measures, so rows are miscomputed and
+  // the top lines render out of frame (#190). Until opened, output is buffered
+  // (like a hidden pane) and flushed once we open at a real size.
+  const openedRef = useRef(false);
   // Skips the first font-zoom effect run per (re)mount — the terminal is already
   // created at the current size, so we must not pty_resize before pty_create.
   const fontReadyRef = useRef(false);
@@ -78,12 +109,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     const el = containerRef.current;
     if (!el) return;
 
-    // Scale scrollback down on larger grids — 16 panes × deep buffers is a major
-    // renderer-memory cost. Derive the grid size from this pane's tab layout.
-    const tabIdx = Number(/^t(\d+)p\d+$/.exec(paneId)?.[1] ?? -1);
-    const layout = useAppStore.getState().tabs[tabIdx]?.layout ?? "1×1";
-    const [lc, lr] = layout.split("×").map(Number);
-    const scrollback = scrollbackForPaneCount((lc || 1) * (lr || 1));
+    // Scale scrollback down on heavier workspaces — every mounted pane keeps
+    // its buffer in renderer memory, and after #187 EVERY tab's panes stay
+    // mounted (not just the active tab's), so a 2-tab × 16-pane setup is 32
+    // live buffers. Use the workspace-wide total — not just this tab's grid —
+    // to keep total scrollback bounded as tabs accumulate.
+    const scrollback = scrollbackForPaneCount(
+      totalMountedPaneCount(useAppStore.getState().tabs),
+    );
 
     // (Re)mounting: re-arm the skip so the font-zoom effect doesn't fire against
     // a terminal whose PTY hasn't been created yet.
@@ -101,10 +134,38 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.open(el);
     termRef.current = term;
     fitRef.current  = fitAddon;
     bumpTerminals(1);
+    useAppStore.getState().bumpLiveAgents(1);
+
+    // Renderer is xterm's default (DOM/canvas). The WebGL addon was tried
+    // (PR #182, toward #52) but produced ghost-cursor flickering with claude's
+    // TUI — the renderer's glyph cache didn't always invalidate cells the
+    // cursor had moved out of, leaving stale yellow cursors painted across
+    // the screen on rapid TUI updates (#190). Canvas is the safe default;
+    // re-enabling WebGL would want to be opt-in behind a setting, and only
+    // after a stable upstream addon version that handles claude's cursor
+    // patterns cleanly.
+
+    // Open the terminal only once its container has real dimensions, so the DOM
+    // renderer measures correct cell metrics (see openedRef). Opening at zero
+    // size (a background tab mounted display:none by #187) caches bad metrics
+    // and pushes the top lines out of frame. Returns true once opened. After
+    // opening, fit to the real size and flush anything buffered while we waited.
+    function openIfReady(): boolean {
+      if (openedRef.current) return true;
+      if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return false;
+      term.open(el);
+      openedRef.current = true;
+      fitAddon.fit();
+      if (pendingRef.current.size() > 0) term.write(pendingRef.current.flush());
+      term.scrollToBottom(); // show the latest output on (re)mount, no scrolling (#68)
+      return true;
+    }
+    // Visible/active tab: the container is already sized, so open right away.
+    // Hidden panes defer to the ResizeObserver / visible effect below.
+    openIfReady();
 
     // Called whenever claude finishes responding (or its process exits).
     function onClaudeIdle() {
@@ -113,9 +174,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // type here and no startup race to manage.
       claudeActiveRef.current = "idle";
       onStatusChangeRef.current?.("idle");
-      // Focus is decided by ConsoleScreen (which pane to auto-focus, with a
-      // startup grace) and actuated by the focused-pane effect below — we don't
-      // focus here, so a pane finishing never steals the cursor on its own.
+      // Focus is decided by ConsoleScreen — handleStatusChange enqueues this
+      // pane on idle and the user steps through with Ctrl+Shift+N (or auto-
+      // advance-on-reply). Only first-idle ever enqueues a pane, so a cold-
+      // starting grid can't yank the cursor around. We don't focus here.
     }
 
     function armQuietTimer() {
@@ -145,6 +207,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         claudeActiveRef.current = "run";
         onStatusChangeRef.current?.("run");
         armQuietTimer();
+        // Mark this pane as a claude pane so the next app launch can resume
+        // it with `claude --continue` (#36). The setter no-ops when the
+        // flag is already on, so repeated OSC 100 "run" emissions during a
+        // session don't churn the store.
+        useAppStore.getState().setPaneWasClaude(paneId, true);
       } else if (data === "idle") {
         inClaudeRef.current = false;
         if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
@@ -183,10 +250,28 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // re-prints its prompt in the fresh terminal.
     requestAnimationFrame(async () => {
       if (destroyed) return;
-      fitAddon.fit();
+      // Open now if the pane became sizable between mount and this frame.
+      openIfReady();
       const unlisten = await listen<string>(`pty_data_${paneId}`, (ev) => {
         const t0 = performance.now();
-        term.write(ev.payload);
+        // Render path: skip xterm.write while the pane is hidden OR not yet
+        // opened — the canvas paint is the dominant render cost and an unseen
+        // pane shouldn't pay it (#52), and writing before open() (deferred until
+        // the container is sized, #190) would render against bad metrics. Bytes
+        // accumulate in pendingRef and flush in one term.write when we open /
+        // become visible (here or in the [visible] effect below). Flush-before-
+        // write here keeps ordering correct even if the flip and the next PTY
+        // event race.
+        if (visibleRef.current && openedRef.current) {
+          if (pendingRef.current.size() > 0) {
+            term.write(pendingRef.current.flush());
+          }
+          term.write(ev.payload);
+        } else {
+          pendingRef.current.push(ev.payload);
+        }
+        // Status detection runs regardless of visibility — a background pane
+        // finishing should still emit "idle" / join the focus queue.
         // Reset quiet timer only for printable output — pure ANSI control sequences
         // (cursor moves, color resets after the last response line) don't count,
         // so Claude's trailing formatting doesn't keep pushing the timer out.
@@ -248,27 +333,122 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // a permission prompt mid-task. Allowed commands are the resolved
       // global+project+repo set; denied are the user's global blocks (the backend
       // always adds its dangerous defaults).
+      // Authenticate gh / git-over-https in the agent shell: export a GitHub token as
+      // GH_TOKEN into the PTY (and the readiness probe), so a worker can push its branch
+      // and open a PR. Without it gh is unauthenticated and gh pr create / https push
+      // fail (#362). Repo-scoped credentials (#158): when this pane is bound to a repo
+      // with an assigned fine-grained token, use THAT token (not the global PAT), so the
+      // session's gh/git is scoped to its repo and can't act on sibling repos; otherwise
+      // fall back to the global token (director / ad-hoc console / un-scoped repo).
+      const ghToken = tokenForRepo(
+        useAppStore.getState().paneRepos[paneId],
+        useAppStore.getState().repoGithubTokens,
+        useAppStore.getState().githubToken,
+      );
+      const agentEnv = ghToken ? { GH_TOKEN: ghToken } : undefined;
       if (launchesClaude && (initialCwd ?? "") !== "") {
         const cmds = useAppStore.getState().paneAllowedCommands[paneId]
           ?? useAppStore.getState().allowedCommands;
-        const denied = useAppStore.getState().deniedCommands;
-        await invoke("ensure_session_settings", { cwd: initialCwd, allowedCommands: cmds, deniedCommands: denied })
-          .catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
+        // Role gate (#219): a planner/worker/triage session has its mutating git/gh
+        // commands denied at launch (deny > the broad gh/git allow), plus a write-tool
+        // guard (#238) that denies Write/Edit for no-code roles and scopes a worker to
+        // its boundary globs. Absent role ⇒ unrestricted.
+        const role = useAppStore.getState().paneRoles[paneId];
+        // The worker's write boundary (its owned globs, set at fleet launch) makes
+        // roleWriteRules auto-approve Edit/Write within its lane; without it a
+        // worker (code:write, empty writeGlobs) prompts on every edit.
+        const roleGlobs = useAppStore.getState().paneRoleGlobs[paneId] ?? [];
+        const cap = role ? roleCapability(role, { writeGlobs: roleGlobs }) : null;
+        const write = cap ? roleWriteRules(cap) : { allow: [], deny: [] };
+        // Agents gate (#255): the profile assigned to this pane adds its command
+        // allowlist + per-tool/path rules on top of the role gate (deny wins for both).
+        const profileId = useAppStore.getState().paneProfiles[paneId];
+        const profile = profileId
+          ? useAppStore.getState().agentProfiles.find((p) => p.id === profileId)
+          : undefined;
+        const prof = profile ? resolveProfileSettings(profile) : null;
+        // Per-agent flow (#297): narrow the GitHub-propagation writes per the
+        // stream's push policy + gate — a hard push-confirm asks before push/PR,
+        // commit-only/none deny them, auto-pr adds nothing (broad allow permits).
+        const paneFlow = useAppStore.getState().paneFlows[paneId];
+        const flowRules = flowPermissionRules(paneFlow);
+        const allowedCommands = prof ? [...cmds, ...prof.allowedCommands] : cmds;
+        // Reconcile role gate + flow (#304): the flow owns the two GitHub-propagation
+        // writes, so lift them from the role denies when the flow permits pushing/PRing
+        // (a worker is github:read and would otherwise be blocked from opening its PR).
+        // Everything else the role denies (gh pr merge, repo delete, …) stays denied.
+        const granted = flowGrantedPushCommands(paneFlow);
+        const roleDenies = (cap ? roleDeniedCommands(cap) : []).filter((d) => !granted.includes(d));
+        const denied = [
+          ...useAppStore.getState().deniedCommands,
+          ...roleDenies,
+          ...(prof?.deniedCommands ?? []),
+        ];
+        const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
+        const denyToolRules = [...write.deny, ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
+        const askToolRules = flowRules.askToolRules;
+        // Extensions (MCP servers + hooks) resolved for this session — pre-resolved
+        // per pane at tab creation; fall back to globals for ad-hoc consoles.
+        const exts = useAppStore.getState().paneExtensions[paneId]
+          ?? resolveExtensions(useAppStore.getState().extensions, "");
+        const { mcp, hooks } = toSessionPayloads(exts);
+        // Agents audit (#257): on a gated pane (role or profile assigned), install a
+        // PreToolUse hooks: log each tool attempt for the Activity feed (bsc-audit),
+        // and confine the file tools to the session's repo root (bsc-confine, #158).
+        const gatedHooks = (cap || prof)
+          ? [...hooks,
+             { event: "PreToolUse", matcher: "", command: "bsc-audit" },
+             { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
+             // Worker-only Stop hook (#369): when a worker tries to end its turn, bounce it
+             // once toward continuing / deferring to the director via bsc-ask instead of
+             // stopping to ask the user. `stop_hook_active` prevents an infinite loop.
+             ...(role === "worker" ? [{ event: "Stop", matcher: "", command: "bsc-defer" }] : [])]
+          : hooks;
+        await invoke("ensure_session_settings", {
+          cwd: initialCwd, allowedCommands, deniedCommands: denied,
+          mcpServers: mcp, hooks: gatedHooks,
+          allowToolRules, denyToolRules, askToolRules,
+        }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
+        if (destroyed) return;
+        // GitHub-readiness probe (#297): fleet/triage agents are told to push and
+        // open PRs; warn in-pane up front if the spawned shell can't (gh/git off
+        // PATH or gh unauthenticated) rather than the agent hitting it mid-task.
+        try {
+          const probe = await invoke<GithubProbe>("github_readiness", { cwd: initialCwd, env: agentEnv });
+          const readiness = interpretGithubReadiness(probe);
+          if (!destroyed) setGhWarn(readiness.ok ? null : readiness.message);
+          if (!readiness.ok) log.warn(`console[${paneId}] github not ready (${readiness.status}): ${readiness.message}`);
+        } catch (e) {
+          log.error(`console[${paneId}] github_readiness probe failed: ${e}`);
+        }
         if (destroyed) return;
       }
 
+      // Resolve the effective init_cmd: an explicit `initCmd` prop wins,
+      // then a triage/fleet `startupPrompt` (handled by pty_create's
+      // prompt-baking path — must NOT also inject a parallel init_cmd),
+      // then the ad-hoc resume (#36): if this pane had claude running at
+      // last shutdown and auto-resume is on, mount straight into
+      // `claude --continue`.
+      const st = useAppStore.getState();
+      const effectiveInitCmd = resolveInitCmd({
+        explicit: initCmd,
+        startupPrompt,
+        paneWasClaude: !!st.paneWasClaude[paneId],
+        autoResumeClaude: st.autoResumeClaude,
+      });
       const isNew = await invoke<boolean>("pty_create", {
         paneId,
         cols: term.cols,
         rows: term.rows,
         cwd:     initialCwd ?? "",
-        initCmd: initCmd ?? "",
+        initCmd: effectiveInitCmd,
         startupPrompt,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
         // Per-repo triage checkpoint doc, so the bsc-checkpoint helper can write it.
         checkpointDoc,
-        env: undefined,
+        env: agentEnv,
       }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
 
       if (!isNew) {
@@ -279,9 +459,16 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
     // Auto-resize. Guard against zero-dimension callbacks that fire when the
     // console screen is hidden via display:none — fitting a zero-size terminal
-    // would corrupt the PTY dimensions until it becomes visible again.
+    // would corrupt the PTY dimensions until it becomes visible again. This is
+    // also the primary trigger that opens a pane first mounted while hidden:
+    // the display:none → grid transition fires the observer with real
+    // dimensions, so openIfReady() runs with correct cell metrics.
     const ro = new ResizeObserver(() => {
       if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+        if (!openIfReady()) return;   // still couldn't open (raced back to 0 size)
+        // Opened-or-already-open: fit to the current size and tell the backend.
+        // (When this call is the one that opened, openIfReady already fit once;
+        // a second fit is idempotent, and the resize propagates the dims.)
         fitAddon.fit();
         invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
       }
@@ -298,32 +485,72 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       term.dispose();
       termRef.current = null;
       fitRef.current  = null;
+      // Reset the open flag so a re-run of this effect opens its FRESH terminal.
+      // Without this, the next mount's openIfReady() sees a stale `true` and skips
+      // term.open() entirely — leaving a blank pane. This fires on every genuine
+      // remount (triage rebuild, app restart) and, critically, on React
+      // StrictMode's mount→cleanup→mount double-invoke in dev, where the second
+      // (live) terminal would otherwise never open (#190 regression follow-up).
+      openedRef.current = false;
       bumpTerminals(-1);
+      useAppStore.getState().bumpLiveAgents(-1);
       // PTY session intentionally kept alive — reconnects on remount (tab switch).
       // Sessions are cleaned up explicitly when a tab is closed (pty_kill).
     };
   }, [paneId]);
 
-  // Re-fit when this view becomes visible again (e.g. switching back from files view)
+  // Keep visibleRef in sync with the prop so the PTY listener reads the latest
+  // value synchronously. Declared before the [visible] effect below so it runs
+  // first per React's effect-ordering rules: by the time the buffer-flush /
+  // fit / resize logic below runs, visibleRef already reflects the new value.
+  useEffect(() => { visibleRef.current = visible; }, [visible]);
+
+  // Re-fit when this view becomes visible again (e.g. switching back from
+  // files view, or coming back to a background tab). Also flush anything the
+  // listener buffered while we were hidden, in one xterm.write so the user
+  // sees what streamed in their absence. The listener already flush-before-
+  // writes on the next event after visibility flips, but if no further event
+  // arrives the user would otherwise stare at a frozen screen; this effect is
+  // the safety net for that case.
+  //
+  // Ordering matters: fit FIRST, then flush. Buffered output (especially from
+  // claude's TUI) is dense with cursor-positioning ANSI escapes (`\x1b[r;cH`
+  // etc.); writing it into a terminal that's about to resize causes the just-
+  // placed cursor moves to be reapplied against a reflowed grid, landing the
+  // cursor in unexpected positions (#190). Doing the fit first means the
+  // buffer is replayed against the dimensions claude assumed when it
+  // generated the bytes — no jump.
   useEffect(() => {
     if (visible) {
       requestAnimationFrame(() => {
+        // If this pane first mounted while hidden it may not be opened yet;
+        // fit() throws on an unopened terminal. The ResizeObserver opens it
+        // (and fits + flushes) on the display:none → grid transition, so just
+        // skip here — this effect is only the re-fit path for an already-open
+        // terminal becoming visible again.
+        if (!openedRef.current) return;
+        const t = termRef.current;
+        if (!t) return;
         fitRef.current?.fit();
-        const term = termRef.current;
-        if (term) {
-          invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
-          // Don't steal focus on becoming visible — the focused-pane effect below
-          // focuses only the active pane. Stealing here made every pane in a grid
-          // grab focus on mount.
+        if (pendingRef.current.size() > 0) {
+          t.write(pendingRef.current.flush());
         }
+        // Snap to the latest output so a pane returning to view shows the most
+        // recent claude response without the user scrolling down (#68).
+        t.scrollToBottom();
+        invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(console.error);
+        // Don't steal focus on becoming visible — the focused-pane effect below
+        // focuses only the active pane. Stealing here made every pane in a grid
+        // grab focus on mount.
       });
     }
   }, [visible, paneId]);
 
-  // Call term.focus() whenever this pane becomes the focused one
+  // Call term.focus() whenever this pane becomes the focused one. focus() reaches
+  // into xterm's textarea, which only exists after open() — skip until opened.
   useEffect(() => {
     if (focused && visible) {
-      requestAnimationFrame(() => termRef.current?.focus());
+      requestAnimationFrame(() => { if (openedRef.current) termRef.current?.focus(); });
     }
   }, [focused, visible]);
 
@@ -336,9 +563,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     if (!term) return;
     term.options.fontSize = terminalFontSize;
     // Defer a frame so xterm remeasures the new glyph size before we fit, then
-    // resize the PTY to the recomputed rows/cols.
+    // resize the PTY to the recomputed rows/cols. fit() throws on an unopened
+    // terminal, so skip the geometry work until it's been opened (#190).
     requestAnimationFrame(() => {
-      if (!termRef.current) return;
+      if (!termRef.current || !openedRef.current) return;
       fitRef.current?.fit();
       invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
     });
@@ -346,13 +574,35 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
   return (
     <div
-      ref={containerRef}
       style={{
-        flex: 1, minHeight: 0, overflow: "hidden",
+        flex: 1, minHeight: 0,
         background: TERM_THEME.background as string,
         display: visible ? "flex" : "none",
-        padding: "6px 4px",
+        flexDirection: "column",
       }}
-    />
+    >
+      {ghWarn && (
+        <div
+          role="alert"
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "6px 10px", fontSize: 12, lineHeight: 1.4,
+            color: "#e5c07b", background: "#3a2f1a", borderBottom: "1px solid #5a4a28",
+          }}
+        >
+          <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>⚠ GitHub</span>
+          <span style={{ flex: 1 }}>{ghWarn}</span>
+          <button
+            onClick={() => setGhWarn(null)}
+            style={{ background: "transparent", border: "none", color: "#e5c07b", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}
+            aria-label="Dismiss GitHub warning"
+          >×</button>
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px" }}
+      />
+    </div>
   );
 }

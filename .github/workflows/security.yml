@@ -1,0 +1,54 @@
+name: Security audit
+
+# Dependency CVE scanning (SCA), complementing Dependabot's version bumps.
+#   - cargo audit: RustSec advisory DB against the workspace Cargo.lock.
+#   - npm audit:   production deps against the GitHub Advisory DB.
+# Runs on dependency changes + weekly (to catch newly-published advisories with no
+# code change). `cargo audit` exits non-zero only on actual *vulnerabilities*, not on
+# `unmaintained` warnings (we transitively pull unmaintained gtk-rs bindings via
+# Tauri's Linux webview — known, non-blocking, upstream's to fix).
+
+on:
+  # Dependency audit on pull requests + the weekly schedule (not on every push).
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "Cargo.lock"
+      - "package-lock.json"
+      - ".github/workflows/security.yml"
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-audit:
+    name: cargo audit (RustSec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Cargo.lock lives at the workspace root.
+      - name: Audit
+        run: cargo audit
+
+  npm-audit:
+    name: npm audit (prod deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      # Production deps only, fail on high/critical — keeps dev-only transitive
+      # advisories from blocking the build.
+      - name: Audit
+        run: npm audit --omit=dev --audit-level=high

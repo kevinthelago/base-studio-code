@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useAppStore } from "../../store";
+import { sanitizeProjectKey } from "../../lib/projectPaths";
 
 interface GhProject {
   id: string;
@@ -155,7 +156,7 @@ export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpe
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject } = useAppStore();
+  const { githubToken, activeScreen, setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -251,15 +252,38 @@ export function ProjectsList() {
     ? visibleProjects.find(p => p.title.toLowerCase() === titleTrimmed.toLowerCase()) ?? null
     : null;
 
-  function handleStartPlanning() {
+  async function handleStartPlanning() {
     if (!titleTrimmed) return;
+    // New project starts as a DRAFT (#379). The planning-dir id is the sanitized title — a
+    // clean, stable folder name (no random suffix), so the folder and the project resolve the
+    // same regardless of how it is later reopened or published. Re-using a title means
+    // replacing an earlier *unpublished* draft (the start form blocks names already on GitHub —
+    // see titleConflict), so clear that draft's folder FIRST for a stale-free start. The delete
+    // is AWAITED so the planning launch's setup_workspaces can't race it and wipe the fresh dir.
+    const draftKey = sanitizeProjectKey(titleTrimmed);
+    removeDraftProject(draftKey);
+    deleteLocalProject([draftKey]);
+    await invoke("delete_project_dir", { projectKey: draftKey }).catch(() => {});
     setPlanningTitle(titleTrimmed);
     setPlanningContext(pitch.trim(), "");
     setActiveProjectMeta(null, "", "", 0);
-    // New project: freeze the human-readable title as the session key so the
-    // directory stays put even after publish assigns a GitHub Project id.
-    setPlanningSession(titleTrimmed);
+    addDraftProject(draftKey, { title: titleTrimmed, pitch: pitch.trim(), createdAt: Date.now() });
+    setPlanningSession(draftKey);
     setProjectsView("planning");
+  }
+
+  function reopenDraft(key: string, d: { title: string; pitch: string }) {
+    setPlanningTitle(d.title);
+    setPlanningContext(d.pitch, "");
+    setActiveProjectMeta(null, "", "", 0);
+    setPlanningSession(key);
+    setProjectsView("planning");
+  }
+
+  function deleteDraft(key: string) {
+    removeDraftProject(key);
+    deleteLocalProject([key]);
+    void invoke("delete_project_dir", { projectKey: key }).catch(() => {});
   }
 
   const repos = new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? []));
@@ -390,6 +414,45 @@ export function ProjectsList() {
             No GitHub Projects found. Create one at github.com/your-org to get started.
           </div>
         )}
+
+        {(() => {
+          const publishedTitles = new Set(visibleProjects.map(p => p.title.toLowerCase()));
+          const drafts = Object.entries(localDraftProjects)
+            .filter(([, d]) => !publishedTitles.has(d.title.toLowerCase()))
+            .sort((a, b) => b[1].createdAt - a[1].createdAt);
+          if (drafts.length === 0) return null;
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 10 }}>
+              {drafts.map(([key, d]) => (
+                <div key={key} style={{
+                  display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
+                  background: "var(--bg-elev)", border: "1px dashed var(--border-soft)", borderRadius: "var(--r-md)",
+                }}>
+                  <div onClick={() => reopenDraft(key, d)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className="tag amber">draft</span>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg)" }}>{d.title}</span>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>not yet on GitHub</span>
+                    </div>
+                    {d.pitch && (
+                      <div style={{ marginTop: 4, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.pitch}</div>
+                    )}
+                  </div>
+                  <button
+                    className="btn ghost"
+                    style={{ height: 24, padding: "0 8px", fontSize: 10.5, color: "var(--fg-muted)" }}
+                    onClick={() => reopenDraft(key, d)}
+                  >resume →</button>
+                  <button
+                    title="Delete draft (removes its local plan files)"
+                    onClick={() => deleteDraft(key)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--fg-dim)", padding: 4 }}
+                  ><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {visibleProjects.map(p => (

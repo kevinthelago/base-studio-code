@@ -8,9 +8,25 @@ import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
 import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
-import { projectRepoCwd, sanitizeProjectKey } from "../lib/projectPaths";
-import { checkpointDocRelpath } from "../lib/checkpoint";
+import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey } from "../lib/projectPaths";
+import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
+import { computeNextRun, appendRun, suggestionToAutomation, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
+import type { SessionRole } from "../lib/sessionRoles";
+import type { AgentFlow } from "../screens/projects/agentFlow";
+import { normalizeFlow, resolveFlow } from "../screens/projects/agentFlow";
+import { flowKickoffText } from "../screens/projects/flowKickoff";
+import { PIPELINE_PRESETS } from "../lib/pipeline";
+import { startRun, currentLaunch, type PipelineRun } from "../lib/conductor";
+import { generateAgentProfile } from "../lib/profileGen";
+import { stagePrompt } from "../lib/pipelineDriver";
+import type { AgentProfile } from "../screens/agents/agentProfiles";
+import { PROFILES } from "../screens/agents/agentProfiles";
+import { scriptDocRelpath } from "../screens/projects/planningSession";
+import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
+import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
+import { worktreeSlug } from "../lib/projectPaths";
+import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
 
 // Sent as the first message to each console when a project tab is opened, so the
 // session starts by reading and executing the laid-out plan. Plain text only — no
@@ -40,6 +56,27 @@ export const TRIAGE_PROMPT =
   "plain-text summary (what you completed, what is in progress, and the single next " +
   "step to take) into the bsc-checkpoint command on stdin. The next triage pass for " +
   "this repo will begin with that summary.";
+
+// Fallback first message for a fleet worker whose stream has no planner-authored
+// kickoff script. Plain text only (no double quotes / $ / backticks) so it is safe
+// to pass as claude's initial-message arg. The authoritative plan lives in
+// CLAUDE.local.md; this points the session at its lane and the autonomy rules.
+function buildStreamPrompt(stream: AgentStream): string {
+  const owns   = stream.owns.length   ? stream.owns.join(", ")   : "the files for your area";
+  const issues = stream.issues.length ? stream.issues.join(", ") : "the issues assigned to your area";
+  const kick = flowKickoffText(stream.flow, stream.id);
+  return (
+    `You are the ${stream.name} work stream, one of several Claude sessions building this project in parallel. ` +
+    `The full project plan is in CLAUDE.local.md — read it first; it is authoritative. ` +
+    `You are working in your own git worktree on branch ${stream.id}; do not switch branches or touch other worktrees. ` +
+    `Your lane: you own ${owns}. Do not modify files outside your owned paths — another session owns them; ` +
+    `coordinate through the plan instead. Your issues: ${issues}. ` +
+    `${kick.autonomy} ` +
+    `${kick.push} ` +
+    `When you pause or finish a work session, pipe a short note of where you left off and the next step into bsc-checkpoint on stdin so your next session resumes there. ` +
+    `Verify your work against the repo tests and CI rather than asking whether it is correct.`
+  );
+}
 
 export interface GithubUser {
   login: string;
@@ -100,14 +137,29 @@ interface AppStore {
   // (advanceFocus), which switches tabs when the next pane lives on another tab.
   // Persists across tab switches; enqueue/remove/reconcile target the active tab.
   focusQueue: QueuedPane[];
-  enqueueFocus: (pane: number) => void;
-  removeFocus: (pane: number) => void;
+  // Enqueue / remove take (tab, pane) so background-tab status changes can
+  // participate too — every tab's TerminalView is mounted after #187, so
+  // ConsoleScreen sees idle transitions for all panes and routes them here (#77).
+  enqueueFocus: (tab: number, pane: number) => void;
+  removeFocus: (tab: number, pane: number) => void;
+  /** Wake a parked pane (#199): seed it with `prompt` as a FRESH claude session and
+   *  remount its tab (runId bump). Returns false if the pane/tab is gone or disabled.
+   *  The caller `pty_kill`s the pane first so the remount spawns fresh, not reconnect. */
+  wakePane: (paneId: string, prompt: string) => boolean;
+  // Session pipelines (#220): in-flight runs keyed by work item. Register-only here;
+  // launching a stage as a role-scoped pane + auto-advance is the live-wiring slice.
+  pipelineRuns: Record<string, PipelineRun>;
+  pipelineStart: (presetKey: string, item: string) => void;
+  pipelineClear: (item: string) => void;
+  pipelineMount: (item: string) => void;
+  pipelineSetRuns: (runs: Record<string, PipelineRun>) => void;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
-  // Prune the active tab's queued panes to just the still-idle ones (passed in).
-  // A session stays queued only while idle; this sweep self-heals any desync.
-  // Other tabs' entries are left untouched (their live status isn't tracked here).
-  reconcileFocusQueue: (waiting: number[]) => void;
+  // Prune queued panes across every tab whose live status the caller has —
+  // dropped if their pane index isn't in that tab's waiting set. Tabs absent
+  // from the map (no live data) keep their entries, so a transient missing-tab
+  // moment can't silently drop queued panes.
+  reconcileFocusQueue: (waitingByTab: ReadonlyMap<number, ReadonlySet<number>>) => void;
   // Global terminal font size (px), shared by every console pane (persisted).
   // Adjusted via Ctrl++ / Ctrl+- / Ctrl+0; clamped to the legible range.
   terminalFontSize: number;
@@ -116,6 +168,15 @@ interface AppStore {
   paneNames: Record<number, Record<number, string>>;
   paneCwds: Record<string, string>;  // keyed by "t{tabIdx}p{paneIdx}"
   setPaneCwd: (paneId: string, cwd: string) => void;
+  // Per-pane flag: this pane has had `claude` running at some point this
+  // session. Persisted so that on next launch the pane can auto-resume the
+  // CLI (with `--continue`) instead of dropping the user back at a bare
+  // bash prompt (#36). Set by TerminalView when OSC 100 "run" fires.
+  paneWasClaude: Record<string, boolean>;
+  /** Live agent/terminal pane count (transient, not persisted) — drives the >10 easter egg (#365). */
+  liveAgents: number;
+  bumpLiveAgents: (delta: number) => void;
+  setPaneWasClaude: (paneId: string, on: boolean) => void;
   paneInitCmds: Record<string, string>; // transient — NOT persisted
   setPaneInitCmd: (paneId: string, cmd: string) => void;
   // Resolved startup-prompt document per pane (transient — NOT persisted).
@@ -139,6 +200,34 @@ interface AppStore {
   // Disabled panes (keyed by "t{tabIdx}p{paneIdx}") — terminal unmounted + PTY killed.
   disabledPanes: Record<string, boolean>;
   setPaneDisabled: (paneId: string, disabled: boolean) => void;
+  // Role-scoped capability per pane (#219) — transient. When set, the session's
+  // command allowlist is narrowed at launch (a planner can't run git/gh writes).
+  // Absent ⇒ unrestricted (current behavior). Set by the planning/fleet assignment.
+  paneRoles: Record<string, SessionRole>;
+  /** Drive mode for each launched director pane (#366) — read by useDirectorPump. */
+  paneDirectorDrive: Record<string, DirectorDrive>;
+  /** Each worker pane's repo + branch (#373) — lets useCiWatcher map a PR back to it. */
+  paneStream: Record<string, { repo: string; branch: string }>;
+  setPaneRole: (paneId: string, role: SessionRole) => void;
+  // Agents (#255) — editable permission profiles + their per-pane assignment, both
+  // persisted. A pane's assigned profile is applied to its session at launch (the
+  // same gate as paneRoles). Absent ⇒ no profile (unrestricted beyond the role gate).
+  agentProfiles: AgentProfile[];
+  setAgentProfiles: (profiles: AgentProfile[]) => void;
+  updateAgentProfile: (id: string, patch: Partial<AgentProfile>) => void;
+  paneProfiles: Record<string, string>;
+  // Worker write boundary: the stream's owned globs, fed to the role gate as
+  // writeGlobs so a worker auto-approves edits within its lane (bsc-confine bounds the repo).
+  paneRoleGlobs: Record<string, string[]>;
+  // Per-pane `owner/name` repo binding (#158), set at fleet/triage launch. TerminalView
+  // resolves the pane's GH_TOKEN from this via tokenForRepo: a repo with an assigned
+  // fine-grained credential gets that token (scoping its gh/git to that repo), otherwise
+  // the global PAT. Absent (director, ad-hoc console) ⇒ global token. Persisted so a
+  // restored session keeps its scope.
+  paneRepos: Record<string, string>;
+  /** Per-agent flow (#297) for each pane, seeded at fleet launch from the stream. */
+  paneFlows: Record<string, AgentFlow>;
+  setPaneProfile: (paneId: string, profileId: string | null) => void;
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
   closeTab: (idx: number) => void;
@@ -157,12 +246,17 @@ interface AppStore {
   // GitHub
   githubConnected: boolean;
   githubToken: string;
+  // Repo-scoped GitHub credentials (#158): per-`owner/name` fine-grained token. When
+  // set, a request targeting that repo uses it instead of the global PAT, so a session
+  // can't act on other repos via the proxy. Persisted (Tauri store), never logged.
+  repoGithubTokens: Record<string, string>;
+  setRepoGithubToken: (repo: string, token: string | null) => void;
   githubUser: GithubUser | null;
   githubRepos: GithubRepo[];
   activeRepoName: string;
   githubPageMode: "summary" | "repos";
   setGithubPageMode: (v: "summary" | "repos") => void;
-  githubActiveTab: "overview" | "actions" | "hooks";
+  githubActiveTab: "overview" | "actions";
   setGithubTab: (tab: AppStore["githubActiveTab"]) => void;
   setGithubToken: (token: string) => void;
   setGithubUser: (user: GithubUser | null) => void;
@@ -179,6 +273,14 @@ interface AppStore {
   // Settings
   settingsSection: string;
   setSettingsSection: (section: string) => void;
+
+  // Mobile tunnel (#243). The relay Worker URL is persisted (the user's BYO relay);
+  // `tunnelRunning` mirrors the Rust client's connected state (transient — NOT
+  // persisted) so ConsoleScreen knows whether to push live pane metadata.
+  tunnelRelayUrl: string;
+  setTunnelRelayUrl: (url: string) => void;
+  tunnelRunning: boolean;
+  setTunnelRunning: (v: boolean) => void;
 
   // Knowledge Store
   kbBlocks: KbBlock[];
@@ -201,6 +303,16 @@ interface AppStore {
   updateCommand: (id: string, patch: Partial<Command>) => void;
   removeCommand: (id: string) => void;
 
+  // Scheduled automations (#142) — the real, fired-on-a-tick model (a frontend
+  // scheduler ticks and dispatches via pty_write). Distinct from the legacy
+  // `schedules`/`commands` above, which are planner-suggested and read by Planning.
+  automations: Automation[];
+  addAutomation: (input: Omit<Automation, "id" | "lastRunAt" | "nextRunAt" | "runs">) => void;
+  updateAutomation: (id: string, patch: Partial<Automation>) => void;
+  removeAutomation: (id: string) => void;
+  setAutomationArmed: (id: string, armed: boolean) => void;
+  recordAutomationRun: (id: string, run: AutomationRun) => void;
+
   // Projects (transient)
   projectsPageMode: "summary" | "projects";
   setProjectsPageMode: (v: "summary" | "projects") => void;
@@ -219,6 +331,13 @@ interface AppStore {
   // planning session key — the title — and the GitHub id), plus the active-project
   // meta if it matches. Pairs with the backend delete_project_dir for the on-disk hub.
   deleteLocalProject: (keys: string[]) => void;
+  /** New, not-yet-published projects (drafts, #379). Keyed by the planning session key
+   *  (a unique `sanitize(title)-<id>` so a re-used title never inherits stale files). */
+  localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number }>;
+  addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number }) => void;
+  removeDraftProject: (key: string) => void;
+  // Dev reset: clears all project/plan-scoped state (keeps auth, profiles, UI).
+  resetProjectData: () => void;
   // GitHub project ids the user removed in-app (persisted). The Projects list is
   // re-fetched from GitHub on every sync, so without this a deleted-but-still-
   // returned project (closed, delete denied, or stale) would reappear. The list
@@ -244,8 +363,8 @@ interface AppStore {
   // navigating from a project's "documents" button. Transient — NOT persisted.
   kbProjectScope: { keys: string[]; label: string } | null;
   setKbProjectScope: (scope: { keys: string[]; label: string } | null) => void;
-  projectsBoardTab: "board" | "roadmap" | "issues" | "insights";
-  setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights") => void;
+  projectsBoardTab: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination" | "pipelines";
+  setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination" | "pipelines") => void;
   projectsDrawerIssue: number | null;
   setProjectsDrawerIssue: (n: number | null) => void;
   planningPitch: string;
@@ -259,6 +378,13 @@ interface AppStore {
   // can move the working directory out from under an active session.
   planningSessionKey: string;
   setPlanningSession: (key: string) => void;
+  // Links a GitHub Project node id to the stable folder/data key (the title
+  // slug the plan files were written under). A project opened from the board
+  // only sets `activeProjectId` (the node id); this lets the planning resolver
+  // find where the plan data actually lives instead of falling through to the
+  // node id and rendering an empty pane. First-write-wins (see setActiveProjectMeta).
+  projectKeyAlias: Record<string, string>;
+  setProjectKeyAlias: (nodeId: string, key: string) => void;
   // Repository resolution — base dir is `~/.base-studio-code` (the base); repo
   // clone paths are derived as `<base>/projects/<key>/<repo>`.
   bscBaseDir: string;
@@ -267,6 +393,18 @@ interface AppStore {
   addProjectRepo: (projectId: string, fullName: string) => void;
   triageStartProject: (projectName: string, repos: string[], projectId?: string) => void;
   findTriageTabIdx: (projectName: string) => number;
+  // Launch the agent fleet: a "· build" tab with the director (if enabled) at the
+  // project root and one worker pane per launched stream in its repo clone. Path
+  // keys off projectKey (the planning session key — where repos/prompts live).
+  fleetStartProject: (projectName: string, fleet: FleetPlan, projectKey: string) => void;
+  findFleetTabIdx: (projectName: string) => number;
+  // Coordination (#199 AC#7): paneId ("t{tab}p{pane}") → the AgentStream launched into
+  // it. The coordination log keys waiters/producers by PANE id (BSC_AUDIT_PANE), but a
+  // stream's produced contracts/issues/owned globs live on the stream by its slug. This
+  // map bridges the two so the inbox can build a producer resolver (buildProducerOf) and
+  // light up file/issue wait-for cycles. Written at fleet launch, persisted, global
+  // (pane ids are unique across all tabs). Only worker panes are recorded.
+  fleetPaneStreams: Record<string, AgentStream>;
 
   // Claude config profiles (persisted)
   configProfiles: ConfigProfile[];
@@ -286,6 +424,46 @@ interface AppStore {
   planAutomations:    Record<string, AutomationSuggestion[]>;
   addPlanAutomation:  (projectId: string, a: AutomationSuggestion) => void;
   clearPlanAutomations: (projectId: string) => void;
+  // Agent fleet — the parallel-execution plan (work streams + optional director +
+  // the optimal concurrent session count). Persisted per project.
+  planFleet:             Record<string, FleetPlan>;
+  setPlanFleet:          (projectId: string, fleet: FleetPlan) => void;       // wholesale (from fleet.json poll)
+  /** Per-project set of context-file names pinned in the project pane (overrides the
+   *  confirmed-section default). projectId -> pinned file names. */
+  pinnedContext:         Record<string, string[]>;
+  togglePinnedContext:   (projectId: string, name: string) => void;
+  addPlanAgentStream:    (projectId: string, stream: AgentStream) => void;    // merge-by-id (from inline tag)
+  removePlanAgentStream: (projectId: string, id: string) => void;
+  /** #289: assign an AgentProfile id to a stream (null clears). */
+  setPlanAgentStreamProfile: (projectId: string, streamId: string, profileId: string | null) => void;
+  /** #297: set one or more flow fields on a stream (merged into its resolved flow). */
+  setPlanAgentStreamFlow: (projectId: string, streamId: string, patch: Partial<AgentFlow>) => void;
+  /** Set a stream's per-capability permission posture from the project pane's agent
+   *  editor; also marks the stream's preset as "custom" (a hand-tuned posture). */
+  setPlanAgentStreamPerm: (projectId: string, streamId: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
+  /** Apply a named permission preset to a stream from the project pane: sets both
+   *  the preset name and the full per-capability posture it implies. */
+  setPlanAgentStreamPreset: (projectId: string, streamId: string, preset: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
+  /** #289: generate + assign a least-privilege profile for each unassigned stream,
+   *  scoped to that stream's resolved toolchain. Idempotent. */
+  generateFleetProfiles: (projectId: string) => void;
+  setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string) => void;
+  setPlanDirector:       (projectId: string, enabled: boolean, role?: string) => void;
+  setPlanDirectorDrive:  (projectId: string, drive: DirectorDrive) => void;
+  clearPlanFleet:        (projectId: string) => void;
+
+  // Extensions — MCP servers + hooks the user configures, each scoped via its
+  // `projects` ([] = global). Written into a launched session's .mcp.json /
+  // .claude/settings.json so the agent actually gets them. Persisted.
+  extensions: ExtensionDef[];
+  addExtension:          (def: Omit<ExtensionDef, "id">) => void;
+  updateExtension:       (id: string, patch: Partial<ExtensionDef>) => void;
+  removeExtension:       (id: string) => void;
+  toggleExtension:       (id: string) => void;
+  setExtensionProjects:  (id: string, projects: string[]) => void;
+  // Resolved per-pane extensions (transient): set at session creation, read by
+  // TerminalView before launch (mirrors paneAllowedCommands).
+  paneExtensions: Record<string, ExtensionDef[]>;
 
   // Agent settings — the GLOBAL allowed-command tier (auto-approved in every
   // session). Per-project / per-repo tiers below combine additively with it.
@@ -321,6 +499,72 @@ interface AppStore {
   // waiting in the focus queue (persisted; configured in Settings → Integrations).
   autoAdvanceOnReply: boolean;
   setAutoAdvanceOnReply: (v: boolean) => void;
+  // When true, panes that had claude running at last shutdown auto-relaunch
+  // it with --continue on next mount (persisted; configured in Settings →
+  // Integrations). Gated per pane by paneWasClaude — off by default for
+  // panes that never used claude (#36).
+  autoResumeClaude: boolean;
+  /** #199: auto-relaunch a parked pane when its deps land (opt-in; off by default). */
+  coordAutoWake: boolean;
+  setCoordAutoWake: (v: boolean) => void;
+  setAutoResumeClaude: (v: boolean) => void;
+}
+
+// (Re)mount a pipeline run's pane for its CURRENT stage (#220): a single-pane
+// `pipeline · <item>` tab whose pane is a fresh, role-scoped claude session seeded
+// with the stage prompt. A runId bump remounts it; the caller pty_kills first on a
+// relaunch so it spawns fresh. Terminal runs (done/escalated) just persist.
+// #174: promote a project's planning-assigned automations into the real scheduler on
+// launch. Idempotent (skips ones already present by name+command); scheduled (cron)
+// suggestions arm, on-demand ones are saved unarmed. Each fires into `targetTab`.
+function activateAutomations(s: AppStore, projectId: string, targetTab: string): Automation[] {
+  const suggestions = projectId ? s.planAutomations[projectId] ?? [] : [];
+  if (suggestions.length === 0) return [];
+  const have = new Set(s.automations.map((a) => `${a.name} ${a.command ?? ""}`));
+  const added: Automation[] = [];
+  for (const sug of suggestions) {
+    const k = `${sug.name} ${sug.command}`;
+    if (have.has(k)) continue;
+    have.add(k);
+    const input = suggestionToAutomation(sug, targetTab);
+    added.push({
+      ...input,
+      id: `auto_${Math.random().toString(36).slice(2, 8)}`,
+      lastRunAt: null,
+      nextRunAt: input.armed ? computeNextRun(input.when, Date.now()) : null,
+      runs: [],
+    });
+  }
+  return added;
+}
+
+function mountState(s: AppStore, item: string, run: PipelineRun) {
+  const launch = currentLaunch(run);
+  if (!launch) return { pipelineRuns: { ...s.pipelineRuns, [item]: run } };
+  const tabName = `pipeline · ${item}`;
+  const existingIdx = s.tabs.findIndex((tb) => tb.name === tabName);
+  const tabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
+  const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
+  const key = `t${tabIdx}p0`;
+  const cwd = s.activeProjectName ? projectHubCwd(s.bscBaseDir, s.activeProjectName) : "";
+  const newTab: Tab = { name: tabName, layout: "1×1", state: "idle", runId };
+  const tabs = existingIdx >= 0 ? s.tabs.map((tb, i) => (i === existingIdx ? newTab : tb)) : [...s.tabs, newTab];
+  const disabledPanes = { ...s.disabledPanes };
+  delete disabledPanes[key];
+  return {
+    tabs,
+    activeTabIdx: tabIdx,
+    activeScreen: "console" as Screen,
+    focusedPaneIdx: -1,
+    paneCwds: { ...s.paneCwds, [key]: cwd },
+    paneInitCmds: { ...s.paneInitCmds, [key]: "claude" },
+    paneStartupPromptText: { ...s.paneStartupPromptText, [key]: stagePrompt(launch, item) },
+    paneContinue: { ...s.paneContinue, [key]: false },
+    paneRoles: { ...s.paneRoles, [key]: launch.role },
+    paneNames: { ...s.paneNames, [tabIdx]: { 0: launch.stage } },
+    disabledPanes,
+    pipelineRuns: { ...s.pipelineRuns, [item]: run },
+  };
 }
 
 export const useAppStore = create<AppStore>()(
@@ -339,13 +583,13 @@ export const useAppStore = create<AppStore>()(
       consoleBroadcast: false,
       setConsoleBroadcast: (v) => set({ consoleBroadcast: v }),
       focusQueue: [],
-      enqueueFocus: (pane) =>
-        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, { tab: s.activeTabIdx, pane }) })),
-      removeFocus: (pane) =>
-        set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, { tab: s.activeTabIdx, pane }) })),
+      enqueueFocus: (tab, pane) =>
+        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, { tab, pane }) })),
+      removeFocus: (tab, pane) =>
+        set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, { tab, pane }) })),
       clearFocusQueue: () => set({ focusQueue: [] }),
-      reconcileFocusQueue: (waiting) =>
-        set((s) => ({ focusQueue: reconcileQueue(s.focusQueue, s.activeTabIdx, waiting) })),
+      reconcileFocusQueue: (waitingByTab) =>
+        set((s) => ({ focusQueue: reconcileQueue(s.focusQueue, waitingByTab) })),
       // Cycle to the next waiting pane relative to the one you're on (maximized
       // pane if maximized, else focused). Focuses it — switching to its tab first
       // when it lives on another tab — and swaps the maximized pane to it so you
@@ -375,6 +619,19 @@ export const useAppStore = create<AppStore>()(
       paneViews: [],
       paneNames: {},
       paneCwds: {},
+      paneWasClaude: {},
+  liveAgents: 0,
+  bumpLiveAgents: (delta) => set((s) => ({ liveAgents: Math.max(0, s.liveAgents + delta) })),
+      setPaneWasClaude: (paneId, on) =>
+        set((s) => {
+          const cur = s.paneWasClaude[paneId];
+          // Avoid producing a new object reference when nothing changed —
+          // OSC 100 "run" can fire many times in a session.
+          if (cur === on) return s;
+          const next = { ...s.paneWasClaude };
+          if (on) next[paneId] = true; else delete next[paneId];
+          return { paneWasClaude: next };
+        }),
       setPaneCwd: (paneId, cwd) =>
         set((s) => ({ paneCwds: { ...s.paneCwds, [paneId]: cwd } })),
       paneInitCmds: {},
@@ -390,6 +647,31 @@ export const useAppStore = create<AppStore>()(
           const next = { ...s.disabledPanes };
           if (disabled) next[paneId] = true; else delete next[paneId];
           return { disabledPanes: next };
+        }),
+      paneRoles: {},
+    paneDirectorDrive: {},
+    paneStream: {},
+      setPaneRole: (paneId, role) =>
+        set((s) => ({ paneRoles: { ...s.paneRoles, [paneId]: role } })),
+
+      // Agents (#255): seed the editable profiles from the built-in defaults; persisted
+      // edits replace this on rehydrate. Deep-cloned so edits never mutate the defaults.
+      agentProfiles: JSON.parse(JSON.stringify(PROFILES)) as AgentProfile[],
+      setAgentProfiles: (profiles) => set({ agentProfiles: profiles }),
+      updateAgentProfile: (id, patch) =>
+        set((s) => ({
+          agentProfiles: s.agentProfiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+        })),
+      paneProfiles: {},
+      paneRoleGlobs: {},
+      paneRepos: {},
+      paneFlows: {},
+      setPaneProfile: (paneId, profileId) =>
+        set((s) => {
+          const next = { ...s.paneProfiles };
+          if (profileId === null) delete next[paneId];
+          else next[paneId] = profileId;
+          return { paneProfiles: next };
         }),
       // Switching tabs clears focus/fullscreen/menu — these are positional and
       // global, so a stale index from the previous tab would mis-target features
@@ -469,6 +751,14 @@ export const useAppStore = create<AppStore>()(
 
       githubConnected: false,
       githubToken: "",
+      repoGithubTokens: {},
+      setRepoGithubToken: (repo, token) =>
+        set((s) => {
+          const next = { ...s.repoGithubTokens };
+          if (token && token.trim()) next[repo] = token.trim();
+          else delete next[repo];
+          return { repoGithubTokens: next };
+        }),
       githubUser: null,
       githubRepos: [],
       activeRepoName: "",
@@ -484,6 +774,7 @@ export const useAppStore = create<AppStore>()(
       disconnectGithub: () => set({
         githubConnected: false,
         githubToken: "",
+        repoGithubTokens: {},
         githubUser: null,
         githubRepos: [],
         activeRepoName: "",
@@ -498,6 +789,11 @@ export const useAppStore = create<AppStore>()(
 
       settingsSection: "github",
       setSettingsSection: (section) => set({ settingsSection: section }),
+
+      tunnelRelayUrl: "",
+      setTunnelRelayUrl: (url) => set({ tunnelRelayUrl: url }),
+      tunnelRunning: false,
+      setTunnelRunning: (v) => set({ tunnelRunning: v }),
 
       kbBlocks: [],
       claudeApiKey: "",
@@ -567,6 +863,43 @@ export const useAppStore = create<AppStore>()(
       removeCommand: (id) =>
         set((s) => ({ commands: s.commands.filter(c => c.id !== id) })),
 
+      automations: [],
+      addAutomation: (input) =>
+        set((s) => {
+          const id = `auto_${Math.random().toString(36).slice(2, 8)}`;
+          const nextRunAt = input.armed ? computeNextRun(input.when, Date.now()) : null;
+          const a: Automation = { ...input, id, lastRunAt: null, nextRunAt, runs: [] };
+          return { automations: [...s.automations, a] };
+        }),
+      updateAutomation: (id, patch) =>
+        set((s) => ({
+          automations: s.automations.map(a => {
+            if (a.id !== id) return a;
+            const next = { ...a, ...patch };
+            // Editing the trigger or arming re-derives the next fire time.
+            if ("when" in patch || "armed" in patch) {
+              next.nextRunAt = next.armed ? computeNextRun(next.when, Date.now()) : null;
+            }
+            return next;
+          }),
+        })),
+      removeAutomation: (id) =>
+        set((s) => ({ automations: s.automations.filter(a => a.id !== id) })),
+      setAutomationArmed: (id, armed) =>
+        set((s) => ({
+          automations: s.automations.map(a =>
+            a.id === id
+              ? { ...a, armed, nextRunAt: armed ? computeNextRun(a.when, Date.now()) : null }
+              : a),
+        })),
+      recordAutomationRun: (id, run) =>
+        set((s) => ({
+          automations: s.automations.map(a =>
+            a.id === id
+              ? { ...a, runs: appendRun(a.runs, run), lastRunAt: run.at, nextRunAt: computeNextRun(a.when, run.at) }
+              : a),
+        })),
+
       projectsPageMode: "summary",
       setProjectsPageMode: (v) => set({ projectsPageMode: v }),
       projectsView: "list",
@@ -578,10 +911,27 @@ export const useAppStore = create<AppStore>()(
       activeProjectNumber: 0,
       setActiveProject: (id) => set({ activeProjectId: id }),
       setActiveProjectMeta: (id, name, repo, number, repos = []) =>
-        set({ activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos }),
+        set((s) => ({
+          activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos,
+          // First-write-wins: bind the GitHub node id to the folder/data key (the
+          // title slug the plan files live under) so a board-path open resolves to
+          // real data, not the empty node-id key. Frozen on first sighting so a
+          // later GitHub rename can't clobber a working alias.
+          projectKeyAlias: id && name && !s.projectKeyAlias[id]
+            ? { ...s.projectKeyAlias, [id]: name }
+            : s.projectKeyAlias,
+        })),
       hiddenProjectIds: [],
       dismissProject: (id) =>
         set((s) => (!id || s.hiddenProjectIds.includes(id) ? {} : { hiddenProjectIds: [...s.hiddenProjectIds, id] })),
+      addDraftProject: (key, draft) =>
+        set((s) => ({ localDraftProjects: { ...s.localDraftProjects, [key]: draft } })),
+      removeDraftProject: (key) =>
+        set((s) => {
+          const next = { ...s.localDraftProjects };
+          delete next[key];
+          return { localDraftProjects: next };
+        }),
       deleteLocalProject: (keys) =>
         set((s) => {
           const keySet = new Set(keys.filter(Boolean));
@@ -597,8 +947,14 @@ export const useAppStore = create<AppStore>()(
             planConfirmedSections:  byKey(s.planConfirmedSections),
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
+            planFleet:              byKey(s.planFleet),
+            pinnedContext:          byKey(s.pinnedContext),
+            projectKeyAlias:        byKey(s.projectKeyAlias),
+            // Drop the deleted project id from every extension's scope list.
+            extensions:             s.extensions.map((e) => ({ ...e, projects: e.projects.filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             projectLocalRepos:      byKey(s.projectLocalRepos),
+        localDraftProjects:     byKey(s.localDraftProjects),
             projectAllowedCommands: byKey(s.projectAllowedCommands),
             repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
             repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
@@ -607,6 +963,18 @@ export const useAppStore = create<AppStore>()(
               ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], projectsView: "list" as const }
               : {}),
           };
+        }),
+      resetProjectData: () =>
+        set({
+          planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
+          planAutomations: {}, planFleet: {}, pinnedContext: {},
+          projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
+          projectKeyAlias: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
+          repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
+          activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
+          activeProjectNumber: 0, activeProjectRepos: [],
+          planningSessionKey: "", planningTitle: "", planningPitch: "",
+          planningRepo: "", projectsView: "list",
         }),
       setActiveProjectRepos: (repos) =>
         set((s) => ({ activeProjectRepos: repos, activeProjectRepo: repos[0] ?? s.activeProjectRepo })),
@@ -625,6 +993,43 @@ export const useAppStore = create<AppStore>()(
       setKbProjectScope: (scope) => set({ kbProjectScope: scope }),
       projectsBoardTab: "board",
       setProjectsBoardTab: (t) => set({ projectsBoardTab: t }),
+      wakePane: (paneId, prompt) => {
+        const m = /^t(\d+)p\d+$/.exec(paneId);
+        if (!m) return false;
+        const tabIdx = Number(m[1]);
+        let ok = false;
+        set((st) => {
+          if (tabIdx < 0 || tabIdx >= st.tabs.length || st.disabledPanes[paneId]) return {};
+          ok = true;
+          return {
+            paneStartupPromptText: { ...st.paneStartupPromptText, [paneId]: prompt },
+            paneContinue: { ...st.paneContinue, [paneId]: false },
+            tabs: st.tabs.map((t, i) => (i === tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
+          };
+        });
+        return ok;
+      },
+      fleetPaneStreams: {},
+      pipelineRuns: {},
+      pipelineStart: (presetKey, item) =>
+        set((s) => {
+          const pipeline = PIPELINE_PRESETS[presetKey];
+          const id = item.trim();
+          if (!pipeline || !id) return {};
+          return mountState(s, id, startRun(pipeline, id).run);
+        }),
+      pipelineClear: (item) =>
+        set((s) => {
+          const runs = { ...s.pipelineRuns };
+          delete runs[item];
+          return { pipelineRuns: runs };
+        }),
+      pipelineMount: (item) =>
+        set((s) => {
+          const run = s.pipelineRuns[item];
+          return run ? mountState(s, item, run) : {};
+        }),
+      pipelineSetRuns: (runs) => set({ pipelineRuns: runs }),
       projectsDrawerIssue: null,
       setProjectsDrawerIssue: (n) => set({ projectsDrawerIssue: n }),
       planningPitch: "",
@@ -634,9 +1039,15 @@ export const useAppStore = create<AppStore>()(
       setPlanningTitle: (title) => set({ planningTitle: title }),
       planningSessionKey: "",
       setPlanningSession: (key) => set({ planningSessionKey: key }),
+      projectKeyAlias: {},
+      setProjectKeyAlias: (nodeId, key) =>
+        set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
+          ? { projectKeyAlias: { ...s.projectKeyAlias, [nodeId]: key } }
+          : {})),
       bscBaseDir: "",
       setBscBaseDir: (dir) => set({ bscBaseDir: dir }),
       projectLocalRepos: {},
+      localDraftProjects: {},
       addProjectRepo: (projectId, fullName) =>
         set((s) => {
           const existing = s.projectLocalRepos[projectId] ?? [];
@@ -658,6 +1069,7 @@ export const useAppStore = create<AppStore>()(
           if (repos.length === 0) return {};
           const newTabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
           const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
+          const addedAutos = activateAutomations(s, projectId, tabName);
           const count = Math.min(repos.length, 16);
           const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
           const rows = Math.ceil(count / cols);
@@ -669,6 +1081,10 @@ export const useAppStore = create<AppStore>()(
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
+          const newPaneExtensions        = { ...s.paneExtensions };
+          const newPaneRoles             = { ...s.paneRoles };
+          const newPaneRepos             = { ...s.paneRepos };
+          const triageExts               = resolveExtensions(s.extensions, projectId);
           // Checkpoint docs live beside the repo clones, under the project-name
           // key (always present; projectId defaults to "" for ad-hoc triage).
           const projKey = sanitizeProjectKey(projectName);
@@ -714,11 +1130,17 @@ export const useAppStore = create<AppStore>()(
               // it via bsc-checkpoint; the next triage launch composes it onto the
               // prompt. Stable per (project, repo) so successive passes accumulate.
               newPaneCheckpointDocs[key] = checkpointDocRelpath(projKey, fullName ?? "");
+              newPaneExtensions[key] = triageExts;
+              newPaneRoles[key] = "triage";
+              // Bind the triage pane to its repo so its session GH_TOKEN is scoped to it
+              // (#158); a repo with an assigned credential triages with that token only.
+              if (fullName) newPaneRepos[key] = fullName;
               delete newDisabledPanes[key];
             } else {
               // Empty grid cell (more cells than repos) — start it disabled so it
               // doesn't spawn an idle shell or add rendering load.
               newDisabledPanes[key] = true;
+              delete newPaneRepos[key];
             }
           }
           const newTab: Tab = { name: `${projectName} · triage`, layout, state: "idle", runId };
@@ -737,8 +1159,191 @@ export const useAppStore = create<AppStore>()(
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneContinue: newPaneContinue,
             paneAllowedCommands: newPaneAllowedCommands,
+            paneExtensions: newPaneExtensions,
+            paneRoles: newPaneRoles,
+            paneRepos: newPaneRepos,
             disabledPanes: newDisabledPanes,
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
+            automations: [...s.automations, ...addedAutos],
+            activeScreen: "console" as Screen,
+          };
+        }),
+
+      findFleetTabIdx: (projectName) => {
+        const tabName = `${projectName} · build`;
+        return get().tabs.findIndex((t) => t.name === tabName);
+      },
+      fleetStartProject: (projectName, fleet, projectKey) =>
+        set((s) => {
+          // The fleet launches into "· build" tabs (plus "· build 2", "· build 3"…
+          // when it overflows a tab). A tab holds up to 16 panes (the 4×4 layout
+          // limit); there is no fleet-wide cap, so larger fleets spill into more tabs.
+          // Each (re-)launch rebuilds its tab(s) in place with a bumped runId (the
+          // caller kills the old panes first), like triageStartProject.
+          const baseTabName = `${projectName} · build`;
+          const hasDirector = fleet.director.enabled;
+          const newPaneDirectorDrive     = { ...s.paneDirectorDrive };
+          const newPaneStream            = { ...s.paneStream };
+
+          // Independents first so the launched wave is what can run now; the
+          // recommended count caps how many workers start (no 16 cap — we go multi-tab).
+          const ordered = [...fleet.streams].sort(
+            (a, b) => (a.dependsOn.length ? 1 : 0) - (b.dependsOn.length ? 1 : 0),
+          );
+          const rec = fleet.recommended > 0 ? fleet.recommended : ordered.length;
+          const workerCount = Math.min(ordered.length, Math.max(ordered.length ? 1 : 0, rec));
+          const workers = ordered.slice(0, workerCount);
+
+          // Flat session list, chunked into tabs of ≤16. `null` marks the director slot.
+          const sessions: (AgentStream | null)[] = [...(hasDirector ? [null] : []), ...workers];
+          if (sessions.length === 0) return {};
+
+          const CAP = 16;
+          const numTabs = Math.ceil(sessions.length / CAP);
+
+          const newPaneCwds              = { ...s.paneCwds };
+          const newPaneInitCmds          = { ...s.paneInitCmds };
+          const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
+          const newPaneStartupPromptText = { ...s.paneStartupPromptText };
+          const newPaneContinue          = { ...s.paneContinue };
+          const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
+          const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
+          const newPaneExtensions        = { ...s.paneExtensions };
+          const newDisabledPanes         = { ...s.disabledPanes };
+          const newPaneNames             = { ...s.paneNames };
+          const newPaneRoles             = { ...s.paneRoles };
+          const newPaneProfiles             = { ...s.paneProfiles };
+          const newFleetPaneStreams      = { ...s.fleetPaneStreams };
+          const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
+          const newPaneRepos                = { ...s.paneRepos };
+          const newPaneFlows                = { ...s.paneFlows };
+
+          const safeKey = sanitizeProjectKey(projectKey);
+          const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
+          // Same resolved extensions for every pane — they share the project scope.
+          const fleetExts = resolveExtensions(s.extensions, projectKey);
+
+          let tabs = s.tabs;
+          let firstTabIdx = -1;
+
+          for (let t = 0; t < numTabs; t++) {
+            const chunk = sessions.slice(t * CAP, t * CAP + CAP);
+            const tabName = t === 0 ? baseTabName : `${baseTabName} ${t + 1}`;
+            const existingIdx = tabs.findIndex((tb) => tb.name === tabName);
+            const tabIdx = existingIdx >= 0 ? existingIdx : tabs.length;
+            if (firstTabIdx < 0) firstTabIdx = tabIdx;
+            const runId = existingIdx >= 0 ? (tabs[existingIdx].runId ?? 0) + 1 : 0;
+            // Resume only on re-run. Each worker has its OWN worktree (a distinct
+            // cwd), so `claude --continue` is unambiguous even for several agents in
+            // one repo — the old shared-cwd hazard is gone.
+            const resume = existingIdx >= 0;
+            const count = chunk.length;
+            const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
+            const rows = Math.ceil(count / cols);
+            const layout = `${cols}×${rows}`;
+            const paneCount = cols * rows;
+            const tabPaneNames: Record<number, string> = {};
+
+            for (let i = 0; i < paneCount; i++) {
+              const key = `t${tabIdx}p${i}`;
+              // Clear any stale wiring from a prior run of this slot.
+              delete newPaneStartupPromptText[key];
+              delete newPaneStartupPromptDocs[key];
+              delete newPaneCheckpointDocs[key];
+              delete newPaneExtensions[key];
+              delete newPaneRoles[key];
+              delete newPaneProfiles[key];
+              delete newFleetPaneStreams[key];
+              delete newPaneRoleGlobs[key];
+              delete newPaneRepos[key];
+              delete newPaneFlows[key];
+              delete newPaneDirectorDrive[key];
+              delete newPaneStream[key];
+              if (i < count) {
+                const sess = chunk[i];
+                if (sess === null) {
+                  // Director session at the project root — sees every repo + worktree.
+                  newPaneCwds[key]     = projectHubCwd(s.bscBaseDir, projectKey);
+                  newPaneInitCmds[key] = "claude";
+                  newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
+                  newPaneAllowedCommands[key] = projectCmds;
+                  newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
+                  tabPaneNames[i] = "director";
+                  newPaneDirectorDrive[key] = resolveDirectorDrive(fleet.director.drive);
+                } else {
+                  // Worker runs in its own git worktree on its own branch.
+                  newPaneCwds[key]     = agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
+                  newPaneInitCmds[key] = "claude";
+                  if (sess.prompt) {
+                    newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
+                  } else {
+                    newPaneStartupPromptText[key] = buildStreamPrompt(sess);
+                  }
+                  newPaneAllowedCommands[key] = resolveAllowedCommands(
+                    s.allowedCommands,
+                    s.projectAllowedCommands[projectKey],
+                    s.repoAllowedCommands[repoPromptKey(projectKey, sess.repo)],
+                  );
+                  // Per-agent checkpoint doc (keyed by stream id) so each agent keeps
+                  // its own "where we left off" note.
+                  newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
+                  newPaneStream[key] = { repo: sess.repo, branch: worktreeSlug(sess.id) };
+                  tabPaneNames[i] = sess.name;
+                  // Bridge pane id → stream so the coordinator can resolve which pane
+                  // produces a contract/issue/file (#199 AC#7).
+                  newFleetPaneStreams[key] = sess;
+                }
+                newPaneContinue[key] = resume;
+                newPaneExtensions[key] = fleetExts;
+                newPaneRoles[key] = sess === null ? "director" : "worker";
+                // Bind the worker pane to its repo so its session GH_TOKEN is scoped to
+                // it (#158). The director spans every repo, so it keeps the global token.
+                if (sess && sess.repo) newPaneRepos[key] = sess.repo;
+                if (sess && sess.profile) newPaneProfiles[key] = sess.profile;
+                // The worker's owned paths become its role write boundary so edits in
+                // its lane auto-approve (dir/ -> dir/** so the subtree matches).
+                if (sess && sess.owns.length) newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
+                if (sess && sess.flow) newPaneFlows[key] = sess.flow;
+                delete newDisabledPanes[key];
+              } else {
+                // Empty grid cell — start disabled so it doesn't spawn an idle shell.
+                newDisabledPanes[key] = true;
+              }
+            }
+
+            const newTab: Tab = { name: tabName, layout, state: "idle", runId };
+            tabs = existingIdx >= 0
+              ? tabs.map((tb, i) => (i === existingIdx ? newTab : tb))
+              : [...tabs, newTab];
+            newPaneNames[tabIdx] = tabPaneNames;
+          }
+
+          const addedAutos = activateAutomations(s, s.activeProjectId ?? "", baseTabName);
+          return {
+            tabs,
+            activeTabIdx: firstTabIdx,
+            automations: [...s.automations, ...addedAutos],
+            focusedPaneIdx: -1,
+            fullscreenPaneIdx: -1,
+            paneMenuOpenIdx: -1,
+            paneCwds: newPaneCwds,
+            paneInitCmds: newPaneInitCmds,
+            paneStartupPromptDocs: newPaneStartupPromptDocs,
+            paneStartupPromptText: newPaneStartupPromptText,
+            paneContinue: newPaneContinue,
+            paneCheckpointDocs: newPaneCheckpointDocs,
+            paneAllowedCommands: newPaneAllowedCommands,
+            paneExtensions: newPaneExtensions,
+            paneRoles: newPaneRoles,
+            paneProfiles: newPaneProfiles,
+            fleetPaneStreams: newFleetPaneStreams,
+            paneRoleGlobs: newPaneRoleGlobs,
+            paneRepos: newPaneRepos,
+            paneFlows: newPaneFlows,
+            paneDirectorDrive: newPaneDirectorDrive,
+            paneStream: newPaneStream,
+            disabledPanes: newDisabledPanes,
+            paneNames: newPaneNames,
             activeScreen: "console" as Screen,
           };
         }),
@@ -806,6 +1411,128 @@ export const useAppStore = create<AppStore>()(
       clearPlanAutomations: (projectId) =>
         set((s) => ({ planAutomations: { ...s.planAutomations, [projectId]: [] } })),
 
+      planFleet: {},
+      pinnedContext: {},
+      togglePinnedContext: (projectId, name) =>
+        set((s) => {
+          const cur = s.pinnedContext[projectId] ?? [];
+          const next = cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name];
+          return { pinnedContext: { ...s.pinnedContext, [projectId]: next } };
+        }),
+      setPlanFleet: (projectId, fleet) =>
+        set((s) => ({ planFleet: { ...s.planFleet, [projectId]: fleet } })),
+      addPlanAgentStream: (projectId, stream) =>
+        set((s) => {
+          const cur = s.planFleet[projectId] ?? emptyFleet();
+          // Merge by id so re-emitted tags refine an existing stream in place.
+          const streams = cur.streams.some((x) => x.id === stream.id)
+            ? cur.streams.map((x) => (x.id === stream.id ? stream : x))
+            : [...cur.streams, stream];
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      removePlanAgentStream: (projectId, id) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams: cur.streams.filter((x) => x.id !== id) } } };
+        }),
+      setPlanAgentStreamProfile: (projectId, streamId, profileId) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) => (x.id === streamId ? { ...x, profile: profileId ?? undefined } : x));
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      setPlanAgentStreamFlow: (projectId, streamId, patch) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, flow: normalizeFlow({ ...resolveFlow(x.flow), ...patch }) } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      setPlanAgentStreamPerm: (projectId, streamId, perm) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, perm: { ...perm }, preset: "custom" } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      setPlanAgentStreamPreset: (projectId, streamId, preset, perm) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, preset, perm: { ...perm } } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      generateFleetProfiles: (projectId) =>
+        set((s) => {
+          const fleet = s.planFleet[projectId];
+          if (!fleet) return {};
+          const profiles = [...s.agentProfiles];
+          const byId = new Set(profiles.map((pr) => pr.id));
+          const streams = fleet.streams.map((stream) => {
+            // Skip only if the stream already points at a profile that EXISTS. A
+            // dangling reference (the planner assigned an id we never created) is
+            // materialized here, keeping the assigned id so the reference stays stable.
+            if (stream.profile && byId.has(stream.profile)) return stream;
+            const commands = resolveAllowedCommands(
+              s.allowedCommands,
+              s.projectAllowedCommands[projectId],
+              s.repoAllowedCommands[repoPromptKey(projectId, stream.repo)],
+            );
+            const gen = generateAgentProfile(stream, "worker", commands);
+            const id = stream.profile || gen.id;
+            if (!byId.has(id)) { profiles.push({ ...gen, id }); byId.add(id); }
+            return { ...stream, profile: id };
+          });
+          return { agentProfiles: profiles, planFleet: { ...s.planFleet, [projectId]: { ...fleet, streams } } };
+        }),
+      setPlanFleetMeta: (projectId, recommended, reasoning) =>
+        set((s) => {
+          const cur = s.planFleet[projectId] ?? emptyFleet();
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, recommended, reasoning } } };
+        }),
+      setPlanDirector: (projectId, enabled, role) =>
+        set((s) => {
+          const cur = s.planFleet[projectId] ?? emptyFleet();
+          return {
+            planFleet: {
+              ...s.planFleet,
+              [projectId]: { ...cur, director: { enabled, role: role ?? cur.director.role, drive: cur.director.drive } },
+            },
+          };
+        }),
+      setPlanDirectorDrive: (projectId, drive) =>
+        set((s) => {
+          const cur = s.planFleet[projectId] ?? emptyFleet();
+          return {
+            planFleet: {
+              ...s.planFleet,
+              [projectId]: { ...cur, director: { ...cur.director, drive } },
+            },
+          };
+        }),
+      clearPlanFleet: (projectId) =>
+        set((s) => ({ planFleet: { ...s.planFleet, [projectId]: emptyFleet() } })),
+
+      extensions: [],
+      addExtension: (def) =>
+        set((s) => ({
+          extensions: [...s.extensions, { ...def, id: `ext_${Math.random().toString(36).slice(2, 8)}` }],
+        })),
+      updateExtension: (id, patch) =>
+        set((s) => ({ extensions: s.extensions.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
+      removeExtension: (id) =>
+        set((s) => ({ extensions: s.extensions.filter((e) => e.id !== id) })),
+      toggleExtension: (id) =>
+        set((s) => ({ extensions: s.extensions.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)) })),
+      setExtensionProjects: (id, projects) =>
+        set((s) => ({ extensions: s.extensions.map((e) => (e.id === id ? { ...e, projects } : e)) })),
+      paneExtensions: {},
+
       allowedCommands: [],
       addAllowedCommand: (cmd) =>
         set((s) => ({
@@ -866,6 +1593,11 @@ export const useAppStore = create<AppStore>()(
 
       autoAdvanceOnReply: true,
       setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v }),
+
+      autoResumeClaude: true,
+      setAutoResumeClaude: (v) => set({ autoResumeClaude: v }),
+      coordAutoWake: false,
+      setCoordAutoWake: (v) => set({ coordAutoWake: v }),
     }),
     {
       name: "app-state",
@@ -879,25 +1611,42 @@ export const useAppStore = create<AppStore>()(
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
         paneCwds:        s.paneCwds,
+        paneWasClaude:   s.paneWasClaude,
+        paneDirectorDrive: s.paneDirectorDrive,
+        paneStream: s.paneStream,
         disabledPanes:   s.disabledPanes,
         githubConnected: s.githubConnected,
         githubToken:     s.githubToken,
+        repoGithubTokens: s.repoGithubTokens,
         githubUser:      s.githubUser,
         githubRepos:     s.githubRepos,
         activeRepoName:  s.activeRepoName,
         githubActiveTab: s.githubActiveTab,
         automationsTab:  s.automationsTab,
         settingsSection: s.settingsSection,
+        tunnelRelayUrl:  s.tunnelRelayUrl,
+        agentProfiles:   s.agentProfiles,
+        paneProfiles:    s.paneProfiles,
+        paneRoleGlobs:   s.paneRoleGlobs,
+        paneRepos:       s.paneRepos,
+        paneFlows:       s.paneFlows,
         kbBlocks:        s.kbBlocks,
         claudeApiKey:    s.claudeApiKey,
         schedules:            s.schedules,
         commands:             s.commands,
+        automations:          s.automations,
         allowedCommands:      s.allowedCommands,
         deniedCommands:       s.deniedCommands,
         projectAllowedCommands: s.projectAllowedCommands,
         repoAllowedCommands:    s.repoAllowedCommands,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
+        autoResumeClaude:     s.autoResumeClaude,
+        coordAutoWake:        s.coordAutoWake,
+        fleetPaneStreams:     s.fleetPaneStreams,
+        pipelineRuns:         s.pipelineRuns,
         projectLocalRepos:    s.projectLocalRepos,
+        localDraftProjects:   s.localDraftProjects,
+        projectKeyAlias:      s.projectKeyAlias,
         hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
         projectStartupPromptDoc: s.projectStartupPromptDoc,
@@ -908,6 +1657,9 @@ export const useAppStore = create<AppStore>()(
         planConfirmedSections: s.planConfirmedSections,
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
+        planFleet:             s.planFleet,
+        pinnedContext:         s.pinnedContext,
+        extensions:            s.extensions,
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint

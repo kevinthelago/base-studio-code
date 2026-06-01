@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { sanitizeProjectKey, projectRepoCwd } from "../../lib/projectPaths";
-import { Dialog } from "../../components/Dialog";
 
 /** Mirror of the Rust sanitize_project_key: ASCII alnum/dash kept, else `_`, capped 80. */
 const sanitizeKey = sanitizeProjectKey;
@@ -21,6 +20,9 @@ const TABS = [
   { k: "roadmap",  label: "Roadmap",  hint: "milestones over time" },
   { k: "issues",   label: "Issues",   hint: "flat list · filter & sort" },
   { k: "insights", label: "Insights", hint: "velocity · burndown" },
+  { k: "hooks",    label: "Hooks",    hint: "git hooks · per repo" },
+  { k: "coordination", label: "Coordination", hint: "blocked sessions · #199" },
+  { k: "pipelines", label: "Pipelines", hint: "staged work-item lifecycle · #220" },
 ] as const;
 
 type BoardTab = typeof TABS[number]["k"];
@@ -200,9 +202,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 }
 
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
-  const { projectsBoardTab, setProjectsBoardTab, setProjectsView, setPlanningContext, setPlanningSession, triageStartProject, findTriageTabIdx, setActiveTab, setScreen, setKbProjectScope } = useAppStore();
-  const [triaging, setTriaging] = useState(false);
-  const [rerunOpen, setRerunOpen] = useState(false);
+  const { projectsBoardTab, setProjectsBoardTab, setProjectsView, setPlanningContext, setPlanningSession, setScreen, setKbProjectScope } = useAppStore();
 
   // Open the Knowledge Base scoped to this project's documents, keyed by the
   // canonical (title-derived) folder the planner writes to. We intentionally do
@@ -210,59 +210,6 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   function handleViewDocuments() {
     setKbProjectScope({ keys: [sanitizeKey(project.name)], label: project.name });
     setScreen("knowledge");
-  }
-
-  async function launchTriage() {
-    setTriaging(true);
-    try {
-      // Clone every linked repo into the app-managed directory (idempotent).
-      await Promise.all(
-        project.repos.map(fullName =>
-          invoke<string>("clone_repo", { project: project.name, fullName })
-            .then(() => useAppStore.getState().addProjectRepo(project.id, fullName))
-            .catch(e => console.error(`clone ${fullName} failed:`, e)),
-        ),
-      );
-      triageStartProject(project.name, project.repos, project.id);
-    } catch (e) {
-      console.error("triage setup failed:", e);
-    } finally {
-      setTriaging(false);
-    }
-  }
-
-  function handleTriage() {
-    if (!project.repos.length || triaging) return;
-    // A triage tab already exists → confirm whether to re-run or just open it
-    // (pressing triage used to silently switch, which read as "nothing happened").
-    if (findTriageTabIdx(project.name) >= 0) {
-      setRerunOpen(true);
-      return;
-    }
-    launchTriage();
-  }
-
-  // Open the existing triage tab without re-running.
-  function openExistingTriage() {
-    setRerunOpen(false);
-    const idx = findTriageTabIdx(project.name);
-    if (idx >= 0) { setActiveTab(idx); setScreen("console"); }
-  }
-
-  // Re-run triage on the existing tab: kill the panes' sessions so the rebuilt
-  // (runId-bumped) tab relaunches each repo's pass fresh — resuming via --continue
-  // and the per-repo checkpoint.
-  async function rerunTriage() {
-    setRerunOpen(false);
-    const idx = findTriageTabIdx(project.name);
-    if (idx < 0) return;
-    const [cols, rows] = (useAppStore.getState().tabs[idx].layout).split("×").map(Number);
-    await Promise.all(
-      Array.from({ length: cols * rows }, (_, i) =>
-        invoke("pty_kill", { paneId: `t${idx}p${i}` }).catch(() => {}),
-      ),
-    );
-    triageStartProject(project.name, project.repos, project.id);
   }
 
   function handlePlan() {
@@ -317,33 +264,10 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
             onClick={handlePlan}
             style={{ fontFamily: "var(--mono)", fontSize: 11 }}
           >⌘ plan →</button>
-          <button
-            className="btn primary"
-            onClick={handleTriage}
-            disabled={triaging || project.repos.length === 0}
-            title={project.repos.length === 0 ? "no repos linked to this project" : undefined}
-            style={{ fontFamily: "var(--mono)", fontSize: 11 }}
-          >{triaging ? "setting up…" : "⚡ triage"}</button>
         </div>
       </div>
 
       <RepoResolverStrip project={project} />
-
-      {rerunOpen && (
-        <Dialog
-          title="Re-run triage?"
-          onDismiss={() => setRerunOpen(false)}
-          actions={
-            <>
-              <button className="btn ghost" onClick={openExistingTriage}>Open existing</button>
-              <button className="btn primary" onClick={rerunTriage}>Re-run triage</button>
-            </>
-          }
-        >
-          A triage tab for <strong>{project.name}</strong> is already open. Re-running
-          relaunches each repo's triage pass, resuming where the last pass left off.
-        </Dialog>
-      )}
 
       <div style={{
         height: 36, marginTop: 8,

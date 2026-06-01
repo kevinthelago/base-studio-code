@@ -1,14 +1,14 @@
 import { useAppStore } from "../../store";
+import { useDragResize } from "../../hooks/useDragResize";
 import { GitHubEmpty } from "./Empty";
 import { OverviewBody } from "./Overview";
 import { ActionsBody } from "./Actions";
-import { HooksBody } from "./Hooks";
 import { GitHubSummary, GitHubPageModeStrip } from "./GitHubSummary";
 
+// (Git hooks moved to the Projects board, where a project+repo maps to a real clone — #265.)
 const PAGE_TABS = [
   { k: "overview", label: "Overview", hint: "branches · commits · PRs"    },
   { k: "actions",  label: "Actions",  hint: "workflow files & recent runs" },
-  { k: "hooks",    label: "Hooks",    hint: "pre-commit · pre-push · etc." },
 ] as const;
 
 type TabKey = typeof PAGE_TABS[number]["k"];
@@ -70,6 +70,11 @@ export function GitHubScreen() {
     disconnectGithub,
   } = useAppStore();
 
+  // Drag-resizable repo sidebar (mirrors the Knowledge Store / planning splitters).
+  // The sidebar sits before the handle, so the panel grows as the pointer moves right
+  // (no invert). Widening gives long `owner/name`s room before they truncate.
+  const sidebar = useDragResize({ initial: 220, min: 160, max: 460, axis: "x" });
+
   if (!githubConnected) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -94,7 +99,7 @@ export function GitHubScreen() {
       }}>
         {/* Repo sidebar */}
         <aside style={{
-          width: 220, flex: "0 0 220px", background: "var(--bg-panel)",
+          width: sidebar.size, flex: `0 0 ${sidebar.size}px`, background: "var(--bg-panel)",
           borderRight: "1px solid var(--border-soft)", padding: "14px 8px",
           display: "flex", flexDirection: "column", gap: 2, overflow: "auto",
         }}>
@@ -138,9 +143,8 @@ export function GitHubScreen() {
                     fontFamily: "var(--mono)", fontSize: 11,
                     color: on ? "var(--fg)" : "var(--fg-muted)",
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    maxWidth: 140,
+                    flex: 1, minWidth: 0,
                   }}>{r.full_name}</span>
-                  <span style={{ flex: 1 }} />
                   <span className="tag" style={{ fontSize: 9.5 }}>{langTag(r.language)}</span>
                 </div>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 4, display: "flex", gap: 8 }}>
@@ -151,6 +155,8 @@ export function GitHubScreen() {
             );
           })}
         </aside>
+
+        <div className="resize-x" {...sidebar.handleProps} title="Drag to resize" />
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
           {activeRepo && (
@@ -184,7 +190,6 @@ export function GitHubScreen() {
           <section style={{ flex: 1, overflow: "auto", padding: "18px 22px", minWidth: 0 }}>
             {githubActiveTab === "overview" && <OverviewBody repo={activeRepo} />}
             {githubActiveTab === "actions"  && <ActionsBody repo={activeRepo} />}
-            {githubActiveTab === "hooks"    && <HooksBody />}
           </section>
         </div>
       </div>

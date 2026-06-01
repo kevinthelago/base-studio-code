@@ -3,6 +3,8 @@ import { GitHubSettings } from "./GitHub";
 import { IntegrationsSettings } from "./Integrations";
 import { AgentsSettings } from "./Agents";
 import { ClaudeConfigSettings } from "./ClaudeConfig";
+import { TunnelSettings } from "./Tunnel";
+import { DeveloperSettings } from "./Developer";
 
 const NAV_ITEMS = [
   { k: "general",       label: "General"        },
@@ -10,9 +12,11 @@ const NAV_ITEMS = [
   { k: "integrations",  label: "Integrations"    },
   { k: "agents",        label: "Agents"          },
   { k: "claude-config", label: "Claude Config"   },
+  { k: "tunnel",        label: "Mobile Tunnel"   },
   { k: "appearance",    label: "Appearance"      },
   { k: "keyboard",      label: "Keyboard"        },
   { k: "advanced",      label: "Advanced"        },
+  { k: "developer",     label: "Developer"       },
 ];
 
 export function SettingsScreen() {
@@ -49,7 +53,9 @@ export function SettingsScreen() {
           {settingsSection === "integrations"  && <IntegrationsSettings />}
           {settingsSection === "agents"        && <AgentsSettings />}
           {settingsSection === "claude-config" && <ClaudeConfigSettings />}
-          {settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && (
+          {settingsSection === "tunnel"        && <TunnelSettings />}
+          {settingsSection === "developer"    && <DeveloperSettings />}
+          {settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && settingsSection !== "tunnel" && settingsSection !== "developer" && (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               height: "100%", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)",

@@ -24,3 +24,41 @@ serde_json = "1"
 reqwest = { version = "0.12", features = ["json"] }
 portable-pty = "0.8"
 rfd = "0.14"
+
+# Mobile tunnel (#242): the desktop ⇄ mobile bridge runs over a zero-knowledge
+# relay (#241), end-to-end encrypted with Noise IK so the relay only ever sees
+# ciphertext. `snow` is the Noise implementation (pure-Rust default resolver — no
+# system crypto toolchain); `tokio` runs the relay client; `tokio-tungstenite`
+# dials the relay over real (CA-signed) TLS via rustls + webpki roots; `base64`
+# encodes the static public key for the pairing QR; `rand` mints room ids + PSKs.
+snow = "0.9"
+base64 = "0.22"
+rand = "0.8"
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "time", "net", "io-util"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+# rustls 0.23 won't auto-select a CryptoProvider at runtime unless its provider
+# feature is pinned, so the relay dial's first TLS handshake panics the tunnel
+# thread. Pin `ring` and install it as the process default at startup (lib.rs `run`).
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
+# Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any
+# grandchildren) dies with the session on pty_kill / app exit. portable-pty calls
+# `setsid()` in the spawned shell, so the shell leads a process group whose pgid ==
+# its pid; `killpg(pgid, SIGKILL)` reaches every descendant that didn't re-setsid.
+# Without it, `portable_pty::Child::kill()` only terminates the immediate shell and
+# leaves `claude` (and any `gh`/`git` it spawned) orphaned, holding cwd locks.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# Windows-only: Job Object APIs so a PTY's whole process tree (shell + claude +
+# any grandchildren) dies with the session on pty_kill / app exit. Without this,
+# `portable_pty::Child::kill()` only terminates the immediate shell and leaves
+# `claude` (and any `gh`/`git` it spawned) orphaned, holding cwd locks.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }

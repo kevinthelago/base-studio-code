@@ -5,8 +5,11 @@ import {
   orderProjectKeys,
   groupSections,
   parseSkipped,
+  parseFleetFile,
   KNOWN_DIMENSIONS,
   SKIPPED_KEY,
+  FLEET_KEY,
+  parseReposFile,
 } from "../screens/projects/planSections";
 
 describe("parseSectionKey", () => {
@@ -132,5 +135,78 @@ describe("KNOWN_DIMENSIONS", () => {
   it("has unique keys", () => {
     const keys = KNOWN_DIMENSIONS.map(d => d.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("groupSections excludes the fleet config", () => {
+  it("does not surface the fleet key as a renderable section", () => {
+    const { project, repos } = groupSections(["goal", FLEET_KEY, "phases"]);
+    expect(project).toEqual(["goal", "phases"]);
+    expect(repos).toEqual([]);
+  });
+});
+
+describe("parseFleetFile", () => {
+  it("parses a full fleet, defaulting list fields", () => {
+    const raw = JSON.stringify({
+      recommended: 3,
+      reasoning: "three independent areas",
+      director: { enabled: true, role: "integrator" },
+      streams: [
+        { id: "auth-ui", name: "Auth UI", repo: "own/web", owns: ["src/auth/**"], issues: ["#1", "#2"], dependsOn: [], prompt: "prompts/auth-ui-kickoff.md" },
+        { id: "api", repo: "own/api" },
+      ],
+    });
+    expect(parseFleetFile(raw)).toEqual({
+      recommended: 3,
+      reasoning: "three independent areas",
+      director: { enabled: true, role: "integrator", drive: "event" },
+      streams: [
+        { id: "auth-ui", name: "Auth UI", repo: "own/web", owns: ["src/auth/**"], issues: ["#1", "#2"], dependsOn: [], prompt: "prompts/auth-ui-kickoff.md" },
+        { id: "api", name: "api", repo: "own/api", owns: [], issues: [], dependsOn: [], prompt: undefined },
+      ],
+    });
+  });
+
+  it("drops streams missing id or repo", () => {
+    const raw = JSON.stringify({ streams: [{ name: "no id", repo: "own/web" }, { id: "no-repo" }, { id: "ok", repo: "own/api" }] });
+    expect(parseFleetFile(raw)?.streams.map(s => s.id)).toEqual(["ok"]);
+  });
+
+  it("accepts depends_on as an alias and coerces a string recommended", () => {
+    const raw = JSON.stringify({
+      recommended: "2",
+      director: { enabled: "true" },
+      streams: [{ id: "b", repo: "o/r", depends_on: ["a"] }],
+    });
+    const fleet = parseFleetFile(raw)!;
+    expect(fleet.recommended).toBe(2);
+    expect(fleet.director.enabled).toBe(true);
+    expect(fleet.streams[0].dependsOn).toEqual(["a"]);
+  });
+
+  it("returns null for blank or malformed input", () => {
+    expect(parseFleetFile("")).toBeNull();
+    expect(parseFleetFile("   ")).toBeNull();
+    expect(parseFleetFile("{not json")).toBeNull();
+    expect(parseFleetFile("[1,2,3]")).toBeNull();
+  });
+});
+
+
+describe("parseReposFile (#378)", () => {
+  it("parses a bare JSON array of owner/repo", () => {
+    expect(parseReposFile('["acme/web","acme/api"]')).toEqual(["acme/web", "acme/api"]);
+  });
+  it("accepts a { repos: [...] } wrapper and dedupes + trims", () => {
+    expect(parseReposFile('{"repos":[" acme/web ","acme/web","acme/api"]}')).toEqual(["acme/web", "acme/api"]);
+  });
+  it("ignores non-owner/repo strings and non-strings", () => {
+    expect(parseReposFile('["acme/web","notarepo",42,null]')).toEqual(["acme/web"]);
+  });
+  it("returns [] for blank or malformed input", () => {
+    expect(parseReposFile("")).toEqual([]);
+    expect(parseReposFile("   ")).toEqual([]);
+    expect(parseReposFile("{not json")).toEqual([]);
   });
 });

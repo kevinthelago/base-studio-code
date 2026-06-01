@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>base-studio-code · project pane redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<link rel="stylesheet" href="pp.css"/>
+<style>
+  html, body { margin:0; height:100%; background:#16181c; }
+  body { font-family:"Inter", -apple-system, system-ui, sans-serif; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="pp-data.jsx"></script>
+<script type="text/babel" src="pp-agents.jsx"></script>
+<script type="text/babel" src="pp-repo.jsx"></script>
+<script type="text/babel" src="pp-github.jsx"></script>
+<script type="text/babel" src="pp-context.jsx"></script>
+<script type="text/babel" src="pp-merged.jsx"></script>
+<script type="text/babel" src="pp-assembled.jsx"></script>
+
+<script type="text/babel">
+const { DesignCanvas, DCSection, DCArtboard, DCPostIt } = window;
+
+// Panel-variant frame — wraps each variant in a realistic pane column.
+function PV({ title, letter, note, children }) {
+  return (
+    <div style={{height:"100%", background:"var(--bg-panel)", color:"var(--fg)",
+      display:"flex", flexDirection:"column", fontFamily:"var(--sans)"}}>
+      <div style={{flex:"0 0 auto", padding:"9px 12px", borderBottom:"1px solid var(--border-soft)",
+        background:"var(--bg-elev)", display:"flex", alignItems:"center", gap:8}}>
+        <span style={{width:18, height:18, borderRadius:5,
+          background:"color-mix(in oklch, var(--accent), transparent 82%)",
+          border:"1px solid var(--accent-dim)", color:"var(--accent)",
+          fontFamily:"var(--mono)", fontSize:10, fontWeight:700,
+          display:"flex", alignItems:"center", justifyContent:"center"}}>{letter}</span>
+        <span style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--fg)",
+          textTransform:"uppercase", letterSpacing:".06em"}}>{title}</span>
+        <span style={{flex:1}}/>
+        {note && <span style={{fontFamily:"var(--mono)", fontSize:9, color:"var(--fg-dim)"}}>{note}</span>}
+      </div>
+      <div style={{flex:1, minHeight:0, overflow:"auto", padding:"12px"}}>{children}</div>
+    </div>
+  );
+}
+
+const W = 400;
+
+const Canvas = (
+  <DesignCanvas>
+
+    <DCSection id="agents" title="A · Agents / Permissions"
+      subtitle="The hero. Fleet at a glance (role · repo · owns · posture + flow) and drill into ONE agent for the full per-capability Allow/Ask/Deny editor + flow. Each frame shows one agent drilled in.">
+      <DCArtboard id="agents-a" label="A1 · Roster rows + inline editor" width={W} height={900}>
+        <PV title="Agents · Permissions" letter="A" note="roster · expand in place">
+          <AgentsA/>
+        </PV>
+      </DCArtboard>
+      <DCArtboard id="agents-b" label="A2 · Posture matrix (who-can-do-what) + bulk" width={W} height={900}>
+        <PV title="Agents · Permissions" letter="B" note="matrix · 6×7 + select">
+          <AgentsB/>
+        </PV>
+      </DCArtboard>
+      <DCArtboard id="agents-c" label="A3 · Cards grouped by role → drill-in" width={W} height={1040}>
+        <PV title="Agents · Permissions" letter="C" note="by role · drill-in">
+          <AgentsC/>
+        </PV>
+      </DCArtboard>
+    </DCSection>
+
+    <DCSection id="repo" title="B · Repository (planning)"
+      subtitle="On the planning page this isn't a file tree — it's the work the project will create per repo: milestones → epics → issues → sub-issues, and the branches each lands on. Spans 2 repos.">
+      <DCArtboard id="repo-a" label="B1 · Repo → work tree (issue → sub-issue)" width={W} height={760}>
+        <PV title="Repository" letter="A" note="work tree"><RepoA/></PV>
+      </DCArtboard>
+      <DCArtboard id="repo-b" label="B2 · Branch lanes (branch = delivery)" width={W} height={760}>
+        <PV title="Repository" letter="B" note="branch lanes"><RepoB/></PV>
+      </DCArtboard>
+      <DCArtboard id="repo-c" label="B3 · Issue cards + sub-issue checklists" width={W} height={760}>
+        <PV title="Repository" letter="C" note="define the work"><RepoC/></PV>
+      </DCArtboard>
+    </DCSection>
+
+    <DCSection id="github" title="C · GitHub Structure"
+      subtitle="milestone → epic → issue with progress, state, ownership (which agent owns each issue), and the per-issue contract: acceptance · owned files · deps.">
+      <DCArtboard id="gh-a" label="C1 · Nested collapsible tree" width={W} height={460}>
+        <PV title="GitHub Structure" letter="A" note="nested tree"><GithubA/></PV>
+      </DCArtboard>
+      <DCArtboard id="gh-b" label="C2 · Milestone cards + epic chips" width={W} height={560}>
+        <PV title="GitHub Structure" letter="B" note="cards + contract"><GithubB/></PV>
+      </DCArtboard>
+      <DCArtboard id="gh-c" label="C3 · Path-to-done spine" width={W} height={720}>
+        <PV title="GitHub Structure" letter="C" note="spine + contract"><GithubC/></PV>
+      </DCArtboard>
+    </DCSection>
+
+    <DCSection id="context" title="D · Context Files"
+      subtitle="The plan / spec / CLAUDE / knowledge blocks fed to agents — pinned-to-context vs the available library.">
+      <DCArtboard id="ctx-a" label="D1 · Pinned vs Library" width={W} height={420}>
+        <PV title="Context Files" letter="A" note="pinned / library"><ContextA/></PV>
+      </DCArtboard>
+      <DCArtboard id="ctx-b" label="D2 · Token-budget, grouped by kind" width={W} height={420}>
+        <PV title="Context Files" letter="B" note="budget meter"><ContextB/></PV>
+      </DCArtboard>
+      <DCArtboard id="ctx-c" label="D3 · By scope (Global→Project→Repo)" width={W} height={420}>
+        <PV title="Context Files" letter="C" note="scope resolution"><ContextC/></PV>
+      </DCArtboard>
+    </DCSection>
+
+    <DCSection id="merged" title="E · Repository × Structure (merged)"
+      subtitle="Folding GitHub Structure into Repository — one section that owns repos + milestones + epics + issues + sub-issues + branches. Three framings to compare.">
+      <DCArtboard id="merged-a" label="E1 · Repo-first tree (rollup → milestone → issue)" width={W} height={900}>
+        <PV title="Repository" letter="A" note="repo-first tree"><MergedA/></PV>
+      </DCArtboard>
+      <DCArtboard id="merged-b" label="E2 · Switcher + milestone rollup + issue cards" width={W} height={900}>
+        <PV title="Repository" letter="B" note="rollup + cards"><MergedB/></PV>
+      </DCArtboard>
+      <DCArtboard id="merged-c" label="E3 · Milestone-first plan (repo = tag)" width={W} height={820}>
+        <PV title="Repository" letter="C" note="plan-first"><MergedC/></PV>
+      </DCArtboard>
+    </DCSection>
+
+    <DCSection id="assembled" title="★ Recommended composition"
+      subtitle="The full pane, calmest variant of each panel, in the operator's reading order: where (repo) → who (agents) → path (structure) → context. Sections collapse; @framer shown drilled in.">
+      <DCArtboard id="assembled" label="Project pane · assembled (scrolls)" width={W} height={1340}>
+        <AssembledPane/>
+      </DCArtboard>
+    </DCSection>
+
+    <DCPostIt top={34} left={34} rotate={-3} width={272}>
+      REDESIGN SCOPE — only the right-hand
+      planning-page pane. Built on the existing
+      studio.css tokens (warm graphite, amber
+      accent, Inter / JetBrains Mono) + the
+      collapsible-section + tree rhythm. Sample
+      data is honest: 2 repos, 6 agents of mixed
+      roles, 2 milestones · 3 epics · 6 issues.
+    </DCPostIt>
+
+    <DCPostIt top={34} left={332} rotate={2} width={290}>
+      WHY THESE PICKS — Roster rows (A) for agents:
+      calmest, scales to 16+, posture+flow read at a
+      glance, drill-in editor in place. Matrix (B) is
+      the better "who-can-do-what" audit view — keep it
+      as a toggle. Repo switcher (A) is tightest for a
+      narrow pane. GitHub nested tree (A) keeps the tree
+      styling you already have. Context pinned/library (A)
+      is the honest default; budget meter (B) for power users.
+    </DCPostIt>
+
+  </DesignCanvas>
+);
+
+ReactDOM.createRoot(document.getElementById("root")).render(Canvas);
+</script>
+</body>
+</html>
