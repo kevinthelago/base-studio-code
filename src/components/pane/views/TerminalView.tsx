@@ -136,6 +136,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     termRef.current = term;
     fitRef.current  = fitAddon;
     bumpTerminals(1);
+    useAppStore.getState().bumpLiveAgents(1);
 
     // Renderer is xterm's default (DOM/canvas). The WebGL addon was tried
     // (PR #182, toward #52) but produced ghost-cursor flickering with claude's
@@ -480,6 +481,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // (live) terminal would otherwise never open (#190 regression follow-up).
       openedRef.current = false;
       bumpTerminals(-1);
+      useAppStore.getState().bumpLiveAgents(-1);
       // PTY session intentionally kept alive — reconnects on remount (tab switch).
       // Sessions are cleaned up explicitly when a tab is closed (pty_kill).
     };
