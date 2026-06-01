@@ -1216,3 +1216,19 @@ describe("extensions store", () => {
     expect(ids).toEqual(["g", "p"]);
   });
 });
+
+
+describe("draft projects (#379)", () => {
+  it("adds, removes, and delete-purges a draft", () => {
+    const st = () => useAppStore.getState();
+    st().addDraftProject("acme-x1", { title: "Acme", pitch: "build it", createdAt: 1 });
+    expect(st().localDraftProjects["acme-x1"]).toMatchObject({ title: "Acme", pitch: "build it" });
+    st().addDraftProject("acme-x2", { title: "Acme 2", pitch: "", createdAt: 2 });
+    st().removeDraftProject("acme-x1");
+    expect(st().localDraftProjects["acme-x1"]).toBeUndefined();
+    expect(st().localDraftProjects["acme-x2"]).toBeDefined();
+    // deleteLocalProject also purges the draft entry (cleanup)
+    st().deleteLocalProject(["acme-x2"]);
+    expect(st().localDraftProjects["acme-x2"]).toBeUndefined();
+  });
+});
