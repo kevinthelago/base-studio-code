@@ -9,6 +9,7 @@ import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { actuateWake } from "../../lib/coordinatorActuate";
+import { heartbeatDirectorPrompt } from "./directorDrive";
 import {
   ingestCoordLog, coordinationSummary, wakePromptFor, waitingWakePrompt, emptyCoordState,
   type BlockedView, type Waiter, type CoordState, type WaitingSession,
@@ -67,6 +68,14 @@ export function CoordinatorInbox() {
     }
   }, [wakePane]);
 
+  const directorPanes = useAppStore((s) => s.paneDirectorDrive);
+  const handlePoke = useCallback(() => {
+    const prompt = heartbeatDirectorPrompt();
+    for (const paneId of Object.keys(directorPanes)) {
+      void invoke("pty_write", { paneId, data: prompt + "\r" }).catch(() => {});
+    }
+  }, [directorPanes]);
+
   const stalled = views.filter((v) => v.stalled).length;
   const nothing = ready.length === 0 && views.length === 0 && state.waiting.length === 0;
 
@@ -80,6 +89,16 @@ export function CoordinatorInbox() {
         {state.waiting.length > 0 && <span className="tag" style={{ color: "var(--accent)" }}>{state.waiting.length} paused</span>}
         {views.length > 0 && <span className="tag">{views.length} blocked</span>}
         {stalled > 0 && <span className="tag" style={{ color: "var(--danger)" }}>{stalled} stalled</span>}
+        {Object.keys(directorPanes).length > 0 && (
+          <button
+            className="btn ghost"
+            style={{ height: 22, fontSize: 10.5, color: "var(--fg-muted)" }}
+            onClick={handlePoke}
+            title="Re-prompt the director session now to sweep the fleet (review/merge PRs, unblock workers). Useful when the director drive is set to manual."
+          >
+            poke director
+          </button>
+        )}
         <button
           className="btn ghost"
           style={{ height: 22, fontSize: 10.5, color: coordAutoWake ? "var(--accent)" : "var(--fg-muted)" }}
