@@ -55,10 +55,35 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # WINDOWS-SIGNING (enable post-procurement, #108): once the Azure Trusted
+      # Signing secrets exist and tauri.conf.json has `bundle.windows.signCommand`,
+      # uncomment to sign the .exe/.msi during bundling. Kept disabled so unsigned
+      # CI builds don't fail for a missing cert. See docs/release-signing.md.
+      # - name: Azure Trusted Signing (Windows)
+      #   if: matrix.platform == 'windows-latest'
+      #   uses: azure/trusted-signing-action@v0
+      #   with:
+      #     azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+      #     endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+      #     trusted-signing-account-name: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+      #     certificate-profile-name: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing + notarization (#119). tauri-action signs/notarizes only
+          # when APPLE_SIGNING_IDENTITY is non-empty, so empty secrets ⇒ an unsigned
+          # macOS build instead of a pipeline failure. Populate the six secrets
+          # (docs/release-signing.md) to turn signing on with no code change.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'base-studio-code ${{ github.ref_name }}'
@@ -72,6 +97,9 @@ jobs:
             | Linux | `.deb` or `.AppImage` |
 
             See the assets below.
+          # Auto-generate the changelog from PRs merged since the previous tag
+          # (#121); the Downloads table above is pre-pended to those notes.
+          generateReleaseNotes: true
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
