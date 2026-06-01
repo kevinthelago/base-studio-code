@@ -10,6 +10,7 @@
 // `bsc-blocked --on` -> register, the director's merge/close -> satisfy, and waking the
 // parked pane -- lands on top of it in later slices. `failed` is deliberately NOT a
 // satisfy: dependents stay blocked and surface as a stalled chain (finished != succeeded).
+import { matchGlob } from "./sessionRoles";
 
 /** A structured dependency target -- what a session is blocked *on*, or what landed. */
 export type CoordRef =
@@ -373,9 +374,10 @@ export function isFreshlyReady(w: Waiter, s: CoordState, now: number, windowMs: 
 // To build the wait-for graph we need to know which session is expected to satisfy a dep.
 // A `session:<id>` dep names that producer directly (id -> that session). Other ref kinds
 // (#issue, contract:, file:, predicate:) carry no producer in the log today, so they yield
-// NO edge under the default resolver -- zero false positives. When the plan's
-// Produces/Consumes edges are wired (#199 AC#7), pass a richer `producerOf` and the same
-// algorithm lights up for contract/issue cycles too. Pure (no IO) so it's fully testable.
+// NO edge under the default resolver -- zero false positives. Pass a plan-derived resolver
+// from {@link buildProducerOf} (fed by the fleet's Produces/Consumes + issue/file ownership)
+// and the same algorithm lights up for contract/issue/file cycles too (#199 AC#7). Pure (no
+// IO) so it's fully testable.
 
 /** Resolves which session is expected to satisfy a dep ref, or undefined if unknown. */
 export type ProducerOf = (ref: CoordRef) => string | undefined;
@@ -384,6 +386,65 @@ export type ProducerOf = (ref: CoordRef) => string | undefined;
  *  kinds are unknown until plan-derived Produces/Consumes is supplied (#199 AC#7). */
 export function defaultProducerOf(ref: CoordRef): string | undefined {
   return ref.kind === "session" ? ref.id : undefined;
+}
+
+/** One session's declared outputs -- the plan-derived data a {@link ProducerOf} is built
+ *  from. The fields mirror what the planner already carries: `contracts` are
+ *  `FeatureContract.produces[].name`, `issues` are `AgentStream.issues`, and `owns` are
+ *  `AgentStream.owns` (file globs). `session` is the producing session id -- the SAME id
+ *  space as a waiter's `session` and a `session:<id>` ref (the launched pane id), so the
+ *  resolved edges land on real parked waiters. */
+export interface SessionProduces {
+  /** Producing session id (pane id) -- must match the waiter ids edges connect to. */
+  session: string;
+  /** Contract names it produces (resolves `contract:<name>` deps). */
+  contracts?: string[];
+  /** Issue refs it owns -- `#42`, `42`, or a number (resolves `#issue` deps). */
+  issues?: (string | number)[];
+  /** File globs it owns -- `src/lib/**` (resolves `file:<path>` deps via glob match). */
+  owns?: string[];
+}
+
+/** Parse an issue ref (`#42`, `42`, or `42`) into its number, or undefined if not one. */
+function issueNumber(ref: string | number): number | undefined {
+  const n = typeof ref === "number" ? ref : Number(String(ref).trim().replace(/^#/, ""));
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * Build a {@link ProducerOf} from the plan's Produces/Consumes data (#199 AC#7): each
+ * session declares the contracts, issues, and file globs it produces, and the resolver
+ * maps a dep ref back to the session expected to satisfy it. This is what lights up
+ * contract/issue/file wait-for cycles in {@link detectDeadlocks} — not just `session:`
+ * ones (which it still resolves, like {@link defaultProducerOf}).
+ *
+ * First declaration wins on a collision (a contract/issue should have exactly one
+ * producer; the planning critic rejects duplicate `produces`). Predicate deps never
+ * resolve to a producer (no session "produces" a predicate). Pure.
+ */
+export function buildProducerOf(producers: SessionProduces[]): ProducerOf {
+  const byContract = new Map<string, string>();
+  const byIssue = new Map<number, string>();
+  const fileOwners: { glob: string; session: string }[] = [];
+  for (const p of producers) {
+    for (const name of p.contracts ?? []) {
+      if (name && !byContract.has(name)) byContract.set(name, p.session);
+    }
+    for (const ref of p.issues ?? []) {
+      const n = issueNumber(ref);
+      if (n !== undefined && !byIssue.has(n)) byIssue.set(n, p.session);
+    }
+    for (const glob of p.owns ?? []) if (glob) fileOwners.push({ glob, session: p.session });
+  }
+  return (ref) => {
+    switch (ref.kind) {
+      case "session": return ref.id;
+      case "contract": return byContract.get(ref.name);
+      case "issue": return byIssue.get(ref.number);
+      case "file": return fileOwners.find((o) => matchGlob(o.glob, ref.path))?.session;
+      case "predicate": return undefined;
+    }
+  };
 }
 
 /** A detected wait-for cycle: the parked sessions that mutually block, in ring order.

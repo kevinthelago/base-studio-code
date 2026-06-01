@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
-  type Waiter, type CoordRef, type ProducerOf,
+  type Waiter, type CoordRef,
   emptyCoordState, refKey, parseRef, isSatisfied, isReady,
   registerWaiter, satisfy, fail, stalledWaiters,
   parseCoordLine, applyCoordEvent, ingestCoordLog,
   wakePromptFor, planWakes, coordinationSummary,
   readinessAt, isFreshlyReady,
-  detectDeadlocks, hasDeadlock, defaultProducerOf,
+  detectDeadlocks, hasDeadlock, defaultProducerOf, buildProducerOf,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -398,8 +398,10 @@ describe("cycle / deadlock detection", () => {
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
     };
-    const producerOf: ProducerOf = (ref) =>
-      refKey(ref) === "contract:Y" ? "B" : refKey(ref) === "#1" ? "A" : undefined;
+    const producerOf = buildProducerOf([
+      { session: "A", issues: ["#1"] },
+      { session: "B", contracts: ["Y"] },
+    ]);
     const cycles = detectDeadlocks(s, producerOf);
     expect(cycles).toHaveLength(1);
     expect([...cycles[0].cycle].sort()).toEqual(["A", "B"]);
@@ -410,5 +412,67 @@ describe("cycle / deadlock detection", () => {
     const view = coordinationSummary(s);
     const byId = Object.fromEntries(view.map((v) => [v.session, v.deadlocked]));
     expect(byId).toEqual({ A: true, B: true, C: false });
+  });
+});
+
+describe("buildProducerOf — plan-derived resolver (#199 AC#7)", () => {
+  it("resolves contract / issue / file / session refs to their producing session", () => {
+    const p = buildProducerOf([
+      { session: "api", contracts: ["TunnelState"], issues: ["#12", 13], owns: ["src/lib/**"] },
+      { session: "ui", contracts: ["LoginView"], issues: ["#20"], owns: ["src/components/login/**"] },
+    ]);
+    expect(p({ kind: "contract", name: "TunnelState" })).toBe("api");
+    expect(p({ kind: "contract", name: "LoginView" })).toBe("ui");
+    expect(p({ kind: "issue", number: 12 })).toBe("api");
+    expect(p({ kind: "issue", number: 13 })).toBe("api");   // bare number issue ref
+    expect(p({ kind: "issue", number: 20 })).toBe("ui");
+    expect(p({ kind: "file", path: "src/lib/tunnel.ts" })).toBe("api");  // glob match
+    expect(p({ kind: "file", path: "src/components/login/Form.tsx" })).toBe("ui");
+    expect(p({ kind: "session", id: "whoever" })).toBe("whoever"); // session: still self-resolves
+  });
+
+  it("returns undefined for unknown refs and never resolves a predicate", () => {
+    const p = buildProducerOf([{ session: "api", contracts: ["X"], issues: ["#1"], owns: ["src/api/**"] }]);
+    expect(p({ kind: "contract", name: "Unmentioned" })).toBeUndefined();
+    expect(p({ kind: "issue", number: 999 })).toBeUndefined();
+    expect(p({ kind: "file", path: "docs/readme.md" })).toBeUndefined();
+    expect(p({ kind: "predicate", expr: "tests-pass" })).toBeUndefined();
+  });
+
+  it("first declaration wins on a duplicate contract/issue (one producer per ref)", () => {
+    const p = buildProducerOf([
+      { session: "first", contracts: ["Shared"], issues: ["#5"] },
+      { session: "second", contracts: ["Shared"], issues: ["#5"] },
+    ]);
+    expect(p({ kind: "contract", name: "Shared" })).toBe("first");
+    expect(p({ kind: "issue", number: 5 })).toBe("first");
+  });
+
+  it("tolerates malformed issue refs and empty/absent fields", () => {
+    const p = buildProducerOf([
+      { session: "a" },                                  // no fields
+      { session: "b", issues: ["#0", "#-1", "abc", ""], contracts: [""], owns: [""] },
+    ]);
+    expect(p({ kind: "issue", number: 0 })).toBeUndefined();
+    expect(p({ kind: "contract", name: "" })).toBeUndefined();
+    expect(p({ kind: "file", path: "" })).toBeUndefined();
+  });
+
+  it("drives detectDeadlocks for a file:/issue: wait-for ring (issue/file deps light up)", () => {
+    // A owns src/db/** and waits on file:src/api/x.ts; B owns src/api/** and waits on #1
+    // (which A produces) -> a real cross-kind ring that the default resolver misses.
+    const s = {
+      latches: {},
+      waiters: [
+        { session: "A", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
+        { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
+      ],
+    };
+    const producerOf = buildProducerOf([
+      { session: "A", issues: ["#1"], owns: ["src/db/**"] },
+      { session: "B", owns: ["src/api/**"] },
+    ]);
+    expect(detectDeadlocks(s, producerOf)).toHaveLength(1);
+    expect(detectDeadlocks(s)).toEqual([]);  // default resolver sees no edge -> no false alarm
   });
 });
