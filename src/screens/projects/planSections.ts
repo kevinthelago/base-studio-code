@@ -1,6 +1,7 @@
 import type { AgentFlow } from "./agentFlow";
 import { flowOrUndefined } from "./agentFlow";
 import { type DirectorDrive, normalizeDirectorDrive, DEFAULT_DIRECTOR_DRIVE } from "./directorDrive";
+import { type IntegrationStrategy, normalizeStrategy } from "./integrationStrategy";
 // Pure helpers for the dynamic, guided project planner.
 //
 // The planner no longer has a fixed list of sections. Claude documents whatever
@@ -72,6 +73,8 @@ export interface AgentStream {
   profile?: string;
   /** Per-agent execution flow (#297): autonomy + GitHub push policy. Unset ⇒ DEFAULT_FLOW at launch. */
   flow?: AgentFlow;
+  /** Per-stream integration-strategy override (#378). Unset ⇒ the fleet default. */
+  strategy?: IntegrationStrategy;
   /** Per-capability permission posture chosen in the project pane's agent editor.
    *  When present it overrides the profile-derived posture in the pane. */
   perm?: Record<string, "allow" | "ask" | "deny">;
@@ -91,6 +94,8 @@ export interface FleetPlan {
   reasoning: string;
   streams: AgentStream[];
   director: FleetDirector;
+  /** Project-default integration strategy (#378). Unset ⇒ DEFAULT_STRATEGY. */
+  strategy?: IntegrationStrategy;
 }
 
 /** An empty fleet — the default before the planner has designed one. */
@@ -339,6 +344,7 @@ export function parseFleetFile(raw: string): FleetPlan | null {
       perm: (so.perm && typeof so.perm === "object" && !Array.isArray(so.perm))
         ? (so.perm as Record<string, "allow" | "ask" | "deny">) : undefined,
       preset: typeof so.preset === "string" && so.preset.trim() ? so.preset.trim() : undefined,
+      strategy: normalizeStrategy(so.strategy),
     });
   }
 
@@ -355,5 +361,6 @@ export function parseFleetFile(raw: string): FleetPlan | null {
     reasoning: typeof o.reasoning === "string" ? o.reasoning : "",
     streams,
     director,
+    strategy: normalizeStrategy(o.strategy),
   };
 }

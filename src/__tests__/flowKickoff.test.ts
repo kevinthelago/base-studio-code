@@ -42,6 +42,18 @@ describe("flowKickoffText", () => {
     expect(flowKickoffText(flow({ autonomy: "checkpoint" }), "api").autonomy).toMatch(/bsc-wait/);
   });
 
+  it("self-merge tells the agent to rebase + push develop, land via bsc-landed, and not open a PR", () => {
+    const k = flowKickoffText(flow({ push: "self-merge" }), "api");
+    expect(k.push).toMatch(/rebase/i);
+    expect(k.push).toMatch(/develop/);
+    expect(k.push).toMatch(/push develop/i);
+    expect(k.push).toMatch(/bsc-landed/);
+    // The auto-pr instruction "open a PR to develop" must not appear (self-merge says do NOT open a PR).
+    expect(k.push).not.toMatch(/open a PR to develop/i);
+    expect(k.push).not.toMatch(/pull request/i);
+    expect(k.push).toMatch(/do NOT open a PR/);
+  });
+
   it("the trigger phrase varies the push sentence", () => {
     expect(flowKickoffText(flow({ trigger: "per-stage" }), "x").push).toMatch(/at each pipeline stage boundary/);
     expect(flowKickoffText(flow({ trigger: "on-green" }), "x").push).toMatch(/as soon as the checks pass/);

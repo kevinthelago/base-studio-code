@@ -5,6 +5,7 @@
 
 import type { AgentStream } from "./planSections";
 import { flowOrUndefined } from "./agentFlow";
+import { type IntegrationStrategy, normalizeStrategy } from "./integrationStrategy";
 
 // Quote-flexible class: straight ("), and curly (“ ”) so an LLM emitting smart
 // quotes doesn't silently break tag detection. Mirrors the other planner tags.
@@ -185,6 +186,7 @@ export function parseAgentAssigns(text: string): AgentStream[] {
         trigger:  tagAttr(attrs, "trigger")?.trim(),
         gate:     tagAttr(attrs, "gate")?.trim(),
       }),
+      strategy: normalizeStrategy(tagAttr(attrs, "strategy")?.trim()),
     });
   }
   return out;
@@ -201,6 +203,8 @@ export interface FleetMeta {
   reasoning: string;
   director: boolean;
   directorRole?: string;
+  /** Project-default integration strategy (#378). Unset ⇒ DEFAULT_STRATEGY downstream. */
+  strategy?: IntegrationStrategy;
 }
 
 const FLEET_PLAN_RE = () => /<fleet_plan\s+([^>]*?)\/?>/g;
@@ -224,6 +228,7 @@ export function parseFleetPlan(text: string): FleetMeta | null {
       reasoning: tagAttr(attrs, "reasoning")?.trim() ?? "",
       director: dir === "true" || dir === "yes" || dir === "1",
       directorRole: tagAttr(attrs, "director_role")?.trim() || undefined,
+      strategy: normalizeStrategy(tagAttr(attrs, "strategy")?.trim()),
     };
   }
   return last;
