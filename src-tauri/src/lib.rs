@@ -1265,6 +1265,9 @@ const BSC_DECISIONS_RC: &str = concat!(
     // bsc-blocked also accepts `--on <ref[,ref]>` (+ optional `--checkpoint <ref>`):
     // when present it appends a structured `blocked` event to $BSC_COORD_LOG (#199),
     // tagged with the pane id, alongside the human note. No --on => note only.
+    // A ref is `#42` | `contract:Name` | `file:path` | `predicate:expr` | `session:<paneId>`
+    // ("blocked until that pane finishes" — the form the runtime uses to detect wait-for
+    // cycles between sessions; see detectDeadlocks in src/lib/coordination.ts).
     r#"bsc-blocked() { on=""; cp=""; while [ $# -gt 0 ]; do case "$1" in --on) on="$2"; shift 2 ;; --checkpoint) cp="$2"; shift 2 ;; *) shift ;; esac; done; d="${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}"; mkdir -p "$(dirname "$d")" 2>/dev/null; m="$(cat)"; { printf '%s' '- BLOCKED: '; printf '%s' "$m"; [ -n "$on" ] && printf '%s' " (on $on)"; printf '\n'; } >> "$d"; l="${BSC_COORD_LOG:-}"; if [ -n "$on" ] && [ -n "$l" ]; then ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\tblocked\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$on" "$cp" >> "$l"; fi; }"#,
     "\n",
 );

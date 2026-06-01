@@ -1064,6 +1064,14 @@ describe("agent fleet store", () => {
 
     // empty grid cell starts disabled
     expect(st.disabledPanes["t3p3"]).toBe(true);
+
+    // fleetPaneStreams bridges pane id → stream for the coordinator (#199 AC#7):
+    // worker panes are recorded by their stream; the director + empty cells are not.
+    expect(st.fleetPaneStreams["t3p1"].id).toBe("auth-ui");
+    expect(st.fleetPaneStreams["t3p1"].owns).toEqual(["src/auth/**"]);
+    expect(st.fleetPaneStreams["t3p2"].id).toBe("api");
+    expect(st.fleetPaneStreams["t3p0"]).toBeUndefined(); // director pane
+    expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
   });
 
   it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
