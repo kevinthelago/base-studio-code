@@ -43,7 +43,7 @@ export function flowKickoffText(flow: AgentFlow | undefined, branch: string): Fl
       break;
     default: // continuous
       autonomy =
-        "Work autonomously and do not stop to ask: when something is underspecified, make the smallest reversible choice consistent with the plan goal and architecture, then record it by piping a one-line note into bsc-note on stdin. If you are genuinely blocked, pipe a one-line reason into bsc-blocked on stdin.";
+        "Work autonomously and do not stop to ask the user — not for direction, not for whether your work is done, and not for whether to open a PR (follow the push instruction below; the director reviews and merges). When something is underspecified, make the smallest reversible choice consistent with the plan goal and architecture and record it by piping a one-line note into bsc-note on stdin. When you genuinely need a decision you cannot make yourself, defer to the DIRECTOR rather than the user: pipe a one-line question into bsc-ask on stdin — it parks you and the director answers and resumes you automatically. For a dependency on another stream's unlanded work, pipe a one-line reason into bsc-blocked on stdin.";
   }
 
   let push: string;
