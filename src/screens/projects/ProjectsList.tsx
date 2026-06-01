@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useAppStore } from "../../store";
-import { sanitizeProjectKey } from "../../lib/projectPaths";
+import { sanitizeProjectKey, isKnownPublishedKey } from "../../lib/projectPaths";
 
 interface GhProject {
   id: string;
@@ -156,7 +156,7 @@ export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpe
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject } = useAppStore();
+  const { githubToken, activeScreen, setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -253,17 +253,23 @@ export function ProjectsList() {
     : null;
 
   async function handleStartPlanning() {
-    if (!titleTrimmed) return;
+    // Never start over — or delete the folder of — an existing project. The button is disabled
+    // on titleConflict, but the Enter-key handler isn't, so this guard is what actually stops a
+    // re-typed published-project name from wiping its plan (#380).
+    if (!titleTrimmed || titleConflict) return;
     // New project starts as a DRAFT (#379). The planning-dir id is the sanitized title — a
     // clean, stable folder name (no random suffix), so the folder and the project resolve the
-    // same regardless of how it is later reopened or published. Re-using a title means
-    // replacing an earlier *unpublished* draft (the start form blocks names already on GitHub —
-    // see titleConflict), so clear that draft's folder FIRST for a stale-free start. The delete
-    // is AWAITED so the planning launch's setup_workspaces can't race it and wipe the fresh dir.
+    // same regardless of how it is later reopened or published. Re-using a title replaces an
+    // earlier *unpublished* draft, so clear that draft's folder FIRST for a stale-free start.
     const draftKey = sanitizeProjectKey(titleTrimmed);
     removeDraftProject(draftKey);
     deleteLocalProject([draftKey]);
-    await invoke("delete_project_dir", { projectKey: draftKey }).catch(() => {});
+    // Belt-and-suspenders: never delete a folder that belongs to a project already published
+    // to GitHub (its node id is aliased to this name) — even if titleConflict missed it because
+    // the project list hadn't loaded. Only a genuinely unpublished draft's folder is cleared.
+    if (!isKnownPublishedKey(draftKey, projectKeyAlias)) {
+      await invoke("delete_project_dir", { projectKey: draftKey }).catch(() => {});
+    }
     setPlanningTitle(titleTrimmed);
     setPlanningContext(pitch.trim(), "");
     setActiveProjectMeta(null, "", "", 0);

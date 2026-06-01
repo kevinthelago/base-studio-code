@@ -236,3 +236,22 @@ describe("parseAgentAssigns — profile (#289)", () => {
     expect(parseAgentAssigns(noProf)[0].profile).toBeUndefined();
   });
 });
+
+describe("integration strategy (#378)", () => {
+  it("parses a stream's strategy attribute", () => {
+    const tag = '<agent_assign id="be" repo="o/api" owns="src/**" strategy="pr-ci" />';
+    expect(parseAgentAssigns(tag)[0].strategy).toBe("pr-ci");
+  });
+  it("leaves strategy undefined when absent or invalid", () => {
+    expect(parseAgentAssigns('<agent_assign id="x" repo="o/r" />')[0].strategy).toBeUndefined();
+    expect(parseAgentAssigns('<agent_assign id="x" repo="o/r" strategy="bogus" />')[0].strategy).toBeUndefined();
+  });
+  it("parses the fleet_plan strategy into the meta", () => {
+    const tag = '<fleet_plan recommended="2" director="true" strategy="self-merge" />';
+    expect(parseFleetPlan(tag)?.strategy).toBe("self-merge");
+  });
+  it("leaves fleet_plan strategy undefined when absent or invalid", () => {
+    expect(parseFleetPlan('<fleet_plan recommended="2" />')?.strategy).toBeUndefined();
+    expect(parseFleetPlan('<fleet_plan recommended="2" strategy="nope" />')?.strategy).toBeUndefined();
+  });
+});

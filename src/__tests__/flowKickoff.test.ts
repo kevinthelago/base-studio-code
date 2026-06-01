@@ -8,6 +8,9 @@ describe("flowKickoffText", () => {
   it("default flow (continuous + auto-pr) tells the agent to push + open a PR", () => {
     const k = flowKickoffText(undefined, "auth-ui");
     expect(k.autonomy).toMatch(/do not stop to ask/);
+    // #382: continuous autonomy no longer references the old PR-merge model.
+    expect(k.autonomy).not.toMatch(/the director reviews and merges/);
+    expect(k.autonomy).toMatch(/do not end your turn while any remain unintegrated/);
     expect(k.push).toMatch(/push it, and open a PR to develop/);
     expect(k.push).toContain("auth-ui");
   });
@@ -40,6 +43,20 @@ describe("flowKickoffText", () => {
   it("checkpoint autonomy pauses at stage/PR boundaries via bsc-checkpoint", () => {
     expect(flowKickoffText(flow({ autonomy: "checkpoint" }), "api").autonomy).toMatch(/bsc-checkpoint.*wait to be resumed/);
     expect(flowKickoffText(flow({ autonomy: "checkpoint" }), "api").autonomy).toMatch(/bsc-wait/);
+  });
+
+  it("self-merge tells the agent to rebase + push develop, land via bsc-landed, and not open a PR", () => {
+    const k = flowKickoffText(flow({ push: "self-merge" }), "api");
+    expect(k.push).toMatch(/rebase/i);
+    expect(k.push).toMatch(/develop/);
+    expect(k.push).toMatch(/push develop/i);
+    expect(k.push).toMatch(/bsc-landed/);
+    // The auto-pr instruction "open a PR to develop" must not appear (self-merge says do NOT open a PR).
+    expect(k.push).not.toMatch(/open a PR to develop/i);
+    expect(k.push).not.toMatch(/pull request/i);
+    expect(k.push).toMatch(/do NOT open a PR/);
+    // #382: self-merge workers must not stop while owned issues remain.
+    expect(k.push).toMatch(/do not stop/i);
   });
 
   it("the trigger phrase varies the push sentence", () => {
