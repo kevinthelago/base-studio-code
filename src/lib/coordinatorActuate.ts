@@ -14,3 +14,15 @@ export async function actuateWake(
   if (ok) await invoke("append_coord_woke", { session }).catch(() => {});
   return ok;
 }
+
+/**
+ * Deliver a wake to a LIVE (parked) session by injecting the prompt straight into its pane
+ * (#374) — instant, keeps the session's own context, and consistent with how the director
+ * pump + CI watcher deliver. Records the `woke` event so it isn't re-fired. This is the
+ * automatic path; the manual inbox button still uses actuateWake (a fresh relaunch).
+ */
+export async function injectWake(session: string, prompt: string): Promise<boolean> {
+  await invoke("pty_write", { paneId: session, data: prompt + "\r" }).catch(() => {});
+  await invoke("append_coord_woke", { session }).catch(() => {});
+  return true;
+}
