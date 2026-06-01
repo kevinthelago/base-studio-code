@@ -8,6 +8,7 @@ import {
   tunnelStop,
   tunnelStatus,
   tunnelSetInputGranted,
+  tunnelUnpair,
 } from "../../lib/tunnelClient";
 
 // A "Deploy to Cloudflare" link prefilled with the relay workspace, so a user can
@@ -71,6 +72,19 @@ export function TunnelSettings() {
       setBusy(false);
     }
   }, [status, sync]);
+
+  const onUnpair = useCallback(async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      sync(await tunnelUnpair());
+      setInputRequested(false);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [sync]);
 
   const onConnect = useCallback(async () => {
     setBusy(true);
@@ -195,6 +209,21 @@ export function TunnelSettings() {
                         : "The phone is view-only — keystrokes are dropped until you grant input."}
                 </div>
               </div>
+              {paired && (
+                <div className="field">
+                  <label>Paired device</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ flex: 1 }} />
+                    <button className="btn" disabled={busy} onClick={onUnpair}>
+                      unpair device
+                    </button>
+                  </div>
+                  <div className="hint">
+                    Drops the connected phone, rotates the room + pairing secret (the old QR
+                    stops working), and shows a fresh QR to pair again.
+                  </div>
+                </div>
+              )}
               <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10.5 }}>
                 The pairing secret is carried inside the QR only — never shown or logged.
               </div>

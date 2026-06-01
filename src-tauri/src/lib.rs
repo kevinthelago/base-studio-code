@@ -3540,6 +3540,7 @@ pub fn run() {
             tunnel::tunnel_stop,
             tunnel::tunnel_status,
             tunnel::tunnel_set_input_granted,
+            tunnel::tunnel_unpair,
             tunnel::tunnel_set_panes,
             tunnel::tunnel_set_sessions,
             read_audit_log,
