@@ -364,6 +364,91 @@ export function isFreshlyReady(w: Waiter, s: CoordState, now: number, windowMs: 
   return at > 0 && now - at < windowMs;
 }
 
+// -- Predicate-based readiness (#199 / #365) ------------------------------------
+// PR-merged / issue-closed have an authoritative emitter (the director), so they arrive
+// as explicit satisfy events. A `predicate:` dep does NOT -- "the symbol exists", "the
+// stub is implemented", "tests pass" has no one to emit it, so the coordinator POLLS it:
+// the host evaluates the predicate against the repo and, when it holds, the latch is set
+// (the third satisfy path). Kept pure -- the actual repo-checking lives in the injected
+// `evaluate`, so the readiness logic stays exhaustively unit-testable.
+
+/** A parsed `predicate:` expression -- the readiness checks the host evaluates against
+ *  the repo. The inner expr (after the `predicate:` prefix) carries an optional kind
+ *  prefix: `tests-pass`, `symbol:<Name>`, `file-exists:<path>`, `stub:<name>`; anything
+ *  else is a `custom` expr the host interprets. Lets the evaluator dispatch on kind. */
+export type Predicate =
+  | { kind: "tests-pass" }
+  | { kind: "symbol"; name: string }       // symbol:TunnelState -- a symbol exists in the tree
+  | { kind: "file-exists"; path: string }  // file-exists:src/lib/x.ts
+  | { kind: "stub"; name: string }         // stub:handleFoo -- a stub/impl landed
+  | { kind: "custom"; expr: string };      // anything else -- host-defined
+
+/** Parse a predicate's inner expr (the part after `predicate:`) into a typed {@link
+ *  Predicate}. Never throws -- an unrecognized/headless expr becomes `custom`. Pure. */
+export function parsePredicate(expr: string): Predicate {
+  const e = expr.trim();
+  if (e === "tests-pass" || e === "tests") return { kind: "tests-pass" };
+  const colon = e.indexOf(":");
+  if (colon > 0) {
+    const head = e.slice(0, colon);
+    const rest = e.slice(colon + 1).trim();
+    if (rest) {
+      if (head === "symbol") return { kind: "symbol", name: rest };
+      if (head === "file-exists" || head === "file") return { kind: "file-exists", path: rest };
+      if (head === "stub") return { kind: "stub", name: rest };
+    }
+  }
+  return { kind: "custom", expr: e };
+}
+
+/** Evaluates whether a predicate expression currently holds against the repo. Injected by
+ *  the runtime (the host runs the actual check); pure here so it's testable. Returns
+ *  `true` (holds -> satisfy), `false` (does not hold), or `undefined` (not yet evaluable
+ *  -- left pending, retried on the next poll). The arg is the predicate's inner expr (the
+ *  part after `predicate:`) -- feed it through {@link parsePredicate} to dispatch on kind. */
+export type PredicateEvaluator = (expr: string) => boolean | undefined;
+
+/**
+ * Evaluate every UNSATISFIED `predicate:` dep currently gating a parked waiter and satisfy
+ * the latches whose predicate now holds -- the polled, third satisfy path alongside
+ * merged/closed/landed (a satisfied predicate uses source `landed`: it finished, like any
+ * produced ref). Distinct refs are evaluated once each (a predicate shared by N waiters is
+ * checked one time). Returns the next state + the waiters now fully ready (all deps
+ * satisfied), removed from the table -- feed them to {@link planWakes} exactly like a
+ * satisfy event's `woken`. Pure (the repo-checking is in `evaluate`) and idempotent:
+ * re-polling an already-satisfied predicate is a no-op. `at` stamps the satisfy time so the
+ * auto-wake recency gate ({@link isFreshlyReady}) treats a polled predicate like any latch.
+ */
+export function evaluatePredicates(
+  s: CoordState,
+  evaluate: PredicateEvaluator,
+  at: number,
+): { state: CoordState; woken: Waiter[] } {
+  const seen = new Set<string>();
+  const toSatisfy: CoordRef[] = [];
+  for (const wtr of s.waiters) {
+    for (const d of wtr.deps) {
+      if (d.kind !== "predicate") continue;
+      const key = refKey(d);
+      if (seen.has(key)) continue;        // each distinct predicate evaluated once
+      seen.add(key);
+      if (isSatisfied(s, d)) continue;    // already latched -- skip
+      if (evaluate(d.expr) === true) toSatisfy.push(d);
+    }
+  }
+  let state = s;
+  const wokenIds = new Set<string>();
+  const woken: Waiter[] = [];
+  for (const ref of toSatisfy) {
+    const r = satisfy(state, ref, "landed", at);
+    state = r.state;
+    for (const wtr of r.woken) {
+      if (!wokenIds.has(wtr.session)) { wokenIds.add(wtr.session); woken.push(wtr); }
+    }
+  }
+  return { state, woken };
+}
+
 // -- Cycle / deadlock detection (#199 AC#5) -------------------------------------
 // "Satisfied" is monotonic, so the *only* way a parked waiter never wakes is a wait-for
 // CYCLE: A waits on something B produces while B waits on something A produces (or a

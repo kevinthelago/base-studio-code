@@ -8,6 +8,7 @@ import {
   readinessAt, isFreshlyReady,
   detectDeadlocks, hasDeadlock, defaultProducerOf, buildProducerOf,
   producesFromPaneStreams,
+  parsePredicate, evaluatePredicates,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -328,6 +329,72 @@ describe("auto-wake recency gate", () => {
     expect(isFreshlyReady(w, s, 1_000_000 + 60_000, 15 * 60_000)).toBe(true);   // 1 min later
     expect(isFreshlyReady(w, s, 1_000_000 + 20 * 60_000, 15 * 60_000)).toBe(false); // 20 min later
     expect(isFreshlyReady(w, emptyCoordState(), 1_000_000, 15 * 60_000)).toBe(false); // never satisfied
+  });
+});
+
+describe("predicate-based readiness (#365)", () => {
+  const pred = (expr: string): CoordRef => ({ kind: "predicate", expr });
+
+  it("parsePredicate dispatches every kind + falls back to custom", () => {
+    expect(parsePredicate("tests-pass")).toEqual({ kind: "tests-pass" });
+    expect(parsePredicate("tests")).toEqual({ kind: "tests-pass" });
+    expect(parsePredicate("symbol:TunnelState")).toEqual({ kind: "symbol", name: "TunnelState" });
+    expect(parsePredicate("file-exists:src/lib/x.ts")).toEqual({ kind: "file-exists", path: "src/lib/x.ts" });
+    expect(parsePredicate("file:src/lib/x.ts")).toEqual({ kind: "file-exists", path: "src/lib/x.ts" });
+    expect(parsePredicate("stub:handleFoo")).toEqual({ kind: "stub", name: "handleFoo" });
+    expect(parsePredicate("whatever the host wants")).toEqual({ kind: "custom", expr: "whatever the host wants" });
+    expect(parsePredicate("symbol:")).toEqual({ kind: "custom", expr: "symbol:" }); // headless -> custom
+  });
+
+  it("satisfies a predicate dep when the evaluator returns true, waking the waiter", () => {
+    const s = registerWaiter(emptyCoordState(), w("A", [pred("tests-pass")])).state;
+    expect(s.waiters).toHaveLength(1);
+    const r = evaluatePredicates(s, (e) => e === "tests-pass", 100);
+    expect(r.woken.map((x) => x.session)).toEqual(["A"]);
+    expect(r.state.waiters).toHaveLength(0);
+    expect(isSatisfied(r.state, pred("tests-pass"))).toBe(true);
+    expect(readinessAt(w("A", [pred("tests-pass")]), r.state)).toBe(100); // stamped for the recency gate
+  });
+
+  it("leaves the waiter parked when the predicate is false or not-yet-evaluable", () => {
+    const s = registerWaiter(emptyCoordState(), w("A", [pred("tests-pass")])).state;
+    expect(evaluatePredicates(s, () => false, 1).woken).toHaveLength(0);
+    expect(evaluatePredicates(s, () => undefined, 1).woken).toHaveLength(0);
+    expect(evaluatePredicates(s, () => false, 1).state.waiters).toHaveLength(1);
+  });
+
+  it("gates a mixed waiter: predicate alone does not wake until the other dep lands too", () => {
+    const issue1 = { kind: "issue", number: 1 } as const;
+    let s = registerWaiter(emptyCoordState(), w("B", [issue1, pred("tests-pass")])).state;
+    s = evaluatePredicates(s, () => true, 1).state; // predicate satisfied, #1 still pending
+    expect(s.waiters.map((x) => x.session)).toEqual(["B"]);
+    const sat = satisfy(s, issue1, "merged", 2);
+    expect(sat.woken.map((x) => x.session)).toEqual(["B"]); // now all deps satisfied
+  });
+
+  it("evaluates a shared predicate once and wakes every waiter on it", () => {
+    let calls = 0;
+    let s = emptyCoordState();
+    s = registerWaiter(s, w("A", [pred("symbol:Foo")])).state;
+    s = registerWaiter(s, w("B", [pred("symbol:Foo")])).state;
+    const r = evaluatePredicates(s, () => { calls++; return true; }, 1);
+    expect(calls).toBe(1); // distinct predicate evaluated a single time
+    expect(r.woken.map((x) => x.session).sort()).toEqual(["A", "B"]);
+  });
+
+  it("is idempotent: re-polling an already-satisfied predicate is a no-op", () => {
+    let s = registerWaiter(emptyCoordState(), w("A", [pred("tests-pass")])).state;
+    s = evaluatePredicates(s, () => true, 1).state;
+    const again = evaluatePredicates(s, () => true, 2);
+    expect(again.woken).toHaveLength(0);
+    expect(again.state.waiters).toHaveLength(0);
+  });
+
+  it("ignores non-predicate deps entirely", () => {
+    const s = registerWaiter(emptyCoordState(), w("A", [{ kind: "issue", number: 1 }])).state;
+    const r = evaluatePredicates(s, () => true, 1); // evaluator would say yes, but no predicate dep
+    expect(r.woken).toHaveLength(0);
+    expect(r.state.waiters).toHaveLength(1);
   });
 });
 
