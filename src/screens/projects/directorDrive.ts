@@ -57,16 +57,21 @@ const DIRECTOR_ACTION =
 /** Build the event-driven injection summarizing the fresh worker events. Single line. */
 export function eventDirectorPrompt(events: CoordEvent[]): string {
   const segs: string[] = [];
+  const asks = events.filter((e) => e.type === "ask") as Array<{ session: string; question: string }>;
   const landed = events.filter((e) => e.type === "landed").map((e) => refLabel((e as { ref: CoordRef }).ref));
   const failed = events.filter((e) => e.type === "failed").map((e) => refLabel((e as { ref: CoordRef }).ref));
   const blocked = events.filter((e) => e.type === "blocked") as Array<{ session: string; deps: CoordRef[] }>;
   const waiting = events.filter((e) => e.type === "waiting") as Array<{ session: string }>;
+  if (asks.length)    segs.push(`${asks.length} awaiting your answer — ${asks.map((a) => `${a.session} asks: "${a.question}"`).join("; ")}`);
   if (landed.length)  segs.push(`${landed.length} landed (${landed.join(", ")})`);
   if (blocked.length) segs.push(`${blocked.length} blocked (${blocked.map((b) => `${b.session} on ${b.deps.map(refLabel).join("+")}`).join("; ")})`);
   if (waiting.length) segs.push(`${waiting.length} waiting (${waiting.map((w) => w.session).join(", ")})`);
   if (failed.length)  segs.push(`${failed.length} failed (${failed.join(", ")})`);
   const summary = segs.length ? segs.join("; ") : "new activity";
-  return `[coordinator] New worker activity: ${summary}. ${DIRECTOR_ACTION}`;
+  const askAction = asks.length
+    ? `Answer each asking worker with \`bsc-answer <session>\` (e.g. \`echo "use cursor pagination" | bsc-answer ${asks[0].session}\`) — that resumes them automatically; do not leave them parked. `
+    : "";
+  return `[coordinator] New worker activity: ${summary}. ${askAction}${DIRECTOR_ACTION}`;
 }
 
 /** Build the periodic heartbeat injection (a generic fleet sweep). Single line. */
@@ -76,7 +81,7 @@ export function heartbeatDirectorPrompt(): string {
 
 /** Coordination events the director should act on (worker-originated asks). Its own
  *  merge/close/wake events are excluded so it is never re-prompted by its own actions. */
-const DIRECTOR_RELEVANT = new Set(["landed", "blocked", "waiting", "failed"]);
+const DIRECTOR_RELEVANT = new Set(["ask", "landed", "blocked", "waiting", "failed"]);
 
 export interface DirectorTickInput {
   /** All coord.log lines, oldest-first. */
