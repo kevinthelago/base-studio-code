@@ -24,6 +24,7 @@ import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
+import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
@@ -61,10 +62,13 @@ export const TRIAGE_PROMPT =
 // kickoff script. Plain text only (no double quotes / $ / backticks) so it is safe
 // to pass as claude's initial-message arg. The authoritative plan lives in
 // CLAUDE.local.md; this points the session at its lane and the autonomy rules.
-function buildStreamPrompt(stream: AgentStream): string {
+function buildStreamPrompt(stream: AgentStream, strategy?: IntegrationStrategy): string {
   const owns   = stream.owns.length   ? stream.owns.join(", ")   : "the files for your area";
   const issues = stream.issues.length ? stream.issues.join(", ") : "the issues assigned to your area";
-  const kick = flowKickoffText(stream.flow, stream.id);
+  const strat = strategy ?? DEFAULT_STRATEGY;
+  const effPush = strategySettings(strat).integrate;
+  const effFlow = { ...resolveFlow(stream.flow), push: stream.flow?.push ?? effPush };
+  const kick = flowKickoffText(effFlow, stream.id);
   return (
     `You are the ${stream.name} work stream, one of several Claude sessions building this project in parallel. ` +
     `The full project plan is in CLAUDE.local.md — read it first; it is authoritative. ` +
@@ -206,6 +210,8 @@ interface AppStore {
   paneRoles: Record<string, SessionRole>;
   /** Drive mode for each launched director pane (#366) — read by useDirectorPump. */
   paneDirectorDrive: Record<string, DirectorDrive>;
+  /** Integration mode (watchdog/integrator) for each launched director pane (#378) — read by useCiWatcher. */
+  paneDirectorMode: Record<string, DirectorMode>;
   /** Each worker pane's repo + branch (#373) — lets useCiWatcher map a PR back to it. */
   paneStream: Record<string, { repo: string; branch: string }>;
   setPaneRole: (paneId: string, role: SessionRole) => void;
@@ -438,6 +444,9 @@ interface AppStore {
   setPlanAgentStreamProfile: (projectId: string, streamId: string, profileId: string | null) => void;
   /** #297: set one or more flow fields on a stream (merged into its resolved flow). */
   setPlanAgentStreamFlow: (projectId: string, streamId: string, patch: Partial<AgentFlow>) => void;
+  /** #378: set a stream's per-stream integration-strategy override (undefined clears
+   *  it so the stream inherits the fleet default). */
+  setPlanAgentStreamStrategy: (projectId: string, streamId: string, strategy: IntegrationStrategy | undefined) => void;
   /** Set a stream's per-capability permission posture from the project pane's agent
    *  editor; also marks the stream's preset as "custom" (a hand-tuned posture). */
   setPlanAgentStreamPerm: (projectId: string, streamId: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
@@ -447,7 +456,7 @@ interface AppStore {
   /** #289: generate + assign a least-privilege profile for each unassigned stream,
    *  scoped to that stream's resolved toolchain. Idempotent. */
   generateFleetProfiles: (projectId: string) => void;
-  setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string) => void;
+  setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string, strategy?: IntegrationStrategy) => void;
   setPlanDirector:       (projectId: string, enabled: boolean, role?: string) => void;
   setPlanDirectorDrive:  (projectId: string, drive: DirectorDrive) => void;
   clearPlanFleet:        (projectId: string) => void;
@@ -650,6 +659,7 @@ export const useAppStore = create<AppStore>()(
         }),
       paneRoles: {},
     paneDirectorDrive: {},
+    paneDirectorMode: {},
     paneStream: {},
       setPaneRole: (paneId, role) =>
         set((s) => ({ paneRoles: { ...s.paneRoles, [paneId]: role } })),
@@ -1183,6 +1193,7 @@ export const useAppStore = create<AppStore>()(
           const baseTabName = `${projectName} · build`;
           const hasDirector = fleet.director.enabled;
           const newPaneDirectorDrive     = { ...s.paneDirectorDrive };
+          const newPaneDirectorMode      = { ...s.paneDirectorMode };
           const newPaneStream            = { ...s.paneStream };
 
           // Independents first so the launched wave is what can run now; the
@@ -1258,6 +1269,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneRepos[key];
               delete newPaneFlows[key];
               delete newPaneDirectorDrive[key];
+              delete newPaneDirectorMode[key];
               delete newPaneStream[key];
               if (i < count) {
                 const sess = chunk[i];
@@ -1270,6 +1282,7 @@ export const useAppStore = create<AppStore>()(
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
                   tabPaneNames[i] = "director";
                   newPaneDirectorDrive[key] = resolveDirectorDrive(fleet.director.drive);
+                  newPaneDirectorMode[key] = strategySettings(resolveStrategy(undefined, fleet.strategy)).director;
                 } else {
                   // Worker runs in its own git worktree on its own branch.
                   newPaneCwds[key]     = agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
@@ -1277,7 +1290,7 @@ export const useAppStore = create<AppStore>()(
                   if (sess.prompt) {
                     newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
                   } else {
-                    newPaneStartupPromptText[key] = buildStreamPrompt(sess);
+                    newPaneStartupPromptText[key] = buildStreamPrompt(sess, resolveStrategy(sess.strategy, fleet.strategy));
                   }
                   newPaneAllowedCommands[key] = resolveAllowedCommands(
                     s.allowedCommands,
@@ -1341,6 +1354,7 @@ export const useAppStore = create<AppStore>()(
             paneRepos: newPaneRepos,
             paneFlows: newPaneFlows,
             paneDirectorDrive: newPaneDirectorDrive,
+            paneDirectorMode: newPaneDirectorMode,
             paneStream: newPaneStream,
             disabledPanes: newDisabledPanes,
             paneNames: newPaneNames,
@@ -1451,6 +1465,14 @@ export const useAppStore = create<AppStore>()(
             x.id === streamId ? { ...x, flow: normalizeFlow({ ...resolveFlow(x.flow), ...patch }) } : x);
           return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
         }),
+      setPlanAgentStreamStrategy: (projectId, streamId, strategy) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, strategy } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
       setPlanAgentStreamPerm: (projectId, streamId, perm) =>
         set((s) => {
           const cur = s.planFleet[projectId];
@@ -1490,10 +1512,10 @@ export const useAppStore = create<AppStore>()(
           });
           return { agentProfiles: profiles, planFleet: { ...s.planFleet, [projectId]: { ...fleet, streams } } };
         }),
-      setPlanFleetMeta: (projectId, recommended, reasoning) =>
+      setPlanFleetMeta: (projectId, recommended, reasoning, strategy) =>
         set((s) => {
           const cur = s.planFleet[projectId] ?? emptyFleet();
-          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, recommended, reasoning } } };
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, recommended, reasoning, strategy: strategy ?? cur.strategy } } };
         }),
       setPlanDirector: (projectId, enabled, role) =>
         set((s) => {
@@ -1613,6 +1635,7 @@ export const useAppStore = create<AppStore>()(
         paneCwds:        s.paneCwds,
         paneWasClaude:   s.paneWasClaude,
         paneDirectorDrive: s.paneDirectorDrive,
+        paneDirectorMode: s.paneDirectorMode,
         paneStream: s.paneStream,
         disabledPanes:   s.disabledPanes,
         githubConnected: s.githubConnected,

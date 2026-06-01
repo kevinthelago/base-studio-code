@@ -53,6 +53,9 @@ export function flowKickoffText(flow: AgentFlow | undefined, branch: string): Fl
         ? `When your work is ready (${when}), commit to your branch ${branch} and run the checks locally, then STOP and ask the user before pushing — the push and PR commands prompt for approval, so wait for it.`
         : `When your work is ready (${when}), commit to your branch ${branch} and run the checks locally, then pause and ask the user before you push or open a PR.`;
       break;
+    case "self-merge":
+      push = `When your work is ready, integrate it yourself (${when}) — do NOT open a PR and do NOT wait for CI. Steps: (1) run the FULL local gate (typecheck + tests + any native build) and make it green; (2) git fetch origin develop and rebase your branch ${branch} onto origin/develop; (3) re-run the FULL gate on the rebased, integrated tree — this is the integration check; (4) if green, merge ${branch} into develop and push develop. If the push is rejected because another stream merged first, re-fetch, rebase, re-gate, and push again. After develop has your commit, pipe your landed issue ref into bsc-landed on stdin (e.g. echo "#42" | bsc-landed) so the director and board track it, then continue to your next issue. develop's CI is the director's backstop, not your gate.`;
+      break;
     case "commit-only":
       push = `Commit your work to your branch ${branch} as you go, but do not push — the user or director will push your branch and open any PR.`;
       break;

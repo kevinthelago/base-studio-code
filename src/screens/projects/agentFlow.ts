@@ -11,7 +11,7 @@
 /** How the agent handles underspecified decisions. */
 export type FlowAutonomy = "continuous" | "checkpoint" | "confirm";
 /** What and whether the agent pushes to GitHub. */
-export type FlowPush = "auto-pr" | "push-confirm" | "commit-only" | "none";
+export type FlowPush = "auto-pr" | "self-merge" | "push-confirm" | "commit-only" | "none";
 /** Which event fires a push attempt. */
 export type FlowTrigger = "per-issue" | "per-stage" | "on-green";
 /** How a "confirm"/"push-confirm" pause is enforced. */
@@ -20,7 +20,7 @@ export type FlowGate = "soft" | "hard";
 export interface AgentFlow {
   /** continuous = never pause; checkpoint = pause at stage/PR boundaries; confirm = ask before non-trivial decisions. */
   autonomy: FlowAutonomy;
-  /** auto-pr = commit+push+open PR on green; push-confirm = commit+test then wait; commit-only = commit, don't push; none = no git/gh. */
+  /** auto-pr = commit+push+open PR on green; self-merge = run full gate, rebase onto develop, re-gate, push develop directly (no PR); push-confirm = commit+test then wait; commit-only = commit, don't push; none = no git/gh. */
   push: FlowPush;
   /** When a push fires: per owned issue, per pipeline stage, or whenever the gate is green. */
   trigger: FlowTrigger;
@@ -29,7 +29,7 @@ export interface AgentFlow {
 }
 
 export const FLOW_AUTONOMY: readonly FlowAutonomy[] = ["continuous", "checkpoint", "confirm"];
-export const FLOW_PUSH: readonly FlowPush[] = ["auto-pr", "push-confirm", "commit-only", "none"];
+export const FLOW_PUSH: readonly FlowPush[] = ["auto-pr", "self-merge", "push-confirm", "commit-only", "none"];
 export const FLOW_TRIGGER: readonly FlowTrigger[] = ["per-issue", "per-stage", "on-green"];
 export const FLOW_GATE: readonly FlowGate[] = ["soft", "hard"];
 

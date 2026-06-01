@@ -185,6 +185,28 @@ describe("parseFleetFile", () => {
     expect(fleet.streams[0].dependsOn).toEqual(["a"]);
   });
 
+  it("round-trips fleet + stream integration strategy (#378)", () => {
+    const raw = JSON.stringify({
+      recommended: 2,
+      strategy: "pr-ci",
+      streams: [
+        { id: "a", repo: "o/r", strategy: "manual" },
+        { id: "b", repo: "o/r" },
+      ],
+    });
+    const fleet = parseFleetFile(raw)!;
+    expect(fleet.strategy).toBe("pr-ci");
+    expect(fleet.streams[0].strategy).toBe("manual");
+    expect(fleet.streams[1].strategy).toBeUndefined();
+  });
+
+  it("drops an invalid fleet/stream strategy to undefined (#378)", () => {
+    const raw = JSON.stringify({ strategy: "bogus", streams: [{ id: "a", repo: "o/r", strategy: "nope" }] });
+    const fleet = parseFleetFile(raw)!;
+    expect(fleet.strategy).toBeUndefined();
+    expect(fleet.streams[0].strategy).toBeUndefined();
+  });
+
   it("returns null for blank or malformed input", () => {
     expect(parseFleetFile("")).toBeNull();
     expect(parseFleetFile("   ")).toBeNull();

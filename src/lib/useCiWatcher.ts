@@ -10,7 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { injectPrompt } from "./paneInject";
 import {
-  rollupChecks, isTerminalCi, ciWorkerPrompt, ciDirectorMergePrompt,
+  rollupChecks, isTerminalCi, ciWorkerPrompt, ciDirectorMergePrompt, ciDevelopRedPrompt,
   type CheckRun, type CiState,
 } from "./ciStatus";
 
@@ -23,18 +23,58 @@ export function useCiWatcher(): void {
   // (a re-pushed fix gets a new sha -> a fresh key -> delivered again on its result).
   const lastState = useRef<Map<string, CiState>>(new Map());
   const inFlight = useRef<Set<string>>(new Set());
+  // Per (repo@developSha) last CI state for the watchdog path (#378): a new develop head
+  // re-arms the alert, so we inject the red prompt at most once per failing head.
+  const lastDevelop = useRef<Map<string, CiState>>(new Map());
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
       if (cancelled) return;
       const token = useAppStore.getState().githubToken;
       const streams = useAppStore.getState().paneStream;
+      const directorModes = useAppStore.getState().paneDirectorMode;
       const entries = Object.entries(streams);
       if (!token || entries.length === 0) return;
+
+      // The tab prefix "t{n}p" groups a director (p0) with its workers; a tab is in watchdog
+      // mode when its director pane's mode === "watchdog".
+      const tabPrefix = (paneId: string): string => paneId.slice(0, paneId.indexOf("p") + 1);
+      const watchdogTabs = new Set<string>();
+      for (const [paneId, mode] of Object.entries(directorModes)) {
+        if (mode === "watchdog") watchdogTabs.add(tabPrefix(paneId));
+      }
+
+      // ── Watchdog path (#378): no worker PRs in a self-merge fleet — watch develop's CI
+      // instead and nudge the director to revert + ping the owner when it goes red.
+      const developRepos = new Map<string, string>(); // repo -> watchdog director paneId
+      for (const [paneId, st] of entries) {
+        const pref = tabPrefix(paneId);
+        if (!watchdogTabs.has(pref)) continue;
+        if (!developRepos.has(st.repo)) developRepos.set(st.repo, pref + "0");
+      }
+      for (const [repo, directorPane] of developRepos) {
+        const checks = await invoke<{ check_runs: CheckRun[] }>("github_request", { token, path: `repos/${repo}/commits/develop/check-runs` }).catch(() => null);
+        if (cancelled || !checks) continue;
+        const runs = checks.check_runs ?? [];
+        const sha = runs[0]?.head_sha ?? "";
+        if (!sha) continue;
+        const key = `${repo}@${sha}`;
+        if (inFlight.current.has(key)) continue;
+        const { state, failing } = rollupChecks(runs);
+        if (state === lastDevelop.current.get(key)) continue;
+        lastDevelop.current.set(key, state);
+        if (!isTerminalCi(state) || state !== "failed") continue;
+        inFlight.current.add(key);
+        void injectPrompt(directorPane, ciDevelopRedPrompt(repo, sha, failing))
+          .catch(() => {})
+          .finally(() => inFlight.current.delete(key));
+      }
 
       const paneByRepoBranch = new Map<string, string>();
       const repos = new Set<string>();
       for (const [paneId, st] of entries) {
+        // A worker whose tab's director is a watchdog has no PR to watch — skip it.
+        if (watchdogTabs.has(tabPrefix(paneId))) continue;
         paneByRepoBranch.set(st.repo + "#" + st.branch, paneId);
         repos.add(st.repo);
       }

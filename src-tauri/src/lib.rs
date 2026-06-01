@@ -2819,7 +2819,7 @@ When you genuinely need a decision you cannot make yourself, defer to the direct
 - `bsc-blocked --on <ref>` — park until another stream's dependency lands.
 - `echo "what you decided" | bsc-note` — for small reversible choices, just pick the smallest sensible option and record it; do not ask.
 
-When you open a PR, stop -- CI runs and is watched for you; you will be told to continue (if it passed) or to fix the build and push (if it failed). Do not poll CI, reopen, or duplicate the PR.
+If your push policy is self-merge, you integrate your own work to develop (full gate -> rebase onto develop -> re-gate -> push) and do NOT open PRs; if it is auto-pr, open a PR and the director merges it. Follow the push instruction in your kickoff. When you open a PR, stop -- CI runs and is watched for you; you will be told to continue (if it passed) or to fix the build and push (if it failed). Do not poll CI, reopen, or duplicate the PR.
 
 Only the director escalates to the user.
 "#;
@@ -2839,9 +2839,15 @@ standing rules you MUST act on, not merely acknowledge:
   bsc-answer t0p2. That command resumes the parked worker automatically. Answering only in
   chat does NOT reach the worker: if you do not run bsc-answer, the worker stays stuck
   forever. Decide it yourself; never punt a worker question to the user.
-- MERGE GREEN PRs. When a PR is reported green (or you find one open and passing), review and
-  merge it into develop (e.g. gh pr merge <n> --squash --delete-branch), then keep the
-  milestones/board current.
+- WATCHDOG MODE (self-merge fleets — the default). Workers run the full gate and merge their
+  own work to develop; you do NOT merge PRs (there are none). Watch develop's CI. When you get a
+  "[coordinator] develop CI is RED ..." message, identify the breaking commit (git log
+  origin/develop), revert it to restore develop to green, then ping the owning worker via
+  bsc-answer <session> (match the commit's changed paths to a stream's owned globs in
+  CLAUDE.local.md) with a one-line fix-forward instruction.
+- INTEGRATOR MODE (pr-ci / manual fleets). Workers open PRs (pr-ci) or commit without pushing
+  (manual). Review and merge each green PR into develop (e.g. gh pr merge <n> --squash
+  --delete-branch), then keep the milestones/board current.
 - KEEP THE FLEET MOVING. Any worker that is blocked or waiting is yours to unblock.
 "#;
 

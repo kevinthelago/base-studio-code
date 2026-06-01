@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  rollupChecks, isTerminalCi, ciWorkerPrompt, ciDirectorMergePrompt, type CheckRun,
+  rollupChecks, isTerminalCi, ciWorkerPrompt, ciDirectorMergePrompt, ciDevelopRedPrompt, type CheckRun,
 } from "../lib/ciStatus";
 
 const run = (name: string, status: string, conclusion: string | null = null): CheckRun => ({ name, status, conclusion });
@@ -54,5 +54,20 @@ describe("prompts", () => {
     expect(p).toMatch(/PR #42/);
     expect(p).toContain("auth-ui");
     expect(p).toMatch(/merge/i);
+  });
+});
+
+describe("ciDevelopRedPrompt (#378)", () => {
+  it("names the repo, short sha, and failing checks, and tells the watchdog to revert + ping", () => {
+    const p = ciDevelopRedPrompt("own/web", "abcdef1234567890", ["build", "test"]);
+    expect(p).toMatch(/develop CI is RED in own\/web/);
+    expect(p).toContain("abcdef1");
+    expect(p).toContain("build, test");
+    expect(p).toMatch(/REVERT/);
+    expect(p).toMatch(/bsc-answer/);
+  });
+  it("falls back to a generic phrase when no failing checks are named", () => {
+    const p = ciDevelopRedPrompt("own/web", "abcdef1234567890", []);
+    expect(p).toMatch(/one or more checks/);
   });
 });
