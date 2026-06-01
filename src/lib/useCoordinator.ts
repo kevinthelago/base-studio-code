@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { ingestCoordLog, wakePromptFor, answerWakePrompt, isFreshlyReady, emptyCoordState } from "./coordination";
-import { actuateWake } from "./coordinatorActuate";
+import { injectWake } from "./coordinatorActuate";
 
 const POLL_MS = 3000;
 const FRESH_MS = 15 * 60 * 1000;
@@ -29,7 +29,7 @@ export function useCoordinator(): void {
         if (inFlight.current.has(a.session)) continue;
         if (now - a.at >= FRESH_MS) continue;
         inFlight.current.add(a.session);
-        void actuateWake(a.session, answerWakePrompt(a), useAppStore.getState().wakePane)
+        void injectWake(a.session, answerWakePrompt(a))
           .finally(() => inFlight.current.delete(a.session));
       }
       if (!useAppStore.getState().coordAutoWake) return;
@@ -37,7 +37,7 @@ export function useCoordinator(): void {
         if (inFlight.current.has(w.session)) continue;
         if (!isFreshlyReady(w, state, now, FRESH_MS)) continue;
         inFlight.current.add(w.session);
-        void actuateWake(w.session, wakePromptFor(w, state), useAppStore.getState().wakePane)
+        void injectWake(w.session, wakePromptFor(w, state))
           .finally(() => inFlight.current.delete(w.session));
       }
     };
