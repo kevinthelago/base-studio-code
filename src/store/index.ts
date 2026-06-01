@@ -331,6 +331,11 @@ interface AppStore {
   // planning session key — the title — and the GitHub id), plus the active-project
   // meta if it matches. Pairs with the backend delete_project_dir for the on-disk hub.
   deleteLocalProject: (keys: string[]) => void;
+  /** New, not-yet-published projects (drafts, #379). Keyed by the planning session key
+   *  (a unique `sanitize(title)-<id>` so a re-used title never inherits stale files). */
+  localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number }>;
+  addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number }) => void;
+  removeDraftProject: (key: string) => void;
   // Dev reset: clears all project/plan-scoped state (keeps auth, profiles, UI).
   resetProjectData: () => void;
   // GitHub project ids the user removed in-app (persisted). The Projects list is
@@ -919,6 +924,14 @@ export const useAppStore = create<AppStore>()(
       hiddenProjectIds: [],
       dismissProject: (id) =>
         set((s) => (!id || s.hiddenProjectIds.includes(id) ? {} : { hiddenProjectIds: [...s.hiddenProjectIds, id] })),
+      addDraftProject: (key, draft) =>
+        set((s) => ({ localDraftProjects: { ...s.localDraftProjects, [key]: draft } })),
+      removeDraftProject: (key) =>
+        set((s) => {
+          const next = { ...s.localDraftProjects };
+          delete next[key];
+          return { localDraftProjects: next };
+        }),
       deleteLocalProject: (keys) =>
         set((s) => {
           const keySet = new Set(keys.filter(Boolean));
@@ -941,6 +954,7 @@ export const useAppStore = create<AppStore>()(
             extensions:             s.extensions.map((e) => ({ ...e, projects: e.projects.filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             projectLocalRepos:      byKey(s.projectLocalRepos),
+        localDraftProjects:     byKey(s.localDraftProjects),
             projectAllowedCommands: byKey(s.projectAllowedCommands),
             repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
             repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
@@ -954,7 +968,7 @@ export const useAppStore = create<AppStore>()(
         set({
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
           planAutomations: {}, planFleet: {}, pinnedContext: {},
-          projectLocalRepos: {}, projectAllowedCommands: {},
+          projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
@@ -1033,6 +1047,7 @@ export const useAppStore = create<AppStore>()(
       bscBaseDir: "",
       setBscBaseDir: (dir) => set({ bscBaseDir: dir }),
       projectLocalRepos: {},
+      localDraftProjects: {},
       addProjectRepo: (projectId, fullName) =>
         set((s) => {
           const existing = s.projectLocalRepos[projectId] ?? [];
@@ -1630,6 +1645,7 @@ export const useAppStore = create<AppStore>()(
         fleetPaneStreams:     s.fleetPaneStreams,
         pipelineRuns:         s.pipelineRuns,
         projectLocalRepos:    s.projectLocalRepos,
+        localDraftProjects:   s.localDraftProjects,
         projectKeyAlias:      s.projectKeyAlias,
         hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
