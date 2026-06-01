@@ -449,13 +449,24 @@ pub fn tunnel_start(
         inner.shutdown_tx = Some(shutdown_tx);
     }
 
-    // Dedicated multi-thread runtime on its own OS thread so the tunnel never depends
-    // on Tauri's runtime having the IO driver enabled, and so stopping it is a clean
-    // watch-signal rather than reaching into Tauri internals.
-    let static_priv = state.static_priv.clone();
-    let app_task = app.clone();
-    let room_task = room.clone();
-    let relay_task = relay_url.clone();
+    spawn_relay_thread(app, relay_url.clone(), room.clone(), state.static_priv.clone(), shutdown_rx)?;
+
+    log::info!("tunnel: dialing relay {relay_url} (room {room})");
+    let inner = state.inner.lock().unwrap();
+    Ok(state.status_locked(&inner))
+}
+
+/// Spawn the relay dial-out client on its own OS thread with a dedicated multi-thread
+/// tokio runtime, so the tunnel never depends on Tauri's runtime having the IO driver
+/// enabled and stopping it is a clean watch-signal rather than reaching into Tauri
+/// internals. Shared by `tunnel_start` and `tunnel_unpair` (which rotates the room).
+fn spawn_relay_thread(
+    app: AppHandle,
+    relay_url: String,
+    room: String,
+    static_priv: Vec<u8>,
+    shutdown_rx: watch::Receiver<bool>,
+) -> Result<(), String> {
     std::thread::Builder::new()
         .name("tunnel-relay".into())
         .spawn(move || {
@@ -466,13 +477,10 @@ pub fn tunnel_start(
                     return;
                 }
             };
-            rt.block_on(transport::run(app_task, relay_task, room_task, static_priv, shutdown_rx));
+            rt.block_on(transport::run(app, relay_url, room, static_priv, shutdown_rx));
         })
-        .map_err(|e| format!("could not spawn tunnel thread: {e}"))?;
-
-    log::info!("tunnel: dialing relay {relay_url} (room {room})");
-    let inner = state.inner.lock().unwrap();
-    Ok(state.status_locked(&inner))
+        .map(|_| ())
+        .map_err(|e| format!("could not spawn tunnel thread: {e}"))
 }
 
 /// Stop the relay transport: signal the client task to close and clear the pairing.
@@ -506,6 +514,50 @@ pub fn tunnel_set_input_granted(
     );
     let inner = state.inner.lock().unwrap();
     state.status_locked(&inner)
+}
+
+/// Unpair the current device (#B-unpair-revoke). Tears down the live relay session
+/// (dropping the paired phone and leaving the old room), rotates to a **fresh room id +
+/// pairing secret** — so the old QR can never re-authenticate — and reconnects so a new
+/// QR can be scanned. The tunnel stays running and returns to view-only. Errors if the
+/// tunnel isn't running. Pairing secrets are therefore short-lived and rotatable: each
+/// `tunnel_start` mints one, and `tunnel_unpair` rotates it on demand.
+#[tauri::command]
+pub fn tunnel_unpair(app: AppHandle, state: State<'_, TunnelState>) -> Result<TunnelStatus, String> {
+    let relay_url = {
+        let mut inner = state.inner.lock().unwrap();
+        if !inner.running {
+            return Err("tunnel is not running".into());
+        }
+        let relay_url = inner
+            .relay_url
+            .clone()
+            .ok_or_else(|| "tunnel has no relay url".to_string())?;
+        // Signal the current transport to drop the paired phone and leave the old room.
+        if let Some(tx) = inner.shutdown_tx.take() {
+            let _ = tx.send(true);
+        }
+        relay_url
+    };
+
+    // Rotate the pairing material so the old QR is dead, then re-dial on the new room.
+    let room = transport::generate_room_id();
+    let psk = transport::generate_psk();
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    {
+        let mut inner = state.inner.lock().unwrap();
+        inner.room = Some(room.clone());
+        inner.psk = psk;
+        inner.client_count = 0;
+        inner.input_granted = false;
+        inner.input_requested = false;
+        inner.shutdown_tx = Some(shutdown_tx);
+    }
+    spawn_relay_thread(app, relay_url, room.clone(), state.static_priv.clone(), shutdown_rx)?;
+
+    log::info!("tunnel: unpaired — rotated to room {room}, pairing secret reset, view-only");
+    let inner = state.inner.lock().unwrap();
+    Ok(state.status_locked(&inner))
 }
 
 // ── Relay dial-out transport ────────────────────────────────────────────────────
@@ -1047,6 +1099,18 @@ mod tests {
         assert!(id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
         // Two draws differ (entropy sanity).
         assert_ne!(transport::generate_room_id(), transport::generate_room_id());
+    }
+
+    /// Pairing secrets are fresh + rotatable (#B-unpair-revoke): each draw is 64 hex
+    /// chars (32 bytes) and two draws differ, so `tunnel_unpair` invalidating the old
+    /// secret by minting a new one cannot collide with the previous QR.
+    #[test]
+    fn psk_is_fresh_rotatable_hex() {
+        let a = transport::generate_psk();
+        let b = transport::generate_psk();
+        assert_eq!(a.len(), 64);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, b);
     }
 
     #[test]
