@@ -1041,6 +1041,12 @@ export function Planning({ visible }: { visible: boolean }) {
         invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
           .catch(e => console.error(`worktree ${st.id} failed:`, e)),
       ));
+      // Give the director its standing protocol at the hub (#375) so it answers worker
+      // questions via bsc-answer and merges green PRs.
+      if (launchPlan.director.enabled) {
+        await invoke("ensure_director_protocol", { projectKey: effectiveProjectId })
+          .catch(e => console.error("director protocol failed:", e));
+      }
       fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
     } catch (e) {
       console.error("fleet launch failed:", e);

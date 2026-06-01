@@ -17,6 +17,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
+import { injectPrompt } from "./paneInject";
 import { ingestCoordLog, emptyCoordState } from "./coordination";
 import {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
@@ -67,7 +68,7 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
           if (fresh.length > 0) {
             for (const a of fresh) surfaced.current.add(paneId + "|" + askKey(a));
             inFlight.current.add(paneId);
-            void invoke("pty_write", { paneId, data: pendingAskPrompt(fresh) + "\r" })
+            void injectPrompt(paneId, pendingAskPrompt(fresh))
               .catch(() => {})
               .finally(() => inFlight.current.delete(paneId));
             continue; // one injection per pane per tick
@@ -91,7 +92,7 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
         cursors.current.set(paneId, { cursor: res.cursor, lastInjectAt: res.lastInjectAt });
         if (res.inject) {
           inFlight.current.add(paneId);
-          void invoke("pty_write", { paneId, data: res.inject + "\r" })
+          void injectPrompt(paneId, res.inject)
             .catch(() => {})
             .finally(() => inFlight.current.delete(paneId));
         }

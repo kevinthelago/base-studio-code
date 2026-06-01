@@ -2,6 +2,7 @@
 // wakePane, then record the `woke` event so it isn't offered again. Used by both the
 // inbox "Wake" button and the always-on auto-wake coordinator.
 import { invoke } from "@tauri-apps/api/core";
+import { injectPrompt } from "./paneInject";
 
 export async function actuateWake(
   session: string,
@@ -22,7 +23,7 @@ export async function actuateWake(
  * automatic path; the manual inbox button still uses actuateWake (a fresh relaunch).
  */
 export async function injectWake(session: string, prompt: string): Promise<boolean> {
-  await invoke("pty_write", { paneId: session, data: prompt + "\r" }).catch(() => {});
+  await injectPrompt(session, prompt);
   await invoke("append_coord_woke", { session }).catch(() => {});
   return true;
 }

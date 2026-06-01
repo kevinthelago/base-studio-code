@@ -2779,6 +2779,39 @@ When you open a PR, stop -- CI runs and is watched for you; you will be told to 
 Only the director escalates to the user.
 "#;
 
+/// Director protocol (#375) appended to the project hub's CLAUDE.local.md so the
+/// async-integrator director always has its standing duties as authoritative context
+/// (it runs at the hub, so it never gets the worker worktree protocol).
+const DIRECTOR_PROTOCOL_MD: &str = r#"
+## Director protocol (auto-added -- do not edit)
+
+You are the async-integrator DIRECTOR for this fleet; you write no feature code. These are
+standing rules you MUST act on, not merely acknowledge:
+
+- ANSWER WORKER QUESTIONS. When a worker asks you something (it arrives as a "[coordinator]
+  <session> asks: ..." message), you MUST reply by running bsc-answer <session> with your
+  one-line answer piped on stdin -- e.g. echo "release-eng owns #158; stay out of it" |
+  bsc-answer t0p2. That command resumes the parked worker automatically. Answering only in
+  chat does NOT reach the worker: if you do not run bsc-answer, the worker stays stuck
+  forever. Decide it yourself; never punt a worker question to the user.
+- MERGE GREEN PRs. When a PR is reported green (or you find one open and passing), review and
+  merge it into develop (e.g. gh pr merge <n> --squash --delete-branch), then keep the
+  milestones/board current.
+- KEEP THE FLEET MOVING. Any worker that is blocked or waiting is yours to unblock.
+"#;
+
+/// Ensure the project hub's CLAUDE.local.md carries the director protocol (#375). Idempotent.
+#[tauri::command]
+fn ensure_director_protocol(project_key: String) -> Result<(), String> {
+    let local = project_dir(&project_key).join("CLAUDE.local.md");
+    if let Some(parent) = local.parent() { let _ = std::fs::create_dir_all(parent); }
+    let cur = std::fs::read_to_string(&local).unwrap_or_default();
+    if !cur.contains("## Director protocol") {
+        std::fs::write(&local, format!("{cur}{DIRECTOR_PROTOCOL_MD}")).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Create (idempotently) a git worktree for one fleet agent: an isolated checkout
 /// of `repo` on a branch named after the agent, at
 /// `projects/<key>/.worktrees/<repoShort>--<agentSlug>`. Each agent edits and
@@ -3642,6 +3675,7 @@ pub fn run() {
             setup_kb_workspace,
             clone_repo,
             ensure_worktree,
+            ensure_director_protocol,
             get_base_dir,
             read_claude_config,
             write_claude_config,
