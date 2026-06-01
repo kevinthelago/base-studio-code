@@ -42,6 +42,7 @@ function refLabel(ref: CoordRef): string {
     case "contract":  return `contract:${ref.name}`;
     case "file":      return `file:${ref.path}`;
     case "predicate": return `predicate:${ref.expr}`;
+    case "session":   return `session:${ref.id}`;
   }
 }
 
