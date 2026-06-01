@@ -1032,6 +1032,14 @@ export function Planning({ visible }: { visible: boolean }) {
       // the fleet back with the now-assigned profile ids.
       useAppStore.getState().generateFleetProfiles(effectiveProjectId);
       const launchPlan = useAppStore.getState().planFleet[effectiveProjectId] ?? fleet;
+      // Create each worker's git worktree (idempotent) before the panes spawn,
+      // so every agent's cwd exists and it starts in its own checkout+branch.
+      // Without this the worktree-based cwd does not exist and the agent lands
+      // in a fallback dir (#359).
+      await Promise.all(launchPlan.streams.map(st =>
+        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
+          .catch(e => console.error(`worktree ${st.id} failed:`, e)),
+      ));
       fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
     } catch (e) {
       console.error("fleet launch failed:", e);
