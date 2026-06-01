@@ -5,7 +5,7 @@
 // profile ∪ project ∪ repo); gh/git are guaranteed; a profile layers a base policy +
 // per-tool tri-states + path scope. Data model + helpers live in ./agentProfiles.
 // (The Activity feed is still sample data — a real audit log is a follow-up.)
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   APP_ROLES, TOOL_DEFS, GUARANTEED,
@@ -15,10 +15,16 @@ import type { AgentProfile, ConsoleSession, ConsolePane, Tier, ToolKey } from ".
 import { resolveProfileSettings } from "./profileEnforcement";
 import { parseAuditLog, toRow, decideAudit, type AuditDecision, type AuditKind, type ResolvedGate } from "./auditLog";
 import { roleCapability, roleWriteRules } from "../../lib/sessionRoles";
+import {
+  ingestCoordLog, coordinationSummary, wakePromptFor, emptyCoordState,
+  type BlockedView, type Waiter, type CoordState,
+} from "../../lib/coordination";
+import { actuateWake } from "../../lib/coordinatorActuate";
+import type { PipelineRun } from "../../lib/conductor";
 import { useAppStore } from "../../store";
 import "./agents.css";
 
-type Tab = "profiles" | "assignments" | "activity";
+type Tab = "profiles" | "assignments" | "activity" | "flow";
 type DecFilter = "all" | "allow" | "ask" | "block";
 
 /** A computed audit row for the Activity table. */
@@ -51,6 +57,11 @@ export function AgentsScreen() {
   const disabledPanes = useAppStore((s) => s.disabledPanes);
   const paneProfiles = useAppStore((s) => s.paneProfiles);
   const activeRepoName = useAppStore((s) => s.activeRepoName);
+
+  // Coordination & pipelines (the Flow tab): the fleet's live work-flow, cross-referenced
+  // with the profile each session runs under — the Agents screen's angle on #199/#220.
+  const wakePane = useAppStore((s) => s.wakePane);
+  const pipelineRuns = useAppStore((s) => s.pipelineRuns);
 
   // Application roles are app-managed singletons (display-only here).
   const roles = APP_ROLES;
@@ -119,6 +130,15 @@ export function AgentsScreen() {
 
   const find = (id: string) => [...roles, ...profiles].find((p) => p.id === id);
   const selected = find(selectedId) ?? profiles[0];
+
+  // Resolve the profile a coord/pipeline session (a pane id like `t0p1`) runs under, so the
+  // Flow tab can show who is parked/flowing and under which permission profile. Falls back
+  // to the safe default when a pane has no explicit assignment.
+  const profileFor = useCallback(
+    (session: string): AgentProfile | undefined => find(paneProfiles[session] ?? "pf_sandbox"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [paneProfiles, profiles],
+  );
 
   // Edits persist to the store. Application-role ids won't match a stored profile, so
   // their controls are effectively read-only (they're system-managed).
@@ -194,6 +214,7 @@ export function AgentsScreen() {
           ["profiles", "Profiles", roles.length + profiles.length, "· application + custom roles"],
           ["assignments", "Assignments", consoles.length, "· consoles & panes"],
           ["activity", "Activity", auditRows.length, ""],
+          ["flow", "Flow", Object.keys(pipelineRuns).length, "· coordination & pipelines"],
         ] as [Tab, string, number, string][]).map(([k, label, count, hint]) => (
           <div key={k} className={`t ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>
             {label} <span className="count">{count}</span>
@@ -213,6 +234,9 @@ export function AgentsScreen() {
             <span className="hint" style={{ fontFamily: "var(--mono)" }}>live · last 1h</span>
             <button className="btn">pause feed</button>
           </>}
+          {tab === "flow" && (
+            <span className="hint" style={{ fontFamily: "var(--mono)" }}>live · #199 latches + #220 stages</span>
+          )}
         </div>
       </div>
 
@@ -238,6 +262,9 @@ export function AgentsScreen() {
             actConsole={actConsole} setActConsole={setActConsole}
             allow={allow} ask={ask} block={block} find={find}
           />
+        )}
+        {tab === "flow" && (
+          <FlowTab runs={pipelineRuns} wakePane={wakePane} profileFor={profileFor} />
         )}
       </div>
     </div>
@@ -700,5 +727,214 @@ function ActivityTab({ rows, consoles, actDecision, setActDecision, actConsole, 
         })}
       </div>
     </>
+  );
+}
+
+// ── Flow tab ──────────────────────────────────────────────────────────────────
+// The fleet's live work-flow: which sessions are parked on a dependency (#199) and which
+// work items are flowing through their pipeline stages (#220) — each cross-referenced with
+// the permission profile the session runs under. This is the Agents-screen view of
+// coordination (the project-wide inbox lives on the Projects board); the angle here is
+// "who is blocked/flowing, and under which profile". Coord state is rebuilt from the
+// app-wide $BSC_COORD_LOG via read_coord_log + ingestCoordLog, so it needs no store wiring.
+
+const COORD_POLL_MS = 3000;
+
+interface FlowTabProps {
+  runs: Record<string, PipelineRun>;
+  wakePane: (paneId: string, prompt: string) => boolean;
+  profileFor: (session: string) => AgentProfile | undefined;
+}
+
+function depColor(status: BlockedView["deps"][number]["status"]): string {
+  return status === "satisfied" ? "var(--success)" : status === "failed" ? "var(--danger)" : "var(--fg-dim)";
+}
+
+function stageColor(status: string): string {
+  return status === "done" ? "var(--success)" : status === "escalated" ? "var(--danger)" : "var(--accent)";
+}
+
+/** A compact "session @ profile" chip — the Agents-screen cross-reference. */
+function SessionTag({ session, profile }: { session: string; profile?: AgentProfile }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{session}</h3>
+      {profile && (
+        <span className="hint" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--mono)", fontSize: 10 }}>
+          <span className="sw" style={{ background: profile.color, width: 8, height: 8, borderRadius: 2, display: "inline-block" }} />
+          {profile.name}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
+  const [views, setViews] = useState<BlockedView[]>([]);
+  const [ready, setReady] = useState<Waiter[]>([]);
+  const [state, setState] = useState<CoordState>(emptyCoordState());
+  const [err, setErr] = useState<string | null>(null);
+  const [waking, setWaking] = useState<Set<string>>(new Set());
+
+  // Polls only while this tab is mounted (the tab is conditionally rendered).
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      invoke<string[]>("read_coord_log", { limit: 1000 })
+        .then((lines) => {
+          if (cancelled) return;
+          const r = ingestCoordLog(lines, emptyCoordState());
+          setViews(coordinationSummary(r.state));
+          setReady(r.ready);
+          setState(r.state);
+          setErr(null);
+        })
+        .catch((e) => { if (!cancelled) setErr(String(e)); });
+    };
+    poll();
+    const id = setInterval(poll, COORD_POLL_MS);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  const handleWake = useCallback(async (wtr: Waiter) => {
+    setWaking((cur) => new Set(cur).add(wtr.session));
+    try {
+      await actuateWake(wtr.session, wakePromptFor(wtr, state), wakePane);
+    } finally {
+      setWaking((cur) => { const n = new Set(cur); n.delete(wtr.session); return n; });
+    }
+  }, [wakePane, state]);
+
+  const stalled = views.filter((v) => v.stalled).length;
+  const deadlocked = views.filter((v) => v.deadlocked).length;
+  const runEntries = Object.entries(runs);
+  const idle = ready.length === 0 && views.length === 0 && runEntries.length === 0;
+
+  return (
+    <div style={{ overflow: "auto", flex: 1, minWidth: 0 }}>
+      <div className="summary">
+        <div className="card"><div className="k">ready</div><div className="v success">{ready.length}</div><div className="sub">deps landed — wake</div></div>
+        <div className="card"><div className="k">blocked</div><div className="v accent">{views.length}</div><div className="sub">parked on a dep</div></div>
+        <div className="card"><div className="k">stalled / deadlocked</div><div className="v danger">{stalled + deadlocked}</div><div className="sub">{deadlocked} cyclic · escalate</div></div>
+        <div className="card"><div className="k">pipelines</div><div className="v">{runEntries.length}</div><div className="sub">work items flowing</div></div>
+      </div>
+
+      {deadlocked > 0 && (
+        <div className="card" style={{ margin: "0 0 14px", borderColor: "var(--danger)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 12 }}>
+            <span>⚠ deadlock</span>
+            <span className="hint" style={{ color: "var(--fg-muted)" }}>
+              {deadlocked} session{deadlocked === 1 ? "" : "s"} sit in a wait-for cycle — no producer can move. Escalate to the director / break the cycle (#199).
+            </span>
+          </div>
+        </div>
+      )}
+
+      {err && <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)", marginBottom: 10 }}>{err}</div>}
+
+      {idle && !err && (
+        <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11.5, padding: "8px 2px" }}>
+          The fleet is flowing. Parked sessions appear here when a worker runs <code>bsc-blocked --on &lt;ref&gt;</code>;
+          pipeline runs appear once a work item is started (Projects → Pipelines).
+        </div>
+      )}
+
+      {ready.length > 0 && (
+        <>
+          <div className="sec-head"><h3>Ready</h3><span className="hint">dependencies landed — wake the parked pane</span></div>
+          <div style={{ marginBottom: 14 }}>
+            {ready.map((wtr) => (
+              <div key={wtr.session} className="card" style={{ marginBottom: 10, borderColor: "var(--success)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <SessionTag session={wtr.session} profile={profileFor(wtr.session)} />
+                  <span className="tag green" style={{ fontSize: 9.5 }}>● ready</span>
+                  <div style={{ flex: 1 }} />
+                  {wtr.checkpoint && <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>↺ {wtr.checkpoint}</span>}
+                  <button
+                    className="btn primary"
+                    style={{ height: 24, padding: "0 12px", fontSize: 11 }}
+                    disabled={waking.has(wtr.session)}
+                    onClick={() => handleWake(wtr)}
+                  >
+                    {waking.has(wtr.session) ? "waking…" : "Wake"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {views.length > 0 && (
+        <>
+          <div className="sec-head"><h3>Blocked</h3><span className="hint">parked on a dependency · live from the coordination log</span></div>
+          {views.map((v) => (
+            <div key={v.session} className="card" style={{ marginBottom: 10, borderColor: v.deadlocked || v.stalled ? "var(--danger)" : undefined }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <SessionTag session={v.session} profile={profileFor(v.session)} />
+                {v.deadlocked
+                  ? <span className="tag" style={{ color: "var(--danger)", fontSize: 9.5 }}>● deadlocked</span>
+                  : v.stalled
+                    ? <span className="tag" style={{ color: "var(--danger)", fontSize: 9.5 }}>● stalled</span>
+                    : <span className="tag" style={{ fontSize: 9.5 }}>waiting</span>}
+                <div style={{ flex: 1 }} />
+                {v.checkpoint && <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>↺ {v.checkpoint}</span>}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {v.deps.map((d) => (
+                  <span key={d.ref} style={{
+                    fontFamily: "var(--mono)", fontSize: 11, padding: "3px 8px", borderRadius: 5,
+                    border: "1px solid var(--border-soft)", color: depColor(d.status),
+                  }}>
+                    {d.ref} · {d.status}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {runEntries.length > 0 && (
+        <>
+          <div className="sec-head"><h3>Pipelines</h3><span className="hint">role-staged work items (#220) · the role each stage runs as</span></div>
+          {runEntries.map(([id, run]) => {
+            const stages = Object.values(run.pipeline.stages);
+            return (
+              <div key={id} className="card" style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{id}</h3>
+                  <span className="hint" style={{ fontSize: 10.5 }}>{run.pipeline.name}</span>
+                  <span className="tag" style={{ color: stageColor(run.state.status), fontSize: 9.5 }}>● {run.state.status}</span>
+                  <div style={{ flex: 1 }} />
+                  {run.state.escalation && (
+                    <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)" }}>{run.state.escalation}</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                  {stages.map((st, i) => {
+                    const current = run.state.stage === st.name;
+                    const attempts = run.state.attempts[st.name] ?? 0;
+                    return (
+                      <span key={st.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {i > 0 && <span style={{ color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10 }}>→</span>}
+                        <span style={{
+                          fontFamily: "var(--mono)", fontSize: 11, padding: "3px 8px", borderRadius: 5,
+                          border: "1px solid " + (current ? "var(--accent)" : "var(--border-soft)"),
+                          color: current ? "var(--accent)" : "var(--fg-muted)",
+                          background: current ? "var(--bg-elev)" : "transparent",
+                        }}>
+                          {st.name} <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>{st.role}</span>{attempts > 1 ? ` ×${attempts}` : ""}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
   );
 }

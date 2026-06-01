@@ -378,6 +378,13 @@ interface AppStore {
   // keys off projectKey (the planning session key — where repos/prompts live).
   fleetStartProject: (projectName: string, fleet: FleetPlan, projectKey: string) => void;
   findFleetTabIdx: (projectName: string) => number;
+  // Coordination (#199 AC#7): paneId ("t{tab}p{pane}") → the AgentStream launched into
+  // it. The coordination log keys waiters/producers by PANE id (BSC_AUDIT_PANE), but a
+  // stream's produced contracts/issues/owned globs live on the stream by its slug. This
+  // map bridges the two so the inbox can build a producer resolver (buildProducerOf) and
+  // light up file/issue wait-for cycles. Written at fleet launch, persisted, global
+  // (pane ids are unique across all tabs). Only worker panes are recorded.
+  fleetPaneStreams: Record<string, AgentStream>;
 
   // Claude config profiles (persisted)
   configProfiles: ConfigProfile[];
@@ -967,6 +974,7 @@ export const useAppStore = create<AppStore>()(
         });
         return ok;
       },
+      fleetPaneStreams: {},
       pipelineRuns: {},
       pipelineStart: (presetKey, item) =>
         set((s) => {
@@ -1161,6 +1169,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneNames             = { ...s.paneNames };
           const newPaneRoles             = { ...s.paneRoles };
           const newPaneProfiles             = { ...s.paneProfiles };
+          const newFleetPaneStreams      = { ...s.fleetPaneStreams };
           const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
           const newPaneFlows                = { ...s.paneFlows };
 
@@ -1199,6 +1208,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneExtensions[key];
               delete newPaneRoles[key];
               delete newPaneProfiles[key];
+              delete newFleetPaneStreams[key];
               delete newPaneRoleGlobs[key];
               delete newPaneFlows[key];
               if (i < count) {
@@ -1229,6 +1239,9 @@ export const useAppStore = create<AppStore>()(
                   // its own "where we left off" note.
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
                   tabPaneNames[i] = sess.name;
+                  // Bridge pane id → stream so the coordinator can resolve which pane
+                  // produces a contract/issue/file (#199 AC#7).
+                  newFleetPaneStreams[key] = sess;
                 }
                 newPaneContinue[key] = resume;
                 newPaneExtensions[key] = fleetExts;
@@ -1270,6 +1283,7 @@ export const useAppStore = create<AppStore>()(
             paneExtensions: newPaneExtensions,
             paneRoles: newPaneRoles,
             paneProfiles: newPaneProfiles,
+            fleetPaneStreams: newFleetPaneStreams,
             paneRoleGlobs: newPaneRoleGlobs,
             paneFlows: newPaneFlows,
             disabledPanes: newDisabledPanes,
@@ -1559,6 +1573,7 @@ export const useAppStore = create<AppStore>()(
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         coordAutoWake:        s.coordAutoWake,
+        fleetPaneStreams:     s.fleetPaneStreams,
         pipelineRuns:         s.pipelineRuns,
         projectLocalRepos:    s.projectLocalRepos,
         projectKeyAlias:      s.projectKeyAlias,

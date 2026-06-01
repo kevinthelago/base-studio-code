@@ -5,12 +5,13 @@
 // $BSC_COORD_LOG via read_coord_log + ingestCoordLog, so it needs no store wiring beyond
 // the wakePane action. A `woke` event (append_coord_woke) records the wake so it isn't
 // offered again.
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { actuateWake } from "../../lib/coordinatorActuate";
 import {
   ingestCoordLog, coordinationSummary, wakePromptFor, waitingWakePrompt, emptyCoordState,
+  buildProducerOf, producesFromPaneStreams,
   type BlockedView, type Waiter, type CoordState, type WaitingSession,
 } from "../../lib/coordination";
 
@@ -24,11 +25,23 @@ export function CoordinatorInbox() {
   const wakePane = useAppStore((s) => s.wakePane);
   const coordAutoWake = useAppStore((s) => s.coordAutoWake);
   const setCoordAutoWake = useAppStore((s) => s.setCoordAutoWake);
-  const [views, setViews] = useState<BlockedView[]>([]);
+  const fleetPaneStreams = useAppStore((s) => s.fleetPaneStreams);
   const [ready, setReady] = useState<Waiter[]>([]);
   const [state, setState] = useState<CoordState>(emptyCoordState());
   const [err, setErr] = useState<string | null>(null);
   const [waking, setWaking] = useState<Set<string>>(new Set());
+
+  // Plan-derived producer resolver (#199 AC#7): map each blocked-on contract/issue/file
+  // ref back to the PANE expected to satisfy it, so coordinationSummary lights up
+  // file/issue wait-for cycles — not just `session:` ones. Falls back to the default
+  // (session-only) resolver when no fleet has launched.
+  const producerOf = useMemo(
+    () => buildProducerOf(producesFromPaneStreams(fleetPaneStreams)),
+    [fleetPaneStreams],
+  );
+  // Derived reactively so it recomputes when either the log state OR the fleet map
+  // changes (a new launch can introduce/break a cycle without a fresh log line).
+  const views = useMemo(() => coordinationSummary(state, producerOf), [state, producerOf]);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,7 +50,6 @@ export function CoordinatorInbox() {
         .then((lines) => {
           if (cancelled) return;
           const r = ingestCoordLog(lines, emptyCoordState());
-          setViews(coordinationSummary(r.state));
           setReady(r.ready);
           setState(r.state);
           setErr(null);
@@ -68,6 +80,7 @@ export function CoordinatorInbox() {
   }, [wakePane]);
 
   const stalled = views.filter((v) => v.stalled).length;
+  const deadlocked = views.filter((v) => v.deadlocked).length;
   const nothing = ready.length === 0 && views.length === 0 && state.waiting.length === 0;
 
   return (
@@ -80,6 +93,7 @@ export function CoordinatorInbox() {
         {state.waiting.length > 0 && <span className="tag" style={{ color: "var(--accent)" }}>{state.waiting.length} paused</span>}
         {views.length > 0 && <span className="tag">{views.length} blocked</span>}
         {stalled > 0 && <span className="tag" style={{ color: "var(--danger)" }}>{stalled} stalled</span>}
+        {deadlocked > 0 && <span className="tag" style={{ color: "var(--danger)" }}>{deadlocked} deadlocked</span>}
         <button
           className="btn ghost"
           style={{ height: 22, fontSize: 10.5, color: coordAutoWake ? "var(--accent)" : "var(--fg-muted)" }}
@@ -161,7 +175,9 @@ export function CoordinatorInbox() {
         <div key={v.session} className="card" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
             <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{v.session}</h3>
-            {v.stalled
+            {v.deadlocked
+              ? <span className="tag" style={{ color: "var(--danger)", fontSize: 9.5 }} title="Part of a wait-for cycle — no producer can satisfy it; the chain will hang. Break the cycle (re-sequence the streams) to recover.">⊗ deadlock</span>
+              : v.stalled
               ? <span className="tag" style={{ color: "var(--danger)", fontSize: 9.5 }}>● stalled</span>
               : <span className="tag" style={{ fontSize: 9.5 }}>waiting</span>}
             <div style={{ flex: 1 }} />
