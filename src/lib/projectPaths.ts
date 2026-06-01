@@ -64,3 +64,13 @@ export function agentWorktreeCwd(baseDir: string, projectKey: string, fullName: 
   const dir = `${repoShortName(fullName)}--${worktreeSlug(agentId)}`;
   return [baseDir, "projects", sanitizeProjectKey(projectKey), ".worktrees", dir].join(sep);
 }
+
+/**
+ * Whether `draftKey` (a sanitized project name) belongs to a project already published to
+ * GitHub — i.e. some node id in `projectKeyAlias` maps to it. The draft clean-start delete
+ * (#379/#380) must never fire for such a key: re-using a published project's name would
+ * otherwise wipe its plan folder even if the GitHub project list hasn't loaded yet.
+ */
+export function isKnownPublishedKey(draftKey: string, projectKeyAlias: Record<string, string>): boolean {
+  return Object.values(projectKeyAlias).includes(draftKey);
+}
