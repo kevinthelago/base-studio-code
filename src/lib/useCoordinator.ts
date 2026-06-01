@@ -6,7 +6,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
-import { ingestCoordLog, wakePromptFor, isFreshlyReady, emptyCoordState } from "./coordination";
+import { ingestCoordLog, wakePromptFor, answerWakePrompt, isFreshlyReady, emptyCoordState } from "./coordination";
 import { actuateWake } from "./coordinatorActuate";
 
 const POLL_MS = 3000;
@@ -17,11 +17,22 @@ export function useCoordinator(): void {
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      if (cancelled || !useAppStore.getState().coordAutoWake) return;
+      if (cancelled) return;
       const lines = await invoke<string[]>("read_coord_log", { limit: 1000 }).catch(() => null);
       if (cancelled || !lines) return;
-      const { state, ready } = ingestCoordLog(lines, emptyCoordState());
+      const { state, ready, answered } = ingestCoordLog(lines, emptyCoordState());
       const now = Date.now();
+      // A director answer (#369) always resumes the asking worker, recency-gated — this
+      // is independent of the dependency auto-wake toggle, since deferring questions to
+      // the director only works if its answer reliably wakes the worker.
+      for (const a of answered) {
+        if (inFlight.current.has(a.session)) continue;
+        if (now - a.at >= FRESH_MS) continue;
+        inFlight.current.add(a.session);
+        void actuateWake(a.session, answerWakePrompt(a), useAppStore.getState().wakePane)
+          .finally(() => inFlight.current.delete(a.session));
+      }
+      if (!useAppStore.getState().coordAutoWake) return;
       for (const w of ready) {
         if (inFlight.current.has(w.session)) continue;
         if (!isFreshlyReady(w, state, now, FRESH_MS)) continue;

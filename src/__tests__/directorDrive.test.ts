@@ -111,3 +111,25 @@ describe("eventDirectorPrompt", () => {
     expect(p).toContain("bsc-merged");
   });
 });
+
+
+describe("director Q&A surfacing (#369)", () => {
+  const TAB = String.fromCharCode(9);
+  const askLine = (sess: string, q: string) => ["2026-06-01T00:00:00Z", sess, "ask", q, ""].join(TAB);
+
+  it("treats an ask as director-relevant and injects when idle", () => {
+    const r = decideDirectorAction({
+      lines: [askLine("w1", "API shape?")], cursor: 0, drive: "event", idle: true,
+      now: 1_000_000, lastInjectAt: 0, heartbeatMs: 600_000, cooldownMs: 6_000,
+    });
+    expect(r.inject).toContain("w1 asks");
+    expect(r.inject).toContain("bsc-answer");
+  });
+
+  it("eventDirectorPrompt formats an ask with the answer instruction", () => {
+    const p = eventDirectorPrompt([{ type: "ask", session: "w1", question: "tabs or spaces?", at: 0 }]);
+    expect(p).toContain("w1 asks");
+    expect(p).toContain("tabs or spaces?");
+    expect(p).toMatch(/bsc-answer/);
+  });
+});

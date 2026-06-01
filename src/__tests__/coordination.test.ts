@@ -4,7 +4,7 @@ import {
   emptyCoordState, refKey, parseRef, isSatisfied, isReady,
   registerWaiter, satisfy, fail, stalledWaiters,
   parseCoordLine, applyCoordEvent, ingestCoordLog,
-  wakePromptFor, planWakes, coordinationSummary, waitingWakePrompt,
+  wakePromptFor, planWakes, coordinationSummary, waitingWakePrompt, answerWakePrompt,
   readinessAt, isFreshlyReady,
 } from "../lib/coordination";
 
@@ -381,5 +381,54 @@ describe("waiting sessions (#297 checkpoint/confirm pauses)", () => {
 
   it("waitingWakePrompt has a sensible empty-reason fallback", () => {
     expect(waitingWakePrompt({ session: "p", reason: "", at: 1 })).toMatch(/you have been resumed/i);
+  });
+});
+
+
+describe("ask / answer round-trip (#369)", () => {
+  const TAB = String.fromCharCode(9);
+  const line = (...cols: string[]) => cols.join(TAB);
+
+  it("parses ask and answer events", () => {
+    expect(parseCoordLine(line("2026-06-01T00:00:00Z", "w1", "ask", "need the API shape", "cp.md")))
+      .toEqual({ type: "ask", session: "w1", question: "need the API shape", checkpoint: "cp.md", at: Date.parse("2026-06-01T00:00:00Z") });
+    expect(parseCoordLine(line("2026-06-01T00:00:00Z", "dir", "answer", "w1", "use cursor pagination")))
+      .toEqual({ type: "answer", target: "w1", answer: "use cursor pagination", at: Date.parse("2026-06-01T00:00:00Z") });
+  });
+
+  it("ask registers an asking session; an answer resumes it with the answer", () => {
+    const r1 = ingestCoordLog([line("2026-06-01T00:00:00Z", "w1", "ask", "tabs or spaces?", "cp.md")]);
+    expect(r1.state.asking.map((a) => a.session)).toEqual(["w1"]);
+    expect(r1.answered).toEqual([]);
+
+    const r2 = ingestCoordLog([
+      line("2026-06-01T00:00:00Z", "w1", "ask", "tabs or spaces?", "cp.md"),
+      line("2026-06-01T00:01:00Z", "dir", "answer", "w1", "spaces"),
+    ]);
+    expect(r2.state.asking).toEqual([]);
+    expect(r2.answered).toHaveLength(1);
+    expect(r2.answered[0]).toMatchObject({ session: "w1", answer: "spaces", checkpoint: "cp.md" });
+  });
+
+  it("a woke ack clears the answered-pending wake (idempotent across polls)", () => {
+    const r = ingestCoordLog([
+      line("2026-06-01T00:00:00Z", "w1", "ask", "q", "cp.md"),
+      line("2026-06-01T00:01:00Z", "dir", "answer", "w1", "do X"),
+      line("2026-06-01T00:02:00Z", "w1", "woke", "", ""),
+    ]);
+    expect(r.answered).toEqual([]);
+    expect(r.state.asking).toEqual([]);
+  });
+
+  it("answering an unknown (not-asking) session yields no wake", () => {
+    const r = ingestCoordLog([line("2026-06-01T00:01:00Z", "dir", "answer", "ghost", "hi")]);
+    expect(r.answered).toEqual([]);
+  });
+
+  it("answerWakePrompt carries the answer and forbids asking the user", () => {
+    const p = answerWakePrompt({ session: "w1", answer: "use cursor pagination", checkpoint: "cp.md", at: 1 });
+    expect(p).toMatch(/use cursor pagination/);
+    expect(p).toMatch(/Do not ask the user/);
+    expect(p).toMatch(/Resume from your checkpoint: cp\.md/);
   });
 });
