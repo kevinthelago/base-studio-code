@@ -96,13 +96,24 @@ describe("PaneShell", () => {
     expect(container.firstChild).toHaveClass("focused");
   });
 
-  it("enters rename mode when agent name is clicked", () => {
+  it("enters rename mode when the agent name is double-clicked", () => {
     render(
       <PaneShell agent="my-agent">
         <div>content</div>
       </PaneShell>
     );
-    fireEvent.click(screen.getByTitle("Click to rename"));
+    fireEvent.doubleClick(screen.getByTitle("Click to switch view; double-click to rename"));
     expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("opens the view-type dropdown when the agent name is clicked", () => {
+    render(
+      <PaneShell agent="my-agent">
+        <div>content</div>
+      </PaneShell>
+    );
+    fireEvent.click(screen.getByTitle("Click to switch view; double-click to rename"));
+    // The dropdown lists the selectable views, each with its hotkey label.
+    expect(screen.getByText("Alt+1")).toBeInTheDocument();
   });
 });
