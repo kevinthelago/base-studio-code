@@ -3684,16 +3684,27 @@ mod tests {
         // every assigned process — that's the orphan kill.
         drop(job);
 
+        let mut exited = false;
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
             match child.try_wait() {
-                Ok(Some(_)) => return,
+                Ok(Some(_)) => {
+                    exited = true;
+                    break;
+                }
                 Ok(None) => std::thread::sleep(Duration::from_millis(25)),
                 Err(e) => panic!("try_wait failed: {e}"),
             }
         }
+        // Always reap before asserting so the test never leaks a Child handle
+        // (satisfies clippy::zombie_processes); kill() is a harmless no-op once
+        // the job already terminated it.
         let _ = child.kill();
-        panic!("ping survived 2s after job drop — kill-on-close not effective");
+        let _ = child.wait();
+        assert!(
+            exited,
+            "ping survived 2s after job drop — kill-on-close not effective"
+        );
     }
 
     /// Loadbearing claim of the Unix orphan-kill fix (#118): dropping the job
