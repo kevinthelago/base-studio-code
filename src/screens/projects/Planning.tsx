@@ -23,7 +23,7 @@ import {
 } from "./planSections";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
-import { ProjectPane } from "./ProjectPane";
+import { ProjectPane, type SyncState } from "./ProjectPane";
 import { buildProjectPaneData } from "./projectPaneData";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -361,6 +361,7 @@ export function Planning({ visible }: { visible: boolean }) {
     pinnedContext,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
     togglePinnedContext,
+    addProjectRepo, triageStartProject,
     agentProfiles,
     commands, schedules,
   } = useAppStore();
@@ -493,20 +494,11 @@ export function Planning({ visible }: { visible: boolean }) {
   );
   const [restarting, setRestarting] = useState(false);
 
+  const [docsSync, setDocsSync] = useState<SyncState>("idle");
+  const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
+  const [triaging, setTriaging] = useState(false);
   type PublishPhase = "idle" | "running" | "done" | "error";
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
-  const [, setFlashConfirm] = useState(false);
-  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function triggerFlash() {
-    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-    setFlashConfirm(false);
-    // Force a re-render so re-adding the class restarts the animation
-    requestAnimationFrame(() => {
-      setFlashConfirm(true);
-      flashTimerRef.current = setTimeout(() => setFlashConfirm(false), 700);
-    });
-  }
   // Live status of each GitHub object, keyed by the ids in buildGhStructure.
   const [ghStatus, setGhStatus] = useState<GhStatusMap>({});
 
@@ -528,14 +520,6 @@ export function Planning({ visible }: { visible: boolean }) {
   const initSendTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const confirmedCount     = sections.filter(s => s.state === "confirmed").length;
-  const draftedOrConfirmed = sections.filter(s => s.state !== "pending").length;
-  // Ready to publish when every section that has content is confirmed.
-  // Sections Claude never filled stay "pending" and don't block publishing.
-  const allConfirmed = draftedOrConfirmed > 0 &&
-    sections.every(s => s.state !== "drafted");
-  // Existing projects can sync as soon as any section is confirmed.
-  // New projects must confirm everything before first publish.
-  const canPublish = isExisting ? confirmedCount > 0 : allConfirmed;
 
   // Mount xterm.js and spawn the planning PTY (once per Planning screen lifecycle).
   // pty_kill is called on unmount so navigating away ends the session cleanly.
@@ -986,8 +970,72 @@ export function Planning({ visible }: { visible: boolean }) {
   // issues. Every step is idempotent (check-then-create) so re-running acts as a
   // sync. Status is reported through ghStatus, keyed by the buildGhStructure ids,
   // so the GitHubStructureCard reflects each object as it is created.
+  // Context Files → push a consolidated PROJECT_PLAN.md into every repo's .github/.
+  async function handleSyncDocs() {
+    if (!githubToken || publishRepos.length === 0) return;
+    const token = githubToken;
+    setDocsSync("running");
+    try {
+      const put = (path: string, body: unknown) => invoke("github_put", { token, path, body });
+      const rest = <T,>(path: string) => invoke<T>("github_request", { token, path });
+      const parts = [`# ${projectTitle} — Project Plan\n`];
+      for (const s of sections) parts.push(`\n## ${s.title || s.k}\n\n${s.content}\n`);
+      const content = btoa(unescape(encodeURIComponent(parts.join("\n"))));
+      for (const repo of publishRepos) {
+        const path = `repos/${repo}/contents/.github/PROJECT_PLAN.md`;
+        let sha: string | undefined;
+        try { const ex = await rest<{ sha?: string }>(path); sha = ex?.sha; } catch { /* file absent */ }
+        await put(path, { message: "docs: sync project plan", content, ...(sha ? { sha } : {}) });
+      }
+      setDocsSync("done");
+    } catch (e) {
+      console.error("sync docs failed:", e);
+      setDocsSync("error");
+    }
+  }
+
+  // Agents → ensure each fleet stream's `stream:<id>` label exists in every repo.
+  async function handleSyncLabels() {
+    if (!githubToken || publishRepos.length === 0) return;
+    const streams = planFleet[effectiveProjectId]?.streams ?? [];
+    if (streams.length === 0) { setLabelsSync("error"); return; }
+    const token = githubToken;
+    setLabelsSync("running");
+    try {
+      const post = (path: string, body: unknown) => invoke("github_post", { token, path, body });
+      for (const repo of publishRepos) {
+        for (const st of streams) {
+          // Idempotent: GitHub 422s when the label already exists — ignore it.
+          await post(`repos/${repo}/labels`, { name: `stream:${st.id}`, color: "5319e7" }).catch(() => {});
+        }
+      }
+      setLabelsSync("done");
+    } catch (e) {
+      console.error("sync labels failed:", e);
+      setLabelsSync("error");
+    }
+  }
+
+  // Header button → clone the repos and launch a triage session for this project.
+  async function launchTriage() {
+    if (publishRepos.length === 0) return;
+    setTriaging(true);
+    try {
+      await Promise.all(publishRepos.map(fullName =>
+        invoke<string>("clone_repo", { project: projectTitle, fullName })
+          .then(() => addProjectRepo(activeProjectId ?? effectiveProjectId, fullName))
+          .catch(e => console.error(`clone ${fullName} failed:`, e)),
+      ));
+      triageStartProject(projectTitle, publishRepos, activeProjectId ?? undefined);
+    } catch (e) {
+      console.error("triage setup failed:", e);
+    } finally {
+      setTriaging(false);
+    }
+  }
+
   async function handlePublish() {
-    if (!canPublish || !githubToken) return;
+    if (!githubToken || publishRepos.length === 0) return;
     const token = githubToken;
 
     const repos       = publishRepos;
@@ -1279,12 +1327,6 @@ _Auto-generated by base-studio-code planner._`,
     }
   }
 
-  // % of filled sections still needing confirmation (shown in the disabled button).
-  const unconfirmedFilled = sections.filter(s => s.state === "drafted").length;
-  const remainingPct = draftedOrConfirmed === 0 ? 100
-    : Math.round((unconfirmedFilled / draftedOrConfirmed) * 100);
-
-  const noRepoReady = !githubToken;
 
   return (
     <>
@@ -1337,52 +1379,14 @@ _Auto-generated by base-studio-code planner._`,
         <button className="btn ghost" onClick={() => setProjectsView(isExisting ? "board" : "list")}>
           save & exit
         </button>
-        {(() => {
-          const verb    = isExisting ? "sync" : "publish";
-          const verbCap = isExisting ? "Sync changes →" : "Publish to GitHub →";
-          const pending = isExisting
-            ? `sync to github · ${remainingPct > 0 ? `${remainingPct}% to go` : "confirm at least one section"}`
-            : `publish to github · ${remainingPct > 0 ? `${remainingPct}% to go` : "confirm all sections"}`;
-          if (publishPhase === "running") return (
-            <button className="btn primary" disabled style={{ opacity: 0.7 }}>
-              {verb}ing…
-            </button>
-          );
-          // After a successful run the flow stays re-runnable — every step is
-          // idempotent, so clicking again syncs new/changed objects to GitHub.
-          if (publishPhase === "done") return (
-            <button
-              className="btn primary"
-              onClick={handlePublish}
-              title="Re-run the publish — existing objects are skipped"
-              style={{ background: "var(--success)", borderColor: "var(--success)" }}
-            >
-              ↻ sync again
-            </button>
-          );
-          if (!canPublish) return (
-            <div onClick={triggerFlash} title="Confirm at least one section first" style={{ cursor: "pointer" }}>
-              <button className="btn primary" disabled style={{ opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }}>
-                {pending}
-              </button>
-            </div>
-          );
-          if (noRepoReady) return (
-            <button className="btn primary" disabled style={{ opacity: 0.5, cursor: "not-allowed" }}
-              title="Add a GitHub token in Settings → Integrations">
-              no github token
-            </button>
-          );
-          return (
-            <button
-              className="btn primary"
-              onClick={handlePublish}
-              style={publishPhase === "error" ? { borderColor: "var(--danger)", color: "var(--danger)", background: "transparent" } : {}}
-            >
-              {publishPhase === "error" ? `↺ retry ${verb}` : verbCap}
-            </button>
-          );
-        })()}
+        <button
+          className="btn primary"
+          onClick={launchTriage}
+          disabled={triaging || publishRepos.length === 0}
+          title={publishRepos.length === 0 ? "Link a repo first" : "Clone the repos and start a triage session"}
+        >
+          {triaging ? "starting triage…" : "Triage →"}
+        </button>
       </div>
 
       {/* Repo strip — always visible so state is clear at a glance */}
@@ -1484,6 +1488,10 @@ _Auto-generated by base-studio-code planner._`,
                 gate: f.gate as FlowGate,
               })}
               onTogglePin={(name) => togglePinnedContext(effectiveProjectId, name)}
+              onSyncStructure={githubToken && publishRepos.length > 0 ? handlePublish : undefined}
+              onSyncDocs={githubToken && publishRepos.length > 0 ? handleSyncDocs : undefined}
+              onSyncLabels={githubToken && publishRepos.length > 0 ? handleSyncLabels : undefined}
+              syncState={{ structure: "idle", docs: docsSync, labels: labelsSync }}
             />
           ) : (
             <>

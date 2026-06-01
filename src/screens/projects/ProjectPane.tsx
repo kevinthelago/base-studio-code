@@ -250,6 +250,37 @@ function Track({ pct, green }: { pct: number; green?: boolean }) {
   </span>;
 }
 
+// per-section sync button (lives in a Sec's `right` slot)
+export type SyncState = "idle" | "running" | "done" | "error";
+function SyncBtn({ label, state = "idle", onClick }: { label: string; state?: SyncState; onClick?: () => void }) {
+  if (!onClick) return null;
+  const txt = state === "running" ? "syncing…"
+    : state === "done" ? "✓ synced"
+    : state === "error" ? "↺ retry"
+    : label;
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); if (state !== "running") onClick(); }}
+      disabled={state === "running"}
+      style={{
+        padding: "2px 9px", borderRadius: 5, whiteSpace: "nowrap",
+        cursor: state === "running" ? "default" : "pointer",
+        fontFamily: "var(--mono)", fontSize: 9.5,
+        opacity: state === "running" ? 0.6 : 1,
+        background: state === "done" ? "color-mix(in oklch, var(--success), transparent 84%)"
+          : state === "error" ? "transparent"
+          : "color-mix(in oklch, var(--accent), transparent 84%)",
+        color: state === "done" ? "var(--success)"
+          : state === "error" ? "var(--danger)"
+          : "var(--accent)",
+        border: "1px solid " + (state === "done" ? "color-mix(in oklch, var(--success), transparent 60%)"
+          : state === "error" ? "color-mix(in oklch, var(--danger), transparent 50%)"
+          : "var(--accent-dim)"),
+      }}
+    >{txt}</button>
+  );
+}
+
 // collapsible section shell
 function Sec({ title, count, open = true, right, children }: {
   title: string; count?: React.ReactNode; open?: boolean; right?: React.ReactNode; children: React.ReactNode;
@@ -722,7 +753,8 @@ void repoRollup;
  * shows the full pane. The drill-in editors keep local state -- display only,
  * no write-back in this slice.
  */
-export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onTogglePin }: {
+export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onTogglePin,
+  onSyncStructure, onSyncDocs, onSyncLabels, syncState }: {
   data?: ProjectPaneData;
   projectName?: string;
   projectId?: string;
@@ -730,6 +762,10 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onTogglePin?: (name: string) => void;
+  onSyncStructure?: () => void;
+  onSyncDocs?: () => void;
+  onSyncLabels?: () => void;
+  syncState?: { structure?: SyncState; docs?: SyncState; labels?: SyncState };
 }) {
   const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.context.length > 0);
   const agents:    Agent[]       = hasData ? data!.agents    : AGENTS;
@@ -787,13 +823,13 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
       </div>
 
       <div className="pp-scroll">
-        <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false}>
+        <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false} right={<SyncBtn label="Push docs →" state={syncState?.docs} onClick={onSyncDocs} />}>
           <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />
         </Sec>
-        <Sec title="Repository · Structure" count={`${repos.length} repos · ${structure.length} milestones`} open={true}>
+        <Sec title="Repository · Structure" count={`${repos.length} repos · ${structure.length} milestones`} open={true} right={<SyncBtn label="Sync to GitHub →" state={syncState?.structure} onClick={onSyncStructure} />}>
           <RepoStructure structure={structure} repos={repos} agents={agents} />
         </Sec>
-        <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true}>
+        <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
           <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
         </Sec>
       </div>
