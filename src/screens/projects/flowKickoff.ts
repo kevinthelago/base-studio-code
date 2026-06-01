@@ -60,7 +60,7 @@ export function flowKickoffText(flow: AgentFlow | undefined, branch: string): Fl
       push = "This is a read-only role: do not commit, push, or open PRs. Report what you find by piping notes into bsc-note on stdin.";
       break;
     default: // auto-pr
-      push = `When your work is ready and the checks pass (${when}), commit to your branch ${branch}, push it, and open a PR to develop for the director to merge.`;
+      push = `When your work is ready and the checks pass (${when}), commit to your branch ${branch}, push it, and open a PR to develop for the director to merge. After opening the PR, run \`bsc-landed <issue>\` for the issue you just finished (e.g. bsc-landed #42) so the director is notified to review and merge it.`;
   }
 
   return { autonomy, push };

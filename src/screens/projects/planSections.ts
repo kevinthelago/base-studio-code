@@ -1,5 +1,6 @@
 import type { AgentFlow } from "./agentFlow";
 import { flowOrUndefined } from "./agentFlow";
+import { type DirectorDrive, normalizeDirectorDrive, DEFAULT_DIRECTOR_DRIVE } from "./directorDrive";
 // Pure helpers for the dynamic, guided project planner.
 //
 // The planner no longer has a fixed list of sections. Claude documents whatever
@@ -53,7 +54,7 @@ export interface AgentStream {
 }
 
 /** Optional async-integrator session that coordinates the fleet from the project root. */
-export interface FleetDirector { enabled: boolean; role?: string; }
+export interface FleetDirector { enabled: boolean; role?: string; drive?: DirectorDrive; }
 
 /** The full parallel-execution plan for a project (persisted as `fleet.json`). */
 export interface FleetPlan {
@@ -67,7 +68,7 @@ export interface FleetPlan {
 
 /** An empty fleet — the default before the planner has designed one. */
 export function emptyFleet(): FleetPlan {
-  return { recommended: 0, reasoning: "", streams: [], director: { enabled: false } };
+  return { recommended: 0, reasoning: "", streams: [], director: { enabled: false, drive: DEFAULT_DIRECTOR_DRIVE } };
 }
 
 /**
@@ -319,6 +320,7 @@ export function parseFleetFile(raw: string): FleetPlan | null {
   const director: FleetDirector = {
     enabled: dir.enabled === true || dir.enabled === "true",
     role: typeof dir.role === "string" && dir.role.trim() ? dir.role.trim() : undefined,
+    drive: normalizeDirectorDrive(dir.drive),
   };
 
   return {

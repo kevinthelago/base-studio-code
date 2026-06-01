@@ -24,6 +24,7 @@ import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
+import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
 
 // Sent as the first message to each console when a project tab is opened, so the
@@ -202,6 +203,8 @@ interface AppStore {
   // command allowlist is narrowed at launch (a planner can't run git/gh writes).
   // Absent ⇒ unrestricted (current behavior). Set by the planning/fleet assignment.
   paneRoles: Record<string, SessionRole>;
+  /** Drive mode for each launched director pane (#366) — read by useDirectorPump. */
+  paneDirectorDrive: Record<string, DirectorDrive>;
   setPaneRole: (paneId: string, role: SessionRole) => void;
   // Agents (#255) — editable permission profiles + their per-pane assignment, both
   // persisted. A pane's assigned profile is applied to its session at launch (the
@@ -425,6 +428,7 @@ interface AppStore {
   generateFleetProfiles: (projectId: string) => void;
   setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string) => void;
   setPlanDirector:       (projectId: string, enabled: boolean, role?: string) => void;
+  setPlanDirectorDrive:  (projectId: string, drive: DirectorDrive) => void;
   clearPlanFleet:        (projectId: string) => void;
 
   // Extensions — MCP servers + hooks the user configures, each scoped via its
@@ -624,6 +628,7 @@ export const useAppStore = create<AppStore>()(
           return { disabledPanes: next };
         }),
       paneRoles: {},
+    paneDirectorDrive: {},
       setPaneRole: (paneId, role) =>
         set((s) => ({ paneRoles: { ...s.paneRoles, [paneId]: role } })),
 
@@ -1137,6 +1142,7 @@ export const useAppStore = create<AppStore>()(
           // caller kills the old panes first), like triageStartProject.
           const baseTabName = `${projectName} · build`;
           const hasDirector = fleet.director.enabled;
+          const newPaneDirectorDrive     = { ...s.paneDirectorDrive };
 
           // Independents first so the launched wave is what can run now; the
           // recommended count caps how many workers start (no 16 cap — we go multi-tab).
@@ -1206,6 +1212,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneProfiles[key];
               delete newPaneRoleGlobs[key];
               delete newPaneFlows[key];
+              delete newPaneDirectorDrive[key];
               if (i < count) {
                 const sess = chunk[i];
                 if (sess === null) {
@@ -1216,6 +1223,7 @@ export const useAppStore = create<AppStore>()(
                   newPaneAllowedCommands[key] = projectCmds;
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
                   tabPaneNames[i] = "director";
+                  newPaneDirectorDrive[key] = resolveDirectorDrive(fleet.director.drive);
                 } else {
                   // Worker runs in its own git worktree on its own branch.
                   newPaneCwds[key]     = agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
@@ -1277,6 +1285,7 @@ export const useAppStore = create<AppStore>()(
             paneProfiles: newPaneProfiles,
             paneRoleGlobs: newPaneRoleGlobs,
             paneFlows: newPaneFlows,
+            paneDirectorDrive: newPaneDirectorDrive,
             disabledPanes: newDisabledPanes,
             paneNames: newPaneNames,
             activeScreen: "console" as Screen,
@@ -1436,7 +1445,17 @@ export const useAppStore = create<AppStore>()(
           return {
             planFleet: {
               ...s.planFleet,
-              [projectId]: { ...cur, director: { enabled, role: role ?? cur.director.role } },
+              [projectId]: { ...cur, director: { enabled, role: role ?? cur.director.role, drive: cur.director.drive } },
+            },
+          };
+        }),
+      setPlanDirectorDrive: (projectId, drive) =>
+        set((s) => {
+          const cur = s.planFleet[projectId] ?? emptyFleet();
+          return {
+            planFleet: {
+              ...s.planFleet,
+              [projectId]: { ...cur, director: { ...cur.director, drive } },
             },
           };
         }),
@@ -1537,6 +1556,7 @@ export const useAppStore = create<AppStore>()(
         paneNames:       s.paneNames,
         paneCwds:        s.paneCwds,
         paneWasClaude:   s.paneWasClaude,
+        paneDirectorDrive: s.paneDirectorDrive,
         disabledPanes:   s.disabledPanes,
         githubConnected: s.githubConnected,
         githubToken:     s.githubToken,
