@@ -31,7 +31,7 @@ rfd = "0.14"
 # system crypto toolchain); `tokio` runs the relay client; `tokio-tungstenite`
 # dials the relay over real (CA-signed) TLS via rustls + webpki roots; `base64`
 # encodes the static public key for the pairing QR; `rand` mints room ids + PSKs.
-snow = "0.9"
+snow = "0.10"
 base64 = "0.22"
 rand = "0.8"
 tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "time", "net", "io-util"] }
