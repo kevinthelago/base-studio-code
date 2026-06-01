@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { githubRequest } from "../../lib/github";
+import { parseWorkflowYaml } from "../../lib/workflowYaml";
 import { useAppStore, type GithubRepo } from "../../store";
 
 interface GhWorkflow {
@@ -80,17 +81,16 @@ function Section2({ label, children }: { label: string; children: React.ReactNod
       }}>
         <span>{label}</span>
         <span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
-        <span style={{ color: "var(--fg-dim)", cursor: "pointer", textTransform: "none", letterSpacing: 0 }}>+ add</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{children}</div>
     </div>
   );
 }
 
-function RowEditable({ icon, t, v, on, placeholder }: { icon: string; t: string; v: string; on?: boolean; placeholder?: boolean }) {
+function InfoRow({ icon, t, v, on, placeholder }: { icon: string; t: string; v: string; on?: boolean; placeholder?: boolean }) {
   return (
     <div style={{
-      display: "grid", gridTemplateColumns: "22px 130px 1fr 22px",
+      display: "grid", gridTemplateColumns: "22px 150px 1fr",
       gap: 10, alignItems: "center", padding: "6px 10px", borderRadius: 5,
       background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
       fontFamily: "var(--mono)", fontSize: 11,
@@ -98,9 +98,21 @@ function RowEditable({ icon, t, v, on, placeholder }: { icon: string; t: string;
       <span style={{ color: on ? "var(--accent)" : "var(--fg-dim)" }}>{icon}</span>
       <span style={{ color: on ? "var(--fg)" : "var(--fg-muted)" }}>{t}</span>
       <span style={{ color: placeholder ? "var(--fg-dim)" : "var(--fg-muted)", fontStyle: placeholder ? "italic" : "normal", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</span>
-      <span style={{ color: "var(--fg-dim)", textAlign: "right", cursor: "pointer" }}>⋯</span>
     </div>
   );
+}
+
+/** Icon hint for a known trigger event; falls back to a neutral dot. */
+function triggerIcon(name: string): string {
+  switch (name) {
+    case "push": return "↑";
+    case "pull_request": case "pull_request_target": return "⇄";
+    case "schedule": return "⏱";
+    case "workflow_dispatch": return "▶";
+    case "workflow_call": return "⇲";
+    case "release": return "⊙";
+    default: return "·";
+  }
 }
 
 function KV({ k, v }: { k: string; v: string }) {
@@ -125,7 +137,7 @@ function JobRow({ name, runs, steps, dur, st }: { name: string; runs: string; st
       display: "flex", flexDirection: "column", gap: 5,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ width: 7, height: 7, borderRadius: "50%", background: st === "passing" ? "var(--success)" : st === "failing" ? "var(--danger)" : "var(--accent)" }} />
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: st === "passing" ? "var(--success)" : st === "failing" ? "var(--danger)" : st === "running" ? "var(--accent)" : "var(--fg-dim)" }} />
         <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--accent)" }}>{name}</span>
         <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>runs-on: {runs}</span>
         <span style={{ flex: 1 }} />
@@ -170,10 +182,11 @@ export function ActionsBody({ repo }: { repo: GithubRepo | null }) {
       .finally(() => setLoading(false));
   }, [repo?.full_name, githubToken]);
 
-  // Fetch YAML when switching to raw mode
+  // Fetch the workflow YAML whenever the selection changes — both the structured
+  // view (which parses it for the real on/env/jobs) and the raw view use it.
   useEffect(() => {
     const wf = workflows.find(w => w.id === selectedId);
-    if (!wf || !repo || !githubToken || viewMode !== "raw") return;
+    if (!wf || !repo || !githubToken) return;
     setYamlLoading(true);
     setYamlContent(null);
     githubRequest<GhFileContent>(`repos/${repo.full_name}/contents/${wf.path}`)
@@ -186,7 +199,7 @@ export function ActionsBody({ repo }: { repo: GithubRepo | null }) {
       })
       .catch(() => setYamlContent("# Could not load workflow file"))
       .finally(() => setYamlLoading(false));
-  }, [selectedId, viewMode, repo?.full_name, githubToken]);
+  }, [selectedId, repo?.full_name, githubToken]);
 
   const selectedWf = workflows.find(w => w.id === selectedId) ?? workflows[0] ?? null;
   const visibleRuns = runs.filter(r => r.workflow_id === selectedId);
@@ -218,6 +231,11 @@ export function ActionsBody({ repo }: { repo: GithubRepo | null }) {
 
   const wfFilename = selectedWf ? selectedWf.path.split("/").pop()! : "—";
   const selectedLatestRun = selectedWf ? runs.find(r => r.workflow_id === selectedWf.id) : null;
+  // The structured view is parsed from the workflow's real YAML (not hardcoded, #141).
+  const parsed = useMemo(
+    () => (yamlContent && !yamlContent.startsWith("# Could not") ? parseWorkflowYaml(yamlContent) : null),
+    [yamlContent],
+  );
 
   return (
     <>
@@ -344,21 +362,48 @@ export function ActionsBody({ repo }: { repo: GithubRepo | null }) {
 
                 {viewMode === "structured" ? (
                   <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
-                    <Section2 label="on">
-                      <RowEditable on icon="↑" t="push"             v="branches: main, feat/**" />
-                      <RowEditable on icon="⇄" t="pull_request"     v="any branch" />
-                      <RowEditable    icon="⏱" t="schedule"         v="not set" placeholder />
-                      <RowEditable    icon="·" t="workflow_dispatch" v="not set" placeholder />
-                    </Section2>
-                    <Section2 label="env">
-                      <KV k="RUST_VERSION"     v="1.82" />
-                      <KV k="CARGO_TERM_COLOR" v="always" />
-                      <KV k="RUSTFLAGS"        v="-D warnings" />
-                    </Section2>
-                    <Section2 label="jobs">
-                      <JobRow name="test"   runs="ubuntu-latest" steps="checkout · setup-rust · cargo test"   dur="—" st="passing" />
-                      <JobRow name="clippy" runs="ubuntu-latest" steps="checkout · setup-rust · cargo clippy" dur="—" st="passing" />
-                    </Section2>
+                    {yamlLoading && !parsed && (
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>Loading workflow…</div>
+                    )}
+                    {!yamlLoading && !parsed && (
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>
+                        Could not read this workflow file — switch to raw yaml to view it.
+                      </div>
+                    )}
+                    {parsed && (() => {
+                      // All jobs share the selected workflow's latest run state (per-job
+                      // status isn't exposed by the runs list); neutral when there's no run.
+                      const jobDot = selectedLatestRun?.conclusion === "success" ? "passing"
+                        : selectedLatestRun?.conclusion === "failure" ? "failing"
+                        : selectedLatestRun && selectedLatestRun.status !== "completed" ? "running" : "";
+                      return (
+                        <>
+                          <Section2 label="on">
+                            {parsed.on.length === 0 ? (
+                              <InfoRow icon="·" t="triggers" v="none found" placeholder />
+                            ) : parsed.on.map(t => (
+                              <InfoRow key={t.name} on icon={triggerIcon(t.name)} t={t.name}
+                                v={t.detail ?? "—"} placeholder={t.detail == null} />
+                            ))}
+                          </Section2>
+                          {parsed.env.length > 0 && (
+                            <Section2 label="env">
+                              {parsed.env.map(e => <KV key={e.key} k={e.key} v={e.value} />)}
+                            </Section2>
+                          )}
+                          <Section2 label="jobs">
+                            {parsed.jobs.length === 0 ? (
+                              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "2px 4px" }}>
+                                No jobs found.
+                              </div>
+                            ) : parsed.jobs.map(j => (
+                              <JobRow key={j.id} name={j.name ?? j.id} runs={j.runsOn}
+                                steps={j.steps.length ? j.steps.join(" · ") : "—"} dur="" st={jobDot} />
+                            ))}
+                          </Section2>
+                        </>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div style={{ padding: "14px 16px" }}>

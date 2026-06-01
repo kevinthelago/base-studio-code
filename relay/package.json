@@ -1,0 +1,19 @@
+{
+  "name": "msc-tunnel-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Zero-knowledge Cloudflare relay for the Mobile Studio Code tunnel — a blind pipe that forwards Noise-encrypted frames between a desktop and its phone.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260530.1",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^4.0.0"
+  }
+}

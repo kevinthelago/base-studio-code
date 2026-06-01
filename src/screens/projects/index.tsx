@@ -6,6 +6,9 @@ import { ProjectBoard } from "./ProjectBoard";
 import { Roadmap } from "./Roadmap";
 import { Issues } from "./Issues";
 import { Insights } from "./Insights";
+import { HooksView } from "./Hooks";
+import { CoordinatorInbox } from "./CoordinatorInbox";
+import { PipelinesLane } from "./PipelinesLane";
 import { Planning } from "./Planning";
 import { ProjectsSummary, ProjectsPageModeStrip } from "./ProjectsSummary";
 import { useProjectScan } from "./useProjectScan";
@@ -23,6 +26,7 @@ export function ProjectsScreen() {
     planningPitch,
     planningTitle,
     planningSessionKey,
+    projectKeyAlias,
   } = useAppStore();
 
   const planningEverShown = useRef(false);
@@ -36,7 +40,8 @@ export function ProjectsScreen() {
   // Remounting Planning only when this changes means publish assigning a project
   // id (or a title edit) no longer tears down the active session. Fallback keeps
   // older sessions working if the key was never set.
-  const planningKey = planningSessionKey || activeProjectId || `${planningTitle}::${planningPitch}`;
+  const rawPlanningKey = planningSessionKey || activeProjectId || `${planningTitle}::${planningPitch}`;
+  const planningKey = projectKeyAlias[rawPlanningKey] ?? rawPlanningKey;
 
   if (!githubConnected) {
     return (
@@ -84,6 +89,9 @@ export function ProjectsScreen() {
           {projectsView === "board" && projectsBoardTab === "board"    && <ProjectBoard />}
           {projectsView === "board" && projectsBoardTab === "issues"   && <Issues />}
           {projectsView === "board" && projectsBoardTab === "insights" && <Insights />}
+          {projectsView === "board" && projectsBoardTab === "hooks"    && <HooksView />}
+          {projectsView === "board" && projectsBoardTab === "coordination" && <CoordinatorInbox />}
+          {projectsView === "board" && projectsBoardTab === "pipelines" && <PipelinesLane />}
           {projectsView !== "board" && <ProjectsList />}
         </div>
       </div>

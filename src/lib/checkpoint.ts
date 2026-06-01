@@ -38,3 +38,14 @@ export function checkpointDocRelpath(sanitizedKey: string, repo: string): string
   const slug = (name.replace(/[^A-Za-z0-9._-]/g, "-") || "repo").toLowerCase();
   return `projects/${sanitizedKey}/prompts/${slug}-checkpoint.md`;
 }
+
+/**
+ * Unified-store relpath for a fleet *agent's* checkpoint document, keyed by the
+ * agent/stream id rather than the repo — so two agents sharing one repo clone keep
+ * separate "where we left off" notes instead of clobbering each other. `agentId` is
+ * a stream id (already slug-like); it is re-slugged defensively.
+ */
+export function agentCheckpointDocRelpath(sanitizedKey: string, agentId: string): string {
+  const slug = (agentId.replace(/[^A-Za-z0-9._-]/g, "-") || "agent").toLowerCase();
+  return `projects/${sanitizedKey}/prompts/${slug}-checkpoint.md`;
+}

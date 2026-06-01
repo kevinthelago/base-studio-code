@@ -8,6 +8,7 @@ import { StatusBar } from "./components/chrome/StatusBar";
 import { Dialog } from "./components/Dialog";
 import { useAppStore } from "./store";
 import { useHotkeys } from "./hooks/useHotkeys";
+import { useScheduler } from "./hooks/useScheduler";
 import { startPerfMonitor, recordStoreWrite } from "./lib/perf";
 import { log } from "./lib/log";
 import { ConsoleScreen } from "./screens/Console";
@@ -17,7 +18,9 @@ import { AutomationsScreen } from "./screens/automations";
 import { ExtensionsScreen } from "./screens/extensions";
 import { SettingsScreen } from "./screens/settings";
 import { ProjectsScreen } from "./screens/projects";
+import { AgentsScreen } from "./screens/agents";
 import type { Tab } from "./components/chrome/Tabstrip";
+import { SuperUserAchievement } from "./components/SuperUserAchievement";
 
 // ── New-tab dialog ────────────────────────────────────────────────────────────
 
@@ -123,6 +126,7 @@ function ConsoleEmptyState({ onNew }: { onNew: () => void }) {
 
 export default function App() {
   useHotkeys();
+  useScheduler();
 
   const {
     activeScreen, setScreen,
@@ -195,6 +199,9 @@ export default function App() {
           parts.push(activeProjectName);
           parts.push(projectsBoardTab);
         }
+        break;
+      case "agents":
+        parts.push("Agents");
         break;
       case "settings":
         parts.push("Settings");
@@ -273,6 +280,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <SuperUserAchievement />
       <Titlebar workspace={titleWorkspace} />
       <div className="shell">
         <Rail active={activeScreen} onNavigate={setScreen} />
@@ -318,6 +326,7 @@ export default function App() {
           {activeScreen === "github"     && <GitHubScreen />}
           {activeScreen === "automation" && <AutomationsScreen />}
           {activeScreen === "extensions" && <ExtensionsScreen />}
+          {activeScreen === "agents"     && <AgentsScreen />}
           {activeScreen === "settings"   && <SettingsScreen />}
           </div>
           <StatusBar extra={

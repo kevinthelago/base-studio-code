@@ -149,8 +149,15 @@ export function PaneShell({
         background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)",
       }}>
 
-        {/* View selector dropdown */}
-        <div ref={viewRef} style={{ position: "relative", flex: "0 0 auto" }}>
+        {/* Status indicator — leftmost */}
+        <span style={{
+          width: 7, height: 7, borderRadius: "50%", background: statusColor,
+          animation: status === "run" ? "pulse 1.4s ease-in-out infinite" : "none",
+          flex: "0 0 7px",
+        }} />
+
+        {/* View selector — the type button AND the title open this dropdown */}
+        <div ref={viewRef} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6, flex: "0 1 auto", minWidth: 0 }}>
           <button
             title={`${viewLabel} · switch view`}
             onClick={() => setViewOpen(!viewOpen)}
@@ -166,6 +173,35 @@ export function PaneShell({
             <ViewIcon size={12} />
           </button>
 
+          {editingName ? (
+          <input
+            ref={nameInputRef}
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+              if (e.key === "Escape") { setDraftName(agent); setEditingName(false); }
+            }}
+            style={{
+              fontFamily: "var(--mono)", fontSize: 11.5,
+              background: "var(--bg-canvas)", color: "var(--fg)",
+              border: "1px solid var(--accent-dim)", borderRadius: 3,
+              padding: "1px 5px", width: 130, outline: "none", flex: "0 0 auto",
+            }}
+          />
+          ) : (
+            <span
+              onClick={() => setViewOpen(true)}
+              onDoubleClick={() => { setViewOpen(false); setDraftName(agent); setEditingName(true); }}
+              title="Click to switch view; double-click to rename"
+              style={{
+                fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)",
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto",
+                cursor: "pointer",
+              }}
+            >{agent}</span>
+          )}
           {viewOpen && (
             <div style={{
               position: "absolute", top: "calc(100% + 4px)", left: 0,
@@ -210,43 +246,6 @@ export function PaneShell({
             </div>
           )}
         </div>
-
-        {/* Status dot */}
-        <span style={{
-          width: 7, height: 7, borderRadius: "50%", background: statusColor,
-          animation: status === "run" ? "pulse 1.4s ease-in-out infinite" : "none",
-          flex: "0 0 7px",
-        }} />
-
-        {/* Agent name — click to rename */}
-        {editingName ? (
-          <input
-            ref={nameInputRef}
-            value={draftName}
-            onChange={(e) => setDraftName(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") { e.preventDefault(); commitRename(); }
-              if (e.key === "Escape") { setDraftName(agent); setEditingName(false); }
-            }}
-            style={{
-              fontFamily: "var(--mono)", fontSize: 11.5,
-              background: "var(--bg-canvas)", color: "var(--fg)",
-              border: "1px solid var(--accent-dim)", borderRadius: 3,
-              padding: "1px 5px", width: 130, outline: "none", flex: "0 0 auto",
-            }}
-          />
-        ) : (
-          <span
-            onClick={() => { setDraftName(agent); setEditingName(true); }}
-            title="Click to rename"
-            style={{
-              fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)",
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto",
-              cursor: "text",
-            }}
-          >{agent}</span>
-        )}
 
         {/* Spacer pushes the controls to the right edge */}
         <div style={{ flex: 1, minWidth: 0 }} />

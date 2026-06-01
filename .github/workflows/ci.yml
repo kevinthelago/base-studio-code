@@ -1,8 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
+  # CI runs on pull requests only (not on every push/merge) -- the same gate
+  # (typecheck/lint/clippy/tests) is run locally before each push.
   pull_request:
     branches: [main, develop]
 
@@ -81,7 +81,15 @@ jobs:
       needs.changes.outputs.rust == 'true'
       || contains(github.event.pull_request.title, '[ci-all]')
       || contains(github.event.head_commit.message, '[ci-all]')
-    runs-on: ubuntu-latest
+    # Per-OS PTY coverage (B-pty-smoke): the process-tree kill is OS-specific
+    # (Windows Job Object vs Unix killpg/setsid), so the cargo test suite -- which
+    # holds the per-OS PtyJob regression tests -- runs on a Linux AND a macOS
+    # runner, not Linux alone. Each test tail-kills its own process group.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +105,7 @@ jobs:
           workspaces: "./src-tauri -> target"
 
       - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \

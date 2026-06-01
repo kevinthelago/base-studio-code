@@ -26,6 +26,7 @@ You can expect an acknowledgement within 48 hours. We aim to release a fix withi
 This project handles:
 
 - **API keys** (Anthropic Claude API key, GitHub tokens) stored via `tauri-plugin-store` in the OS keychain/app data directory — never committed to source
+- **Repo-scoped credentials** — a session can be assigned a fine-grained, single-repo GitHub token so its `gh`/`git` and the UI proxy act only on that repo, never on sibling repos; see [docs/repo-credentials.md](docs/repo-credentials.md) (#158)
 - **PTY sessions** — shell access is local to the host machine only
 - **WebSocket tunnel** — token-authenticated bridge between desktop and mobile companion (not yet implemented; see issue #35)
 

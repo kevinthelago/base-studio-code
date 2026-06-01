@@ -1,0 +1,45 @@
+name: CodeQL
+
+# Static analysis (SAST) of our own code — complements Dependabot (which only
+# covers dependency CVEs). Findings land in the repo's Security → Code scanning tab.
+# JS/TS is analyzed today; add the `rust` language to the matrix once CodeQL's Rust
+# support is GA (until then Rust is covered by `cargo audit` + clippy).
+
+on:
+  # CodeQL on pull requests + the weekly schedule (not on every push).
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC — catch newly-published rules
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          language: ${{ matrix.language }}
+          queries: security-extended
+
+      # JS/TS needs no compile; autobuild is effectively a no-op but kept for
+      # forward-compat if a buildable language is added to the matrix.
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

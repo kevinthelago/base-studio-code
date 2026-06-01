@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore, TRIAGE_PROMPT } from "../store";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { QueuedPane } from "../lib/focusQueue";
+import type { FleetPlan } from "../screens/projects/planSections";
+import type { ExtensionDef } from "../lib/extensions";
 
 const RESET_STATE = {
   tabs: [
@@ -98,18 +100,23 @@ describe("terminal font zoom", () => {
 // ── Focus queue ─────────────────────────────────────────────────────────────────
 
 describe("focus queue", () => {
-  it("enqueueFocus appends (deduped) waiting panes on the active tab", () => {
+  it("enqueueFocus appends (deduped) waiting panes — explicitly per-tab (#77)", () => {
     const s = useAppStore.getState();
-    s.enqueueFocus(2);
-    s.enqueueFocus(2);            // dup ignored
-    s.enqueueFocus(4);
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 2 }, { tab: 0, pane: 4 }]);
+    s.enqueueFocus(0, 2);
+    s.enqueueFocus(0, 2);            // dup ignored
+    s.enqueueFocus(0, 4);
+    // Same pane index on a different tab is a distinct entry — the queue is
+    // global across tabs (a background-tab idle still joins).
+    s.enqueueFocus(1, 2);
+    expect(useAppStore.getState().focusQueue).toEqual([
+      { tab: 0, pane: 2 }, { tab: 0, pane: 4 }, { tab: 1, pane: 2 },
+    ]);
   });
 
-  it("removeFocus drops a pane from the active tab's queue", () => {
-    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 }] });
-    useAppStore.getState().removeFocus(2);
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 3 }]);
+  it("removeFocus targets the (tab, pane) you name — not the active tab implicitly", () => {
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 2 }, { tab: 1, pane: 2 }] });
+    useAppStore.getState().removeFocus(1, 2);
+    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 2 }]);
   });
 
   it("advanceFocus cycles to the next waiting pane WITHOUT dequeuing", () => {
@@ -172,15 +179,24 @@ describe("focus queue", () => {
     expect(useAppStore.getState().autoAdvanceOnReply).toBe(false);
   });
 
-  it("reconcileFocusQueue prunes the active tab's panes that are no longer waiting", () => {
-    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 }] });
-    useAppStore.getState().reconcileFocusQueue([1, 3]); // pane 2 no longer idle
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 3 }]);
+  it("reconcileFocusQueue prunes panes across every tab whose waiting set is supplied (#77)", () => {
+    useAppStore.setState({ focusQueue: [
+      { tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 },
+      { tab: 1, pane: 5 }, { tab: 1, pane: 7 },
+    ] });
+    useAppStore.getState().reconcileFocusQueue(new Map([
+      [0, new Set([1, 3])],
+      [1, new Set([5])],
+    ]));
+    expect(useAppStore.getState().focusQueue).toEqual([
+      { tab: 0, pane: 1 }, { tab: 0, pane: 3 }, { tab: 1, pane: 5 },
+    ]);
   });
 
-  it("reconcileFocusQueue leaves other tabs' entries untouched", () => {
-    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 1 }, { tab: 1, pane: 2 }] });
-    useAppStore.getState().reconcileFocusQueue([]); // nothing waiting on the active tab
+  it("reconcileFocusQueue leaves tabs absent from the map alone (no live data → no assumption)", () => {
+    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 1 }, { tab: 1, pane: 2 }] });
+    useAppStore.getState().reconcileFocusQueue(new Map([[0, new Set<number>()]]));
+    // Tab 0 has no waiting panes → its entries pruned. Tab 1 absent from map → kept.
     expect(useAppStore.getState().focusQueue).toEqual([{ tab: 1, pane: 2 }]);
   });
 });
@@ -233,6 +249,71 @@ describe("deleteLocalProject", () => {
     useAppStore.getState().dismissProject("PVT_y");
     useAppStore.getState().dismissProject("");      // empty ignored
     expect(useAppStore.getState().hiddenProjectIds).toEqual(["PVT_x", "PVT_y"]);
+  });
+});
+
+// ── Project key alias ───────────────────────────────────────
+
+describe("projectKeyAlias", () => {
+  it("setActiveProjectMeta binds the GitHub node id to the title key (first-write-wins)", () => {
+    useAppStore.setState({ projectKeyAlias: {} });
+    useAppStore.getState().setActiveProjectMeta("PVT_n1", "studio-code", "o/r", 16, ["o/r"]);
+    expect(useAppStore.getState().projectKeyAlias["PVT_n1"]).toBe("studio-code");
+    // A later sighting under a renamed title must NOT clobber the working alias.
+    useAppStore.getState().setActiveProjectMeta("PVT_n1", "Studio Code Redux", "o/r", 16, ["o/r"]);
+    expect(useAppStore.getState().projectKeyAlias["PVT_n1"]).toBe("studio-code");
+  });
+
+  it("does not record an alias when there is no node id (unpublished draft)", () => {
+    useAppStore.setState({ projectKeyAlias: {} });
+    useAppStore.getState().setActiveProjectMeta(null, "", "", 0);
+    expect(useAppStore.getState().projectKeyAlias).toEqual({});
+  });
+
+  it("setProjectKeyAlias records when absent and ignores empties / overwrites", () => {
+    useAppStore.setState({ projectKeyAlias: {} });
+    useAppStore.getState().setProjectKeyAlias("PVT_a", "my-app");
+    useAppStore.getState().setProjectKeyAlias("PVT_a", "renamed"); // ignored, already set
+    useAppStore.getState().setProjectKeyAlias("", "x");           // ignored, empty id
+    expect(useAppStore.getState().projectKeyAlias).toEqual({ "PVT_a": "my-app" });
+  });
+
+  it("deleteLocalProject prunes the alias entry for the removed project", () => {
+    useAppStore.setState({ projectKeyAlias: { "PVT_gone": "gone", "PVT_keep": "keep" } });
+    useAppStore.getState().deleteLocalProject(["gone", "PVT_gone"]);
+    const a = useAppStore.getState().projectKeyAlias;
+    expect(a["PVT_gone"]).toBeUndefined();
+    expect(a["PVT_keep"]).toBe("keep");
+  });
+});
+
+// ── Dev reset ─────────────────────────
+
+describe("resetProjectData", () => {
+  it("clears project/plan state but keeps credentials", () => {
+    useAppStore.setState({
+      planSections: { P: { goal: "x" } },
+      planConfirmedSections: { P: ["goal"] },
+      projectLocalRepos: { P: ["o/r"] },
+      hiddenProjectIds: ["PVT_x"],
+      projectKeyAlias: { PVT_x: "P" },
+      activeProjectId: "PVT_x", activeProjectName: "P",
+      planningSessionKey: "P", projectsView: "planning",
+      githubToken: "tok", claudeApiKey: "key",
+    });
+    useAppStore.getState().resetProjectData();
+    const s = useAppStore.getState();
+    expect(s.planSections).toEqual({});
+    expect(s.planConfirmedSections).toEqual({});
+    expect(s.projectLocalRepos).toEqual({});
+    expect(s.hiddenProjectIds).toEqual([]);
+    expect(s.projectKeyAlias).toEqual({});
+    expect(s.activeProjectId).toBeNull();
+    expect(s.planningSessionKey).toBe("");
+    expect(s.projectsView).toBe("list");
+    // credentials are NOT a project concern -> preserved
+    expect(s.githubToken).toBe("tok");
+    expect(s.claudeApiKey).toBe("key");
   });
 });
 
@@ -680,16 +761,20 @@ describe("triageStartProject", () => {
     const { tabs, activeTabIdx, paneCwds, paneInitCmds, disabledPanes } = useAppStore.getState();
     expect(tabs[activeTabIdx].layout).toBe("3×2");
 
+    const { paneRepos } = useAppStore.getState();
     // The 5 real repos are wired up (clone path) and left enabled.
     for (let i = 0; i < repos.length; i++) {
       const key = `t${before}p${i}`;
       expect(paneCwds[key]).toBe(`/base/projects/proj/${repos[i].split("/")[1]}`);
       expect(paneInitCmds[key]).toContain("claude");
       expect(disabledPanes[key]).toBeUndefined();
+      // Bound to its repo so the triage session's GH_TOKEN is repo-scoped (#158).
+      expect(paneRepos[key]).toBe(repos[i]);
     }
     // The single empty cell starts disabled (no shell spawned).
     expect(disabledPanes[`t${before}p5`]).toBe(true);
     expect(paneCwds[`t${before}p5`]).toBeUndefined();
+    expect(paneRepos[`t${before}p5`]).toBeUndefined();
   });
 
   it("marks each real-repo pane to resume its prior conversation (--continue)", () => {
@@ -914,5 +999,236 @@ describe("github state", () => {
   it("setActiveRepo stores the selected repo name", () => {
     useAppStore.getState().setActiveRepo("kevinthelago/base-studio-code");
     expect(useAppStore.getState().activeRepoName).toBe("kevinthelago/base-studio-code");
+  });
+});
+
+describe("agent fleet store", () => {
+  const fleet: FleetPlan = {
+    recommended: 2,
+    reasoning: "r",
+    director: { enabled: true, role: "integrator" },
+    streams: [
+      { id: "auth-ui", name: "Auth UI", repo: "own/web", owns: ["src/auth/**"], issues: ["#1"], dependsOn: [], prompt: "prompts/auth-ui-kickoff.md" },
+      { id: "api", name: "API", repo: "own/api", owns: [], issues: [], dependsOn: [] },
+    ],
+  };
+
+  it("setPlanFleet / add (merge by id) / remove / setPlanDirector manage the per-project fleet", () => {
+    const s = useAppStore.getState();
+    s.setPlanFleet("p", fleet);
+    expect(useAppStore.getState().planFleet["p"].streams).toHaveLength(2);
+
+    s.addPlanAgentStream("p", { id: "auth-ui", name: "Auth UI v2", repo: "own/web", owns: [], issues: [], dependsOn: [] });
+    expect(useAppStore.getState().planFleet["p"].streams).toHaveLength(2);
+    expect(useAppStore.getState().planFleet["p"].streams.find(x => x.id === "auth-ui")!.name).toBe("Auth UI v2");
+
+    s.removePlanAgentStream("p", "api");
+    expect(useAppStore.getState().planFleet["p"].streams.map(x => x.id)).toEqual(["auth-ui"]);
+
+    s.setPlanDirector("p", false);
+    expect(useAppStore.getState().planFleet["p"].director.enabled).toBe(false);
+    expect(useAppStore.getState().planFleet["p"].director.role).toBe("integrator");
+  });
+
+  it("fleetStartProject opens a build tab with the director and worker panes", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("Proj");
+    expect(idx).toBe(3);
+    expect(st.tabs[idx].name).toBe("Proj · build");
+    expect(st.tabs[idx].layout).toBe("2×2"); // director + 2 workers = 3 panes
+
+    // pane 0 = director at the project hub, doc-based kickoff
+    expect(st.paneCwds["t3p0"]).toBe("/base/projects/proj-key");
+    expect(st.paneStartupPromptDocs["t3p0"]).toBe("projects/proj-key/prompts/director-kickoff.md");
+    expect(st.paneNames[idx][0]).toBe("director");
+
+    // pane 1 = first worker in its OWN git worktree, planner-authored kickoff doc
+    expect(st.paneCwds["t3p1"]).toBe("/base/projects/proj-key/.worktrees/web--auth-ui");
+    expect(st.paneStartupPromptDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-kickoff.md");
+    expect(st.paneNames[idx][1]).toBe("Auth UI");
+
+    // pane 2 = second worker (own worktree) with no kickoff doc → generated text
+    expect(st.paneCwds["t3p2"]).toBe("/base/projects/proj-key/.worktrees/api--api");
+    expect(st.paneStartupPromptText["t3p2"]).toContain("API");
+
+    // worker write boundary (#354): the stream's owned globs feed the role gate so
+    // edits in its lane auto-approve; the director (code:none) gets none.
+    expect(st.paneRoleGlobs["t3p1"]).toEqual(["src/auth/**"]);
+    expect(st.paneRoleGlobs["t3p0"]).toBeUndefined();
+    expect(st.paneRoleGlobs["t3p2"]).toBeUndefined();
+
+    // repo-scoped session credentials (#158): each worker pane is bound to its repo
+    // so TerminalView scopes its GH_TOKEN to that repo; the director spans every repo
+    // and stays on the global token (no binding).
+    expect(st.paneRepos["t3p1"]).toBe("own/web");
+    expect(st.paneRepos["t3p2"]).toBe("own/api");
+    expect(st.paneRepos["t3p0"]).toBeUndefined();
+
+    // per-agent checkpoint docs, keyed by stream id (director gets its own)
+    expect(st.paneCheckpointDocs["t3p0"]).toBe("projects/proj-key/prompts/director-checkpoint.md");
+    expect(st.paneCheckpointDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-checkpoint.md");
+    expect(st.paneCheckpointDocs["t3p2"]).toBe("projects/proj-key/prompts/api-checkpoint.md");
+    // first launch starts fresh — no --continue
+    expect(st.paneContinue["t3p1"]).toBe(false);
+
+    // empty grid cell starts disabled
+    expect(st.disabledPanes["t3p3"]).toBe(true);
+
+    // fleetPaneStreams bridges pane id → stream for the coordinator (#199 AC#7):
+    // worker panes are recorded by their stream; the director + empty cells are not.
+    expect(st.fleetPaneStreams["t3p1"].id).toBe("auth-ui");
+    expect(st.fleetPaneStreams["t3p1"].owns).toEqual(["src/auth/**"]);
+    expect(st.fleetPaneStreams["t3p2"].id).toBe("api");
+    expect(st.fleetPaneStreams["t3p0"]).toBeUndefined(); // director pane
+    expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
+  });
+
+  it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const dirFleet: FleetPlan = {
+      recommended: 1, reasoning: "", director: { enabled: false },
+      streams: [{ id: "w", name: "W", repo: "o/r", owns: ["src/x/", "src/y.ts"], issues: [], dependsOn: [] }],
+    };
+    useAppStore.getState().fleetStartProject("DirN", dirFleet, "k");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("DirN");
+    // trailing-slash dir -> subtree glob; a file path is left as-is
+    expect(st.paneRoleGlobs[`t${idx}p0`]).toEqual(["src/x/**", "src/y.ts"]);
+  });
+
+  it("generateFleetProfiles materializes unassigned and dangling-reference profiles", () => {
+    const f: FleetPlan = {
+      recommended: 2, reasoning: "", director: { enabled: false },
+      streams: [
+        { id: "a", name: "A", repo: "o/r", owns: ["src/a/**"], issues: [], dependsOn: [] },
+        { id: "b", name: "B", repo: "o/r", owns: ["src/b/**"], issues: [], dependsOn: [], profile: "b-dev" },
+      ],
+    };
+    useAppStore.setState({ planFleet: { gp: f } });
+    useAppStore.getState().generateFleetProfiles("gp");
+    const st = useAppStore.getState();
+    const streams = st.planFleet["gp"].streams;
+    // unassigned -> generated id + a profile whose write paths are its owns
+    expect(streams[0].profile).toBe("gen_a");
+    expect(st.agentProfiles.find((p) => p.id === "gen_a")!.paths.allow).toEqual(["src/a/**"]);
+    // dangling reference -> materialized, keeping the planner-assigned id stable
+    expect(streams[1].profile).toBe("b-dev");
+    expect(st.agentProfiles.find((p) => p.id === "b-dev")!.paths.allow).toEqual(["src/b/**"]);
+  });
+
+  it("isolates co-located agents in separate worktrees with distinct checkpoint docs", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const coFleet: FleetPlan = {
+      recommended: 3, reasoning: "", director: { enabled: false },
+      streams: [
+        { id: "web-a", name: "Web A", repo: "own/web", owns: [], issues: [], dependsOn: [] },
+        { id: "web-b", name: "Web B", repo: "own/web", owns: [], issues: [], dependsOn: [] },
+        { id: "api",   name: "API",   repo: "own/api", owns: [], issues: [], dependsOn: [] },
+      ],
+    };
+    useAppStore.getState().fleetStartProject("Co", coFleet, "k");
+    const idx = useAppStore.getState().findFleetTabIdx("Co");
+    const st1 = useAppStore.getState();
+    // Two agents in own/web get separate worktree cwds — no shared working tree.
+    expect(st1.paneCwds[`t${idx}p0`]).toBe("/base/projects/k/.worktrees/web--web-a");
+    expect(st1.paneCwds[`t${idx}p1`]).toBe("/base/projects/k/.worktrees/web--web-b");
+    expect(st1.paneCwds[`t${idx}p2`]).toBe("/base/projects/k/.worktrees/api--api");
+    // …and distinct per-agent checkpoint docs.
+    expect(st1.paneCheckpointDocs[`t${idx}p0`]).toBe("projects/k/prompts/web-a-checkpoint.md");
+    expect(st1.paneCheckpointDocs[`t${idx}p1`]).toBe("projects/k/prompts/web-b-checkpoint.md");
+    expect(st1.paneCheckpointDocs[`t${idx}p2`]).toBe("projects/k/prompts/api-checkpoint.md");
+
+    // Re-run → resume. Distinct worktree cwds make --continue unambiguous, so even
+    // co-located agents resume (no co-location exception needed any more).
+    useAppStore.getState().fleetStartProject("Co", coFleet, "k");
+    const st2 = useAppStore.getState();
+    expect(st2.paneContinue[`t${idx}p0`]).toBe(true);
+    expect(st2.paneContinue[`t${idx}p1`]).toBe(true);
+    expect(st2.paneContinue[`t${idx}p2`]).toBe(true);
+  });
+
+  it("spreads a fleet larger than one tab across multiple build tabs", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const streams = Array.from({ length: 20 }, (_, i) => ({
+      id: `s${i}`, name: `S${i}`, repo: "own/web", owns: [], issues: [], dependsOn: [],
+    }));
+    const bigFleet: FleetPlan = { recommended: 20, reasoning: "", director: { enabled: false }, streams };
+    useAppStore.getState().fleetStartProject("Big", bigFleet, "big");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("Big");
+    // 20 workers → 16 in tab 1, 4 in tab 2.
+    expect(st.tabs[idx].name).toBe("Big · build");
+    expect(st.tabs[idx].layout).toBe("4×4");
+    expect(st.tabs[idx + 1].name).toBe("Big · build 2");
+    expect(st.tabs[idx + 1].layout).toBe("2×2");
+    // tab 2's first pane is the 17th worker (s16), in its own worktree.
+    expect(st.paneNames[idx + 1][0]).toBe("S16");
+    expect(st.paneCwds[`t${idx + 1}p0`]).toBe("/base/projects/big/.worktrees/web--s16");
+  });
+
+  it("fleetStartProject caps launched workers at the recommended count", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    useAppStore.getState().fleetStartProject("Cap", { ...fleet, recommended: 1 }, "k");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("Cap");
+    expect(st.tabs[idx].layout).toBe("2×1"); // 1 worker + director = 2 panes
+    expect(st.paneNames[idx][0]).toBe("director");
+    expect(st.paneNames[idx][1]).toBe("Auth UI");
+    expect(st.paneNames[idx][2]).toBeUndefined();
+  });
+});
+
+describe("extensions store", () => {
+  it("add (assigns id) / toggle / update / setProjects / remove", () => {
+    useAppStore.setState({ extensions: [] });
+    const s = useAppStore.getState();
+    s.addExtension({ kind: "mcp", name: "fs", enabled: false, projects: [], transport: "stdio", command: "npx", args: "" });
+    const id = useAppStore.getState().extensions[0].id;
+    expect(useAppStore.getState().extensions).toHaveLength(1);
+    expect(id).toMatch(/^ext_/);
+    s.toggleExtension(id);
+    expect(useAppStore.getState().extensions[0].enabled).toBe(true);
+    s.updateExtension(id, { command: "node" });
+    expect(useAppStore.getState().extensions[0].command).toBe("node");
+    s.setExtensionProjects(id, ["P1"]);
+    expect(useAppStore.getState().extensions[0].projects).toEqual(["P1"]);
+    s.removeExtension(id);
+    expect(useAppStore.getState().extensions).toHaveLength(0);
+  });
+
+  it("fleetStartProject resolves only enabled global + this-project extensions onto panes", () => {
+    const exts: ExtensionDef[] = [
+      { id: "g",     kind: "mcp", name: "g", enabled: true,  projects: [] },
+      { id: "p",     kind: "mcp", name: "p", enabled: true,  projects: ["proj-key"] },
+      { id: "off",   kind: "mcp", name: "x", enabled: false, projects: [] },
+      { id: "other", kind: "mcp", name: "o", enabled: true,  projects: ["zzz"] },
+    ];
+    useAppStore.setState({ bscBaseDir: "/base", extensions: exts });
+    const fleet: FleetPlan = {
+      recommended: 1, reasoning: "", director: { enabled: false },
+      streams: [{ id: "s0", name: "S0", repo: "own/web", owns: [], issues: [], dependsOn: [] }],
+    };
+    useAppStore.getState().fleetStartProject("ExtP", fleet, "proj-key");
+    const idx = useAppStore.getState().findFleetTabIdx("ExtP");
+    const ids = (useAppStore.getState().paneExtensions[`t${idx}p0`] ?? []).map(e => e.id);
+    expect(ids).toEqual(["g", "p"]);
+  });
+});
+
+
+describe("draft projects (#379)", () => {
+  it("adds, removes, and delete-purges a draft", () => {
+    const st = () => useAppStore.getState();
+    st().addDraftProject("acme-x1", { title: "Acme", pitch: "build it", createdAt: 1 });
+    expect(st().localDraftProjects["acme-x1"]).toMatchObject({ title: "Acme", pitch: "build it" });
+    st().addDraftProject("acme-x2", { title: "Acme 2", pitch: "", createdAt: 2 });
+    st().removeDraftProject("acme-x1");
+    expect(st().localDraftProjects["acme-x1"]).toBeUndefined();
+    expect(st().localDraftProjects["acme-x2"]).toBeDefined();
+    // deleteLocalProject also purges the draft entry (cleanup)
+    st().deleteLocalProject(["acme-x2"]);
+    expect(st().localDraftProjects["acme-x2"]).toBeUndefined();
   });
 });

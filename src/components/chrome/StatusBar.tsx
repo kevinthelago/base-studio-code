@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "../../store";
 
 interface StatusBarProps {
@@ -6,6 +8,13 @@ interface StatusBarProps {
 
 export function StatusBar({ extra }: StatusBarProps) {
   const { claudeApiKey, githubConnected, tabs } = useAppStore();
+
+  // The real app version (from tauri.conf.json); drops the old hardcoded
+  // "vX · rust Y" string (#215). Empty in a non-Tauri/web context.
+  const [appVersion, setAppVersion] = useState("");
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion(""));
+  }, []);
 
   const claudeOk  = Boolean(claudeApiKey);
   const totalPanes = tabs.reduce((sum, tab) => {
@@ -28,7 +37,7 @@ export function StatusBar({ extra }: StatusBarProps) {
       <div className="s" style={{ color: "var(--fg-dim)" }}>
         {tabs.length} {tabs.length === 1 ? "tab" : "tabs"} · {totalPanes} {totalPanes === 1 ? "pane" : "panes"}
       </div>
-      <div>v0.2.0 · rust 1.82</div>
+      {appVersion && <div>v{appVersion}</div>}
     </div>
   );
 }
