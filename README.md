@@ -6,17 +6,31 @@ Pairs with **mobile-studio-code**, a companion app that tunnels into the desktop
 
 ## Roadmap
 
-Building toward **1.0.0** — the first official release — one focused release at a time. **0.6.0** (Knowledge Base) is the current development preview.
+Building toward **1.0.0** — the first official release — one focused release at a time. Work runs in parallel across milestones; **0.6.0 (Knowledge Base)** is the named development preview, while the multi-agent **planning + fleet orchestration** (0.7.0) is where most of the active work is right now.
 
-| Version | Focus |
-|---|---|
-| 0.6.0 | **Knowledge Base** — UX rework, T-layout, doc-assignment, resizable panes |
-| 0.7.0 | **Automations & multi-agent planning** — end-to-end scheduling + assign agents to issues/features |
-| 0.8.0 | **Extensions** — agent-facing tooling via MCP (first-party in-process server + hooks) |
-| 0.9.0 | **Tunneling, mobile integration & security** — secure WebSocket tunnel + pairing + repo-level credential scoping |
-| 1.0.0 | **First official release** — GA polish + publish |
+| Version | Focus | Status |
+|---|---|---|
+| 0.6.0 | **Knowledge Base** — UX rework, T-layout, doc-assignment, resizable panes | in progress (~4/7) |
+| 0.7.0 | **Automations & multi-agent planning** — cron scheduling + plan → publish → fleet | in progress (~11/15) |
+| 0.8.0 | **Extensions (MCP)** — agent-facing tooling via an in-process MCP host + hooks | early (~1/3) |
+| 0.9.0 | **Tunneling, mobile & security** — token-authed WS tunnel + relay + pairing + repo-scoped credentials | in progress (~9/12) |
+| 1.0.0 | **First official release (GA)** — feature pages polished, code signing, packaging, publish | planned (~7/12) |
+
+### In flight now — the planning → orchestration loop (0.7.0)
+
+- **Project planning page** — repo-first milestone/issue structure, per-agent permission + flow editor, context-file viewer
+- **Plan → GitHub sync** — milestones, issues, and `stream:` labels created per pane section; plan docs pushed to each repo
+- **Fleet launch** — one worker per stream in its own git worktree + branch, least-privilege profiles, a director at the project hub
+- **Console hardening** — broadcast mode, pane/tab/view navigation hotkeys, font zoom
+
+### Still to do before 1.0.0
+
+- **0.6.0** — finish the Knowledge Base page (remaining UX + empty/first-run states)
+- **0.8.0** — the in-process MCP extension host + server-management UI
+- **1.0.0** — GitHub-screen review polish, Windows/macOS code signing + packaging, the release pipeline
 
 Tracked as [GitHub milestones](https://github.com/kevinthelago/base-studio-code/milestones). The `0.x` series is a development preview — see [Versioning & Releases](#versioning--releases).
+
 
 ## Features
 
