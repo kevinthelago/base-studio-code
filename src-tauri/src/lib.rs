@@ -1750,6 +1750,11 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
      (`gh repo create {owner}/{name} --private --description "..."`), clone it
      (`git clone https://github.com/{owner}/{name} {name}`), write an initial
      `{name}/CLAUDE.md`, and emit `<repo_link full_name="{owner}/{name}" />`.
+   - **Also write `repos.json`** -- a JSON array of every linked `"owner/repo"`
+     (e.g. `["acme/web","acme/api"]`). This is the AUTHORITATIVE, resume-safe repo
+     registration: a `<repo_link>` tag is live-stream-only and is lost when the session
+     resumes, but `repos.json` is a file you can always (re)write, so the right pane
+     reliably shows the repos. Keep it in sync whenever you link a repo.
 3. **Walk the discovery checklist as a QUICK orientation** (see "The discovery
    checklist") — document the core dimensions (goal, users, scope, stack,
    architecture) briefly, skip the rest unless they're central, and don't dwell.

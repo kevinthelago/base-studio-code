@@ -18,7 +18,7 @@ import {
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, titleForKey, groupSections, parseSectionKey,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, REPOS_KEY, parseReposFile, titleForKey, groupSections, parseSectionKey,
   parseFleetFile,
 } from "./planSections";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
@@ -407,6 +407,10 @@ export function Planning({ visible }: { visible: boolean }) {
   // Feeds both handlePublish and the GitHubStructureCard.
   const publishRepos = [...new Set([
     ...effectiveRepos,
+    // The planner's repos.json — the persistent, resume-safe repo registration (a
+    // resumed session can't replay a stream-only <repo_link> tag, but it can write this
+    // file). This is what makes the right pane reliably show repos across reloads.
+    ...parseReposFile((planSections[effectiveProjectId] ?? {})[REPOS_KEY] ?? ""),
     // Repos the planner linked + auto-cloned this project, persisted under the planning
     // session key. effectiveRepos keys off the GitHub board id (empty for a not-yet-published
     // project), so without this the visualizer/publish lose planner-linked repos on reload.
@@ -433,7 +437,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const sections = useMemo<Section[]>(() => {
     const keys = new Set<string>(ANCHOR_KEYS);
     for (const k of Object.keys(savedSections)) {
-      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY) keys.add(k);
+      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== REPOS_KEY) keys.add(k);
     }
     const { project, repos } = groupSections([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];

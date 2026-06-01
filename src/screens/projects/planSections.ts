@@ -24,6 +24,33 @@ export const COMMANDS_KEY = "commands";
  *  shown in its own Fleet card. See {@link parseFleetFile}. */
 export const FLEET_KEY = "fleet";
 
+/** The linked-repositories file (JSON: `repos.json` — an array of `"owner/repo"`).
+ *  The persistent, resume-safe complement to the live `<repo_link>` tag: a resumed
+ *  planner can't replay a stream-only tag, but it CAN write this file, so the right
+ *  pane reliably shows the repos. Surfaced by the poll like `fleet.json`; not rendered
+ *  as a plan section. See {@link parseReposFile}. */
+export const REPOS_KEY = "repos";
+
+/** Parse `repos.json` into a deduped list of `owner/repo` full names. Accepts a bare
+ *  JSON array of strings, or `{ "repos": [...] }`. Returns [] on blank/malformed. */
+export function parseReposFile(raw: string): string[] {
+  const t = raw.trim();
+  if (!t) return [];
+  try {
+    const j: unknown = JSON.parse(t);
+    const arr: unknown[] = Array.isArray(j)
+      ? j
+      : (j && typeof j === "object" && Array.isArray((j as { repos?: unknown }).repos))
+        ? (j as { repos: unknown[] }).repos
+        : [];
+    return [...new Set(
+      arr.filter((x): x is string => typeof x === "string" && x.includes("/")).map((x) => x.trim()),
+    )];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * One parallel work stream — a single Claude session with a focused role, a repo,
  * the files/globs it OWNS (its conflict boundary), the issues it owns, the streams
@@ -197,7 +224,7 @@ export function groupSections(keys: string[]): {
   const project: string[] = [];
   const byRepo = new Map<string, string[]>();
   for (const key of keys) {
-    if (key === SKIPPED_KEY || key === COMMANDS_KEY || key === FLEET_KEY) continue;
+    if (key === SKIPPED_KEY || key === COMMANDS_KEY || key === FLEET_KEY || key === REPOS_KEY) continue;
     const info = parseSectionKey(key);
     if (info.tier === "repo" && info.repo) {
       const list = byRepo.get(info.repo) ?? [];
