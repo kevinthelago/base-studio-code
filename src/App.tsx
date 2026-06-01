@@ -20,6 +20,7 @@ import { SettingsScreen } from "./screens/settings";
 import { ProjectsScreen } from "./screens/projects";
 import { AgentsScreen } from "./screens/agents";
 import type { Tab } from "./components/chrome/Tabstrip";
+import { SuperUserAchievement } from "./components/SuperUserAchievement";
 
 // ── New-tab dialog ────────────────────────────────────────────────────────────
 
@@ -279,6 +280,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <SuperUserAchievement />
       <Titlebar workspace={titleWorkspace} />
       <div className="shell">
         <Rail active={activeScreen} onNavigate={setScreen} />
