@@ -24,6 +24,23 @@ export function resolveGithubToken(
   globalToken: string,
 ): string {
   const repo = repoFromGitHubPath(path);
+  return tokenForRepo(repo, repoTokens, globalToken);
+}
+
+/**
+ * Resolve the token for a session bound to a specific `owner/name` repo: the
+ * repo-scoped credential when one is assigned, otherwise the global token. This is
+ * the session axis of #158 — a worker/triage pane is launched with this token as its
+ * `GH_TOKEN`, so its `gh`/`git` operations carry a fine-grained, repo-scoped credential
+ * (when assigned) and can't act on sibling repos. Matching is case-insensitive on the
+ * `owner/name` (GitHub repo names are case-insensitive). A null/empty `repo` (a console
+ * with no bound repo, the director) falls back to the global token.
+ */
+export function tokenForRepo(
+  repo: string | null | undefined,
+  repoTokens: Record<string, string>,
+  globalToken: string,
+): string {
   if (!repo) return globalToken;
   const lower = repo.toLowerCase();
   for (const [k, v] of Object.entries(repoTokens)) {
