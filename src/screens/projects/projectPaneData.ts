@@ -58,7 +58,7 @@ export interface Issue {
 export interface Epic { id: string; title: string; pct: number; issues: Issue[] }
 export interface Milestone { id: string; title: string; repo: string; pct: number; state: string; epics: Epic[] }
 
-export interface ContextFile { name: string; kind: string; tok: string; pinned: boolean; scope: string }
+export interface ContextFile { name: string; kind: string; tok: string; pinned: boolean; scope: string; content: string }
 
 export interface ProjectPaneData {
   agents: Agent[];
@@ -229,6 +229,7 @@ function buildContext(input: BuildProjectPaneInput): ContextFile[] {
       tok,
       pinned: explicitPins ? explicitPins.has(name) : s.state === "confirmed",
       scope: "project",
+      content: s.content,
     };
   });
 }

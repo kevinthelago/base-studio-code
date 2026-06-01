@@ -157,13 +157,13 @@ function structFor(repoId: string, structure: Milestone[] = STRUCTURE): Mileston
 
 // ── context files ──────────────────────────────────────────────
 const CONTEXT: ContextFile[] = [
-  { name: "settlement-webhooks.spec.md", kind: "spec",   tok: "4.1k", pinned: true,  scope: "project" },
-  { name: "CLAUDE.md",                   kind: "claude", tok: "1.2k", pinned: true,  scope: "global" },
-  { name: "blk_71fe · framing v2",       kind: "kb",     tok: "0.8k", pinned: true,  scope: "project" },
-  { name: "blk_2199 · sqlite>lmdb",      kind: "kb",     tok: "0.6k", pinned: true,  scope: "project" },
-  { name: "acme/payments · CLAUDE.md",   kind: "claude", tok: "0.9k", pinned: false, scope: "repo" },
-  { name: "docs/architecture.md",        kind: "doc",    tok: "3.4k", pinned: false, scope: "repo" },
-  { name: "blk_44a1 · retry policy",     kind: "kb",     tok: "0.5k", pinned: false, scope: "project" },
+  { name: "settlement-webhooks.spec.md", kind: "spec",   tok: "4.1k", pinned: true,  scope: "project", content: "# Settlement webhooks v2\n\nDelivery contract for settlement events: emit on settle, retry with backoff, sign each payload with an HMAC header.\n\n## Frame\n{ id, type, ts, payload }" },
+  { name: "CLAUDE.md",                   kind: "claude", tok: "1.2k", pinned: true,  scope: "global",  content: "# CLAUDE.md\n\nProject-wide guidance for agents. Build with the existing primitives; keep changes minimal and tested." },
+  { name: "blk_71fe · framing v2",       kind: "kb",     tok: "0.8k", pinned: true,  scope: "project", content: "Framing v2 — length-prefixed binary frames, schema regenerated on build, round-trip tested." },
+  { name: "blk_2199 · sqlite>lmdb",      kind: "kb",     tok: "0.6k", pinned: true,  scope: "project", content: "Decision: SQLite over LMDB for the local store — simpler ops, sufficient throughput, easy backups." },
+  { name: "acme/payments · CLAUDE.md",   kind: "claude", tok: "0.9k", pinned: false, scope: "repo",    content: "# acme/payments\n\nRepo guidance: the HMAC middleware owns request verification; never log raw signatures." },
+  { name: "docs/architecture.md",        kind: "doc",    tok: "3.4k", pinned: false, scope: "repo",    content: "# Architecture\n\nWS server -> framer -> webhook emitter. The auth surface verifies HMAC + tokens; the dashboard subscribes for live updates." },
+  { name: "blk_44a1 · retry policy",     kind: "kb",     tok: "0.5k", pinned: false, scope: "project", content: "Retry policy — exponential backoff, max 6 attempts, jitter, dead-letter after exhaustion." },
 ];
 const CTX_KIND: Record<string, string> = {
   spec:   "oklch(0.72 0.10 230)",
@@ -320,12 +320,13 @@ function KindDot({ kind }: { kind: string }) {
   }} />;
 }
 
-function CtxRow({ f, onToggle }: { f: ContextFile; onToggle?: () => void }) {
+function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void; onView?: () => void }) {
   return (
-    <div style={{
+    <div onClick={onView} style={{
       display: "flex", alignItems: "center", gap: 7, padding: "5px 7px",
       borderRadius: 5, background: f.pinned ? "var(--bg-canvas)" : "transparent",
       border: "1px solid " + (f.pinned ? "var(--border-soft)" : "transparent"),
+      cursor: onView ? "pointer" : "default",
     }}>
       <KindDot kind={f.kind} />
       <span style={{
@@ -333,7 +334,7 @@ function CtxRow({ f, onToggle }: { f: ContextFile; onToggle?: () => void }) {
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
       }}>{f.name}</span>
       <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }}>{f.tok}</span>
-      <span onClick={onToggle} style={{
+      <span onClick={(e) => { e.stopPropagation(); onToggle?.(); }} style={{
         cursor: "pointer", fontFamily: "var(--mono)", fontSize: 11,
         color: f.pinned ? "var(--accent)" : "var(--fg-dim)", width: 14, textAlign: "center",
       }}>
@@ -344,8 +345,8 @@ function CtxRow({ f, onToggle }: { f: ContextFile; onToggle?: () => void }) {
 }
 
 // VARIANT A — Pinned vs Library, two sections
-function ContextA({ context = CONTEXT, onTogglePin }: {
-  context?: ContextFile[]; onTogglePin?: (name: string) => void;
+function ContextA({ context = CONTEXT, onTogglePin, onView }: {
+  context?: ContextFile[]; onTogglePin?: (name: string) => void; onView?: (f: ContextFile) => void;
 }) {
   // Local items give a snappy toggle; onTogglePin (when supplied) persists to the
   // store. Re-seed from the prop when the persisted context changes so the local
@@ -367,7 +368,7 @@ function ContextA({ context = CONTEXT, onTogglePin }: {
         <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>~6.7k tok</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
-        {pinned.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} />)}
+        {pinned.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} onView={onView ? () => onView(f) : undefined} />)}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 2px 7px" }}>
@@ -376,7 +377,7 @@ function ContextA({ context = CONTEXT, onTogglePin }: {
         <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{lib.length} available</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        {lib.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} />)}
+        {lib.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} onView={onView ? () => onView(f) : undefined} />)}
       </div>
     </div>
   );
@@ -716,6 +717,14 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   const idleCount = agents.filter((a) => a.status === "idle").length;
   const pinnedCount = context.filter((c) => c.pinned).length;
 
+  const [viewing, setViewing] = useState<ContextFile | null>(null);
+  useEffect(() => {
+    if (!viewing) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setViewing(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [viewing]);
+
   return (
     <div className="pp">
       {/* pane header */}
@@ -754,7 +763,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
 
       <div className="pp-scroll">
         <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false}>
-          <ContextA context={context} onTogglePin={onTogglePin} />
+          <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />
         </Sec>
         <Sec title="Repository · Structure" count={`${repos.length} repos · ${structure.length} milestones`} open={true}>
           <MergedC structure={structure} repos={repos} agents={agents} />
@@ -763,6 +772,35 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
           <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
         </Sec>
       </div>
+
+      {viewing && (
+        <div onClick={() => setViewing(null)} style={{
+          position: "fixed", inset: 0, zIndex: 50,
+          background: "color-mix(in oklch, var(--bg-canvas), transparent 20%)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+        }}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            width: "min(720px, 92vw)", maxHeight: "84vh", display: "flex", flexDirection: "column",
+            background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
+            borderRadius: 10, boxShadow: "0 16px 50px rgba(0,0,0,.45)", overflow: "hidden",
+          }}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "12px 14px",
+              borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
+            }}>
+              <KindDot kind={viewing.kind} />
+              <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{viewing.tok} · {viewing.scope}</span>
+              <span onClick={() => setViewing(null)} style={{ cursor: "pointer", fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)", padding: "0 2px 0 8px" }}>✕</span>
+            </div>
+            <pre style={{
+              margin: 0, padding: "14px 16px", overflow: "auto", flex: 1,
+              fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.55, color: "var(--fg-muted)",
+              whiteSpace: "pre-wrap", wordBreak: "break-word",
+            }}>{viewing.content || "(empty)"}</pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
