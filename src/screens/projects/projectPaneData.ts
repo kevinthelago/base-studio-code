@@ -177,41 +177,60 @@ function buildStructure(input: BuildProjectPaneInput): Milestone[] {
   });
   const pct = (group: PlanIssue[]): number =>
     group.length ? group.filter(issueClosed).length / group.length : 0;
-  const byPhase = new Map<number, PlanIssue[]>();
-  const unscheduled: PlanIssue[] = [];
+
+  // Attribute each issue to a repo (its explicit `repo`, else the first publish
+  // repo) and render milestones PER repo: a milestone is a (repo, phase) pair
+  // that actually has issues, so the repo-first structure view shows each repo's
+  // own work tree and empty (repo, phase) pairs don't appear.
+  const fallbackRepo = repos[0] ?? "";
+  const repoOf = (p: PlanIssue): string => p.repo || fallbackRepo;
+  const repoOrder: string[] = [...repos];
   for (const p of issues) {
-    const idx = resolvePhaseIndex(p.phase, phaseNames);
-    if (idx === undefined) { unscheduled.push(p); continue; }
-    const list = byPhase.get(idx) ?? [];
-    list.push(p);
-    byPhase.set(idx, list);
+    const r = repoOf(p);
+    if (!repoOrder.includes(r)) repoOrder.push(r);
   }
-  const out: Milestone[] = phases.map((phase, i) => {
-    const group = byPhase.get(i) ?? [];
-    const repoForPhase = group.find(p => p.repo)?.repo ?? repos[0] ?? "";
-    const fraction = pct(group);
-    return {
-      id: "M" + (i + 1),
-      title: phase.name,
-      repo: repoForPhase,
-      pct: fraction,
-      state: "doing",
-      epics: [{ id: "E" + (i + 1), title: "Issues", pct: fraction, issues: group.map(toIssue) }],
-    };
-  });
-  if (unscheduled.length > 0) {
-    const fraction = pct(unscheduled);
-    out.push({
-      id: "M" + (phases.length + 1),
-      title: "Unscheduled",
-      repo: unscheduled.find(p => p.repo)?.repo ?? repos[0] ?? "",
-      pct: fraction,
-      state: "doing",
-      epics: [{ id: "E" + (phases.length + 1), title: "Issues", pct: fraction, issues: unscheduled.map(toIssue) }],
+
+  const out: Milestone[] = [];
+  for (const repo of repoOrder) {
+    const repoIssues = issues.filter(p => repoOf(p) === repo);
+    if (repoIssues.length === 0) continue;
+    const byPhase = new Map<number, PlanIssue[]>();
+    const unscheduled: PlanIssue[] = [];
+    for (const p of repoIssues) {
+      const idx = resolvePhaseIndex(p.phase, phaseNames);
+      if (idx === undefined) { unscheduled.push(p); continue; }
+      const list = byPhase.get(idx) ?? [];
+      list.push(p);
+      byPhase.set(idx, list);
+    }
+    phases.forEach((phase, i) => {
+      const group = byPhase.get(i) ?? [];
+      if (group.length === 0) return;
+      const fraction = pct(group);
+      out.push({
+        id: `${repo}#M${i + 1}`,
+        title: phase.name,
+        repo,
+        pct: fraction,
+        state: "doing",
+        epics: [{ id: `${repo}#E${i + 1}`, title: "Issues", pct: fraction, issues: group.map(toIssue) }],
+      });
     });
+    if (unscheduled.length > 0) {
+      const fraction = pct(unscheduled);
+      out.push({
+        id: `${repo}#M0`,
+        title: "Unscheduled",
+        repo,
+        pct: fraction,
+        state: "doing",
+        epics: [{ id: `${repo}#E0`, title: "Issues", pct: fraction, issues: unscheduled.map(toIssue) }],
+      });
+    }
   }
   return out;
 }
+
 
 function buildContext(input: BuildProjectPaneInput): ContextFile[] {
   // When the project has an explicit pinned set (user toggles in the pane),

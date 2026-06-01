@@ -383,7 +383,7 @@ function ContextA({ context = CONTEXT, onTogglePin }: {
 }
 
 /* =================================================================
-   pp-merged.jsx — MStateDot, repoRollup, MergedC
+   pp-merged.jsx — MStateDot, repoRollup, RepoStructure
    ================================================================= */
 function MStateDot({ state }: { state: string }) {
   return <span style={{
@@ -399,82 +399,107 @@ function repoRollup(repoId: string, structure: Milestone[] = STRUCTURE): { ms: M
   return { ms, iss, pct };
 }
 
-// MERGED C — Milestone-first (the project plan); repo is a tag
-function MergedC({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }: {
+// REPO-FIRST — a collapsible repository card holding its own work tree:
+// milestones (the phases decomposed for THAT repo) → issues → acceptance sub-list.
+// Mirrors the design's RepoA variant; reuses structFor/MStateDot/SubList/etc.
+function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }: {
   structure?: Milestone[]; repos?: Repo[]; agents?: Agent[];
 }) {
-  const [openIss, setOpenIss] = useState<number | string | null>(417);
+  const [openRepo, setOpenRepo] = useState<string | null>(repos[0]?.id ?? null);
+  const [openIss, setOpenIss] = useState<number | string | null>(null);
   return (
     <div>
       <div style={{ padding: "0 2px 10px", fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
-        the plan · {structure.length} milestones across {repos.length} repos
+        the plan · {repos.length} repos · {structure.length} milestones
       </div>
-      <div style={{ paddingLeft: 6 }}>
-        {structure.map((m, mi) => (
-          <div key={m.id} style={{
-            position: "relative", paddingLeft: 18,
-            borderLeft: "2px solid var(--border-soft)", paddingBottom: mi < structure.length - 1 ? 16 : 0,
-          }}>
-            <span style={{
-              position: "absolute", left: -7, top: 1, width: 12, height: 12, borderRadius: "50%",
-              background: "var(--bg-panel)", border: "2px solid var(--accent)",
-            }} />
-            {/* milestone header with repo tag */}
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>{m.id}</span>
-              <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 11.5, color: "var(--fg)" }}>{m.title}</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{Math.round(m.pct * 100)}%</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
-              <span style={{
-                fontFamily: "var(--mono)", fontSize: 8.5, padding: "0 6px", borderRadius: 3,
-                background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)",
-              }}>⎇ {m.repo.split("/")[1]}</span>
-              <span style={{ flex: 1 }}><Track pct={m.pct} /></span>
-            </div>
-            {m.epics.map((e) => (
-              <div key={e.id} style={{ marginBottom: 9 }}>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", marginBottom: 5 }}>{e.id} · {e.title}</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {e.issues.map((is) => {
-                    const io = openIss === is.n;
-                    return (
-                      <div key={is.n} style={{
-                        borderRadius: 6, background: "var(--bg-canvas)",
-                        border: "1px solid var(--border-soft)", overflow: "hidden",
-                      }}>
-                        <div onClick={() => setOpenIss(io ? null : is.n)} style={{ padding: "7px 9px", cursor: "pointer" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <MStateDot state={is.state} />
-                            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>#{is.n}</span>
-                            <span style={{
-                              flex: 1, fontFamily: "var(--sans)", fontSize: 10.5, color: "var(--fg)",
-                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                            }}>{is.t}</span>
-                            <span title={"@" + is.owner}><Avatar id={is.owner} sz={14} agents={agents} /></span>
-                          </div>
-                          <div style={{ display: "flex", gap: 5, marginTop: 5, paddingLeft: 20, alignItems: "center" }}>
-                            <BranchChip n={is.branch} />
-                            <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--success)" }}>✓ {is.ac} AC</span>
-                            {is.sub.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>⌱ {is.sub.length} sub</span>}
-                            {is.deps.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--accent)" }}>⇠ #{is.deps.join(" #")}</span>}
-                          </div>
-                        </div>
-                        {io && is.sub.length > 0 && (
-                          <div style={{ padding: "0 9px 8px", borderTop: "1px solid var(--border-soft)" }}>
-                            <SubList sub={is.sub} pad={4} />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {repos.map((r) => {
+          const on = openRepo === r.id;
+          const ms = structFor(r.id, structure);
+          const issues = ms.flatMap((m) => m.epics.flatMap((e) => e.issues));
+          return (
+            <div key={r.id} style={{
+              borderRadius: 7, overflow: "hidden",
+              border: "1px solid " + (r.primary ? "var(--accent-dim)" : "var(--border-soft)"),
+              background: "var(--bg-canvas)",
+            }}>
+              {/* repo header — collapsible */}
+              <div onClick={() => setOpenRepo(on ? null : r.id)} style={{ padding: "9px 11px", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <span style={{ width: 8, fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{on ? "▾" : "▸"}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{r.id}</span>
+                  {r.primary && <span style={{
+                    fontFamily: "var(--mono)", fontSize: 8.5, padding: "0 5px", borderRadius: 3,
+                    background: "color-mix(in oklch, var(--accent), transparent 84%)", color: "var(--accent)",
+                  }}>primary</span>}
+                  <span style={{ flex: 1 }} />
+                  <div style={{ display: "flex" }}>
+                    {r.agents.map((id, i) => (
+                      <span key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={15} agents={agents} /></span>
+                    ))}
+                  </div>
+                </div>
+                <div style={{
+                  display: "flex", gap: 10, marginTop: 6, paddingLeft: 15,
+                  fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)",
+                }}>
+                  <span>{ms.length} milestone{ms.length !== 1 ? "s" : ""}</span>
+                  <span>{issues.length} issue{issues.length !== 1 ? "s" : ""}</span>
                 </div>
               </div>
-            ))}
-          </div>
-        ))}
+
+              {on && (
+                <div style={{ padding: "4px 10px 10px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
+                  {ms.length === 0 ? (
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", padding: "6px 4px" }}>
+                      no milestones decomposed yet
+                    </div>
+                  ) : ms.map((m) => (
+                    <div key={m.id} style={{ marginTop: 6 }}>
+                      {/* milestone header */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "4px 4px" }}>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>{m.id.split("#")[1]}</span>
+                        <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg)" }}>{m.title}</span>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{Math.round(m.pct * 100)}%</span>
+                        <span style={{ width: 40 }}><Track pct={m.pct} /></span>
+                      </div>
+                      {/* issues for this milestone (epics flattened) */}
+                      <div style={{ borderLeft: "1px solid var(--border-soft)", marginLeft: 6, paddingLeft: 8, display: "flex", flexDirection: "column", gap: 5 }}>
+                        {m.epics.flatMap((e) => e.issues).map((is) => {
+                          const io = openIss === is.n;
+                          return (
+                            <div key={is.n} style={{ borderRadius: 6, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+                              <div onClick={() => setOpenIss(io ? null : is.n)} style={{ padding: "7px 9px", cursor: "pointer" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <MStateDot state={is.state} />
+                                  <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>#{is.n}</span>
+                                  <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 10.5, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{is.t}</span>
+                                  <span title={"@" + is.owner}><Avatar id={is.owner} sz={14} agents={agents} /></span>
+                                </div>
+                                <div style={{ display: "flex", gap: 5, marginTop: 5, paddingLeft: 20, alignItems: "center", flexWrap: "wrap" }}>
+                                  <BranchChip n={is.branch} />
+                                  <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--success)" }}>✓ {is.ac} AC</span>
+                                  {is.sub.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>⌱ {is.sub.length} sub</span>}
+                                  {is.deps.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--accent)" }}>⇠ #{is.deps.join(" #")}</span>}
+                                </div>
+                              </div>
+                              {io && is.sub.length > 0 && (
+                                <div style={{ padding: "0 9px 8px", borderTop: "1px solid var(--border-soft)" }}>
+                                  <SubList sub={is.sub} pad={4} />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
-      <div style={{ marginTop: 8, fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)", cursor: "pointer" }}>+ milestone</div>
     </div>
   );
 }
@@ -507,17 +532,18 @@ function Seg({ options, value, onChange, tiny }: {
   );
 }
 
-// ── the shared per-agent editor (drill-in) ─────────────────────
-function AgentEditor({ a, agents = AGENTS, onPerm, onPreset, onFlow }: {
-  a: Agent; agents?: Agent[]; dense?: boolean;
+// ── the per-agent detail body (presets · capabilities · flow) ──
+// Header-less by design: the AgentsA roster row is the single header and the
+// repo/owns/issues meta now lives there too, so the row + this body read as one
+// cohesive card instead of a row plus a second headered card.
+function AgentEditor({ a, onPerm, onPreset, onFlow }: {
+  a: Agent;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
 }) {
   // Local state for snappy UI; the callbacks (when supplied) persist every change
-  // to the store so it survives a remount. Initialized from the agent prop so a
-  // reopened editor reflects the persisted values. Re-seed when the agent id
-  // changes (a different stream's editor reuses this component instance).
+  // to the store so it survives a remount. Re-seed when the agent id changes.
   const [perm, setPerm] = useState<Perm>(a.perm);
   const [preset, setPreset] = useState(a.preset);
   const [flow, setFlow] = useState<Flow>(a.flow);
@@ -533,30 +559,9 @@ function AgentEditor({ a, agents = AGENTS, onPerm, onPreset, onFlow }: {
     onPreset?.(a.id, p, next);
   };
   return (
-    <div className="editor">
-      {/* header */}
-      <div style={{ padding: "10px 12px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Avatar id={a.id} sz={20} agents={agents} />
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{a.name}</span>
-          <RoleChip role={a.role} />
-          <span style={{ flex: 1 }} />
-          <Dot s={a.status} />
-        </div>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 6, marginTop: 7,
-          fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)", flexWrap: "wrap",
-        }}>
-          <span style={{ color: "var(--info)" }}>⎇ {a.repo}</span>
-          <span style={{ color: "var(--fg-dim)" }}>·</span>
-          <span>owns</span>
-          {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
-          {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
-        </div>
-      </div>
-
+    <>
       {/* presets */}
-      <div style={{ padding: "9px 12px", borderBottom: "1px solid var(--border-soft)" }}>
+      <div style={{ padding: "9px 12px", borderTop: "1px solid var(--border-soft)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
           <span className="ulabel">preset</span>
           <span style={{ flex: 1 }} />
@@ -571,7 +576,7 @@ function AgentEditor({ a, agents = AGENTS, onPerm, onPreset, onFlow }: {
       </div>
 
       {/* capabilities */}
-      <div style={{ padding: "6px 12px 10px" }}>
+      <div style={{ padding: "6px 12px 10px", borderTop: "1px solid var(--border-soft)" }}>
         <div className="ulabel" style={{ padding: "5px 0 7px" }}>capabilities</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {CAPS.map((c) => (
@@ -611,11 +616,13 @@ function AgentEditor({ a, agents = AGENTS, onPerm, onPreset, onFlow }: {
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
-// VARIANT A — Roster rows w/ inline expand
+// VARIANT A — Roster rows; the row IS the single header and the detail body
+// (meta + presets + capabilities + flow) expands inside the SAME card, so an
+// open agent reads as one cohesive element rather than a row + a second card.
 function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
   agents?: Agent[];
   onPerm?: (streamId: string, perm: Perm) => void;
@@ -638,12 +645,15 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
         {agents.map((a) => {
           const on = open === a.id;
           return (
-            <div key={a.id}>
+            <div key={a.id} style={{
+              borderRadius: 6, overflow: "hidden",
+              background: "var(--bg-canvas)",
+              border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
+            }}>
+              {/* header row — the single header for the whole card */}
               <div onClick={() => setOpen(on ? null : a.id)} style={{
                 display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8,
-                alignItems: "center", padding: "7px 8px", borderRadius: 6, cursor: "pointer",
-                background: on ? "color-mix(in oklch, var(--accent), transparent 92%)" : "var(--bg-canvas)",
-                border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
+                alignItems: "center", padding: "7px 8px", cursor: "pointer",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                   <Dot s={a.status} />
@@ -669,9 +679,24 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
                   <span className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</span>
                 </div>
               </div>
-              {on && <div style={{ marginTop: 5, marginBottom: 2 }}>
-                <AgentEditor a={a} agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
-              </div>}
+
+              {on && (
+                <>
+                  {/* detail meta — moved out of the old editor header so the card has ONE header */}
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+                    padding: "7px 10px", borderTop: "1px solid var(--border-soft)",
+                    fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)",
+                  }}>
+                    <span style={{ color: "var(--info)" }}>⎇ {a.repo}</span>
+                    <span style={{ color: "var(--fg-dim)" }}>·</span>
+                    <span>owns</span>
+                    {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
+                    {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
+                  </div>
+                  <AgentEditor a={a} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+                </>
+              )}
             </div>
           );
         })}
@@ -681,7 +706,7 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
 }
 
 // FlowBadges and repoRollup are ported for completeness but unused by the
-// assembled composition (it picks MergedC + AgentsA); reference them so
+// assembled composition (it picks RepoStructure + AgentsA); reference them so
 // strict noUnusedLocals stays satisfied.
 void FlowBadges;
 void repoRollup;
@@ -757,7 +782,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
           <ContextA context={context} onTogglePin={onTogglePin} />
         </Sec>
         <Sec title="Repository · Structure" count={`${repos.length} repos · ${structure.length} milestones`} open={true}>
-          <MergedC structure={structure} repos={repos} agents={agents} />
+          <RepoStructure structure={structure} repos={repos} agents={agents} />
         </Sec>
         <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true}>
           <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
