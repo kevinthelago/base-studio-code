@@ -313,6 +313,8 @@ interface AppStore {
   // planning session key — the title — and the GitHub id), plus the active-project
   // meta if it matches. Pairs with the backend delete_project_dir for the on-disk hub.
   deleteLocalProject: (keys: string[]) => void;
+  // Dev reset: clears all project/plan-scoped state (keeps auth, profiles, UI).
+  resetProjectData: () => void;
   // GitHub project ids the user removed in-app (persisted). The Projects list is
   // re-fetched from GitHub on every sync, so without this a deleted-but-still-
   // returned project (closed, delete denied, or stale) would reappear. The list
@@ -915,6 +917,18 @@ export const useAppStore = create<AppStore>()(
               ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], projectsView: "list" as const }
               : {}),
           };
+        }),
+      resetProjectData: () =>
+        set({
+          planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
+          planAutomations: {}, planFleet: {}, pinnedContext: {},
+          projectLocalRepos: {}, projectAllowedCommands: {},
+          projectKeyAlias: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
+          repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
+          activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
+          activeProjectNumber: 0, activeProjectRepos: [],
+          planningSessionKey: "", planningTitle: "", planningPitch: "",
+          planningRepo: "", projectsView: "list",
         }),
       setActiveProjectRepos: (repos) =>
         set((s) => ({ activeProjectRepos: repos, activeProjectRepo: repos[0] ?? s.activeProjectRepo })),
