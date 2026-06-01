@@ -282,6 +282,50 @@ fn delete_project_dir(project_key: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Clear every project's plan files for a from-scratch dev reset, WITHOUT touching
+/// the cloned repos. Deletes only the top-level `.md` / `.json` plan files in each
+/// `projects/<key>/` dir (goal.md, issues.json, phases.json, fleet.json, the
+/// context docs, …) and leaves all SUBDIRECTORIES — the cloned repos, their
+/// `.worktrees`, and `prompts/` — intact. Best-effort; returns how many files were
+/// removed. Without this, the planning poll re-reads the files and a store-only
+/// clear is undone within a tick.
+#[tauri::command]
+fn clear_all_plan_files() -> Result<u32, String> {
+    let projects = bsc_base_dir().join("projects");
+    if !projects.exists() {
+        return Ok(0);
+    }
+    let mut removed = 0u32;
+    let entries = std::fs::read_dir(&projects).map_err(|e| format!("clear_all_plan_files: {e}"))?;
+    for entry in entries.flatten() {
+        let proj = entry.path();
+        if !proj.is_dir() {
+            continue;
+        }
+        let items = match std::fs::read_dir(&proj) {
+            Ok(i) => i,
+            Err(_) => continue,
+        };
+        for item in items.flatten() {
+            let p = item.path();
+            // Preserve every subdirectory (cloned repos, .worktrees, prompts, .claude).
+            if !p.is_file() {
+                continue;
+            }
+            let is_plan = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("json"))
+                .unwrap_or(false);
+            if is_plan && std::fs::remove_file(&p).is_ok() {
+                removed += 1;
+            }
+        }
+    }
+    log::info!("clear_all_plan_files: removed {removed} plan files");
+    Ok(removed)
+}
+
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
 ///
 /// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
@@ -3452,6 +3496,7 @@ pub fn run() {
             read_plan_sections,
             write_project_plan,
             delete_project_dir,
+            clear_all_plan_files,
             list_documents,
             read_document,
             write_document,

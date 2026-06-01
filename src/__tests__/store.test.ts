@@ -252,6 +252,34 @@ describe("deleteLocalProject", () => {
   });
 });
 
+// ── Dev reset ─────────────────────────
+
+describe("resetProjectData", () => {
+  it("clears project/plan state but keeps credentials", () => {
+    useAppStore.setState({
+      planSections: { P: { goal: "x" } },
+      planConfirmedSections: { P: ["goal"] },
+      projectLocalRepos: { P: ["o/r"] },
+      hiddenProjectIds: ["PVT_x"],
+      activeProjectId: "PVT_x", activeProjectName: "P",
+      planningSessionKey: "P", projectsView: "planning",
+      githubToken: "tok", claudeApiKey: "key",
+    });
+    useAppStore.getState().resetProjectData();
+    const s = useAppStore.getState();
+    expect(s.planSections).toEqual({});
+    expect(s.planConfirmedSections).toEqual({});
+    expect(s.projectLocalRepos).toEqual({});
+    expect(s.hiddenProjectIds).toEqual([]);
+    expect(s.activeProjectId).toBeNull();
+    expect(s.planningSessionKey).toBe("");
+    expect(s.projectsView).toBe("list");
+    // credentials are NOT a project concern -> preserved
+    expect(s.githubToken).toBe("tok");
+    expect(s.claudeApiKey).toBe("key");
+  });
+});
+
 // ── Tab management ────────────────────────────────────────────────────────────
 
 describe("tab management", () => {
