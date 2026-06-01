@@ -1027,7 +1027,12 @@ export function Planning({ visible }: { visible: boolean }) {
           .then(() => addProjectRepo(activeProjectId ?? effectiveProjectId, fullName))
           .catch(e => console.error(`clone ${fullName} failed:`, e)),
       ));
-      fleetStartProject(projectTitle, fleet, effectiveProjectId);
+      // Materialize any unassigned / dangling-reference agent profiles before
+      // launch so each worker gets its least-privilege profile (#358), then read
+      // the fleet back with the now-assigned profile ids.
+      useAppStore.getState().generateFleetProfiles(effectiveProjectId);
+      const launchPlan = useAppStore.getState().planFleet[effectiveProjectId] ?? fleet;
+      fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
     } catch (e) {
       console.error("fleet launch failed:", e);
     } finally {
