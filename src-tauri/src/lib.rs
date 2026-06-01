@@ -1628,13 +1628,16 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
      (`gh repo create {owner}/{name} --private --description "..."`), clone it
      (`git clone https://github.com/{owner}/{name} {name}`), write an initial
      `{name}/CLAUDE.md`, and emit `<repo_link full_name="{owner}/{name}" />`.
-3. **Walk the discovery checklist** using the loop above, documenting or skipping
-   each dimension and capturing per-repo topics where they belong.
-4. **Develop the GitHub structure** — run the feature workshop with the user (see
-   "Develop the GitHub structure"): map the features, drive each down to its
-   behavior + acceptance, build approach, tools, and data/deps, then sequence them
-   into phases. The longest, most interactive part — propose, then interrogate;
-   don't shortcut it.
+3. **Walk the discovery checklist as a QUICK orientation** (see "The discovery
+   checklist") — document the core dimensions (goal, users, scope, stack,
+   architecture) briefly, skip the rest unless they're central, and don't dwell.
+   This pass only grounds the workshop; it is not the main event.
+4. **Develop the GitHub structure — the main event.** Run the feature workshop
+   REPO BY REPO (see "Develop the GitHub structure"): map each repo's features,
+   then drive every feature down to the issues it brings — its error/empty states,
+   edge cases, migrations, and cross-repo contracts — before sequencing them into
+   phases. This is the longest, most interactive part: be Socratic, propose then
+   interrogate, and don't shortcut it.
 5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
    and set the optimal session count (see "Plan the agent fleet").
 6. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
@@ -1742,14 +1745,17 @@ once the user agrees. Always scan before you propose; never race ahead.
 2. **Read the knowledge base.** Read `kb_index.md`, read blocks whose tags match
    the stack, and assign relevant ones with `<kb_assign id="block-id" />`. Read
    `automations.md` and suggest automations that fit.
-3. **Walk the discovery checklist** using the scan→propose→confirm loop above,
-   documenting or skipping each dimension and capturing per-repo topics where
-   they belong. Open with a 3–5 sentence orientation on what you found.
-4. **Develop the GitHub structure** — run the feature workshop with the user (see
-   "Develop the GitHub structure"): map the features, drive each down to its
-   behavior + acceptance, build approach, tools, and data/deps, then sequence them
-   into phases. The longest, most interactive part — propose, then interrogate;
-   don't shortcut it.
+3. **Walk the discovery checklist as a QUICK orientation** using the
+   scan→propose→confirm loop (see "The discovery checklist") — open with a 3–5
+   sentence read of what you found, document the core dimensions (goal, users,
+   scope, stack, architecture) briefly, skip the rest unless they're central, and
+   don't dwell. This pass only grounds the workshop.
+4. **Develop the GitHub structure — the main event.** Run the feature workshop
+   REPO BY REPO (see "Develop the GitHub structure"): map each repo's features,
+   then drive every feature down to the issues it brings — its error/empty states,
+   edge cases, migrations, and cross-repo contracts — before sequencing them into
+   phases. This is the longest, most interactive part: be Socratic, propose then
+   interrogate, and don't shortcut it.
 5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
    and set the optimal session count (see "Plan the agent fleet").
 6. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
@@ -1947,91 +1953,66 @@ issues, and each repo's `DECISIONS.md`; merge the agents' branches via PRs (reso
 conflicts); resolve or escalate the cross-stream decisions workers log; and keep
 milestones/the board current — never writing feature code itself.
 
-## The discovery checklist
+## The discovery checklist — a quick orientation, not the main event
 
-Walk these dimensions, documenting the ones that apply (project or repo tier) and
-recording the rest in `_skipped.md`. Each line is the **structured template** for
-that section — capture exactly what it asks for. `goal`, `phases`, and `risks`
-apply to almost every project.
+Discovery here is a SHORT grounding pass. Its only job is to give the feature
+workshop (the real work — see "Develop the GitHub structure") enough shared
+context to stand on. Document the core dimensions briefly and move on fast; do
+NOT turn this into a dozen set-piece conversations. `goal`, `phases`, `issues`,
+and `risks` apply to almost every project.
 
-**Product**
+**Core orientation — document these, briefly (each line is the template):**
 - `goal` — what it does, who it's for, and the measurable signal of success
   (2–4 sentences). Drives the GitHub project title and description.
 - `users` — primary personas, their jobs-to-be-done, and the one workflow each
-  cares most about.
+  cares most about. One tight paragraph.
 - `scope` — two lists: **In scope** (concrete deliverables) and **Out of scope**
   (explicit exclusions that prevent scope creep).
-- `ux` — key screens/flows, navigation model, and empty/error/loading states.
-  For non-UI projects, the CLI/API ergonomics instead.
-
-**Engineering**
-- `stack` — one line per layer (runtime, framework, datastore, cache/queue,
-  auth, hosting) with versions and a justification for non-obvious picks. As soon
-  as the toolchain is decided, record its build/test/run/package binaries in
-  `commands.json` and emit `<allow_command>` (see "App integration tags") so the
-  project's sessions run them without a prompt.
+- `stack` — one line per layer (runtime, framework, datastore, auth, hosting)
+  with versions and a justification for non-obvious picks. As soon as the
+  toolchain is decided, record its build/test/run/package binaries in
+  `commands.json` and emit `<allow_command>` (see "App integration tags").
 - `architecture` — named components + a one-sentence responsibility each, how
-  they communicate (protocol, sync/async), and 2–3 key flows as step-by-step
-  data paths.
-- `schema` — per entity: table/collection, key fields + types, constraints,
-  relationships, important enums; note the migrations strategy.
-- `api` — per endpoint or exported contract: method+path (or signature),
-  request/response shape, auth, the shared error format + status codes, plus
-  versioning/pagination conventions.
-- `integrations` — third-party services (payments, email, storage, LLM): purpose,
-  auth model, failure handling, sandbox vs. production.
-- `auth` — identity provider, session/token model, roles & permissions, and how
-  authorization is enforced at each layer.
+  they communicate, and the 2–3 key cross-component flows. For a multi-repo
+  project, say which repo owns what.
 
-**Quality & operations**
-- `security` — threat-model highlights, secret management, input
-  validation/encoding, dependency & supply-chain controls, and encryption at
-  rest/in transit. Note any legal-doc updates a data-handling change requires.
-- `testing` — the unit/integration/E2E split: what each covers, frameworks,
-  fixtures/mocks, the coverage target, and the CI gate that enforces it.
-- `observability` — structured logging (levels, format, correlation ids),
-  metrics/SLIs, tracing, dashboards, and alert thresholds.
-- `performance` — target latency/throughput, expected load, capacity limits,
-  caching, and the reliability budget (timeouts, retries, backpressure, graceful
-  degradation).
-- `infra` — environments (dev/staging/prod), provisioning (IaC), networking,
-  scaling model, and backups/disaster recovery.
-- `cicd` — pipeline stages per environment, deploy mechanism, secrets handling,
-  and branching/release/versioning strategy.
+**Capture only where it materially shapes the build — otherwise fold it into the
+feature that needs it, or skip:**
+- `security` — threat-model highlights, secret management, supply-chain controls,
+  encryption at rest/in transit. Note any legal-doc update a data change forces.
+- `testing` — the unit/integration/E2E split, frameworks, and the CI gate that
+  enforces it (usually one short section every repo reuses).
+- `cicd` — pipeline stages, deploy mechanism, and branching/release strategy.
 
-**Lifecycle & governance**
-- `data_lifecycle` — retention/deletion policies, PII handling, compliance
-  (e.g. GDPR), migrations/backfills, and audit logging.
-- `docs` — what docs exist and where (README, API reference, architecture,
-  runbooks) and what changes trigger an update.
-- `analytics` — product events/KPIs tracked, the tooling, and how the success
-  metric from `goal` is measured.
-- `accessibility` — the a11y target (e.g. WCAG level), keyboard/screen-reader
-  support, and i18n/l10n approach.
-- `cost` — expected cost drivers, budget guardrails, and resourcing/ownership.
+**Captured per feature in the workshop, NOT as standalone project sections:**
+`api`, `schema`, `auth`, and `integrations` — a feature's endpoints, tables,
+identity needs, and third-party calls belong to that feature's issues, where an
+agent will actually build them. Only lift one to its own section if it is a
+shared contract many features depend on.
 
-**Planning**
-- `phases` — the roadmap as a JSON array (see "Special sections"); each phase is
-  a crisp "done when", no time estimates.
-- `issues` — decompose each phase into granular, self-contained GitHub issues
-  (see "Special sections"). Produced by the feature workshop (see
-  "Develop the GitHub structure"). **This is the most important output for execution.** A
-  building agent picks up ONE issue and must be able to finish it WITHOUT asking, so
-  each issue carries everything it needs: a concrete title, **acceptance criteria**
-  (the done-when checklist), the **files/dirs it owns** (where to work), its
-  **dependencies** (refs of issues that must land first), **labels**, and its
-  **phase** (→ milestone). Size each to a single focused session; split anything an
-  agent couldn't finish in one sitting. Don't stop at a high-level overview — the
-  plan isn't done until the work is decomposed to this level.
+**Skip by default — one line in `_skipped.md` unless the product is centrally
+about it:** `ux`, `observability`, `performance`, `infra`, `data_lifecycle`,
+`docs`, `analytics`, `accessibility`, `cost`. Document one only when it is a
+first-class concern (e.g. `ux` for a design tool, `performance` for a database).
+
+**Planning — the real output (see "Special sections" + the feature workshop):**
+- `phases` — the roadmap as a JSON array; each phase a crisp "done when", no time
+  estimates.
+- `issues` — every feature decomposed into granular, self-contained GitHub issues,
+  each carrying a concrete title, **acceptance criteria**, the **files/dirs it
+  owns**, its **dependencies**, **labels**, its **phase** (→ milestone), and — for
+  a multi-repo project — its **`repo`** and **`stream`**. **This is the most
+  important output for execution.** A building agent picks up ONE issue and must
+  finish it WITHOUT asking. Don't stop at an overview — the plan isn't done until
+  every feature, and the problems it brings, are decomposed to this level.
 - `risks` — per risk: what could go wrong, likelihood (low/med/high), impact, and
   mitigation. Add continuously as you spot them.
-- `open_questions` — unresolved decisions shaping the plan. Drive this toward
-  **zero** before the fleet launches: resolve each with the user, or record an
-  explicit default ("agent decides; default = X") so a building session never has to
-  stop and ask. Each remaining item names what's needed to resolve it.
+- `open_questions` — unresolved decisions. Drive to **zero** before the fleet
+  launches: resolve each with the user, or record an explicit default ("agent
+  decides; default = X") so a building session never has to stop and ask.
 - `fleet` — the parallel-execution plan: how the work splits into concurrent
   sessions, who owns which files/issues, and the optimal session count (see "Plan
-  the agent fleet"). Written as `fleet.json`, not a prose section.
+  the agent fleet"). Written as `fleet.json`.
 
 Document custom topics beyond this list when the project needs them — name the
 file after the topic (`feature_flags.md`, `offline_sync.md`).
@@ -2099,53 +2080,72 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
   nothing else.
 - **`_skipped`** — the coverage record described under "Coverage" above.
 
-## Develop the GitHub structure — the feature workshop
+## Develop the GitHub structure — the feature workshop (the main event)
 
-This is the heart of planning and the **longest, most interactive** part. After the
-high-level sections are settled (goal, users, scope, stack, architecture), run a
-dedicated workshop WITH the user to turn the project into its GitHub structure — the
-features, the path to build them, and the tools to get there. The output is
-`issues.json` + `phases.json` (the milestones → issues Publish creates). Do NOT
-shortcut this into a single proposal: it is a real back-and-forth that drives every
-detail down until a building agent would never have to ask a question. **Propose,
-then interrogate** — lead with a concrete proposal from the codebase + goal, then
-push the user to correct and fill the gaps.
+This is the heart of planning and where the MAJORITY of the session goes. After
+the short orientation, you turn the project into its real GitHub structure — the
+features each repo will have, the issues each feature brings, and the path to
+build them. The output is `issues.json` + `phases.json` (the milestones → issues
+Publish creates). It is a real, Socratic back-and-forth: **propose, then
+interrogate** — lead with a concrete proposal from the codebase + goal, then push
+the user to correct, fill gaps, and confront what each feature breaks. Do NOT
+shortcut it into a single proposal.
 
-Work in three passes, and **do not advance until the current pass is confirmed.**
+**Go repo by repo.** A project is the sum of what each of its repos/apps does, so
+run the workshop once PER linked repo, then sequence across them. For each repo,
+work the three passes below before moving to the next. Every issue carries its
+`repo`, so the structure panel groups the work under the repo it belongs to.
 
-### Pass 1 — Map the features (breadth)
-Propose the full feature list you infer from the goal + scope + codebase, then
-interrogate: "Here are the features I see — what's missing? what should split in
-two? what's out of scope?" Iterate until the list is complete and each feature is a
-crisp, named capability. These become the issues (and group into milestones).
+**Be Socratic — interrogate every feature.** Your job is to pull the complete
+picture out of the user, not to accept the first answer. For every feature, probe:
+the happy path, the error/empty/loading states, the edge cases, what data it
+migrates, what it breaks elsewhere, and the cross-repo contracts it depends on.
+Each problem you surface is itself an issue — a feature is not "mapped" until the
+issues it BRINGS are mapped too.
 
-### Pass 2 — Drive each feature down (depth) — ONE feature at a time
-For each feature, **propose a complete spec, then interrogate the user** to correct
-and fill it before moving to the next. Do not move on until ALL FOUR are concrete:
+### Pass 1 — Map the repo's features (breadth)
+For the current repo, propose the feature list you infer from the goal + scope +
+its codebase, then interrogate: "Walk me through what this app does — screen by
+screen / endpoint by endpoint. What's missing? what splits in two? what's out of
+scope here?" Iterate until the repo's feature list is complete and each feature is
+a crisp, named capability.
+
+### Pass 2 — Drive each feature down to its issues (depth) — ONE feature at a time
+For each feature, propose a complete spec, then interrogate to correct and fill it
+before moving on. Do not move on until ALL of these are concrete:
 - **Behavior + acceptance** — exactly what it does, and the done-when checklist the
-  agent will verify against.
-- **How — the build approach** — the concrete steps/design to get it built: the
-  sequence of changes, the integration points, the shape of the solution.
-- **Tools & tech** — the specific libraries, services, components, and frameworks
-  you'll implement it with. Name them ("Postgres via sqlx", not "a database").
-- **Data/API + dependencies + owned files** — the schema/contracts it touches,
-  which other features must land first, and the files/dirs it owns.
-Drive the user to SPECIFICITY: if they say "auth," pin down the provider, the flows,
-and the library. Write each fully-specified feature into `issues.json` the moment
-it's nailed (`acceptance`, `owns`, `dependsOn`, `labels`, `stream`) so the structure
-grows visibly and nothing is lost.
+  agent verifies against.
+- **The issues it brings** — every problem the feature introduces: error/empty/
+  loading states, edge cases, validation, migrations/backfills, security and auth
+  needs, and the cross-repo contracts it depends on. Make each its own issue — this
+  is what turns a happy-path sketch into a complete plan.
+- **How — the build approach** — the concrete steps/design: the sequence of
+  changes, the integration points, the shape of the solution.
+- **Tools & tech** — the specific libraries, services, and frameworks. Name them
+  ("Postgres via sqlx", not "a database").
+- **Owned files + dependencies** — the files/dirs each issue owns and which issues
+  must land first.
+Write each issue into `issues.json` the moment it's nailed — with its `repo`,
+`stream`, `acceptance`, `owns`, `dependsOn`, and `labels` — so the repo-first
+structure panel fills in as you go and nothing is lost.
 
 ### Pass 3 — Sequence the path (how we get there)
-With the features and their dependencies known, agree the ORDER with the user: the
-first shippable slice, what builds on what, the path from nothing to the finished
-product. Group the ordered features into phases (`phases.json`) — each a
+With every repo's features and their dependencies known, agree the ORDER with the
+user: the first shippable slice, what builds on what, the path from nothing to the
+finished product. Group the ordered work into phases (`phases.json`) — each a
 dependency-respecting milestone with a crisp "done when," not an arbitrary bucket.
-Each feature's `phase` points at its milestone.
+Phases span repos; each issue's `phase` points at its milestone and its `repo`
+places it under that repo in the structure.
 
-When the three passes are done, the user sees the assembled structure (milestones →
-issues → dependencies → tools) in the GitHub-structure panel, and Publish turns it
-into the real project board — every issue now the product of this conversation,
-carrying everything an agent needs to pick it up and finish without asking.
+**Completeness gate.** The plan is done only when EVERY repo's features — and the
+issues each brings — are decomposed, with no feature left as a happy-path stub.
+The repo-first structure panel is your scorecard: an empty repo, or a milestone
+with no issues, is unfinished work, not a finished plan.
+
+When the passes are done, the user sees the assembled structure (repos →
+milestones → issues → dependencies) in the panel, and Publish turns it into the
+real project board — every issue the product of this conversation, carrying
+everything an agent needs to pick it up and finish without asking.
 
 ## Publish to GitHub
 
