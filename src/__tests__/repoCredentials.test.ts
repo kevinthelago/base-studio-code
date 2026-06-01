@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { repoFromGitHubPath, resolveGithubToken } from "../lib/repoCredentials";
+import { repoFromGitHubPath, resolveGithubToken, tokenForRepo } from "../lib/repoCredentials";
 
 describe("repoFromGitHubPath", () => {
   it("extracts owner/name from a repo-scoped path", () => {
@@ -33,5 +33,29 @@ describe("resolveGithubToken", () => {
   });
   it("ignores an empty repo-scoped token (falls back to global)", () => {
     expect(resolveGithubToken("repos/acme/web/pulls", { "acme/web": "" }, global)).toBe("GLOBAL");
+  });
+});
+
+describe("tokenForRepo (session axis, #158)", () => {
+  const repoTokens = { "acme/web": "REPO_WEB", "acme/api": "REPO_API" };
+  const global = "GLOBAL";
+
+  it("uses the repo-scoped token for a session bound to that repo", () => {
+    expect(tokenForRepo("acme/web", repoTokens, global)).toBe("REPO_WEB");
+    expect(tokenForRepo("acme/api", repoTokens, global)).toBe("REPO_API");
+  });
+  it("matches the repo case-insensitively", () => {
+    expect(tokenForRepo("Acme/Web", repoTokens, global)).toBe("REPO_WEB");
+  });
+  it("falls back to the global token for an un-scoped repo", () => {
+    expect(tokenForRepo("other/x", repoTokens, global)).toBe("GLOBAL");
+  });
+  it("falls back to the global token when no repo is bound (director / ad-hoc console)", () => {
+    expect(tokenForRepo(undefined, repoTokens, global)).toBe("GLOBAL");
+    expect(tokenForRepo(null, repoTokens, global)).toBe("GLOBAL");
+    expect(tokenForRepo("", repoTokens, global)).toBe("GLOBAL");
+  });
+  it("ignores an empty repo-scoped token (falls back to global)", () => {
+    expect(tokenForRepo("acme/web", { "acme/web": "" }, global)).toBe("GLOBAL");
   });
 });
