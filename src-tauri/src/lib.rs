@@ -2774,6 +2774,8 @@ When you genuinely need a decision you cannot make yourself, defer to the direct
 - `bsc-blocked --on <ref>` — park until another stream's dependency lands.
 - `echo "what you decided" | bsc-note` — for small reversible choices, just pick the smallest sensible option and record it; do not ask.
 
+When you open a PR, stop -- CI runs and is watched for you; you will be told to continue (if it passed) or to fix the build and push (if it failed). Do not poll CI, reopen, or duplicate the PR.
+
 Only the director escalates to the user.
 "#;
 
