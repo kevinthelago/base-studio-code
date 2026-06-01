@@ -8,6 +8,9 @@ describe("flowKickoffText", () => {
   it("default flow (continuous + auto-pr) tells the agent to push + open a PR", () => {
     const k = flowKickoffText(undefined, "auth-ui");
     expect(k.autonomy).toMatch(/do not stop to ask/);
+    // #382: continuous autonomy no longer references the old PR-merge model.
+    expect(k.autonomy).not.toMatch(/the director reviews and merges/);
+    expect(k.autonomy).toMatch(/do not end your turn while any remain unintegrated/);
     expect(k.push).toMatch(/push it, and open a PR to develop/);
     expect(k.push).toContain("auth-ui");
   });
@@ -52,6 +55,8 @@ describe("flowKickoffText", () => {
     expect(k.push).not.toMatch(/open a PR to develop/i);
     expect(k.push).not.toMatch(/pull request/i);
     expect(k.push).toMatch(/do NOT open a PR/);
+    // #382: self-merge workers must not stop while owned issues remain.
+    expect(k.push).toMatch(/do not stop/i);
   });
 
   it("the trigger phrase varies the push sentence", () => {
