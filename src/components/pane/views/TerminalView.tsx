@@ -331,6 +331,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // a permission prompt mid-task. Allowed commands are the resolved
       // global+project+repo set; denied are the user's global blocks (the backend
       // always adds its dangerous defaults).
+      // Authenticate gh / git-over-https in the agent shell: export the app's
+      // GitHub token as GH_TOKEN into the PTY (and the readiness probe), so a worker
+      // can push its branch and open a PR. Without it gh is unauthenticated and
+      // gh pr create / https push fail (#362).
+      const ghToken = useAppStore.getState().githubToken;
+      const agentEnv = ghToken ? { GH_TOKEN: ghToken } : undefined;
       if (launchesClaude && (initialCwd ?? "") !== "") {
         const cmds = useAppStore.getState().paneAllowedCommands[paneId]
           ?? useAppStore.getState().allowedCommands;
@@ -395,7 +401,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // open PRs; warn in-pane up front if the spawned shell can't (gh/git off
         // PATH or gh unauthenticated) rather than the agent hitting it mid-task.
         try {
-          const probe = await invoke<GithubProbe>("github_readiness", { cwd: initialCwd, env: undefined });
+          const probe = await invoke<GithubProbe>("github_readiness", { cwd: initialCwd, env: agentEnv });
           const readiness = interpretGithubReadiness(probe);
           if (!destroyed) setGhWarn(readiness.ok ? null : readiness.message);
           if (!readiness.ok) log.warn(`console[${paneId}] github not ready (${readiness.status}): ${readiness.message}`);
@@ -429,7 +435,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
         // Per-repo triage checkpoint doc, so the bsc-checkpoint helper can write it.
         checkpointDoc,
-        env: undefined,
+        env: agentEnv,
       }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
 
       if (!isNew) {
