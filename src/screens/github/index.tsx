@@ -2,6 +2,7 @@ import { useAppStore } from "../../store";
 import { useDragResize } from "../../hooks/useDragResize";
 import { GitHubEmpty } from "./Empty";
 import { GitHubSummary, GitHubPageModeStrip } from "./GitHubSummary";
+import { ProjectsSummary } from "../projects/ProjectsSummary";
 import { Pulse } from "./Pulse";
 
 function langTag(lang: string | null): string {
@@ -36,6 +37,10 @@ export function GitHubScreen() {
 
       {/* Summary page */}
       {githubPageMode === "summary" && <GitHubSummary />}
+
+      {/* Projects portfolio — the GitHub Projects analytics (moved from the
+          Projects tab, #421). Between Summary and Repositories. */}
+      {githubPageMode === "projects" && <ProjectsSummary />}
 
       {/* Repositories view — repo picker + the per-repo Pulse dashboard (progress,
           changes, CI, contributors) with the branch graph folded in (#413). */}

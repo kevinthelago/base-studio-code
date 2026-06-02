@@ -226,8 +226,9 @@ function useGitHubSummaryData() {
 export function GitHubPageModeStrip() {
   const { githubPageMode, setGithubPageMode, githubUser } = useAppStore();
   const modes = [
-    { k: "summary", label: "Summary",      hint: "all repos · analytics" },
-    { k: "repos",   label: "Repositories", hint: "progress · changes · CI" },
+    { k: "summary",  label: "Summary",      hint: "all repos · analytics" },
+    { k: "projects", label: "Projects",     hint: "portfolio · analytics" },
+    { k: "repos",    label: "Repositories", hint: "progress · changes · CI" },
   ] as const;
   return (
     <div style={{
