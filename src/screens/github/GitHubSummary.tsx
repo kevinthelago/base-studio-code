@@ -228,6 +228,7 @@ export function GitHubPageModeStrip() {
   const modes = [
     { k: "summary", label: "Summary",      hint: "all repos · analytics" },
     { k: "repos",   label: "Repositories", hint: "drill into a repo" },
+    { k: "pulse",   label: "Pulse",        hint: "progress & changes" },
   ] as const;
   return (
     <div style={{

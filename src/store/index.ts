@@ -267,8 +267,8 @@ interface AppStore {
   githubUser: GithubUser | null;
   githubRepos: GithubRepo[];
   activeRepoName: string;
-  githubPageMode: "summary" | "repos";
-  setGithubPageMode: (v: "summary" | "repos") => void;
+  githubPageMode: "summary" | "repos" | "pulse";
+  setGithubPageMode: (v: "summary" | "repos" | "pulse") => void;
   githubActiveTab: "overview" | "actions";
   setGithubTab: (tab: AppStore["githubActiveTab"]) => void;
   setGithubToken: (token: string) => void;

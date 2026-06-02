@@ -4,6 +4,7 @@ import { GitHubEmpty } from "./Empty";
 import { OverviewBody } from "./Overview";
 import { ActionsBody } from "./Actions";
 import { GitHubSummary, GitHubPageModeStrip } from "./GitHubSummary";
+import { Pulse } from "./Pulse";
 
 // (Git hooks moved to the Projects board, where a project+repo maps to a real clone — #265.)
 const PAGE_TABS = [
@@ -91,6 +92,13 @@ export function GitHubScreen() {
 
       {/* Summary page */}
       {githubPageMode === "summary" && <GitHubSummary />}
+
+      {/* Pulse — repo progress & changes analytics */}
+      {githubPageMode === "pulse" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <Pulse />
+        </div>
+      )}
 
       {/* Repositories view */}
       <div style={{
