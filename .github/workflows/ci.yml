@@ -126,3 +126,24 @@ jobs:
 
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # Single always-run check to require on branch protection. The frontend/rust
+  # jobs are conditional (skipped when their paths don't change), and a *skipped*
+  # required check can wedge a PR — so require this aggregate instead. It passes
+  # when each needed job succeeded OR was skipped, and fails only on a real
+  # failure/cancellation (#425).
+  gate:
+    name: CI gate
+    needs: [frontend, rust]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs passed (or were skipped)
+        run: |
+          echo "frontend=${{ needs.frontend.result }} rust=${{ needs.rust.result }}"
+          for r in "${{ needs.frontend.result }}" "${{ needs.rust.result }}"; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::a required CI job did not pass ($r)"; exit 1
+            fi
+          done
+          echo "CI gate passed"
