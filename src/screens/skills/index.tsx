@@ -8,12 +8,13 @@ import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import {
-  KIND, PROFILE_COLOR, SOURCE_TAG, SKILL_CATALOG, SKILL_KPIS, fmtCount,
+  KIND, PROFILE_COLOR, SOURCE_TAG, SKILL_CATALOG, fmtCount,
   type SkillKind, type SkillSource, type SkillProfile,
 } from "../../data/skills";
 import {
-  blankSkill, defFromCatalog, deriveSkillKpis, parseSkillsFile, type SkillDef,
+  blankSkill, defFromCatalog, deriveSkillKpis, parseSkillsFile, skillSlug, type SkillDef,
 } from "../../lib/skills";
+import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "../../lib/skillTelemetry";
 import { Spark, HBars, type HBarRow } from "./SkillsCharts";
 import "./skills.css";
 
@@ -125,15 +126,42 @@ export function SkillsScreen() {
     return () => { cancelled = true; };
   }, [githubToken]);
 
+  // Real invocation telemetry from the skill-usage log (#406), polled while the
+  // screen is open. Keyed by skill-name slug; merged over the library below.
+  const [stats, setStats] = useState<Record<string, SkillStats>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const lines = await invoke<string[]>("read_skill_log", { limit: 4000 }).catch(() => [] as string[]);
+      if (cancelled) return;
+      setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join("\n")), new Date()));
+    };
+    load();
+    const id = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  // Merge telemetry over each skill: invocations + 7-day trend, and `success` as
+  // the real success RATE (0–100), so the cards/leaderboard/KPIs render live data.
+  const merged = useMemo<SkillDef[]>(() => skills.map(s => {
+    const st = stats[skillSlug(s.name)];
+    return st
+      ? { ...s, invocations: st.invocations, success: st.successRate, trend: st.trend }
+      : { ...s, invocations: 0, success: 0, trend: [] };
+  }), [skills, stats]);
+
   const kinds: Array<"all" | SkillKind> = ["all", ...KIND_KEYS];
-  const list = filter === "all" ? skills : skills.filter(s => s.kind === filter);
-  const kpis = useMemo(() => deriveSkillKpis(skills), [skills]);
+  const list = filter === "all" ? merged : merged.filter(s => s.kind === filter);
+  const kpis = useMemo(() => deriveSkillKpis(merged), [merged]);
+  const invToday = useMemo(() => Object.values(stats).reduce((a, s) => a + s.today, 0), [stats]);
+  const activeCount = useMemo(() => merged.filter(s => s.invocations > 0).length, [merged]);
   const selected = selectedId ? skills.find(s => s.id === selectedId) ?? null : null;
 
   // Workhorse (most invoked) + least-reliable (lowest success among the used),
-  // derived from the live list so the digest never names a skill that's gone.
-  const workhorse = skills.reduce<SkillDef | null>((a, s) => (!a || s.invocations > a.invocations ? s : a), null);
-  const leastReliable = skills.filter(s => s.invocations > 0)
+  // derived from the live, telemetry-merged list. Null until there's real usage.
+  const workhorse = merged.filter(s => s.invocations > 0)
+    .reduce<SkillDef | null>((a, s) => (!a || s.invocations > a.invocations ? s : a), null);
+  const leastReliable = merged.filter(s => s.invocations > 0)
     .reduce<SkillDef | null>((a, s) => (!a || s.success < a.success ? s : a), null);
 
   function patch(id: string, p: Partial<SkillDef>) { updateSkill(id, p); }
@@ -262,7 +290,8 @@ export function SkillsScreen() {
   }
 
   // ── right rail ───────────────────────────────────────────────────────────────
-  const leaderboardRows: HBarRow[] = [...skills]
+  const leaderboardRows: HBarRow[] = [...merged]
+    .filter(s => s.invocations > 0)
     .sort((a, b) => b.invocations - a.invocations).slice(0, 6)
     .map(s => ({
       label: s.name, value: s.invocations, color: KIND[s.kind].color, strong: true,
@@ -271,14 +300,15 @@ export function SkillsScreen() {
 
   const byKind = useMemo(() => {
     const acc: Partial<Record<SkillKind, { inv: number; ok: number }>> = {};
-    skills.forEach(s => {
+    merged.forEach(s => {
       const a = (acc[s.kind] ??= { inv: 0, ok: 0 });
       a.inv += s.invocations; a.ok += s.invocations * s.success / 100;
     });
     return (Object.entries(acc) as Array<[SkillKind, { inv: number; ok: number }]>)
-      .map(([k, v]) => ({ kind: k, rate: v.inv > 0 ? Math.round(v.ok / v.inv * 100) : 0 }))
+      .filter(([, v]) => v.inv > 0)
+      .map(([k, v]) => ({ kind: k, rate: Math.round(v.ok / v.inv * 100) }))
       .sort((a, b) => b.rate - a.rate);
-  }, [skills]);
+  }, [merged]);
 
   return (
     <div className="skills-screen">
@@ -328,10 +358,13 @@ export function SkillsScreen() {
                   <button className="btn ghost" style={{ height: 22, fontSize: 10 }} onClick={() => setMode("runs")}>view runs</button>
                 </div>
                 <p style={{ margin: 0 }}>
-                  <b style={{ color: "var(--fg)" }}>{kpis.total} skills</b> available to the fleet — invoked
-                  <b style={{ color: "var(--fg)" }}> {SKILL_KPIS.invToday}×</b> today at <b style={{ color: "var(--success)" }}>{kpis.avgSuccess}% success</b>.
-                  {workhorse && <> <b style={{ color: "var(--accent)" }}>{workhorse.name}</b> is the workhorse;</>}
-                  {leastReliable && <> <b style={{ color: "var(--danger)" }}>{leastReliable.name}</b> is the least reliable at {leastReliable.success}% — worth tightening its guardrails.</>}
+                  <b style={{ color: "var(--fg)" }}>{kpis.total} skills</b> available to the fleet.
+                  {kpis.invWeek === 0
+                    ? <> No invocations recorded yet — run the fleet to populate these metrics.</>
+                    : <> Invoked <b style={{ color: "var(--fg)" }}>{invToday}×</b> today at <b style={{ color: "var(--success)" }}>{kpis.avgSuccess}% success</b>.
+                        {workhorse && <> <b style={{ color: "var(--accent)" }}>{workhorse.name}</b> is the workhorse;</>}
+                        {leastReliable && leastReliable.id !== workhorse?.id && <> <b style={{ color: "var(--danger)" }}>{leastReliable.name}</b> is the least reliable at {leastReliable.success}% — worth tightening its guardrails.</>}
+                      </>}
                 </p>
               </div>
             </div>
@@ -340,11 +373,11 @@ export function SkillsScreen() {
           {/* KPI row */}
           <div className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
             <StatCard k="skills" v={String(kpis.total)} sub="in library" tone="fg" />
-            <StatCard k="invocations · today" v={String(SKILL_KPIS.invToday)} sub="across all workers" tone="accent" delta={{ dir: "up", text: "+64" }} />
-            <StatCard k="avg success" v={`${kpis.avgSuccess}%`} sub="weighted by use" tone="success" delta={{ dir: "up", text: "+2%" }} />
+            <StatCard k="invocations · today" v={String(invToday)} sub="across all workers" tone="accent" />
+            <StatCard k="avg success" v={kpis.invWeek ? `${kpis.avgSuccess}%` : "—"} sub="weighted by use" tone="success" />
             <StatCard k="invocations · 7d" v={fmtCount(kpis.invWeek)} sub="fleet-wide" tone="info" />
             <StatCard k="pinned" v={String(kpis.pinned)} sub="auto-available to fleet" tone="fg" />
-            <StatCard k="tokens saved · 7d" v={`${SKILL_KPIS.tokensSavedM}M`} sub="vs ad-hoc prompting" tone="success" />
+            <StatCard k="active · 7d" v={String(activeCount)} sub="skills used at least once" tone="info" />
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
@@ -400,12 +433,15 @@ export function SkillsScreen() {
                         <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 9, borderTop: "1px solid var(--border-soft)" }}>
                           <ProfileDots profiles={s.profiles} />
                           <div style={{ flex: 1 }} />
-                          {s.avgTokensK > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{s.avgTokensK}k avg</span>}
                           <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>{fmtCount(s.invocations)}×</span>
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                            <span style={{ width: 42 }} className="meter"><i style={{ width: `${s.success}%`, background: sc }} /></span>
-                            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: sc, width: 26, textAlign: "right" }}>{s.success}%</span>
-                          </span>
+                          {s.invocations > 0 ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                              <span style={{ width: 42 }} className="meter"><i style={{ width: `${s.success}%`, background: sc }} /></span>
+                              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: sc, width: 26, textAlign: "right" }}>{s.success}%</span>
+                            </span>
+                          ) : (
+                            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>not run yet</span>
+                          )}
                         </div>
                       </div>
                     );
