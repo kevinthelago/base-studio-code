@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { unlock } from "../lib/achievements";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Screen } from "../components/chrome/Rail";
 import type { Tab } from "../components/chrome/Tabstrip";
@@ -180,6 +181,11 @@ interface AppStore {
   /** Live agent/terminal pane count (transient, not persisted) — drives the >10 easter egg (#365). */
   liveAgents: number;
   bumpLiveAgents: (delta: number) => void;
+  /** Unlocked achievements: id -> unlockedAt epoch ms (persisted). */
+  achievements: Record<string, number>;
+  /** Unlock an achievement once, ever. Returns true only on the FIRST unlock
+   *  (so the caller fires its toast exactly once); false if already unlocked. */
+  unlockAchievement: (id: string) => boolean;
   setPaneWasClaude: (paneId: string, on: boolean) => void;
   paneInitCmds: Record<string, string>; // transient — NOT persisted
   setPaneInitCmd: (paneId: string, cmd: string) => void;
@@ -631,6 +637,13 @@ export const useAppStore = create<AppStore>()(
       paneWasClaude: {},
   liveAgents: 0,
   bumpLiveAgents: (delta) => set((s) => ({ liveAgents: Math.max(0, s.liveAgents + delta) })),
+      achievements: {},
+      unlockAchievement: (id) => {
+        const next = unlock(get().achievements, id, Date.now());
+        if (!next) return false;            // already unlocked — once ever
+        set({ achievements: next });
+        return true;
+      },
       setPaneWasClaude: (paneId, on) =>
         set((s) => {
           const cur = s.paneWasClaude[paneId];
@@ -1670,6 +1683,7 @@ export const useAppStore = create<AppStore>()(
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
         projectKeyAlias:      s.projectKeyAlias,
+        achievements:         s.achievements,
         hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
         projectStartupPromptDoc: s.projectStartupPromptDoc,
