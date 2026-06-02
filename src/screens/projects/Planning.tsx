@@ -988,10 +988,12 @@ export function Planning({ visible }: { visible: boolean }) {
   useEffect(() => {
     const token = useAppStore.getState().githubToken;
     // Skip (and leave whatever overlay is already shown) when there is nothing
-    // to fetch for: not a published project, no repos, or no token. The async
-    // refresh below is the only path that calls setGhProgress, so the effect
-    // body never triggers a synchronous cascading render.
-    if (!isExisting || ghStructure.repos.length === 0 || !token) return;
+    // to fetch for: no linked repos, or no token. NOT gated on isExisting — a
+    // project's issues live on its repos whether or not it was opened as a board
+    // project, so we resync progress on every page-open (the `visible` dep) as
+    // long as there are repos to query. The async refresh below is the only path
+    // that calls setGhProgress, so the effect body never cascades a render.
+    if (ghStructure.repos.length === 0 || !token) return;
     let cancelled = false;
 
     const rest = <T,>(path: string) =>
@@ -1043,7 +1045,7 @@ export function Planning({ visible }: { visible: boolean }) {
   // ghStructSig captures the parts of ghStructure the overlay keys off, so the
   // effect re-runs when the plan changes without depending on the object identity.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isExisting, visible, ghStructSig]);
+  }, [visible, ghStructSig]);
 
 
   // Re-sync CLAUDE.md whenever a repo resolves after the initial mount.
