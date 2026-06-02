@@ -9,6 +9,8 @@ import { projectRepoCwd, sanitizeProjectKey } from "../../lib/projectPaths";
 import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
+import { buildProgressOverlay } from "./ghProgress";
+import type { IssueState, MilestoneState, NodeProgress } from "./ghProgress";
 import {
   parsePlanFocus, stripPlanFocus,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
@@ -219,20 +221,60 @@ const GH_STATUS_GLYPH: Record<GhItemStatus, { icon: string; color: string }> = {
   error:   { icon: "✗", color: "var(--danger)" },
 };
 
-function GhItemRow({ node, state }: { node: GhNode; state: GhItemState }) {
+// A small {closed}/{total} counter plus a thin progress bar, matching the
+// existing mono 9.5px detail styling. Rendered for rollup nodes (milestone /
+// repo / project) that carry a `total`.
+function ProgressMeter({ closed, total }: { closed: number; total: number }) {
+  const frac = total > 0 ? Math.max(0, Math.min(1, closed / total)) : 0;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <span style={{ color: "var(--fg-dim)", fontSize: 9.5, fontFamily: "var(--mono)" }}>
+        {closed}/{total}
+      </span>
+      <span style={{
+        width: 36, height: 4, borderRadius: 2,
+        background: "var(--border-soft)", overflow: "hidden", flexShrink: 0,
+      }}>
+        <span style={{
+          display: "block", height: "100%",
+          width: `${Math.round(frac * 100)}%`, background: "var(--accent)",
+        }} />
+      </span>
+    </span>
+  );
+}
+
+function GhItemRow({ node, state, progress }: { node: GhNode; state: GhItemState; progress?: NodeProgress }) {
   const g = GH_STATUS_GLYPH[state.status];
+  // Live progression (#393 Layer 2) takes visual precedence over publish status:
+  // a green check + dimmed label for done issues, an inline meter for rollups.
+  const isDone = progress?.done === true;
+  const hasMeter = progress?.total !== undefined && progress.total > 0;
+  const icon  = isDone ? "✓" : g.icon;
+  const color = isDone ? "var(--success)" : g.color;
+  // Prefer the live issue link (#number) when the overlay carries one.
+  const liveUrl = progress?.url;
+  const liveNum = progress?.number;
   return (
     <div style={{
       display: "flex", alignItems: "baseline", gap: 8,
       fontFamily: "var(--mono)", fontSize: 10.5,
-      opacity: state.status === "planned" ? 0.6 : 1,
+      opacity: state.status === "planned" && !progress ? 0.6 : 1,
     }}>
-      <span style={{ width: 11, textAlign: "center", flexShrink: 0, color: g.color }}>{g.icon}</span>
+      <span style={{ width: 11, textAlign: "center", flexShrink: 0, color }}>{icon}</span>
       <span style={{
-        color: state.status === "error" ? "var(--danger)" : "var(--fg)",
+        color: state.status === "error" ? "var(--danger)" : isDone ? "var(--fg-dim)" : "var(--fg)",
+        textDecoration: isDone ? "line-through" : "none",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
       }}>{node.label}</span>
-      {state.url ? (
+      {hasMeter && <ProgressMeter closed={progress!.closed ?? 0} total={progress!.total!} />}
+      {liveUrl && liveNum !== undefined ? (
+        <a href={liveUrl} target="_blank" rel="noreferrer"
+          style={{ color: "var(--fg-dim)", fontSize: 9.5, textDecoration: "none" }}
+          title={liveUrl}>
+          #{liveNum} ↗
+        </a>
+      ) : state.url ? (
         <a href={state.url} target="_blank" rel="noreferrer"
           style={{ color: "var(--fg-dim)", fontSize: 9.5, textDecoration: "none" }}
           title={state.url}>
@@ -245,8 +287,9 @@ function GhItemRow({ node, state }: { node: GhNode; state: GhItemState }) {
   );
 }
 
-function GhGroup({ title, count, nodes, status, empty }: {
-  title: string; count?: number; nodes: GhNode[]; status: GhStatusMap; empty?: string;
+function GhGroup({ title, count, nodes, status, progress, empty }: {
+  title: string; count?: number; nodes: GhNode[]; status: GhStatusMap;
+  progress: Record<string, NodeProgress>; empty?: string;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -263,7 +306,7 @@ function GhGroup({ title, count, nodes, status, empty }: {
         : (
           <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingLeft: 8 }}>
             {nodes.map(n => (
-              <GhItemRow key={n.id} node={n} state={status[n.id] ?? { status: "planned" }} />
+              <GhItemRow key={n.id} node={n} state={status[n.id] ?? { status: "planned" }} progress={progress[n.id]} />
             ))}
           </div>
         )
@@ -274,7 +317,9 @@ function GhGroup({ title, count, nodes, status, empty }: {
 
 // Repositories group: each repo row owns its phase tracking issues, indented
 // beneath it with a connector so issue ownership is clear at a glance.
-function GhReposGroup({ repos, status }: { repos: GhRepoNode[]; status: GhStatusMap }) {
+function GhReposGroup({ repos, status, progress }: {
+  repos: GhRepoNode[]; status: GhStatusMap; progress: Record<string, NodeProgress>;
+}) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
       <div style={{
@@ -293,7 +338,7 @@ function GhReposGroup({ repos, status }: { repos: GhRepoNode[]; status: GhStatus
           <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 8 }}>
             {repos.map(r => (
               <div key={r.node.id} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                <GhItemRow node={r.node} state={status[r.node.id] ?? { status: "planned" }} />
+                <GhItemRow node={r.node} state={status[r.node.id] ?? { status: "planned" }} progress={progress[r.node.id]} />
                 {r.issues.length > 0 && (
                   <div style={{
                     display: "flex", flexDirection: "column", gap: 2,
@@ -301,7 +346,7 @@ function GhReposGroup({ repos, status }: { repos: GhRepoNode[]; status: GhStatus
                     borderLeft: "1px solid var(--border-soft)",
                   }}>
                     {r.issues.map(iss => (
-                      <GhItemRow key={iss.id} node={iss} state={status[iss.id] ?? { status: "planned" }} />
+                      <GhItemRow key={iss.id} node={iss} state={status[iss.id] ?? { status: "planned" }} progress={progress[iss.id]} />
                     ))}
                   </div>
                 )}
@@ -314,7 +359,12 @@ function GhReposGroup({ repos, status }: { repos: GhRepoNode[]; status: GhStatus
   );
 }
 
-function GitHubStructureCard({ structure, status }: { structure: GhStructure; status: GhStatusMap }) {
+function GitHubStructureCard({ structure, status, progress }: {
+  structure: GhStructure; status: GhStatusMap; progress: Record<string, NodeProgress>;
+}) {
+  // Overall rollup from the project node the overlay computes (matched issues
+  // across every repo). Drives the small "{closed}/{total} issues done" summary.
+  const overall = progress["project"];
   return (
     <div style={{
       padding: "12px 14px", borderRadius: 6,
@@ -324,21 +374,34 @@ function GitHubStructureCard({ structure, status }: { structure: GhStructure; st
       flexShrink: 0,
     }}>
       <div style={{
+        display: "flex", alignItems: "center", gap: 10,
         color: "var(--info)", textTransform: "uppercase", letterSpacing: ".06em",
         fontFamily: "var(--mono)", fontSize: 10,
       }}>
-        github structure
+        <span>github structure</span>
+        {overall?.total !== undefined && overall.total > 0 && (
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            marginLeft: "auto", textTransform: "none", letterSpacing: 0,
+          }}>
+            <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>
+              {overall.closed ?? 0}/{overall.total} issues done
+            </span>
+            <ProgressMeter closed={overall.closed ?? 0} total={overall.total} />
+          </span>
+        )}
       </div>
-      <GhGroup title="Project board" nodes={[structure.project]} status={status} />
-      <GhGroup title="Milestones" count={structure.milestones.length} nodes={structure.milestones} status={status}
+      <GhGroup title="Project board" nodes={[structure.project]} status={status} progress={progress} />
+      <GhGroup title="Milestones" count={structure.milestones.length} nodes={structure.milestones} status={status} progress={progress}
         empty="defined by the Phases section" />
-      <GhReposGroup repos={structure.repos} status={status} />
+      <GhReposGroup repos={structure.repos} status={status} progress={progress} />
       {structure.streams.length > 0 && (
         <GhGroup
           title="Agents"
           count={structure.streams.length}
           nodes={structure.streams.map(s => ({ id: s.id, label: `${s.label} · stream:${s.id.replace(/^stream:/, "")}` }))}
           status={status}
+          progress={progress}
         />
       )}
     </div>
@@ -512,6 +575,9 @@ export function Planning({ visible }: { visible: boolean }) {
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
   // Live status of each GitHub object, keyed by the ids in buildGhStructure.
   const [ghStatus, setGhStatus] = useState<GhStatusMap>({});
+  // Live issue-progression overlay (#393 Layer 2): node id -> NodeProgress
+  // reflecting what's actually CLOSED/done on GitHub for a published project.
+  const [ghProgress, setGhProgress] = useState<Record<string, NodeProgress>>({});
 
   // The section Claude is currently discussing, driven by <plan_focus> tags.
   // Null until the first focus tag arrives. Highlights the matching card.
@@ -906,6 +972,79 @@ export function Planning({ visible }: { visible: boolean }) {
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, effectiveProjectId]);
+
+  // Live issue-progression overlay (#393 Layer 2). For an already-published
+  // project, fetch each repo's GitHub issues + milestone counts and build a
+  // node-id -> NodeProgress overlay (done checkmarks, milestone/repo/project
+  // rollups) the structure card renders. Polls on a light 30s interval while
+  // visible. Cancellation-safe; failed repos are skipped, never fatal.
+  // The dep signature is derived from the structure (repo names + milestone +
+  // issue node labels) so the effect re-subscribes only when the plan changes,
+  // not on every render (ghStructure is a fresh object each pass).
+  const ghStructSig = JSON.stringify({
+    repos: ghStructure.repos.map(r => [r.node.label, r.issues.map(i => i.label)]),
+    ms: ghStructure.milestones.map(m => m.label),
+  });
+  useEffect(() => {
+    const token = useAppStore.getState().githubToken;
+    // Skip (and leave whatever overlay is already shown) when there is nothing
+    // to fetch for: not a published project, no repos, or no token. The async
+    // refresh below is the only path that calls setGhProgress, so the effect
+    // body never triggers a synchronous cascading render.
+    if (!isExisting || ghStructure.repos.length === 0 || !token) return;
+    let cancelled = false;
+
+    const rest = <T,>(path: string) =>
+      invoke<T>("github_request", { token, path }).catch(() => null) as Promise<T | null>;
+
+    type GhIssue = {
+      title: string; state: string; number: number; html_url: string;
+      milestone: { title: string } | null; pull_request?: unknown;
+    };
+    type GhMilestone = { title: string; open_issues: number; closed_issues: number };
+
+    const refresh = async () => {
+      const issuesByRepo: Record<string, IssueState[]> = {};
+      const milestonesByRepo: Record<string, MilestoneState[]> = {};
+      await Promise.all(ghStructure.repos.map(async repo => {
+        const fullName = repo.node.label;
+        const [issues, milestones] = await Promise.all([
+          rest<GhIssue[]>(`repos/${fullName}/issues?state=all&per_page=100`),
+          rest<GhMilestone[]>(`repos/${fullName}/milestones?state=all&per_page=100`),
+        ]);
+        if (Array.isArray(issues)) {
+          issuesByRepo[fullName] = issues
+            // GitHub returns PRs in the issues list; the `pull_request` field
+            // marks them. Skip so only real issues map to structure nodes.
+            .filter(it => !it.pull_request)
+            .map(it => ({
+              title: it.title,
+              state: it.state === "closed" ? "closed" : "open",
+              number: it.number,
+              url: it.html_url,
+              milestone: it.milestone?.title ?? null,
+            }));
+        }
+        if (Array.isArray(milestones)) {
+          milestonesByRepo[fullName] = milestones.map(m => ({
+            title: m.title,
+            open: m.open_issues ?? 0,
+            closed: m.closed_issues ?? 0,
+          }));
+        }
+      }));
+      if (cancelled) return;
+      setGhProgress(buildProgressOverlay(ghStructure, issuesByRepo, milestonesByRepo));
+    };
+
+    refresh();
+    const id = setInterval(() => { if (visible) refresh(); }, 30_000);
+    return () => { cancelled = true; clearInterval(id); };
+  // ghStructSig captures the parts of ghStructure the overlay keys off, so the
+  // effect re-runs when the plan changes without depending on the object identity.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExisting, visible, ghStructSig]);
+
 
   // Re-sync CLAUDE.md whenever a repo resolves after the initial mount.
   // kbBlocks is captured via ref to avoid including it in deps (it's large and
@@ -1572,7 +1711,7 @@ _Auto-generated by base-studio-code planner._`,
 
               {/* Live GitHub structure — each node updates as it is created */}
               <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-                <GitHubStructureCard structure={ghStructure} status={ghStatus} />
+                <GitHubStructureCard structure={ghStructure} status={ghStatus} progress={ghProgress} />
               </div>
             </>
           )}
