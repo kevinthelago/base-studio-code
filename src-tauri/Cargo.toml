@@ -31,11 +31,11 @@ rfd = "0.14"
 # system crypto toolchain); `tokio` runs the relay client; `tokio-tungstenite`
 # dials the relay over real (CA-signed) TLS via rustls + webpki roots; `base64`
 # encodes the static public key for the pairing QR; `rand` mints room ids + PSKs.
-snow = "0.9"
+snow = "0.10"
 base64 = "0.22"
-rand = "0.8"
+rand = "0.10"
 tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "time", "net", "io-util"] }
-tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 # rustls 0.23 won't auto-select a CryptoProvider at runtime unless its provider
 # feature is pinned, so the relay dial's first TLS handshake panics the tunnel
