@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SkillsScreen } from "../screens/skills";
-import { SKILLS, SKILL_KPIS } from "../data/skills";
+import { SKILLS } from "../data/skills";
 
 // Skill cards carry both `card` and `hrow`; the right-rail panels are `card`
 // only and the catalog rows are `hrow` only — so `.card.hrow` selects exactly
@@ -18,8 +18,9 @@ describe("SkillsScreen", () => {
   it("renders the header, KPIs, and the skill library", () => {
     const { container } = render(<SkillsScreen />);
     expect(screen.getByRole("heading", { name: "Skills" })).toBeTruthy();
-    // KPI + digest figures come from the derived SKILL_KPIS.
-    expect(screen.getAllByText(String(SKILL_KPIS.invToday)).length).toBeGreaterThan(0);
+    // KPI row is present (values derive from real telemetry — 0 with no usage log).
+    expect(screen.getByText("invocations · today")).toBeTruthy();
+    expect(screen.getByText("avg success")).toBeTruthy();
     // Right-rail panels are present.
     expect(screen.getByText("Most invoked")).toBeTruthy();
     expect(screen.getByText("Success by kind")).toBeTruthy();
