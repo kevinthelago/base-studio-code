@@ -32,6 +32,12 @@ export const FLEET_KEY = "fleet";
  *  as a plan section. See {@link parseReposFile}. */
 export const REPOS_KEY = "repos";
 
+/** The reusable-skills file (JSON: `skills.json` — an array of skill objects).
+ *  The planner's CRUD channel into the global Skills library. Surfaced by the
+ *  poll like `commands.json`; not rendered as a plan section — upserted into the
+ *  skills store. See {@link parseSkillsFile} in lib/skills. (#404) */
+export const SKILLS_KEY = "skills";
+
 /** Parse `repos.json` into a deduped list of `owner/repo` full names. Accepts a bare
  *  JSON array of strings, or `{ "repos": [...] }`. Returns [] on blank/malformed. */
 export function parseReposFile(raw: string): string[] {
@@ -229,7 +235,7 @@ export function groupSections(keys: string[]): {
   const project: string[] = [];
   const byRepo = new Map<string, string[]>();
   for (const key of keys) {
-    if (key === SKIPPED_KEY || key === COMMANDS_KEY || key === FLEET_KEY || key === REPOS_KEY) continue;
+    if (key === SKIPPED_KEY || key === COMMANDS_KEY || key === FLEET_KEY || key === REPOS_KEY || key === SKILLS_KEY) continue;
     const info = parseSectionKey(key);
     if (info.tier === "repo" && info.repo) {
       const list = byRepo.get(info.repo) ?? [];
