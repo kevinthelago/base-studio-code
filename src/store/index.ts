@@ -273,8 +273,8 @@ interface AppStore {
   githubUser: GithubUser | null;
   githubRepos: GithubRepo[];
   activeRepoName: string;
-  githubPageMode: "summary" | "repos";
-  setGithubPageMode: (v: "summary" | "repos") => void;
+  githubPageMode: "summary" | "projects" | "repos";
+  setGithubPageMode: (v: "summary" | "projects" | "repos") => void;
   setGithubToken: (token: string) => void;
   setGithubUser: (user: GithubUser | null) => void;
   setGithubRepos: (repos: GithubRepo[]) => void;
@@ -331,8 +331,8 @@ interface AppStore {
   recordAutomationRun: (id: string, run: AutomationRun) => void;
 
   // Projects (transient)
-  projectsPageMode: "summary" | "projects" | "fleet";
-  setProjectsPageMode: (v: "summary" | "projects" | "fleet") => void;
+  projectsPageMode: "projects" | "fleet";
+  setProjectsPageMode: (v: "projects" | "fleet") => void;
   projectsView: "list" | "board" | "planning";
   setProjectsView: (v: "list" | "board" | "planning") => void;
   activeProjectId: string | null;
@@ -952,7 +952,7 @@ export const useAppStore = create<AppStore>()(
               : a),
         })),
 
-      projectsPageMode: "summary",
+      projectsPageMode: "projects",
       setProjectsPageMode: (v) => set({ projectsPageMode: v }),
       projectsView: "list",
       setProjectsView: (v) => set({ projectsView: v }),
