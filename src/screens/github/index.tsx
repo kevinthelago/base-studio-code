@@ -93,10 +93,10 @@ export function GitHubScreen() {
       {/* Summary page */}
       {githubPageMode === "summary" && <GitHubSummary />}
 
-      {/* Pulse — repo progress & changes analytics */}
+      {/* Pulse — repo progress & changes analytics (live GitHub data) */}
       {githubPageMode === "pulse" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <Pulse />
+          <Pulse repo={activeRepo} />
         </div>
       )}
 
