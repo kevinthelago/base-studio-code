@@ -1,16 +1,16 @@
-// Projects → Fleet (#401; live data #412). A live orchestration dashboard for a
-// project's agent fleet, driven by the running app state: the launched fleet
-// roster (store `fleetPaneStreams`) with real run/idle (`paneStatus`) overlaid
-// with blocked/asking/waiting from the coordination log. No fabrication.
-//
-// Deferred to follow-ups (rendered as explicit "not wired" notes, never sample
-// data): GitHub-derived analytics (throughput, merge queue, time-to-land) and
-// token/cost accounting (#412 token-usage follow-up).
-import { Donut, StatCard, CardHead, Avatar } from "../../components/charts";
+// Projects → Fleet (#401). A live orchestration dashboard for a project's agent
+// fleet. The roster + run/idle + coordination status come from the running app
+// state (#412); throughput / merge queue / time-to-land come from GitHub across
+// the fleet's repos (#415). No fabrication — tokens/spend still need per-session
+// accounting (#416) and show an explicit note.
+import { useMemo, useState } from "react";
+import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar, useTip } from "../../components/charts";
 import { useAppStore } from "../../store";
 import { STATUS } from "../../data/fleet";
 import { useFleetLive } from "../../hooks/useFleetLive";
+import { useFleetGithub, type FleetGithub } from "../../hooks/useFleetGithub";
 import type { LiveWorker } from "../../lib/fleetLive";
+import type { ThroughputSlice } from "../../lib/fleetGithub";
 
 const GRID = "150px 96px 1fr 70px";
 
@@ -87,15 +87,91 @@ function FleetStatus({ counts, total }: { counts: Partial<Record<LiveWorker["sta
   );
 }
 
-/** Honest placeholder for the analytics that still need GitHub history / token
- *  accounting — explicitly NOT sample data. */
-function DeferredPanel() {
+// ── GitHub-derived panels (#415) ──────────────────────────────────────────────
+function sliceThroughput(t: ThroughputSlice, range: string): ThroughputSlice {
+  const n = range === "7d" ? 7 : t.labels.length;
+  const last = <T,>(a: T[]) => a.slice(-n);
+  return { labels: last(t.labels), landed: last(t.landed), merged: last(t.merged) };
+}
+
+function Throughput({ gh }: { gh: FleetGithub }) {
+  const [range, setRange] = useState("14d");
+  const tip = useTip();
+  const d = sliceThroughput(gh.throughput, range);
+  const total = d.landed.reduce((a, b) => a + b, 0) + d.merged.reduce((a, b) => a + b, 0);
   return (
     <div className="card">
-      <CardHead title="Throughput · merge queue · spend" hint="live-data follow-ups" />
-      <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.7 }}>
-        <div>· <b style={{ color: "var(--fg-muted)" }}>Throughput, merge queue, time-to-land</b> — derive from GitHub PR/issue history across the project's repos (#415).</div>
-        <div>· <b style={{ color: "var(--fg-muted)" }}>Tokens &amp; spend</b> — need per-session token accounting, which doesn't exist yet (#416).</div>
+      <CardHead title="Fleet throughput" hint="issues landed vs PRs merged"
+        right={<RangeToggle value={range} onChange={setRange} options={["7d", "14d"]} />} />
+      {gh.loading && total === 0 ? <div className="hint" style={{ padding: "8px 2px" }}>Loading from GitHub…</div>
+        : total === 0 ? <div className="hint" style={{ padding: "8px 2px" }}>No landed issues or merged PRs in the window.</div>
+        : <>
+            <LineArea labels={d.labels} height={150} tip={tip} series={[
+              { name: "landed", color: "var(--success)", data: d.landed },
+              { name: "merged", color: "var(--accent)", data: d.merged },
+            ]} />
+            <Legend style={{ marginTop: 8 }} items={[
+              { color: "var(--success)", label: "issues landed" },
+              { color: "var(--accent)", label: "PRs merged" },
+            ]} />
+          </>}
+      {tip.node}
+    </div>
+  );
+}
+
+function TimeToLand({ gh }: { gh: FleetGithub }) {
+  const tip = useTip();
+  const total = gh.timeToLand.reduce((a, b) => a + b.v, 0);
+  return (
+    <div className="card">
+      <CardHead title="Time-to-land" hint="PR open → merged · last 14d" />
+      {total === 0 ? <div className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No merged PRs in the window."}</div>
+        : <>
+            <Bars labels={gh.timeToLand.map(b => b.label)} height={116} tip={tip}
+              groups={[{ name: "PRs", color: "var(--info)", data: gh.timeToLand.map(b => b.v) }]} />
+            <div style={{ marginTop: 6, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "center" }}>
+              median <b style={{ color: "var(--fg)" }}>{gh.medianLandH}h</b> over {total} merged PR{total === 1 ? "" : "s"}
+            </div>
+          </>}
+      {tip.node}
+    </div>
+  );
+}
+
+function MergeQueue({ gh }: { gh: FleetGithub }) {
+  const tone: Record<string, string> = { green: "var(--success)", running: "var(--accent)", blocked: "var(--danger)", draft: "var(--fg-dim)" };
+  return (
+    <div className="card">
+      <CardHead title="Merge queue" hint="open PRs across the fleet's repos"
+        right={<span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--accent)" }}>{gh.mergeQueue.length}</span>} />
+      {gh.mergeQueue.length === 0
+        ? <div className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No open PRs."}</div>
+        : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+            {gh.mergeQueue.map((q, i) => (
+              <div key={`${q.repo}${q.pr}`} className="hrow" style={{ display: "grid", gridTemplateColumns: "42px 1fr 64px", gap: 8, alignItems: "center", padding: "9px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
+                <span style={{ fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>{q.pr}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.title}</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.repo}</div>
+                </div>
+                <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 10, color: tone[q.state] }}>● {q.state}</span>
+              </div>
+            ))}
+          </div>
+        )}
+    </div>
+  );
+}
+
+/** Tokens/spend still need per-session accounting (#416) — honest note, no fake numbers. */
+function SpendNote() {
+  return (
+    <div className="card">
+      <CardHead title="Tokens & spend" hint="not measured yet" />
+      <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.6 }}>
+        Per-session token + cost accounting doesn't exist yet (#416). Once it lands, token burn and spend appear here.
       </div>
     </div>
   );
@@ -104,6 +180,8 @@ function DeferredPanel() {
 export function Fleet() {
   const activeProjectName = useAppStore(s => s.activeProjectName);
   const { workers, kpis, counts, hasFleet } = useFleetLive();
+  const repos = useMemo(() => [...new Set(workers.map(w => w.repo).filter(Boolean))], [workers]);
+  const gh = useFleetGithub(repos);
 
   if (!hasFleet) {
     return (
@@ -130,20 +208,25 @@ export function Fleet() {
           </div>
         </div>
 
-        <div className="statgrid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+        <div className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
           <StatCard k="active workers" v={`${kpis.active}/${kpis.total}`} sub="running now" tone="accent" />
           <StatCard k="need attention" v={String(kpis.needAttention)} sub="blocked · asking · waiting" tone={kpis.needAttention > 0 ? "danger" : "fg"} />
           <StatCard k="idle" v={String(kpis.idle)} sub="at rest" tone="fg" />
-          <StatCard k="streams" v={String(kpis.total)} sub="launched in this fleet" tone="info" />
+          <StatCard k="landed today" v={String(gh.kpis.landedToday)} sub="issues closed" tone="success" />
+          <StatCard k="PRs merged · 7d" v={String(gh.kpis.prsMergedWeek)} sub="across the fleet's repos" tone="info" />
+          <StatCard k="time-to-land" v={gh.kpis.avgLandH ? `${gh.kpis.avgLandH}h` : "—"} sub="open → merge median" tone="fg" />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
             <WorkerBoard workers={workers} />
+            <Throughput gh={gh} />
+            <TimeToLand gh={gh} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
             <FleetStatus counts={counts} total={kpis.total} />
-            <DeferredPanel />
+            <MergeQueue gh={gh} />
+            <SpendNote />
           </div>
         </div>
       </div>
