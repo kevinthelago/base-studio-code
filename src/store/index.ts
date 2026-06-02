@@ -327,8 +327,8 @@ interface AppStore {
   recordAutomationRun: (id: string, run: AutomationRun) => void;
 
   // Projects (transient)
-  projectsPageMode: "summary" | "projects";
-  setProjectsPageMode: (v: "summary" | "projects") => void;
+  projectsPageMode: "summary" | "projects" | "fleet";
+  setProjectsPageMode: (v: "summary" | "projects" | "fleet") => void;
   projectsView: "list" | "board" | "planning";
   setProjectsView: (v: "list" | "board" | "planning") => void;
   activeProjectId: string | null;

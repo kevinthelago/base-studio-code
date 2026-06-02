@@ -201,6 +201,7 @@ export function ProjectsPageModeStrip() {
   const modes = [
     { k: "summary",  label: "Summary",  hint: "portfolio · analytics" },
     { k: "projects", label: "Projects", hint: "drill into a project" },
+    { k: "fleet",    label: "Fleet",    hint: "live orchestration" },
   ] as const;
   return (
     <div style={{
