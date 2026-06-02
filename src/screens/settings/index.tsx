@@ -5,6 +5,7 @@ import { AgentsSettings } from "./Agents";
 import { ClaudeConfigSettings } from "./ClaudeConfig";
 import { TunnelSettings } from "./Tunnel";
 import { DeveloperSettings } from "./Developer";
+import { AchievementsSettings } from "./Achievements";
 
 const NAV_ITEMS = [
   { k: "general",       label: "General"        },
@@ -17,6 +18,7 @@ const NAV_ITEMS = [
   { k: "keyboard",      label: "Keyboard"        },
   { k: "advanced",      label: "Advanced"        },
   { k: "developer",     label: "Developer"       },
+  { k: "achievements",  label: "Achievements"    },
 ];
 
 export function SettingsScreen() {
@@ -55,7 +57,8 @@ export function SettingsScreen() {
           {settingsSection === "claude-config" && <ClaudeConfigSettings />}
           {settingsSection === "tunnel"        && <TunnelSettings />}
           {settingsSection === "developer"    && <DeveloperSettings />}
-          {settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && settingsSection !== "tunnel" && settingsSection !== "developer" && (
+          {settingsSection === "achievements" && <AchievementsSettings />}
+          {settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && settingsSection !== "tunnel" && settingsSection !== "developer" && settingsSection !== "achievements" && (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               height: "100%", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)",
