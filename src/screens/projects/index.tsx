@@ -11,6 +11,7 @@ import { CoordinatorInbox } from "./CoordinatorInbox";
 import { PipelinesLane } from "./PipelinesLane";
 import { Planning } from "./Planning";
 import { ProjectsSummary, ProjectsPageModeStrip } from "./ProjectsSummary";
+import { Fleet } from "./Fleet";
 import { useProjectScan } from "./useProjectScan";
 
 export function ProjectsScreen() {
@@ -63,6 +64,13 @@ export function ProjectsScreen() {
           flex: 1, flexDirection: "column", minHeight: 0,
         }}>
           <ProjectsSummary />
+        </div>
+      )}
+
+      {/* Fleet — live orchestration analytics for the active project's agent fleet. */}
+      {projectsPageMode === "fleet" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <Fleet />
         </div>
       )}
 
