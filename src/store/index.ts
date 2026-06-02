@@ -174,6 +174,12 @@ interface AppStore {
   paneNames: Record<number, Record<number, string>>;
   paneCwds: Record<string, string>;  // keyed by "t{tabIdx}p{paneIdx}"
   setPaneCwd: (paneId: string, cwd: string) => void;
+  // Live per-pane run status (transient — NOT persisted), keyed by "t{tab}p{pane}".
+  // Mirrors Console's local pane-status map into the store so other screens (the
+  // Fleet board, #412) can read whether a worker pane is actively running. "run" =
+  // claude is mid-turn, "on" = shell up / claude idle, "idle" = at rest.
+  paneStatus: Record<string, "run" | "on" | "idle">;
+  setPaneStatus: (paneId: string, status: "run" | "on" | "idle") => void;
   // Per-pane flag: this pane has had `claude` running at some point this
   // session. Persisted so that on next launch the pane can auto-resume the
   // CLI (with `--continue`) instead of dropping the user back at a bare
@@ -678,6 +684,9 @@ export const useAppStore = create<AppStore>()(
         }),
       setPaneCwd: (paneId, cwd) =>
         set((s) => ({ paneCwds: { ...s.paneCwds, [paneId]: cwd } })),
+      paneStatus: {},
+      setPaneStatus: (paneId, status) =>
+        set((s) => (s.paneStatus[paneId] === status ? {} : { paneStatus: { ...s.paneStatus, [paneId]: status } })),
       paneInitCmds: {},
       setPaneInitCmd: (paneId, cmd) =>
         set((s) => ({ paneInitCmds: { ...s.paneInitCmds, [paneId]: cmd } })),
