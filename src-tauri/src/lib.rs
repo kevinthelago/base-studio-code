@@ -609,7 +609,7 @@ async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -618,6 +618,11 @@ async fn pty_create(
     // panes whose settings install the hook actually write).
     cmd.env("BSC_AUDIT_LOG", to_bash_path(&base.join("audit.log").to_string_lossy()));
     cmd.env("BSC_AUDIT_PANE", &pane_id);
+    // Skill usage log (#406): the `bsc-skill` Skill-tool hook (added to gated panes'
+    // settings.json by the frontend) appends one TSV line per skill invocation to this
+    // app-wide log, tagged with the pane id via BSC_AUDIT_PANE. Set for every pane
+    // (harmless — only panes whose settings install the hook actually write).
+    cmd.env("BSC_SKILL_LOG", to_bash_path(&base.join("skills.log").to_string_lossy()));
     // Coordination log (#199): `bsc-blocked --on <ref>` appends a structured
     // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
     // merge/close append satisfy events later. Set for every pane; only --on writes.
@@ -1315,6 +1320,18 @@ const BSC_AUDIT_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-skill` helper (#406): a PreToolUse/PostToolUse hook for the Skill tool on a
+/// gated pane pipes Claude Code's hook JSON into this; it extracts ONLY the skill name
+/// (`skill_name`) and the hook event (`hook_event_name`) and appends one TAB-separated
+/// line — `ts \t pane \t event \t skill` — to the app-wide `$BSC_SKILL_LOG`, tagged with
+/// `$BSC_AUDIT_PANE`. The name/event are sanitized like bsc-audit's target (strip tabs/
+/// newlines, cap length) so a stray char can't corrupt the TSV. Best-effort + always
+/// exits 0 so it never blocks a tool. A raw string keeps the embedded quotes/regex readable.
+const BSC_SKILL_RC: &str = concat!(
+    r#"bsc-skill() { l="${BSC_SKILL_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; sn="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"skill_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$sn" >> "$l"; return 0; }"#,
+    "\n",
+);
+
 /// The `bsc-confine` helper (#158): a PreToolUse hook for the file tools on a gated
 /// pane. It reads Claude Code's tool JSON, extracts the target `file_path` /
 /// `notebook_path`, and BLOCKS (return 2 + stderr) when the path escapes the session's
@@ -1356,6 +1373,17 @@ const BSC_DEFER_RC: &str = concat!(
 #[tauri::command]
 fn read_audit_log(limit: usize) -> Vec<String> {
     let path = bsc_base_dir().join("audit.log");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
+    lines.reverse();
+    lines.truncate(limit);
+    lines
+}
+
+/// Read the skill usage log (#406): the newest `limit` TSV lines, newest first.
+#[tauri::command]
+fn read_skill_log(limit: usize) -> Vec<String> {
+    let path = bsc_base_dir().join("skills.log");
     let text = std::fs::read_to_string(&path).unwrap_or_default();
     let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
     lines.reverse();
@@ -3827,6 +3855,7 @@ pub fn run() {
             tunnel::tunnel_set_panes,
             tunnel::tunnel_set_sessions,
             read_audit_log,
+            read_skill_log,
             read_coord_log,
             append_coord_woke,
             read_git_hooks,
@@ -4178,10 +4207,11 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
+            super::BSC_SKILL_RC,
             super::BSC_CONFINE_RC,
             super::BSC_COORD_EMIT_RC,
             super::BSC_DEFER_RC,
@@ -4246,6 +4276,55 @@ mod tests {
             std::fs::read_to_string(&doc).unwrap(),
             "- chose cursor pagination\n- used JWT for auth\n",
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bsc_skill_helper_appends_a_usage_line() {
+        // Like bsc-audit, bsc-skill must work from the agent's own `bash -c` subshells via
+        // the rc file + BASH_ENV. It reads the Skill hook JSON on stdin and appends one
+        // TSV line — `ts \t pane \t event \t skill` — to $BSC_SKILL_LOG. Skips where bash
+        // isn't on PATH (same gating as the other helper-run tests).
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_skill subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-skill-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_SKILL_RC).unwrap();
+        // Nested path exercises the helper's `mkdir -p` of the log's parent.
+        let log = dir.join("nested").join("skills.log");
+
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let log_bash = super::to_bash_path(&log.to_string_lossy());
+
+        let mut child = Command::new(&shell)
+            .arg("-c").arg("bsc-skill")
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_SKILL_LOG", &log_bash)
+            .env("BSC_AUDIT_PANE", "t0p1")
+            .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().unwrap();
+        child.stdin.take().unwrap()
+            .write_all(br#"{"hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{"skill_name":"open-a-clean-pr","prompt":"..."}}"#)
+            .unwrap();
+        assert!(child.wait().unwrap().success(), "bsc-skill should run in the subshell");
+
+        let line = std::fs::read_to_string(&log).unwrap();
+        let line = line.trim_end();
+        let fields: Vec<&str> = line.split('\t').collect();
+        assert_eq!(fields.len(), 4, "expected 4 TAB-separated fields, got: {line:?}");
+        assert_eq!(fields[1], "t0p1", "pane field should be the BSC_AUDIT_PANE tag");
+        assert_eq!(fields[2], "PreToolUse", "event field should be hook_event_name");
+        assert_eq!(fields[3], "open-a-clean-pr", "skill field should be skill_name");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

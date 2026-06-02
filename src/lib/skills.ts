@@ -46,7 +46,9 @@ export interface SkillDef {
   trend: number[];
 }
 
-/** A sample {@link Skill} → a full editable {@link SkillDef} (enabled + global). */
+/** A sample {@link Skill} → a full editable {@link SkillDef} (enabled + global).
+ *  Telemetry (invocations/success/trend/avgTokensK) starts at zero — real usage
+ *  is supplied later from the skill-usage log (#406), never seeded with samples. */
 function fromSample(s: Skill): SkillDef {
   return {
     id: s.id,
@@ -62,10 +64,10 @@ function fromSample(s: Skill): SkillDef {
     projects: [],
     enabled: true,
     pinned: !!s.pinned,
-    invocations: s.invocations,
-    success: s.success,
-    avgTokensK: s.avgTokensK,
-    trend: [...s.trend],
+    invocations: 0,
+    success: 0,
+    avgTokensK: 0,
+    trend: [],
   };
 }
 
