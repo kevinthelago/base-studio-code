@@ -10,6 +10,7 @@ import {
   type HBarRow, type StatTone,
 } from "../../components/charts";
 import type { GithubRepo } from "../../store";
+import { BranchGraph } from "./BranchGraph";
 import { useRepoPulse, type RepoPulseLive } from "../../hooks/useRepoPulse";
 import type { VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch } from "../../data/repoPulse";
 import type { CiHealth, PulseKpis } from "../../lib/repoPulseLive";
@@ -319,10 +320,10 @@ export function Pulse({ repo }: { repo: GithubRepo | null }) {
   if (!repo) return <Centered>Select a repository to see its pulse.</Centered>;
   if (error) return <Centered>{error}</Centered>;
   if (!data) return <Centered>{loading ? "Loading repo data from GitHub…" : "No data."}</Centered>;
-  return <PulseBody data={data} />;
+  return <PulseBody data={data} repo={repo} />;
 }
 
-function PulseBody({ data }: { data: RepoPulseLive }) {
+function PulseBody({ data, repo }: { data: RepoPulseLive; repo: GithubRepo }) {
   const r = data.repo;
   return (
     <section className="an-page">
@@ -342,6 +343,11 @@ function PulseBody({ data }: { data: RepoPulseLive }) {
 
         <PulseDigest kpis={data.kpis} churnAreas={data.churnAreas} ci={data.ci} partialDiffs={data.partialDiffs} />
         <KpiRow kpis={data.kpis} runs={data.ci.runs} />
+
+        {/* The branches map — carried over from the old Repositories view. */}
+        <div style={{ marginBottom: 14 }}>
+          <BranchGraph repo={repo} />
+        </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>

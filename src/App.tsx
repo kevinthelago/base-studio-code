@@ -135,7 +135,7 @@ export default function App() {
     tabs, activeTabIdx, setActiveTab,
     addTab, closeTab, renameTab, setTabLayout,
     focusedAgentName,
-    activeRepoName, githubActiveTab,
+    activeRepoName,
     automationsTab,
     settingsSection,
     projectsView, activeProjectName, projectsBoardTab,
@@ -184,7 +184,6 @@ export default function App() {
       case "github":
         parts.push("GitHub");
         if (activeRepoName) parts.push(activeRepoName);
-        parts.push(githubActiveTab);
         break;
       case "automation":
         parts.push("Automations");
