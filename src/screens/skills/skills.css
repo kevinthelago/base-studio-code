@@ -8,7 +8,57 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /* contain the absolutely-positioned edit drawer */
+  position: relative;
+  overflow: hidden;
 }
+
+/* ── edit drawer (ported from extensions.css, scoped) ───────────────────────── */
+.skills-screen .scrim { position:absolute; inset:0; background:color-mix(in oklch, #000, transparent 60%); opacity:0; pointer-events:none; transition:opacity .18s ease; z-index:4; }
+.skills-screen .scrim.on { opacity:1; pointer-events:auto; }
+.skills-screen .drawer { position:absolute; top:0; right:0; bottom:0; width:460px; max-width:90%; background:var(--bg-panel); border-left:1px solid var(--border-soft); box-shadow:-20px 0 50px rgba(0,0,0,.35); display:flex; flex-direction:column; transform:translateX(100%); transition:transform .22s cubic-bezier(.2,.7,.2,1); z-index:5; min-height:0; }
+.skills-screen .drawer.on { transform:translateX(0); }
+.skills-screen .dr-head { height:46px; flex:0 0 46px; padding:0 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; gap:10px; background:var(--bg-elev); }
+.skills-screen .dr-head .name { font-family:var(--mono); font-size:13px; color:var(--fg); font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.skills-screen .dr-head .x { width:22px; height:22px; border-radius:4px; border:0; background:transparent; color:var(--fg-muted); cursor:pointer; font-size:16px; line-height:1; display:flex; align-items:center; justify-content:center; }
+.skills-screen .dr-head .x:hover { background:var(--bg-elev2); color:var(--fg); }
+.skills-screen .dr-body { flex:1; overflow:auto; padding:16px 18px; display:flex; flex-direction:column; gap:14px; }
+.skills-screen .dr-foot { border-top:1px solid var(--border-soft); padding:10px 16px; background:var(--bg-elev); display:flex; align-items:center; gap:8px; }
+.skills-screen .dr-foot .spacer { flex:1; }
+
+/* toggle */
+.skills-screen .toggle { width:30px; height:16px; border-radius:99px; background:var(--bg-elev2); border:1px solid var(--border); position:relative; cursor:pointer; flex:0 0 30px; transition:background .15s, border-color .15s; }
+.skills-screen .toggle::after { content:""; position:absolute; top:1px; left:1px; width:12px; height:12px; border-radius:50%; background:var(--fg-dim); transition:left .15s, background .15s; }
+.skills-screen .toggle.on { background:var(--accent); border-color:transparent; }
+.skills-screen .toggle.on::after { left:15px; background:#1a120a; }
+
+/* scope segmented (kind / source pickers in the drawer) */
+.skills-screen .scope { display:inline-flex; align-items:center; gap:0; background:var(--bg-elev); border:1px solid var(--border-soft); border-radius:var(--r-md); padding:3px; flex-wrap:wrap; }
+.skills-screen .scope button { height:22px; padding:0 10px; border:0; background:transparent; color:var(--fg-muted); font-family:var(--mono); font-size:10.5px; cursor:pointer; border-radius:4px; letter-spacing:.02em; }
+.skills-screen .scope button.on { background:var(--bg-canvas); color:var(--accent); border:1px solid var(--accent-dim); }
+
+/* textarea (prompt body) */
+.skills-screen .ta { min-height:120px; padding:8px 10px; border-radius:var(--r-md); background:var(--bg-canvas); border:1px solid var(--border-soft); color:var(--fg); font-family:var(--mono); font-size:11px; line-height:1.5; width:100%; resize:vertical; }
+.skills-screen .ta:focus { outline:none; border-color:var(--accent-dim); }
+
+/* project assignment */
+.skills-screen .global-banner { padding:8px 12px; border-radius:var(--r-md); background:color-mix(in oklch, var(--success), transparent 88%); border:1px solid color-mix(in oklch, var(--success), transparent 70%); font-family:var(--mono); font-size:10.5px; color:var(--fg); display:flex; align-items:center; gap:8px; }
+.skills-screen .global-banner .gd { width:7px; height:7px; border-radius:50%; background:var(--success); }
+.skills-screen .proj-multi { display:flex; flex-direction:column; gap:4px; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-md); padding:6px; }
+.skills-screen .proj-multi .pm-row { display:grid; grid-template-columns:18px 1fr; gap:10px; padding:7px 10px; border-radius:5px; cursor:pointer; border:1px solid transparent; background:transparent; align-items:center; }
+.skills-screen .proj-multi .pm-row:hover, .skills-screen .proj-multi .pm-row.on { background:var(--bg-elev); }
+.skills-screen .proj-multi .check { width:14px; height:14px; border-radius:3px; border:1px solid var(--border); background:transparent; display:flex; align-items:center; justify-content:center; color:#1a120a; font-size:10px; font-weight:700; }
+.skills-screen .proj-multi .pm-row.on .check { background:var(--accent); border-color:var(--accent); }
+.skills-screen .proj-multi .pname { font-family:var(--mono); font-size:11.5px; color:var(--fg-muted); }
+.skills-screen .proj-multi .pm-row.on .pname { color:var(--fg); }
+
+/* clickable card affordance */
+.skills-screen .skill-card { cursor:pointer; }
+.skills-screen .skill-card.off { opacity:.55; }
+.skills-screen .pin-btn { background:transparent; border:0; cursor:pointer; padding:0; font-size:11px; line-height:1; }
+
+/* empty state */
+.skills-screen .empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:64px 24px; text-align:center; }
 
 /* page-mode strip (Library / Runs / Catalog) */
 .skills-screen .modestrip {

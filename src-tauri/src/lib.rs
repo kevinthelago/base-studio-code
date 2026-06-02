@@ -2461,6 +2461,20 @@ or `push=none` for a pure reviewer/explorer.
 <agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" profile="auth-ui-dev" autonomy="continuous" push="auto-pr" trigger="per-issue" gate="hard" />
 ```
 
+**Manage the Skills library** (reusable procedures the fleet can invoke). Write
+`skills.json` in this directory — the authoritative channel the app polls (there is
+no inline tag; the file is the only channel). It is a JSON array of skill objects;
+overwrite the whole file to update the set:
+```
+[{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"pinned":true}]
+```
+- `kind` — one of `workflow|scaffold|codemod|review|docs`.
+- `description` — one line summarizing what the skill does.
+- `prompt` — the reusable procedure body the agent follows when it invokes the skill.
+- `tools` — the tool names bundled with the skill.
+- `profiles` — the permission profiles allowed to invoke it (`build|review|docs|auto|sandbox`).
+- `pinned` — when true, the skill is auto-available to the fleet.
+
 ## GitHub tools
 
 `GH_TOKEN` is pre-loaded — use `gh` for all GitHub operations. Read
@@ -3000,6 +3014,17 @@ struct HookCfg {
     command: String,
 }
 
+/// One reusable Skill written into a session as a Claude Code Skill file
+/// (`.claude/skills/<slug>/SKILL.md`). Field names match the frontend payload.
+#[derive(serde::Deserialize, Clone)]
+struct SkillCfg {
+    name: String,
+    description: String,
+    prompt: String,
+    #[serde(default)]
+    tools: Vec<String>,
+}
+
 /// Ensure the claude session rooted at `cwd` can run shell commands without a
 /// permission prompt while blocking dangerous ones, and apply the session's
 /// extensions (MCP servers → `.mcp.json`, hooks → settings.json), by merging into
@@ -3069,12 +3094,14 @@ async fn ensure_session_settings(
     allow_tool_rules: Option<Vec<String>>,
     deny_tool_rules: Option<Vec<String>>,
     ask_tool_rules: Option<Vec<String>>,
+    skills: Option<Vec<SkillCfg>>,
 ) -> Result<(), String> {
     write_session_settings(
         &cwd, &allowed_commands, &denied_commands,
         &mcp_servers.unwrap_or_default(), &hooks.unwrap_or_default(),
         &allow_tool_rules.unwrap_or_default(), &deny_tool_rules.unwrap_or_default(),
         &ask_tool_rules.unwrap_or_default(),
+        &skills.unwrap_or_default(),
     )
 }
 
@@ -3098,6 +3125,7 @@ fn write_session_settings(
     allow_tool_rules: &[String],
     deny_tool_rules: &[String],
     ask_tool_rules: &[String],
+    skills: &[SkillCfg],
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     let root = std::path::PathBuf::from(cwd);
@@ -3181,6 +3209,7 @@ fn write_session_settings(
         serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
     ).map_err(|e| e.to_string())?;
     write_mcp_json(&root, mcp_servers)?;
+    write_session_skills(&root, skills)?;
     git_exclude(&root, ".claude/");
     git_exclude(&root, ".mcp.json");
     Ok(())
@@ -3246,6 +3275,58 @@ fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
         .collect();
     if !env.is_empty() { v.insert("env".into(), serde_json::Value::Object(env)); }
     serde_json::Value::Object(v)
+}
+
+/// Write each resolved Skill as a Claude Code Skill file at
+/// `<cwd_root>/.claude/skills/<slug>/SKILL.md` (slug derived from the name). The
+/// file is YAML frontmatter (`name`, `description`, optional `allowed-tools`) then
+/// the prompt body. Skills with an empty slug are skipped; an empty set is a no-op.
+///
+/// Additive only: this writer creates/updates skill files but never deletes them,
+/// so toggling a skill off does not remove its file yet (follow-up).
+fn write_session_skills(cwd_root: &std::path::Path, skills: &[SkillCfg]) -> Result<(), String> {
+    if cwd_root.as_os_str().is_empty() || skills.is_empty() { return Ok(()); }
+    let skills_root = cwd_root.join(".claude").join("skills");
+    for s in skills {
+        let slug = skill_slug(&s.name);
+        if slug.is_empty() { continue; }
+        let dir = skills_root.join(&slug);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let mut doc = String::from("---\n");
+        doc.push_str(&format!("name: {}\n", yaml_quote(&s.name)));
+        doc.push_str(&format!("description: {}\n", yaml_quote(&s.description)));
+        if !s.tools.is_empty() {
+            doc.push_str(&format!("allowed-tools: {}\n", yaml_quote(&s.tools.join(", "))));
+        }
+        doc.push_str("---\n\n");
+        doc.push_str(&s.prompt);
+        std::fs::write(dir.join("SKILL.md"), doc).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Render a string as a YAML double-quoted scalar so frontmatter values with
+/// colons, `#`, leading specials, or newlines can't break the `SKILL.md` header.
+fn yaml_quote(s: &str) -> String {
+    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n");
+    format!("\"{}\"", escaped)
+}
+
+/// Slug a skill name: lowercase, keep `[a-z0-9-]`, collapse any run of other
+/// chars to a single `-`, and trim leading/trailing `-`. May return empty.
+fn skill_slug(name: &str) -> String {
+    let mut out = String::new();
+    let mut pending_dash = false;
+    for c in name.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() || c == '-' {
+            if pending_dash && !out.is_empty() { out.push('-'); }
+            pending_dash = false;
+            out.push(c);
+        } else {
+            pending_dash = true;
+        }
+    }
+    out.trim_matches('-').to_string()
 }
 
 /// Merge `rules` into `config.permissions.<key>` (an array), preserving existing
@@ -4261,6 +4342,7 @@ mod tests {
             &[],
             &[],
             &[],
+            &[],
         ).unwrap();
 
         let v: serde_json::Value =
@@ -4304,6 +4386,7 @@ mod tests {
             &[],
             &[],
             &["Bash(git push *)".into(), "Bash(gh pr create *)".into()],
+            &[],
         ).unwrap();
 
         let v: serde_json::Value =
@@ -4336,6 +4419,7 @@ mod tests {
             &[],
             &["Edit(src/auth/**)".into(), "Write(src/auth/**)".into()],
             &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
+            &[],
             &[],
         ).unwrap();
 
@@ -4376,7 +4460,7 @@ mod tests {
         let hooks = vec![super::HookCfg {
             event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
         }];
-        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[]).unwrap();
+        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[], &[]).unwrap();
 
         // .mcp.json carries both servers in the right transport shapes.
         let mcp_json: serde_json::Value =
@@ -4395,6 +4479,50 @@ mod tests {
         assert!(enabled.contains(&"filesystem".to_string()) && enabled.contains(&"sentry".to_string()));
         assert_eq!(settings["hooks"]["PostToolUse"][0]["matcher"], "Write|Edit");
         assert_eq!(settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "format.sh");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_session_skills_writes_skill_files() {
+        let dir = std::env::temp_dir().join(format!("bsc-skills-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let skills = vec![
+            super::SkillCfg {
+                name: "Open a clean PR".into(),
+                description: "Open a tidy pull request".into(),
+                prompt: "Do the PR steps.".into(),
+                tools: vec!["create_pr".into(), "git_diff".into()],
+            },
+            super::SkillCfg {
+                name: "Review Docs".into(),
+                description: "Review the docs".into(),
+                prompt: "Check the docs.".into(),
+                tools: vec![],
+            },
+        ];
+        super::write_session_skills(&dir, &skills).unwrap();
+
+        // First skill: slugged dir, frontmatter with name/description/allowed-tools, body.
+        let a = std::fs::read_to_string(
+            dir.join(".claude").join("skills").join("open-a-clean-pr").join("SKILL.md"),
+        ).unwrap();
+        assert!(a.starts_with("---\n"));
+        assert!(a.contains("name: \"Open a clean PR\"\n"));
+        assert!(a.contains("description: \"Open a tidy pull request\"\n"));
+        assert!(a.contains("allowed-tools: \"create_pr, git_diff\"\n"));
+        assert!(a.contains("Do the PR steps."));
+
+        // Second skill: no tools → no allowed-tools line, body still present.
+        let b = std::fs::read_to_string(
+            dir.join(".claude").join("skills").join("review-docs").join("SKILL.md"),
+        ).unwrap();
+        assert!(b.contains("name: \"Review Docs\"\n"));
+        assert!(b.contains("description: \"Review the docs\"\n"));
+        assert!(!b.contains("allowed-tools:"));
+        assert!(b.contains("Check the docs."));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
