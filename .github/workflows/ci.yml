@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, main]
   pull_request:
-    branches: [main]
+    # Gate PRs into BOTH integration branches. Previously only `main` PRs ran the
+    # build/test/lint here, so PRs into `develop` (every feature + Dependabot PR)
+    # merged on CodeQL + audit alone — a broken build only surfaced post-merge on
+    # the develop push (#420). The dorny/paths-filter `changes` job keeps it cheap.
+    branches: [develop, main]
 
 jobs:
   # Detect which parts of the tree changed so the expensive jobs below only run
