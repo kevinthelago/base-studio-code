@@ -1,21 +1,31 @@
-// GitHub → Pulse analytics (#402) — repo progress & changes (commits/PRs, CI,
-// churn, agent-vs-human contributors, branches). Presentational: renders off
-// data/repoPulse.ts (sample data; a live GitHub feed is a follow-up) using the
-// shared chart primitives (#399). Rendered by the GitHub index when the page mode
-// is "pulse"; the mode strip + app status bar are the surrounding chrome.
+// GitHub → Pulse analytics (#402; live data #413). Repo progress & changes from
+// the GitHub API for the active repo — velocity, CI, churn, contributors,
+// branches. Pure GitHub data (no fleet inference; fleet lives on the Fleet page).
+// Fetch + assembly is in hooks/useRepoPulse; this renders the view model with
+// loading / empty / error states using the shared chart primitives (#399).
 import { useState } from "react";
 import {
   LineArea, Bars, Donut, HBars, Legend,
   StatCard, CardHead, RangeToggle, Avatar, useTip, fmt,
   type HBarRow, type StatTone,
 } from "../../components/charts";
-import {
-  REPO, vrange, CHURN_AREAS, CHURN_FILES, CONTRIB, HUMAN_COMMITS, BOT_COMMITS,
-  CI, WORKFLOWS, BRANCHES, BRANCH_STATUS, REVIEW_BUCKETS, KPIS,
-} from "../../data/repoPulse";
+import type { GithubRepo } from "../../store";
+import { BranchGraph } from "./BranchGraph";
+import { useRepoPulse, type RepoPulseLive } from "../../hooks/useRepoPulse";
+import type { VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch } from "../../data/repoPulse";
+import type { CiHealth, PulseKpis } from "../../lib/repoPulseLive";
+import { BRANCH_STATUS } from "../../data/repoPulse";
 
-// ── digest ────────────────────────────────────────────────────────────────────
-function PulseDigest() {
+/** Last 7 or 14 days of a velocity slice (the series are stored 14-wide). */
+function sliceVelocity(v: VelocitySlice, range: string): VelocitySlice {
+  const n = range === "7d" ? 7 : v.labels.length;
+  const last = <T,>(a: T[]) => a.slice(-n);
+  return { labels: last(v.labels), commits: last(v.commits), merged: last(v.merged), opened: last(v.opened), adds: last(v.adds), dels: last(v.dels) };
+}
+
+// ── digest (factual summary derived from live data) ──────────────────────────
+function PulseDigest({ kpis, churnAreas, ci, partialDiffs }: { kpis: PulseKpis; churnAreas: ChurnArea[]; ci: CiHealth; partialDiffs: boolean }) {
+  const hottest = churnAreas[0];
   return (
     <div className="card" style={{
       padding: "13px 18px", marginBottom: 14,
@@ -28,19 +38,18 @@ function PulseDigest() {
           background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
           color: "#1a120a", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 13,
           display: "flex", alignItems: "center", justifyContent: "center",
-        }}>C</div>
+        }}>G</div>
         <div style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".06em" }}>repo pulse · claude</span>
-            <span className="hint">generated 02:00 today · run #14</span>
-            <div style={{ flex: 1 }} />
-            <button className="btn ghost" style={{ height: 22, fontSize: 10 }}>regenerate</button>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".06em" }}>repo pulse · last 14 days</span>
+            <span className="hint">live from the GitHub API</span>
           </div>
           <p style={{ margin: 0 }}>
-            Commit volume is up <b style={{ color: "var(--success)" }}>+38%</b> week-over-week, driven by the
-            settlement fleet — <b style={{ color: "var(--fg)" }}>{KPIS.botShare}%</b> of commits now land from worker agents.
-            Hottest area is <b style={{ color: "oklch(0.7 0.12 290)" }}>src/</b> (Planning + Summary rework).
-            CI holds at <b style={{ color: "var(--success)" }}>{CI.passRate}%</b>; <b style={{ color: "var(--danger)" }}>release.yml</b> is the weak spot at 78%.
+            <b style={{ color: "var(--fg)" }}>{kpis.commitsWeek} commits</b> and <b style={{ color: "var(--fg)" }}>{kpis.prsMerged} merged PRs</b> in the last 7 days
+            {kpis.contributors > 0 && <> across <b style={{ color: "var(--fg)" }}>{kpis.contributors} contributors</b> ({kpis.botShare}% bot)</>}.
+            CI pass rate is <b style={{ color: ci.passRate >= 90 ? "var(--success)" : "var(--danger)" }}>{ci.passRate}%</b>.
+            {hottest && <> Hottest area: <b style={{ color: "oklch(0.7 0.12 290)" }}>{hottest.area}</b>.</>}
+            {partialDiffs && <span className="hint"> · line/churn panels reflect the most recent commits</span>}
           </p>
         </div>
       </div>
@@ -49,15 +58,14 @@ function PulseDigest() {
 }
 
 // ── KPI row ──────────────────────────────────────────────────────────────────
-function KpiRow() {
-  const k = KPIS;
-  const cards: Array<{ k: string; v: string; sub: string; tone?: StatTone; delta?: { dir: "up" | "down" | "flat"; text: string } }> = [
-    { k: "commits · 7d", v: String(k.commitsWeek), sub: "on main + branches", tone: "fg", delta: { dir: "up", text: "+38%" } },
-    { k: "PRs merged · 7d", v: String(k.prsMerged), sub: "into develop", tone: "accent", delta: { dir: "up", text: "+9" } },
-    { k: "net lines · 7d", v: `+${fmt(k.netLines)}`, sub: "added − removed", tone: "success" },
-    { k: "CI pass rate", v: `${k.passRate}%`, sub: `${CI.runs} runs`, tone: "success", delta: { dir: "up", text: "+3%" } },
-    { k: "review latency", v: `${k.reviewLatencyH}h`, sub: "open → merge median", tone: "fg", delta: { dir: "down", text: "−0.4h" } },
-    { k: "agent commits", v: `${k.botShare}%`, sub: `${CONTRIB.length} contributors`, tone: "info" },
+function KpiRow({ kpis, runs }: { kpis: PulseKpis; runs: number }) {
+  const cards: Array<{ k: string; v: string; sub: string; tone?: StatTone }> = [
+    { k: "commits · 7d", v: String(kpis.commitsWeek), sub: "on the default branch", tone: "fg" },
+    { k: "PRs merged · 7d", v: String(kpis.prsMerged), sub: "merged pull requests", tone: "accent" },
+    { k: "net lines · 7d", v: `${kpis.netLines >= 0 ? "+" : ""}${fmt(kpis.netLines)}`, sub: "added − removed", tone: kpis.netLines >= 0 ? "success" : "danger" },
+    { k: "CI pass rate", v: `${kpis.passRate}%`, sub: `${runs} runs`, tone: kpis.passRate >= 90 ? "success" : "fg" },
+    { k: "review latency", v: kpis.reviewLatencyH ? `${kpis.reviewLatencyH}h` : "—", sub: "open → merge median", tone: "fg" },
+    { k: "contributors", v: String(kpis.contributors), sub: `${kpis.botShare}% bot commits`, tone: "info" },
   ];
   return (
     <div className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
@@ -67,10 +75,10 @@ function KpiRow() {
 }
 
 // ── commit & PR velocity ─────────────────────────────────────────────────────
-function Velocity() {
+function Velocity({ velocity }: { velocity: VelocitySlice }) {
   const [range, setRange] = useState("14d");
   const tip = useTip();
-  const d = vrange(range);
+  const d = sliceVelocity(velocity, range);
   return (
     <div className="card">
       <CardHead title="Commit & PR velocity" hint="daily commits, PRs opened vs merged"
@@ -91,13 +99,13 @@ function Velocity() {
 }
 
 // ── lines changed ────────────────────────────────────────────────────────────
-function NetLines() {
+function NetLines({ velocity, partialDiffs }: { velocity: VelocitySlice; partialDiffs: boolean }) {
   const [range, setRange] = useState("14d");
   const tip = useTip();
-  const d = vrange(range);
+  const d = sliceVelocity(velocity, range);
   return (
     <div className="card">
-      <CardHead title="Lines changed" hint="additions vs deletions / day"
+      <CardHead title="Lines changed" hint={partialDiffs ? "additions vs deletions · recent commits" : "additions vs deletions / day"}
         right={<RangeToggle value={range} onChange={setRange} options={["7d", "14d"]} />} />
       <Bars labels={d.labels} height={140} fmtY={(v) => fmt(v)} tip={tip} groups={[
         { name: "added", color: "var(--success)", data: d.adds },
@@ -113,8 +121,9 @@ function NetLines() {
 }
 
 // ── churn by area ────────────────────────────────────────────────────────────
-function ChurnByArea() {
-  const rows: HBarRow[] = CHURN_AREAS.map(a => ({
+function ChurnByArea({ areas }: { areas: ChurnArea[] }) {
+  if (!areas.length) return null;
+  const rows: HBarRow[] = areas.map(a => ({
     label: a.area, value: a.add + a.del, color: a.color, strong: true,
     tag: <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
       <span style={{ color: "var(--success)" }}>+{fmt(a.add)}</span> / <span style={{ color: "var(--danger)" }}>−{fmt(a.del)}</span> · {a.files}f
@@ -122,20 +131,21 @@ function ChurnByArea() {
   }));
   return (
     <div className="card">
-      <CardHead title="Churn by area" hint="lines changed · last 14 days" />
+      <CardHead title="Churn by area" hint="lines changed · recent commits" />
       <HBars rows={rows} fmtV={(v) => fmt(v)} />
     </div>
   );
 }
 
-// ── hottest files (bespoke heatmap grid) ─────────────────────────────────────
-function FileChurn() {
-  const max = Math.max(...CHURN_FILES.map(f => f.w));
+// ── hottest files (heatmap grid) ─────────────────────────────────────────────
+function FileChurn({ files }: { files: ChurnFile[] }) {
+  if (!files.length) return null;
+  const max = Math.max(...files.map(f => f.w));
   return (
     <div className="card">
-      <CardHead title="Hottest files" hint="±lines in last 14d · darker = hotter" />
+      <CardHead title="Hottest files" hint="±lines · recent commits · darker = hotter" />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
-        {CHURN_FILES.map(f => {
+        {files.map(f => {
           const t = f.w / max;
           const a = 0.16 + 0.74 * t;
           const dark = t > 0.55;
@@ -158,18 +168,22 @@ function FileChurn() {
   );
 }
 
-// ── contributors (agents vs humans) ──────────────────────────────────────────
-function Contributors() {
-  const sorted = [...CONTRIB].sort((a, b) => b.commits - a.commits);
-  const max = Math.max(...sorted.map(c => c.commits));
+// ── contributors (bot vs human, GitHub-attributed) ───────────────────────────
+function Contributors({ contributors }: { contributors: Contributor[] }) {
+  if (!contributors.length) return null;
+  const sorted = [...contributors].sort((a, b) => b.commits - a.commits);
+  const max = Math.max(...sorted.map(c => c.commits), 1);
+  const botCommits = sorted.filter(c => c.bot).reduce((s, c) => s + c.commits, 0);
+  const humanCommits = sorted.filter(c => !c.bot).reduce((s, c) => s + c.commits, 0);
+  const botShare = botCommits + humanCommits ? Math.round(botCommits / (botCommits + humanCommits) * 100) : 0;
   return (
     <div className="card">
-      <CardHead title="Contributors" hint="commits · agents vs humans"
+      <CardHead title="Contributors" hint="commits · bots vs humans (per GitHub)"
         right={<span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
-          <span style={{ color: "var(--accent)" }}>◆ {BOT_COMMITS}</span> agent · <span style={{ color: "var(--fg)" }}>{HUMAN_COMMITS}</span> human
+          <span style={{ color: "var(--accent)" }}>◆ {botCommits}</span> bot · <span style={{ color: "var(--fg)" }}>{humanCommits}</span> human
         </span>} />
       <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 12 }}>
-        <div title="agents" style={{ width: `${KPIS.botShare}%`, background: "var(--accent)" }} />
+        <div title="bots" style={{ width: `${botShare}%`, background: "var(--accent)" }} />
         <div title="humans" style={{ flex: 1, background: "oklch(0.68 0.12 250)" }} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -179,10 +193,12 @@ function Contributors() {
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>
                 <Avatar login={c.name} bot={c.bot} size={15} />
                 <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
-                <span className={"tag " + (c.bot ? "amber" : "")} style={{ fontSize: 8.5 }}>{c.bot ? "agent" : "human"}</span>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }}>
-                  <span style={{ color: "var(--success)" }}>+{fmt(c.add)}</span> <span style={{ color: "var(--danger)" }}>−{fmt(c.del)}</span>
-                </span>
+                <span className={"tag " + (c.bot ? "amber" : "")} style={{ fontSize: 8.5 }}>{c.bot ? "bot" : "human"}</span>
+                {(c.add > 0 || c.del > 0) && (
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }}>
+                    <span style={{ color: "var(--success)" }}>+{fmt(c.add)}</span> <span style={{ color: "var(--danger)" }}>−{fmt(c.del)}</span>
+                  </span>
+                )}
               </div>
               <div className="meter"><i style={{ width: `${c.commits / max * 100}%`, background: c.bot ? "var(--accent)" : "oklch(0.68 0.12 250)" }} /></div>
             </div>
@@ -194,54 +210,61 @@ function Contributors() {
   );
 }
 
-// ── CI / Actions ─────────────────────────────────────────────────────────────
-function CIHealth() {
+// ── CI health ────────────────────────────────────────────────────────────────
+function CIHealth({ ci, workflows }: { ci: CiHealth; workflows: Workflow[] }) {
   const slices = [
-    { name: "passed", value: CI.passed, color: "var(--success)" },
-    { name: "failed", value: CI.failed, color: "var(--danger)" },
-    { name: "cancelled", value: CI.cancelled, color: "var(--fg-dim)" },
+    { name: "passed", value: ci.passed, color: "var(--success)" },
+    { name: "failed", value: ci.failed, color: "var(--danger)" },
+    { name: "cancelled", value: ci.cancelled, color: "var(--fg-dim)" },
   ];
   return (
     <div className="card">
-      <CardHead title="CI health" hint={`${CI.runs} runs · 14d`} />
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
-        <Donut slices={slices} size={112} thickness={14} center={{ value: `${CI.passRate}%`, label: "pass" }} />
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-          {slices.map(s => (
-            <div key={s.name} style={{ display: "grid", gridTemplateColumns: "12px 1fr 28px", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
-              <span style={{ width: 9, height: 9, borderRadius: 2, background: s.color }} />
-              <span>{s.name}</span><span style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</span>
+      <CardHead title="CI health" hint={`${ci.runs} runs · 14d`} />
+      {ci.runs === 0 ? (
+        <div className="hint" style={{ padding: "8px 2px" }}>No workflow runs in the window.</div>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
+            <Donut slices={slices} size={112} thickness={14} center={{ value: `${ci.passRate}%`, label: "pass" }} />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+              {slices.map(s => (
+                <div key={s.name} style={{ display: "grid", gridTemplateColumns: "12px 1fr 28px", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 2, background: s.color }} />
+                  <span>{s.name}</span><span style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</span>
+                </div>
+              ))}
+              <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 2 }}>avg duration {ci.avgMin}m</div>
             </div>
-          ))}
-          <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 2 }}>avg duration {CI.avgMin}m</div>
-        </div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        {WORKFLOWS.map(w => (
-          <div key={w.name} style={{ display: "grid", gridTemplateColumns: "120px 1fr 34px", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>
-            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</span>
-            <div className="meter" style={{ height: 5 }}><i style={{ width: `${w.pass}%`, background: w.pass >= 90 ? "var(--success)" : w.pass >= 80 ? "var(--accent)" : "var(--danger)" }} /></div>
-            <span style={{ textAlign: "right", color: w.pass >= 90 ? "var(--success)" : "var(--fg)" }}>{w.pass}%</span>
           </div>
-        ))}
-      </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {workflows.map(w => (
+              <div key={w.name} style={{ display: "grid", gridTemplateColumns: "120px 1fr 34px", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>
+                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</span>
+                <div className="meter" style={{ height: 5 }}><i style={{ width: `${w.pass}%`, background: w.pass >= 90 ? "var(--success)" : w.pass >= 80 ? "var(--accent)" : "var(--danger)" }} /></div>
+                <span style={{ textAlign: "right", color: w.pass >= 90 ? "var(--success)" : "var(--fg)" }}>{w.pass}%</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-// ── branches & worktrees ─────────────────────────────────────────────────────
-function Branches() {
+// ── branches ─────────────────────────────────────────────────────────────────
+function Branches({ branches }: { branches: Branch[] }) {
+  if (!branches.length) return null;
   return (
     <div className="card">
-      <CardHead title="Active branches" hint="fleet worktrees → develop"
-        right={<span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--accent)" }}>{BRANCHES.length}</span>} />
+      <CardHead title="Active branches" hint="ahead/behind the default branch"
+        right={<span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--accent)" }}>{branches.length}</span>} />
       <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-        {BRANCHES.map((b, i) => {
+        {branches.map((b, i) => {
           const st = BRANCH_STATUS[b.status];
           return (
             <div key={b.n} className="hrow" style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px", gap: 8, alignItems: "center", padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-                <Avatar login={b.owner} bot={b.bot} size={15} />
+                {b.owner && <Avatar login={b.owner} bot={b.bot} size={15} />}
                 <span style={{ fontFamily: "var(--mono)", color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.n}</span>
               </div>
               <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>
@@ -257,23 +280,51 @@ function Branches() {
 }
 
 // ── review latency ───────────────────────────────────────────────────────────
-function ReviewLatency() {
+function ReviewLatency({ buckets, medianH }: { buckets: Array<{ label: string; v: number }>; medianH: number }) {
   const tip = useTip();
+  const total = buckets.reduce((s, b) => s + b.v, 0);
   return (
     <div className="card">
       <CardHead title="Review latency" hint="PR open → merged · last 14d" />
-      <Bars labels={REVIEW_BUCKETS.map(b => b.label)} height={116} tip={tip}
-        groups={[{ name: "PRs", color: "var(--info)", data: REVIEW_BUCKETS.map(b => b.v) }]} />
-      <div style={{ marginTop: 6, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "center" }}>
-        median <b style={{ color: "var(--fg)" }}>1.3h</b> · director auto-merges green PRs
-      </div>
+      {total === 0 ? (
+        <div className="hint" style={{ padding: "8px 2px" }}>No merged PRs in the window.</div>
+      ) : (
+        <>
+          <Bars labels={buckets.map(b => b.label)} height={116} tip={tip}
+            groups={[{ name: "PRs", color: "var(--info)", data: buckets.map(b => b.v) }]} />
+          <div style={{ marginTop: 6, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "center" }}>
+            median <b style={{ color: "var(--fg)" }}>{medianH}h</b> over {total} merged PR{total === 1 ? "" : "s"}
+          </div>
+        </>
+      )}
       {tip.node}
     </div>
   );
 }
 
+// ── states ───────────────────────────────────────────────────────────────────
+function Centered({ children }: { children: React.ReactNode }) {
+  return (
+    <section className="an-page">
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 48, color: "var(--fg-muted)", fontFamily: "var(--mono)", fontSize: 13 }}>
+        {children}
+      </div>
+    </section>
+  );
+}
+
 // ── page ─────────────────────────────────────────────────────────────────────
-export function Pulse() {
+export function Pulse({ repo }: { repo: GithubRepo | null }) {
+  const { data, loading, error } = useRepoPulse(repo);
+
+  if (!repo) return <Centered>Select a repository to see its pulse.</Centered>;
+  if (error) return <Centered>{error}</Centered>;
+  if (!data) return <Centered>{loading ? "Loading repo data from GitHub…" : "No data."}</Centered>;
+  return <PulseBody data={data} repo={repo} />;
+}
+
+function PulseBody({ data, repo }: { data: RepoPulseLive; repo: GithubRepo }) {
+  const r = data.repo;
   return (
     <section className="an-page">
       <div className="an-wrap">
@@ -281,30 +332,35 @@ export function Pulse() {
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
               <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600 }}>Pulse</h2>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)" }}>{REPO.name}</span>
-              <span className="tag amber">● {REPO.pushedMin}m ago</span>
-              <span className="tag">{REPO.lang}</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)" }}>{r.name}</span>
+              <span className="tag amber">● {r.pushedMin}m ago</span>
+              <span className="tag">{r.lang}</span>
             </div>
-            <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>{REPO.desc}</div>
+            {r.desc && <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>{r.desc}</div>}
           </div>
-          <button className="btn ghost" onClick={() => window.open(`https://github.com/${REPO.name}`, "_blank")}>open on github →</button>
+          <button className="btn ghost" onClick={() => window.open(`https://github.com/${r.name}`, "_blank")}>open on github →</button>
         </div>
 
-        <PulseDigest />
-        <KpiRow />
+        <PulseDigest kpis={data.kpis} churnAreas={data.churnAreas} ci={data.ci} partialDiffs={data.partialDiffs} />
+        <KpiRow kpis={data.kpis} runs={data.ci.runs} />
+
+        {/* The branches map — carried over from the old Repositories view. */}
+        <div style={{ marginBottom: 14 }}>
+          <BranchGraph repo={repo} />
+        </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-            <Velocity />
-            <NetLines />
-            <ChurnByArea />
-            <FileChurn />
+            <Velocity velocity={data.velocity} />
+            <NetLines velocity={data.velocity} partialDiffs={data.partialDiffs} />
+            <ChurnByArea areas={data.churnAreas} />
+            <FileChurn files={data.hottestFiles} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-            <CIHealth />
-            <Contributors />
-            <Branches />
-            <ReviewLatency />
+            <CIHealth ci={data.ci} workflows={data.workflows} />
+            <Contributors contributors={data.contributors} />
+            <Branches branches={data.branches} />
+            <ReviewLatency buckets={data.reviewBuckets} medianH={data.kpis.reviewLatencyH} />
           </div>
         </div>
       </div>

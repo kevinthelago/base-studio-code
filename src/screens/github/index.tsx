@@ -1,50 +1,8 @@
 import { useAppStore } from "../../store";
 import { useDragResize } from "../../hooks/useDragResize";
 import { GitHubEmpty } from "./Empty";
-import { OverviewBody } from "./Overview";
-import { ActionsBody } from "./Actions";
 import { GitHubSummary, GitHubPageModeStrip } from "./GitHubSummary";
 import { Pulse } from "./Pulse";
-
-// (Git hooks moved to the Projects board, where a project+repo maps to a real clone — #265.)
-const PAGE_TABS = [
-  { k: "overview", label: "Overview", hint: "branches · commits · PRs"    },
-  { k: "actions",  label: "Actions",  hint: "workflow files & recent runs" },
-] as const;
-
-type TabKey = typeof PAGE_TABS[number]["k"];
-
-function PageTabs({ active, onSelect }: { active: TabKey; onSelect: (k: TabKey) => void }) {
-  return (
-    <div style={{
-      height: 36, flex: "0 0 36px",
-      borderBottom: "1px solid var(--border-soft)",
-      background: "var(--bg-panel)",
-      padding: "0 22px",
-      display: "flex", alignItems: "end", gap: 2,
-    }}>
-      {PAGE_TABS.map(t => {
-        const on = t.k === active;
-        return (
-          <div key={t.k} onClick={() => onSelect(t.k)} style={{
-            padding: "0 14px", height: 30,
-            display: "flex", alignItems: "center", gap: 8,
-            borderTopLeftRadius: 6, borderTopRightRadius: 6,
-            background: on ? "var(--bg-canvas)" : "transparent",
-            border: "1px solid " + (on ? "var(--border-soft)" : "transparent"),
-            borderBottom: "0",
-            color: on ? "var(--fg)" : "var(--fg-muted)",
-            fontFamily: "var(--mono)", fontSize: 11.5,
-            cursor: "pointer",
-          }}>
-            {t.label}
-            {on && <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>· {t.hint}</span>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function langTag(lang: string | null): string {
   if (!lang) return "—";
@@ -52,28 +10,14 @@ function langTag(lang: string | null): string {
   return map[lang] ?? lang.toLowerCase().slice(0, 4);
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
 export function GitHubScreen() {
   const {
     githubConnected, githubPageMode,
-    githubActiveTab, setGithubTab,
     githubRepos, activeRepoName, setActiveRepo,
     disconnectGithub,
   } = useAppStore();
 
   // Drag-resizable repo sidebar (mirrors the Knowledge Store / planning splitters).
-  // The sidebar sits before the handle, so the panel grows as the pointer moves right
-  // (no invert). Widening gives long `owner/name`s room before they truncate.
   const sidebar = useDragResize({ initial: 220, min: 160, max: 460, axis: "x" });
 
   if (!githubConnected) {
@@ -93,14 +37,8 @@ export function GitHubScreen() {
       {/* Summary page */}
       {githubPageMode === "summary" && <GitHubSummary />}
 
-      {/* Pulse — repo progress & changes analytics */}
-      {githubPageMode === "pulse" && (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <Pulse />
-        </div>
-      )}
-
-      {/* Repositories view */}
+      {/* Repositories view — repo picker + the per-repo Pulse dashboard (progress,
+          changes, CI, contributors) with the branch graph folded in (#413). */}
       <div style={{
         display: githubPageMode === "repos" ? "flex" : "none",
         flex: 1, minHeight: 0,
@@ -166,39 +104,9 @@ export function GitHubScreen() {
 
         <div className="resize-x" {...sidebar.handleProps} title="Drag to resize" />
 
+        {/* The repo's pulse — replaces the old Overview/Actions tabs. */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-          {activeRepo && (
-            <div style={{ padding: "14px 22px 0", display: "flex", alignItems: "flex-start", gap: 14 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-                  <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600 }}>
-                    {activeRepo.full_name}
-                  </h2>
-                  <span className="tag amber">● {timeAgo(activeRepo.pushed_at)}</span>
-                  {activeRepo.private && <span className="tag">private</span>}
-                  {activeRepo.language && <span className="tag">{activeRepo.language.toLowerCase()}</span>}
-                </div>
-                <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
-                  {activeRepo.description ?? "No description."}
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <select className="input" defaultValue={activeRepo.default_branch} style={{ width: 160 }}>
-                  <option>{activeRepo.default_branch}</option>
-                </select>
-                <button className="btn ghost" onClick={() => window.open(`https://github.com/${activeRepo.full_name}`, "_blank")}>
-                  open on github →
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div style={{ height: 14 }} />
-          <PageTabs active={githubActiveTab} onSelect={setGithubTab} />
-          <section style={{ flex: 1, overflow: "auto", padding: "18px 22px", minWidth: 0 }}>
-            {githubActiveTab === "overview" && <OverviewBody repo={activeRepo} />}
-            {githubActiveTab === "actions"  && <ActionsBody repo={activeRepo} />}
-          </section>
+          <Pulse repo={activeRepo} />
         </div>
       </div>
     </div>
