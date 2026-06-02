@@ -1,3 +1,5 @@
+THIS APPLICATION CREATES BY DEFAULT ISSUES, MILESTONES, REPOSITORIES, ECT. please be aware! the project planning page will show you everything that will be done
+
 # base-studio-code
 
 Desktop host application for a multi-agent AI development workflow platform. Run many Claude coding agents in parallel across multiple repositories, with standardized knowledge injected per project based on its tech stack.
