@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { GitHubPageModeStrip } from "../screens/github/GitHubSummary";
 import { ProjectsPageModeStrip } from "../screens/projects/ProjectsSummary";
 
