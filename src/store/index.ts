@@ -267,10 +267,8 @@ interface AppStore {
   githubUser: GithubUser | null;
   githubRepos: GithubRepo[];
   activeRepoName: string;
-  githubPageMode: "summary" | "repos" | "pulse";
-  setGithubPageMode: (v: "summary" | "repos" | "pulse") => void;
-  githubActiveTab: "overview" | "actions";
-  setGithubTab: (tab: AppStore["githubActiveTab"]) => void;
+  githubPageMode: "summary" | "repos";
+  setGithubPageMode: (v: "summary" | "repos") => void;
   setGithubToken: (token: string) => void;
   setGithubUser: (user: GithubUser | null) => void;
   setGithubRepos: (repos: GithubRepo[]) => void;
@@ -811,8 +809,6 @@ export const useAppStore = create<AppStore>()(
       activeRepoName: "",
       githubPageMode: "summary",
       setGithubPageMode: (v) => set({ githubPageMode: v }),
-      githubActiveTab: "overview",
-      setGithubTab: (tab) => set({ githubActiveTab: tab }),
       setGithubToken: (token) => set({ githubToken: token }),
       setGithubUser: (user) => set({ githubUser: user }),
       setGithubRepos: (repos) => set({ githubRepos: repos }),
@@ -1734,7 +1730,6 @@ export const useAppStore = create<AppStore>()(
         githubUser:      s.githubUser,
         githubRepos:     s.githubRepos,
         activeRepoName:  s.activeRepoName,
-        githubActiveTab: s.githubActiveTab,
         automationsTab:  s.automationsTab,
         settingsSection: s.settingsSection,
         tunnelRelayUrl:  s.tunnelRelayUrl,
