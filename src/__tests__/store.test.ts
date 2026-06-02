@@ -48,6 +48,7 @@ const RESET_STATE = {
   planningPitch: "",
   planningRepo: "",
   projectLocalRepos: {} as Record<string, string[]>,
+  issueLinks: {} as Record<string, Record<string, { number: number; url: string }>>,
   hiddenProjectIds: [] as string[],
   configProfiles: [] as import("../store").ConfigProfile[],
   paneStartupPromptDocs: {} as Record<string, string>,
@@ -1230,5 +1231,37 @@ describe("draft projects (#379)", () => {
     // deleteLocalProject also purges the draft entry (cleanup)
     st().deleteLocalProject(["acme-x2"]);
     expect(st().localDraftProjects["acme-x2"]).toBeUndefined();
+  });
+});
+
+
+describe("issue links (#393 Layer 1)", () => {
+  const st = () => useAppStore.getState();
+
+  it("setIssueLinks stores a project's node->issue map", () => {
+    st().setIssueLinks("proj-a", { "issue:acme/api:F1": { number: 7, url: "https://gh/7" } });
+    expect(st().issueLinks["proj-a"]).toEqual({ "issue:acme/api:F1": { number: 7, url: "https://gh/7" } });
+  });
+
+  it("merges into an existing project map without dropping prior entries (idempotent upsert)", () => {
+    st().setIssueLinks("proj-a", { "issue:acme/api:F1": { number: 7, url: "https://gh/7" } });
+    st().setIssueLinks("proj-a", { "issue:acme/api:F2": { number: 8, url: "https://gh/8" } });
+    expect(st().issueLinks["proj-a"]).toEqual({
+      "issue:acme/api:F1": { number: 7, url: "https://gh/7" },
+      "issue:acme/api:F2": { number: 8, url: "https://gh/8" },
+    });
+  });
+
+  it("a later write for the same node id overwrites that entry only", () => {
+    st().setIssueLinks("proj-a", { "issue:acme/api:F1": { number: 7, url: "https://gh/7" } });
+    st().setIssueLinks("proj-a", { "issue:acme/api:F1": { number: 9, url: "https://gh/9" } });
+    expect(st().issueLinks["proj-a"]).toEqual({ "issue:acme/api:F1": { number: 9, url: "https://gh/9" } });
+  });
+
+  it("keeps each project's map independent", () => {
+    st().setIssueLinks("proj-a", { "issue:acme/api:F1": { number: 7, url: "https://gh/7" } });
+    st().setIssueLinks("proj-b", { "issue:acme/web:W1": { number: 3, url: "https://gh/3" } });
+    expect(st().issueLinks["proj-a"]).toEqual({ "issue:acme/api:F1": { number: 7, url: "https://gh/7" } });
+    expect(st().issueLinks["proj-b"]).toEqual({ "issue:acme/web:W1": { number: 3, url: "https://gh/3" } });
   });
 });

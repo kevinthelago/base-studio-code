@@ -48,11 +48,12 @@ const norm = (s: string): string => s.trim().toLowerCase();
  * map, derived from per-repo GitHub issue and milestone state. Pure and
  * deterministic.
  *
- * - **Issue nodes** (`issue:{repo}:{ref}`): matched to a GitHub issue by
- *   case-insensitive/trimmed title equality within the same repo. A match yields
- *   `{ done: state==="closed", url, number }`. Legacy phase-tracker nodes (label
- *   `[phase] title`) won't equal a real issue title and are simply left with no
- *   progress - that's acceptable.
+ * - **Issue nodes** (`issue:{repo}:{ref}`): matched to a GitHub issue by its
+ *   persisted link (#393 Layer 1) — node id -> exact issue NUMBER — falling back
+ *   to case-insensitive/trimmed title equality within the same repo. A match
+ *   yields `{ done: state==="closed", url, number }`. Legacy phase-tracker nodes
+ *   (label `[phase] title`) won't equal a real issue title and are simply left
+ *   with no progress - that's acceptable.
  * - **Milestone nodes** (`ms:{i}`): open/closed summed across ALL repos for the
  *   milestone whose title equals `structure.milestones[i].label`. Yields
  *   `{ closed, total, done: total>0 && open===0 }`.
@@ -64,12 +65,16 @@ const norm = (s: string): string => s.trim().toLowerCase();
  * @param structure        the derived GitHub object graph (node ids + labels)
  * @param issuesByRepo     full_name -> its GitHub issues (PRs already filtered out)
  * @param milestonesByRepo full_name -> its GitHub milestones with open/closed counts
+ * @param links            optional node id -> linked GitHub issue ({number,url}); when
+ *                         present, an issue node is matched to that exact issue number
+ *                         (robust to title drift) before falling back to title match.
  * @returns node id -> progress; nodes with no progress are simply absent.
  */
 export function buildProgressOverlay(
   structure: GhStructure,
   issuesByRepo: Record<string, IssueState[]>,
   milestonesByRepo: Record<string, MilestoneState[]>,
+  links?: Record<string, { number: number; url: string }>,   // nodeId -> linked GitHub issue
 ): Record<string, NodeProgress> {
   const overlay: Record<string, NodeProgress> = {};
 
@@ -85,12 +90,19 @@ export function buildProgressOverlay(
     // Last write wins on duplicate titles - fine; titles are effectively unique.
     const byTitle = new Map<string, IssueState>();
     for (const iss of issues) byTitle.set(norm(iss.title), iss);
+    // Index by issue number too, so a persisted link (#393 Layer 1) matches the
+    // exact GitHub issue regardless of title drift.
+    const byNumber = new Map<number, IssueState>();
+    for (const iss of issues) byNumber.set(iss.number, iss);
 
     let repoClosed = 0;
     let repoTotal = 0;
 
     for (const node of repo.issues) {
-      const match = byTitle.get(norm(node.label));
+      // Robust path: a persisted link pins this node to a real GitHub issue
+      // number; match by number first, then fall back to title equality.
+      const linked = links?.[node.id];
+      const match = (linked && byNumber.get(linked.number)) ?? byTitle.get(norm(node.label));
       if (!match) continue; // unmatched (e.g. legacy phase-tracker node) -> no progress
       const done = match.state === "closed";
       overlay[node.id] = { done, url: match.url, number: match.number };

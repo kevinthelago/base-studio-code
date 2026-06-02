@@ -166,6 +166,66 @@ describe("buildProgressOverlay", () => {
     expect(buildProgressOverlay(structure, {}, {})).toEqual({});
   });
 
+  it("matches an issue node by NUMBER via the links map even when no title matches", () => {
+    const structure = buildGhStructure(
+      [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],
+      ["acme/api"], "P",
+    );
+    // The plan title drifted: GitHub issue #7's title no longer equals the node label.
+    const overlay = buildProgressOverlay(
+      structure,
+      { "acme/api": [
+        iss({ title: "Renamed on GitHub after publish", state: "closed", number: 7, url: "https://gh/7" }),
+        iss({ title: "Wire status command",             state: "open",   number: 8, url: "https://gh/8" }),
+      ] },
+      {},
+      { "issue:acme/api:F1": { number: 7, url: "https://gh/7" } },
+    );
+    // Number-link wins over the (now mismatched) title: F1 is still tracked + closed.
+    expect(overlay["issue:acme/api:F1"]).toEqual({ done: true, url: "https://gh/7", number: 7 });
+    // F2 still resolves by title (no link), open.
+    expect(overlay["issue:acme/api:F2"]).toEqual({ done: false, url: "https://gh/8", number: 8 });
+  });
+
+  it("number-matched nodes roll up into the repo and project counts", () => {
+    const structure = buildGhStructure(
+      [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],
+      ["acme/api"], "P",
+    );
+    const overlay = buildProgressOverlay(
+      structure,
+      { "acme/api": [
+        iss({ title: "drifted A", state: "closed", number: 7, url: "https://gh/7" }),
+        iss({ title: "drifted B", state: "open",   number: 8, url: "https://gh/8" }),
+      ] },
+      {},
+      {
+        "issue:acme/api:F1": { number: 7, url: "https://gh/7" },
+        "issue:acme/api:F2": { number: 8, url: "https://gh/8" },
+      },
+    );
+    // Both nodes matched purely by number (neither title matches) → counted.
+    expect(overlay["repo:acme/api"]).toEqual({ closed: 1, total: 2 });
+    expect(overlay.project).toEqual({ closed: 1, total: 2 });
+  });
+
+  it("falls back to title match when a link points at a missing issue number", () => {
+    const structure = buildGhStructure(
+      [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],
+      ["acme/api"], "P",
+    );
+    const overlay = buildProgressOverlay(
+      structure,
+      { "acme/api": [
+        iss({ title: "Add login endpoint", state: "closed", number: 7, url: "https://gh/7" }),
+      ] },
+      {},
+      // #999 no longer exists; the node still resolves by its (unchanged) title.
+      { "issue:acme/api:F1": { number: 999, url: "https://gh/999" } },
+    );
+    expect(overlay["issue:acme/api:F1"]).toEqual({ done: true, url: "https://gh/7", number: 7 });
+  });
+
   it("ignores GitHub issues with no matching structure node", () => {
     const structure = buildGhStructure(
       [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],

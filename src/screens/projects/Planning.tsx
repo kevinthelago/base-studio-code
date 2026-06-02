@@ -1036,7 +1036,10 @@ export function Planning({ visible }: { visible: boolean }) {
         }
       }));
       if (cancelled) return;
-      setGhProgress(buildProgressOverlay(ghStructure, issuesByRepo, milestonesByRepo));
+      // Persisted plan-issue -> GitHub-issue links (#393 Layer 1); read fresh so
+      // the overlay matches each node to its exact issue NUMBER (title-drift safe).
+      const links = useAppStore.getState().issueLinks[effectiveProjectId];
+      setGhProgress(buildProgressOverlay(ghStructure, issuesByRepo, milestonesByRepo, links));
     };
 
     refresh();
@@ -1387,16 +1390,26 @@ export function Planning({ visible }: { visible: boolean }) {
       //      tracking issue per phase when the planner defined none. Idempotent. ──
       const planIssues = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
       const phaseNames = phases.map(p => p.name);
+      // Persisted plan-issue -> GitHub-issue linkage (#393 Layer 1): structure
+      // node id -> { number, url }. Accumulated across all repos, saved once below.
+      const linkMap: Record<string, { number: number; url: string }> = {};
       for (const [repoIdx, fullName] of repos.entries()) {
         // Check what already exists BEFORE creating so a re-sync never duplicates.
         // Fail CLOSED: if we can't fetch the repo's issues, skip creating here.
         let existingTitles: string[];
+        // title -> { number, url } for the issues already on this repo, so an
+        // "already exists" issue can still be linked (#393) by its real number.
+        const byTitle = new Map<string, { number: number; url: string }>();
         try {
-          const existing = await rest<{ title: string }[]>(`repos/${fullName}/issues?state=all&per_page=100`);
+          const existing = await rest<{ title: string; number: number; html_url: string }[]>(`repos/${fullName}/issues?state=all&per_page=100`);
           existingTitles = existing.map(i => i.title);
+          for (const i of existing) byTitle.set(i.title, { number: i.number, url: i.html_url });
         } catch {
+          // Fail closed: index every plan issue for THIS repo by its node id so the
+          // error surfaces on the right node (granular nodes use `ref ?? idx`).
           if (planIssues.length) {
-            for (const iss of planIssues) upd(`issue:${fullName}:${iss.ref}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
+            const mineFail = planIssues.filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0);
+            for (const [idx, iss] of mineFail.entries()) upd(`issue:${fullName}:${iss.ref ?? idx}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
           } else {
             for (let pi = 0; pi < phases.length; pi++) upd(`issue:${fullName}:${pi}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
           }
@@ -1410,10 +1423,17 @@ export function Planning({ visible }: { visible: boolean }) {
           for (const name of [...new Set(mine.flatMap(iss => iss.labels))]) {
             await post(`repos/${fullName}/labels`, { name, color: "0e8a16" }).catch(() => {});
           }
-          for (const iss of mine) {
-            const id = `issue:${fullName}:${iss.ref}`;
-            if (existingTitles.includes(iss.title)) { upd(id, { status: "exists", detail: "already exists" }); continue; }
-            upd(id, { status: "running" });
+          for (const [idx, iss] of mine.entries()) {
+            const nodeId = `issue:${fullName}:${iss.ref ?? idx}`;
+            if (existingTitles.includes(iss.title)) {
+              upd(nodeId, { status: "exists", detail: "already exists" });
+              // Link to the existing issue (matched by title) so the overlay can
+              // track it by number even if the plan title later drifts.
+              const hit = byTitle.get(iss.title);
+              if (hit) linkMap[nodeId] = { number: hit.number, url: hit.url };
+              continue;
+            }
+            upd(nodeId, { status: "running" });
             try {
               const body: Record<string, unknown> = { title: iss.title, body: renderIssueBody(iss) };
               const phIdx = resolvePhaseIndex(iss.phase, phaseNames);
@@ -1424,9 +1444,10 @@ export function Planning({ visible }: { visible: boolean }) {
               if (projectId && issue.node_id) {
                 await gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
               }
-              upd(id, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
+              linkMap[nodeId] = { number: issue.number, url: issue.html_url };
+              upd(nodeId, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
             } catch (e) {
-              upd(id, { status: "error", detail: String(e) });
+              upd(nodeId, { status: "error", detail: String(e) });
             }
           }
           continue;
@@ -1490,6 +1511,12 @@ _Auto-generated by base-studio-code planner._`,
         } catch (e) {
           upd(id, { status: "error", detail: String(e) });
         }
+      }
+
+      // Persist the plan-issue -> GitHub-issue linkage (#393 Layer 1) so the
+      // progress overlay can track each node by its real issue number.
+      if (Object.keys(linkMap).length) {
+        useAppStore.getState().setIssueLinks(effectiveProjectId, linkMap);
       }
 
       // Published: the draft is now a real GitHub project — promote it out of drafts (#379).

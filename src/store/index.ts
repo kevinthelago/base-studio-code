@@ -397,6 +397,10 @@ interface AppStore {
   // node id and rendering an empty pane. First-write-wins (see setActiveProjectMeta).
   projectKeyAlias: Record<string, string>;
   setProjectKeyAlias: (nodeId: string, key: string) => void;
+  // project key -> structure node id -> linked GitHub issue (#393).
+  issueLinks: Record<string, Record<string, { number: number; url: string }>>;
+  // Merge links for a project (idempotent upsert; never drops existing entries).
+  setIssueLinks: (projectKey: string, links: Record<string, { number: number; url: string }>) => void;
   // Repository resolution — base dir is `~/.base-studio-code` (the base); repo
   // clone paths are derived as `<base>/projects/<key>/<repo>`.
   bscBaseDir: string;
@@ -973,6 +977,7 @@ export const useAppStore = create<AppStore>()(
             planFleet:              byKey(s.planFleet),
             pinnedContext:          byKey(s.pinnedContext),
             projectKeyAlias:        byKey(s.projectKeyAlias),
+            issueLinks:             byKey(s.issueLinks),
             // Drop the deleted project id from every extension's scope list.
             extensions:             s.extensions.map((e) => ({ ...e, projects: e.projects.filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
@@ -992,7 +997,7 @@ export const useAppStore = create<AppStore>()(
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
           planAutomations: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
-          projectKeyAlias: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
+          projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
           activeProjectNumber: 0, activeProjectRepos: [],
@@ -1067,6 +1072,9 @@ export const useAppStore = create<AppStore>()(
         set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
           ? { projectKeyAlias: { ...s.projectKeyAlias, [nodeId]: key } }
           : {})),
+      issueLinks: {},
+      setIssueLinks: (projectKey, links) =>
+        set((s) => ({ issueLinks: { ...s.issueLinks, [projectKey]: { ...(s.issueLinks[projectKey] ?? {}), ...links } } })),
       bscBaseDir: "",
       setBscBaseDir: (dir) => set({ bscBaseDir: dir }),
       projectLocalRepos: {},
@@ -1683,6 +1691,7 @@ export const useAppStore = create<AppStore>()(
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
         projectKeyAlias:      s.projectKeyAlias,
+        issueLinks:           s.issueLinks,
         achievements:         s.achievements,
         hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
