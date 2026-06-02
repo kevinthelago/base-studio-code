@@ -20,9 +20,10 @@ import {
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, REPOS_KEY, parseReposFile, titleForKey, groupSections, parseSectionKey,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, REPOS_KEY, SKILLS_KEY, parseReposFile, titleForKey, groupSections, parseSectionKey,
   parseFleetFile,
 } from "./planSections";
+import { parseSkillsFile } from "../../lib/skills";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
 import { ProjectPane, type SyncState } from "./ProjectPane";
@@ -502,7 +503,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const sections = useMemo<Section[]>(() => {
     const keys = new Set<string>(ANCHOR_KEYS);
     for (const k of Object.keys(savedSections)) {
-      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== REPOS_KEY) keys.add(k);
+      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== REPOS_KEY && k !== SKILLS_KEY) keys.add(k);
     }
     const { project, repos } = groupSections([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
@@ -544,6 +545,18 @@ export function Planning({ visible }: { visible: boolean }) {
     const fleet = parseFleetFile(raw);
     if (fleet) useAppStore.getState().setPlanFleet(effectiveProjectId, fleet);
   }, [savedSections, effectiveProjectId]);
+
+  // Sync skills.json (the planner's CRUD channel into the global Skills library —
+  // surfaced by the poll like commands.json/fleet.json). Upsert by id/name-slug so
+  // a re-emitted definition refines in place. Runs only when the file changes.
+  const skillsSyncedRef = useRef("");
+  useEffect(() => {
+    const raw = savedSections[SKILLS_KEY] ?? "";
+    if (raw === skillsSyncedRef.current) return;
+    skillsSyncedRef.current = raw;
+    const defs = parseSkillsFile(raw);
+    if (defs.length) useAppStore.getState().upsertSkills(defs);
+  }, [savedSections]);
 
   // Title + derived GitHub object graph that the structure card renders and the
   // publish flow fills in. Kept in sync with handlePublish's own derivation.
