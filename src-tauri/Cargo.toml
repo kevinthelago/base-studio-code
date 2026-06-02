@@ -56,7 +56,7 @@ libc = "0.2"
 # `portable_pty::Child::kill()` only terminates the immediate shell and leaves
 # `claude` (and any `gh`/`git` it spawned) orphaned, holding cwd locks.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_System_JobObjects",
