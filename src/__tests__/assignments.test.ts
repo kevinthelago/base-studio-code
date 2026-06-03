@@ -6,6 +6,8 @@ import {
   resolveStartupPrompt,
   resolveReferenceContext,
   resolveAssignments,
+  composeReferenceContext,
+  REFERENCE_CONTEXT_HEADING,
   type DocAssignments,
 } from "../lib/assignments";
 
@@ -152,5 +154,27 @@ describe("resolveAssignments — both fields in one call", () => {
     a.referenceContext.default = { add: ["kb/x.md"] };
     a.referenceContext.project[P1] = emptyRefContextLevel();
     expect(resolveReferenceContext(a, { projectId: P1 })).toEqual(["kb/x.md"]);
+  });
+});
+
+describe("composeReferenceContext — folding context onto a launch prompt", () => {
+  it("returns the base unchanged when there is no context", () => {
+    expect(composeReferenceContext("kickoff", [])).toBe("kickoff");
+    expect(composeReferenceContext("kickoff", ["  ", ""])).toBe("kickoff");
+  });
+
+  it("appends a heading + the blocks under the base prompt", () => {
+    const out = composeReferenceContext("kickoff", ["block A", "block B"]);
+    expect(out).toContain("kickoff");
+    expect(out).toContain(REFERENCE_CONTEXT_HEADING);
+    expect(out).toContain("block A");
+    expect(out).toContain("block B");
+    // base precedes the context section
+    expect(out!.indexOf("kickoff")).toBeLessThan(out!.indexOf(REFERENCE_CONTEXT_HEADING));
+  });
+
+  it("uses the context as the whole prompt when there is no base", () => {
+    const out = composeReferenceContext(undefined, ["block A"]);
+    expect(out).toBe(`${REFERENCE_CONTEXT_HEADING}\n\nblock A`);
   });
 });

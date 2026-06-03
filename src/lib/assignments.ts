@@ -198,3 +198,22 @@ export function resolveAssignments(
     referenceContext: resolveReferenceContext(assignments, scope),
   };
 }
+
+/** Heading the injected reference-context blocks are placed under in a launch prompt. */
+export const REFERENCE_CONTEXT_HEADING = "# Reference context (assigned knowledge)";
+
+/**
+ * Folds resolved reference-context document contents onto a session's startup
+ * prompt for delivery (#326). Empty/blank blocks are dropped; when nothing is
+ * left the `base` is returned unchanged. When there is no base prompt but there
+ * is context, the context section becomes the prompt so it is still delivered.
+ */
+export function composeReferenceContext(
+  base: string | undefined,
+  contents: string[],
+): string | undefined {
+  const blocks = contents.map((c) => c.trim()).filter(Boolean);
+  if (blocks.length === 0) return base;
+  const section = `${REFERENCE_CONTEXT_HEADING}\n\n${blocks.join("\n\n---\n\n")}`;
+  return base ? `${base}\n\n${section}` : section;
+}
