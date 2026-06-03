@@ -218,6 +218,89 @@ function KbEmptyState({
   return wrap(<>No matches.</>);
 }
 
+/**
+ * Per-document assignment affordance (#325). Assigns the selected block as either
+ * the session STARTUP PROMPT (one doc, override cascade) or REFERENCE CONTEXT
+ * (accumulating set) — the two distinct fields of the assignments model (#324) —
+ * at Global scope, plus Project scope for reference context when the page is
+ * scoped to a project. Repo/session levels stay in the contract for the planner
+ * and fleet flows; keeping scope to Global + Project is exactly what lets the UI
+ * "scale to many-repo projects" without a per-repo dropdown stack.
+ *
+ * Project-scope startup-prompt assignment is intentionally omitted here: it is
+ * keyed by the GitHub project id (set in the planner), which this page does not
+ * have — the project key here is the sanitized name. Reference context is keyed
+ * by that sanitized key, matching what session launch resolves with.
+ */
+function AssignPanel({ relpath, projectKey, projectLabel }: {
+  relpath: string;
+  projectKey: string | null;
+  projectLabel: string | null;
+}) {
+  const {
+    defaultStartupPromptDoc, setDefaultStartupPromptDoc,
+    refContextDefault, refContextProject, toggleReferenceContext,
+  } = useAppStore();
+
+  const isStartupGlobal = defaultStartupPromptDoc === relpath;
+  const inRefGlobal = refContextDefault.includes(relpath);
+  const inRefProject = projectKey ? (refContextProject[projectKey] ?? []).includes(relpath) : false;
+
+  const pill = (on: boolean, label: string, onClick: () => void, title: string) => (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        padding: "2px 9px", borderRadius: 4, cursor: "pointer",
+        fontFamily: "var(--mono)", fontSize: 10,
+        border: "1px solid " + (on ? "var(--accent)" : "var(--border-soft)"),
+        background: on ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent",
+        color: on ? "var(--accent)" : "var(--fg-dim)",
+      }}
+    >{on ? "✓ " : ""}{label}</button>
+  );
+
+  const row = (label: string, hint: string, controls: ReactNode) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ width: 110, flexShrink: 0 }}>
+        <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>{label}</div>
+        <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{hint}</div>
+      </div>
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{controls}</div>
+    </div>
+  );
+
+  return (
+    <div style={{
+      padding: "10px 18px", background: "var(--bg-panel)",
+      borderBottom: "1px solid var(--border-soft)",
+      display: "flex", flexDirection: "column", gap: 9,
+    }}>
+      {row(
+        "Startup prompt",
+        "one doc wins",
+        pill(
+          isStartupGlobal, "Global default",
+          () => setDefaultStartupPromptDoc(isStartupGlobal ? null : relpath),
+          "Use this block as the global default kickoff prompt",
+        ),
+      )}
+      {row(
+        "Reference context",
+        "injected as context",
+        <>
+          {pill(inRefGlobal, "Global",
+            () => toggleReferenceContext("default", null, relpath),
+            "Inject into every session")}
+          {projectKey && pill(inRefProject, projectLabel ?? "This project",
+            () => toggleReferenceContext("project", projectKey, relpath),
+            "Inject into this project's sessions")}
+        </>,
+      )}
+    </div>
+  );
+}
+
 export function KnowledgeStoreScreen() {
   // When navigated from a project, scope the list to that project's documents.
   const { kbProjectScope, setKbProjectScope } = useAppStore();
@@ -243,6 +326,8 @@ export function KnowledgeStoreScreen() {
   // Manual editor: when editing, the preview swaps to a textarea seeded with the
   // current content; Save writes it back via write_document and refreshes.
   const [editing, setEditing]       = useState(false);
+  // Assignment panel (#325): toggles the per-document assign affordance.
+  const [assignOpen, setAssignOpen] = useState(false);
   const [editText, setEditText]     = useState("");
   const [saving, setSaving]         = useState(false);
   const [saveError, setSaveError]   = useState<string | null>(null);
@@ -343,8 +428,9 @@ export function KnowledgeStoreScreen() {
 
   // ── Preview when a document is selected ─────────────────────────────────────
   useEffect(() => {
-    // Selecting a different document cancels any in-progress edit.
+    // Selecting a different document cancels any in-progress edit + closes assign.
     setEditing(false);
+    setAssignOpen(false);
     setSaveError(null);
     if (!selectedPath) { setPreview(null); return; }
     setPreviewLoading(true);
@@ -806,18 +892,31 @@ export function KnowledgeStoreScreen() {
                   >cancel</button>
                 </>
               ) : (
-                <button
-                  onClick={startEdit}
-                  disabled={previewLoading || preview === null}
-                  title="Edit this document"
-                  style={{
-                    padding: "2px 8px", borderRadius: 3,
-                    cursor: (previewLoading || preview === null) ? "not-allowed" : "pointer",
-                    background: "transparent", border: "1px solid var(--border-soft)",
-                    color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
-                    opacity: (previewLoading || preview === null) ? 0.5 : 1,
-                  }}
-                >✎ edit</button>
+                <>
+                  <button
+                    onClick={() => setAssignOpen(o => !o)}
+                    title="Assign this block to sessions (startup prompt / reference context)"
+                    style={{
+                      padding: "2px 8px", borderRadius: 3, cursor: "pointer",
+                      background: assignOpen ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent",
+                      border: "1px solid " + (assignOpen ? "var(--accent)" : "var(--border-soft)"),
+                      color: assignOpen ? "var(--accent)" : "var(--fg-dim)",
+                      fontFamily: "var(--mono)", fontSize: 10,
+                    }}
+                  >⊕ assign</button>
+                  <button
+                    onClick={startEdit}
+                    disabled={previewLoading || preview === null}
+                    title="Edit this document"
+                    style={{
+                      padding: "2px 8px", borderRadius: 3,
+                      cursor: (previewLoading || preview === null) ? "not-allowed" : "pointer",
+                      background: "transparent", border: "1px solid var(--border-soft)",
+                      color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
+                      opacity: (previewLoading || preview === null) ? 0.5 : 1,
+                    }}
+                  >✎ edit</button>
+                </>
               )}
               <button
                 onClick={() => selectDoc(null)}
@@ -827,6 +926,13 @@ export function KnowledgeStoreScreen() {
                 }}
               >×</button>
             </div>
+            {assignOpen && !editing && (
+              <AssignPanel
+                relpath={selected.relpath}
+                projectKey={kbProjectScope?.keys[0] ?? null}
+                projectLabel={kbProjectScope?.label ?? null}
+              />
+            )}
             <div style={{ padding: "16px 20px" }}>
               {editing ? (
                 <textarea
