@@ -1114,6 +1114,139 @@ async fn github_put(
     Ok(json)
 }
 
+// ── GitHub OAuth Device Flow ───────────────────────────────────────────────────
+//
+// Secret-less OAuth for a distributed desktop app: GitHub has no PKCE token
+// exchange, so the auth-code flow would require shipping a client secret (unsafe)
+// or running a callback server. Device Flow needs only the public Client ID — the
+// user authorizes a short code in their browser and we poll for the token.
+//
+// The Client ID is a *public* identifier (it appears in the browser auth URL, and
+// the `gh` CLI ships its own in source the same way) — not a secret — so it is
+// baked into the binary and is the single source of truth for every build (dev,
+// source, and release). Must be an **OAuth App** Client ID (`Ov…` prefix) with
+// "Enable Device Flow" turned on — a GitHub App (`Iv…`) ignores OAuth scopes and
+// would not work with this flow. A `GITHUB_CLIENT_ID` env var at build time can
+// still override it locally; if it were ever blanked, the commands return a clear
+// error and the UI falls back to the personal-access-token paste flow.
+const GITHUB_CLIENT_ID: &str = match option_env!("GITHUB_CLIENT_ID") {
+    Some(id) => id,
+    None => "Ov23liTfjTACNhB38cMq",
+};
+
+/// The build-time GitHub OAuth Client ID, or "" when this build has none — the UI
+/// uses an empty value to hide the "Connect with GitHub" button and offer the PAT
+/// flow only.
+#[tauri::command]
+fn github_client_id() -> String {
+    GITHUB_CLIENT_ID.to_string()
+}
+
+/// The device/user codes returned by `POST /login/device/code`. `user_code` is
+/// shown to the user, `verification_uri` is opened in their browser, `device_code`
+/// is the opaque handle passed back to `github_device_poll`, and `interval` is the
+/// minimum seconds GitHub allows between polls.
+#[derive(serde::Serialize)]
+struct DeviceStart {
+    device_code: String,
+    user_code: String,
+    verification_uri: String,
+    interval: u64,
+    expires_in: u64,
+}
+
+/// Begin the OAuth Device Flow: request a device + user code for the given scope
+/// (e.g. "repo read:org").
+///
+/// # Errors
+/// Returns an error when no Client ID is baked in, the request fails, or GitHub
+/// answers with an `error` field.
+#[tauri::command]
+async fn github_device_start(scope: String) -> Result<DeviceStart, String> {
+    if GITHUB_CLIENT_ID.is_empty() {
+        return Err("This build has no GitHub OAuth Client ID; use a personal access token instead.".to_string());
+    }
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://github.com/login/device/code")
+        .header("Accept", "application/json")
+        .header("User-Agent", "base-studio-code/0.2.0")
+        .form(&[("client_id", GITHUB_CLIENT_ID), ("scope", scope.as_str())])
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    if let Some(err) = json["error"].as_str() {
+        let desc = json["error_description"].as_str().unwrap_or(err);
+        log::warn!("github_device_start error: {err}: {desc}");
+        return Err(format!("GitHub: {}", desc));
+    }
+    if !status.is_success() {
+        return Err(format!("GitHub returned HTTP {}", status));
+    }
+    Ok(DeviceStart {
+        device_code: json["device_code"].as_str().unwrap_or_default().to_string(),
+        user_code: json["user_code"].as_str().unwrap_or_default().to_string(),
+        verification_uri: json["verification_uri"]
+            .as_str()
+            .unwrap_or("https://github.com/login/device")
+            .to_string(),
+        interval: json["interval"].as_u64().unwrap_or(5),
+        expires_in: json["expires_in"].as_u64().unwrap_or(900),
+    })
+}
+
+/// The outcome of one device-flow poll. Exactly one of `access_token` / `error` is
+/// normally set: `access_token` once the user authorizes; otherwise `error` is a
+/// GitHub status string the UI keys on — `authorization_pending` (keep waiting),
+/// `slow_down` (back off — also bump the interval), `expired_token` /
+/// `access_denied` (restart). Both `None` ⇒ an unexpected response.
+#[derive(serde::Serialize)]
+struct DevicePoll {
+    access_token: Option<String>,
+    error: Option<String>,
+}
+
+/// Poll once for the access token using the `device_code` from `github_device_start`.
+/// The frontend drives the cadence (respecting `interval` / `slow_down`); this
+/// command performs a single exchange.
+///
+/// # Errors
+/// Returns an error only on transport/parse failure or a missing Client ID — a
+/// pending/denied/expired authorization is reported via `DevicePoll.error`, not as
+/// an `Err`, so the caller can distinguish "keep polling" from "request broke".
+#[tauri::command]
+async fn github_device_poll(device_code: String) -> Result<DevicePoll, String> {
+    if GITHUB_CLIENT_ID.is_empty() {
+        return Err("This build has no GitHub OAuth Client ID; use a personal access token instead.".to_string());
+    }
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://github.com/login/oauth/access_token")
+        .header("Accept", "application/json")
+        .header("User-Agent", "base-studio-code/0.2.0")
+        .form(&[
+            ("client_id", GITHUB_CLIENT_ID),
+            ("device_code", device_code.as_str()),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    Ok(DevicePoll {
+        access_token: json["access_token"].as_str().map(|s| s.to_string()),
+        error: json["error"].as_str().map(|s| s.to_string()),
+    })
+}
+
 // ── GitHub response cache (ETag-validated, in-memory) ──────────────────────────
 //
 // REST GETs are cached by endpoint path. On the next request we send the stored
@@ -2801,6 +2934,24 @@ async fn write_claude_config(
 // Repos live inside their project hub at `projects/<project>/<short-repo-name>`.
 // clone_repo: clones there via HTTPS; idempotent if the dir already exists.
 
+/// Suppress the console window Windows pops for each child process (#432).
+///
+/// A GUI-subsystem Tauri build has no console, so every `std::process::Command`
+/// it spawns (git, the readiness-probe shell, …) would otherwise flash — or, on
+/// Windows 10, *persist* — its own `cmd`/`conhost` window with no way to close it.
+/// The `CREATE_NO_WINDOW` (0x0800_0000) creation flag spawns the child detached
+/// from any console. No-op on non-Windows. Call it on the `Command` right before
+/// `.status()`/`.output()`/`.spawn()`. (The PTY path is unaffected — it goes
+/// through portable_pty's headless ConPTY, not `std::process`.)
+fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
+
 /// Clones `full_name` (an `owner/name` GitHub slug) into the project hub at
 /// `projects/<sanitize(project)>/<short-repo-name>` and returns the clone path.
 /// Idempotent: if the destination is already a git clone it is returned as-is.
@@ -2818,10 +2969,9 @@ async fn clone_repo(project: String, full_name: String) -> Result<String, String
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let url = format!("https://github.com/{}.git", full_name);
-    let status = std::process::Command::new("git")
-        .args(["clone", &url, &dest.to_string_lossy()])
-        .status()
-        .map_err(|e| e.to_string())?;
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["clone", &url, &dest.to_string_lossy()]);
+    let status = no_window(&mut cmd).status().map_err(|e| e.to_string())?;
     if !status.success() {
         log::warn!("clone_repo: git clone failed for {full_name}");
         return Err(format!("git clone failed for {}", full_name));
@@ -2932,9 +3082,9 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
         }
         let clone_str = clone.to_string_lossy().into_owned();
         // Reuse the branch if a prior run already created it; otherwise create it.
-        let branch_exists = std::process::Command::new("git")
-            .args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")])
-            .status().map(|s| s.success()).unwrap_or(false);
+        let mut probe = std::process::Command::new("git");
+        probe.args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")]);
+        let branch_exists = no_window(&mut probe).status().map(|s| s.success()).unwrap_or(false);
         let mut args: Vec<String> = vec!["-C".into(), clone_str, "worktree".into(), "add".into()];
         if branch_exists {
             args.push(wt_str.clone());
@@ -2944,7 +3094,9 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
             args.push(slug.clone());
             args.push(wt_str.clone());
         }
-        let status = std::process::Command::new("git").args(&args).status().map_err(|e| e.to_string())?;
+        let mut wt_cmd = std::process::Command::new("git");
+        wt_cmd.args(&args);
+        let status = no_window(&mut wt_cmd).status().map_err(|e| e.to_string())?;
         if !status.success() {
             return Err(format!("ensure_worktree: git worktree add failed for {repo} / {agent_id}"));
         }
@@ -3101,7 +3253,7 @@ async fn github_readiness(
     for (k, v) in session_env(&env_map) {
         cmd.env(k, v);
     }
-    let (gh, git, auth) = match cmd.output() {
+    let (gh, git, auth) = match no_window(&mut cmd).output() {
         Ok(out) => parse_github_probe(&String::from_utf8_lossy(&out.stdout)),
         Err(e) => {
             log::warn!("github_readiness probe failed to spawn ({shell}): {e}");
@@ -3824,6 +3976,9 @@ pub fn run() {
             github_graphql,
             github_post,
             github_put,
+            github_client_id,
+            github_device_start,
+            github_device_poll,
             pty_create,
             pty_write,
             pty_broadcast,
@@ -3878,6 +4033,31 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn github_client_id_returns_the_baked_constant() {
+        // github_client_id() must echo the build-time constant verbatim, so the UI
+        // can decide whether to offer the device flow.
+        assert_eq!(super::github_client_id(), super::GITHUB_CLIENT_ID);
+    }
+
+    #[test]
+    fn github_device_flow_errors_without_a_client_id() {
+        // With no GITHUB_CLIENT_ID baked in (the default test build), both device-flow
+        // commands must short-circuit with a clear error and never touch the network —
+        // this is what lets the UI fall back to the personal-access-token path.
+        if super::GITHUB_CLIENT_ID.is_empty() {
+            let start =
+                tauri::async_runtime::block_on(super::github_device_start("repo".to_string()));
+            let poll =
+                tauri::async_runtime::block_on(super::github_device_poll("dc".to_string()));
+            assert!(poll.is_err());
+            match start {
+                Err(e) => assert!(e.contains("personal access token"), "got: {e}"),
+                Ok(_) => panic!("expected an error without a client id"),
+            }
+        }
+    }
+
     #[test]
     fn parse_hooks_path_reads_core_hookspath() {
         assert_eq!(
