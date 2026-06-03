@@ -1121,13 +1121,17 @@ async fn github_put(
 // or running a callback server. Device Flow needs only the public Client ID — the
 // user authorizes a short code in their browser and we poll for the token.
 //
-// The Client ID is baked at build time from the GITHUB_CLIENT_ID env var. When it
-// is empty (dev builds without it set) the commands return a clear error and the
-// UI falls back to the existing personal-access-token paste flow. To enable it,
-// register an OAuth App with "Device Flow" turned on and build with the env var.
+// The Client ID is a *public* identifier (it appears in the browser auth URL, and
+// the `gh` CLI ships its own in source the same way) — not a secret — so it is
+// baked into the binary and is the single source of truth for every build (dev,
+// source, and release). Must be an **OAuth App** Client ID (`Ov…` prefix) with
+// "Enable Device Flow" turned on — a GitHub App (`Iv…`) ignores OAuth scopes and
+// would not work with this flow. A `GITHUB_CLIENT_ID` env var at build time can
+// still override it locally; if it were ever blanked, the commands return a clear
+// error and the UI falls back to the personal-access-token paste flow.
 const GITHUB_CLIENT_ID: &str = match option_env!("GITHUB_CLIENT_ID") {
     Some(id) => id,
-    None => "",
+    None => "Ov23liTfjTACNhB38cMq",
 };
 
 /// The build-time GitHub OAuth Client ID, or "" when this build has none — the UI
@@ -2930,6 +2934,24 @@ async fn write_claude_config(
 // Repos live inside their project hub at `projects/<project>/<short-repo-name>`.
 // clone_repo: clones there via HTTPS; idempotent if the dir already exists.
 
+/// Suppress the console window Windows pops for each child process (#432).
+///
+/// A GUI-subsystem Tauri build has no console, so every `std::process::Command`
+/// it spawns (git, the readiness-probe shell, …) would otherwise flash — or, on
+/// Windows 10, *persist* — its own `cmd`/`conhost` window with no way to close it.
+/// The `CREATE_NO_WINDOW` (0x0800_0000) creation flag spawns the child detached
+/// from any console. No-op on non-Windows. Call it on the `Command` right before
+/// `.status()`/`.output()`/`.spawn()`. (The PTY path is unaffected — it goes
+/// through portable_pty's headless ConPTY, not `std::process`.)
+fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
+
 /// Clones `full_name` (an `owner/name` GitHub slug) into the project hub at
 /// `projects/<sanitize(project)>/<short-repo-name>` and returns the clone path.
 /// Idempotent: if the destination is already a git clone it is returned as-is.
@@ -2947,10 +2969,9 @@ async fn clone_repo(project: String, full_name: String) -> Result<String, String
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let url = format!("https://github.com/{}.git", full_name);
-    let status = std::process::Command::new("git")
-        .args(["clone", &url, &dest.to_string_lossy()])
-        .status()
-        .map_err(|e| e.to_string())?;
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["clone", &url, &dest.to_string_lossy()]);
+    let status = no_window(&mut cmd).status().map_err(|e| e.to_string())?;
     if !status.success() {
         log::warn!("clone_repo: git clone failed for {full_name}");
         return Err(format!("git clone failed for {}", full_name));
@@ -3061,9 +3082,9 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
         }
         let clone_str = clone.to_string_lossy().into_owned();
         // Reuse the branch if a prior run already created it; otherwise create it.
-        let branch_exists = std::process::Command::new("git")
-            .args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")])
-            .status().map(|s| s.success()).unwrap_or(false);
+        let mut probe = std::process::Command::new("git");
+        probe.args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")]);
+        let branch_exists = no_window(&mut probe).status().map(|s| s.success()).unwrap_or(false);
         let mut args: Vec<String> = vec!["-C".into(), clone_str, "worktree".into(), "add".into()];
         if branch_exists {
             args.push(wt_str.clone());
@@ -3073,7 +3094,9 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
             args.push(slug.clone());
             args.push(wt_str.clone());
         }
-        let status = std::process::Command::new("git").args(&args).status().map_err(|e| e.to_string())?;
+        let mut wt_cmd = std::process::Command::new("git");
+        wt_cmd.args(&args);
+        let status = no_window(&mut wt_cmd).status().map_err(|e| e.to_string())?;
         if !status.success() {
             return Err(format!("ensure_worktree: git worktree add failed for {repo} / {agent_id}"));
         }
@@ -3230,7 +3253,7 @@ async fn github_readiness(
     for (k, v) in session_env(&env_map) {
         cmd.env(k, v);
     }
-    let (gh, git, auth) = match cmd.output() {
+    let (gh, git, auth) = match no_window(&mut cmd).output() {
         Ok(out) => parse_github_probe(&String::from_utf8_lossy(&out.stdout)),
         Err(e) => {
             log::warn!("github_readiness probe failed to spawn ({shell}): {e}");
