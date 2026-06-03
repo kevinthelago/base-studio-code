@@ -1687,7 +1687,7 @@ fn latest_transcript_per_pane(log_text: &str) -> Vec<(String, String, String)> {
     }
     let mut rows: Vec<(usize, String, String, String)> =
         latest.into_iter().map(|(pane, (ord, sid, tp))| (ord, pane, sid, tp)).collect();
-    rows.sort_by(|a, b| b.0.cmp(&a.0)); // newest line first
+    rows.sort_by_key(|r| std::cmp::Reverse(r.0)); // newest line first
     rows.into_iter().map(|(_, pane, sid, tp)| (pane, sid, tp)).collect()
 }
 
