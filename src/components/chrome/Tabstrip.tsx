@@ -27,6 +27,8 @@ interface TabstripProps {
   onAdd?: () => void;
   onRename?: (idx: number, name: string) => void;
   onChangeLayout?: (idx: number, layout: string) => void;
+  /** Reorder a tab from index `from` to `to` (drag-and-drop within the strip). */
+  onReorder?: (from: number, to: number) => void;
 }
 
 export function Tabstrip({
@@ -37,10 +39,14 @@ export function Tabstrip({
   onAdd,
   onRename,
   onChangeLayout,
+  onReorder,
 }: TabstripProps) {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editingName, setEditingName] = useState("");
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Drag-to-reorder: index being dragged, and the index it's hovering over.
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
 
   const editInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -93,8 +99,29 @@ export function Tabstrip({
           <div
             key={i}
             className={"tab " + (i === activeIdx ? "active" : "")}
+            // Disable drag while renaming so the input stays text-selectable.
+            draggable={editingIdx !== i}
             onClick={() => { if (editingIdx !== i) onSelect?.(i); }}
             onContextMenu={(e) => handleContextMenu(e, i)}
+            onDragStart={(e) => { setDragIdx(i); if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"; }}
+            onDragOver={(e) => {
+              if (dragIdx === null || dragIdx === i) return;
+              e.preventDefault();
+              if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+              setOverIdx(i);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragIdx !== null && dragIdx !== i) onReorder?.(dragIdx, i);
+              setDragIdx(null); setOverIdx(null);
+            }}
+            onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+            style={
+              overIdx === i && dragIdx !== null && dragIdx !== i
+                // Drop indicator on the side the dragged tab will land.
+                ? { boxShadow: `inset ${dragIdx < i ? "-2px" : "2px"} 0 0 0 var(--accent)` }
+                : dragIdx === i ? { opacity: 0.45 } : undefined
+            }
           >
             <span className={"dot " + (t.state ?? "")} />
 

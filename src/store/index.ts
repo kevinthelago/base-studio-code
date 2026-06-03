@@ -9,6 +9,7 @@ import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET, type QueuedPane, type FocusTarget } from "../lib/focusQueue";
 import { repoPromptKey } from "./../lib/startupPrompt";
+import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "../lib/tabReorder";
 import { resolveStartupPrompt, resolveReferenceContext, type DocAssignments } from "../lib/assignments";
 import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey } from "../lib/projectPaths";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
@@ -294,6 +295,10 @@ interface AppStore {
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
   closeTab: (idx: number) => void;
+  /** Reorder a tab from index `from` to `to`, remapping all index-keyed pane
+   *  state (names/cwds/status/disabled/extensions/allowed-commands/focus queue)
+   *  so nothing bleeds onto the wrong tab (#461). */
+  moveTab: (from: number, to: number) => void;
   renameTab: (idx: number, name: string) => void;
   setTabLayout: (tabIdx: number, layout: string) => void;
   setTabState: (tabIdx: number, state: Tab["state"]) => void;
@@ -820,6 +825,24 @@ export const useAppStore = create<AppStore>()(
           if (idx < s.activeTabIdx) activeTabIdx -= 1;
           else if (idx === s.activeTabIdx) activeTabIdx = Math.min(activeTabIdx, tabs.length - 1);
           return { tabs, activeTabIdx, focusQueue: [] };
+        }),
+      moveTab: (from, to) =>
+        set((s) => {
+          if (from === to || from < 0 || to < 0 || from >= s.tabs.length || to >= s.tabs.length) return {};
+          // OLD tab index → NEW tab index; remap every index-keyed structure so
+          // a reordered tab keeps its panes' names/cwd/status/disabled/etc.
+          const map = tabIndexMap(s.tabs.length, from, to);
+          return {
+            tabs: moveInArray(s.tabs, from, to),
+            activeTabIdx: map[s.activeTabIdx] ?? s.activeTabIdx,
+            paneNames: rekeyByTab(s.paneNames, map),
+            paneCwds: rekeyByPaneId(s.paneCwds, map),
+            paneStatus: rekeyByPaneId(s.paneStatus, map),
+            disabledPanes: rekeyByPaneId(s.disabledPanes, map),
+            paneExtensions: rekeyByPaneId(s.paneExtensions, map),
+            paneAllowedCommands: rekeyByPaneId(s.paneAllowedCommands, map),
+            focusQueue: remapFocusQueue(s.focusQueue, map),
+          };
         }),
       renameTab: (idx, name) =>
         set((s) => {

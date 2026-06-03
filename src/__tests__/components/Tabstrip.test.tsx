@@ -123,6 +123,27 @@ describe("Tabstrip inline rename", () => {
   });
 });
 
+describe("Tabstrip drag-to-reorder", () => {
+  it("calls onReorder(from, to) when a tab is dragged onto another", () => {
+    const onReorder = vi.fn();
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={onReorder} />);
+    const tabEls = container.querySelectorAll(".tab");
+    fireEvent.dragStart(tabEls[0]);
+    fireEvent.dragOver(tabEls[2]);
+    fireEvent.drop(tabEls[2]);
+    expect(onReorder).toHaveBeenCalledWith(0, 2);
+  });
+
+  it("does not call onReorder when dropped on the same tab", () => {
+    const onReorder = vi.fn();
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={onReorder} />);
+    const tabEls = container.querySelectorAll(".tab");
+    fireEvent.dragStart(tabEls[1]);
+    fireEvent.drop(tabEls[1]);
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+});
+
 describe("Tabstrip context menu", () => {
   it("opens a context menu on right-click", () => {
     render(<Tabstrip tabs={TABS} />);

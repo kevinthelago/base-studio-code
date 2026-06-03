@@ -133,7 +133,7 @@ export default function App() {
   const {
     activeScreen, setScreen,
     tabs, activeTabIdx, setActiveTab,
-    addTab, closeTab, renameTab, setTabLayout,
+    addTab, closeTab, renameTab, setTabLayout, moveTab,
     focusedAgentName,
     activeRepoName,
     automationsTab,
@@ -298,6 +298,7 @@ export default function App() {
               onAdd={() => setShowNewTab(true)}
               onRename={renameTab}
               onChangeLayout={handleLayoutChange}
+              onReorder={moveTab}
             />
           )}
           {/* ConsoleScreen stays mounted across all screen navigations so xterm
