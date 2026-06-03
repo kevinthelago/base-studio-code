@@ -124,23 +124,63 @@ describe("Tabstrip inline rename", () => {
 });
 
 describe("Tabstrip drag-to-reorder", () => {
-  it("calls onReorder(from, to) when a tab is dragged onto another", () => {
+  // jsdom has no layout, so give each tab a deterministic 100px-wide box
+  // ([0-100], [100-200], [200-300]) for the cursor→gap math.
+  function layoutTabs(container: HTMLElement) {
+    container.querySelectorAll<HTMLElement>(".tab").forEach((el, i) => {
+      el.getBoundingClientRect = () => ({
+        left: i * 100, right: i * 100 + 100, width: 100,
+        top: 0, bottom: 28, height: 28, x: i * 100, y: 0, toJSON: () => ({}),
+      }) as DOMRect;
+    });
+    return container.querySelector(".tabstrip") as HTMLElement;
+  }
+
+  // RTL's fireEvent.dragOver doesn't carry clientX through jsdom; dispatch a real
+  // MouseEvent of type "dragover" (which does) so the gap math sees the cursor.
+  function dragOverAt(strip: HTMLElement, clientX: number) {
+    fireEvent(strip, new MouseEvent("dragover", { bubbles: true, cancelable: true, clientX }));
+  }
+
+  it("reorders to the gap nearest the cursor (drop zone is the whole strip)", () => {
     const onReorder = vi.fn();
     const { container } = render(<Tabstrip tabs={TABS} onReorder={onReorder} />);
-    const tabEls = container.querySelectorAll(".tab");
-    fireEvent.dragStart(tabEls[0]);
-    fireEvent.dragOver(tabEls[2]);
-    fireEvent.drop(tabEls[2]);
+    const strip = layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
+    dragOverAt(strip, 160); // tab2's left half → gap index 2
+    fireEvent.drop(strip, { clientX: 160 });
+    expect(onReorder).toHaveBeenCalledWith(0, 1); // gap 2 with from=0 → final index 1
+  });
+
+  it("can drop past the last tab to move it to the end", () => {
+    const onReorder = vi.fn();
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={onReorder} />);
+    const strip = layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
+    dragOverAt(strip, 999); // past all tabs → gap index 3
+    fireEvent.drop(strip, { clientX: 999 });
     expect(onReorder).toHaveBeenCalledWith(0, 2);
   });
 
-  it("does not call onReorder when dropped on the same tab", () => {
+  it("does not reorder when dropped in its own slot", () => {
     const onReorder = vi.fn();
     const { container } = render(<Tabstrip tabs={TABS} onReorder={onReorder} />);
-    const tabEls = container.querySelectorAll(".tab");
-    fireEvent.dragStart(tabEls[1]);
-    fireEvent.drop(tabEls[1]);
+    const strip = layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[1]);
+    dragOverAt(strip, 130); // tab1's left half → gap index 1 (own slot)
+    fireEvent.drop(strip, { clientX: 130 });
     expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("highlights the strip and marks the drop gap during a drag", () => {
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} />);
+    const strip = layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
+    dragOverAt(strip, 250); // gap at tab2 (left of it)
+    expect(strip).toHaveClass("dragging");
+    // the gap tab carries the insertion bar as an inline box-shadow
+    const tabs = container.querySelectorAll<HTMLElement>(".tab");
+    expect(tabs[2].style.boxShadow).toContain("var(--accent)");
   });
 });
 

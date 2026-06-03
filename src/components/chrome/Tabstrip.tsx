@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Pencil } from "lucide-react";
 
@@ -44,12 +45,50 @@ export function Tabstrip({
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editingName, setEditingName] = useState("");
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  // Drag-to-reorder: index being dragged, and the index it's hovering over.
+  // Drag-to-reorder: index being dragged, and the insertion gap (0..tabs.length)
+  // the cursor is over. The whole strip is the drop zone so a tab can be moved
+  // anywhere, including past the last tab (gap === tabs.length).
   const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const [dropPos, setDropPos] = useState<number | null>(null);
 
   const editInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // Which insertion gap is the cursor nearest? Compares clientX to each tab's
+  // horizontal midpoint; returns tabs.length when past the last tab.
+  const dropGapFor = useCallback((clientX: number): number => {
+    const els = stripRef.current?.querySelectorAll<HTMLElement>(".tab");
+    if (!els) return 0;
+    for (let i = 0; i < els.length; i++) {
+      const r = els[i].getBoundingClientRect();
+      if (clientX < r.left + r.width / 2) return i;
+    }
+    return els.length;
+  }, []);
+
+  const endDrag = useCallback(() => { setDragIdx(null); setDropPos(null); }, []);
+
+  function commitDrop() {
+    if (dragIdx !== null && dropPos !== null) {
+      // A gap after the dragged tab maps one lower once it's removed.
+      const target = dropPos > dragIdx ? dropPos - 1 : dropPos;
+      if (target !== dragIdx) onReorder?.(dragIdx, target);
+    }
+    endDrag();
+  }
+
+  // Per-tab drag styling: dim the tab being dragged, and draw the insertion bar
+  // on the edge nearest the drop gap (left of tab[dropPos], or right of the last
+  // tab when dropping at the end). Drawn as an outset box-shadow so it adds no
+  // DOM node — keeps the tab elements stable across the drag.
+  function tabDragStyle(i: number): CSSProperties | undefined {
+    const dim: CSSProperties = dragIdx === i ? { opacity: 0.4 } : {};
+    if (dragIdx === null || dropPos === null) return Object.keys(dim).length ? dim : undefined;
+    if (dropPos === i) return { ...dim, boxShadow: "-2px 0 0 0 var(--accent)" };
+    if (dropPos === tabs.length && i === tabs.length - 1) return { ...dim, boxShadow: "2px 0 0 0 var(--accent)" };
+    return Object.keys(dim).length ? dim : undefined;
+  }
 
   useEffect(() => {
     if (editingIdx !== null) editInputRef.current?.select();
@@ -94,7 +133,19 @@ export function Tabstrip({
 
   return (
     <>
-      <div className="tabstrip">
+      <div
+        ref={stripRef}
+        className={"tabstrip" + (dragIdx !== null ? " dragging" : "")}
+        // The entire strip is the drop zone (full width), so a tab can be moved
+        // anywhere — including the empty space past the last tab.
+        onDragOver={(e) => {
+          if (dragIdx === null) return;
+          e.preventDefault();
+          if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+          setDropPos(dropGapFor(e.clientX));
+        }}
+        onDrop={(e) => { if (dragIdx === null) return; e.preventDefault(); commitDrop(); }}
+      >
         {tabs.map((t, i) => (
           <div
             key={i}
@@ -103,25 +154,9 @@ export function Tabstrip({
             draggable={editingIdx !== i}
             onClick={() => { if (editingIdx !== i) onSelect?.(i); }}
             onContextMenu={(e) => handleContextMenu(e, i)}
-            onDragStart={(e) => { setDragIdx(i); if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"; }}
-            onDragOver={(e) => {
-              if (dragIdx === null || dragIdx === i) return;
-              e.preventDefault();
-              if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-              setOverIdx(i);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (dragIdx !== null && dragIdx !== i) onReorder?.(dragIdx, i);
-              setDragIdx(null); setOverIdx(null);
-            }}
-            onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
-            style={
-              overIdx === i && dragIdx !== null && dragIdx !== i
-                // Drop indicator on the side the dragged tab will land.
-                ? { boxShadow: `inset ${dragIdx < i ? "-2px" : "2px"} 0 0 0 var(--accent)` }
-                : dragIdx === i ? { opacity: 0.45 } : undefined
-            }
+            onDragStart={(e) => { setDragIdx(i); setDropPos(i); if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"; }}
+            onDragEnd={endDrag}
+            style={tabDragStyle(i)}
           >
             <span className={"dot " + (t.state ?? "")} />
 
