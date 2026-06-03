@@ -33,6 +33,15 @@ import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
 import { resolveSkills, seedSkills, type SkillDef } from "../lib/skills";
 
+/** Mint a stable tab id (#463). Prefers crypto.randomUUID; falls back for older
+ *  webviews. Used for every tab the store creates + backfilled on hydration. */
+function newTabId(): string {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return `tab_${crypto.randomUUID()}`;
+  } catch { /* fall through */ }
+  return `tab_${Date.now()}_${Math.floor(Math.random() * 1e9).toString(36)}`;
+}
+
 /**
  * Lifts the store's flat assignment fields into the {@link DocAssignments}
  * cascade the resolution module (#324) consumes. The per-repo maps are keyed by
@@ -657,7 +666,7 @@ function mountState(s: AppStore, item: string, run: PipelineRun) {
   const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
   const key = `t${tabIdx}p0`;
   const cwd = s.activeProjectName ? projectHubCwd(s.bscBaseDir, s.activeProjectName) : "";
-  const newTab: Tab = { name: tabName, layout: "1×1", state: "idle", runId };
+  const newTab: Tab = { id: newTabId(), name: tabName, layout: "1×1", state: "idle", runId };
   const tabs = existingIdx >= 0 ? s.tabs.map((tb, i) => (i === existingIdx ? newTab : tb)) : [...s.tabs, newTab];
   const disabledPanes = { ...s.disabledPanes };
   delete disabledPanes[key];
@@ -816,7 +825,7 @@ export const useAppStore = create<AppStore>()(
       setActiveTab: (idx) => set({ activeTabIdx: idx, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: -1 }),
       addTab: (tab) =>
         set((s) => ({
-          tabs: [...s.tabs, tab],
+          tabs: [...s.tabs, { ...tab, id: tab.id ?? newTabId() }],
           activeTabIdx: s.tabs.length,
           focusedPaneIdx: -1,
           fullscreenPaneIdx: -1,
@@ -1329,7 +1338,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneRepos[key];
             }
           }
-          const newTab: Tab = { name: `${projectName} · triage`, layout, state: "idle", runId };
+          const newTab: Tab = { id: newTabId(), name: `${projectName} · triage`, layout, state: "idle", runId };
           return {
             tabs: existingIdx >= 0
               ? s.tabs.map((t, i) => (i === existingIdx ? newTab : t))
@@ -1522,7 +1531,7 @@ export const useAppStore = create<AppStore>()(
               }
             }
 
-            const newTab: Tab = { name: tabName, layout, state: "idle", runId };
+            const newTab: Tab = { id: newTabId(), name: tabName, layout, state: "idle", runId };
             tabs = existingIdx >= 0
               ? tabs.map((tb, i) => (i === existingIdx ? newTab : tb))
               : [...tabs, newTab];
@@ -1935,6 +1944,11 @@ export const useAppStore = create<AppStore>()(
       // until the persisted state is in — otherwise screens flash from defaults
       // (e.g. GitHub "not connected" → connected) on every load.
       onRehydrateStorage: () => (state) => {
+        // Backfill stable ids for tabs persisted before #463 so identity is
+        // well-defined immediately (detached set / re-dock / order key off it).
+        if (state && state.tabs.some((t) => !t.id)) {
+          state.tabs = state.tabs.map((t) => (t.id ? t : { ...t, id: newTabId() }));
+        }
         // Release the gate once hydration settles — on success or error — so the
         // shell never hangs on a blank canvas (on error the store keeps defaults).
         (state ?? useAppStore.getState()).setHasHydrated(true);

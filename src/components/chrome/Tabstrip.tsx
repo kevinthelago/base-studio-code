@@ -8,6 +8,11 @@ import { Pencil } from "lucide-react";
 import { TabBar, type TabItem } from "./TabBar";
 
 export interface Tab {
+  /** Stable identity (#463), minted at creation. Survives reorder/close/detach,
+   *  so the detached set, persisted order, and re-dock key off it (not the array
+   *  index). Optional in the type for legacy/test literals; the store backfills
+   *  one on hydration and mints one for every tab it creates. */
+  id?: string;
   name: string;
   layout: string;
   state?: "run" | "on" | "idle";
@@ -88,24 +93,28 @@ function LayoutMenu({ layout, onRename, onPick }: {
 export function Tabstrip({
   tabs, activeIdx = 0, onSelect, onClose, onAdd, onRename, onChangeLayout, onReorder, onTearOff,
 }: TabstripProps) {
+  // Identity is the stable tab id; fall back to the array index for legacy/test
+  // tabs that predate ids. All console callbacks are index-based, so map back.
+  const idOf = (i: number) => tabs[i]?.id ?? String(i);
+  const idxOf = (id: string) => tabs.findIndex((_, i) => idOf(i) === id);
   const items: TabItem[] = tabs.map((t, i) => ({
-    id: String(i), label: t.name, status: t.state, meta: t.layout,
+    id: idOf(i), label: t.name, status: t.state, meta: t.layout,
   }));
   return (
     <TabBar
       tabs={items}
-      activeId={String(activeIdx)}
-      onSelect={(id) => onSelect?.(Number(id))}
+      activeId={idOf(activeIdx)}
+      onSelect={(id) => onSelect?.(idxOf(id))}
       onAdd={onAdd}
-      onClose={onClose ? (id) => onClose(Number(id)) : undefined}
-      onRename={onRename ? (id, name) => onRename(Number(id), name) : undefined}
+      onClose={onClose ? (id) => onClose(idxOf(id)) : undefined}
+      onRename={onRename ? (id, name) => onRename(idxOf(id), name) : undefined}
       onReorder={onReorder}
-      onTearOff={onTearOff ? (id) => onTearOff(Number(id)) : undefined}
+      onTearOff={onTearOff ? (id) => onTearOff(idxOf(id)) : undefined}
       renderMenu={(id, ctx) => (
         <LayoutMenu
-          layout={tabs[Number(id)]?.layout}
+          layout={tabs[idxOf(id)]?.layout}
           onRename={ctx.startRename}
-          onPick={(l) => { onChangeLayout?.(Number(id), l); ctx.close(); }}
+          onPick={(l) => { onChangeLayout?.(idxOf(id), l); ctx.close(); }}
         />
       )}
     />
