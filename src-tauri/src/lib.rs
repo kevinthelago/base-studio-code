@@ -2595,6 +2595,31 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
 ]</plan_update>
 ```
 
+### Worked example — dissecting a hard unit
+A hard unit becomes a **sourced approach → a generated Skill → the sub-issues that
+consume it** (see "Hard topics" in the feature workshop). One unit, end to end:
+
+*Unit: "Render 10k+ nodes in the graph view at 60 fps" — too vague to hand off, so
+dissect it.*
+
+1. **Sourced approach** — WebGL instanced rendering via `three` (r160) `InstancedMesh`;
+   one draw call for all nodes, per-instance matrices updated on layout tick; GPU
+   picking via an id-color buffer. Pitfall: per-frame matrix churn → batch into a
+   `Float32Array` and `needsUpdate` once.
+2. **Generated Skill** (written into `skills.json`, scoped to this project + pinned so
+   the fleet picks it up — see "Manage the Skills library"):
+```
+[{"name":"WebGL instanced graph render","kind":"scaffold","description":"Set up a three.js InstancedMesh scene graph with GPU picking for 10k+ nodes at 60 fps","prompt":"1. Create the InstancedMesh with a capacity of N. 2. On each layout tick, write per-node matrices into one Float32Array and set instanceMatrix.needsUpdate. 3. Add an id-color picking pass on a separate render target. 4. Verify 60 fps at 10k nodes via the perf harness.","tools":["Read","Edit","Bash"],"profiles":["build"],"projects":["<this-project-key>"],"pinned":true}]
+```
+3. **Sub-issues that consume it** (each `dependsOn` the prior; the skill carries the how):
+```
+<plan_update section="issues">[
+  {"ref":"G1","title":"InstancedMesh scene graph for nodes","phase":2,"acceptance":["one draw call for all nodes","capacity grows without re-alloc churn"],"owns":["src/graph/render/scene.ts"],"dependsOn":[],"labels":["scope:core","area:graph"],"stream":"graph-render"},
+  {"ref":"G2","title":"Per-tick instance-matrix batching","phase":2,"acceptance":["matrices written into one Float32Array","instanceMatrix.needsUpdate set once per tick","60 fps at 10k nodes in the perf harness"],"owns":["src/graph/render/layoutSync.ts"],"dependsOn":["G1"],"labels":["scope:core","area:graph"],"stream":"graph-render"},
+  {"ref":"G3","title":"GPU id-color picking pass","phase":2,"acceptance":["hover/click resolves the node under the cursor","picking target separate from the visible pass"],"owns":["src/graph/render/picking.ts"],"dependsOn":["G1"],"labels":["scope:core","area:graph"],"stream":"graph-render"}
+]</plan_update>
+```
+
 ## Special sections
 
 - **`goal`** — always document it; its first sentence becomes the GitHub project
@@ -2659,33 +2684,51 @@ error/empty/loading states, the edge cases, what data it migrates, what it break
 elsewhere, and the cross-repo contracts it depends on. Each problem you surface is
 itself an issue — a unit is not "mapped" until the issues it BRINGS are mapped too.
 
-**Hard topics — research and source before you decompose.** When a unit needs a
-non-trivial or specialized solution — a physics / protein-folding simulation, a
-neural-net architecture, 3D graphics/rendering, a novel algorithm, anything where
-"build it somehow" would leave the agent stuck — STOP and ground the approach
-before you write its issues:
-- **Name the established approach** from what you know: the standard technique, the
-  canonical library/framework, the reference architecture.
-- **Source it.** Ask the user for papers / docs / a reference implementation they
-  trust, and `WebFetch` any concrete URL you or they name (a library API page, a
-  spec, a GitHub raw file) to verify it. You can fetch a known URL but not search —
-  so ask for the link rather than guessing.
-- **Pin the specifics**: the exact library + version, the algorithm/architecture,
-  the data structures, the known pitfalls, and the perf/accuracy constraints.
-- **Fold it into the issues (preferred).** The grounded approach becomes each
-  issue's **How / build approach** and **Tools & tech** (named, not "a library"),
-  sharpens its **acceptance** (e.g. "renders 10k instances at 60 fps via
-  InstancedMesh"), and drives the **epic → sub-issue decomposition** the technique
-  implies (e.g. an epic "WebGL renderer" → sub-issues for scene graph, instancing,
-  picking). The agent building it should never have to re-derive the approach.
-- **Capture the source** so the agent inherits it: write a short reference section
-  (a `{topic}.md` plan section, e.g. `research_renderer.md`) and/or assign a
-  Knowledge Base block (`<kb_assign>`) scoped to the project so it lands in the
-  agent's prompt — preferred over a loose note; failing that, link the source in
-  the issue body.
+**Hard topics — dissect into a sourced approach + reusable Skills.** When a unit
+needs a non-trivial or specialized solution — a physics / protein-folding
+simulation, a neural-net architecture, 3D graphics/rendering, a novel algorithm, a
+gnarly migration, anything where "build it somehow" would leave the agent stuck —
+STOP and ground the approach before you write its issues. **This dissection is the
+single highest-leverage moment in planning**: the user's understanding of the hard
+problem should leave as a durable, reusable **Skill** the building agent can invoke,
+not a one-off prose sketch it has to re-derive:
+
+1. **Research + source.** Name the established approach from what you know (the
+   standard technique, the canonical library/framework, the reference architecture).
+   Source it: ask the user for papers / docs / a reference implementation they trust,
+   and `WebFetch` any concrete URL you or they name (a library API page, a spec, a
+   GitHub raw file) to verify it — you can fetch a known URL but not search, so ask
+   for the link rather than guessing. **Pin the specifics**: the exact library +
+   version, the algorithm/architecture, the data structures, the known pitfalls, and
+   the perf/accuracy constraints.
+2. **Break the problem into one or more Skills.** Instead of leaving the grounded
+   approach as prose, emit a **Skill** — a reusable capability bundle (prompt +
+   bundled tools + profile guardrails) — into `skills.json` (see "Manage the Skills
+   library"). The skill encodes the procedure you and the user worked out: the ordered
+   steps, the named tools, the guardrails, and the success checks. The agent that
+   builds the unit **invokes the skill** rather than re-deriving the approach.
+   - **Scope it to this project** so the fleet picks it up: set the skill's
+     `projects` to this project's key and leave it `pinned` (the default) — pinned,
+     project-scoped skills are auto-available to every worker on the project. (There
+     is no per-stream assignment tag; the `skills.json` entry + `projects`/`pinned`
+     scoping IS the assignment.)
+   - Planner-generated skills are carried into each worker's worktree at fleet launch
+     (`.claude/skills/<slug>/SKILL.md`), the same way `CLAUDE.local.md` is.
+3. **Fold the grounded approach into the issues.** The sourced approach becomes each
+   issue's **How / build approach** and **Tools & tech** (named, not "a library"),
+   sharpens its **acceptance** (e.g. "renders 10k instances at 60 fps via
+   InstancedMesh"), and drives the **epic → sub-issue decomposition** the technique
+   implies (e.g. an epic "WebGL renderer" → sub-issues for scene graph, instancing,
+   picking). The agent building it should never have to re-derive the approach.
+4. **Capture the source** so the agent inherits the provenance: write a short
+   reference section (a `{topic}.md` plan section, e.g. `research_renderer.md`)
+   and/or assign a Knowledge Base block (`<kb_assign>`) scoped to the project so it
+   lands in the agent's prompt — preferred over a loose note; failing that, link the
+   source in the issue body.
 
 A hard unit left as a generic sketch is a happy-path stub — treat it like a missing
-issue: research, source, and decompose it before the plan is "done."
+issue: research, source, **dissect into Skills**, and decompose it before the plan is
+"done." (See "Worked example — dissecting a hard unit" for the end-to-end shape.)
 
 ### Drive a unit (feature or section) down to its issues
 For the current unit, propose a complete spec, then interrogate to correct and fill
@@ -2826,18 +2869,30 @@ or `push=none` for a pure reviewer/explorer.
 ```
 
 **Manage the Skills library** (reusable procedures the fleet can invoke). Write
-`skills.json` in this directory — the authoritative channel the app polls (there is
-no inline tag; the file is the only channel). It is a JSON array of skill objects;
-overwrite the whole file to update the set:
+`skills.json` in this directory — the authoritative channel the app polls (the file
+is the channel of record). It is a JSON array of skill objects; overwrite the whole
+file to update the set. This is where the feature workshop's **"dissect hard problems
+→ Skills"** step deposits each capability it distils (see "Hard topics"):
 ```
-[{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"pinned":true}]
+[{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"projects":["<this-project-key>"],"pinned":true}]
 ```
-- `kind` — one of `workflow|scaffold|codemod|review|docs`.
-- `description` — one line summarizing what the skill does.
+- `kind` — one of `workflow|scaffold|codemod|review|docs` (defaults to `workflow`).
+- `description` — one line summarizing what the skill does (the parser also accepts `desc`).
 - `prompt` — the reusable procedure body the agent follows when it invokes the skill.
 - `tools` — the tool names bundled with the skill.
-- `profiles` — the permission profiles allowed to invoke it (`build|review|docs|auto|sandbox`).
-- `pinned` — when true, the skill is auto-available to the fleet.
+- `profiles` — the permission profiles allowed to invoke it (`build|review|docs|auto|sandbox`; defaults to `build`).
+- `projects` — the project keys this skill is scoped to. Set it to **this project's
+  key** so the skill is the fleet's, not global noise.
+- `pinned` — defaults to `true` for planner skills; pinned + project-scoped skills are
+  **auto-available to every worker on the project**.
+
+**Assignment is by scoping, not a tag.** There is no per-stream assignment and no
+inline tag — a skill's `projects` + `pinned` fields ARE its assignment. The app
+upserts each `skills.json` entry into the global Skills library and, at fleet launch,
+copies every pinned skill scoped to this project into each worker's worktree
+(`.claude/skills/<slug>/SKILL.md`), the same way `CLAUDE.local.md` is. So to "hand the
+agent the means to solve a hard unit," write the skill into `skills.json` with this
+project's key in `projects` and leave it pinned.
 
 ## GitHub tools
 
