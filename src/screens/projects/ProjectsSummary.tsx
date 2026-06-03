@@ -199,8 +199,8 @@ function useProjectsSummaryData() {
 export function ProjectsPageModeStrip() {
   const { projectsPageMode, setProjectsPageMode } = useAppStore();
   const modes = [
-    { k: "summary",  label: "Summary",  hint: "portfolio · analytics" },
     { k: "projects", label: "Projects", hint: "drill into a project" },
+    { k: "fleet",    label: "Fleet",    hint: "live orchestration" },
   ] as const;
   return (
     <div style={{
@@ -756,7 +756,10 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
   repoIssues: Record<string, GhIssue[]>;
   loading: boolean;
 }) {
-  const { setProjectsPageMode } = useAppStore();
+  const { setProjectsPageMode, setScreen } = useAppStore();
+  // This portfolio now lives in the GitHub screen (#421); drilling in jumps to the
+  // Projects tab and shows the project list/board.
+  const openProjects = () => { setScreen("projects"); setProjectsPageMode("projects"); };
 
   const projectsWithStats = useMemo(() => {
     return projects.map((p, i) => {
@@ -787,14 +790,14 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
         <span className="hint">{loading ? "loading…" : `${projects.length} project${projects.length !== 1 ? "s" : ""} · click to open the board`}</span>
         <div style={{ flex: 1 }} />
         <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}
-          onClick={() => setProjectsPageMode("projects")}>view list →</button>
+          onClick={openProjects}>view list →</button>
       </div>
       {projects.length === 0 && !loading && (
         <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No projects found. Create one on GitHub.</div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
         {projectsWithStats.map(({ p, c, status, spark, repo }) => (
-          <div key={p.id} onClick={() => setProjectsPageMode("projects")} style={{
+          <div key={p.id} onClick={openProjects} style={{
             padding: "12px 14px", borderRadius: 6,
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             cursor: "pointer", minWidth: 0, overflow: "hidden",
@@ -823,7 +826,9 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function ProjectsSummary() {
-  const { setProjectsPageMode } = useAppStore();
+  const { setProjectsPageMode, setScreen } = useAppStore();
+  // Hosted in the GitHub screen (#421) — "browse projects" jumps to the Projects tab.
+  const openProjects = () => { setScreen("projects"); setProjectsPageMode("projects"); };
   const { loading, projects, events, repoMilestones, repoIssues, burndown } = useProjectsSummaryData();
 
   const activeProjects = projects.filter(p => !p.closed);
@@ -872,7 +877,7 @@ export function ProjectsSummary() {
               {loading ? "loading…" : `${activeCount} active · ${draftingCount} drafting · ${shippedCount} shipped`}
             </div>
           </div>
-          <button className="btn" onClick={() => setProjectsPageMode("projects")}>browse projects →</button>
+          <button className="btn" onClick={openProjects}>browse projects →</button>
         </div>
 
         <div style={{ marginBottom: 14 }}>

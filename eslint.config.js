@@ -23,6 +23,10 @@ export default tseslint.config(
       "react-hooks/purity": "warn",
       // ref.current reads in render back "ever-shown"/latest-value flags (intentional)
       "react-hooks/refs": "warn",
+      // Components with the intentional ref-in-render pattern above can't be compiled,
+      // so the compiler can't "preserve" their manual useMemo — but those memos are
+      // correct + doing real work (the compiler isn't enabled at build). Warn, not error.
+      "react-hooks/preserve-manual-memoization": "warn",
     },
   }
 );

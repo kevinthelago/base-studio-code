@@ -1,0 +1,54 @@
+/* Shared analytics helper classes (#399), ported from the design's tokens.css
+   "analytics-specific helpers" block. Global (not scoped) so any screen using
+   src/components/charts gets them; .card/.tag/.btn/.hint come from tokens.css.
+   These are additive and namespaced enough (statcard/seg/meter/chart-tip/…) not
+   to collide with existing screen styles. */
+
+/* KPI cards */
+.statgrid { display: grid; gap: 8px; margin-bottom: 14px; }
+.statcard { padding: 10px 13px; }
+.statcard .k { font-family: var(--mono); font-size: 10px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .06em; }
+.statcard .v { font-family: var(--mono); font-size: 19px; font-weight: 600; margin-top: 2px; color: var(--fg); }
+.statcard .sub { font-size: 10px; color: var(--fg-muted); margin-top: 1px; display: flex; align-items: center; gap: 5px; }
+.delta { font-family: var(--mono); font-size: 10px; }
+.delta.up { color: var(--success); }
+.delta.down { color: var(--danger); }
+.delta.flat { color: var(--fg-dim); }
+
+/* segmented toggle (range picker etc.) */
+.seg { display: inline-flex; border: 1px solid var(--border-soft); border-radius: var(--r-md); overflow: hidden; }
+.seg button { height: 26px; padding: 0 10px; border: 0; background: transparent; cursor: pointer; font-family: var(--mono); font-size: 10.5px; color: var(--fg-muted); border-right: 1px solid var(--border-soft); }
+.seg button:last-child { border-right: 0; }
+.seg button:hover { background: var(--bg-elev); color: var(--fg); }
+.seg button.on { background: var(--bg-elev2); color: var(--accent); }
+
+/* small inline meter (HBars + progress) */
+.meter { height: 6px; border-radius: 99px; background: var(--bg-elev2); overflow: hidden; }
+.meter > i { display: block; height: 100%; border-radius: 99px; }
+
+/* hoverable list rows */
+.hrow { transition: background .1s; }
+.hrow:hover { background: var(--bg-elev2) !important; }
+
+/* worker/status dots */
+.wd { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: 0 0 7px; }
+.wd.run, .wd.running { background: var(--accent); animation: chartPulse 1.4s ease-in-out infinite; }
+.wd.idle { background: var(--fg-dim); }
+.wd.blocked { background: var(--danger); }
+.wd.waiting { background: var(--info); }
+.wd.asking { background: oklch(0.7 0.12 290); }
+.wd.done { background: var(--success); }
+@keyframes chartPulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
+
+/* chart hover tooltip */
+.chart-tip {
+  position: fixed; pointer-events: none; z-index: 50;
+  background: var(--bg-elev2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 6px 9px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg);
+  box-shadow: 0 6px 20px oklch(0 0 0 / 0.45); white-space: nowrap;
+}
+
+/* analytics page scroll body */
+.an-page { flex: 1; overflow: auto; padding: 20px 24px; min-width: 0; background: var(--bg-canvas); }
+.an-wrap { max-width: 1320px; margin: 0 auto; }

@@ -1,7 +1,7 @@
-import { TerminalSquare, BookOpen, Zap, Puzzle, GitFork, FolderKanban, ShieldCheck, Settings } from "lucide-react";
+import { TerminalSquare, BookOpen, Zap, Puzzle, GitFork, FolderKanban, ShieldCheck, Sparkles, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type Screen = "console" | "knowledge" | "automation" | "extensions" | "github" | "projects" | "agents" | "settings";
+export type Screen = "console" | "knowledge" | "automation" | "extensions" | "github" | "projects" | "skills" | "agents" | "settings";
 
 const NAV: Array<{ key: Screen; Icon: LucideIcon; title: string }> = [
   { key: "console",    Icon: TerminalSquare, title: "Console"         },
@@ -10,6 +10,7 @@ const NAV: Array<{ key: Screen; Icon: LucideIcon; title: string }> = [
   { key: "automation", Icon: Zap,            title: "Automations"     },
   { key: "extensions", Icon: Puzzle,         title: "Extensions"      },
   { key: "github",     Icon: GitFork,        title: "GitHub"          },
+  { key: "skills",     Icon: Sparkles,       title: "Skills"          },
   { key: "agents",     Icon: ShieldCheck,    title: "Agents"          },
   { key: "settings",   Icon: Settings,       title: "Settings"        },
 ];

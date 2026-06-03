@@ -91,7 +91,7 @@ export function buildGhStructure(
       issues: planIssues.length
         ? planIssues
             .filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0)
-            .map(iss => ({ id: `issue:${fullName}:${iss.ref}`, label: iss.title }))
+            .map((iss, idx) => ({ id: `issue:${fullName}:${iss.ref ?? idx}`, label: iss.title }))
         : phases.map((ph, i) => ({
             id:    `issue:${fullName}:${i}`,
             label: `[${ph.name}] ${projectTitle}`,

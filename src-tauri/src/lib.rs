@@ -609,7 +609,7 @@ async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -618,6 +618,11 @@ async fn pty_create(
     // panes whose settings install the hook actually write).
     cmd.env("BSC_AUDIT_LOG", to_bash_path(&base.join("audit.log").to_string_lossy()));
     cmd.env("BSC_AUDIT_PANE", &pane_id);
+    // Skill usage log (#406): the `bsc-skill` Skill-tool hook (added to gated panes'
+    // settings.json by the frontend) appends one TSV line per skill invocation to this
+    // app-wide log, tagged with the pane id via BSC_AUDIT_PANE. Set for every pane
+    // (harmless — only panes whose settings install the hook actually write).
+    cmd.env("BSC_SKILL_LOG", to_bash_path(&base.join("skills.log").to_string_lossy()));
     // Coordination log (#199): `bsc-blocked --on <ref>` appends a structured
     // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
     // merge/close append satisfy events later. Set for every pane; only --on writes.
@@ -1315,6 +1320,18 @@ const BSC_AUDIT_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-skill` helper (#406): a PreToolUse/PostToolUse hook for the Skill tool on a
+/// gated pane pipes Claude Code's hook JSON into this; it extracts ONLY the skill name
+/// (`skill_name`) and the hook event (`hook_event_name`) and appends one TAB-separated
+/// line — `ts \t pane \t event \t skill` — to the app-wide `$BSC_SKILL_LOG`, tagged with
+/// `$BSC_AUDIT_PANE`. The name/event are sanitized like bsc-audit's target (strip tabs/
+/// newlines, cap length) so a stray char can't corrupt the TSV. Best-effort + always
+/// exits 0 so it never blocks a tool. A raw string keeps the embedded quotes/regex readable.
+const BSC_SKILL_RC: &str = concat!(
+    r#"bsc-skill() { l="${BSC_SKILL_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; sn="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"skill_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$sn" >> "$l"; return 0; }"#,
+    "\n",
+);
+
 /// The `bsc-confine` helper (#158): a PreToolUse hook for the file tools on a gated
 /// pane. It reads Claude Code's tool JSON, extracts the target `file_path` /
 /// `notebook_path`, and BLOCKS (return 2 + stderr) when the path escapes the session's
@@ -1356,6 +1373,17 @@ const BSC_DEFER_RC: &str = concat!(
 #[tauri::command]
 fn read_audit_log(limit: usize) -> Vec<String> {
     let path = bsc_base_dir().join("audit.log");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
+    lines.reverse();
+    lines.truncate(limit);
+    lines
+}
+
+/// Read the skill usage log (#406): the newest `limit` TSV lines, newest first.
+#[tauri::command]
+fn read_skill_log(limit: usize) -> Vec<String> {
+    let path = bsc_base_dir().join("skills.log");
     let text = std::fs::read_to_string(&path).unwrap_or_default();
     let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
     lines.reverse();
@@ -2461,6 +2489,20 @@ or `push=none` for a pure reviewer/explorer.
 <agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" profile="auth-ui-dev" autonomy="continuous" push="auto-pr" trigger="per-issue" gate="hard" />
 ```
 
+**Manage the Skills library** (reusable procedures the fleet can invoke). Write
+`skills.json` in this directory — the authoritative channel the app polls (there is
+no inline tag; the file is the only channel). It is a JSON array of skill objects;
+overwrite the whole file to update the set:
+```
+[{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"pinned":true}]
+```
+- `kind` — one of `workflow|scaffold|codemod|review|docs`.
+- `description` — one line summarizing what the skill does.
+- `prompt` — the reusable procedure body the agent follows when it invokes the skill.
+- `tools` — the tool names bundled with the skill.
+- `profiles` — the permission profiles allowed to invoke it (`build|review|docs|auto|sandbox`).
+- `pinned` — when true, the skill is auto-available to the fleet.
+
 ## GitHub tools
 
 `GH_TOKEN` is pre-loaded — use `gh` for all GitHub operations. Read
@@ -3000,6 +3042,17 @@ struct HookCfg {
     command: String,
 }
 
+/// One reusable Skill written into a session as a Claude Code Skill file
+/// (`.claude/skills/<slug>/SKILL.md`). Field names match the frontend payload.
+#[derive(serde::Deserialize, Clone)]
+struct SkillCfg {
+    name: String,
+    description: String,
+    prompt: String,
+    #[serde(default)]
+    tools: Vec<String>,
+}
+
 /// Ensure the claude session rooted at `cwd` can run shell commands without a
 /// permission prompt while blocking dangerous ones, and apply the session's
 /// extensions (MCP servers → `.mcp.json`, hooks → settings.json), by merging into
@@ -3069,12 +3122,14 @@ async fn ensure_session_settings(
     allow_tool_rules: Option<Vec<String>>,
     deny_tool_rules: Option<Vec<String>>,
     ask_tool_rules: Option<Vec<String>>,
+    skills: Option<Vec<SkillCfg>>,
 ) -> Result<(), String> {
     write_session_settings(
         &cwd, &allowed_commands, &denied_commands,
         &mcp_servers.unwrap_or_default(), &hooks.unwrap_or_default(),
         &allow_tool_rules.unwrap_or_default(), &deny_tool_rules.unwrap_or_default(),
         &ask_tool_rules.unwrap_or_default(),
+        &skills.unwrap_or_default(),
     )
 }
 
@@ -3098,6 +3153,7 @@ fn write_session_settings(
     allow_tool_rules: &[String],
     deny_tool_rules: &[String],
     ask_tool_rules: &[String],
+    skills: &[SkillCfg],
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     let root = std::path::PathBuf::from(cwd);
@@ -3181,6 +3237,7 @@ fn write_session_settings(
         serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
     ).map_err(|e| e.to_string())?;
     write_mcp_json(&root, mcp_servers)?;
+    write_session_skills(&root, skills)?;
     git_exclude(&root, ".claude/");
     git_exclude(&root, ".mcp.json");
     Ok(())
@@ -3246,6 +3303,58 @@ fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
         .collect();
     if !env.is_empty() { v.insert("env".into(), serde_json::Value::Object(env)); }
     serde_json::Value::Object(v)
+}
+
+/// Write each resolved Skill as a Claude Code Skill file at
+/// `<cwd_root>/.claude/skills/<slug>/SKILL.md` (slug derived from the name). The
+/// file is YAML frontmatter (`name`, `description`, optional `allowed-tools`) then
+/// the prompt body. Skills with an empty slug are skipped; an empty set is a no-op.
+///
+/// Additive only: this writer creates/updates skill files but never deletes them,
+/// so toggling a skill off does not remove its file yet (follow-up).
+fn write_session_skills(cwd_root: &std::path::Path, skills: &[SkillCfg]) -> Result<(), String> {
+    if cwd_root.as_os_str().is_empty() || skills.is_empty() { return Ok(()); }
+    let skills_root = cwd_root.join(".claude").join("skills");
+    for s in skills {
+        let slug = skill_slug(&s.name);
+        if slug.is_empty() { continue; }
+        let dir = skills_root.join(&slug);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let mut doc = String::from("---\n");
+        doc.push_str(&format!("name: {}\n", yaml_quote(&s.name)));
+        doc.push_str(&format!("description: {}\n", yaml_quote(&s.description)));
+        if !s.tools.is_empty() {
+            doc.push_str(&format!("allowed-tools: {}\n", yaml_quote(&s.tools.join(", "))));
+        }
+        doc.push_str("---\n\n");
+        doc.push_str(&s.prompt);
+        std::fs::write(dir.join("SKILL.md"), doc).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Render a string as a YAML double-quoted scalar so frontmatter values with
+/// colons, `#`, leading specials, or newlines can't break the `SKILL.md` header.
+fn yaml_quote(s: &str) -> String {
+    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n");
+    format!("\"{}\"", escaped)
+}
+
+/// Slug a skill name: lowercase, keep `[a-z0-9-]`, collapse any run of other
+/// chars to a single `-`, and trim leading/trailing `-`. May return empty.
+fn skill_slug(name: &str) -> String {
+    let mut out = String::new();
+    let mut pending_dash = false;
+    for c in name.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() || c == '-' {
+            if pending_dash && !out.is_empty() { out.push('-'); }
+            pending_dash = false;
+            out.push(c);
+        } else {
+            pending_dash = true;
+        }
+    }
+    out.trim_matches('-').to_string()
 }
 
 /// Merge `rules` into `config.permissions.<key>` (an array), preserving existing
@@ -3746,6 +3855,7 @@ pub fn run() {
             tunnel::tunnel_set_panes,
             tunnel::tunnel_set_sessions,
             read_audit_log,
+            read_skill_log,
             read_coord_log,
             append_coord_woke,
             read_git_hooks,
@@ -4097,10 +4207,11 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
+            super::BSC_SKILL_RC,
             super::BSC_CONFINE_RC,
             super::BSC_COORD_EMIT_RC,
             super::BSC_DEFER_RC,
@@ -4165,6 +4276,55 @@ mod tests {
             std::fs::read_to_string(&doc).unwrap(),
             "- chose cursor pagination\n- used JWT for auth\n",
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bsc_skill_helper_appends_a_usage_line() {
+        // Like bsc-audit, bsc-skill must work from the agent's own `bash -c` subshells via
+        // the rc file + BASH_ENV. It reads the Skill hook JSON on stdin and appends one
+        // TSV line — `ts \t pane \t event \t skill` — to $BSC_SKILL_LOG. Skips where bash
+        // isn't on PATH (same gating as the other helper-run tests).
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_skill subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-skill-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_SKILL_RC).unwrap();
+        // Nested path exercises the helper's `mkdir -p` of the log's parent.
+        let log = dir.join("nested").join("skills.log");
+
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let log_bash = super::to_bash_path(&log.to_string_lossy());
+
+        let mut child = Command::new(&shell)
+            .arg("-c").arg("bsc-skill")
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_SKILL_LOG", &log_bash)
+            .env("BSC_AUDIT_PANE", "t0p1")
+            .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().unwrap();
+        child.stdin.take().unwrap()
+            .write_all(br#"{"hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{"skill_name":"open-a-clean-pr","prompt":"..."}}"#)
+            .unwrap();
+        assert!(child.wait().unwrap().success(), "bsc-skill should run in the subshell");
+
+        let line = std::fs::read_to_string(&log).unwrap();
+        let line = line.trim_end();
+        let fields: Vec<&str> = line.split('\t').collect();
+        assert_eq!(fields.len(), 4, "expected 4 TAB-separated fields, got: {line:?}");
+        assert_eq!(fields[1], "t0p1", "pane field should be the BSC_AUDIT_PANE tag");
+        assert_eq!(fields[2], "PreToolUse", "event field should be hook_event_name");
+        assert_eq!(fields[3], "open-a-clean-pr", "skill field should be skill_name");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -4261,6 +4421,7 @@ mod tests {
             &[],
             &[],
             &[],
+            &[],
         ).unwrap();
 
         let v: serde_json::Value =
@@ -4304,6 +4465,7 @@ mod tests {
             &[],
             &[],
             &["Bash(git push *)".into(), "Bash(gh pr create *)".into()],
+            &[],
         ).unwrap();
 
         let v: serde_json::Value =
@@ -4336,6 +4498,7 @@ mod tests {
             &[],
             &["Edit(src/auth/**)".into(), "Write(src/auth/**)".into()],
             &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
+            &[],
             &[],
         ).unwrap();
 
@@ -4376,7 +4539,7 @@ mod tests {
         let hooks = vec![super::HookCfg {
             event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
         }];
-        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[]).unwrap();
+        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[], &[]).unwrap();
 
         // .mcp.json carries both servers in the right transport shapes.
         let mcp_json: serde_json::Value =
@@ -4395,6 +4558,50 @@ mod tests {
         assert!(enabled.contains(&"filesystem".to_string()) && enabled.contains(&"sentry".to_string()));
         assert_eq!(settings["hooks"]["PostToolUse"][0]["matcher"], "Write|Edit");
         assert_eq!(settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "format.sh");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_session_skills_writes_skill_files() {
+        let dir = std::env::temp_dir().join(format!("bsc-skills-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let skills = vec![
+            super::SkillCfg {
+                name: "Open a clean PR".into(),
+                description: "Open a tidy pull request".into(),
+                prompt: "Do the PR steps.".into(),
+                tools: vec!["create_pr".into(), "git_diff".into()],
+            },
+            super::SkillCfg {
+                name: "Review Docs".into(),
+                description: "Review the docs".into(),
+                prompt: "Check the docs.".into(),
+                tools: vec![],
+            },
+        ];
+        super::write_session_skills(&dir, &skills).unwrap();
+
+        // First skill: slugged dir, frontmatter with name/description/allowed-tools, body.
+        let a = std::fs::read_to_string(
+            dir.join(".claude").join("skills").join("open-a-clean-pr").join("SKILL.md"),
+        ).unwrap();
+        assert!(a.starts_with("---\n"));
+        assert!(a.contains("name: \"Open a clean PR\"\n"));
+        assert!(a.contains("description: \"Open a tidy pull request\"\n"));
+        assert!(a.contains("allowed-tools: \"create_pr, git_diff\"\n"));
+        assert!(a.contains("Do the PR steps."));
+
+        // Second skill: no tools → no allowed-tools line, body still present.
+        let b = std::fs::read_to_string(
+            dir.join(".claude").join("skills").join("review-docs").join("SKILL.md"),
+        ).unwrap();
+        assert!(b.contains("name: \"Review Docs\"\n"));
+        assert!(b.contains("description: \"Review the docs\"\n"));
+        assert!(!b.contains("allowed-tools:"));
+        assert!(b.contains("Check the docs."));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

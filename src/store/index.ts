@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { unlock } from "../lib/achievements";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Screen } from "../components/chrome/Rail";
 import type { Tab } from "../components/chrome/Tabstrip";
@@ -28,6 +29,7 @@ import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategy
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
+import { resolveSkills, seedSkills, type SkillDef } from "../lib/skills";
 
 // Sent as the first message to each console when a project tab is opened, so the
 // session starts by reading and executing the laid-out plan. Plain text only — no
@@ -172,6 +174,12 @@ interface AppStore {
   paneNames: Record<number, Record<number, string>>;
   paneCwds: Record<string, string>;  // keyed by "t{tabIdx}p{paneIdx}"
   setPaneCwd: (paneId: string, cwd: string) => void;
+  // Live per-pane run status (transient — NOT persisted), keyed by "t{tab}p{pane}".
+  // Mirrors Console's local pane-status map into the store so other screens (the
+  // Fleet board, #412) can read whether a worker pane is actively running. "run" =
+  // claude is mid-turn, "on" = shell up / claude idle, "idle" = at rest.
+  paneStatus: Record<string, "run" | "on" | "idle">;
+  setPaneStatus: (paneId: string, status: "run" | "on" | "idle") => void;
   // Per-pane flag: this pane has had `claude` running at some point this
   // session. Persisted so that on next launch the pane can auto-resume the
   // CLI (with `--continue`) instead of dropping the user back at a bare
@@ -180,6 +188,11 @@ interface AppStore {
   /** Live agent/terminal pane count (transient, not persisted) — drives the >10 easter egg (#365). */
   liveAgents: number;
   bumpLiveAgents: (delta: number) => void;
+  /** Unlocked achievements: id -> unlockedAt epoch ms (persisted). */
+  achievements: Record<string, number>;
+  /** Unlock an achievement once, ever. Returns true only on the FIRST unlock
+   *  (so the caller fires its toast exactly once); false if already unlocked. */
+  unlockAchievement: (id: string) => boolean;
   setPaneWasClaude: (paneId: string, on: boolean) => void;
   paneInitCmds: Record<string, string>; // transient — NOT persisted
   setPaneInitCmd: (paneId: string, cmd: string) => void;
@@ -260,10 +273,8 @@ interface AppStore {
   githubUser: GithubUser | null;
   githubRepos: GithubRepo[];
   activeRepoName: string;
-  githubPageMode: "summary" | "repos";
-  setGithubPageMode: (v: "summary" | "repos") => void;
-  githubActiveTab: "overview" | "actions";
-  setGithubTab: (tab: AppStore["githubActiveTab"]) => void;
+  githubPageMode: "summary" | "projects" | "repos";
+  setGithubPageMode: (v: "summary" | "projects" | "repos") => void;
   setGithubToken: (token: string) => void;
   setGithubUser: (user: GithubUser | null) => void;
   setGithubRepos: (repos: GithubRepo[]) => void;
@@ -320,8 +331,8 @@ interface AppStore {
   recordAutomationRun: (id: string, run: AutomationRun) => void;
 
   // Projects (transient)
-  projectsPageMode: "summary" | "projects";
-  setProjectsPageMode: (v: "summary" | "projects") => void;
+  projectsPageMode: "projects" | "fleet";
+  setProjectsPageMode: (v: "projects" | "fleet") => void;
   projectsView: "list" | "board" | "planning";
   setProjectsView: (v: "list" | "board" | "planning") => void;
   activeProjectId: string | null;
@@ -391,6 +402,10 @@ interface AppStore {
   // node id and rendering an empty pane. First-write-wins (see setActiveProjectMeta).
   projectKeyAlias: Record<string, string>;
   setProjectKeyAlias: (nodeId: string, key: string) => void;
+  // project key -> structure node id -> linked GitHub issue (#393).
+  issueLinks: Record<string, Record<string, { number: number; url: string }>>;
+  // Merge links for a project (idempotent upsert; never drops existing entries).
+  setIssueLinks: (projectKey: string, links: Record<string, { number: number; url: string }>) => void;
   // Repository resolution — base dir is `~/.base-studio-code` (the base); repo
   // clone paths are derived as `<base>/projects/<key>/<repo>`.
   bscBaseDir: string;
@@ -473,6 +488,25 @@ interface AppStore {
   // Resolved per-pane extensions (transient): set at session creation, read by
   // TerminalView before launch (mirrors paneAllowedCommands).
   paneExtensions: Record<string, ExtensionDef[]>;
+
+  // Skills — reusable capability bundles (prompt + bundled tools + profile
+  // guardrails) the fleet can invoke, each scoped via its `projects` ([] = global).
+  // Written into a launched session's .claude/skills/<slug>/SKILL.md so agents
+  // actually get them. Seeded from the sample library; persisted. (#404)
+  skills: SkillDef[];
+  addSkill:        (def: Omit<SkillDef, "id">) => string;
+  updateSkill:     (id: string, patch: Partial<SkillDef>) => void;
+  removeSkill:     (id: string) => void;
+  toggleSkill:     (id: string) => void;
+  toggleSkillPin:  (id: string) => void;
+  setSkillProjects: (id: string, projects: string[]) => void;
+  /** Upsert planner-authored skills (from skills.json) into the global library,
+   *  keyed by id then by name-slug, so re-emitted definitions refine in place
+   *  rather than duplicating. */
+  upsertSkills:    (defs: Array<Omit<SkillDef, "id"> & { id?: string }>) => void;
+  // Resolved per-pane skills (transient): set at session creation, read by
+  // TerminalView before launch (mirrors paneExtensions).
+  paneSkills: Record<string, SkillDef[]>;
 
   // Agent settings — the GLOBAL allowed-command tier (auto-approved in every
   // session). Per-project / per-repo tiers below combine additively with it.
@@ -631,6 +665,13 @@ export const useAppStore = create<AppStore>()(
       paneWasClaude: {},
   liveAgents: 0,
   bumpLiveAgents: (delta) => set((s) => ({ liveAgents: Math.max(0, s.liveAgents + delta) })),
+      achievements: {},
+      unlockAchievement: (id) => {
+        const next = unlock(get().achievements, id, Date.now());
+        if (!next) return false;            // already unlocked — once ever
+        set({ achievements: next });
+        return true;
+      },
       setPaneWasClaude: (paneId, on) =>
         set((s) => {
           const cur = s.paneWasClaude[paneId];
@@ -643,6 +684,9 @@ export const useAppStore = create<AppStore>()(
         }),
       setPaneCwd: (paneId, cwd) =>
         set((s) => ({ paneCwds: { ...s.paneCwds, [paneId]: cwd } })),
+      paneStatus: {},
+      setPaneStatus: (paneId, status) =>
+        set((s) => (s.paneStatus[paneId] === status ? {} : { paneStatus: { ...s.paneStatus, [paneId]: status } })),
       paneInitCmds: {},
       setPaneInitCmd: (paneId, cmd) =>
         set((s) => ({ paneInitCmds: { ...s.paneInitCmds, [paneId]: cmd } })),
@@ -774,8 +818,6 @@ export const useAppStore = create<AppStore>()(
       activeRepoName: "",
       githubPageMode: "summary",
       setGithubPageMode: (v) => set({ githubPageMode: v }),
-      githubActiveTab: "overview",
-      setGithubTab: (tab) => set({ githubActiveTab: tab }),
       setGithubToken: (token) => set({ githubToken: token }),
       setGithubUser: (user) => set({ githubUser: user }),
       setGithubRepos: (repos) => set({ githubRepos: repos }),
@@ -910,7 +952,7 @@ export const useAppStore = create<AppStore>()(
               : a),
         })),
 
-      projectsPageMode: "summary",
+      projectsPageMode: "projects",
       setProjectsPageMode: (v) => set({ projectsPageMode: v }),
       projectsView: "list",
       setProjectsView: (v) => set({ projectsView: v }),
@@ -960,8 +1002,11 @@ export const useAppStore = create<AppStore>()(
             planFleet:              byKey(s.planFleet),
             pinnedContext:          byKey(s.pinnedContext),
             projectKeyAlias:        byKey(s.projectKeyAlias),
+            issueLinks:             byKey(s.issueLinks),
             // Drop the deleted project id from every extension's scope list.
             extensions:             s.extensions.map((e) => ({ ...e, projects: e.projects.filter((p) => !keySet.has(p)) })),
+            // …and from every skill's scope list.
+            skills:                 s.skills.map((sk) => ({ ...sk, projects: sk.projects.filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             projectLocalRepos:      byKey(s.projectLocalRepos),
         localDraftProjects:     byKey(s.localDraftProjects),
@@ -979,7 +1024,7 @@ export const useAppStore = create<AppStore>()(
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
           planAutomations: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
-          projectKeyAlias: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
+          projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
           activeProjectNumber: 0, activeProjectRepos: [],
@@ -1054,6 +1099,9 @@ export const useAppStore = create<AppStore>()(
         set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
           ? { projectKeyAlias: { ...s.projectKeyAlias, [nodeId]: key } }
           : {})),
+      issueLinks: {},
+      setIssueLinks: (projectKey, links) =>
+        set((s) => ({ issueLinks: { ...s.issueLinks, [projectKey]: { ...(s.issueLinks[projectKey] ?? {}), ...links } } })),
       bscBaseDir: "",
       setBscBaseDir: (dir) => set({ bscBaseDir: dir }),
       projectLocalRepos: {},
@@ -1092,9 +1140,11 @@ export const useAppStore = create<AppStore>()(
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newPaneExtensions        = { ...s.paneExtensions };
+          const newPaneSkills            = { ...s.paneSkills };
           const newPaneRoles             = { ...s.paneRoles };
           const newPaneRepos             = { ...s.paneRepos };
           const triageExts               = resolveExtensions(s.extensions, projectId);
+          const triageSkills             = resolveSkills(s.skills, projectId);
           // Checkpoint docs live beside the repo clones, under the project-name
           // key (always present; projectId defaults to "" for ad-hoc triage).
           const projKey = sanitizeProjectKey(projectName);
@@ -1141,6 +1191,7 @@ export const useAppStore = create<AppStore>()(
               // prompt. Stable per (project, repo) so successive passes accumulate.
               newPaneCheckpointDocs[key] = checkpointDocRelpath(projKey, fullName ?? "");
               newPaneExtensions[key] = triageExts;
+              newPaneSkills[key] = triageSkills;
               newPaneRoles[key] = "triage";
               // Bind the triage pane to its repo so its session GH_TOKEN is scoped to it
               // (#158); a repo with an assigned credential triages with that token only.
@@ -1170,6 +1221,7 @@ export const useAppStore = create<AppStore>()(
             paneContinue: newPaneContinue,
             paneAllowedCommands: newPaneAllowedCommands,
             paneExtensions: newPaneExtensions,
+            paneSkills: newPaneSkills,
             paneRoles: newPaneRoles,
             paneRepos: newPaneRepos,
             disabledPanes: newDisabledPanes,
@@ -1220,6 +1272,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newPaneExtensions        = { ...s.paneExtensions };
+          const newPaneSkills            = { ...s.paneSkills };
           const newDisabledPanes         = { ...s.disabledPanes };
           const newPaneNames             = { ...s.paneNames };
           const newPaneRoles             = { ...s.paneRoles };
@@ -1233,6 +1286,7 @@ export const useAppStore = create<AppStore>()(
           const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
           // Same resolved extensions for every pane — they share the project scope.
           const fleetExts = resolveExtensions(s.extensions, projectKey);
+          const fleetSkills = resolveSkills(s.skills, projectKey);
 
           let tabs = s.tabs;
           let firstTabIdx = -1;
@@ -1308,6 +1362,7 @@ export const useAppStore = create<AppStore>()(
                 }
                 newPaneContinue[key] = resume;
                 newPaneExtensions[key] = fleetExts;
+                newPaneSkills[key] = fleetSkills;
                 newPaneRoles[key] = sess === null ? "director" : "worker";
                 // Bind the worker pane to its repo so its session GH_TOKEN is scoped to
                 // it (#158). The director spans every repo, so it keeps the global token.
@@ -1347,6 +1402,7 @@ export const useAppStore = create<AppStore>()(
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneAllowedCommands: newPaneAllowedCommands,
             paneExtensions: newPaneExtensions,
+            paneSkills: newPaneSkills,
             paneRoles: newPaneRoles,
             paneProfiles: newPaneProfiles,
             fleetPaneStreams: newFleetPaneStreams,
@@ -1555,6 +1611,45 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ extensions: s.extensions.map((e) => (e.id === id ? { ...e, projects } : e)) })),
       paneExtensions: {},
 
+      skills: seedSkills(),
+      addSkill: (def) => {
+        const id = `skill_${Math.random().toString(36).slice(2, 8)}`;
+        set((s) => ({ skills: [...s.skills, { ...def, id }] }));
+        return id;
+      },
+      updateSkill: (id, patch) =>
+        set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, ...patch } : sk)) })),
+      removeSkill: (id) =>
+        set((s) => ({ skills: s.skills.filter((sk) => sk.id !== id) })),
+      toggleSkill: (id) =>
+        set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, enabled: !sk.enabled } : sk)) })),
+      toggleSkillPin: (id) =>
+        set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, pinned: !sk.pinned } : sk)) })),
+      setSkillProjects: (id, projects) =>
+        set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, projects } : sk)) })),
+      upsertSkills: (defs) =>
+        set((s) => {
+          const skills = [...s.skills];
+          for (const def of defs) {
+            // Match by explicit id first, then by name-slug, so a re-emitted
+            // definition refines the existing skill in place.
+            const slug = def.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+            const idx = skills.findIndex(
+              (sk) => (def.id && sk.id === def.id) ||
+                sk.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") === slug,
+            );
+            if (idx >= 0) {
+              const rest = { ...def };
+              delete rest.id;
+              skills[idx] = { ...skills[idx], ...rest };
+            } else {
+              skills.push({ ...def, id: def.id ?? `skill_${Math.random().toString(36).slice(2, 8)}` });
+            }
+          }
+          return { skills };
+        }),
+      paneSkills: {},
+
       allowedCommands: [],
       addAllowedCommand: (cmd) =>
         set((s) => ({
@@ -1644,7 +1739,6 @@ export const useAppStore = create<AppStore>()(
         githubUser:      s.githubUser,
         githubRepos:     s.githubRepos,
         activeRepoName:  s.activeRepoName,
-        githubActiveTab: s.githubActiveTab,
         automationsTab:  s.automationsTab,
         settingsSection: s.settingsSection,
         tunnelRelayUrl:  s.tunnelRelayUrl,
@@ -1670,6 +1764,8 @@ export const useAppStore = create<AppStore>()(
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
         projectKeyAlias:      s.projectKeyAlias,
+        issueLinks:           s.issueLinks,
+        achievements:         s.achievements,
         hiddenProjectIds:     s.hiddenProjectIds,
         defaultStartupPromptDoc: s.defaultStartupPromptDoc,
         projectStartupPromptDoc: s.projectStartupPromptDoc,
@@ -1683,6 +1779,7 @@ export const useAppStore = create<AppStore>()(
         planFleet:             s.planFleet,
         pinnedContext:         s.pinnedContext,
         extensions:            s.extensions,
+        skills:                s.skills,
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint
