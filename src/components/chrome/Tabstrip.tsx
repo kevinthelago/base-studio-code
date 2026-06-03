@@ -50,6 +50,11 @@ export function Tabstrip({
   // anywhere, including past the last tab (gap === tabs.length).
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dropPos, setDropPos] = useState<number | null>(null);
+  // When the dragged tab is pulled OUT of the strip, this holds the cursor
+  // position and we render a floating "new window" preview there. Dropping while
+  // torn off will open the tab in its own window (#430); coming back into the
+  // strip cancels the tear-off and resumes reordering.
+  const [tearOff, setTearOff] = useState<{ x: number; y: number } | null>(null);
 
   const editInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -67,7 +72,31 @@ export function Tabstrip({
     return els.length;
   }, []);
 
-  const endDrag = useCallback(() => { setDragIdx(null); setDropPos(null); }, []);
+  const endDrag = useCallback(() => { setDragIdx(null); setDropPos(null); setTearOff(null); }, []);
+
+  // While a tab is being dragged, watch the cursor app-wide (HTML5 dragover fires
+  // over every element). When it leaves the strip's box, enter tear-off mode and
+  // show the floating preview; when it re-enters, cancel it and resume reordering.
+  useEffect(() => {
+    if (dragIdx === null) return;
+    const M = 10; // small slack around the strip so the edge isn't twitchy
+    const onWinDragOver = (e: DragEvent) => {
+      const r = stripRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const inside =
+        e.clientX >= r.left - M && e.clientX <= r.right + M &&
+        e.clientY >= r.top - M && e.clientY <= r.bottom + M;
+      if (inside) {
+        setTearOff(null);
+      } else {
+        e.preventDefault(); // allow the eventual drop-to-open-window outside the strip
+        setDropPos(null);
+        setTearOff({ x: e.clientX, y: e.clientY });
+      }
+    };
+    window.addEventListener("dragover", onWinDragOver);
+    return () => window.removeEventListener("dragover", onWinDragOver);
+  }, [dragIdx]);
 
   function commitDrop() {
     if (dragIdx !== null && dropPos !== null) {
@@ -154,7 +183,16 @@ export function Tabstrip({
             draggable={editingIdx !== i}
             onClick={() => { if (editingIdx !== i) onSelect?.(i); }}
             onContextMenu={(e) => handleContextMenu(e, i)}
-            onDragStart={(e) => { setDragIdx(i); setDropPos(i); if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"; }}
+            onDragStart={(e) => {
+              setDragIdx(i); setDropPos(i);
+              if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = "move";
+                // Hide the browser's default drag ghost so our own preview shows.
+                const img = new Image();
+                img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+                e.dataTransfer.setDragImage(img, 0, 0);
+              }
+            }}
             onDragEnd={endDrag}
             style={tabDragStyle(i)}
           >
@@ -200,6 +238,25 @@ export function Tabstrip({
         ))}
         <button className="tab-add" onClick={onAdd}>+</button>
       </div>
+
+      {/* Tear-off preview — a floating "new window" mock following the cursor
+          while the tab is dragged outside the strip. Dropping here will open the
+          tab in its own window (#430). */}
+      {tearOff && dragIdx !== null && createPortal(
+        <div
+          className="tab-tearoff-preview"
+          style={{ position: "fixed", left: tearOff.x + 14, top: tearOff.y + 14, zIndex: 3000, pointerEvents: "none" }}
+        >
+          <div className="ttp-bar">
+            <span className="ttp-light" /><span className="ttp-light" /><span className="ttp-light" />
+            <span className="ttp-title">{tabs[dragIdx]?.name}</span>
+          </div>
+          <div className="ttp-body">
+            <span className="ttp-hint">↗ release to open in a new window</span>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {contextMenu && createPortal(
         <div

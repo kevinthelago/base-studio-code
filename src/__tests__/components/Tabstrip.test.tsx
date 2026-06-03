@@ -133,7 +133,12 @@ describe("Tabstrip drag-to-reorder", () => {
         top: 0, bottom: 28, height: 28, x: i * 100, y: 0, toJSON: () => ({}),
       }) as DOMRect;
     });
-    return container.querySelector(".tabstrip") as HTMLElement;
+    const strip = container.querySelector(".tabstrip") as HTMLElement;
+    // Strip box [0..300]×[0..34] so the app-wide tear-off detection has real bounds.
+    strip.getBoundingClientRect = () => ({
+      left: 0, right: 300, top: 0, bottom: 34, width: 300, height: 34, x: 0, y: 0, toJSON: () => ({}),
+    }) as DOMRect;
+    return strip;
   }
 
   // RTL's fireEvent.dragOver doesn't carry clientX through jsdom; dispatch a real
@@ -157,8 +162,8 @@ describe("Tabstrip drag-to-reorder", () => {
     const { container } = render(<Tabstrip tabs={TABS} onReorder={onReorder} />);
     const strip = layoutTabs(container);
     fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
-    dragOverAt(strip, 999); // past all tabs → gap index 3
-    fireEvent.drop(strip, { clientX: 999 });
+    dragOverAt(strip, 290); // within the strip, past the last tab's midpoint → gap index 3
+    fireEvent.drop(strip, { clientX: 290 });
     expect(onReorder).toHaveBeenCalledWith(0, 2);
   });
 
@@ -170,6 +175,18 @@ describe("Tabstrip drag-to-reorder", () => {
     dragOverAt(strip, 130); // tab1's left half → gap index 1 (own slot)
     fireEvent.drop(strip, { clientX: 130 });
     expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("shows the tear-off preview when the tab is dragged out of the strip", () => {
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} />);
+    layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
+    // cursor pulled well below the strip → outside → preview appears (portaled to body)
+    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 150, clientY: 220 }));
+    expect(document.querySelector(".tab-tearoff-preview")).toBeInTheDocument();
+    // back inside the strip → preview is dismissed, reordering resumes
+    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 150, clientY: 12 }));
+    expect(document.querySelector(".tab-tearoff-preview")).toBeNull();
   });
 
   it("highlights the strip and marks the drop gap during a drag", () => {
