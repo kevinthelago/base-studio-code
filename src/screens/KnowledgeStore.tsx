@@ -7,7 +7,11 @@ import "@xterm/xterm/css/xterm.css";
 import ReactMarkdown from "react-markdown";
 import { log } from "../lib/log";
 import { useAppStore } from "../store";
-import { filterDocuments, scopeToProject, DOC_FILTERS, kindLabel, type Doc, type DocFilter, type DocKind } from "../lib/documents";
+import {
+  scopeToProject, selectDocuments, collectTags, groupByKind,
+  DOC_FILTERS, kindLabel,
+  type Doc, type DocFilter, type DocKind,
+} from "../lib/documents";
 import { useDragResize } from "../hooks/useDragResize";
 
 const KB_PANE_ID = "kb";
@@ -165,6 +169,55 @@ function CommandsPanel() {
   );
 }
 
+/**
+ * Empty-state copy for the document list (#323). Distinguishes a genuine
+ * first-run (no documents at all — offer to set up the workspace + create a
+ * block) from a filter/search that simply matched nothing, with per-facet copy
+ * so the user knows *why* the list is empty.
+ */
+function KbEmptyState({
+  docCount, workspaceReady, projectScoped, filter, tags, query, onSetupWorkspace,
+}: {
+  docCount: number;
+  workspaceReady: boolean;
+  projectScoped: boolean;
+  filter: DocFilter;
+  tags: string[];
+  query: string;
+  onSetupWorkspace: () => void;
+}) {
+  const wrap = (children: ReactNode) => (
+    <div style={{
+      padding: "28px 18px", fontFamily: "var(--mono)", fontSize: 11,
+      color: "var(--fg-dim)", textAlign: "center", lineHeight: 1.8,
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+    }}>{children}</div>
+  );
+
+  // First run: the store holds nothing at all.
+  if (docCount === 0) {
+    return wrap(
+      <>
+        <div style={{ fontSize: 22, opacity: 0.5 }}>📚</div>
+        <div style={{ color: "var(--fg-muted)" }}>Your knowledge base is empty.</div>
+        <div>Ask Claude in the panel to the right to draft your first block —{"\n"}reusable conventions, GitHub Actions templates, review checklists.</div>
+        {!workspaceReady && (
+          <button className="btn" onClick={onSetupWorkspace} style={{ fontSize: 10.5, marginTop: 2 }}>
+            set up workspace
+          </button>
+        )}
+      </>,
+    );
+  }
+
+  // Has docs, but the active filter/search hid them all.
+  if (query.trim()) return wrap(<>No documents match “{query.trim()}”.</>);
+  if (tags.length > 0) return wrap(<>No documents carry {tags.map(t => `#${t}`).join(" + ")}.</>);
+  if (projectScoped) return wrap(<>No documents for this project yet.</>);
+  if (filter !== "all") return wrap(<>No {kindLabel(filter)} documents yet.</>);
+  return wrap(<>No matches.</>);
+}
+
 export function KnowledgeStoreScreen() {
   // When navigated from a project, scope the list to that project's documents.
   const { kbProjectScope, setKbProjectScope } = useAppStore();
@@ -173,6 +226,15 @@ export function KnowledgeStoreScreen() {
   const [showCommands, setShowCommands] = useState(false);
   const [filter, setFilter]         = useState<DocFilter>("all");
   const [search, setSearch]         = useState("");
+  // Search is debounced (#321): the input updates `search` immediately for a
+  // responsive box, while `debouncedSearch` drives the (body-reading) filter.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  // Tag/stack facet (#320): the selected tags narrow the list (AND semantics).
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  // Lazy body cache (#321): full-text search reads document bodies, which the
+  // backend's list_documents does not return. Bodies are fetched on demand only
+  // while a query is active and cached by relpath; selecting a doc also fills it.
+  const [bodies, setBodies] = useState<Record<string, string>>({});
   const [selectedPath, setSelected] = useState<string | null>(null);
   const [preview, setPreview]       = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -211,11 +273,31 @@ export function KnowledgeStoreScreen() {
   }, [docs]);
 
   const selected = selectedPath ? docs.find(d => d.relpath === selectedPath) ?? null : null;
-  // A project scope overrides the source chips: show only that project's docs,
-  // still narrowable by the search box.
-  const filtered = kbProjectScope
-    ? filterDocuments(scopeToProject(docs, kbProjectScope.keys), "all", search)
-    : filterDocuments(docs, filter, search);
+  // A project scope overrides the source chips: show only that project's docs;
+  // otherwise the source-kind filter applies. The tag facet + debounced
+  // free-text query (incl. body) narrow either set.
+  const scoped = kbProjectScope ? scopeToProject(docs, kbProjectScope.keys) : docs;
+  const tagOptions = collectTags(scoped);
+  const filtered = selectDocuments(
+    scoped,
+    { filter: kbProjectScope ? "all" : filter, tags: selectedTags, query: debouncedSearch },
+    bodies,
+  );
+  // Render grouped under reusable / project / repo headers (#320). When a single
+  // kind is selected the helper naturally collapses to one group.
+  const groups = groupByKind(filtered);
+
+  // Debounce the search box (#321) so each keystroke doesn't re-scan bodies.
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(search), 200);
+    return () => clearTimeout(id);
+  }, [search]);
+
+  // Drop tag selections that no longer exist in the current doc set.
+  useEffect(() => {
+    setSelectedTags(prev => prev.filter(t => tagOptions.includes(t)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tagOptions.join(" ")]);
 
   // ── Document list polling ────────────────────────────────────────────────────
   const refreshDocs = useCallback(async () => {
@@ -233,6 +315,32 @@ export function KnowledgeStoreScreen() {
     return () => clearInterval(id);
   }, [refreshDocs]);
 
+  // ── Lazy body fetch for full-text search (#321) ─────────────────────────────
+  // Only pay the read cost while a query is active: fetch the body of every doc
+  // not already cached, in parallel, and merge into the cache. Bounded by the KB
+  // size; bodies persist so a refined query reuses them.
+  useEffect(() => {
+    if (!debouncedSearch.trim()) return;
+    const missing = docs.filter(d => bodies[d.relpath] === undefined);
+    if (missing.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      missing.map(d =>
+        invoke<string>("read_document", { relpath: d.relpath })
+          .then(content => [d.relpath, content] as const)
+          .catch(() => [d.relpath, ""] as const),
+      ),
+    ).then(pairs => {
+      if (cancelled) return;
+      setBodies(prev => {
+        const next = { ...prev };
+        for (const [rel, content] of pairs) next[rel] = content;
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [debouncedSearch, docs, bodies]);
+
   // ── Preview when a document is selected ─────────────────────────────────────
   useEffect(() => {
     // Selecting a different document cancels any in-progress edit.
@@ -241,10 +349,45 @@ export function KnowledgeStoreScreen() {
     if (!selectedPath) { setPreview(null); return; }
     setPreviewLoading(true);
     invoke<string>("read_document", { relpath: selectedPath })
-      .then(content => setPreview(content))
+      .then(content => {
+        setPreview(content);
+        // Fill the search body cache for free while we have the content.
+        setBodies(prev => ({ ...prev, [selectedPath]: content }));
+      })
       .catch(() => setPreview(null))
       .finally(() => setPreviewLoading(false));
   }, [selectedPath]);
+
+  // Live generation → preview (#322): when the open document is regenerated on
+  // disk (the embedded Claude session writes it; refreshDocs bumps modified_secs),
+  // re-read it into the preview so the new content lands without reselecting.
+  // Suppressed while editing so it can't clobber unsaved edits.
+  const selectedModified = selected?.modified_secs ?? 0;
+  useEffect(() => {
+    if (!selectedPath || editing || selectedModified === 0) return;
+    invoke<string>("read_document", { relpath: selectedPath })
+      .then(content => {
+        setPreview(content);
+        setBodies(prev => ({ ...prev, [selectedPath]: content }));
+      })
+      .catch(() => { /* keep the current preview on a transient read error */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModified]);
+
+  // Unsaved-changes guard (#322): true while the editor holds edits not yet
+  // written. Navigating away (selecting another doc, closing the preview) asks
+  // for confirmation first so a generation/edit isn't silently discarded.
+  const dirty = editing && editText !== (preview ?? "");
+  const confirmDiscard = useCallback(() => {
+    if (!dirty) return true;
+    return window.confirm("Discard unsaved changes to this document?");
+  }, [dirty]);
+  /** Select a document, guarding any unsaved edit first. */
+  const selectDoc = useCallback((relpath: string | null) => {
+    if (!confirmDiscard()) return;
+    setShowCommands(false);
+    setSelected(relpath);
+  }, [confirmDiscard]);
 
   // ── Manual editor handlers ──────────────────────────────────────────────────
   function startEdit() {
@@ -375,6 +518,17 @@ export function KnowledgeStoreScreen() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // First-run setup (#323): (re)create the KB workspace on demand from the empty
+  // state, in case the mount-time setup failed (e.g. the dir was absent).
+  async function handleSetupWorkspace() {
+    const dir = await invoke<string>("setup_kb_workspace").catch((e: unknown) => {
+      log.error(`kb workspace setup failed: ${e}`);
+      return "";
+    });
+    if (dir) { kbDirRef.current = dir; setKbDir(dir); }
+    refreshDocs();
+  }
+
   async function handleRestart() {
     const term = termRef.current;
     if (!term || restarting) return;
@@ -408,7 +562,7 @@ export function KnowledgeStoreScreen() {
       }}>
         {/* Commands section entry — swaps the main area to the command-policy editor. */}
         <div
-          onClick={() => { setShowCommands(true); setSelected(null); }}
+          onClick={() => { if (confirmDiscard()) { setShowCommands(true); setSelected(null); } }}
           style={{
             padding: "9px 12px", cursor: "pointer", userSelect: "none",
             borderBottom: "1px solid var(--border-soft)",
@@ -489,60 +643,107 @@ export function KnowledgeStoreScreen() {
             </div>
           )}
 
+          {/* Tag / stack facet (#320) — multi-select; a doc must carry every
+              selected tag. Hidden when the visible docs carry no tags. */}
+          {tagOptions.length > 0 && (
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", marginRight: 2 }}>#</span>
+              {tagOptions.map(t => {
+                const on = selectedTags.includes(t);
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setSelectedTags(prev => on ? prev.filter(x => x !== t) : [...prev, t])}
+                    style={{
+                      padding: "1px 6px", borderRadius: 3, cursor: "pointer",
+                      fontFamily: "var(--mono)", fontSize: 9,
+                      border: "1px solid " + (on ? "var(--info)" : "var(--border-soft)"),
+                      background: on ? "color-mix(in oklch, var(--info), transparent 86%)" : "transparent",
+                      color: on ? "var(--info)" : "var(--fg-dim)",
+                    }}
+                  >{t}</button>
+                );
+              })}
+              {selectedTags.length > 0 && (
+                <span
+                  onClick={() => setSelectedTags([])}
+                  title="Clear tags"
+                  style={{ cursor: "pointer", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 9 }}
+                >clear</span>
+              )}
+            </div>
+          )}
+
           {/* Search */}
           <input
             className="input"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="search…"
+            placeholder="search title + body…"
             style={{ height: 24, padding: "0 8px", fontFamily: "var(--mono)", fontSize: 10.5 }}
           />
         </div>
 
         <div style={{ flex: 1, overflow: "auto" }}>
           {filtered.length === 0 ? (
-            <div style={{
-              padding: "24px 16px", fontFamily: "var(--mono)", fontSize: 11,
-              color: "var(--fg-dim)", textAlign: "center", lineHeight: 1.7,
-            }}>
-              {docs.length === 0
-                ? <>No documents yet.{"\n"}Ask Claude to create one →</>
-                : kbProjectScope ? "No documents for this project yet." : "No matches."}
-            </div>
-          ) : filtered.map(d => {
-            const sel = d.relpath === selectedPath;
-            return (
-              <div
-                key={d.relpath}
-                onClick={() => { setShowCommands(false); setSelected(sel ? null : d.relpath); }}
-                style={{
-                  padding: sel ? "9px 12px 9px 10px" : "9px 12px",
-                  borderBottom: "1px solid var(--border-soft)",
-                  borderLeft: sel ? "2px solid var(--accent)" : "2px solid transparent",
-                  background: sel ? "var(--bg-elev)" : "transparent",
-                  cursor: "pointer", userSelect: "none",
-                }}
-              >
-                <div style={{
-                  fontFamily: "var(--mono)", fontSize: 11.5,
-                  color: sel ? "var(--fg)" : "var(--fg-muted)",
-                  marginBottom: 3,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}>
-                  {d.title}
-                </div>
-                <div style={{
-                  fontFamily: "var(--mono)", fontSize: 9.5,
-                  color: "var(--fg-dim)", display: "flex", gap: 6, alignItems: "center",
-                }}>
-                  <KindBadge kind={d.kind} project={d.project} repo={d.repo} />
-                  <div style={{ flex: 1 }} />
-                  <span>{formatSize(d.size_bytes)}</span>
-                  {d.modified_secs > 0 && <span>{formatAge(d.modified_secs)}</span>}
-                </div>
+            <KbEmptyState
+              docCount={docs.length}
+              workspaceReady={kbDir !== ""}
+              projectScoped={!!kbProjectScope}
+              filter={kbProjectScope ? "all" : filter}
+              tags={selectedTags}
+              query={debouncedSearch}
+              onSetupWorkspace={handleSetupWorkspace}
+            />
+          ) : groups.map(group => (
+            <div key={group.kind}>
+              <div style={{
+                padding: "6px 12px 4px", fontFamily: "var(--mono)", fontSize: 9,
+                letterSpacing: ".08em", color: "var(--fg-dim)", textTransform: "uppercase",
+                background: "var(--bg-panel)", position: "sticky", top: 0, zIndex: 1,
+                borderBottom: "1px solid var(--border-soft)",
+                display: "flex", alignItems: "center", gap: 6,
+              }}>
+                <span style={{ color: KIND_COLOR[group.kind] }}>●</span>
+                <span>{group.label}</span>
+                <span style={{ color: "var(--fg-dim)", opacity: 0.7 }}>{group.docs.length}</span>
               </div>
-            );
-          })}
+              {group.docs.map(d => {
+                const sel = d.relpath === selectedPath;
+                return (
+                  <div
+                    key={d.relpath}
+                    onClick={() => selectDoc(sel ? null : d.relpath)}
+                    style={{
+                      padding: sel ? "9px 12px 9px 10px" : "9px 12px",
+                      borderBottom: "1px solid var(--border-soft)",
+                      borderLeft: sel ? "2px solid var(--accent)" : "2px solid transparent",
+                      background: sel ? "var(--bg-elev)" : "transparent",
+                      cursor: "pointer", userSelect: "none",
+                    }}
+                  >
+                    <div style={{
+                      fontFamily: "var(--mono)", fontSize: 11.5,
+                      color: sel ? "var(--fg)" : "var(--fg-muted)",
+                      marginBottom: 3,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                      {d.title}
+                    </div>
+                    <div style={{
+                      fontFamily: "var(--mono)", fontSize: 9.5,
+                      color: "var(--fg-dim)", display: "flex", gap: 6, alignItems: "center",
+                    }}>
+                      <KindBadge kind={d.kind} project={d.project} repo={d.repo} />
+                      <div style={{ flex: 1 }} />
+                      <span>{formatSize(d.size_bytes)}</span>
+                      {d.modified_secs > 0 && <span>{formatAge(d.modified_secs)}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
 
         {kbDir && (
@@ -619,7 +820,7 @@ export function KnowledgeStoreScreen() {
                 >✎ edit</button>
               )}
               <button
-                onClick={() => setSelected(null)}
+                onClick={() => selectDoc(null)}
                 style={{
                   background: "none", border: "none", cursor: "pointer",
                   color: "var(--fg-dim)", fontSize: 13, padding: 0, lineHeight: 1,
