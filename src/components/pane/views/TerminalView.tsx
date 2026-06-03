@@ -9,6 +9,7 @@ import { recordPtyData, bumpTerminals } from "../../../lib/perf";
 import { gateClaudeLaunch } from "../../../lib/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/terminal";
 import { composeStartupPrompt } from "../../../lib/checkpoint";
+import { composeReferenceContext } from "../../../lib/assignments";
 import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
 import { resolveSkills, toSkillCfgs } from "../../../lib/skills";
 import { PendingPtyData } from "../../../lib/pendingPtyData";
@@ -307,6 +308,18 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
             startupPrompt = docText.trim() || PROJECT_INIT_PROMPT;
           }
         }
+      }
+      // Reference context (#326): documents assigned as background knowledge for
+      // this session (resolved at launch into paneReferenceDocs). Read each and
+      // fold their content onto the startup prompt under a clear heading, so the
+      // session starts with the assigned context in its first message.
+      const refRelpaths = useAppStore.getState().paneReferenceDocs[paneId];
+      if (refRelpaths && refRelpaths.length > 0) {
+        const contents = await Promise.all(
+          refRelpaths.map((rp) => invoke<string>("read_document", { relpath: rp }).catch(() => "")),
+        );
+        if (destroyed) return;
+        startupPrompt = composeReferenceContext(startupPrompt, contents);
       }
       // Triage continuity: if this pane has a checkpoint doc, fold the prior
       // session's "where we left off" note onto the prompt. The doc is handed to

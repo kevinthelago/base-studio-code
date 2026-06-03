@@ -7,8 +7,9 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
-import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
-import { resolveStartupPromptDoc, repoPromptKey } from "./../lib/startupPrompt";
+import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET, type QueuedPane, type FocusTarget } from "../lib/focusQueue";
+import { repoPromptKey } from "./../lib/startupPrompt";
+import { resolveStartupPrompt, resolveReferenceContext, type DocAssignments } from "../lib/assignments";
 import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey } from "../lib/projectPaths";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
 import { computeNextRun, appendRun, suggestionToAutomation, type Automation, type AutomationRun } from "../lib/scheduler";
@@ -30,6 +31,39 @@ import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/di
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
 import { resolveSkills, seedSkills, type SkillDef } from "../lib/skills";
+
+/**
+ * Lifts the store's flat assignment fields into the {@link DocAssignments}
+ * cascade the resolution module (#324) consumes. The per-repo maps are keyed by
+ * `repoPromptKey`, which is byte-identical to the module's `scopeKey`, so they
+ * drop straight in. The session level is unused at launch (assignment happens at
+ * the project/repo level). Reference context is stored as plain add-lists.
+ */
+function buildAssignments(s: {
+  defaultStartupPromptDoc: string | null;
+  projectStartupPromptDoc: Record<string, string | null>;
+  repoStartupPromptDoc: Record<string, string | null>;
+  refContextDefault: string[];
+  refContextProject: Record<string, string[]>;
+  refContextRepo: Record<string, string[]>;
+}): DocAssignments {
+  const lift = (m: Record<string, string[]>) =>
+    Object.fromEntries(Object.entries(m).map(([k, add]) => [k, { add }]));
+  return {
+    startupPrompt: {
+      default: s.defaultStartupPromptDoc,
+      project: s.projectStartupPromptDoc,
+      repo: s.repoStartupPromptDoc,
+      session: {},
+    },
+    referenceContext: {
+      default: { add: s.refContextDefault },
+      project: lift(s.refContextProject),
+      repo: lift(s.refContextRepo),
+      session: {},
+    },
+  };
+}
 
 // Sent as the first message to each console when a project tab is opened, so the
 // session starts by reading and executing the laid-out plan. Plain text only — no
@@ -148,6 +182,11 @@ interface AppStore {
   // ConsoleScreen sees idle transitions for all panes and routes them here (#77).
   enqueueFocus: (tab: number, pane: number) => void;
   removeFocus: (tab: number, pane: number) => void;
+  // Role-aware focus targeting (#392, persisted). Which panes the autofocus queue
+  // surfaces — by default only the director (workers run dark, escalating via
+  // bsc-ask). enqueueFocus is gated by it; changing it re-gates the live queue.
+  focusTarget: FocusTarget;
+  setFocusTarget: (target: FocusTarget) => void;
   /** Wake a parked pane (#199): seed it with `prompt` as a FRESH claude session and
    *  remount its tab (runId bump). Returns false if the pane/tab is gone or disabled.
    *  The caller `pty_kill`s the pane first so the remount spawns fresh, not reconnect. */
@@ -205,6 +244,11 @@ interface AppStore {
   // exact text is sent to the session once Claude reaches its prompt. Used by
   // triage panes (see TRIAGE_PROMPT).
   paneStartupPromptText: Record<string, string>;
+  // Resolved REFERENCE-CONTEXT documents per pane (transient — NOT persisted).
+  // paneId → list of unified-store relpaths to inject as background context at
+  // launch (#326). TerminalView reads + composes their content onto the startup
+  // prompt. Distinct from the startup prompt itself (paneStartupPromptDocs).
+  paneReferenceDocs: Record<string, string[]>;
   // paneId → unified-store relpath of the triage CHECKPOINT doc (transient — NOT
   // persisted). The session overwrites it via the `bsc-checkpoint` shell helper;
   // TerminalView composes its content onto the next triage launch's prompt so the
@@ -370,6 +414,19 @@ interface AppStore {
   setProjectStartupPromptDoc: (projectId: string, doc: string | null) => void;
   repoStartupPromptDoc: Record<string, string | null>;
   setRepoStartupPromptDoc: (projectId: string, repo: string, doc: string | null) => void;
+  // Reference-context assignment (persisted) — the SECOND assignment field from
+  // lib/assignments.ts, distinct from the startup prompt above. These are the
+  // documents injected as background context for a session. Unlike the startup
+  // prompt (one doc, override cascade), reference context ACCUMULATES across the
+  // default → project → repo levels. Stored as plain add-lists of relpaths; the
+  // launch resolver (#326) lifts them into the assignments-module cascade.
+  refContextDefault: string[];
+  refContextProject: Record<string, string[]>;            // keyed by projectId
+  refContextRepo: Record<string, string[]>;               // keyed by repoPromptKey
+  /** Toggle a document into/out of the reference-context set at one scope.
+   *  level "default" ignores the key; "project" keys by projectId; "repo" by
+   *  repoPromptKey(projectId, repo). */
+  toggleReferenceContext: (level: "default" | "project" | "repo", key: string | null, doc: string) => void;
   // Per-repo TRIAGE starting script (persisted). relpath of a unified-store doc,
   // or null. Used by triageStartProject for that repo's triage pane; falls back
   // to the verbatim TRIAGE_PROMPT when unset. Keyed by repoPromptKey.
@@ -626,8 +683,21 @@ export const useAppStore = create<AppStore>()(
       consoleBroadcast: false,
       setConsoleBroadcast: (v) => set({ consoleBroadcast: v }),
       focusQueue: [],
+      focusTarget: DEFAULT_FOCUS_TARGET,
+      setFocusTarget: (target) =>
+        // Re-gate the live queue against the new target so panes that no longer
+        // match drop out (and the cursor isn't stranded on them).
+        set((s) => ({
+          focusTarget: target,
+          focusQueue: s.focusQueue.filter((q) => shouldFocus(s.paneRoles[`t${q.tab}p${q.pane}`], target)),
+        })),
       enqueueFocus: (tab, pane) =>
-        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, { tab, pane }) })),
+        // Role-aware gate (#392): only queue the pane if its role matches the
+        // active focus target (a plain console always queues except under "none").
+        set((s) =>
+          shouldFocus(s.paneRoles[`t${tab}p${pane}`], s.focusTarget)
+            ? { focusQueue: enqueueFocusQueue(s.focusQueue, { tab, pane }) }
+            : {}),
       removeFocus: (tab, pane) =>
         set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, { tab, pane }) })),
       clearFocusQueue: () => set({ focusQueue: [] }),
@@ -691,6 +761,7 @@ export const useAppStore = create<AppStore>()(
       setPaneInitCmd: (paneId, cmd) =>
         set((s) => ({ paneInitCmds: { ...s.paneInitCmds, [paneId]: cmd } })),
       paneStartupPromptDocs: {},
+      paneReferenceDocs: {},
       paneCheckpointDocs: {},
       paneStartupPromptText: {},
       paneContinue: {},
@@ -1014,6 +1085,8 @@ export const useAppStore = create<AppStore>()(
             repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
             repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
             repoAllowedCommands:    byRepoKey(s.repoAllowedCommands),
+            refContextProject:      byKey(s.refContextProject),
+            refContextRepo:         byRepoKey(s.refContextRepo),
             ...(clearActive
               ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], projectsView: "list" as const }
               : {}),
@@ -1026,6 +1099,7 @@ export const useAppStore = create<AppStore>()(
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
+          refContextDefault: [], refContextProject: {}, refContextRepo: {},
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
           activeProjectNumber: 0, activeProjectRepos: [],
           planningSessionKey: "", planningTitle: "", planningPitch: "",
@@ -1041,6 +1115,21 @@ export const useAppStore = create<AppStore>()(
       repoStartupPromptDoc: {},
       setRepoStartupPromptDoc: (projectId, repo, doc) =>
         set((s) => ({ repoStartupPromptDoc: { ...s.repoStartupPromptDoc, [repoPromptKey(projectId, repo)]: doc } })),
+      refContextDefault: [],
+      refContextProject: {},
+      refContextRepo: {},
+      toggleReferenceContext: (level, key, doc) =>
+        set((s) => {
+          const toggle = (list: string[]): string[] =>
+            list.includes(doc) ? list.filter((d) => d !== doc) : [...list, doc];
+          if (level === "default") return { refContextDefault: toggle(s.refContextDefault) };
+          if (level === "project") {
+            const k = key ?? "";
+            return { refContextProject: { ...s.refContextProject, [k]: toggle(s.refContextProject[k] ?? []) } };
+          }
+          const k = key ?? "";
+          return { refContextRepo: { ...s.refContextRepo, [k]: toggle(s.refContextRepo[k] ?? []) } };
+        }),
       repoTriagePromptDoc: {},
       setRepoTriagePromptDoc: (projectId, repo, doc) =>
         set((s) => ({ repoTriagePromptDoc: { ...s.repoTriagePromptDoc, [repoPromptKey(projectId, repo)]: doc } })),
@@ -1136,6 +1225,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneInitCmds = { ...s.paneInitCmds };
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
+          const newPaneReferenceDocs     = { ...s.paneReferenceDocs };
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
@@ -1151,11 +1241,7 @@ export const useAppStore = create<AppStore>()(
           const newDisabledPanes = { ...s.disabledPanes };
           const tabPaneNames: Record<number, string> = {};
           const paneCount = cols * rows;
-          const assignments = {
-            defaultStartupPromptDoc: s.defaultStartupPromptDoc,
-            projectStartupPromptDoc: s.projectStartupPromptDoc,
-            repoStartupPromptDoc: s.repoStartupPromptDoc,
-          };
+          const assignments = buildAssignments(s);
           for (let i = 0; i < paneCount; i++) {
             const key = `t${newTabIdx}p${i}`;
             if (i < count) {
@@ -1175,9 +1261,17 @@ export const useAppStore = create<AppStore>()(
                 newPaneStartupPromptDocs[key] = triageDoc;
               } else {
                 newPaneStartupPromptText[key] = TRIAGE_PROMPT;
-                const doc = resolveStartupPromptDoc(assignments, projectId, fullName ?? "");
+                // Resolution moved to the assignments module (#324/#326): startup
+                // prompt is the override cascade; reference context accumulates.
+                const doc = resolveStartupPrompt(assignments, { projectId, repo: fullName ?? "" });
                 newPaneStartupPromptDocs[key] = doc ?? "";
               }
+              // Reference-context docs (#326): injected as background context for
+              // this pane regardless of which startup prompt won above. Keyed by
+              // the sanitized project key (projKey) so KB-page project assignments
+              // — which use the same key — resolve here.
+              const refDocs = resolveReferenceContext(assignments, { projectId: projKey, repo: fullName ?? "" });
+              if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
               newPaneAllowedCommands[key] = resolveAllowedCommands(
                 s.allowedCommands,
                 s.projectAllowedCommands[projectId],
@@ -1217,6 +1311,7 @@ export const useAppStore = create<AppStore>()(
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
+            paneReferenceDocs: newPaneReferenceDocs,
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneContinue: newPaneContinue,
             paneAllowedCommands: newPaneAllowedCommands,
@@ -1268,6 +1363,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneInitCmds          = { ...s.paneInitCmds };
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
+          const newPaneReferenceDocs     = { ...s.paneReferenceDocs };
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
@@ -1287,6 +1383,8 @@ export const useAppStore = create<AppStore>()(
           // Same resolved extensions for every pane — they share the project scope.
           const fleetExts = resolveExtensions(s.extensions, projectKey);
           const fleetSkills = resolveSkills(s.skills, projectKey);
+          // Reference-context assignments resolved per pane below (#326).
+          const fleetAssignments = buildAssignments(s);
 
           let tabs = s.tabs;
           let firstTabIdx = -1;
@@ -1314,6 +1412,7 @@ export const useAppStore = create<AppStore>()(
               // Clear any stale wiring from a prior run of this slot.
               delete newPaneStartupPromptText[key];
               delete newPaneStartupPromptDocs[key];
+              delete newPaneReferenceDocs[key];
               delete newPaneCheckpointDocs[key];
               delete newPaneExtensions[key];
               delete newPaneRoles[key];
@@ -1334,6 +1433,13 @@ export const useAppStore = create<AppStore>()(
                   newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
                   newPaneAllowedCommands[key] = projectCmds;
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
+                  // Project-level reference context for the director (no repo
+                  // scope). Keyed by the sanitized project key (safeKey) to match
+                  // the KB page's project assignments.
+                  {
+                    const refDocs = resolveReferenceContext(fleetAssignments, { projectId: safeKey });
+                    if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
+                  }
                   tabPaneNames[i] = "director";
                   newPaneDirectorDrive[key] = resolveDirectorDrive(fleet.director.drive);
                   newPaneDirectorMode[key] = strategySettings(resolveStrategy(undefined, fleet.strategy)).director;
@@ -1354,6 +1460,12 @@ export const useAppStore = create<AppStore>()(
                   // Per-agent checkpoint doc (keyed by stream id) so each agent keeps
                   // its own "where we left off" note.
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
+                  // Repo-scoped reference context for this worker (#326). Keyed by
+                  // the sanitized project key (safeKey) to match KB-page assignments.
+                  {
+                    const refDocs = resolveReferenceContext(fleetAssignments, { projectId: safeKey, repo: sess.repo });
+                    if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
+                  }
                   newPaneStream[key] = { repo: sess.repo, branch: worktreeSlug(sess.id) };
                   tabPaneNames[i] = sess.name;
                   // Bridge pane id → stream so the coordinator can resolve which pane
@@ -1398,6 +1510,7 @@ export const useAppStore = create<AppStore>()(
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
+            paneReferenceDocs: newPaneReferenceDocs,
             paneContinue: newPaneContinue,
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneAllowedCommands: newPaneAllowedCommands,
@@ -1759,6 +1872,7 @@ export const useAppStore = create<AppStore>()(
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         coordAutoWake:        s.coordAutoWake,
+        focusTarget:          s.focusTarget,
         fleetPaneStreams:     s.fleetPaneStreams,
         pipelineRuns:         s.pipelineRuns,
         projectLocalRepos:    s.projectLocalRepos,
@@ -1771,6 +1885,9 @@ export const useAppStore = create<AppStore>()(
         projectStartupPromptDoc: s.projectStartupPromptDoc,
         repoStartupPromptDoc:    s.repoStartupPromptDoc,
         repoTriagePromptDoc:     s.repoTriagePromptDoc,
+        refContextDefault:       s.refContextDefault,
+        refContextProject:       s.refContextProject,
+        refContextRepo:          s.refContextRepo,
         configProfiles:       s.configProfiles,
         planSections:          s.planSections,
         planConfirmedSections: s.planConfirmedSections,

@@ -9,7 +9,9 @@ import {
   detectDeadlocks, hasDeadlock, defaultProducerOf, buildProducerOf,
   producesFromPaneStreams,
   parsePredicate, evaluatePredicates, pendingPredicateExprs,
-  coordNotifications,
+  coordNotifications, assignWakePrompt,
+  triageLanding, aggregateVerdicts, tallyVerdicts, planJuryAction,
+  type JurorVerdict,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -434,7 +436,7 @@ describe("cycle / deadlock detection", () => {
   // Park `session` blocked on each of `on` (as session: refs).
   const block = (session: string, ...on: string[]): Waiter =>
     ({ session, deps: on.map(sess), registeredAt: 0 });
-  const state = (...waiters: Waiter[]) => ({ latches: {}, waiters, waiting: [], asking: [] });
+  const state = (...waiters: Waiter[]) => ({ latches: {}, waiters, waiting: [], asking: [], issues: [] });
 
   it("parses + keys the session ref grammar", () => {
     expect(parseRef("session:t0p2")).toEqual({ kind: "session", id: "t0p2" });
@@ -472,7 +474,7 @@ describe("cycle / deadlock detection", () => {
 
   it("a satisfied dep breaks the edge, so it is no longer a deadlock", () => {
     const s = { latches: { "session:B": { state: "satisfied" as const, source: "merged" as const, at: 1 } },
-                waiters: [block("A", "B"), block("B", "A")], waiting: [], asking: [] };
+                waiters: [block("A", "B"), block("B", "A")], waiting: [], asking: [], issues: [] };
     // B's dep on A still stands, but A's dep on B is satisfied -> A->B edge gone -> no ring.
     expect(detectDeadlocks(s)).toEqual([]);
   });
@@ -484,7 +486,7 @@ describe("cycle / deadlock detection", () => {
         { session: "A", deps: [{ kind: "issue" as const, number: 2 }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [],
+      waiting: [], asking: [], issues: [],
     };
     expect(detectDeadlocks(s)).toEqual([]);
   });
@@ -497,7 +499,7 @@ describe("cycle / deadlock detection", () => {
         { session: "A", deps: [{ kind: "contract" as const, name: "Y" }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [],
+      waiting: [], asking: [], issues: [],
     };
     const producerOf = buildProducerOf([
       { session: "A", issues: ["#1"] },
@@ -568,7 +570,7 @@ describe("buildProducerOf — plan-derived resolver (#199 AC#7)", () => {
         { session: "A", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [],
+      waiting: [], asking: [], issues: [],
     };
     const producerOf = buildProducerOf([
       { session: "A", issues: ["#1"], owns: ["src/db/**"] },
@@ -602,7 +604,7 @@ describe("producesFromPaneStreams — pane-id bridge for the resolver (#199 AC#7
         { session: "t0p1", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
         { session: "t0p2", deps: [{ kind: "issue" as const, number: 7 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [],
+      waiting: [], asking: [], issues: [],
     };
     const paneStreams = {
       t0p1: { id: "db",  name: "DB",  repo: "o/r", owns: ["src/db/**"],  issues: ["#7"], dependsOn: [] },
@@ -651,7 +653,7 @@ describe("coordNotifications — mobile push payloads (#366)", () => {
 
   it("emits a deadlocked notification for a wait-for cycle and outranks stalled", () => {
     // A<->B deadlock; the same refs are unsatisfied (no producer can clear them).
-    const s = { latches: {}, waiters: [w("A", [sess("B")]), w("B", [sess("A")])], waiting: [], asking: [] };
+    const s = { latches: {}, waiters: [w("A", [sess("B")]), w("B", [sess("A")])], waiting: [], asking: [], issues: [] };
     const notes = coordNotifications(s);
     expect(notes.map((n) => n.kind)).toEqual(["deadlocked", "deadlocked"]);
     expect(notes.map((n) => n.session).sort()).toEqual(["A", "B"]);
@@ -660,7 +662,7 @@ describe("coordNotifications — mobile push payloads (#366)", () => {
 
   it("a deadlocked-AND-failed session reports deadlocked only (most severe wins)", () => {
     // A waits on session:B (the deadlock edge) and on a failed issue. One notification.
-    let s: CoordState = { latches: {}, waiters: [w("A", [sess("B"), issue(9)]), w("B", [sess("A")])], waiting: [], asking: [] };
+    let s: CoordState = { latches: {}, waiters: [w("A", [sess("B"), issue(9)]), w("B", [sess("A")])], waiting: [], asking: [], issues: [] };
     s = fail(s, issue(9), "nope", 1).state;
     const notes = coordNotifications(s);
     const byId = Object.fromEntries(notes.map((n) => [n.session, n.kind]));
@@ -796,5 +798,171 @@ describe("ask / answer round-trip (#369)", () => {
     expect(p).toMatch(/use cursor pagination/);
     expect(p).toMatch(/Do not ask the user/);
     expect(p).toMatch(/Resume from your checkpoint: cp\.md/);
+  });
+});
+
+describe("issuer flow (#376) — issue intake + director assign → worker inject", () => {
+  const line = (...cols: (string | number)[]) => cols.join("\t");
+
+  it("parses a bsc-issue line into an issue event with a default id", () => {
+    const ev = parseCoordLine(line("2026-06-03T00:00:00Z", "t0p3", "issue", "Add export button", "AC: clicking exports CSV", "own/web"));
+    expect(ev).toMatchObject({
+      type: "issue", session: "t0p3", title: "Add export button",
+      body: "AC: clicking exports CSV", suggested: "own/web",
+    });
+    expect((ev as { id: string }).id).toBe("t0p3@" + Date.parse("2026-06-03T00:00:00Z"));
+  });
+
+  it("uses an explicit issue id when provided", () => {
+    const ev = parseCoordLine(line("2026-06-03T00:00:00Z", "t0p3", "issue", "T", "", "", "ISS-1"));
+    expect((ev as { id: string }).id).toBe("ISS-1");
+  });
+
+  it("rejects an issue line with no title", () => {
+    expect(parseCoordLine(line("2026-06-03T00:00:00Z", "t0p3", "issue", ""))).toBeNull();
+  });
+
+  it("an issue event folds into the director's pending-issue list (dedup by id)", () => {
+    const e1 = parseCoordLine(line("2026-06-03T00:00:00Z", "t0p3", "issue", "A", "", "", "ISS-1"))!;
+    const e2 = parseCoordLine(line("2026-06-03T00:00:01Z", "t0p3", "issue", "A (refined)", "", "", "ISS-1"))!;
+    let s = emptyCoordState();
+    s = applyCoordEvent(s, e1).state;
+    s = applyCoordEvent(s, e2).state;
+    expect(s.issues).toHaveLength(1);
+    expect(s.issues[0].title).toBe("A (refined)");
+  });
+
+  it("parses a bsc-assign line and produces an injection for the target worker", () => {
+    const ev = parseCoordLine(line("2026-06-03T00:00:02Z", "director", "assign", "t1p2", "Build the export button", "ISS-1", "Add export button"));
+    expect(ev).toMatchObject({ type: "assign", target: "t1p2", body: "Build the export button", issueId: "ISS-1", title: "Add export button" });
+    const r = applyCoordEvent(emptyCoordState(), ev!);
+    expect(r.assigned).toEqual([{ session: "t1p2", title: "Add export button", body: "Build the export button", checkpoint: undefined, at: Date.parse("2026-06-03T00:00:02Z") }]);
+  });
+
+  it("assign clears the matching pending issue and resumes a parked target", () => {
+    const log = [
+      line("2026-06-03T00:00:00Z", "t0p3", "issue", "Add export", "AC", "own/web", "ISS-1"),
+      line("2026-06-03T00:00:01Z", "t1p2", "ask", "what next?"),
+      line("2026-06-03T00:00:02Z", "director", "assign", "t1p2", "Do ISS-1", "ISS-1", "Add export"),
+    ];
+    const r = ingestCoordLog(log);
+    expect(r.state.issues).toHaveLength(0);            // pending issue cleared
+    expect(r.state.asking.find((a) => a.session === "t1p2")).toBeUndefined(); // worker resumed
+    expect(r.assigned.map((a) => a.session)).toEqual(["t1p2"]);
+  });
+
+  it("an assigned wake stops being pending once the worker acks with `woke`", () => {
+    const log = [
+      line("2026-06-03T00:00:02Z", "director", "assign", "t1p2", "Do it", "", ""),
+      line("2026-06-03T00:00:03Z", "t1p2", "woke", ""),
+    ];
+    expect(ingestCoordLog(log).assigned).toEqual([]);
+  });
+
+  it("assignWakePrompt carries the title + body and forbids asking the user", () => {
+    const p = assignWakePrompt({ session: "t1p2", title: "Add export", body: "Build it; AC: CSV", at: 1 });
+    expect(p).toMatch(/assigned you new work: Add export/);
+    expect(p).toMatch(/Build it; AC: CSV/);
+    expect(p).toMatch(/Do not ask the user/);
+  });
+});
+
+describe("verification jury (#394)", () => {
+  const j = (juror: string, verdict: "pass" | "reject", reason?: string, relevant?: boolean): JurorVerdict =>
+    ({ juror, verdict, reason, relevant });
+
+  describe("triageLanding (risk triage)", () => {
+    it("fast-paths a small, low-risk change", () => {
+      expect(triageLanding({ diffLines: 12, coverageDelta: 0 })).toBe("fast-path");
+      expect(triageLanding({})).toBe("fast-path");
+    });
+
+    it("convenes a panel on any high-risk signal", () => {
+      expect(triageLanding({ touchesSharedOrContract: true })).toBe("panel");
+      expect(triageLanding({ securitySensitive: true })).toBe("panel");
+      expect(triageLanding({ revertedBefore: true })).toBe("panel");
+      expect(triageLanding({ diffLines: 200 })).toBe("panel");
+      expect(triageLanding({ coverageDelta: -5 })).toBe("panel");
+    });
+
+    it("honors a custom threshold config", () => {
+      expect(triageLanding({ diffLines: 60 }, { maxDiffLines: 50, minCoverageDelta: -10 })).toBe("panel");
+      expect(triageLanding({ coverageDelta: -3 }, { maxDiffLines: 50, minCoverageDelta: -10 })).toBe("fast-path");
+    });
+  });
+
+  describe("aggregateVerdicts", () => {
+    it("veto: any concrete reject fails the landing", () => {
+      const r = aggregateVerdicts([j("a", "pass"), j("b", "reject", "null deref at L20")], "veto");
+      expect(r.verdict).toBe("reject");
+      expect(r.rejecters).toEqual(["b"]);
+      expect(r.reason).toBe("null deref at L20");
+    });
+
+    it("majority: rejects only when more than half reject", () => {
+      expect(aggregateVerdicts([j("a", "reject", "x"), j("b", "pass"), j("c", "pass")], "majority").verdict).toBe("pass");
+      expect(aggregateVerdicts([j("a", "reject", "x"), j("b", "reject", "y"), j("c", "pass")], "majority").verdict).toBe("reject");
+    });
+
+    it("pass-unless-concrete: a reject with no reason is noise and is ignored", () => {
+      // One noisy juror rejects without a reason → veto should still pass.
+      expect(aggregateVerdicts([j("noisy", "reject"), j("b", "pass")], "veto").verdict).toBe("pass");
+      // reject-on-doubt counts it.
+      expect(aggregateVerdicts([j("noisy", "reject"), j("b", "pass")], "veto", "reject-on-doubt").verdict).toBe("reject");
+    });
+
+    it("quorum: only jurors whose slice the change touches vote", () => {
+      // Off-slice juror rejects but is irrelevant → quorum passes; veto would reject.
+      const verdicts = [j("onslice", "pass", undefined, true), j("offslice", "reject", "unrelated", false)];
+      expect(aggregateVerdicts(verdicts, "quorum").verdict).toBe("pass");
+      expect(aggregateVerdicts(verdicts, "veto").verdict).toBe("reject");
+    });
+
+    it("is robust to a single noisy rejecter among a passing majority (majority rule)", () => {
+      const r = aggregateVerdicts([j("a", "pass"), j("b", "pass"), j("c", "reject", "maybe?")], "majority");
+      expect(r.verdict).toBe("pass");
+    });
+  });
+
+  describe("tallyVerdicts", () => {
+    it("groups verdict events by target, latest-per-juror wins", () => {
+      const ev = (juror: string, target: string, v: string, reason = "") =>
+        parseCoordLine(["2026-06-03T00:00:00Z", juror, "verdict", target, v, reason].join("\t"))!;
+      const tally = tallyVerdicts([ev("j1", "#42", "reject", "bug"), ev("j1", "#42", "pass"), ev("j2", "#42", "pass")]);
+      expect(tally.get("#42")).toHaveLength(2);                 // j1 + j2, j1's pass replaced its reject
+      expect(tally.get("#42")!.find((v) => v.juror === "j1")!.verdict).toBe("pass");
+    });
+  });
+
+  describe("planJuryAction (reject → revert + ping)", () => {
+    it("a passing panel takes no action", () => {
+      const action = planJuryAction("#42", [j("a", "pass"), j("b", "pass")], "veto");
+      expect(action.action).toBe("pass");
+    });
+
+    it("a rejecting panel reverts the landing ref and pings the owner with the reason", () => {
+      const action = planJuryAction("#42", [j("a", "reject", "breaks the contract at L9")], "veto");
+      expect(action.action).toBe("revert");
+      expect(action.ref).toEqual({ kind: "issue", number: 42 });
+      expect(action.reason).toBe("breaks the contract at L9");
+      expect(action.ping).toMatch(/breaks the contract at L9/);
+      expect(action.ping).toMatch(/reverted/);
+    });
+
+    it("the revert ref feeds the existing fail() reflex — the same watchdog machinery", () => {
+      const action = planJuryAction("session:t1p2", [j("a", "reject", "wrong")], "veto");
+      expect(action.ref).toEqual({ kind: "session", id: "t1p2" });
+      // Park a dependent on the landing, then apply the jury's revert via fail().
+      const s = registerWaiter(emptyCoordState(), w("dep", [action.ref!])).state;
+      const f = fail(s, action.ref!, action.reason ?? "", 1);
+      expect(f.state.latches["session:t1p2"].state).toBe("failed");
+      expect(f.stalled.map((x) => x.session)).toEqual(["dep"]);
+    });
+  });
+
+  it("parseCoordLine round-trips a bsc-verdict line", () => {
+    const ev = parseCoordLine(["2026-06-03T00:00:00Z", "juror-1", "verdict", "#42", "reject", "AC not met", "true"].join("\t"));
+    expect(ev).toMatchObject({ type: "verdict", juror: "juror-1", target: "#42", verdict: "reject", reason: "AC not met", relevant: true });
+    expect(parseCoordLine(["2026-06-03T00:00:00Z", "j", "verdict", "#42", "maybe"].join("\t"))).toBeNull(); // invalid verdict
   });
 });
