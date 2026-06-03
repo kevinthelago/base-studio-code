@@ -24,7 +24,7 @@ describe("Tabstrip rendering", () => {
   });
 
   it("renders an add button", () => {
-    render(<Tabstrip tabs={TABS} />);
+    render(<Tabstrip tabs={TABS} onAdd={() => {}} />);
     expect(screen.getByText("+")).toBeInTheDocument();
   });
 
@@ -54,7 +54,7 @@ describe("Tabstrip interactions", () => {
 
   it("does not call onSelect when the × button is clicked", () => {
     const onSelect = vi.fn();
-    render(<Tabstrip tabs={TABS} onSelect={onSelect} />);
+    render(<Tabstrip tabs={TABS} onSelect={onSelect} onClose={() => {}} />);
     fireEvent.click(screen.getAllByText("×")[0]);
     expect(onSelect).not.toHaveBeenCalled();
   });
@@ -69,13 +69,13 @@ describe("Tabstrip interactions", () => {
 
 describe("Tabstrip inline rename", () => {
   it("shows an input on double-click of the tab name", () => {
-    render(<Tabstrip tabs={TABS} />);
+    render(<Tabstrip tabs={TABS} onRename={() => {}} />);
     fireEvent.dblClick(screen.getByText("orchestrator"));
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
   it("pre-fills the input with the current tab name", () => {
-    render(<Tabstrip tabs={TABS} />);
+    render(<Tabstrip tabs={TABS} onRename={() => {}} />);
     fireEvent.dblClick(screen.getByText("orchestrator"));
     const input = screen.getByRole("textbox") as HTMLInputElement;
     expect(input.value).toBe("orchestrator");
@@ -178,7 +178,7 @@ describe("Tabstrip drag-to-reorder", () => {
   });
 
   it("shows the tear-off preview when the tab is dragged out of the strip", () => {
-    const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} />);
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} onTearOff={vi.fn()} />);
     layoutTabs(container);
     fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
     // cursor pulled well below the strip → outside → preview appears (portaled to body)
