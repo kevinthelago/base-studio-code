@@ -145,11 +145,9 @@ export default function App() {
   } = useAppStore();
 
   // Detached tab window (#430): when opened via tear-off (?detachTab=N), this
-  // window renders only that console tab. Computed once per window load.
+  // window renders only that console tab — pinned via ConsoleScreen's override so
+  // it never touches the shared `activeTabIdx`. Computed once per window load.
   const [detachIdx] = useState(() => detachedTabIndex());
-  useEffect(() => {
-    if (detachIdx !== null) { setScreen("console"); setActiveTab(detachIdx); }
-  }, [detachIdx, setScreen, setActiveTab]);
 
   // Mount the Knowledge Store (and spawn its claude session) lazily on first
   // visit, then keep it mounted so the PTY survives navigation. Avoids launching
@@ -300,7 +298,7 @@ export default function App() {
             <div className="page">
               {hasHydrated && tabs.length > 0 && (
                 <div style={{ display: "flex", flex: 1, flexDirection: "column", minHeight: 0 }}>
-                  <ConsoleScreen />
+                  <ConsoleScreen tabIdxOverride={detachIdx} />
                 </div>
               )}
             </div>
