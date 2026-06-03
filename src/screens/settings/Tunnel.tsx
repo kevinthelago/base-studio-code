@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "../../store";
 import { pairingPayload, type TunnelStatus } from "../../lib/tunnel";
@@ -145,7 +146,7 @@ export function TunnelSettings() {
               disabled={running}
               onChange={(e) => setTunnelRelayUrl(e.target.value)}
             />
-            <button className="btn" onClick={() => window.open(DEPLOY_URL, "_blank")}>
+            <button className="btn" onClick={() => openUrl(DEPLOY_URL)}>
               deploy a relay →
             </button>
           </div>
