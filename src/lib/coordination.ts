@@ -245,7 +245,10 @@ export type CoordEvent =
   | { type: "answer"; target: string; answer: string; at: number }
   // Issuer flow (#376): the issuer captures new work; the director routes it to a worker.
   | { type: "issue"; session: string; id: string; title: string; body?: string; suggested?: string; at: number }
-  | { type: "assign"; session: string; target: string; body: string; issueId?: string; title?: string; at: number };
+  | { type: "assign"; session: string; target: string; body: string; issueId?: string; title?: string; at: number }
+  // Verification jury (#394): a juror reports a structured verdict on a landing; the
+  // foreman tallies them and, on reject, drives the existing revert+ping reflex.
+  | { type: "verdict"; juror: string; target: string; verdict: JuryVerdict; reason?: string; relevant?: boolean; at: number };
 
 /**
  * Parse one TSV `$BSC_COORD_LOG` line into an event, or null if unrecognized.
@@ -297,6 +300,14 @@ export function parseCoordLine(line: string): CoordEvent | null {
       const target = (rest[0] ?? "").trim();
       if (!target) return null;
       return { type: "assign", session, target, body: rest[1] ?? "", issueId: rest[2]?.trim() || undefined, title: rest[3]?.trim() || undefined, at };
+    }
+    case "verdict": {
+      // payload = <target> \t <pass|reject> \t <reason?> \t <relevant?>; the juror is the session column.
+      const target = (rest[0] ?? "").trim();
+      const v = (rest[1] ?? "").trim().toLowerCase();
+      if (!target || (v !== "pass" && v !== "reject")) return null;
+      const relevant = rest[3] === undefined ? undefined : rest[3].trim() !== "false" && rest[3].trim() !== "0";
+      return { type: "verdict", juror: session, target, verdict: v, reason: rest[2]?.trim() || undefined, relevant, at };
     }
     case "woke":
       return { type: "woke", session, at };
@@ -392,6 +403,11 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
         woken: [], ready: false, stalled: [], answered: [], assigned,
       };
     }
+    case "verdict":
+      // Verdicts don't move the latch/waiter state — the foreman tallies them off the
+      // log (see {@link tallyVerdicts} / {@link planJuryAction}) and emits the revert
+      // (a `failed` event) when the panel rejects. So this fold is a no-op.
+      return { state: s, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
   }
 }
 
@@ -951,4 +967,166 @@ function tarjanCycles(adj: Map<string, Set<string>>): Deadlock[] {
 
   for (const n of adj.keys()) if (!idx.has(n)) connect(n);
   return cycles;
+}
+
+// -- Verification jury (#394) ----------------------------------------------------
+// The jury is the watchdog's BRAIN, not a new gate. Under self-merge a worker writes
+// the code AND its tests and merges on a green gate -- which proves internal
+// consistency, not correctness. The jury reviews POST-merge and async: each juror
+// judges the landing from a DIFFERENT anchor than the worker used (acceptance
+// criteria / lens / subsystem slice), so their errors are uncorrelated; a reject
+// drives the SAME revert+ping reflex the watchdog already runs (#382), with the
+// juror's reason as a fix-forward instruction. Pure + testable; the foreman/strategy
+// wiring lands on top.
+
+/** Cheap, risk-triage signals about a landing — decide fast-path vs convene a panel. */
+export interface LandingSignals {
+  /** The change touched a shared / contract file (high blast radius). */
+  touchesSharedOrContract?: boolean;
+  /** The change touched a security-sensitive path. */
+  securitySensitive?: boolean;
+  /** A region that was reverted before (repeat-offender). */
+  revertedBefore?: boolean;
+  /** Lines changed in the diff. */
+  diffLines?: number;
+  /** Coverage delta (negative = a drop). */
+  coverageDelta?: number;
+}
+
+export type TriageDecision = "fast-path" | "panel";
+
+/** Risk-triage thresholds (overridable). */
+export interface TriageConfig {
+  /** Diffs at/above this many lines convene a panel. */
+  maxDiffLines: number;
+  /** Coverage drops at/below this delta convene a panel. */
+  minCoverageDelta: number;
+}
+
+export const DEFAULT_TRIAGE_CONFIG: TriageConfig = { maxDiffLines: 150, minCoverageDelta: -1 };
+
+/**
+ * Risk-triage a landing: a cheap signal decides whether the full jury convenes or the
+ * change takes the fast-path (no panel). Any high-risk signal — a shared/contract file,
+ * a security path, a repeat-offender region, a large diff, or a coverage drop — forces a
+ * panel; otherwise fast-path. Like risk-based testing: spend the panel where it pays.
+ */
+export function triageLanding(sig: LandingSignals, cfg: TriageConfig = DEFAULT_TRIAGE_CONFIG): TriageDecision {
+  if (sig.touchesSharedOrContract || sig.securitySensitive || sig.revertedBefore) return "panel";
+  if ((sig.diffLines ?? 0) >= cfg.maxDiffLines) return "panel";
+  if (sig.coverageDelta !== undefined && sig.coverageDelta <= cfg.minCoverageDelta) return "panel";
+  return "fast-path";
+}
+
+export type JuryVerdict = "pass" | "reject";
+
+/** One juror's structured verdict on a landing. `relevant` (default true) marks whether
+ *  the change touches this juror's slice — used by the quorum rule. */
+export interface JurorVerdict {
+  juror: string;
+  verdict: JuryVerdict;
+  reason?: string;
+  location?: string;
+  relevant?: boolean;
+}
+
+/** How the foreman tallies the panel. veto: any reject fails. majority: >half reject.
+ *  quorum: only jurors whose slice the change touches vote, majority of those. */
+export type AggregationRule = "veto" | "majority" | "quorum";
+
+/** Strictness when a juror is uncertain. pass-unless-concrete (default for a merge gate):
+ *  only a reject WITH a concrete reason counts — keeps the fleet flowing. reject-on-doubt:
+ *  every reject counts (safety over speed; for bug-hunts). */
+export type JuryStrictness = "pass-unless-concrete" | "reject-on-doubt";
+
+export interface JuryAggregate {
+  verdict: JuryVerdict;
+  /** The jurors whose rejection counted toward the outcome. */
+  rejecters: string[];
+  /** The first counted rejecter's reason — the fix-forward instruction. */
+  reason?: string;
+}
+
+/**
+ * Aggregate a panel's verdicts into one outcome, robust to noisy jurors. Under the
+ * default `pass-unless-concrete` strictness a reject only counts if it carries a reason,
+ * so a juror that rejects on vague doubt can't sink a landing. The `quorum` rule first
+ * restricts to jurors whose slice the change touches (`relevant !== false`), so an
+ * off-slice juror's noise is ignored entirely.
+ */
+export function aggregateVerdicts(
+  verdicts: JurorVerdict[],
+  rule: AggregationRule,
+  strictness: JuryStrictness = "pass-unless-concrete",
+): JuryAggregate {
+  const counts = (v: JurorVerdict) =>
+    v.verdict === "reject" && (strictness === "reject-on-doubt" || !!v.reason?.trim());
+  const panel = rule === "quorum" ? verdicts.filter((v) => v.relevant !== false) : verdicts;
+  const rejects = panel.filter(counts);
+  const reject =
+    rule === "veto"
+      ? rejects.length > 0
+      : rejects.length * 2 > panel.length; // strict majority (of the relevant panel for quorum)
+  return {
+    verdict: reject ? "reject" : "pass",
+    rejecters: reject ? rejects.map((v) => v.juror) : [],
+    reason: reject ? rejects.find((v) => v.reason?.trim())?.reason : undefined,
+  };
+}
+
+/** Fold verdict events into per-landing tallies (keyed by the verdict `target`). A juror's
+ *  latest verdict on a target replaces an earlier one. Non-verdict events are ignored. */
+export function tallyVerdicts(events: CoordEvent[]): Map<string, JurorVerdict[]> {
+  const byTarget = new Map<string, Map<string, JurorVerdict>>();
+  for (const e of events) {
+    if (e.type !== "verdict") continue;
+    const jurors = byTarget.get(e.target) ?? new Map<string, JurorVerdict>();
+    jurors.set(e.juror, { juror: e.juror, verdict: e.verdict, reason: e.reason, relevant: e.relevant });
+    byTarget.set(e.target, jurors);
+  }
+  const out = new Map<string, JurorVerdict[]>();
+  for (const [target, jurors] of byTarget) out.set(target, [...jurors.values()]);
+  return out;
+}
+
+/** What the foreman does with a tallied landing: pass, or revert + ping the owner. The
+ *  `ref` is the landing parsed as a coord ref (an issue #, a `session:` id, …), ready to
+ *  feed into {@link fail} — the SAME revert reflex the watchdog runs (#382). */
+export interface JuryAction {
+  target: string;
+  action: "pass" | "revert";
+  ref: CoordRef | null;
+  /** The fix-forward reason (a counted rejecter's reason), present on a revert. */
+  reason?: string;
+  /** The owner-facing ping message, present on a revert. */
+  ping?: string;
+}
+
+/** Compose the owner-facing ping for a rejected landing — the fix-forward instruction. */
+export function juryPingMessage(target: string, reason: string | undefined): string {
+  return `The verification jury rejected ${target}: ${reason?.trim() || "see the jurors' notes"}. It was reverted — fix forward and re-land.`;
+}
+
+/**
+ * Decide the foreman's action for a landing from its panel: aggregate the verdicts and,
+ * on reject, produce a revert targeting the landing ref plus an owner ping carrying the
+ * reason. On pass, no action. This is the reject→revert+ping wiring in pure form — the
+ * caller feeds `ref` into {@link fail} and delivers `ping` via the existing notification
+ * path.
+ */
+export function planJuryAction(
+  target: string,
+  verdicts: JurorVerdict[],
+  rule: AggregationRule,
+  strictness: JuryStrictness = "pass-unless-concrete",
+): JuryAction {
+  const agg = aggregateVerdicts(verdicts, rule, strictness);
+  if (agg.verdict === "pass") return { target, action: "pass", ref: parseRef(target) };
+  return {
+    target,
+    action: "revert",
+    ref: parseRef(target),
+    reason: agg.reason,
+    ping: juryPingMessage(target, agg.reason),
+  };
 }

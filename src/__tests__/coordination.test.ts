@@ -10,6 +10,8 @@ import {
   producesFromPaneStreams,
   parsePredicate, evaluatePredicates, pendingPredicateExprs,
   coordNotifications, assignWakePrompt,
+  triageLanding, aggregateVerdicts, tallyVerdicts, planJuryAction,
+  type JurorVerdict,
 } from "../lib/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
@@ -862,5 +864,105 @@ describe("issuer flow (#376) — issue intake + director assign → worker injec
     expect(p).toMatch(/assigned you new work: Add export/);
     expect(p).toMatch(/Build it; AC: CSV/);
     expect(p).toMatch(/Do not ask the user/);
+  });
+});
+
+describe("verification jury (#394)", () => {
+  const j = (juror: string, verdict: "pass" | "reject", reason?: string, relevant?: boolean): JurorVerdict =>
+    ({ juror, verdict, reason, relevant });
+
+  describe("triageLanding (risk triage)", () => {
+    it("fast-paths a small, low-risk change", () => {
+      expect(triageLanding({ diffLines: 12, coverageDelta: 0 })).toBe("fast-path");
+      expect(triageLanding({})).toBe("fast-path");
+    });
+
+    it("convenes a panel on any high-risk signal", () => {
+      expect(triageLanding({ touchesSharedOrContract: true })).toBe("panel");
+      expect(triageLanding({ securitySensitive: true })).toBe("panel");
+      expect(triageLanding({ revertedBefore: true })).toBe("panel");
+      expect(triageLanding({ diffLines: 200 })).toBe("panel");
+      expect(triageLanding({ coverageDelta: -5 })).toBe("panel");
+    });
+
+    it("honors a custom threshold config", () => {
+      expect(triageLanding({ diffLines: 60 }, { maxDiffLines: 50, minCoverageDelta: -10 })).toBe("panel");
+      expect(triageLanding({ coverageDelta: -3 }, { maxDiffLines: 50, minCoverageDelta: -10 })).toBe("fast-path");
+    });
+  });
+
+  describe("aggregateVerdicts", () => {
+    it("veto: any concrete reject fails the landing", () => {
+      const r = aggregateVerdicts([j("a", "pass"), j("b", "reject", "null deref at L20")], "veto");
+      expect(r.verdict).toBe("reject");
+      expect(r.rejecters).toEqual(["b"]);
+      expect(r.reason).toBe("null deref at L20");
+    });
+
+    it("majority: rejects only when more than half reject", () => {
+      expect(aggregateVerdicts([j("a", "reject", "x"), j("b", "pass"), j("c", "pass")], "majority").verdict).toBe("pass");
+      expect(aggregateVerdicts([j("a", "reject", "x"), j("b", "reject", "y"), j("c", "pass")], "majority").verdict).toBe("reject");
+    });
+
+    it("pass-unless-concrete: a reject with no reason is noise and is ignored", () => {
+      // One noisy juror rejects without a reason → veto should still pass.
+      expect(aggregateVerdicts([j("noisy", "reject"), j("b", "pass")], "veto").verdict).toBe("pass");
+      // reject-on-doubt counts it.
+      expect(aggregateVerdicts([j("noisy", "reject"), j("b", "pass")], "veto", "reject-on-doubt").verdict).toBe("reject");
+    });
+
+    it("quorum: only jurors whose slice the change touches vote", () => {
+      // Off-slice juror rejects but is irrelevant → quorum passes; veto would reject.
+      const verdicts = [j("onslice", "pass", undefined, true), j("offslice", "reject", "unrelated", false)];
+      expect(aggregateVerdicts(verdicts, "quorum").verdict).toBe("pass");
+      expect(aggregateVerdicts(verdicts, "veto").verdict).toBe("reject");
+    });
+
+    it("is robust to a single noisy rejecter among a passing majority (majority rule)", () => {
+      const r = aggregateVerdicts([j("a", "pass"), j("b", "pass"), j("c", "reject", "maybe?")], "majority");
+      expect(r.verdict).toBe("pass");
+    });
+  });
+
+  describe("tallyVerdicts", () => {
+    it("groups verdict events by target, latest-per-juror wins", () => {
+      const ev = (juror: string, target: string, v: string, reason = "") =>
+        parseCoordLine(["2026-06-03T00:00:00Z", juror, "verdict", target, v, reason].join("\t"))!;
+      const tally = tallyVerdicts([ev("j1", "#42", "reject", "bug"), ev("j1", "#42", "pass"), ev("j2", "#42", "pass")]);
+      expect(tally.get("#42")).toHaveLength(2);                 // j1 + j2, j1's pass replaced its reject
+      expect(tally.get("#42")!.find((v) => v.juror === "j1")!.verdict).toBe("pass");
+    });
+  });
+
+  describe("planJuryAction (reject → revert + ping)", () => {
+    it("a passing panel takes no action", () => {
+      const action = planJuryAction("#42", [j("a", "pass"), j("b", "pass")], "veto");
+      expect(action.action).toBe("pass");
+    });
+
+    it("a rejecting panel reverts the landing ref and pings the owner with the reason", () => {
+      const action = planJuryAction("#42", [j("a", "reject", "breaks the contract at L9")], "veto");
+      expect(action.action).toBe("revert");
+      expect(action.ref).toEqual({ kind: "issue", number: 42 });
+      expect(action.reason).toBe("breaks the contract at L9");
+      expect(action.ping).toMatch(/breaks the contract at L9/);
+      expect(action.ping).toMatch(/reverted/);
+    });
+
+    it("the revert ref feeds the existing fail() reflex — the same watchdog machinery", () => {
+      const action = planJuryAction("session:t1p2", [j("a", "reject", "wrong")], "veto");
+      expect(action.ref).toEqual({ kind: "session", id: "t1p2" });
+      // Park a dependent on the landing, then apply the jury's revert via fail().
+      let s = registerWaiter(emptyCoordState(), w("dep", [action.ref!])).state;
+      const f = fail(s, action.ref!, action.reason ?? "", 1);
+      expect(f.state.latches["session:t1p2"].state).toBe("failed");
+      expect(f.stalled.map((x) => x.session)).toEqual(["dep"]);
+    });
+  });
+
+  it("parseCoordLine round-trips a bsc-verdict line", () => {
+    const ev = parseCoordLine(["2026-06-03T00:00:00Z", "juror-1", "verdict", "#42", "reject", "AC not met", "true"].join("\t"));
+    expect(ev).toMatchObject({ type: "verdict", juror: "juror-1", target: "#42", verdict: "reject", reason: "AC not met", relevant: true });
+    expect(parseCoordLine(["2026-06-03T00:00:00Z", "j", "verdict", "#42", "maybe"].join("\t"))).toBeNull(); // invalid verdict
   });
 });
