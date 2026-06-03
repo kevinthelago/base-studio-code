@@ -953,7 +953,7 @@ describe("verification jury (#394)", () => {
       const action = planJuryAction("session:t1p2", [j("a", "reject", "wrong")], "veto");
       expect(action.ref).toEqual({ kind: "session", id: "t1p2" });
       // Park a dependent on the landing, then apply the jury's revert via fail().
-      let s = registerWaiter(emptyCoordState(), w("dep", [action.ref!])).state;
+      const s = registerWaiter(emptyCoordState(), w("dep", [action.ref!])).state;
       const f = fail(s, action.ref!, action.reason ?? "", 1);
       expect(f.state.latches["session:t1p2"].state).toBe("failed");
       expect(f.stalled.map((x) => x.session)).toEqual(["dep"]);
