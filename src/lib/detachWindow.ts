@@ -38,7 +38,7 @@ export function openDetachedSection(page: string, section: string, title?: strin
   u.hash = "";
   u.search = `?detach=${encodeURIComponent(page)}&section=${encodeURIComponent(section)}`;
   try {
-    new WebviewWindow(label, { url: u.href, title: title || section, width: 1100, height: 800 });
+    new WebviewWindow(label, { url: u.href, title: title || section, width: 1100, height: 800, decorations: false });
   } catch (e) {
     console.error("openDetachedSection failed:", e);
   }
@@ -64,6 +64,7 @@ export function openDetachedTab(idx: number, title?: string): void {
       title: title || `Console — tab ${idx + 1}`,
       width: 960,
       height: 720,
+      decorations: false, // use the app's custom titlebar, not the native OS frame
     });
   } catch (e) {
     console.error("openDetachedTab failed:", e);
