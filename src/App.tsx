@@ -16,6 +16,7 @@ import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
 import { AutomationsScreen } from "./screens/automations";
 import { ExtensionsScreen } from "./screens/extensions";
+import { SkillsScreen } from "./screens/skills";
 import { SettingsScreen } from "./screens/settings";
 import { ProjectsScreen } from "./screens/projects";
 import { AgentsScreen } from "./screens/agents";
@@ -191,6 +192,9 @@ export default function App() {
       case "extensions":
         parts.push("Extensions");
         break;
+      case "skills":
+        parts.push("Skills");
+        break;
       case "projects":
         parts.push("Projects");
         if (projectsView === "planning") {
@@ -326,6 +330,7 @@ export default function App() {
           {activeScreen === "github"     && <GitHubScreen />}
           {activeScreen === "automation" && <AutomationsScreen />}
           {activeScreen === "extensions" && <ExtensionsScreen />}
+          {activeScreen === "skills"     && <SkillsScreen />}
           {activeScreen === "agents"     && <AgentsScreen />}
           {activeScreen === "settings"   && <SettingsScreen />}
           </div>
