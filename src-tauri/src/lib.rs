@@ -4225,6 +4225,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
         .manage(PtyState(Mutex::new(HashMap::new())))
         .manage(tunnel::TunnelState::new())
         .invoke_handler(tauri::generate_handler![
