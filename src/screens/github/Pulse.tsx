@@ -4,6 +4,7 @@
 // Fetch + assembly is in hooks/useRepoPulse; this renders the view model with
 // loading / empty / error states using the shared chart primitives (#399).
 import { useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   LineArea, Bars, Donut, HBars, Legend,
   StatCard, CardHead, RangeToggle, Avatar, useTip, fmt,
@@ -338,7 +339,7 @@ function PulseBody({ data, repo }: { data: RepoPulseLive; repo: GithubRepo }) {
             </div>
             {r.desc && <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>{r.desc}</div>}
           </div>
-          <button className="btn ghost" onClick={() => window.open(`https://github.com/${r.name}`, "_blank")}>open on github →</button>
+          <button className="btn ghost" onClick={() => openUrl(`https://github.com/${r.name}`)}>open on github →</button>
         </div>
 
         <PulseDigest kpis={data.kpis} churnAreas={data.churnAreas} ci={data.ci} partialDiffs={data.partialDiffs} />
