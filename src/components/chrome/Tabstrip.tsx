@@ -30,6 +30,8 @@ interface TabstripProps {
   onChangeLayout?: (idx: number, layout: string) => void;
   /** Reorder a tab from index `from` to `to` (drag-and-drop within the strip). */
   onReorder?: (from: number, to: number) => void;
+  /** Tear off a tab into a new window — fired when it's dropped outside the strip. */
+  onTearOff?: (idx: number) => void;
 }
 
 export function Tabstrip({
@@ -41,6 +43,7 @@ export function Tabstrip({
   onRename,
   onChangeLayout,
   onReorder,
+  onTearOff,
 }: TabstripProps) {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -80,23 +83,37 @@ export function Tabstrip({
   useEffect(() => {
     if (dragIdx === null) return;
     const M = 10; // small slack around the strip so the edge isn't twitchy
+    const outside = (e: { clientX: number; clientY: number }, r: DOMRect) =>
+      e.clientX < r.left - M || e.clientX > r.right + M ||
+      e.clientY < r.top - M || e.clientY > r.bottom + M;
     const onWinDragOver = (e: DragEvent) => {
       const r = stripRef.current?.getBoundingClientRect();
       if (!r) return;
-      const inside =
-        e.clientX >= r.left - M && e.clientX <= r.right + M &&
-        e.clientY >= r.top - M && e.clientY <= r.bottom + M;
-      if (inside) {
-        setTearOff(null);
-      } else {
-        e.preventDefault(); // allow the eventual drop-to-open-window outside the strip
+      if (outside(e, r)) {
+        e.preventDefault(); // allow the drop-to-open-window outside the strip
         setDropPos(null);
         setTearOff({ x: e.clientX, y: e.clientY });
+      } else {
+        setTearOff(null);
       }
     };
+    // Dropping outside the strip tears the tab off into a new window; inside
+    // drops are handled by the strip's own onDrop (reorder).
+    const onWinDrop = (e: DragEvent) => {
+      const r = stripRef.current?.getBoundingClientRect();
+      if (r && outside(e, r) && dragIdx !== null) {
+        e.preventDefault();
+        onTearOff?.(dragIdx);
+      }
+      endDrag();
+    };
     window.addEventListener("dragover", onWinDragOver);
-    return () => window.removeEventListener("dragover", onWinDragOver);
-  }, [dragIdx]);
+    window.addEventListener("drop", onWinDrop);
+    return () => {
+      window.removeEventListener("dragover", onWinDragOver);
+      window.removeEventListener("drop", onWinDrop);
+    };
+  }, [dragIdx, onTearOff, endDrag]);
 
   function commitDrop() {
     if (dragIdx !== null && dropPos !== null) {

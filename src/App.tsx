@@ -23,6 +23,7 @@ import { AgentsScreen } from "./screens/agents";
 import { SKILL_KPIS } from "./data/skills";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
+import { openDetachedTab, detachedTabIndex } from "./lib/detachWindow";
 
 // ── New-tab dialog ────────────────────────────────────────────────────────────
 
@@ -142,6 +143,13 @@ export default function App() {
     setBscBaseDir,
     hasHydrated,
   } = useAppStore();
+
+  // Detached tab window (#430): when opened via tear-off (?detachTab=N), this
+  // window renders only that console tab. Computed once per window load.
+  const [detachIdx] = useState(() => detachedTabIndex());
+  useEffect(() => {
+    if (detachIdx !== null) { setScreen("console"); setActiveTab(detachIdx); }
+  }, [detachIdx, setScreen, setActiveTab]);
 
   // Mount the Knowledge Store (and spawn its claude session) lazily on first
   // visit, then keep it mounted so the PTY survives navigation. Avoids launching
@@ -282,6 +290,26 @@ export default function App() {
   // load. Hydration is a fast local read — a brief blank-canvas frame, not a wait.
   if (!hasHydrated) return <div className="app" />;
 
+  // Detached tab window: minimal chrome (no rail/tabstrip), just this tab's console.
+  if (detachIdx !== null) {
+    return (
+      <div className="app">
+        <Titlebar workspace={tabs[detachIdx]?.name ?? "Console"} />
+        <div className="shell">
+          <div className="main">
+            <div className="page">
+              {hasHydrated && tabs.length > 0 && (
+                <div style={{ display: "flex", flex: 1, flexDirection: "column", minHeight: 0 }}>
+                  <ConsoleScreen />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <SuperUserAchievement />
@@ -299,6 +327,7 @@ export default function App() {
               onRename={renameTab}
               onChangeLayout={handleLayoutChange}
               onReorder={moveTab}
+              onTearOff={(idx) => openDetachedTab(idx, tabs[idx]?.name)}
             />
           )}
           {/* ConsoleScreen stays mounted across all screen navigations so xterm

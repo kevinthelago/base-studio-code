@@ -189,6 +189,26 @@ describe("Tabstrip drag-to-reorder", () => {
     expect(document.querySelector(".tab-tearoff-preview")).toBeNull();
   });
 
+  it("tears off (onTearOff) when the tab is dropped outside the strip", () => {
+    const onTearOff = vi.fn();
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} onTearOff={onTearOff} />);
+    layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[1]);
+    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 150, clientY: 220 }));
+    fireEvent(window, new MouseEvent("drop", { bubbles: true, clientX: 150, clientY: 220 }));
+    expect(onTearOff).toHaveBeenCalledWith(1);
+  });
+
+  it("does not tear off when the tab is dropped inside the strip", () => {
+    const onTearOff = vi.fn();
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} onTearOff={onTearOff} />);
+    const strip = layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
+    dragOverAt(strip, 150);
+    fireEvent.drop(strip, { clientX: 150 });
+    expect(onTearOff).not.toHaveBeenCalled();
+  });
+
   it("highlights the strip and marks the drop gap during a drag", () => {
     const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} />);
     const strip = layoutTabs(container);
