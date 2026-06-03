@@ -50,6 +50,40 @@ export interface CoordState {
   waiting: WaitingSession[];
   /** Sessions that asked the DIRECTOR a question (#369) — woken when it answers. */
   asking: AskingSession[];
+  /** New work the ISSUER captured (#376), pending the director's routing decision. */
+  issues: PendingIssue[];
+}
+
+/** A shaped issue the issuer captured, awaiting the director's `bsc-assign` (#376). The
+ *  issuer does intake only; the director picks the owning worker by `owns`/stream. */
+export interface PendingIssue {
+  /** Stable key — the wire id, else `<session>@<at>`. Dedupes + lets `assign` clear it. */
+  id: string;
+  /** The issuer session that captured it. */
+  session: string;
+  /** Well-formed issue title. */
+  title: string;
+  /** Issue body (acceptance criteria, etc.); may be empty. */
+  body?: string;
+  /** The issuer's suggested repo or stream, from the plan (the director may override). */
+  suggested?: string;
+  /** When captured (ms epoch). */
+  at: number;
+}
+
+/** A pending injection produced when the director assigns an issue to a worker (#376).
+ *  Carries the issue into the target worker's fresh session, like {@link AnsweredWake}. */
+export interface AssignedWork {
+  /** The target worker session/pane id. */
+  session: string;
+  /** The issue title (when known). */
+  title?: string;
+  /** The issue body / instructions to start on. */
+  body: string;
+  /** Resume seed, if the target was parked with one. */
+  checkpoint?: string;
+  /** When assigned (ms epoch). */
+  at: number;
 }
 
 /** A session paused for the USER, not blocked on a dependency latch (#297). It carries
@@ -83,7 +117,7 @@ export interface AnsweredWake {
 }
 
 export function emptyCoordState(): CoordState {
-  return { latches: {}, waiters: [], waiting: [], asking: [] };
+  return { latches: {}, waiters: [], waiting: [], asking: [], issues: [] };
 }
 
 /** Canonical string key for a ref -- the `bsc-blocked --on <token>` wire form too. */
@@ -153,6 +187,7 @@ export function registerWaiter(s: CoordState, w: Waiter): { state: CoordState; r
     waiters: ready ? others : [...others, w],
     waiting: s.waiting,
     asking: s.asking,
+    issues: s.issues,
   };
   return { state, ready };
 }
@@ -169,10 +204,10 @@ export function satisfy(
   at: number,
 ): { state: CoordState; woken: Waiter[] } {
   const latches = { ...s.latches, [refKey(ref)]: { state: "satisfied" as const, source, at } };
-  const probe: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking };
+  const probe: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking, issues: s.issues };
   const woken = s.waiters.filter((w) => isReady(probe, w));
   const wokenIds = new Set(woken.map((w) => w.session));
-  return { state: { latches, waiters: s.waiters.filter((w) => !wokenIds.has(w.session)), waiting: s.waiting, asking: s.asking }, woken };
+  return { state: { latches, waiters: s.waiters.filter((w) => !wokenIds.has(w.session)), waiting: s.waiting, asking: s.asking, issues: s.issues }, woken };
 }
 
 /**
@@ -187,7 +222,7 @@ export function fail(
   at: number,
 ): { state: CoordState; stalled: Waiter[] } {
   const latches = { ...s.latches, [refKey(ref)]: { state: "failed" as const, reason, at } };
-  const next: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking };
+  const next: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking, issues: s.issues };
   return { state: next, stalled: stalledWaiters(next, ref) };
 }
 
@@ -207,7 +242,10 @@ export type CoordEvent =
   | { type: "woke"; session: string; at: number }
   | { type: "waiting"; session: string; reason: string; checkpoint?: string; at: number }
   | { type: "ask"; session: string; question: string; checkpoint?: string; at: number }
-  | { type: "answer"; target: string; answer: string; at: number };
+  | { type: "answer"; target: string; answer: string; at: number }
+  // Issuer flow (#376): the issuer captures new work; the director routes it to a worker.
+  | { type: "issue"; session: string; id: string; title: string; body?: string; suggested?: string; at: number }
+  | { type: "assign"; session: string; target: string; body: string; issueId?: string; title?: string; at: number };
 
 /**
  * Parse one TSV `$BSC_COORD_LOG` line into an event, or null if unrecognized.
@@ -247,6 +285,19 @@ export function parseCoordLine(line: string): CoordEvent | null {
       const target = (rest[0] ?? "").trim();
       return target ? { type: "answer", target, answer: rest[1] ?? "", at } : null;
     }
+    case "issue": {
+      // payload = <title> \t <body?> \t <suggested?> \t <id?>
+      const title = (rest[0] ?? "").trim();
+      if (!title) return null;
+      const id = rest[3]?.trim() || `${session}@${at}`;
+      return { type: "issue", session, id, title, body: rest[1]?.trim() || undefined, suggested: rest[2]?.trim() || undefined, at };
+    }
+    case "assign": {
+      // payload = <target> \t <body> \t <issueId?> \t <title?>
+      const target = (rest[0] ?? "").trim();
+      if (!target) return null;
+      return { type: "assign", session, target, body: rest[1] ?? "", issueId: rest[2]?.trim() || undefined, title: rest[3]?.trim() || undefined, at };
+    }
     case "woke":
       return { type: "woke", session, at };
     default:
@@ -256,34 +307,34 @@ export function parseCoordLine(line: string): CoordEvent | null {
 
 /** Fold one event into the latch state, returning what it triggered. */
 export function applyCoordEvent(s: CoordState, e: CoordEvent): {
-  state: CoordState; woken: Waiter[]; ready: boolean; stalled: Waiter[]; answered: AnsweredWake[];
+  state: CoordState; woken: Waiter[]; ready: boolean; stalled: Waiter[]; answered: AnsweredWake[]; assigned: AssignedWork[];
 } {
   switch (e.type) {
     case "blocked": {
       const r = registerWaiter(s, { session: e.session, deps: e.deps, checkpoint: e.checkpoint, registeredAt: e.at });
       // A session that now declares a real dependency leaves the manual-wait list.
       const state = { ...r.state, waiting: r.state.waiting.filter((w) => w.session !== e.session) };
-      return { state, woken: [], ready: r.ready, stalled: [], answered: [] };
+      return { state, woken: [], ready: r.ready, stalled: [], answered: [], assigned: [] };
     }
     case "waiting": {
       const waiting = [
         ...s.waiting.filter((w) => w.session !== e.session),
         { session: e.session, reason: e.reason, checkpoint: e.checkpoint, at: e.at },
       ];
-      return { state: { ...s, waiting }, woken: [], ready: false, stalled: [], answered: [] };
+      return { state: { ...s, waiting }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "landed":
     case "merged":
     case "closed": {
       const r = satisfy(s, e.ref, e.type, e.at);
-      return { state: r.state, woken: r.woken, ready: false, stalled: [], answered: [] };
+      return { state: r.state, woken: r.woken, ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "failed": {
       const r = fail(s, e.ref, e.reason, e.at);
-      return { state: r.state, woken: [], ready: false, stalled: r.stalled, answered: [] };
+      return { state: r.state, woken: [], ready: false, stalled: r.stalled, answered: [], assigned: [] };
     }
     case "woke": {
-      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session) }, woken: [], ready: false, stalled: [], answered: [] };
+      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "ask": {
       const asking = [
@@ -292,7 +343,7 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
       ];
       // Asking the director supersedes any prior user-wait registration for this session.
       const waiting = s.waiting.filter((w) => w.session !== e.session);
-      return { state: { ...s, asking, waiting }, woken: [], ready: false, stalled: [], answered: [] };
+      return { state: { ...s, asking, waiting }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "answer": {
       // The director is addressing a specific worker — resume it whatever its park (an
@@ -310,7 +361,35 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
           waiters: s.waiters.filter((w) => w.session !== e.target),
           waiting: s.waiting.filter((w) => w.session !== e.target),
         },
-        woken: [], ready: false, stalled: [], answered,
+        woken: [], ready: false, stalled: [], answered, assigned: [],
+      };
+    }
+    case "issue": {
+      // The issuer captured new work — append it to the director's pending-issue
+      // intake list (dedup by id so a replayed log doesn't double it).
+      const issues = [
+        ...s.issues.filter((i) => i.id !== e.id),
+        { id: e.id, session: e.session, title: e.title, body: e.body, suggested: e.suggested, at: e.at },
+      ];
+      return { state: { ...s, issues }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
+    }
+    case "assign": {
+      // The director routed an issue to a worker — resume that worker whatever its
+      // park and inject the issue, and clear the matching pending issue from intake.
+      const waiter = s.waiters.find((w) => w.session === e.target);
+      const waitS = s.waiting.find((w) => w.session === e.target);
+      const ask = s.asking.find((a) => a.session === e.target);
+      const checkpoint = ask?.checkpoint ?? waitS?.checkpoint ?? waiter?.checkpoint;
+      const assigned: AssignedWork[] = [{ session: e.target, title: e.title, body: e.body, checkpoint, at: e.at }];
+      return {
+        state: {
+          ...s,
+          asking: s.asking.filter((a) => a.session !== e.target),
+          waiters: s.waiters.filter((w) => w.session !== e.target),
+          waiting: s.waiting.filter((w) => w.session !== e.target),
+          issues: e.issueId ? s.issues.filter((i) => i.id !== e.issueId) : s.issues,
+        },
+        woken: [], ready: false, stalled: [], answered: [], assigned,
       };
     }
   }
@@ -322,7 +401,7 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
  * rebuild-from-disk. Unparseable lines are skipped.
  */
 export function ingestCoordLog(lines: string[], initial: CoordState = emptyCoordState()): {
-  state: CoordState; woken: Waiter[]; ready: Waiter[]; answered: AnsweredWake[];
+  state: CoordState; woken: Waiter[]; ready: Waiter[]; answered: AnsweredWake[]; assigned: AssignedWork[];
 } {
   let state = initial;
   const woken: Waiter[] = [];
@@ -333,12 +412,15 @@ export function ingestCoordLog(lines: string[], initial: CoordState = emptyCoord
   // `answeredPending`: asking sessions the director has answered (#369) but that have not
   // yet acked with a `woke` — the ones still awaiting an auto-wake with the answer.
   const answeredPending = new Map<string, AnsweredWake>();
+  // `assignedPending`: workers the director assigned new work (#376), awaiting injection.
+  const assignedPending = new Map<string, AssignedWork>();
   for (const line of lines) {
     const ev = parseCoordLine(line);
     if (!ev) continue;
     if (ev.type === "woke") {
       pending.delete(ev.session);
       answeredPending.delete(ev.session);
+      assignedPending.delete(ev.session);
       state = applyCoordEvent(state, ev).state;
       continue;
     }
@@ -349,8 +431,12 @@ export function ingestCoordLog(lines: string[], initial: CoordState = emptyCoord
       pending.set(w.session, w);
     }
     for (const a of r.answered) answeredPending.set(a.session, a);
+    for (const a of r.assigned) assignedPending.set(a.session, a);
   }
-  return { state, woken, ready: [...pending.values()], answered: [...answeredPending.values()] };
+  return {
+    state, woken, ready: [...pending.values()],
+    answered: [...answeredPending.values()], assigned: [...assignedPending.values()],
+  };
 }
 
 // -- Wake planning + inbox view (#199 slice 3) ----------------------------------
@@ -425,6 +511,23 @@ export function answerWakePrompt(a: AnsweredWake): string {
   ];
   if (a.checkpoint) {
     lines.push(`Resume from your checkpoint: ${a.checkpoint} — read it first, then continue.`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Compose the injection prompt for a worker the director assigned new work (#376).
+ * States it is new work routed by the director, carries the title + body, and points
+ * at the checkpoint so a resumed worker re-grounds before starting. The worker then
+ * flows into its normal implement → integrate loop.
+ */
+export function assignWakePrompt(a: AssignedWork): string {
+  const lines = [
+    `The director assigned you new work${a.title ? `: ${a.title}` : ""}. Start on it now and carry it through your normal loop (implement → gate → integrate). Do not ask the user.`,
+  ];
+  if (a.body.trim()) lines.push("", a.body.trim());
+  if (a.checkpoint) {
+    lines.push("", `First re-read your checkpoint: ${a.checkpoint}, then begin the new work.`);
   }
   return lines.join("\n");
 }
