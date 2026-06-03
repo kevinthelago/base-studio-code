@@ -77,16 +77,18 @@ jobs:
           # GitHub OAuth Device Flow (#431): the OAuth App Client ID is a public
           # identifier baked directly into the Rust binary (see GITHUB_CLIENT_ID in
           # src-tauri/src/lib.rs) — no secret/env needed at build time.
-          # macOS signing + notarization (#119). tauri-action signs/notarizes only
-          # when APPLE_SIGNING_IDENTITY is non-empty, so empty secrets ⇒ an unsigned
-          # macOS build instead of a pipeline failure. Populate the six secrets
-          # (docs/release-signing.md) to turn signing on with no code change.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # macOS signing (#119 / #440). We have no Apple Developer ID cert. We must
+          # NOT pass APPLE_CERTIFICATE from a (nonexistent) secret: GitHub sets an
+          # absent secret to "" — *present but empty* — and the Tauri bundler then
+          # runs `security import` on the empty cert and hard-fails, killing the .dmg.
+          # So sign AD-HOC ("-") instead: no cert/keychain import, and it signs the
+          # arm64 slice — required, a fully unsigned arm64 app won't launch on Apple
+          # Silicon at all. The .dmg is unsigned + un-notarized; users clear the
+          # quarantine once: `xattr -cr /Applications/base-studio-code.app`.
+          # To enable real Developer-ID signing + notarization later, add the six
+          # APPLE_* env vars + secrets back (docs/release-signing.md) — they break
+          # the build only while empty, so they go in together with the secrets.
+          APPLE_SIGNING_IDENTITY: '-'
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'base-studio-code ${{ github.ref_name }}'
@@ -100,6 +102,10 @@ jobs:
             | Linux | `.deb` or `.AppImage` |
 
             See the assets below.
+
+            > **macOS:** the app is currently unsigned/un-notarized. After dragging it
+            > to Applications, clear the download quarantine once:
+            > `xattr -cr /Applications/base-studio-code.app`
           # Auto-generate the changelog from PRs merged since the previous tag
           # (#121); the Downloads table above is pre-pended to those notes.
           generateReleaseNotes: true
