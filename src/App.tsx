@@ -18,7 +18,9 @@ import { AutomationsScreen } from "./screens/automations";
 import { ExtensionsScreen } from "./screens/extensions";
 import { SettingsScreen } from "./screens/settings";
 import { ProjectsScreen } from "./screens/projects";
+import { SkillsScreen } from "./screens/skills";
 import { AgentsScreen } from "./screens/agents";
+import { SKILL_KPIS } from "./data/skills";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
 
@@ -133,7 +135,7 @@ export default function App() {
     tabs, activeTabIdx, setActiveTab,
     addTab, closeTab, renameTab, setTabLayout,
     focusedAgentName,
-    activeRepoName, githubActiveTab,
+    activeRepoName,
     automationsTab,
     settingsSection,
     projectsView, activeProjectName, projectsBoardTab,
@@ -182,7 +184,6 @@ export default function App() {
       case "github":
         parts.push("GitHub");
         if (activeRepoName) parts.push(activeRepoName);
-        parts.push(githubActiveTab);
         break;
       case "automation":
         parts.push("Automations");
@@ -199,6 +200,9 @@ export default function App() {
           parts.push(activeProjectName);
           parts.push(projectsBoardTab);
         }
+        break;
+      case "skills":
+        parts.push("Skills");
         break;
       case "agents":
         parts.push("Agents");
@@ -326,12 +330,19 @@ export default function App() {
           {activeScreen === "github"     && <GitHubScreen />}
           {activeScreen === "automation" && <AutomationsScreen />}
           {activeScreen === "extensions" && <ExtensionsScreen />}
+          {activeScreen === "skills"     && <SkillsScreen />}
           {activeScreen === "agents"     && <AgentsScreen />}
           {activeScreen === "settings"   && <SettingsScreen />}
           </div>
           <StatusBar extra={
             activeScreen === "automation"
               ? <span className="s"><i className="warn" /> 4 schedules armed · next at 02:00</span>
+            : activeScreen === "skills"
+              ? <>
+                  <span className="s"><i /> {SKILL_KPIS.total} skills loaded</span>
+                  <span className="s"><i /> {SKILL_KPIS.invToday} invocations today</span>
+                  <span className="s"><i className="warn" /> bump-dep-safely 78%</span>
+                </>
               : undefined
           } />
         </div>

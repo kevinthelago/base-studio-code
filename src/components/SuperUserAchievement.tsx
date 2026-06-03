@@ -6,19 +6,23 @@ import "./superUserAchievement.css";
 
 // Easter egg (#365): when more than 10 agents are running at once, swipe a
 // "Super User" achievement down from the top (with a spring bounce) and play a
-// sound, hold it, then swipe it away. Fires once per upward crossing of the
-// threshold so it does not repeat while the fleet stays large.
+// sound, hold it, then swipe it away. Unlocks ONCE, EVER — the unlock is persisted
+// via the store (unlockAchievement returns true only on the first unlock), so a
+// later threshold re-crossing never re-fires it. View unlocked ones in Settings.
 const THRESHOLD = 10;
 
 export function SuperUserAchievement() {
   const liveAgents = useAppStore((s) => s.liveAgents);
+  const unlockAchievement = useAppStore((s) => s.unlockAchievement);
   const [phase, setPhase] = useState<"hidden" | "in" | "out">("hidden");
   const wasOverRef = useRef(false);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     const over = liveAgents > THRESHOLD;
-    if (over && !wasOverRef.current) {
+    // unlockAchievement is idempotent: true only the FIRST time it's ever unlocked,
+    // so the toast plays exactly once across all sessions.
+    if (over && !wasOverRef.current && unlockAchievement("super-user")) {
       timersRef.current.forEach(clearTimeout);
       timersRef.current = [];
       setPhase("in");
@@ -34,7 +38,7 @@ export function SuperUserAchievement() {
       timersRef.current.push(setTimeout(() => setPhase("hidden"), 4750));
     }
     wasOverRef.current = over;
-  }, [liveAgents]);
+  }, [liveAgents, unlockAchievement]);
 
   useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
 

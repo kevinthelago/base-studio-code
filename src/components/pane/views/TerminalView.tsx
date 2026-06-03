@@ -10,6 +10,7 @@ import { gateClaudeLaunch } from "../../../lib/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/terminal";
 import { composeStartupPrompt } from "../../../lib/checkpoint";
 import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
+import { resolveSkills, toSkillCfgs } from "../../../lib/skills";
 import { PendingPtyData } from "../../../lib/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/resumeClaude";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
@@ -392,12 +393,22 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         const exts = useAppStore.getState().paneExtensions[paneId]
           ?? resolveExtensions(useAppStore.getState().extensions, "");
         const { mcp, hooks } = toSessionPayloads(exts);
+        // Skills (reusable capability bundles) resolved for this session — like
+        // extensions, pre-resolved per pane at tab creation; fall back to globals
+        // for ad-hoc consoles. Written as .claude/skills/<slug>/SKILL.md.
+        const skillDefs = useAppStore.getState().paneSkills[paneId]
+          ?? resolveSkills(useAppStore.getState().skills, "");
+        const skills = toSkillCfgs(skillDefs);
         // Agents audit (#257): on a gated pane (role or profile assigned), install a
         // PreToolUse hooks: log each tool attempt for the Activity feed (bsc-audit),
         // and confine the file tools to the session's repo root (bsc-confine, #158).
         const gatedHooks = (cap || prof)
           ? [...hooks,
              { event: "PreToolUse", matcher: "", command: "bsc-audit" },
+             // Skill telemetry (#406): one PreToolUse line per invocation + one
+             // PostToolUse line per success → the skills.log the Skills screen reads.
+             { event: "PreToolUse", matcher: "Skill", command: "bsc-skill" },
+             { event: "PostToolUse", matcher: "Skill", command: "bsc-skill" },
              { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
              // Worker-only Stop hook (#369): when a worker tries to end its turn, bounce it
              // once toward continuing / deferring to the director via bsc-ask instead of
@@ -408,6 +419,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           cwd: initialCwd, allowedCommands, deniedCommands: denied,
           mcpServers: mcp, hooks: gatedHooks,
           allowToolRules, denyToolRules, askToolRules,
+          skills,
         }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         if (destroyed) return;
         // GitHub-readiness probe (#297): fleet/triage agents are told to push and

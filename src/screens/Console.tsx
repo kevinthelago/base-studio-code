@@ -161,6 +161,7 @@ export function ConsoleScreen() {
   const setPaneView          = useAppStore((s) => s.setPaneView);
   const setPaneName          = useAppStore((s) => s.setPaneName);
   const setPaneCwd           = useAppStore((s) => s.setPaneCwd);
+  const setPaneStatus        = useAppStore((s) => s.setPaneStatus);
   const setPaneDisabled      = useAppStore((s) => s.setPaneDisabled);
   const setFocusedAgentName  = useAppStore((s) => s.setFocusedAgentName);
   const setTabState          = useAppStore((s) => s.setTabState);
@@ -198,6 +199,9 @@ export function ConsoleScreen() {
   const handleStatusChange = useCallback((tabIdx: number, paneIdx: number, status: "run" | "idle") => {
     const pid = paneId(tabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
+    // Mirror into the store so other screens (the Fleet board, #412) can read
+    // live worker run/idle without owning the focus-queue machinery.
+    setPaneStatus(pid, status);
 
     // Focus queue is screen-level (one cursor across the app), and after #77
     // it now spans every tab — a background-tab agent finishing also joins
@@ -235,7 +239,7 @@ export function ConsoleScreen() {
       setTabState(tabIdx, tabState);
       return next;
     });
-  }, [autoAdvanceOnReply, setTabState, enqueueFocus, advanceFocus]);
+  }, [autoAdvanceOnReply, setTabState, enqueueFocus, advanceFocus, setPaneStatus]);
 
   // Reconcile the focus queue with reality: a session stays queued only while
   // it's idle, so whenever statuses change, drop any queued pane that's no
@@ -289,6 +293,7 @@ export function ConsoleScreen() {
       // Re-arm the launch gate so a later batch re-enable is serialized again.
       resetLaunchGate(pid);
       setPaneStatuses((s) => ({ ...s, [pid]: "idle" }));
+      setPaneStatus(pid, "idle");
       // Screen-level focus / fullscreen only matter for the active tab — only
       // clear them when this disable came from the active tab.
       if (tabIdx === st.activeTabIdx) {
@@ -296,7 +301,7 @@ export function ConsoleScreen() {
         if (st.fullscreenPaneIdx === paneIdx) setFullscreenPane(-1);
       }
     }
-  }, [setPaneDisabled, setFocusedPane, setFullscreenPane]);
+  }, [setPaneDisabled, setFocusedPane, setFullscreenPane, setPaneStatus]);
 
   const handleCwdChange = useCallback((tabIdx: number, paneIdx: number, path: string) => {
     setPaneCwd(paneId(tabIdx, paneIdx), path);

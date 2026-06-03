@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, main]
   pull_request:
-    branches: [main]
+    # Gate PRs into BOTH integration branches. Previously only `main` PRs ran the
+    # build/test/lint here, so PRs into `develop` (every feature + Dependabot PR)
+    # merged on CodeQL + audit alone — a broken build only surfaced post-merge on
+    # the develop push (#420). The dorny/paths-filter `changes` job keeps it cheap.
+    branches: [develop, main]
 
 jobs:
   # Detect which parts of the tree changed so the expensive jobs below only run
@@ -19,7 +23,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -122,3 +126,24 @@ jobs:
 
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # Single always-run check to require on branch protection. The frontend/rust
+  # jobs are conditional (skipped when their paths don't change), and a *skipped*
+  # required check can wedge a PR — so require this aggregate instead. It passes
+  # when each needed job succeeded OR was skipped, and fails only on a real
+  # failure/cancellation (#425).
+  gate:
+    name: CI gate
+    needs: [frontend, rust]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs passed (or were skipped)
+        run: |
+          echo "frontend=${{ needs.frontend.result }} rust=${{ needs.rust.result }}"
+          for r in "${{ needs.frontend.result }}" "${{ needs.rust.result }}"; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::a required CI job did not pass ($r)"; exit 1
+            fi
+          done
+          echo "CI gate passed"

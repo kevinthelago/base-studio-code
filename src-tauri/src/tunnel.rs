@@ -158,7 +158,7 @@ pub mod noise {
     #[allow(dead_code)] // wired into the relay transport in #242b
     pub fn responder(static_priv: &[u8]) -> Result<HandshakeState, snow::Error> {
         Builder::new(PARAMS.parse().expect("valid noise params"))
-            .local_private_key(static_priv)
+            .local_private_key(static_priv)?
             .build_responder()
     }
 
@@ -168,8 +168,8 @@ pub mod noise {
     #[allow(dead_code)] // mirrors the mobile initiator; exercised by tests + #242b
     pub fn initiator(static_priv: &[u8], remote_pub: &[u8]) -> Result<HandshakeState, snow::Error> {
         Builder::new(PARAMS.parse().expect("valid noise params"))
-            .local_private_key(static_priv)
-            .remote_public_key(remote_pub)
+            .local_private_key(static_priv)?
+            .remote_public_key(remote_pub)?
             .build_initiator()
     }
 }
@@ -572,7 +572,6 @@ mod transport {
     };
     use futures_util::stream::{SplitSink, SplitStream};
     use futures_util::{SinkExt, StreamExt};
-    use rand::RngCore;
     use serde::Serialize;
     use std::time::Duration;
     use tauri::{AppHandle, Emitter, Manager};
@@ -594,16 +593,14 @@ mod transport {
     /// (`[A-Za-z0-9_-]{16,64}`) — 24 random bytes → 32 base64url chars.
     pub fn generate_room_id() -> String {
         use base64::Engine;
-        let mut bytes = [0u8; 24];
-        rand::thread_rng().fill_bytes(&mut bytes);
+        let bytes: [u8; 24] = rand::random();
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
     }
 
     /// A pre-shared pairing secret (hex of 32 random bytes) — the mobile sends it back
     /// inside the Noise session as its `auth` token.
     pub fn generate_psk() -> String {
-        let mut bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut bytes);
+        let bytes: [u8; 32] = rand::random();
         bytes.iter().map(|b| format!("{b:02x}")).collect()
     }
 
@@ -649,7 +646,7 @@ mod transport {
 
     async fn send_msg(sink: &mut WsSink, tx: &mut snow::TransportState, msg: &ServerMsg) -> Result<(), String> {
         let frame = encode(tx, msg)?;
-        sink.send(Message::Binary(frame)).await.map_err(|e| e.to_string())
+        sink.send(Message::Binary(frame.into())).await.map_err(|e| e.to_string())
     }
 
     async fn send_output(sink: &mut WsSink, tx: &mut snow::TransportState, po: &PaneOutput) -> Result<(), String> {
@@ -668,7 +665,7 @@ mod transport {
     async fn next_binary(read: &mut WsStream) -> Result<Vec<u8>, String> {
         loop {
             match read.next().await {
-                Some(Ok(Message::Binary(b))) => return Ok(b),
+                Some(Ok(Message::Binary(b))) => return Ok(b.to_vec()),
                 Some(Ok(Message::Close(_))) | None => return Err("connection closed".into()),
                 Some(Ok(_)) => continue,
                 Some(Err(e)) => return Err(e.to_string()),
@@ -748,7 +745,7 @@ mod transport {
         let n = hs
             .write_message(&[], &mut scratch)
             .map_err(|e| format!("handshake msg2 write failed: {e}"))?;
-        sink.send(Message::Binary(scratch[..n].to_vec())).await.map_err(|e| e.to_string())?;
+        sink.send(Message::Binary(scratch[..n].to_vec().into())).await.map_err(|e| e.to_string())?;
         log::debug!("tunnel: handshake msg2 sent ({n} bytes); awaiting auth");
         let mut noise_tx = hs.into_transport_mode().map_err(|e| e.to_string())?;
 
