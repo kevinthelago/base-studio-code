@@ -2801,6 +2801,21 @@ async fn write_claude_config(
 // Repos live inside their project hub at `projects/<project>/<short-repo-name>`.
 // clone_repo: clones there via HTTPS; idempotent if the dir already exists.
 
+/// Suppress the console window a child process would otherwise pop on Windows
+/// when spawned from this GUI-subsystem app (#432). `CREATE_NO_WINDOW` =
+/// 0x08000000. No-op on other platforms. Apply to EVERY non-PTY `Command` spawn
+/// (PTYs use ConPTY, which is already headless) so launching panes/fleets doesn't
+/// flash a cmd window per git/gh call.
+#[inline]
+fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd
+}
+
 /// Clones `full_name` (an `owner/name` GitHub slug) into the project hub at
 /// `projects/<sanitize(project)>/<short-repo-name>` and returns the clone path.
 /// Idempotent: if the destination is already a git clone it is returned as-is.
@@ -2818,8 +2833,8 @@ async fn clone_repo(project: String, full_name: String) -> Result<String, String
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let url = format!("https://github.com/{}.git", full_name);
-    let status = std::process::Command::new("git")
-        .args(["clone", &url, &dest.to_string_lossy()])
+    let status = no_window(std::process::Command::new("git")
+        .args(["clone", &url, &dest.to_string_lossy()]))
         .status()
         .map_err(|e| e.to_string())?;
     if !status.success() {
@@ -2932,8 +2947,8 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
         }
         let clone_str = clone.to_string_lossy().into_owned();
         // Reuse the branch if a prior run already created it; otherwise create it.
-        let branch_exists = std::process::Command::new("git")
-            .args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")])
+        let branch_exists = no_window(std::process::Command::new("git")
+            .args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")]))
             .status().map(|s| s.success()).unwrap_or(false);
         let mut args: Vec<String> = vec!["-C".into(), clone_str, "worktree".into(), "add".into()];
         if branch_exists {
@@ -2944,7 +2959,7 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
             args.push(slug.clone());
             args.push(wt_str.clone());
         }
-        let status = std::process::Command::new("git").args(&args).status().map_err(|e| e.to_string())?;
+        let status = no_window(std::process::Command::new("git").args(&args)).status().map_err(|e| e.to_string())?;
         if !status.success() {
             return Err(format!("ensure_worktree: git worktree add failed for {repo} / {agent_id}"));
         }
@@ -3101,6 +3116,7 @@ async fn github_readiness(
     for (k, v) in session_env(&env_map) {
         cmd.env(k, v);
     }
+    no_window(&mut cmd);
     let (gh, git, auth) = match cmd.output() {
         Ok(out) => parse_github_probe(&String::from_utf8_lossy(&out.stdout)),
         Err(e) => {
