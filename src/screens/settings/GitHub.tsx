@@ -1,7 +1,21 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, type GithubUser, type GithubRepo } from "../../store";
 import { clearGithubCache } from "../../lib/github";
+import { mapDevicePoll, type DevicePollResult } from "../../lib/githubDeviceFlow";
+
+/** Mirror of the backend `DeviceStart` struct (`github_device_start`). */
+interface DeviceStart {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  interval: number;
+  expires_in: number;
+}
+
+const DEVICE_SCOPE = "repo read:org read:user";
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function ConnectCard() {
   const { setGithubToken, setGithubUser, setGithubRepos, setActiveRepo, setGithubConnected } = useAppStore();
@@ -10,26 +24,44 @@ function ConnectCard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Device flow: clientId === null until probed; "" means this build has no OAuth
+  // app configured, so we offer the PAT path only.
+  const [clientId, setClientId] = useState<string | null>(null);
+  const [device, setDevice] = useState<DeviceStart | null>(null);
+  const [deviceBusy, setDeviceBusy] = useState(false);
+  // Cancels an in-flight poll loop (unmount, or the user starting over).
+  const pollCancel = useRef(false);
+
+  useEffect(() => {
+    invoke<string>("github_client_id").then(setClientId).catch(() => setClientId(""));
+    return () => { pollCancel.current = true; };
+  }, []);
+
+  // Exchange a validated token for the user + repo list and flip to connected.
+  async function finishConnect(t: string) {
+    // New token (possibly a different account) — drop any cached bodies first.
+    await clearGithubCache().catch(() => {});
+    const user = await invoke<GithubUser>("github_request", { token: t, path: "user" });
+    const repos = await invoke<GithubRepo[]>("github_request", {
+      token: t,
+      path: "user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member",
+    });
+    setGithubToken(t);
+    setGithubUser(user);
+    setGithubRepos(Array.isArray(repos) ? repos : []);
+    if (Array.isArray(repos) && repos.length > 0) {
+      setActiveRepo(repos[0].full_name);
+    }
+    setGithubConnected(true);
+  }
+
   async function handleConnect() {
     const t = token.trim();
     if (!t) return;
     setLoading(true);
     setError(null);
     try {
-      // New token (possibly a different account) — drop any cached bodies first.
-      await clearGithubCache().catch(() => {});
-      const user = await invoke<GithubUser>("github_request", { token: t, path: "user" });
-      const repos = await invoke<GithubRepo[]>("github_request", {
-        token: t,
-        path: "user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member",
-      });
-      setGithubToken(t);
-      setGithubUser(user);
-      setGithubRepos(Array.isArray(repos) ? repos : []);
-      if (Array.isArray(repos) && repos.length > 0) {
-        setActiveRepo(repos[0].full_name);
-      }
-      setGithubConnected(true);
+      await finishConnect(t);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -37,9 +69,116 @@ function ConnectCard() {
     }
   }
 
+  async function handleDeviceConnect() {
+    setError(null);
+    setDeviceBusy(true);
+    pollCancel.current = false;
+    try {
+      const start = await invoke<DeviceStart>("github_device_start", { scope: DEVICE_SCOPE });
+      setDevice(start);
+      window.open(start.verification_uri, "_blank");
+
+      const deadline = Date.now() + start.expires_in * 1000;
+      let intervalSec = start.interval;
+      // Poll until authorized, error, expiry, or cancellation.
+      while (!pollCancel.current && Date.now() < deadline) {
+        await sleep(intervalSec * 1000);
+        if (pollCancel.current) return;
+        const res = await invoke<DevicePollResult>("github_device_poll", {
+          deviceCode: start.device_code,
+        });
+        const action = mapDevicePoll(res, intervalSec);
+        if (action.kind === "success") {
+          await finishConnect(action.token);
+          return; // connected — the card unmounts
+        }
+        if (action.kind === "error") {
+          setError(action.message);
+          setDevice(null);
+          return;
+        }
+        intervalSec = action.intervalSec; // honor slow_down
+      }
+      if (!pollCancel.current) {
+        setError("The code expired before you authorized. Please try again.");
+        setDevice(null);
+      }
+    } catch (e) {
+      setError(String(e));
+      setDevice(null);
+    } finally {
+      setDeviceBusy(false);
+    }
+  }
+
+  function cancelDevice() {
+    pollCancel.current = true;
+    setDevice(null);
+    setDeviceBusy(false);
+  }
+
   return (
     <div className="card">
       <h3 style={{ margin: "0 0 10px", fontFamily: "var(--mono)", fontSize: 14 }}>Connect GitHub account</h3>
+
+      {/* Device flow (when this build has an OAuth Client ID) */}
+      {clientId ? (
+        device ? (
+          <div style={{
+            marginBottom: 18, padding: "16px", borderRadius: 8,
+            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+          }}>
+            <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+              In the browser tab that just opened, enter this code to authorize:
+            </p>
+            <div style={{
+              fontFamily: "var(--mono)", fontSize: 26, fontWeight: 700, letterSpacing: ".18em",
+              textAlign: "center", color: "var(--accent)", padding: "10px 0",
+              userSelect: "all",
+            }}>
+              {device.user_code}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+              <span className="hint" style={{ flex: 1 }}>
+                Waiting for authorization at{" "}
+                <span style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontSize: 11 }}>
+                  {device.verification_uri.replace(/^https?:\/\//, "")}
+                </span>
+                …
+              </span>
+              <button className="btn ghost" style={{ height: 28, fontSize: 11 }} onClick={() => window.open(device.verification_uri, "_blank")}>
+                reopen
+              </button>
+              <button className="btn ghost danger" style={{ height: 28, fontSize: 11 }} onClick={cancelDevice}>
+                cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 18 }}>
+            <p style={{ margin: "0 0 12px", color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
+              Authorize base-studio-code on GitHub in your browser — no token to copy.
+            </p>
+            <button
+              className="btn primary"
+              onClick={handleDeviceConnect}
+              disabled={deviceBusy || loading}
+              style={{ height: 36, width: "100%" }}
+            >
+              {deviceBusy ? "Starting…" : "Connect with GitHub"}
+            </button>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10, margin: "16px 0 4px",
+              color: "var(--fg-dim)", fontSize: 10.5, fontFamily: "var(--mono)",
+            }}>
+              <div style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+              or use a token
+              <div style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+            </div>
+          </div>
+        )
+      ) : null}
+
       <p style={{ margin: "0 0 16px", color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
         Create a <b>Personal Access Token</b> at{" "}
         <span style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontSize: 11 }}>
@@ -82,7 +221,7 @@ function ConnectCard() {
       )}
 
       <div className="hint" style={{ marginTop: 8 }}>
-        Token stored locally · never sent to any server other than api.github.com
+        Token stored locally · never sent to any server other than github.com
       </div>
     </div>
   );
