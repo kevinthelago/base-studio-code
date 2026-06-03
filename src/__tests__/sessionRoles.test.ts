@@ -151,3 +151,26 @@ describe("roleWriteRules (write-tool guard)", () => {
     expect(roleWriteRules(worker).allow).toContain("Edit(src/api/**)");
   });
 });
+
+describe("issuer + juror roles (#376 / #394)", () => {
+  it("issuer may open GitHub issues but never writes code or git", () => {
+    const issuer = ROLE_DEFAULTS.issuer;
+    expect(issuer.github).toBe("write");
+    expect(issuer.git).toBe("read");
+    expect(issuer.code).toBe("none");
+    // github:write allows gh issue create; code:none denies every write tool.
+    expect(checkCommand(issuer, "gh issue create --title x").allowed).toBe(true);
+    expect(roleWriteRules(issuer).deny).toContain("Write");
+    expect(canWritePath(roleCapability("issuer", { writeGlobs: ["**"] }), "a.ts")).toBe(false);
+  });
+
+  it("juror is a read-only reviewer — judges, never edits or merges", () => {
+    const juror = ROLE_DEFAULTS.juror;
+    expect(juror.github).toBe("read");
+    expect(juror.git).toBe("read");
+    expect(juror.code).toBe("none");
+    expect(checkCommand(juror, "git merge develop").allowed).toBe(false);
+    expect(checkCommand(juror, "git log").allowed).toBe(true);
+    expect(roleWriteRules(juror).deny).toEqual(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+  });
+});
