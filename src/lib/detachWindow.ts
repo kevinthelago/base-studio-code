@@ -21,6 +21,29 @@ export function detachedTabIndex(search: string = window.location.search): numbe
   return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
+/** A detached page-section window's target (`?detach=<page>&section=<id>`), or
+ *  null for the main / console-tab windows. Pure. */
+export function detachedSection(search: string = window.location.search): { page: string; section: string } | null {
+  const p = new URLSearchParams(search);
+  const page = p.get("detach");
+  const section = p.get("section");
+  return page && section ? { page, section } : null;
+}
+
+/** Open a page's section (e.g. github → repos) in its own window (tear-off). */
+export function openDetachedSection(page: string, section: string, title?: string): void {
+  seq += 1;
+  const label = `tab-${page}-${section}-${seq}`.replace(/[^A-Za-z0-9/:_-]/g, "_");
+  const u = new URL(window.location.href);
+  u.hash = "";
+  u.search = `?detach=${encodeURIComponent(page)}&section=${encodeURIComponent(section)}`;
+  try {
+    new WebviewWindow(label, { url: u.href, title: title || section, width: 1100, height: 800 });
+  } catch (e) {
+    console.error("openDetachedSection failed:", e);
+  }
+}
+
 /**
  * Open tab `idx` in its own OS window. Best-effort: logs and swallows failures
  * so a denied/edge case never breaks the drag gesture.

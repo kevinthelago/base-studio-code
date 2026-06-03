@@ -23,7 +23,7 @@ import { AgentsScreen } from "./screens/agents";
 import { SKILL_KPIS } from "./data/skills";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
-import { openDetachedTab, detachedTabIndex } from "./lib/detachWindow";
+import { openDetachedTab, detachedTabIndex, detachedSection } from "./lib/detachWindow";
 
 // ── New-tab dialog ────────────────────────────────────────────────────────────
 
@@ -148,6 +148,9 @@ export default function App() {
   // window renders only that console tab — pinned via ConsoleScreen's override so
   // it never touches the shared `activeTabIdx`. Computed once per window load.
   const [detachIdx] = useState(() => detachedTabIndex());
+  // Detached page-section window (#463): ?detach=<page>&section=<id> renders just
+  // that page's section, no chrome. Computed once per window load.
+  const [detSection] = useState(() => detachedSection());
 
   // Mount the Knowledge Store (and spawn its claude session) lazily on first
   // visit, then keep it mounted so the PTY survives navigation. Avoids launching
@@ -287,6 +290,29 @@ export default function App() {
   // don't flash from store defaults (e.g. GitHub "not connected" → connected) on
   // load. Hydration is a fast local read — a brief blank-canvas frame, not a wait.
   if (!hasHydrated) return <div className="app" />;
+
+  // Detached page-section window: minimal chrome, just that page's section.
+  if (detSection) {
+    const sectionScreens: Record<string, (s: string) => React.ReactNode> = {
+      automations: (s) => <AutomationsScreen sectionOverride={s} />,
+    };
+    return (
+      <div className="app">
+        <Titlebar workspace={`${detSection.page} · ${detSection.section}`} />
+        <div className="shell">
+          <div className="main">
+            <div className="page">
+              {hasHydrated && (sectionScreens[detSection.page]?.(detSection.section) ?? (
+                <div style={{ padding: 24, fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>
+                  Unknown detached page: {detSection.page}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Detached tab window: minimal chrome (no rail/tabstrip), just this tab's console.
   if (detachIdx !== null) {

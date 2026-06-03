@@ -335,6 +335,11 @@ interface AppStore {
   // Automations
   automationsTab: "schedules" | "history";
   setAutomationsTab: (tab: AppStore["automationsTab"]) => void;
+  /** Persisted, user-arranged tab order per page (keyed by page id). A page opens
+   *  whatever tab the user dragged to the front, so the order IS the preference
+   *  (#463). Unknown/new tabs append; stale ids are ignored. */
+  pageTabOrder: Record<string, string[]>;
+  setPageTabOrder: (page: string, order: string[]) => void;
 
   // Settings
   settingsSection: string;
@@ -932,6 +937,9 @@ export const useAppStore = create<AppStore>()(
 
       automationsTab: "schedules",
       setAutomationsTab: (tab) => set({ automationsTab: tab }),
+      pageTabOrder: {},
+      setPageTabOrder: (page, order) =>
+        set((s) => ({ pageTabOrder: { ...s.pageTabOrder, [page]: order } })),
 
       settingsSection: "github",
       setSettingsSection: (section) => set({ settingsSection: section }),
@@ -1876,6 +1884,7 @@ export const useAppStore = create<AppStore>()(
         githubRepos:     s.githubRepos,
         activeRepoName:  s.activeRepoName,
         automationsTab:  s.automationsTab,
+        pageTabOrder:    s.pageTabOrder,
         settingsSection: s.settingsSection,
         tunnelRelayUrl:  s.tunnelRelayUrl,
         agentProfiles:   s.agentProfiles,
