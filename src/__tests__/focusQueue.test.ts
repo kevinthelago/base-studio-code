@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { enqueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
+import {
+  enqueue, removeFromQueue, nextInCycle, reconcileQueue,
+  shouldFocus, FOCUS_TARGETS, DEFAULT_FOCUS_TARGET, focusTargetLabel,
+  type QueuedPane,
+} from "../lib/focusQueue";
 
 const p = (tab: number, pane: number): QueuedPane => ({ tab, pane });
 
@@ -93,5 +97,52 @@ describe("reconcileQueue", () => {
     // status info for them. Defensive against transient empty-state moments.
     const q = [p(0, 1), p(1, 2)];
     expect(reconcileQueue(q, w({ 0: [1] }))).toEqual([p(0, 1), p(1, 2)]);
+  });
+});
+
+describe("shouldFocus (role-aware focus targeting #392)", () => {
+  it("default target is director", () => {
+    expect(DEFAULT_FOCUS_TARGET).toBe("director");
+  });
+
+  it("a plain console (no role) always queues except under 'none'", () => {
+    for (const t of FOCUS_TARGETS) {
+      expect(shouldFocus(undefined, t)).toBe(t !== "none");
+      expect(shouldFocus("", t)).toBe(t !== "none");
+    }
+  });
+
+  it("'none' queues nothing — not even the director or a console", () => {
+    expect(shouldFocus("director", "none")).toBe(false);
+    expect(shouldFocus("worker", "none")).toBe(false);
+    expect(shouldFocus(undefined, "none")).toBe(false);
+  });
+
+  it("'director' queues only director panes (workers run dark)", () => {
+    expect(shouldFocus("director", "director")).toBe(true);
+    expect(shouldFocus("worker", "director")).toBe(false);
+    expect(shouldFocus("triage", "director")).toBe(false);
+  });
+
+  it("'workers' queues only worker panes", () => {
+    expect(shouldFocus("worker", "workers")).toBe(true);
+    expect(shouldFocus("director", "workers")).toBe(false);
+  });
+
+  it("'fleet' queues both director and worker panes", () => {
+    expect(shouldFocus("director", "fleet")).toBe(true);
+    expect(shouldFocus("worker", "fleet")).toBe(true);
+    expect(shouldFocus("reviewer", "fleet")).toBe(false);
+  });
+
+  it("'everything' queues every role", () => {
+    for (const r of ["director", "worker", "triage", "reviewer", "tester", "conductor"]) {
+      expect(shouldFocus(r, "everything")).toBe(true);
+    }
+  });
+
+  it("exposes labelled presets in display order", () => {
+    expect(FOCUS_TARGETS).toEqual(["director", "workers", "fleet", "everything", "none"]);
+    expect(focusTargetLabel("fleet")).toBe("Director + workers");
   });
 });

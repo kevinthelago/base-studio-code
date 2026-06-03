@@ -7,7 +7,7 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
-import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, type QueuedPane } from "../lib/focusQueue";
+import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET, type QueuedPane, type FocusTarget } from "../lib/focusQueue";
 import { repoPromptKey } from "./../lib/startupPrompt";
 import { resolveStartupPrompt, resolveReferenceContext, type DocAssignments } from "../lib/assignments";
 import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey } from "../lib/projectPaths";
@@ -182,6 +182,11 @@ interface AppStore {
   // ConsoleScreen sees idle transitions for all panes and routes them here (#77).
   enqueueFocus: (tab: number, pane: number) => void;
   removeFocus: (tab: number, pane: number) => void;
+  // Role-aware focus targeting (#392, persisted). Which panes the autofocus queue
+  // surfaces — by default only the director (workers run dark, escalating via
+  // bsc-ask). enqueueFocus is gated by it; changing it re-gates the live queue.
+  focusTarget: FocusTarget;
+  setFocusTarget: (target: FocusTarget) => void;
   /** Wake a parked pane (#199): seed it with `prompt` as a FRESH claude session and
    *  remount its tab (runId bump). Returns false if the pane/tab is gone or disabled.
    *  The caller `pty_kill`s the pane first so the remount spawns fresh, not reconnect. */
@@ -678,8 +683,21 @@ export const useAppStore = create<AppStore>()(
       consoleBroadcast: false,
       setConsoleBroadcast: (v) => set({ consoleBroadcast: v }),
       focusQueue: [],
+      focusTarget: DEFAULT_FOCUS_TARGET,
+      setFocusTarget: (target) =>
+        // Re-gate the live queue against the new target so panes that no longer
+        // match drop out (and the cursor isn't stranded on them).
+        set((s) => ({
+          focusTarget: target,
+          focusQueue: s.focusQueue.filter((q) => shouldFocus(s.paneRoles[`t${q.tab}p${q.pane}`], target)),
+        })),
       enqueueFocus: (tab, pane) =>
-        set((s) => ({ focusQueue: enqueueFocusQueue(s.focusQueue, { tab, pane }) })),
+        // Role-aware gate (#392): only queue the pane if its role matches the
+        // active focus target (a plain console always queues except under "none").
+        set((s) =>
+          shouldFocus(s.paneRoles[`t${tab}p${pane}`], s.focusTarget)
+            ? { focusQueue: enqueueFocusQueue(s.focusQueue, { tab, pane }) }
+            : {}),
       removeFocus: (tab, pane) =>
         set((s) => ({ focusQueue: removeFromQueue(s.focusQueue, { tab, pane }) })),
       clearFocusQueue: () => set({ focusQueue: [] }),
@@ -1854,6 +1872,7 @@ export const useAppStore = create<AppStore>()(
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         coordAutoWake:        s.coordAutoWake,
+        focusTarget:          s.focusTarget,
         fleetPaneStreams:     s.fleetPaneStreams,
         pipelineRuns:         s.pipelineRuns,
         projectLocalRepos:    s.projectLocalRepos,
