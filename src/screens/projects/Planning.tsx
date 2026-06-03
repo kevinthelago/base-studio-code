@@ -564,6 +564,13 @@ export function Planning({ visible }: { visible: boolean }) {
   const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
   const ghStructure  = buildGhStructure(sections, publishRepos, projectTitle, planFleet[effectiveProjectId]);
 
+  // Live status of each GitHub object, keyed by the ids in buildGhStructure.
+  const [ghStatus, setGhStatus] = useState<GhStatusMap>({});
+  // Live issue-progression overlay (#393 Layer 2): node id -> NodeProgress
+  // reflecting what's actually CLOSED/done on GitHub for a published project.
+  // Declared before paneData so the memo below can fold it into the pane data.
+  const [ghProgress, setGhProgress] = useState<Record<string, NodeProgress>>({});
+
   // Real plan data for the ProjectPane (#: wire-in). Maps the fleet, agent
   // profiles, decomposed issues, phases, repos, and sections into the pane's
   // render shapes; the pane falls back to its sample data when this is empty.
@@ -576,8 +583,12 @@ export function Planning({ visible }: { visible: boolean }) {
       repos:    publishRepos,
       sections,
       pinned:   pinnedContext[effectiveProjectId],
+      // Live GitHub progression (#393 Layer 2) so the always-visible ProjectPane
+      // shows real milestone/issue percentages — not 0% — for a published project
+      // (#429). Same overlay the publish-time GitHubStructureCard renders.
+      progress: ghProgress,
     }),
-    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext],
+    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, ghProgress],
   );
   const [restarting, setRestarting] = useState(false);
 
@@ -586,11 +597,6 @@ export function Planning({ visible }: { visible: boolean }) {
   const [triaging, setTriaging] = useState(false);
   type PublishPhase = "idle" | "running" | "done" | "error";
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
-  // Live status of each GitHub object, keyed by the ids in buildGhStructure.
-  const [ghStatus, setGhStatus] = useState<GhStatusMap>({});
-  // Live issue-progression overlay (#393 Layer 2): node id -> NodeProgress
-  // reflecting what's actually CLOSED/done on GitHub for a published project.
-  const [ghProgress, setGhProgress] = useState<Record<string, NodeProgress>>({});
 
   // The section Claude is currently discussing, driven by <plan_focus> tags.
   // Null until the first focus tag arrives. Highlights the matching card.

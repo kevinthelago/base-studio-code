@@ -119,6 +119,52 @@ describe("buildProjectPaneData", () => {
     expect(m2.epics[0].issues[0].state).toBe("done");
   });
 
+  it("live progress overlay drives done-state + pct, overriding the static label (#429)", () => {
+    const phases = [{ name: "Phase 1" }];
+    const issues: PlanIssue[] = [
+      // No static done label — would read backlog/0% without the overlay.
+      { ref: "A1", title: "Build A", phase: 1, acceptance: ["ac one"], owns: [], dependsOn: [], labels: [], repo: "o/api" },
+      { ref: "A2", title: "Build B", phase: 1, acceptance: [], owns: [], dependsOn: [], labels: [], repo: "o/api" },
+    ];
+    // The overlay marks A1's node closed (matched by `issue:{repo}:{ref}`); A2 absent.
+    const progress = { "issue:o/api:A1": { done: true } };
+    const d = buildProjectPaneData(base({ phases, issues, repos: ["o/api"], progress }));
+    const m = d.structure[0];
+    // One of two issues done -> 50%.
+    expect(m.pct).toBe(0.5);
+    expect(m.epics[0].pct).toBe(0.5);
+    const a1 = m.epics[0].issues.find(i => i.n === "A1")!;
+    const a2 = m.epics[0].issues.find(i => i.n === "A2")!;
+    expect(a1.state).toBe("done");
+    expect(a2.state).toBe("backlog");
+    // A closed issue's acceptance sub-items read as met so the drill-in agrees.
+    expect(a1.sub).toEqual([{ t: "ac one", done: true }]);
+  });
+
+  it("static done/closed label still marks an issue done when the overlay has no node (#429 fallback)", () => {
+    const phases = [{ name: "Phase 1" }];
+    const issues: PlanIssue[] = [
+      { ref: "A1", title: "Build A", phase: 1, acceptance: [], owns: [], dependsOn: [], labels: ["closed"], repo: "o/api" },
+    ];
+    // Overlay present but doesn't cover A1 -> fall back to the static label.
+    const d = buildProjectPaneData(base({ phases, issues, repos: ["o/api"], progress: {} }));
+    const m = d.structure[0];
+    expect(m.pct).toBe(1);
+    expect(m.epics[0].issues[0].state).toBe("done");
+  });
+
+  it("an open overlay node forces an issue with a stale done label back to not-done (#429)", () => {
+    const phases = [{ name: "Phase 1" }];
+    const issues: PlanIssue[] = [
+      // Stale static label says done, but the live overlay says the issue is open.
+      { ref: "A1", title: "Build A", phase: 1, acceptance: [], owns: [], dependsOn: [], labels: ["done"], repo: "o/api" },
+    ];
+    const progress = { "issue:o/api:A1": { done: false } };
+    const d = buildProjectPaneData(base({ phases, issues, repos: ["o/api"], progress }));
+    expect(d.structure[0].pct).toBe(0);
+    expect(d.structure[0].epics[0].issues[0].state).toBe("backlog");
+  });
+
   it("issues with unknown phase land under a trailing Unscheduled milestone", () => {
     const phases = [{ name: "Phase 1" }];
     const issues: PlanIssue[] = [

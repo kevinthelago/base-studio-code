@@ -4,3 +4,5 @@
 
 - Verified this session (no edits): B-wan-viewonly (#357) and B-unpair-revoke (#358) already fully landed on the tunnel-security branch — tunnel.rs (tunnel_unpair + rotation + psk_is_fresh_rotatable_hex test), lib.rs:3543 command registration, tunnelClient.ts:28, Tunnel.tsx unpair UI. 11/11 cargo tunnel tests green. Both close the WAN-safety half of epic #208.
 
+- for #429, acceptance sub-items render as done when the live overlay marks the issue closed (overlay tracks per-issue, not per-criterion) per the plan
+
