@@ -3474,6 +3474,12 @@ const GH_PATH_MARK: &str = "BSC_GH_PATH_OK";
 const GIT_PATH_MARK: &str = "BSC_GIT_PATH_OK";
 const GH_AUTH_MARK: &str = "BSC_GH_AUTH_OK";
 
+/// Prefix the diagnostics preflight (#446) emits, one tab-delimited line per CLI
+/// tool: `BSC_PREREQ\t<name>\t<path>\t<version>` (path/version empty when the tool
+/// is absent). A distinct prefix keeps parsing a locale-independent substring scan,
+/// like the GitHub-readiness markers above.
+const PREFLIGHT_MARK: &str = "BSC_PREREQ";
+
 /// Parse the probe shell's stdout into `(gh_on_path, git_on_path, gh_authed)`. Pure.
 fn parse_github_probe(stdout: &str) -> (bool, bool, bool) {
     (
@@ -3519,6 +3525,169 @@ async fn github_readiness(
         }
     };
     Ok(serde_json::json!({ "ghOnPath": gh, "gitOnPath": git, "ghAuthed": auth }))
+}
+
+/// One prerequisite's detected state, reported to the Diagnostics UI (#446). Field
+/// names match the frontend `PrereqStatus`.
+#[derive(serde::Serialize, PartialEq, Debug)]
+struct PrereqStatus {
+    /// Display name, e.g. "Git Bash", "claude", "git", "gh", "gh auth".
+    name: String,
+    /// Whether the tool was located (and, for "gh auth", authenticated).
+    found: bool,
+    /// First line of `<tool> --version`, when found.
+    version: Option<String>,
+    /// Resolved on-disk path, when found.
+    path: Option<String>,
+    /// Actionable install/fix hint — empty when `found`.
+    hint: String,
+}
+
+/// Git Bash detection outcome handed to [`interpret_preflight`] so the pure
+/// interpretation stays testable off-Windows. `NotApplicable` omits the entry
+/// (non-Windows, where the session shell IS bash); `Missing`/`Found` map to the
+/// Windows console-shell prerequisite.
+// Each build constructs only its platform's variants — `NotApplicable` off Windows,
+// `Found`/`Missing` on Windows (plus tests exercise all three), so per-platform
+// dead-code analysis would flag the unused ones.
+#[allow(dead_code)]
+#[derive(Clone, PartialEq, Debug)]
+enum GitBashProbe {
+    NotApplicable,
+    Missing,
+    Found(String),
+}
+
+/// Static install/fix hint for a prerequisite that wasn't found. Empty for unknown
+/// names so a present tool never carries a hint.
+fn prereq_hint(tool: &str) -> &'static str {
+    match tool {
+        "claude" => "Install the Claude CLI — see https://docs.claude.com/claude-code",
+        "git" => "Install Git — https://git-scm.com/downloads",
+        "gh" => "Install the GitHub CLI — https://cli.github.com",
+        "gh auth" => "Run `gh auth login` to authenticate the GitHub CLI",
+        "Git Bash" => "Install Git for Windows (provides Git Bash) — https://git-scm.com/download/win",
+        _ => "",
+    }
+}
+
+/// Pure: turn the preflight probe's stdout (+ Git Bash detection) into the ordered
+/// prerequisite list. No I/O, so it is fully unit-testable. `BSC_PREREQ` lines carry
+/// each CLI tool's path/version; `BSC_GH_AUTH_OK` (reused from the GitHub probe)
+/// signals `gh` is authenticated. `gh auth` is only reported authenticated when `gh`
+/// itself is present, so a stale auth marker can't mask a missing CLI.
+fn interpret_preflight(stdout: &str, git_bash: GitBashProbe) -> Vec<PrereqStatus> {
+    // name -> (path, version), both trimmed; empty string means absent.
+    let mut probed: HashMap<String, (String, String)> = HashMap::new();
+    for line in stdout.lines() {
+        let mut parts = line.splitn(4, '\t');
+        if parts.next() != Some(PREFLIGHT_MARK) { continue; }
+        if let Some(name) = parts.next() {
+            let path = parts.next().unwrap_or("").trim().to_string();
+            let version = parts.next().unwrap_or("").trim().to_string();
+            probed.insert(name.to_string(), (path, version));
+        }
+    }
+
+    let mut out: Vec<PrereqStatus> = Vec::new();
+
+    // Git Bash — the Windows console shell; omitted where bash is the native shell.
+    match git_bash {
+        GitBashProbe::NotApplicable => {}
+        GitBashProbe::Missing => out.push(PrereqStatus {
+            name: "Git Bash".into(), found: false, version: None, path: None,
+            hint: prereq_hint("Git Bash").into(),
+        }),
+        GitBashProbe::Found(p) => out.push(PrereqStatus {
+            name: "Git Bash".into(), found: true, version: None, path: Some(p),
+            hint: String::new(),
+        }),
+    }
+
+    // CLI tools probed through the shell, in a fixed order (independent of stdout).
+    for tool in ["claude", "git", "gh"] {
+        let (path, version) = probed.get(tool).cloned().unwrap_or_default();
+        let found = !path.is_empty();
+        out.push(PrereqStatus {
+            name: tool.into(),
+            found,
+            version: if version.is_empty() { None } else { Some(version) },
+            path: if path.is_empty() { None } else { Some(path) },
+            hint: if found { String::new() } else { prereq_hint(tool).into() },
+        });
+    }
+
+    // gh authentication — meaningful only once `gh` itself is present.
+    let gh_found = probed.get("gh").map(|(p, _)| !p.is_empty()).unwrap_or(false);
+    let authed = gh_found && stdout.contains(GH_AUTH_MARK);
+    out.push(PrereqStatus {
+        name: "gh auth".into(),
+        found: authed,
+        version: None,
+        path: None,
+        hint: if authed { String::new() } else { prereq_hint("gh auth").into() },
+    });
+
+    out
+}
+
+/// Resolve the Git Bash prerequisite state for the diagnostics preflight: on
+/// Windows, whether [`find_git_bash`] located a `bash.exe`; elsewhere bash is the
+/// native shell, so Git Bash is not a prerequisite.
+fn detect_git_bash() -> GitBashProbe {
+    #[cfg(windows)]
+    {
+        match find_git_bash() {
+            Some(p) => GitBashProbe::Found(p),
+            None => GitBashProbe::Missing,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        GitBashProbe::NotApplicable
+    }
+}
+
+/// Diagnostics preflight (#446): in one call, report whether each external
+/// prerequisite the app needs is present — the Windows console shell (Git Bash),
+/// the `claude` CLI that runs agents, and `git`/`gh` (+ `gh` auth). Each result
+/// carries presence, version, path, and an install hint so the UI can tell the user
+/// exactly what to install. Runs through the SAME resolved shell + caller env as
+/// agent subshells (login shell, so profile PATH additions count). Best-effort: a
+/// spawn failure reports the CLI tools as missing rather than erroring.
+#[tauri::command]
+async fn preflight(
+    cwd: String,
+    env: Option<std::collections::HashMap<String, String>>,
+) -> Result<Vec<PrereqStatus>, String> {
+    let shell = resolve_shell();
+    // One tab-delimited line per tool: BSC_PREREQ <name> <path> <version>. `tr` drops
+    // CRs/tabs so a Windows version string can't break the field layout.
+    let script = format!(
+        "for t in claude git gh; do \
+           p=\"$(command -v \"$t\" 2>/dev/null)\"; \
+           v=\"$(\"$t\" --version 2>/dev/null | head -1 | tr -d '\\r\\t')\"; \
+           printf '{PREFLIGHT_MARK}\\t%s\\t%s\\t%s\\n' \"$t\" \"$p\" \"$v\"; \
+         done; \
+         gh auth status >/dev/null 2>&1 && echo {GH_AUTH_MARK}",
+    );
+    let mut cmd = std::process::Command::new(&shell);
+    cmd.arg("-lc").arg(&script);
+    if !cwd.is_empty() {
+        cmd.current_dir(&cwd);
+    }
+    let env_map = env.unwrap_or_default();
+    for (k, v) in session_env(&env_map) {
+        cmd.env(k, v);
+    }
+    let stdout = match no_window(&mut cmd).output() {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).into_owned(),
+        Err(e) => {
+            log::warn!("preflight probe failed to spawn ({shell}): {e}");
+            String::new()
+        }
+    };
+    Ok(interpret_preflight(&stdout, detect_git_bash()))
 }
 
 #[tauri::command]
@@ -4253,6 +4422,7 @@ pub fn run() {
             write_claude_config,
             ensure_session_settings,
             github_readiness,
+            preflight,
             read_plan_sections,
             write_project_plan,
             delete_project_dir,
@@ -4967,6 +5137,71 @@ mod tests {
 {GH_PATH_MARK}
 ");
         assert_eq!(super::parse_github_probe(&no_auth), (true, true, false));
+    }
+
+    #[test]
+    fn interpret_preflight_reports_each_prerequisite() {
+        use super::{interpret_preflight, GitBashProbe, GH_AUTH_MARK, PREFLIGHT_MARK};
+        // Everything present + authed, on Windows with Git Bash found.
+        let stdout = format!(
+            "{PREFLIGHT_MARK}\tclaude\t/usr/bin/claude\tclaude 1.2.3\n\
+             {PREFLIGHT_MARK}\tgit\t/usr/bin/git\tgit version 2.43.0\n\
+             {PREFLIGHT_MARK}\tgh\t/usr/bin/gh\tgh version 2.40.0\n\
+             {GH_AUTH_MARK}\n"
+        );
+        let r = interpret_preflight(&stdout, GitBashProbe::Found("C:\\Git\\bin\\bash.exe".into()));
+        // Git Bash first (the console shell), then claude, git, gh, gh auth.
+        let names: Vec<&str> = r.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Git Bash", "claude", "git", "gh", "gh auth"]);
+        assert!(r.iter().all(|p| p.found), "all prerequisites should be found");
+        assert!(r.iter().all(|p| p.hint.is_empty()), "found tools carry no hint");
+        let git = r.iter().find(|p| p.name == "git").unwrap();
+        assert_eq!(git.version.as_deref(), Some("git version 2.43.0"));
+        assert_eq!(git.path.as_deref(), Some("/usr/bin/git"));
+    }
+
+    #[test]
+    fn interpret_preflight_flags_missing_tools_with_hints() {
+        use super::{interpret_preflight, GitBashProbe, PREFLIGHT_MARK};
+        // claude + git present; gh missing (empty path), unauthenticated; Git Bash missing.
+        let stdout = format!(
+            "{PREFLIGHT_MARK}\tclaude\t/usr/bin/claude\tclaude 1.2.3\n\
+             {PREFLIGHT_MARK}\tgit\t/usr/bin/git\tgit version 2.43.0\n\
+             {PREFLIGHT_MARK}\tgh\t\t\n"
+        );
+        let r = interpret_preflight(&stdout, GitBashProbe::Missing);
+        let gh = r.iter().find(|p| p.name == "gh").unwrap();
+        assert!(!gh.found);
+        assert!(gh.hint.contains("cli.github.com"));
+        let gh_auth = r.iter().find(|p| p.name == "gh auth").unwrap();
+        assert!(!gh_auth.found, "gh missing -> auth cannot be reported found");
+        assert!(!gh_auth.hint.is_empty());
+        let gitbash = r.iter().find(|p| p.name == "Git Bash").unwrap();
+        assert!(!gitbash.found);
+        assert!(gitbash.hint.contains("git-scm.com"));
+        // Present tools still carry their version/path even when others are missing.
+        assert!(r.iter().find(|p| p.name == "claude").unwrap().found);
+    }
+
+    #[test]
+    fn interpret_preflight_omits_git_bash_off_windows() {
+        use super::{interpret_preflight, GitBashProbe};
+        let r = interpret_preflight("", GitBashProbe::NotApplicable);
+        assert!(!r.iter().any(|p| p.name == "Git Bash"));
+        // Empty probe -> every CLI tool reported missing with a hint.
+        let names: Vec<&str> = r.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["claude", "git", "gh", "gh auth"]);
+        assert!(r.iter().all(|p| !p.found));
+        assert!(r.iter().all(|p| !p.hint.is_empty()));
+    }
+
+    #[test]
+    fn interpret_preflight_gh_auth_requires_gh_present() {
+        // A stale GH_AUTH_OK marker must NOT report auth when gh itself is absent.
+        use super::{interpret_preflight, GitBashProbe, GH_AUTH_MARK, PREFLIGHT_MARK};
+        let stdout = format!("{PREFLIGHT_MARK}\tgh\t\t\n{GH_AUTH_MARK}\n");
+        let r = interpret_preflight(&stdout, GitBashProbe::NotApplicable);
+        assert!(!r.iter().find(|p| p.name == "gh auth").unwrap().found);
     }
 
     #[test]
