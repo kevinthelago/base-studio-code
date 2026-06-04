@@ -150,4 +150,23 @@ describe("ProjectPane (v2)", () => {
     expect(screen.getByText("Build the thing")).toBeTruthy();
     expect(screen.getByText("Wire the UI")).toBeTruthy();
   });
+
+  // ── #506: redundant per-section sync buttons removed ────────────────────────
+  it("no longer renders the 'Sync to GitHub →' or 'Push docs →' buttons (#506)", () => {
+    // Even with the label-sync affordance wired, the structure/docs publish
+    // buttons are gone — publish is owned by the header button + the app's
+    // Publish flow. Only 'Apply labels →' remains pane-local.
+    render(
+      <ProjectPane
+        data={data()}
+        projectName="P"
+        projectId="p"
+        onSyncLabels={() => {}}
+        syncState={{ labels: "idle" }}
+      />,
+    );
+    expect(screen.queryByText("Sync to GitHub →")).toBeNull();
+    expect(screen.queryByText("Push docs →")).toBeNull();
+    expect(screen.getByText("Apply labels →")).toBeTruthy();
+  });
 });
