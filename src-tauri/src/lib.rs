@@ -2439,15 +2439,16 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
 1. **Read the knowledge base.** Before asking anything, read every `.md` in
    `../kb/` (team standards, stack conventions, templates). Assign relevant
    blocks with `<kb_assign id="block-id" />`.
-2. **Set up repositories first.** The Publish button stays disabled until at
+2. **Decide the repositories first.** The Publish button stays disabled until at
    least one `<repo_link>` is registered, so do this before deep discovery:
-   - `gh api user --jq .login` for the authenticated owner.
+   - `gh api user --jq .login` for the authenticated owner (read-only).
    - Ask what distinct codebases the project needs (name, purpose, language,
      visibility); skip what the pitch already makes obvious.
-   - For each confirmed repo, immediately: create it
-     (`gh repo create {owner}/{name} --private --description "..."`), clone it
-     (`git clone https://github.com/{owner}/{name} {name}`), write an initial
-     `{name}/CLAUDE.md`, and emit `<repo_link full_name="{owner}/{name}" />`.
+   - For each confirmed repo, emit `<repo_link full_name="{owner}/{name}" />`. Do
+     NOT run `gh repo create` or `git clone` yourself — you are plan-only. The app
+     **creates any missing repo and clones it for you** when Publish runs (and
+     `<repo_link>` triggers an immediate clone into the project hub), so the repos
+     are ready for the build agents without you touching git.
    - **Also write `repos.json`** -- a JSON array of every linked `"owner/repo"`
      (e.g. `["acme/web","acme/api"]`). This is the AUTHORITATIVE, resume-safe repo
      registration: a `<repo_link>` tag is live-stream-only and is lost when the session
@@ -2562,13 +2563,14 @@ once the user agrees. Always scan before you propose; never race ahead.
 
 1. **Link repositories.** Check whether `## Linked repositories` appears at the
    bottom of this file.
-   - **If listed:** for each, emit `<repo_link full_name="owner/repo" />`, clone
-     if the local path is missing, then read its `CLAUDE.md`, top-level
-     manifests, and recent `gh issue list` / `gh pr list` for orientation.
+   - **If listed:** for each, emit `<repo_link full_name="owner/repo" />` (the app
+     clones it into the project hub for you), then read its `CLAUDE.md`, top-level
+     manifests, and recent `gh issue list` / `gh pr list` for orientation. You are
+     plan-only — don't clone or mutate git yourself.
    - **If none listed:** `gh api user --jq .login`, then
      `gh repo list --limit 100 --json nameWithOwner,description,pushedAt`,
      present the likely candidates for **{PROJECT_NAME}**, ask which belong, and
-     emit `<repo_link>` for each confirmed repo before cloning.
+     emit `<repo_link>` for each confirmed repo (the app clones them).
 2. **Read the knowledge base.** Read `kb_index.md`, read blocks whose tags match
    the stack, and assign relevant ones with `<kb_assign id="block-id" />`. Read
    `automations.md` and `extensions.md`, and run the **Automations & extensions**
@@ -3107,37 +3109,28 @@ issues → dependencies) in the panel, and Publish turns it into the real projec
 board — every issue the product of this conversation, carrying everything an agent
 needs to pick it up and finish without asking.
 
-## Publish to GitHub
+## Publish to GitHub — the APP does this, not you
 
-After the user confirms the plan in the right panel, the **Publish** button
-creates the repositories, the project board, one milestone per phase, and one
-GitHub issue per `issues.json` entry (pinned to its milestone, with its labels;
-falling back to a per-phase tracking issue when no issues are defined), and labels
-each fleet stream's owned issues with `stream:<id>`. You can also push detail yourself with the
-`gh` CLI — every step below is idempotent (check-then-create), so re-running is a
-safe sync. Do this in order, per linked repository:
+You are plan-only: do NOT run `gh repo create`, `gh issue create`, `gh label
+create`, `gh api … --method POST`, `git commit`, or `git push`. Those are denied
+for this session and, more importantly, the **app's Publish button owns every
+git/GitHub mutation**. Your job is to get the plan files right; the app turns them
+into the real structure.
 
-**Labels** (`--force` is idempotent):
-```
-gh label create "scope:core" --color "0075ca" --repo owner/repo --force
-gh label create "phase:1"    --color "0e8a16" --repo owner/repo --force
-gh label create "risk:high"  --color "b60205" --repo owner/repo --force
-```
-**Milestones** (one per phase):
-```
-gh api repos/owner/repo/milestones --method POST --field title="Phase 1 — <name>" --field description="<done-when>"
-```
-**Issues** (one per in-scope deliverable, pinned to its milestone):
-```
-gh issue create --repo owner/repo --title "<deliverable>" --body "<acceptance criteria>" --milestone <number> --label "scope:core,phase:1"
-```
-**Repo metadata + plan file:**
-```
-gh repo edit owner/repo --description "<one-line goal>" --add-topic "<language>" --add-topic "<framework>"
-```
-Write the consolidated plan to `{repo}/.github/PROJECT_PLAN.md`, then commit and
-push it (new projects to `main`; existing projects via a `docs/project-plan`
-branch and a PR).
+When the user clicks **Publish**, the app — using the project owner's credentials —
+performs all of this idempotently (check-then-create), per linked repository:
+- **Repositories** — creates any `<repo_link>` repo that doesn't exist yet and clones it.
+- **Project board** — creates / adopts the same-title board (title + description from `goal`).
+- **Milestones** — one per `phases.json` entry.
+- **Issues** — one per `issues.json` entry, pinned to its phase milestone, with its
+  labels + a `stream:<id>` label (falling back to a per-phase tracking issue when no
+  issues are defined).
+- **Labels + repo metadata** + the consolidated **`PROJECT_PLAN.md`** committed into
+  each repo's `.github/`.
+
+So your only outputs are the plan artifacts — the section files, `phases.json`,
+`issues.json`, `fleet.json`, `repos.json`, the `prompts/` kickoffs, and the
+`<repo_link>` / `<plan_update>` tags. Get those right and Publish does the rest.
 
 ## App integration tags
 
@@ -3241,19 +3234,18 @@ copies every pinned skill scoped to this project into each worker's worktree
 agent the means to solve a hard unit," write the skill into `skills.json` with this
 project's key in `projects` and leave it pinned.
 
-## GitHub tools
+## GitHub tools — read-only orientation
 
-`GH_TOKEN` is pre-loaded — use `gh` for all GitHub operations. Read
-`github_context.md` for the authenticated login, linked repos, and command
-examples.
+`GH_TOKEN` is pre-loaded for **reading** GitHub to ground the plan. You are
+plan-only: use `gh` only to inspect (login, repo list, open issues/PRs). Do NOT
+create repos, milestones, issues, or labels, and do NOT commit/push — the app's
+Publish button performs every mutation from your plan files. Read
+`github_context.md` for the authenticated login + linked repos.
 ```
 gh api user --jq .login
-gh repo create owner/name --private --description "..."
 gh repo list --limit 100 --json nameWithOwner,description,pushedAt
 gh issue list --repo owner/repo --state open --limit 20
-gh api repos/owner/repo/milestones --method POST --field title="..."
-gh issue create --repo owner/repo --title "..." --body "..." --milestone N --label "a,b"
-gh repo edit owner/repo --description "..." --add-topic "..."
+gh pr list   --repo owner/repo --state open --limit 20
 ```
 "##;
 
@@ -3349,7 +3341,7 @@ async fn setup_workspaces(
             for full_name in &repo_full_names {
                 let local_path = repo_dir(&project_key, full_name);
                 planning_md.push_str(&format!(
-                    "- **{full_name}**\n  - local path: `{local_path}`\n  - clone if missing: `git clone https://github.com/{full_name} {local_path}`\n",
+                    "- **{full_name}**\n  - local path: `{local_path}` — the app clones it here for you to read; don't clone it yourself.\n",
                     full_name  = full_name,
                     local_path = local_path.display(),
                 ));
@@ -3475,11 +3467,10 @@ async fn setup_workspaces(
         gh_ctx.push('\n');
     }
     gh_ctx.push_str(
-        "## Useful gh commands\n\n\
+        "## Useful gh commands (read-only — the app's Publish button does all writes)\n\n\
          ```\n\
          gh api user                                    # confirm auth\n\
          gh repo list --limit 100 --json nameWithOwner  # all repos\n\
-         gh repo create {login}/{name} --private        # new repo\n\
          gh issue list --repo {owner}/{repo}            # open issues\n\
          gh pr list   --repo {owner}/{repo}             # open PRs\n\
          ```\n"
@@ -5139,6 +5130,26 @@ mod tests {
     fn claude_launch_adds_continue_flag() {
         // Triage resumes the repo's prior conversation instead of starting fresh.
         assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
+    }
+
+    #[test]
+    fn planner_template_is_plan_only_no_git_mutations() {
+        // The planner is plan-only (#503): it must not be instructed to create repos,
+        // milestones, issues, or labels, nor commit/push — the app's Publish flow owns
+        // every git/GitHub mutation. (The prohibition prose uses bare backticked forms
+        // like `gh repo create`; here we guard the args-bearing INSTRUCTION forms that
+        // only ever appeared as commands to run.)
+        for t in [super::PLANNING_NEW_INTRO, super::PLANNING_EXISTING_INTRO, super::PLANNING_PROCESS_MD] {
+            assert!(!t.contains("--method POST --field"), "planner template instructs `gh api … --method POST`");
+            assert!(!t.contains("gh label create \""), "planner template instructs `gh label create`");
+            assert!(!t.contains("gh issue create --repo"), "planner template instructs `gh issue create`");
+            assert!(!t.contains("gh repo create owner"), "planner template instructs `gh repo create`");
+            assert!(!t.contains("gh repo create {owner}"), "planner template instructs `gh repo create`");
+            assert!(!t.contains("gh repo create {login}"), "planner template instructs `gh repo create`");
+        }
+        // Positive: the plan-only publish framing is present.
+        assert!(super::PLANNING_PROCESS_MD.contains("Publish button"), "publish-by-app framing missing");
+        assert!(super::PLANNING_PROCESS_MD.contains("plan-only"), "plan-only framing missing");
     }
 
     #[test]
