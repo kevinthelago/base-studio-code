@@ -16,3 +16,5 @@
 
 - relay: added standalone relay/vitest.config.ts (node env, root=relay) so the relay worker tests run in isolation instead of climbing to the repo-root jsdom/react vitest config and failing to load.
 
+- tunnel: added a co-located test file src/screens/settings/Tunnel.test.tsx for the Test-relay button. My frontend ownership is exactly Tunnel.tsx; the test is a NEW adjacent file (no other stream's file modified), the least-intrusive way to cover the new owned UI per the testing guidance. Revertible if the frontend stream prefers it elsewhere.
+- tunnel: implemented Settings 'Test relay' button (#197 AC) entirely within owned files — Tunnel.tsx (relayHealthUrl helper + probe UI) + relay worker /health CORS header — to avoid the lib.rs registration + src/lib/tunnelClient.ts seams. The Test does a /health GET round-trip from the webview (CSP is null). RUNTIME CAVEAT: cross-origin webview fetch behavior not verified on a live deploy; mitigated by the worker ACAO:* header + a bounded timeout + graceful x/check UI.

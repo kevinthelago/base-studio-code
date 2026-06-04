@@ -17,6 +17,30 @@ import {
 const DEPLOY_URL =
   "https://deploy.workers.cloudflare.com/?url=https://github.com/kevinthelago/base-studio-code/tree/main/relay";
 
+/**
+ * Map a user-entered relay URL (any of `http(s)://` / `ws(s)://`, with or without a
+ * scheme or trailing slash) to its `https` `/health` probe endpoint. The relay serves
+ * `/health` over plain HTTPS GET (the `wss://` form is only for the tunnel upgrade), so
+ * the Test button normalizes to `https` before probing.
+ */
+export function relayHealthUrl(relayUrl: string): string {
+  const trimmed = relayUrl.trim().replace(/\/+$/, "");
+  const normalized = trimmed
+    .replace(/^wss:\/\//i, "https://")
+    .replace(/^ws:\/\//i, "http://");
+  const withScheme = /^https?:\/\//i.test(normalized) ? normalized : `https://${normalized}`;
+  return `${withScheme}/health`;
+}
+
+/** How long to wait for the relay's `/health` before calling the Test a failure. */
+const TEST_TIMEOUT_MS = 6000;
+
+type RelayTest =
+  | { state: "idle" }
+  | { state: "testing" }
+  | { state: "ok"; version?: string }
+  | { state: "fail"; detail: string };
+
 export function TunnelSettings() {
   const tunnelRelayUrl = useAppStore((s) => s.tunnelRelayUrl);
   const setTunnelRelayUrl = useAppStore((s) => s.setTunnelRelayUrl);
@@ -25,6 +49,8 @@ export function TunnelSettings() {
   const [status, setStatus] = useState<TunnelStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Result of the "Test relay" probe (a /health round-trip), shown inline under the URL.
+  const [test, setTest] = useState<RelayTest>({ state: "idle" });
   // Set when a view-only phone tries to send input, so the grant control is highlighted
   // until the desktop responds (#B-wan-viewonly). Cleared once input is granted/revoked.
   const [inputRequested, setInputRequested] = useState(false);
@@ -87,6 +113,37 @@ export function TunnelSettings() {
     }
   }, [sync]);
 
+  // Probe the relay's /health to confirm it's reachable and is actually a tunnel relay,
+  // before the user relies on it for pairing. A real round-trip (GET → JSON), bounded by
+  // a timeout; failures surface the reason rather than silently doing nothing.
+  const onTest = useCallback(async () => {
+    const target = tunnelRelayUrl.trim();
+    if (!target) return;
+    setTest({ state: "testing" });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(relayHealthUrl(target), { signal: ctrl.signal });
+      if (!res.ok) {
+        setTest({ state: "fail", detail: `relay returned HTTP ${res.status}` });
+        return;
+      }
+      const body = (await res.json().catch(() => null)) as
+        | { service?: string; version?: string }
+        | null;
+      if (body?.service !== "msc-tunnel-relay") {
+        setTest({ state: "fail", detail: "reachable, but not a tunnel relay" });
+        return;
+      }
+      setTest({ state: "ok", version: body.version });
+    } catch (e) {
+      const aborted = e instanceof DOMException && e.name === "AbortError";
+      setTest({ state: "fail", detail: aborted ? "timed out" : "could not reach relay" });
+    } finally {
+      clearTimeout(timer);
+    }
+  }, [tunnelRelayUrl]);
+
   const onConnect = useCallback(async () => {
     setBusy(true);
     setErr(null);
@@ -144,14 +201,32 @@ export function TunnelSettings() {
               placeholder="https://msc-tunnel-relay.<you>.workers.dev"
               value={tunnelRelayUrl}
               disabled={running}
-              onChange={(e) => setTunnelRelayUrl(e.target.value)}
+              onChange={(e) => {
+                setTunnelRelayUrl(e.target.value);
+                setTest({ state: "idle" }); // a fresh URL invalidates the last probe
+              }}
             />
+            <button
+              className="btn"
+              disabled={busy || running || test.state === "testing" || !canConnect}
+              onClick={onTest}
+            >
+              {test.state === "testing" ? "testing…" : "test"}
+            </button>
             <button className="btn" onClick={() => openUrl(DEPLOY_URL)}>
               deploy a relay →
             </button>
           </div>
           <div className="hint">
-            Your own Cloudflare Worker (free tier is enough). Deploy once, paste the URL it prints.
+            {test.state === "ok" ? (
+              <span style={{ color: "var(--success, #2ea043)" }}>
+                ✓ relay reachable{test.version ? ` · v${test.version}` : ""}
+              </span>
+            ) : test.state === "fail" ? (
+              <span style={{ color: "var(--danger)" }}>✗ {test.detail}</span>
+            ) : (
+              "Your own Cloudflare Worker (free tier is enough). Deploy once, paste the URL it prints."
+            )}
           </div>
         </div>
 
