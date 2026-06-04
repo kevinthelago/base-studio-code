@@ -2636,13 +2636,33 @@ For each repo `{short}`:
    its testing approach, and the current phase's in-scope work for *this* repo.
    Write them as `repo__{short}__{topic}.md` (e.g. `repo__web__api.md`); they
    appear under that repo's group in the panel.
-2. **Record the repo's toolchain commands** the moment you decide its stack — its
+2. **Break this repo into FEATURES — one section per feature (#177).** After the
+   dimensions, decompose this repo's in-scope phase work into named features and
+   write ONE plan section per feature, keyed `repo__{short}__feat__{slug}.md`
+   (e.g. `repo__web__feat__login-form.md`). Each feature section is granular and
+   self-contained — it becomes exactly **one GitHub issue** under its phase
+   milestone at publish (supplementing, not replacing, the per-phase tracking
+   issue). Write each as:
+   - **First line — a phase marker**: `phase: <N or milestone name>` (e.g.
+     `phase: 2` or `phase: Phase 1 — MVP`). This pins the feature's issue to that
+     milestone. Omit only for backlog/unscheduled features.
+   - **A `# Title` heading** — the feature's name; becomes the issue title (falls
+     back to the humanized slug if omitted).
+   - **The approach** (the body) — how it's built: the behavior, the sequence of
+     changes, integration points, the specific libraries/services, and the files
+     or areas it touches.
+   - **Acceptance criteria** as `- [ ]` checkbox lines — the done-when checklist;
+     these are lifted into the issue's acceptance section.
+   Drive each feature down to this level (behavior + acceptance, approach, tools,
+   files) before moving to the next, the same way the feature workshop does —
+   these sections ARE that workshop's per-repo output.
+3. **Record the repo's toolchain commands** the moment you decide its stack — its
    build, test, run, and package-manager binaries (e.g. `cargo`, `npm`, `pnpm`,
    `pytest`, `docker`). Add them under that repo in `commands.json` and emit the
    `<allow_command>` tag (see "App integration tags"). Required, not optional, and
    don't just mention them in prose: without it the repo's console/triage sessions
    block on a permission prompt for every command. `gh`/`git` are always allowed.
-3. **Write two starting scripts** into `prompts/` — these are the first messages
+4. **Write two starting scripts** into `prompts/` — these are the first messages
    future Claude sessions in that repo receive, so write them as direct
    instructions addressed to that session (not notes about it):
    - `prompts/{short}-kickoff.md` — the **dev** kickoff: this repo's role, its
@@ -2651,7 +2671,7 @@ For each repo `{short}`:
    - `prompts/{short}-triage.md` — the **triage** script: how to triage *this*
      repo's open issues (priority labels P0–P3, this repo's label/area
      conventions, what "stale" means here), grounded in the plan's priorities.
-4. **Register both** so the app auto-assigns them as that repo's startup prompts
+5. **Register both** so the app auto-assigns them as that repo's startup prompts
    (see `<startup_script>` under "App integration tags"). Once registered,
    opening this repo's console uses the kickoff and its triage pane uses the
    triage script — no manual assignment needed.
