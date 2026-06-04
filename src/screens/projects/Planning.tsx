@@ -5,7 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../../store";
-import { projectRepoCwd, sanitizeProjectKey } from "../../lib/projectPaths";
+import { projectRepoCwd, sanitizeProjectKey, resolveProjectKey } from "../../lib/projectPaths";
 import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
@@ -440,7 +440,9 @@ export function Planning({ visible }: { visible: boolean }) {
   // `activeProjectId` set = the GitHub node id) maps to the stable folder/data
   // key its plan files live under, instead of an empty node-id key.
   const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
-  const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
+  // One canonical resolver (#380) — the same helper everything per-project keys off, so
+  // a write (addProjectRepo) and a later read (the linked-repo list) never diverge.
+  const sessionKeyRef = useRef(resolveProjectKey(rawSessionKey, projectKeyAlias));
   const effectiveProjectId = sessionKeyRef.current;
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so

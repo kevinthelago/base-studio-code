@@ -7,6 +7,8 @@ import {
   canonicalProjectKey,
   findProjectTabIdx,
   deriveTabIdentity,
+  resolveProjectKey,
+  findByTitle,
 } from "../lib/projectPaths";
 
 describe("sanitizeProjectKey", () => {
@@ -147,5 +149,50 @@ describe("deriveTabIdentity (#457 migration — back-derive from a frozen name)"
   it("matches the launch-time key for the same name (round-trips with sanitizeProjectKey)", () => {
     const derived = deriveTabIdentity("Alpha Beta · build")!;
     expect(derived.projectKey).toBe(sanitizeProjectKey("Alpha Beta"));
+  });
+});
+
+describe("resolveProjectKey (#380 — one canonical workspace key)", () => {
+  const alias = { "PVT_node1": "my-project", "PVT_node2": "other" };
+  it("maps an aliased node id to its stable folder key", () => {
+    expect(resolveProjectKey("PVT_node1", alias)).toBe("my-project");
+  });
+  it("returns the raw key unchanged when no alias maps it (local-only draft)", () => {
+    expect(resolveProjectKey("my-project", alias)).toBe("my-project");
+    expect(resolveProjectKey("brand-new", alias)).toBe("brand-new");
+  });
+  it("is a no-op against an empty alias map", () => {
+    expect(resolveProjectKey("PVT_node1", {})).toBe("PVT_node1");
+  });
+  it("a write key and a read key derived through it agree (no divergence)", () => {
+    // Board-reached session keys off the node id; the planner wrote under the folder key.
+    const writeKey = resolveProjectKey("my-project", alias); // planner's raw folder key
+    const readKey = resolveProjectKey("PVT_node1", alias);   // board's node id
+    expect(writeKey).toBe(readKey);
+  });
+});
+
+describe("findByTitle (#380/#444 — one title matcher)", () => {
+  const projects = [
+    { id: "1", title: "Studio Code" },
+    { id: "2", title: "  Github Pretty Readme  " },
+  ];
+  const get = (p: { title: string }) => p.title;
+  it("matches case-insensitively", () => {
+    expect(findByTitle(projects, "studio code", get)?.id).toBe("1");
+    expect(findByTitle(projects, "STUDIO CODE", get)?.id).toBe("1");
+  });
+  it("ignores surrounding whitespace on both sides", () => {
+    expect(findByTitle(projects, "github pretty readme", get)?.id).toBe("2");
+    expect(findByTitle(projects, "  Studio Code  ", get)?.id).toBe("1");
+  });
+  it("returns null for no match or a blank title", () => {
+    expect(findByTitle(projects, "nope", get)).toBeNull();
+    expect(findByTitle(projects, "   ", get)).toBeNull();
+    expect(findByTitle(projects, "", get)).toBeNull();
+  });
+  it("returns the first match when several share a title", () => {
+    const dups = [{ id: "a", title: "Dup" }, { id: "b", title: "dup" }];
+    expect(findByTitle(dups, "DUP", p => p.title)?.id).toBe("a");
   });
 });
