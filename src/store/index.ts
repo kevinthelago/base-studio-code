@@ -8,6 +8,7 @@ import type { ModelId } from "../components/pane/PaneMenu";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
+import { DEFAULT_ACCENT } from "../lib/appearance";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET, type QueuedPane, type FocusTarget } from "../lib/focusQueue";
 import { repoPromptKey } from "./../lib/startupPrompt";
 import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "../lib/tabReorder";
@@ -221,6 +222,10 @@ interface AppStore {
   // Adjusted via Ctrl++ / Ctrl+- / Ctrl+0; clamped to the legible range.
   terminalFontSize: number;
   setTerminalFontSize: (size: number) => void;
+  // Accent color preset id (persisted; configured in Settings → Appearance).
+  // Applied to the --accent / --accent-dim CSS tokens at the document root.
+  accent: string;
+  setAccent: (id: string) => void;
   paneViews: ViewKey[];
   paneNames: Record<number, Record<number, string>>;
   paneCwds: Record<string, string>;  // keyed by "t{tabIdx}p{paneIdx}"
@@ -783,6 +788,8 @@ export const useAppStore = create<AppStore>()(
         }),
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       setTerminalFontSize: (size) => set({ terminalFontSize: clampFontSize(size) }),
+      accent: DEFAULT_ACCENT,
+      setAccent: (id) => set({ accent: id }),
       paneViews: [],
       paneNames: {},
       paneCwds: {},
@@ -1995,6 +2002,7 @@ export const useAppStore = create<AppStore>()(
         tabs:            s.tabs,
         activeTabIdx:    s.activeTabIdx,
         terminalFontSize: s.terminalFontSize,
+        accent:          s.accent,
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
         paneCwds:        s.paneCwds,

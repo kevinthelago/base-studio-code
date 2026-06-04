@@ -1455,3 +1455,18 @@ describe("model selection", () => {
     expect(useAppStore.getState().paneModels["t0p1"]).toBe("opus-4.5");
   });
 });
+
+describe("appearance", () => {
+  it("setAccent updates the persisted accent id", () => {
+    useAppStore.setState({ accent: "amber" });
+    useAppStore.getState().setAccent("purple");
+    expect(useAppStore.getState().accent).toBe("purple");
+  });
+
+  it("setTerminalFontSize clamps to the legible range", () => {
+    useAppStore.getState().setTerminalFontSize(999);
+    expect(useAppStore.getState().terminalFontSize).toBe(28);
+    useAppStore.getState().setTerminalFontSize(1);
+    expect(useAppStore.getState().terminalFontSize).toBe(8);
+  });
+});
