@@ -17,35 +17,19 @@ export interface ActiveProjectInfo {
   description: string;
 }
 
-const TABS = [
-  { k: "board",    label: "Board",    hint: "kanban · per column" },
-  { k: "roadmap",  label: "Roadmap",  hint: "milestones over time" },
-  { k: "issues",   label: "Issues",   hint: "flat list · filter & sort" },
-  { k: "insights", label: "Insights", hint: "velocity · burndown" },
-  { k: "hooks",    label: "Hooks",    hint: "git hooks · per repo" },
-  { k: "coordination", label: "Coordination", hint: "blocked sessions · #199" },
-  { k: "pipelines", label: "Pipelines", hint: "staged work-item lifecycle · #220" },
-] as const;
-
-type BoardTab = typeof TABS[number]["k"];
-
-// The GitHub Projects v2 published views live on the GitHub page (#498); the
-// Projects page keeps the execution/repo surfaces. The header shows one set or the
-// other depending on `context`.
+// The project header lives on the GitHub page (#498/#499): the published board
+// sub-tabs (board · roadmap · issues · insights), a back-to-portfolio link, and a
+// "plan →" jump to the planning session on the Projects page.
 type GithubTab = "board" | "roadmap" | "issues" | "insights";
-const GITHUB_KEYS: GithubTab[] = ["board", "roadmap", "issues", "insights"];
-const tabItem = (k: string): TabItem => {
-  const t = TABS.find((x) => x.k === k)!;
-  return { id: t.k, label: t.label, hint: t.hint };
-};
-const GITHUB_BOARD_TABS: TabItem[] = GITHUB_KEYS.map(tabItem);
-const PROJECT_BOARD_TABS: TabItem[] = TABS.filter((t) => !GITHUB_KEYS.includes(t.k as GithubTab)).map((t) => tabItem(t.k));
+const GITHUB_BOARD_TABS: TabItem[] = [
+  { id: "board",    label: "Board",    hint: "kanban · per column" },
+  { id: "roadmap",  label: "Roadmap",  hint: "milestones over time" },
+  { id: "issues",   label: "Issues",   hint: "flat list · filter & sort" },
+  { id: "insights", label: "Insights", hint: "velocity · burndown" },
+];
 
 interface ProjectsHeaderProps {
   project: ActiveProjectInfo;
-  /** "projects" (default) shows the execution tabs + back-to-list/plan; "github"
-   *  shows the published board tabs + back-to-portfolio, for the GitHub page (#498). */
-  context?: "projects" | "github";
 }
 
 function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
@@ -218,22 +202,14 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
   );
 }
 
-export function ProjectsHeader({ project, context = "projects" }: ProjectsHeaderProps) {
+export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   const {
-    projectsBoardTab, setProjectsBoardTab, setProjectsView, setPlanningContext, setPlanningSession,
+    setProjectsView, setPlanningContext, setPlanningSession,
     setScreen, setKbProjectScope, githubBoardTab, setGithubBoardTab, closeGithubBoard,
   } = useAppStore();
-  const onGithub = context === "github";
-  // On the GitHub page the header drives the published-board sub-tabs (githubBoardTab);
-  // on the Projects page it drives the execution tabs (projectsBoardTab).
   const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
-    usePageTabs(
-      onGithub ? "github-board" : "projects-board",
-      onGithub ? GITHUB_BOARD_TABS : PROJECT_BOARD_TABS,
-      onGithub
-        ? { activeId: githubBoardTab, setActive: (id) => setGithubBoardTab(id as GithubTab) }
-        : { activeId: projectsBoardTab, setActive: (id) => setProjectsBoardTab(id as BoardTab) },
-    );
+    usePageTabs("github-board", GITHUB_BOARD_TABS,
+      { activeId: githubBoardTab, setActive: (id) => setGithubBoardTab(id as GithubTab) });
 
   // Open the Knowledge Base scoped to this project's documents, keyed by the
   // canonical (title-derived) folder the planner writes to. We intentionally do
@@ -262,13 +238,13 @@ export function ProjectsHeader({ project, context = "projects" }: ProjectsHeader
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <button
-              onClick={onGithub ? closeGithubBoard : () => setProjectsView("list")}
+              onClick={closeGithubBoard}
               style={{
                 background: "none", border: "none", cursor: "pointer",
                 fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
                 padding: 0, marginRight: 4,
               }}
-            >{onGithub ? "← portfolio" : "← projects"}</button>
+            >← portfolio</button>
             <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{project.number}</span>
             <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600 }}>{project.name}</h2>
             {project.repo && <span className="tag">{project.repo}</span>}

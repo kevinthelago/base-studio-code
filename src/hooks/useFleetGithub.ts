@@ -37,7 +37,7 @@ const EMPTY: FleetGithub = {
   loading: false, error: null, repoCount: 0,
 };
 
-export function useFleetGithub(repos: string[]): FleetGithub {
+export function useFleetGithub(repos: string[], refreshNonce = 0): FleetGithub {
   const githubToken = useAppStore(s => s.githubToken);
   const [data, setData] = useState<FleetGithub>(EMPTY);
   const key = repos.join(",");
@@ -93,7 +93,7 @@ export function useFleetGithub(repos: string[]): FleetGithub {
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, githubToken]);
+  }, [key, githubToken, refreshNonce]);
 
   return data;
 }
