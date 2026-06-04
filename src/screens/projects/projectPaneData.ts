@@ -1,6 +1,6 @@
 // projectPaneData -- maps the real plan store (fleet streams, agent profiles,
-// decomposed issues, phases, sections, linked repos) into the shapes the v4
-// ProjectPane renders. Pure (no React / Tauri) so the mapping is unit-testable,
+// decomposed issues, phases, sections, linked repos) into the shapes the
+// ProjectPane (v2) renders. Pure (no React / Tauri) so the mapping is unit-testable,
 // keeping the pane a dumb view. ProjectPane re-imports these interfaces, so this
 // module is the single source of truth for the pane data contract; the pane
 // falls back to its own sample consts when a project has none of this yet.
@@ -9,71 +9,21 @@ import type { AgentProfile, Tier, ToolKey } from "../agents/agentProfiles";
 import type { FleetPlan } from "./planSections";
 import type { PlanIssue } from "./planIssues";
 import type { Section } from "./ghStructure";
+import type { NodeProgress } from "./ghProgress";
 import { resolvePhaseIndex } from "./planIssues";
 import { resolveFlow } from "./agentFlow";
-import { type DirectorDrive, resolveDirectorDrive } from "./directorDrive";
-import type { IntegrationStrategy } from "./integrationStrategy";
+import { resolveDirectorDrive } from "./directorDrive";
+// The render-shape contract lives in projectPane.types (#356, the shared pane
+// types). This adapter imports those shapes and re-exports them so existing
+// import sites that reach for them via "./projectPaneData" keep working.
+import type {
+  Posture, Perm, Agent, Repo, Issue, Milestone, ContextFile, ProjectPaneData,
+} from "./projectPane.types";
 
-export type Posture = "allow" | "ask" | "deny";
-export type Perm = Record<string, Posture>;
-export interface Flow { autonomy: string; push: string; gate: string }
-
-export interface Agent {
-  id: string;
-  name: string;
-  role: string;
-  status: string;
-  repo: string;
-  color: string;
-  initial: string;
-  owns: string[];
-  issues: string[];
-  focus?: boolean;
-  preset: string;
-  perm: Perm;
-  flow: Flow;
-  /** Per-stream integration-strategy override (#378); undefined ⇒ inherits the fleet default. */
-  strategy?: IntegrationStrategy;
-  ctx: number;
-}
-
-export interface RepoBranch { n: string; issue: number; state: string; ahead: number; behind: number }
-export interface Repo {
-  id: string;
-  branch: string;
-  ahead: number;
-  behind: number;
-  agents: string[];
-  primary: boolean;
-  branches: RepoBranch[];
-}
-
-export interface SubItem { t: string; done: boolean }
-export interface Issue {
-  n: number | string;
-  t: string;
-  state: string;
-  owner: string;
-  ac: number;
-  branch: string;
-  deps: (number | string)[];
-  sub: SubItem[];
-}
-export interface Epic { id: string; title: string; pct: number; issues: Issue[] }
-export interface Milestone { id: string; title: string; repo: string; pct: number; state: string; epics: Epic[] }
-
-export interface ContextFile { name: string; kind: string; tok: string; pinned: boolean; scope: string; content: string }
-
-export interface ProjectPaneData {
-  agents: Agent[];
-  repos: Repo[];
-  structure: Milestone[];
-  context: ContextFile[];
-  /** The async-integrator director config (#366), surfaced for the planning UI. */
-  director: { enabled: boolean; role?: string; drive: DirectorDrive };
-  /** Project-default integration strategy (#378); undefined ⇒ DEFAULT_STRATEGY. */
-  fleetStrategy?: IntegrationStrategy;
-}
+export type {
+  Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone,
+  ContextFile, ProjectPaneData,
+} from "./projectPane.types";
 
 export interface BuildProjectPaneInput {
   fleet?: FleetPlan;
@@ -86,6 +36,13 @@ export interface BuildProjectPaneInput {
    *  store). When present it drives each context file's `pinned` instead of the
    *  confirmed-section default. */
   pinned?: string[];
+  /** Live GitHub issue-progression overlay (#393 Layer 2), keyed by structure node
+   *  id (`issue:{repo}:{ref}`). When present it drives each issue's done-state and
+   *  the milestone/epic percentages — reflecting what is actually CLOSED on GitHub
+   *  — falling back to the static done/closed label when a node has no live data
+   *  (#429). The same overlay the GitHubStructureCard renders, built by
+   *  {@link buildProgressOverlay}. */
+  progress?: Record<string, NodeProgress>;
 }
 
 const AGENT_HUES = [230, 70, 50, 145, 195, 300, 350, 110, 20, 260];
@@ -168,12 +125,25 @@ function buildRepos(input: BuildProjectPaneInput): Repo[] {
 }
 
 function buildStructure(input: BuildProjectPaneInput): Milestone[] {
-  const { phases, issues, repos } = input;
+  const { phases, issues, repos, progress } = input;
   if (phases.length === 0 && issues.length === 0) return [];
   const phaseNames = phases.map(p => p.name);
   const firstAgent = input.fleet?.streams[0]?.id ?? "";
-  const issueClosed = (p: PlanIssue): boolean =>
+
+  // Attribute each issue to a repo (its explicit `repo`, else the first publish
+  // repo) and render milestones PER repo: a milestone is a (repo, phase) pair
+  // that actually has issues, so the repo-first structure view shows each repo's
+  // own work tree and empty (repo, phase) pairs don't appear.
+  const fallbackRepo = repos[0] ?? "";
+  const repoOf = (p: PlanIssue): string => p.repo || fallbackRepo;
+
+  // An issue is done when the live GitHub overlay (#393 Layer 2) marks its
+  // structure node closed, falling back to a static done/closed label on the plan
+  // issue (#429). The node id mirrors buildGhStructure: `issue:{repo}:{ref}`.
+  const staticClosed = (p: PlanIssue): boolean =>
     p.labels.some(l => /^(done|closed)$/i.test(l));
+  const issueClosed = (p: PlanIssue): boolean =>
+    progress?.[`issue:${repoOf(p)}:${p.ref}`]?.done ?? staticClosed(p);
   const toIssue = (p: PlanIssue): Issue => ({
     n: p.ref,
     t: p.title,
@@ -182,17 +152,15 @@ function buildStructure(input: BuildProjectPaneInput): Milestone[] {
     ac: p.acceptance.length,
     branch: p.ref,
     deps: p.dependsOn,
-    sub: p.acceptance.map(a => ({ t: a, done: false })),
+    // Acceptance sub-items: when the live overlay marks the issue closed, treat
+    // every acceptance criterion as met so the drill-in checklist agrees with the
+    // issue's done state; otherwise leave them open (the overlay tracks per-issue,
+    // not per-criterion, state).
+    sub: p.acceptance.map(a => ({ t: a, done: issueClosed(p) })),
   });
   const pct = (group: PlanIssue[]): number =>
     group.length ? group.filter(issueClosed).length / group.length : 0;
 
-  // Attribute each issue to a repo (its explicit `repo`, else the first publish
-  // repo) and render milestones PER repo: a milestone is a (repo, phase) pair
-  // that actually has issues, so the repo-first structure view shows each repo's
-  // own work tree and empty (repo, phase) pairs don't appear.
-  const fallbackRepo = repos[0] ?? "";
-  const repoOf = (p: PlanIssue): string => p.repo || fallbackRepo;
   const repoOrder: string[] = [...repos];
   for (const p of issues) {
     const r = repoOf(p);

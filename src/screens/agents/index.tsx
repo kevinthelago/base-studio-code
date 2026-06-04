@@ -7,6 +7,8 @@
 // (The Activity feed is still sample data — a real audit log is a follow-up.)
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { TabBar, type TabItem } from "../../components/chrome/TabBar";
+import { usePageTabs } from "../../hooks/usePageTabs";
 import {
   APP_ROLES, TOOL_DEFS, GUARANTEED,
   MODE_LABEL, resolveAllowlistFrom, paneCount, consoleCount,
@@ -24,7 +26,6 @@ import type { PipelineRun } from "../../lib/conductor";
 import { useAppStore } from "../../store";
 import "./agents.css";
 
-type Tab = "profiles" | "assignments" | "activity" | "flow";
 type DecFilter = "all" | "allow" | "ask" | "block";
 
 /** A computed audit row for the Activity table. */
@@ -41,8 +42,7 @@ interface AuditDisplayRow {
 const initialOf = (name: string) => name.replace(/[^a-z]/gi, "").slice(0, 2).toUpperCase();
 const modeColor = (m: Tier) => m === "deny" ? "var(--danger)" : m === "ask" ? "var(--accent)" : "var(--success)";
 
-export function AgentsScreen() {
-  const [tab, setTab] = useState<Tab>("profiles");
+export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   const [selectedId, setSelectedId] = useState("sys_planner");
   const [actDecision, setActDecision] = useState<DecFilter>("all");
   const [actConsole, setActConsole] = useState("all");
@@ -91,6 +91,16 @@ export function AgentsScreen() {
   // applies. Refreshed while the Activity tab is open.
   const paneRoles = useAppStore((s) => s.paneRoles);
   const [auditRows, setAuditRows] = useState<AuditDisplayRow[]>([]);
+
+  const agentDefs: TabItem[] = useMemo(() => [
+    { id: "profiles", label: "Profiles", count: roles.length + profiles.length, hint: "· application + custom roles" },
+    { id: "assignments", label: "Assignments", count: consoles.length, hint: "· consoles & panes" },
+    { id: "activity", label: "Activity", count: auditRows.length },
+    { id: "flow", label: "Flow", count: Object.keys(pipelineRuns).length, hint: "· coordination & pipelines" },
+  ], [roles.length, profiles.length, consoles.length, auditRows.length, pipelineRuns]);
+  const { tabs: agentTabs, activeId, select, reorder, tearOff } = usePageTabs("agents", agentDefs);
+  const tab = sectionOverride ?? activeId; // active section
+
   useEffect(() => {
     if (tab !== "activity") return;
     let cancelled = false;
@@ -165,7 +175,7 @@ export function AgentsScreen() {
     const idx = profiles.findIndex((p) => p.id === cur);
     setPaneProfile(paneId, profiles[(idx + 1) % profiles.length].id);
   }
-  function openProfile(id: string) { setTab("profiles"); setSelectedId(id); }
+  function openProfile(id: string) { select("profiles"); setSelectedId(id); }
 
   // Create a new user profile (#259): sensible defaults, persisted, then selected.
   function createProfile() {
@@ -184,7 +194,7 @@ export function AgentsScreen() {
       paths: { allow: [], deny: [] }, net: { allow: [] }, builtin: false,
     };
     setAgentProfiles([...profiles, next]);
-    setTab("profiles");
+    select("profiles");
     setSelectedId(id);
   }
 
@@ -209,36 +219,34 @@ export function AgentsScreen() {
 
   return (
     <div className="agents-page">
-      <div className="subtabs">
-        {([
-          ["profiles", "Profiles", roles.length + profiles.length, "· application + custom roles"],
-          ["assignments", "Assignments", consoles.length, "· consoles & panes"],
-          ["activity", "Activity", auditRows.length, ""],
-          ["flow", "Flow", Object.keys(pipelineRuns).length, "· coordination & pipelines"],
-        ] as [Tab, string, number, string][]).map(([k, label, count, hint]) => (
-          <div key={k} className={`t ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>
-            {label} <span className="count">{count}</span>
-            {hint && <span className="hint-inline">{hint}</span>}
-          </div>
-        ))}
-        <div className="right">
-          {tab === "profiles" && <>
-            <span className="hint" style={{ fontFamily: "var(--mono)" }}>{roles.length} application · {profiles.length} custom roles</span>
-            <button className="btn primary" onClick={createProfile}>+ New role</button>
-          </>}
-          {tab === "assignments" && <>
-            <span className="hint" style={{ fontFamily: "var(--mono)" }}>resolved · guaranteed ∪ profile ∪ project ∪ repo</span>
-            <button className="btn">apply to all panes…</button>
-          </>}
-          {tab === "activity" && <>
-            <span className="hint" style={{ fontFamily: "var(--mono)" }}>live · last 1h</span>
-            <button className="btn">pause feed</button>
-          </>}
-          {tab === "flow" && (
-            <span className="hint" style={{ fontFamily: "var(--mono)" }}>live · #199 latches + #220 stages</span>
-          )}
-        </div>
-      </div>
+      {!sectionOverride && (
+        <TabBar
+          tabs={agentTabs}
+          activeId={activeId}
+          onSelect={select}
+          onReorder={reorder}
+          onTearOff={tearOff}
+          right={
+            <>
+              {tab === "profiles" && <>
+                <span className="hint" style={{ fontFamily: "var(--mono)" }}>{roles.length} application · {profiles.length} custom roles</span>
+                <button className="btn primary" onClick={createProfile}>+ New role</button>
+              </>}
+              {tab === "assignments" && <>
+                <span className="hint" style={{ fontFamily: "var(--mono)" }}>resolved · guaranteed ∪ profile ∪ project ∪ repo</span>
+                <button className="btn">apply to all panes…</button>
+              </>}
+              {tab === "activity" && <>
+                <span className="hint" style={{ fontFamily: "var(--mono)" }}>live · last 1h</span>
+                <button className="btn">pause feed</button>
+              </>}
+              {tab === "flow" && (
+                <span className="hint" style={{ fontFamily: "var(--mono)" }}>live · #199 latches + #220 stages</span>
+              )}
+            </>
+          }
+        />
+      )}
 
       <div className="body">
         {tab === "profiles" && (

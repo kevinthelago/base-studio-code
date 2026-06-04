@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { filterDocuments, scopeToProject, DOC_FILTERS, type Doc } from "../lib/documents";
+import {
+  filterDocuments, scopeToProject, DOC_FILTERS,
+  collectTags, filterByTags, matchesQuery, selectDocuments, groupByKind,
+  type Doc,
+} from "../lib/documents";
 
 const doc = (p: Partial<Doc> & Pick<Doc, "relpath" | "kind">): Doc => ({
   name: p.relpath.split("/").pop()!,
@@ -83,5 +87,85 @@ describe("scopeToProject", () => {
 
   it("returns nothing for an empty key list", () => {
     expect(scopeToProject(DOCS, [])).toEqual([]);
+  });
+});
+
+describe("collectTags", () => {
+  it("returns the distinct tags across all docs, sorted", () => {
+    expect(collectTags(DOCS)).toEqual(["react", "rust", "vitest"]);
+  });
+
+  it("returns an empty list when no doc carries tags", () => {
+    expect(collectTags([doc({ relpath: "a.md", kind: "project", project: "x" })])).toEqual([]);
+  });
+});
+
+describe("filterByTags", () => {
+  it("imposes no constraint for an empty selection", () => {
+    expect(filterByTags(DOCS, [])).toHaveLength(DOCS.length);
+  });
+
+  it("keeps docs carrying the selected tag", () => {
+    expect(filterByTags(DOCS, ["react"]).map(d => d.relpath)).toEqual(["documents/react-testing.md"]);
+  });
+
+  it("requires ALL selected tags (AND semantics)", () => {
+    expect(filterByTags(DOCS, ["react", "vitest"]).map(d => d.relpath)).toEqual(["documents/react-testing.md"]);
+    // rust + react is carried by no single doc.
+    expect(filterByTags(DOCS, ["rust", "react"])).toHaveLength(0);
+  });
+});
+
+describe("matchesQuery (full-text incl. body)", () => {
+  const d = DOCS[0]; // Rust error handling, tag rust
+
+  it("matches everything for an empty query", () => {
+    expect(matchesQuery(d, "")).toBe(true);
+  });
+
+  it("matches the title case-insensitively without a body", () => {
+    expect(matchesQuery(d, "ERROR")).toBe(true);
+    expect(matchesQuery(d, "react")).toBe(false);
+  });
+
+  it("matches body content only when the body is supplied", () => {
+    expect(matchesQuery(d, "anyhow")).toBe(false);
+    expect(matchesQuery(d, "anyhow", "Use the anyhow crate for context.")).toBe(true);
+  });
+
+  it("still matches metadata (tags/project/repo) so existing search keeps working", () => {
+    expect(matchesQuery(d, "rust")).toBe(true);
+  });
+});
+
+describe("selectDocuments (kind + tags + query pipeline)", () => {
+  it("composes the source filter, tag facet, and free-text query", () => {
+    const out = selectDocuments(DOCS, { filter: "reusable", tags: ["react"], query: "test" });
+    expect(out.map(d => d.relpath)).toEqual(["documents/react-testing.md"]);
+  });
+
+  it("searches bodies via the injected map", () => {
+    const bodies = { "documents/rust-errors.md": "prefer the thiserror derive" };
+    const out = selectDocuments(DOCS, { filter: "all", tags: [], query: "thiserror" }, bodies);
+    expect(out.map(d => d.relpath)).toEqual(["documents/rust-errors.md"]);
+  });
+
+  it("returns everything for the default selection", () => {
+    expect(selectDocuments(DOCS, { filter: "all", tags: [], query: "" })).toHaveLength(DOCS.length);
+  });
+});
+
+describe("groupByKind", () => {
+  it("buckets docs under reusable/project/repo headers in display order", () => {
+    const groups = groupByKind(DOCS);
+    expect(groups.map(g => g.kind)).toEqual(["reusable", "project", "repo"]);
+    expect(groups[0].docs).toHaveLength(2);
+    expect(groups[1].docs).toHaveLength(2);
+    expect(groups[2].docs).toHaveLength(1);
+  });
+
+  it("drops empty groups", () => {
+    const onlyReusable = DOCS.filter(d => d.kind === "reusable");
+    expect(groupByKind(onlyReusable).map(g => g.kind)).toEqual(["reusable"]);
   });
 });

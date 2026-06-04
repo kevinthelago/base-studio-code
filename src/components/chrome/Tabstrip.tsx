@@ -1,8 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
+// Tabstrip -- the console's workspace tab strip. Now a thin adapter over the
+// shared <TabBar> (#463): it maps the console's index-based API to TabBar's
+// generic id-based model (id = the tab's array index) and supplies the
+// layout-picker context menu. All the drag/reorder/tear-off/rename behavior lives
+// in TabBar, shared with every other page.
+
 import { Pencil } from "lucide-react";
+import { TabBar, type TabItem } from "./TabBar";
 
 export interface Tab {
+  /** Stable identity (#463), minted at creation. Survives reorder/close/detach,
+   *  so the detached set, persisted order, and re-dock key off it (not the array
+   *  index). Optional in the type for legacy/test literals; the store backfills
+   *  one on hydration and mints one for every tab it creates. */
+  id?: string;
   name: string;
   layout: string;
   state?: "run" | "on" | "idle";
@@ -13,12 +23,6 @@ export interface Tab {
 
 const LAYOUTS = ["1×1", "2×1", "1×2", "2×2", "3×2", "3×3"] as const;
 
-interface ContextMenuState {
-  tabIdx: number;
-  x: number;
-  y: number;
-}
-
 interface TabstripProps {
   tabs: Tab[];
   activeIdx?: number;
@@ -27,202 +31,96 @@ interface TabstripProps {
   onAdd?: () => void;
   onRename?: (idx: number, name: string) => void;
   onChangeLayout?: (idx: number, layout: string) => void;
+  onReorder?: (from: number, to: number) => void;
+  onTearOff?: (idx: number) => void;
+  /** Tab ids to hide from the bar (detached into their own window, #430). */
+  hiddenIds?: string[];
+}
+
+function LayoutMenu({ layout, onRename, onPick }: {
+  layout?: string; onRename: () => void; onPick: (layout: string) => void;
+}) {
+  return (
+    <>
+      <button
+        onClick={onRename}
+        style={{
+          width: "100%", padding: "7px 12px", background: "transparent", border: "none",
+          color: "var(--fg-muted)", fontSize: 11.5, textAlign: "left", cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 8,
+        }}
+        onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg-elev)")}
+        onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "transparent")}
+      >
+        <Pencil size={12} /> Rename
+      </button>
+      <div style={{ height: 1, background: "var(--border-soft)", margin: "0 8px" }} />
+      <div style={{ padding: "6px 12px 10px" }}>
+        <div style={{ fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 7, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+          Layout
+        </div>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+          {LAYOUTS.map((l) => {
+            const [c, r] = l.split("×").map(Number);
+            const current = layout === l;
+            return (
+              <button
+                key={l}
+                onClick={() => onPick(l)}
+                title={l}
+                style={{
+                  padding: "5px 7px", borderRadius: 4, cursor: "pointer",
+                  fontFamily: "var(--mono)", fontSize: 10,
+                  background: current ? "color-mix(in oklch, var(--accent), transparent 85%)" : "var(--bg-elev)",
+                  border: "1px solid " + (current ? "var(--accent-dim)" : "var(--border-soft)"),
+                  color: current ? "var(--accent)" : "var(--fg-muted)",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                }}
+              >
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${c}, 8px)`, gridTemplateRows: `repeat(${r}, 5px)`, gap: 1.5 }}>
+                  {Array.from({ length: c * r }).map((_, idx) => (
+                    <div key={idx} style={{ borderRadius: 1, background: current ? "var(--accent)" : "var(--border)" }} />
+                  ))}
+                </div>
+                {l}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
 }
 
 export function Tabstrip({
-  tabs,
-  activeIdx = 0,
-  onSelect,
-  onClose,
-  onAdd,
-  onRename,
-  onChangeLayout,
+  tabs, activeIdx = 0, onSelect, onClose, onAdd, onRename, onChangeLayout, onReorder, onTearOff, hiddenIds = [],
 }: TabstripProps) {
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editingName, setEditingName] = useState("");
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-
-  const editInputRef = useRef<HTMLInputElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (editingIdx !== null) editInputRef.current?.select();
-  }, [editingIdx]);
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    function onMouseDown(e: MouseEvent) {
-      if (!menuRef.current?.contains(e.target as Node)) setContextMenu(null);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setContextMenu(null);
-    }
-    document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [contextMenu]);
-
-  const commitRename = useCallback(() => {
-    if (editingIdx === null) return;
-    const trimmed = editingName.trim();
-    if (trimmed) onRename?.(editingIdx, trimmed);
-    setEditingIdx(null);
-  }, [editingIdx, editingName, onRename]);
-
-  function startRename(idx: number) {
-    setContextMenu(null);
-    setEditingIdx(idx);
-    setEditingName(tabs[idx].name);
-  }
-
-  function handleContextMenu(e: React.MouseEvent, idx: number) {
-    e.preventDefault();
-    // Clamp the menu so it doesn't overflow the right edge
-    const menuWidth = 220;
-    const x = Math.min(e.clientX, window.innerWidth - menuWidth - 8);
-    setContextMenu({ tabIdx: idx, x, y: e.clientY });
-  }
-
+  // Identity is the stable tab id; fall back to the array index for legacy/test
+  // tabs that predate ids. All console callbacks are index-based, so map back.
+  const idOf = (i: number) => tabs[i]?.id ?? String(i);
+  const idxOf = (id: string) => tabs.findIndex((_, i) => idOf(i) === id);
+  // Detached tabs are hidden from the bar (still in the array, so their place is
+  // kept). Reorder positions are in this visible subset → translate to full idx.
+  const items: TabItem[] = tabs
+    .map((t, i) => ({ id: idOf(i), label: t.name, status: t.state, meta: t.layout }))
+    .filter((it) => !hiddenIds.includes(it.id));
   return (
-    <>
-      <div className="tabstrip">
-        {tabs.map((t, i) => (
-          <div
-            key={i}
-            className={"tab " + (i === activeIdx ? "active" : "")}
-            onClick={() => { if (editingIdx !== i) onSelect?.(i); }}
-            onContextMenu={(e) => handleContextMenu(e, i)}
-          >
-            <span className={"dot " + (t.state ?? "")} />
-
-            {editingIdx === i ? (
-              <input
-                ref={editInputRef}
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onBlur={commitRename}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); commitRename(); }
-                  if (e.key === "Escape") setEditingIdx(null);
-                }}
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  fontFamily: "var(--mono)", fontSize: 11.5,
-                  background: "var(--bg-canvas)", color: "var(--fg)",
-                  border: "1px solid var(--accent-dim)", borderRadius: 3,
-                  padding: "1px 4px", width: 100, outline: "none",
-                }}
-              />
-            ) : (
-              <span
-                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                onDoubleClick={(e) => { e.stopPropagation(); startRename(i); }}
-              >
-                {t.name}
-              </span>
-            )}
-
-            <span style={{ color: "var(--fg-dim)", marginLeft: 4, fontSize: 10 }}>
-              {t.layout}
-            </span>
-            <span
-              className="x"
-              onClick={(e) => { e.stopPropagation(); onClose?.(i); }}
-            >
-              ×
-            </span>
-          </div>
-        ))}
-        <button className="tab-add" onClick={onAdd}>+</button>
-      </div>
-
-      {contextMenu && createPortal(
-        <div
-          ref={menuRef}
-          style={{
-            position: "fixed", top: contextMenu.y, left: contextMenu.x, zIndex: 2000,
-            background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
-            borderRadius: "var(--r-md)", boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
-            minWidth: 210, overflow: "hidden", fontFamily: "var(--mono)",
-          }}
-        >
-          {/* Rename row */}
-          <button
-            onClick={() => startRename(contextMenu.tabIdx)}
-            style={{
-              width: "100%", padding: "7px 12px", background: "transparent",
-              border: "none", color: "var(--fg-muted)", fontSize: 11.5,
-              textAlign: "left", cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 8,
-            }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg-elev)")}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "transparent")}
-          >
-            <Pencil size={12} />
-            Rename
-          </button>
-
-          <div style={{ height: 1, background: "var(--border-soft)", margin: "0 8px" }} />
-
-          {/* Layout picker */}
-          <div style={{ padding: "6px 12px 10px" }}>
-            <div style={{
-              fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 7,
-              textTransform: "uppercase", letterSpacing: "0.07em",
-            }}>
-              Layout
-            </div>
-            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-              {LAYOUTS.map((l) => {
-                const [c, r] = l.split("×").map(Number);
-                const current = tabs[contextMenu.tabIdx]?.layout === l;
-                return (
-                  <button
-                    key={l}
-                    onClick={() => { onChangeLayout?.(contextMenu.tabIdx, l); setContextMenu(null); }}
-                    title={l}
-                    style={{
-                      padding: "5px 7px", borderRadius: 4, cursor: "pointer",
-                      fontFamily: "var(--mono)", fontSize: 10,
-                      background: current
-                        ? "color-mix(in oklch, var(--accent), transparent 85%)"
-                        : "var(--bg-elev)",
-                      border: "1px solid " + (current ? "var(--accent-dim)" : "var(--border-soft)"),
-                      color: current ? "var(--accent)" : "var(--fg-muted)",
-                      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!current) (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-elev2)";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!current) (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-elev)";
-                    }}
-                  >
-                    <div style={{
-                      display: "grid",
-                      gridTemplateColumns: `repeat(${c}, 8px)`,
-                      gridTemplateRows: `repeat(${r}, 5px)`,
-                      gap: 1.5,
-                    }}>
-                      {Array.from({ length: c * r }).map((_, idx) => (
-                        <div key={idx} style={{
-                          borderRadius: 1,
-                          background: current ? "var(--accent)" : "var(--border)",
-                        }} />
-                      ))}
-                    </div>
-                    {l}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>,
-        document.body
+    <TabBar
+      tabs={items}
+      activeId={idOf(activeIdx)}
+      onSelect={(id) => onSelect?.(idxOf(id))}
+      onAdd={onAdd}
+      onClose={onClose ? (id) => onClose(idxOf(id)) : undefined}
+      onRename={onRename ? (id, name) => onRename(idxOf(id), name) : undefined}
+      onReorder={onReorder ? (from, to) => onReorder(idxOf(items[from].id), idxOf(items[to].id)) : undefined}
+      onTearOff={onTearOff ? (id) => onTearOff(idxOf(id)) : undefined}
+      renderMenu={(id, ctx) => (
+        <LayoutMenu
+          layout={tabs[idxOf(id)]?.layout}
+          onRename={ctx.startRename}
+          onPick={(l) => { onChangeLayout?.(idxOf(id), l); ctx.close(); }}
+        />
       )}
-    </>
+    />
   );
 }

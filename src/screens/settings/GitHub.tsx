@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppStore, type GithubUser, type GithubRepo } from "../../store";
 import { clearGithubCache } from "../../lib/github";
 import { mapDevicePoll, type DevicePollResult } from "../../lib/githubDeviceFlow";
@@ -76,7 +77,7 @@ function ConnectCard() {
     try {
       const start = await invoke<DeviceStart>("github_device_start", { scope: DEVICE_SCOPE });
       setDevice(start);
-      window.open(start.verification_uri, "_blank");
+      openUrl(start.verification_uri).catch(() => { /* user can use the shown URL/code manually */ });
 
       const deadline = Date.now() + start.expires_in * 1000;
       let intervalSec = start.interval;
@@ -146,7 +147,7 @@ function ConnectCard() {
                 </span>
                 …
               </span>
-              <button className="btn ghost" style={{ height: 28, fontSize: 11 }} onClick={() => window.open(device.verification_uri, "_blank")}>
+              <button className="btn ghost" style={{ height: 28, fontSize: 11 }} onClick={() => openUrl(device.verification_uri)}>
                 reopen
               </button>
               <button className="btn ghost danger" style={{ height: 28, fontSize: 11 }} onClick={cancelDevice}>

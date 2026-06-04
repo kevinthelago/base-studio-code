@@ -1,15 +1,18 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema/acl/capability.schema.json",
   "identifier": "default",
-  "description": "Default capability — grants core Tauri APIs to the main window.",
-  "windows": ["main"],
+  "description": "Default capability — grants core Tauri APIs to the main window and detached tab windows.",
+  "windows": ["main", "tab-*"],
   "permissions": [
     "core:default",
     "core:window:allow-close",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
+    "core:webview:allow-create-webview-window",
     "store:default",
-    "log:default"
+    "log:default",
+    "opener:default",
+    "opener:allow-open-url"
   ]
 }

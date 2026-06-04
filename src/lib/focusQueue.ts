@@ -10,6 +10,58 @@ export interface QueuedPane {
   pane: number;
 }
 
+// ── Role-aware focus targeting (#392) ─────────────────────────────────────────
+//
+// Which panes the autofocus queue pulls your attention to. With a director/worker
+// fleet, you usually want only the DIRECTOR to surface — workers run dark and
+// escalate via bsc-ask (which flips their pane to awaiting-input through the
+// coordinator), so genuine worker questions still reach you. A plain console
+// (no role) always queues, except under "none".
+
+export type FocusTarget =
+  | "director"   // default: the integrator + plain consoles; workers run dark
+  | "workers"    // workers + plain consoles (debug worker behavior)
+  | "fleet"      // every fleet role (director + workers) + consoles
+  | "everything" // every idle pane, whatever its role
+  | "none";      // nothing auto-queues (fully manual)
+
+/** The presets, in display order — for a picker control. */
+export const FOCUS_TARGETS: FocusTarget[] = ["director", "workers", "fleet", "everything", "none"];
+
+/** Default focus target — surface the director; let workers run dark. */
+export const DEFAULT_FOCUS_TARGET: FocusTarget = "director";
+
+/** Human label for a focus target. */
+export function focusTargetLabel(t: FocusTarget): string {
+  switch (t) {
+    case "director": return "Director";
+    case "workers": return "Workers";
+    case "fleet": return "Director + workers";
+    case "everything": return "Everything";
+    case "none": return "None";
+  }
+}
+
+/**
+ * Whether a pane that just went idle should join the focus queue, given the active
+ * target. A role-less pane (a plain console — `role` undefined/empty) always queues
+ * except under "none", so single-console behavior is unchanged for every target but
+ * "none". A fleet pane queues only when its role matches the target.
+ *
+ * @param role the pane's session role (`paneRoles[pid]`), or undefined for a plain console.
+ * @param target the active focus target.
+ */
+export function shouldFocus(role: string | undefined, target: FocusTarget): boolean {
+  if (target === "none") return false;
+  if (!role) return true;                       // plain console — always queue (except "none")
+  switch (target) {
+    case "everything": return true;
+    case "director":   return role === "director";
+    case "workers":    return role === "worker";
+    case "fleet":      return role === "director" || role === "worker";
+  }
+}
+
 const samePane = (a: QueuedPane, b: QueuedPane) => a.tab === b.tab && a.pane === b.pane;
 
 /**

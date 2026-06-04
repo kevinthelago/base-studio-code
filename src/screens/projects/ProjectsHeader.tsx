@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { sanitizeProjectKey, projectRepoCwd } from "../../lib/projectPaths";
+import { TabBar, type TabItem } from "../../components/chrome/TabBar";
+import { usePageTabs } from "../../hooks/usePageTabs";
 
 /** Mirror of the Rust sanitize_project_key: ASCII alnum/dash kept, else `_`, capped 80. */
 const sanitizeKey = sanitizeProjectKey;
@@ -26,6 +28,8 @@ const TABS = [
 ] as const;
 
 type BoardTab = typeof TABS[number]["k"];
+
+const BOARD_TABS: TabItem[] = TABS.map((t) => ({ id: t.k, label: t.label, hint: t.hint }));
 
 interface ProjectsHeaderProps {
   project: ActiveProjectInfo;
@@ -203,6 +207,8 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   const { projectsBoardTab, setProjectsBoardTab, setProjectsView, setPlanningContext, setPlanningSession, setScreen, setKbProjectScope } = useAppStore();
+  const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
+    usePageTabs("projects-board", BOARD_TABS, { activeId: projectsBoardTab, setActive: (id) => setProjectsBoardTab(id as BoardTab) });
 
   // Open the Knowledge Base scoped to this project's documents, keyed by the
   // canonical (title-derived) folder the planner writes to. We intentionally do
@@ -269,35 +275,14 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
 
       <RepoResolverStrip project={project} />
 
-      <div style={{
-        height: 36, marginTop: 8,
-        borderBottom: "1px solid var(--border-soft)",
-        padding: "0 24px",
-        display: "flex", alignItems: "end", gap: 2,
-      }}>
-        {TABS.map((t) => {
-          const on = t.k === projectsBoardTab;
-          return (
-            <div
-              key={t.k}
-              onClick={() => setProjectsBoardTab(t.k as BoardTab)}
-              style={{
-                padding: "0 14px", height: 30,
-                display: "flex", alignItems: "center", gap: 8,
-                borderTopLeftRadius: 6, borderTopRightRadius: 6,
-                background: on ? "var(--bg-canvas)" : "transparent",
-                border: "1px solid " + (on ? "var(--border-soft)" : "transparent"),
-                borderBottom: "0",
-                color: on ? "var(--fg)" : "var(--fg-muted)",
-                fontFamily: "var(--mono)", fontSize: 11.5,
-                cursor: "pointer",
-              }}
-            >
-              {t.label}
-              {on && <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>· {t.hint}</span>}
-            </div>
-          );
-        })}
+      <div style={{ marginTop: 8 }}>
+        <TabBar
+          tabs={boardTabs}
+          activeId={boardActive}
+          onSelect={boardSelect}
+          onReorder={boardReorder}
+          onTearOff={boardTearOff}
+        />
       </div>
     </>
   );

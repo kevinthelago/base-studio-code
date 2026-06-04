@@ -13,12 +13,13 @@ import {
 import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
   ProjectPaneData,
-} from "./projectPaneData";
+} from "./projectPane.types";
 
 /* =================================================================
-   types -- the render shapes live in projectPaneData.ts (single source of
-   truth). ProjectPane imports them so real plan data and the sample fallback
-   share one contract. Local Role/Cap describe this file's palette tables only.
+   types -- the render shapes live in projectPane.types.ts (#356, the shared
+   pane-types module). ProjectPane and the projectPaneData adapter both import
+   them so real plan data and the sample fallback share one contract. Local
+   Role/Cap describe this file's palette tables only.
    ================================================================= */
 interface Role { c: string; label: string }
 interface Cap { k: string; g: string; label: string }
