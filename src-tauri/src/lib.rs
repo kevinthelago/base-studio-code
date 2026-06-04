@@ -409,6 +409,20 @@ fn claude_launch(prompt: &str, continue_session: bool) -> String {
     format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
 }
 
+/// Map a UI model id (`sonnet-4.5`, `opus-4.5`, `haiku-4.5`) to the alias Claude
+/// Code's `--model` flag accepts. Returns `None` for anything unrecognized, so the
+/// session falls back to Claude Code's own default and we never interpolate an
+/// arbitrary caller string into the shell command (the match only ever yields a
+/// fixed literal — no injection surface).
+fn claude_model_flag(model: &str) -> Option<&'static str> {
+    match model {
+        "haiku-4.5" => Some("haiku"),
+        "sonnet-4.5" => Some("sonnet"),
+        "opus-4.5" => Some("opus"),
+        _ => None,
+    }
+}
+
 /// Claude Code's on-disk directory name for a launch cwd. Conversations live at
 /// `~/.claude/projects/<dir>/<session>.jsonl`, where `<dir>` is the cwd with every
 /// non-alphanumeric character replaced by `-`
@@ -673,7 +687,11 @@ fn non_bash_init(
     cwd_missing: bool,
     effective_cwd: &str,
     launch_claude: bool,
+    model: Option<&str>,
 ) -> String {
+    // `--model <alias>` for the auto-launched claude when a model is set; the alias
+    // is a fixed literal from claude_model_flag, so this is injection-safe.
+    let model_arg = model.map(|m| format!(" --model {m}")).unwrap_or_default();
     // The directory to land in: the nearest existing ancestor when the configured
     // cwd is gone, else the cwd itself (native paths — pwsh/cmd, not bash, syntax).
     let dir = if cwd.is_empty() {
@@ -703,7 +721,7 @@ fn non_bash_init(
                 "Write-Host '[bsc] Running under PowerShell -- {NOTICE}.' -ForegroundColor Yellow; "
             ));
             if launch_claude {
-                s.push_str("claude; ");
+                s.push_str(&format!("claude{model_arg}; "));
             }
             s.push('\n');
             s
@@ -721,7 +739,7 @@ fn non_bash_init(
             s.push_str("cls & ");
             s.push_str(&format!("echo [bsc] Running under cmd.exe -- {NOTICE}. & "));
             if launch_claude {
-                s.push_str("claude & ");
+                s.push_str(&format!("claude{model_arg} & "));
             }
             s.push_str("echo.\n");
             s
@@ -768,6 +786,7 @@ async fn pty_create(
     startup_prompt: Option<String>,
     continue_session: Option<bool>,
     checkpoint_doc: Option<String>,
+    model: Option<String>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -921,6 +940,19 @@ async fn pty_create(
     // Whether the launch would start `claude` — the only command the degraded
     // non-bash path replays (an arbitrary bash init_cmd would be invalid there).
     let launch_claude = launch.as_deref().map(|s| s.contains("claude")).unwrap_or(false);
+    // The default `--model` alias for this session (per-pane override or global
+    // default, mapped from the UI model id). None ⇒ Claude Code's own default.
+    let model_alias = model.as_deref().and_then(claude_model_flag);
+    // The `claude()` shell wrapper: it emits the run/idle OSC markers AND injects the
+    // session's default model, so BOTH the auto-launch below and anything the user
+    // types pick it up. Skip the injection when the call already carries `--model`
+    // (whole-word match, so prompt text containing the string can't trip it).
+    let claude_fn = match model_alias {
+        Some(m) => format!(
+            "claude() {{ __bsc_state run; case \" $* \" in *\" --model \"*) command claude \"$@\";; *) command claude --model {m} \"$@\";; esac; }}; "
+        ),
+        None => "claude() { __bsc_state run; command claude \"$@\"; }; ".to_string(),
+    };
     let init_line = match resolved_shell.kind {
         ShellKind::Bash => {
             let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
@@ -945,7 +977,7 @@ async fn pty_create(
             format!(
                 "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
                  __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
-                 claude() {{ __bsc_state run; command claude \"$@\"; }}; \
+                 {claude_fn}\
                  {helpers_src}\
                  PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
                  __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
@@ -955,7 +987,7 @@ async fn pty_create(
         // are bash-only, so run a degraded init that cd's, clears, and prints a visible
         // notice (no silent breakage, #447).
         ShellKind::PowerShell | ShellKind::Cmd => {
-            non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude)
+            non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude, model_alias)
         }
     };
     writer.write_all(init_line.as_bytes()).ok();
@@ -5711,7 +5743,7 @@ mod tests {
     fn non_bash_init_is_visibly_degraded_and_shell_shaped() {
         use super::{non_bash_init, ShellKind};
         // PowerShell: cd's, clears, prints the degraded notice in yellow, launches claude.
-        let ps = non_bash_init(ShellKind::PowerShell, "C:/repo", false, "C:/repo", true);
+        let ps = non_bash_init(ShellKind::PowerShell, "C:/repo", false, "C:/repo", true, None);
         assert!(ps.contains("Set-Location -LiteralPath 'C:/repo'"));
         assert!(ps.contains("Clear-Host"));
         assert!(ps.contains("-ForegroundColor Yellow"));
@@ -5724,7 +5756,7 @@ mod tests {
         assert!(!ps.contains("PROMPT_COMMAND"));
 
         // cmd: uses `&` separators, cls, echo notice; no claude when not launching.
-        let cmd = non_bash_init(ShellKind::Cmd, "C:\\repo", false, "C:\\repo", false);
+        let cmd = non_bash_init(ShellKind::Cmd, "C:\\repo", false, "C:\\repo", false, None);
         assert!(cmd.contains("cd /d \"C:\\repo\""));
         assert!(cmd.contains("cls"));
         assert!(cmd.contains("bash-only and unavailable"));
@@ -5735,11 +5767,36 @@ mod tests {
     #[test]
     fn non_bash_init_warns_loudly_when_cwd_is_missing() {
         use super::{non_bash_init, ShellKind};
-        let ps = non_bash_init(ShellKind::PowerShell, "C:/gone", true, "C:/", false);
+        let ps = non_bash_init(ShellKind::PowerShell, "C:/gone", true, "C:/", false, None);
         // Lands in the existing ancestor, not the missing dir, and shouts about it.
         assert!(ps.contains("Set-Location -LiteralPath 'C:/'"));
         assert!(ps.contains("does not exist"));
         assert!(ps.contains("-ForegroundColor Red"));
+    }
+
+    #[test]
+    fn claude_model_flag_maps_known_ids_only() {
+        use super::claude_model_flag;
+        assert_eq!(claude_model_flag("haiku-4.5"), Some("haiku"));
+        assert_eq!(claude_model_flag("sonnet-4.5"), Some("sonnet"));
+        assert_eq!(claude_model_flag("opus-4.5"), Some("opus"));
+        // Anything unrecognized falls back to Claude Code's own default (no flag).
+        assert_eq!(claude_model_flag("gpt-4"), None);
+        assert_eq!(claude_model_flag(""), None);
+    }
+
+    #[test]
+    fn non_bash_init_injects_the_model_flag_into_the_claude_launch() {
+        use super::{non_bash_init, ShellKind};
+        // With a model, the auto-launched claude carries --model <alias>.
+        let ps = non_bash_init(ShellKind::PowerShell, "C:/repo", false, "C:/repo", true, Some("opus"));
+        assert!(ps.contains("claude --model opus"));
+        let cmd = non_bash_init(ShellKind::Cmd, "C:\\repo", false, "C:\\repo", true, Some("haiku"));
+        assert!(cmd.contains("claude --model haiku"));
+        // Without a model, no flag is added.
+        let ps_none = non_bash_init(ShellKind::PowerShell, "C:/repo", false, "C:/repo", true, None);
+        assert!(ps_none.contains("claude"));
+        assert!(!ps_none.contains("--model"));
     }
 
     #[test]
