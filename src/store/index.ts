@@ -12,6 +12,7 @@ import { repoPromptKey } from "./../lib/startupPrompt";
 import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "../lib/tabReorder";
 import { resolveStartupPrompt, resolveReferenceContext, type DocAssignments } from "../lib/assignments";
 import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, canonicalProjectKey, findProjectTabIdx, deriveTabIdentity } from "../lib/projectPaths";
+import { aggregateTabState, clearTabStatuses as clearTabStatusesPure, parsePaneKey } from "../lib/paneStatus";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
 import { computeNextRun, appendRun, suggestionToAutomation, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
@@ -228,7 +229,17 @@ interface AppStore {
   // Fleet board, #412) can read whether a worker pane is actively running. "run" =
   // claude is mid-turn, "on" = shell up / claude idle, "idle" = at rest.
   paneStatus: Record<string, "run" | "on" | "idle">;
+  // Record a pane's live status AND re-roll its tab's state in one step (#435) — the
+  // store is the single source of truth for both the pane dot and the tab rollup.
   setPaneStatus: (paneId: string, status: "run" | "on" | "idle") => void;
+  // Recompute one tab's rolled-up state from the current pane statuses + layout +
+  // disabled set (#435). Called whenever a rollup input changes that isn't itself a
+  // status event — a layout change or a pane enable/disable — so the tab dot never
+  // goes stale (e.g. shows "run" after the only running pane was disabled).
+  recomputeTabState: (tabIdx: number) => void;
+  // Drop a tab's pane statuses on close / remount so a prior session's "run"/"on"
+  // can't strand a stale activity dot on the fresh panes (#435).
+  clearTabStatuses: (tabIdx: number) => void;
   // Per-pane flag: this pane has had `claude` running at some point this
   // session. Persisted so that on next launch the pane can auto-resume the
   // CLI (with `--continue`) instead of dropping the user back at a bare
@@ -790,7 +801,42 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ paneCwds: { ...s.paneCwds, [paneId]: cwd } })),
       paneStatus: {},
       setPaneStatus: (paneId, status) =>
-        set((s) => (s.paneStatus[paneId] === status ? {} : { paneStatus: { ...s.paneStatus, [paneId]: status } })),
+        set((s) => {
+          if (s.paneStatus[paneId] === status) return {}; // no-op — same status
+          const paneStatus = { ...s.paneStatus, [paneId]: status };
+          const parsed = parsePaneKey(paneId);
+          const tab = parsed ? s.tabs[parsed.tabIdx] : undefined;
+          if (!parsed || !tab) return { paneStatus };
+          // Re-roll the owning tab from the full live set; only rebuild the tabs
+          // array when the rollup actually changes (status events are frequent).
+          const nextState = aggregateTabState(parsed.tabIdx, tab.layout, paneStatus, s.disabledPanes);
+          if (nextState === tab.state) return { paneStatus };
+          return {
+            paneStatus,
+            tabs: s.tabs.map((t, i) => (i === parsed.tabIdx ? { ...t, state: nextState } : t)),
+          };
+        }),
+      recomputeTabState: (tabIdx) =>
+        set((s) => {
+          const tab = s.tabs[tabIdx];
+          if (!tab) return {};
+          const state = aggregateTabState(tabIdx, tab.layout, s.paneStatus, s.disabledPanes);
+          return state === tab.state
+            ? {}
+            : { tabs: s.tabs.map((t, i) => (i === tabIdx ? { ...t, state } : t)) };
+        }),
+      clearTabStatuses: (tabIdx) =>
+        set((s) => {
+          const paneStatus = clearTabStatusesPure(s.paneStatus, tabIdx);
+          const tab = s.tabs[tabIdx];
+          const tabs = tab
+            ? s.tabs.map((t, i) =>
+                i === tabIdx
+                  ? { ...t, state: aggregateTabState(i, t.layout, paneStatus, s.disabledPanes) }
+                  : t)
+            : s.tabs;
+          return { paneStatus, tabs };
+        }),
       paneInitCmds: {},
       setPaneInitCmd: (paneId, cmd) =>
         set((s) => ({ paneInitCmds: { ...s.paneInitCmds, [paneId]: cmd } })),
@@ -804,7 +850,16 @@ export const useAppStore = create<AppStore>()(
         set((s) => {
           const next = { ...s.disabledPanes };
           if (disabled) next[paneId] = true; else delete next[paneId];
-          return { disabledPanes: next };
+          // Enabling/disabling a pane changes which cells count in its tab's rollup
+          // (a disabled cell can't be "run"), so re-roll the owning tab (#435).
+          const parsed = parsePaneKey(paneId);
+          const tabs = parsed && s.tabs[parsed.tabIdx]
+            ? s.tabs.map((t, i) =>
+                i === parsed.tabIdx
+                  ? { ...t, state: aggregateTabState(i, t.layout, s.paneStatus, next) }
+                  : t)
+            : s.tabs;
+          return { disabledPanes: next, tabs };
         }),
       paneRoles: {},
     paneDirectorDrive: {},
@@ -849,11 +904,14 @@ export const useAppStore = create<AppStore>()(
       closeTab: (idx) =>
         set((s) => {
           const tabs = s.tabs.filter((_, i) => i !== idx);
-          if (tabs.length === 0) return { tabs, activeTabIdx: 0, focusQueue: [] };
+          // Drop the closed tab's pane statuses so its sessions' "run"/"on" can't
+          // linger as a stale activity dot (#435) — like the focusQueue reset.
+          const paneStatus = clearTabStatusesPure(s.paneStatus, idx);
+          if (tabs.length === 0) return { tabs, activeTabIdx: 0, focusQueue: [], paneStatus };
           let activeTabIdx = s.activeTabIdx;
           if (idx < s.activeTabIdx) activeTabIdx -= 1;
           else if (idx === s.activeTabIdx) activeTabIdx = Math.min(activeTabIdx, tabs.length - 1);
-          return { tabs, activeTabIdx, focusQueue: [] };
+          return { tabs, activeTabIdx, focusQueue: [], paneStatus };
         }),
       moveTab: (from, to) =>
         set((s) => {
@@ -903,6 +961,9 @@ export const useAppStore = create<AppStore>()(
             return m && Number(m[1]) === tabIdx && Number(m[2]) >= newCount;
           };
           Object.keys(paneCwds).forEach((key) => { if (isExcess(key)) delete paneCwds[key]; });
+          // Re-roll this tab's state against the new grid: cells trimmed away by a
+          // smaller layout stop contributing their "run"/"on" (#435).
+          tabs[tabIdx] = { ...tabs[tabIdx], state: aggregateTabState(tabIdx, layout, s.paneStatus, s.disabledPanes) };
           return {
             tabs,
             paneNames: { ...s.paneNames, [tabIdx]: tabPaneNames },
@@ -1392,6 +1453,9 @@ export const useAppStore = create<AppStore>()(
             paneRoles: newPaneRoles,
             paneRepos: newPaneRepos,
             disabledPanes: newDisabledPanes,
+            // Bumped runId remounts this tab's panes; clear their old statuses so a
+            // prior pass's "run"/"on" doesn't stick on the fresh sessions (#435).
+            paneStatus: clearTabStatusesPure(s.paneStatus, newTabIdx),
             paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
             automations: [...s.automations, ...addedAutos],
             activeScreen: "console" as Screen,
@@ -1447,6 +1511,7 @@ export const useAppStore = create<AppStore>()(
           const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
           const newPaneRepos                = { ...s.paneRepos };
           const newPaneFlows                = { ...s.paneFlows };
+          let   newPaneStatus               = { ...s.paneStatus };
 
           const safeKey = sanitizeProjectKey(projectKey);
           const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
@@ -1469,6 +1534,9 @@ export const useAppStore = create<AppStore>()(
             const tabIdx = existingIdx >= 0 ? existingIdx : tabs.length;
             if (firstTabIdx < 0) firstTabIdx = tabIdx;
             const runId = existingIdx >= 0 ? (tabs[existingIdx].runId ?? 0) + 1 : 0;
+            // Reused tab → bumped runId remounts its panes; clear their old statuses so
+            // a prior run's "run"/"on" doesn't persist on the fresh sessions (#435).
+            newPaneStatus = clearTabStatusesPure(newPaneStatus, tabIdx);
             // Resume only on re-run. Each worker has its OWN worktree (a distinct
             // cwd), so `claude --continue` is unambiguous even for several agents in
             // one repo — the old shared-cwd hazard is gone.
@@ -1599,6 +1667,7 @@ export const useAppStore = create<AppStore>()(
             paneDirectorMode: newPaneDirectorMode,
             paneStream: newPaneStream,
             disabledPanes: newDisabledPanes,
+            paneStatus: newPaneStatus,
             paneNames: newPaneNames,
             activeScreen: "console" as Screen,
           };

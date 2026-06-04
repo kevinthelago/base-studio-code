@@ -1290,6 +1290,67 @@ describe("agent fleet store", () => {
   });
 });
 
+describe("pane status — store single source of truth (#435)", () => {
+  it("setPaneStatus records the status and rolls it up to tab.state", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "ps-a", layout: "2×2" });
+    const idx = before;
+    useAppStore.getState().clearTabStatuses(idx); // isolate from shared-store state
+    useAppStore.getState().setPaneStatus(`t${idx}p0`, "on");
+    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBe("on");
+    expect(useAppStore.getState().tabs[idx].state).toBe("on");
+    // Any running pane dominates the rollup.
+    useAppStore.getState().setPaneStatus(`t${idx}p1`, "run");
+    expect(useAppStore.getState().tabs[idx].state).toBe("run");
+    // Back to idle when every live pane is idle.
+    useAppStore.getState().setPaneStatus(`t${idx}p0`, "idle");
+    useAppStore.getState().setPaneStatus(`t${idx}p1`, "idle");
+    expect(useAppStore.getState().tabs[idx].state).toBe("idle");
+  });
+
+  it("re-rolls the tab when a running pane is disabled (no stale 'run' dot)", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "ps-dis", layout: "2×2" });
+    const idx = before;
+    useAppStore.getState().clearTabStatuses(idx);
+    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
+    expect(useAppStore.getState().tabs[idx].state).toBe("run");
+    useAppStore.getState().setPaneDisabled(`t${idx}p0`, true);
+    expect(useAppStore.getState().tabs[idx].state).toBe("idle");
+  });
+
+  it("re-rolls the tab on a layout shrink that trims a running pane", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "ps-layout", layout: "2×2" });
+    const idx = before;
+    useAppStore.getState().clearTabStatuses(idx);
+    useAppStore.getState().setPaneStatus(`t${idx}p3`, "run");
+    expect(useAppStore.getState().tabs[idx].state).toBe("run");
+    useAppStore.getState().setTabLayout(idx, "1×1"); // trims pane 3 out of the grid
+    expect(useAppStore.getState().tabs[idx].state).toBe("idle");
+  });
+
+  it("clearTabStatuses drops a tab's statuses and re-rolls it to idle (remount)", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "ps-clear", layout: "2×2" });
+    const idx = before;
+    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
+    useAppStore.getState().clearTabStatuses(idx);
+    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBeUndefined();
+    expect(useAppStore.getState().tabs[idx].state).toBe("idle");
+  });
+
+  it("closeTab clears the closed tab's pane statuses", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "ps-close", layout: "2×2" });
+    const idx = before;
+    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
+    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBe("run");
+    useAppStore.getState().closeTab(idx);
+    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBeUndefined();
+  });
+});
+
 describe("extensions store", () => {
   it("add (assigns id) / toggle / update / setProjects / remove", () => {
     useAppStore.setState({ extensions: [] });

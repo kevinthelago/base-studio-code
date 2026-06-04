@@ -1,6 +1,8 @@
 // Focus policy for console panes.
 
-export type PaneStatus = "run" | "on" | "idle";
+// Canonical pane-status vocabulary (#435), re-exported for this module's importers.
+export type { PaneStatus } from "./paneStatus";
+import type { PaneStatus } from "./paneStatus";
 
 /**
  * Whether replying to the focused agent — it just went idle -> run — should
