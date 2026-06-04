@@ -14,7 +14,9 @@ interface DeviceStart {
   expires_in: number;
 }
 
-const DEVICE_SCOPE = "repo read:org read:user";
+// `project` is required to read AND create GitHub Projects v2 (the Projects page
+// + planning publish); without it the API returns "token lacks read:project".
+const DEVICE_SCOPE = "repo read:org read:user project";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -187,7 +189,8 @@ function ConnectCard() {
         </span>{" "}
         with <span className="tag" style={{ fontSize: 10 }}>repo</span>{" "}
         <span className="tag" style={{ fontSize: 10 }}>read:org</span>{" "}
-        <span className="tag" style={{ fontSize: 10 }}>read:user</span> scopes, then paste it below.
+        <span className="tag" style={{ fontSize: 10 }}>read:user</span>{" "}
+        <span className="tag" style={{ fontSize: 10 }}>project</span> scopes, then paste it below.
       </p>
 
       <div style={{ display: "flex", gap: 8 }}>
@@ -338,7 +341,7 @@ export function GitHubSettings() {
                   {githubUser.name ? `${githubUser.name} (${githubUser.login})` : githubUser.login}
                 </b>
                 <span className="tag green">● connected</span>
-                <span className="tag">scopes: repo · read:org · read:user</span>
+                <span className="tag">scopes: repo · read:org · read:user · project</span>
               </div>
               <div className="hint" style={{ marginTop: 3 }}>
                 {githubRepos.length} {githubRepos.length === 1 ? "repo" : "repos"} accessible
