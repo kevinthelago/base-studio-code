@@ -9,15 +9,16 @@ import { useAppStore } from "../../store";
 import { STATUS } from "../../data/fleet";
 import { useFleetLive } from "../../hooks/useFleetLive";
 import { useFleetGithub, type FleetGithub } from "../../hooks/useFleetGithub";
+import { WorkerDetail } from "./WorkerDetail";
 import type { LiveWorker } from "../../lib/fleetLive";
 import type { ThroughputSlice } from "../../lib/fleetGithub";
 
-const GRID = "150px 96px 1fr 70px";
+const GRID = "150px 96px 1fr 70px 22px";
 
-function WorkerBoard({ workers }: { workers: LiveWorker[] }) {
+function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: LiveWorker) => void }) {
   return (
     <div className="card">
-      <CardHead title="Worker board" hint="one agent per stream · live run/idle + coordination"
+      <CardHead title="Worker board" hint="one agent per stream · click a worker to open it"
         right={<span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--accent)" }}>{workers.length} live</span>} />
       <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
         <div style={{
@@ -25,15 +26,15 @@ function WorkerBoard({ workers }: { workers: LiveWorker[] }) {
           background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
           fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em",
         }}>
-          <span>worker</span><span>status</span><span>current</span><span style={{ textAlign: "right" }}>issues</span>
+          <span>worker</span><span>status</span><span>current</span><span style={{ textAlign: "right" }}>issues</span><span />
         </div>
         {workers.map((w, i) => {
           const st = STATUS[w.status];
           return (
-            <div key={w.id} className="hrow" style={{
+            <div key={w.id} className="hrow" onClick={() => onOpen(w)} style={{
               display: "grid", gridTemplateColumns: GRID, gap: 10, padding: "9px 12px", alignItems: "center", fontSize: 11,
               background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)",
-              borderLeft: `2px solid ${w.profileColor}`,
+              borderLeft: `2px solid ${w.profileColor}`, cursor: "pointer",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
                 <Avatar login={w.name} bot size={18} />
@@ -50,6 +51,7 @@ function WorkerBoard({ workers }: { workers: LiveWorker[] }) {
                 {w.note && <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.note}</div>}
               </div>
               <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>{w.ownedTotal}</span>
+              <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-dim)" }}>›</span>
             </div>
           );
         })}
@@ -181,7 +183,18 @@ export function Fleet() {
   const activeProjectName = useAppStore(s => s.activeProjectName);
   const { workers, kpis, counts, hasFleet } = useFleetLive();
   const repos = useMemo(() => [...new Set(workers.map(w => w.repo).filter(Boolean))], [workers]);
-  const gh = useFleetGithub(repos);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const gh = useFleetGithub(repos, refreshNonce);
+  // The opened worker is held as a snapshot (its identity), so the per-agent page
+  // survives the worker leaving the live roster — e.g. when you pause it (#499).
+  // WorkerDetail re-reads live status/paused from the store itself.
+  const [selected, setSelected] = useState<LiveWorker | null>(null);
+  const setProjectsPageMode = useAppStore(s => s.setProjectsPageMode);
+  const setProjectsView = useAppStore(s => s.setProjectsView);
+
+  if (selected) {
+    return <WorkerDetail worker={selected} onBack={() => setSelected(null)} />;
+  }
 
   if (!hasFleet) {
     return (
@@ -206,6 +219,13 @@ export function Fleet() {
               {activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention
             </div>
           </div>
+          <button className="btn ghost" onClick={() => setRefreshNonce(n => n + 1)} disabled={gh.loading}>
+            {gh.loading ? "refreshing…" : "↻ refresh"}
+          </button>
+          <button className="btn" title="Launch the fleet from this project's plan"
+            onClick={() => { setProjectsPageMode("projects"); setProjectsView("planning"); }}>
+            launch worker
+          </button>
         </div>
 
         <div className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
@@ -219,7 +239,7 @@ export function Fleet() {
 
         <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-            <WorkerBoard workers={workers} />
+            <WorkerBoard workers={workers} onOpen={setSelected} />
             <Throughput gh={gh} />
             <TimeToLand gh={gh} />
           </div>

@@ -173,7 +173,7 @@ function StatCard({ k, v, sub, tone }: { k: string; v: string; sub: string; tone
 
 // ── Insights screen ───────────────────────────────────────────────────────────
 
-export function Insights({ context }: { context?: "projects" | "github" } = {}) {
+export function Insights() {
   const {
     githubToken,
     activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
@@ -344,7 +344,7 @@ export function Insights({ context }: { context?: "projects" | "github" } = {}) 
 
   return (
     <>
-      <ProjectsHeader project={project} context={context} />
+      <ProjectsHeader project={project} />
       <section style={{ flex: 1, overflow: "auto", padding: "18px 24px" }}>
         <div style={{ maxWidth: 1240, margin: "0 auto" }}>
 
