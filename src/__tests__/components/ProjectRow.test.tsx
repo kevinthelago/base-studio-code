@@ -10,7 +10,11 @@ const mockProject = {
   url: "https://github.com/x",
   closed: false,
   updatedAt: new Date().toISOString(),
-  items: { totalCount: 3 },
+  items: { totalCount: 3, nodes: [
+    { content: { state: "OPEN" } },
+    { content: { state: "CLOSED" } },
+    { content: { state: "CLOSED" } },
+  ] },
   repositories: { nodes: [{ nameWithOwner: "o/a" }] },
 };
 
@@ -45,6 +49,13 @@ describe("ProjectRow", () => {
     render(row({ running: 2, paused: 1 }));
     expect(screen.getByText(/2 agents running/)).toBeTruthy();
     expect(screen.getByText(/1 paused/)).toBeTruthy();
+  });
+
+  it("shows open count + closed-fraction progress (#499)", () => {
+    render(row());
+    // 1 open of 3 items (2 closed) → 67%.
+    expect(screen.getByText("1")).toBeTruthy(); // open count
+    expect(screen.getByText("67%")).toBeTruthy();
   });
 
   it("calls onBoard when 'board on GitHub' is clicked", () => {
