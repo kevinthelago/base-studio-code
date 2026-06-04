@@ -160,7 +160,7 @@ export default function App() {
     activeRepoName,
     automationsTab,
     settingsSection,
-    projectsView, activeProjectName, projectsBoardTab,
+    projectsView,
     setBscBaseDir,
     accent,
     hasHydrated,
@@ -236,12 +236,7 @@ export default function App() {
         break;
       case "projects":
         parts.push("Projects");
-        if (projectsView === "planning") {
-          parts.push("planning");
-        } else if (projectsView === "board" && activeProjectName) {
-          parts.push(activeProjectName);
-          parts.push(projectsBoardTab);
-        }
+        if (projectsView === "planning") parts.push("planning");
         break;
       case "skills":
         parts.push("Skills");

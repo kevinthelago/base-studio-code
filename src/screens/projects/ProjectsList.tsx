@@ -1,8 +1,48 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ExternalLink, MoreHorizontal, Trash2, GitFork } from "lucide-react";
 import { useAppStore } from "../../store";
+import { useFleetLive } from "../../hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../lib/projectPaths";
+
+// A project's lifecycle, derived from GitHub state (#499 design).
+type ProjStatus = "active" | "drafting" | "shipped";
+const STATUS_META: Record<ProjStatus, { label: string; cls: string; dot: string }> = {
+  active:   { label: "active",   cls: "green", dot: "var(--success)" },
+  drafting: { label: "drafting", cls: "amber", dot: "var(--accent)" },
+  shipped:  { label: "shipped",  cls: "",      dot: "var(--fg-dim)" },
+};
+function projStatus(p: { closed: boolean; items: { totalCount: number } }): ProjStatus {
+  if (p.closed) return "shipped";
+  return p.items.totalCount === 0 ? "drafting" : "active";
+}
+
+/** Live "N agents running · M paused" pill for a project (matched by repo). */
+function FleetPill({ running, paused }: { running: number; paused: number }) {
+  if (running === 0 && paused === 0) return null;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 9px", borderRadius: 99,
+      fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--success)",
+      background: "color-mix(in oklch, var(--success), transparent 88%)",
+      border: "1px solid color-mix(in oklch, var(--success), transparent 70%)",
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: 99, background: "var(--success)", animation: "pulse 1.4s ease-in-out infinite" }} />
+      <span>{running} agent{running !== 1 ? "s" : ""} running</span>
+      {paused > 0 && <span style={{ color: "var(--fg-dim)" }}>· {paused} paused</span>}
+    </span>
+  );
+}
+
+function GroupLabel({ label, count }: { label: string; count: number }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "2px 2px 0", marginTop: 4 }}>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".08em" }}>{label}</span>
+      <span className="tag" style={{ fontSize: 9 }}>{count}</span>
+      <span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+    </div>
+  );
+}
 
 interface GhProject {
   id: string;
@@ -48,22 +88,24 @@ function timeAgo(iso: string): string {
 
 interface ProjectRowProps {
   p: GhProject;
+  running: number;
+  paused: number;
   onPlan: (p: GhProject) => void;
   onBoard: (p: GhProject) => void;
-  onWorkspace: (p: GhProject) => void;
   onDelete: (p: GhProject) => void;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
 }
 
-export function ProjectRow({ p, onPlan, onBoard, onWorkspace, onDelete, menuOpenId, setMenuOpenId }: ProjectRowProps) {
-  const repo    = p.repositories?.nodes?.[0]?.nameWithOwner ?? "";
+export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menuOpenId, setMenuOpenId }: ProjectRowProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const isOpen  = menuOpenId === p.id;
+  const [hover, setHover] = useState(false);
+  const status = projStatus(p);
+  const repos  = (p.repositories?.nodes ?? []).map(r => r.nameWithOwner.split("/")[1] ?? r.nameWithOwner);
 
   // Close the menu on an outside mousedown, but NOT on a mousedown inside it —
-  // otherwise the menu unmounts before a menu item's click fires, and delete /
-  // plan-edit never run. (This is why the menuRef exists.)
+  // otherwise the menu unmounts before a menu item's click fires.
   useEffect(() => {
     if (!isOpen) return;
     function onDown(e: MouseEvent) {
@@ -74,54 +116,45 @@ export function ProjectRow({ p, onPlan, onBoard, onWorkspace, onDelete, menuOpen
   }, [isOpen, setMenuOpenId]);
 
   return (
-    <div className="card" style={{
-      padding: "14px 18px",
-      display: "grid", gridTemplateColumns: "1fr auto", gap: 18, alignItems: "center",
-    }}>
+    <div
+      onClick={() => onPlan(p)}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+        padding: "13px 16px 13px 18px", display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "center",
+        cursor: "pointer", borderLeft: "2px solid " + (hover ? "var(--accent)" : "transparent"),
+        background: hover ? "var(--bg-elev)" : "var(--bg-panel)",
+      }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 5 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5, flexWrap: "wrap" }}>
+          <span style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_META[status].dot, flexShrink: 0 }} />
           <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{p.number}</span>
-          <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 14, color: "var(--fg)" }}>{p.title}</h3>
-          {p.closed
-            ? <span className="tag" style={{ fontSize: 9.5 }}>● closed</span>
-            : <span className="tag green" style={{ fontSize: 9.5 }}>● active</span>
-          }
-          {repo && <span className="tag" style={{ fontSize: 9.5 }}>{repo}</span>}
-          <span style={{
-            padding: "1px 6px", borderRadius: 3,
-            fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--info)",
-            background: "color-mix(in oklch, var(--info), transparent 88%)",
-            border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
-          }}>⎇ synced · gh/projects/{p.number}</span>
+          <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>{p.title}</h3>
+          <span className={"tag " + STATUS_META[status].cls} style={{ fontSize: 9.5 }}>{STATUS_META[status].label}</span>
+          {repos.slice(0, 2).map(r => <span key={r} className="tag" style={{ fontSize: 9.5 }}>{r}</span>)}
+          {repos.length > 2 && <span className="tag" style={{ fontSize: 9.5 }}>+{repos.length - 2}</span>}
         </div>
-        <div style={{ color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.55, marginBottom: 8 }}>
+        <div style={{ color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.5, marginBottom: 9, maxWidth: 620 }}>
           {p.shortDescription ?? "No description."}
         </div>
-        <div style={{ display: "flex", gap: 14, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", flexWrap: "wrap" }}>
-          <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>
-          {(p.repositories?.nodes?.length ?? 0) > 1 && (
-            <span>· {p.repositories.nodes.length} repos</span>
-          )}
+        <div style={{ display: "flex", gap: 16, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", flexWrap: "wrap" }}>
+          {p.items.totalCount > 0 && <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>}
+          {status === "drafting" && <span style={{ color: "var(--accent)" }}>plan in progress</span>}
+          <span style={{ color: "var(--fg-dim)" }}>updated {timeAgo(p.updatedAt)}</span>
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginRight: 4 }}>
-          {timeAgo(p.updatedAt)}
-        </span>
-        <button
-          className="btn primary"
-          style={{ height: 28, fontSize: 10.5, padding: "0 12px", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}
-          onClick={() => onPlan(p)}
-        >
-          ⌘ plan →
-        </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <FleetPill running={running} paused={paused} />
+        <span style={{
+          fontFamily: "var(--mono)", fontSize: 10.5, whiteSpace: "nowrap",
+          color: hover ? "var(--accent)" : "var(--fg-dim)", transition: "color .12s",
+        }}>open planning →</span>
 
-        {/* ⋯ menu */}
-        <div ref={menuRef} style={{ position: "relative" }}>
+        {/* ⋯ menu — stops row-click propagation */}
+        <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
           <button
             className="btn ghost"
-            style={{ height: 28, width: 28, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+            style={{ height: 26, width: 26, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setMenuOpenId(isOpen ? null : p.id)}
             title="More options"
           >
@@ -132,26 +165,14 @@ export function ProjectRow({ p, onPlan, onBoard, onWorkspace, onDelete, menuOpen
             <div style={{
               position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
               background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-              borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 160,
+              borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 168,
               boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
             }}>
-              <button
-                className="menu-item"
-                onClick={() => { setMenuOpenId(null); onBoard(p); }}
-              >
+              <button className="menu-item" onClick={() => { setMenuOpenId(null); onBoard(p); }}>
                 <ExternalLink size={12} /> board on GitHub
               </button>
-              <button
-                className="menu-item"
-                onClick={() => { setMenuOpenId(null); onWorkspace(p); }}
-              >
-                <Pencil size={12} /> coordination
-              </button>
               <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
-              <button
-                className="menu-item danger"
-                onClick={() => { setMenuOpenId(null); onDelete(p); }}
-              >
+              <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(p); }}>
                 <Trash2 size={12} /> delete project
               </button>
             </div>
@@ -163,7 +184,7 @@ export function ProjectRow({ p, onPlan, onBoard, onWorkspace, onDelete, menuOpen
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setScreen, setProjectsView, setProjectsBoardTab, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -174,7 +195,8 @@ export function ProjectsList() {
   const [deleteTarget, setDeleteTarget] = useState<GhProject | null>(null);
   const [deleting, setDeleting]   = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
+  // Live fleet (for the per-project "agents running" pill).
+  const { workers } = useFleetLive();
 
   const fetchProjects = useCallback(() => {
     if (!githubToken) return;
@@ -206,14 +228,6 @@ export function ProjectsList() {
     setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
     setScreen("github");
     openGithubBoard("board");
-  }
-
-  // The Projects-page execution surfaces (coordination / pipelines / hooks).
-  function handleOpenWorkspace(p: GhProject) {
-    const repos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
-    setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
-    setProjectsBoardTab("coordination");
-    setProjectsView("board");
   }
 
   function handleEditPlan(p: GhProject) {
@@ -310,6 +324,34 @@ export function ProjectsList() {
 
   const repos = new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? []));
 
+  // Per-project live fleet counts: a worker belongs to a project when its repo is
+  // one of the project's repos (running vs parked = asking/waiting/blocked).
+  const fleetByProject = useMemo(() => {
+    const m: Record<string, { running: number; paused: number }> = {};
+    for (const p of visibleProjects) {
+      const projRepos = new Set((p.repositories?.nodes ?? []).map(r => r.nameWithOwner));
+      let running = 0, paused = 0;
+      for (const w of workers) {
+        if (!projRepos.has(w.repo)) continue;
+        if (w.status === "running") running++;
+        else if (w.status !== "idle") paused++;
+      }
+      m[p.id] = { running, paused };
+    }
+    return m;
+  }, [visibleProjects, workers]);
+
+  // Group the published projects by lifecycle for the sectioned list (#499).
+  const grouped = useMemo(() => {
+    const order: ProjStatus[] = ["active", "drafting", "shipped"];
+    const by: Record<ProjStatus, GhProject[]> = { active: [], drafting: [], shipped: [] };
+    for (const p of visibleProjects) by[projStatus(p)].push(p);
+    return order.map(s => [s, by[s]] as const).filter(([, arr]) => arr.length > 0);
+  }, [visibleProjects]);
+
+  // Jump to the GitHub Portfolio (where the analytics + live Fleet now live, #498).
+  function gotoPortfolio() { setScreen("github"); }
+
   return (
     <section style={{ flex: 1, overflow: "auto", padding: "24px 32px", minWidth: 0 }}>
       <div style={{ maxWidth: 1080, margin: "0 auto" }}>
@@ -339,6 +381,20 @@ export function ProjectsList() {
             {loading ? "syncing…" : "↻ sync"}
           </button>
           <button className="btn">import existing</button>
+        </div>
+
+        {/* Analytics moved-out signpost (#498): the portfolio + live Fleet now live
+            on the GitHub page. */}
+        <div onClick={gotoPortfolio} style={{
+          display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", marginBottom: 16, cursor: "pointer",
+          background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
+        }}>
+          <GitFork size={13} style={{ color: "var(--info)" }} />
+          <span style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>
+            Portfolio analytics &amp; live <b style={{ color: "var(--fg)" }}>Fleet</b> now live under <b style={{ color: "var(--fg)" }}>GitHub → Projects</b>.
+          </span>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--info)" }}>view analytics →</span>
         </div>
 
         {/* Plan new project CTA */}
@@ -476,18 +532,28 @@ export function ProjectsList() {
           );
         })()}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {visibleProjects.map(p => (
-            <ProjectRow
-              key={p.id}
-              p={p}
-              onPlan={handleEditPlan}
-              onBoard={handleOpenGithubBoard}
-              onWorkspace={handleOpenWorkspace}
-              onDelete={setDeleteTarget}
-              menuOpenId={menuOpenId}
-              setMenuOpenId={setMenuOpenId}
-            />
+        {/* Grouped published projects: Active · Drafting · Shipped */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {grouped.map(([status, items]) => (
+            <div key={status} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <GroupLabel label={STATUS_META[status].label} count={items.length} />
+              <div style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
+                {items.map((p, i) => (
+                  <div key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
+                    <ProjectRow
+                      p={p}
+                      running={fleetByProject[p.id]?.running ?? 0}
+                      paused={fleetByProject[p.id]?.paused ?? 0}
+                      onPlan={handleEditPlan}
+                      onBoard={handleOpenGithubBoard}
+                      onDelete={setDeleteTarget}
+                      menuOpenId={menuOpenId}
+                      setMenuOpenId={setMenuOpenId}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>

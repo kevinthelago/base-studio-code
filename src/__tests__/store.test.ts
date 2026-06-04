@@ -37,7 +37,7 @@ const RESET_STATE = {
   githubUser: null,
   githubRepos: [],
   activeRepoName: "",
-  projectsView: "list" as "list" | "board" | "planning",
+  projectsView: "list" as "list" | "planning",
   activeProjectId: null as string | null,
   activeProjectName: "",
   activeProjectRepo: "",
@@ -216,7 +216,7 @@ describe("deleteLocalProject", () => {
       repoAllowedCommands: { "My App::o/a": ["gh"] },
       activeProjectId: "PVT_id1",
       activeProjectName: "My App",
-      projectsView: "board",
+      projectsView: "planning",
     });
     // Pass both the session key (title) and the GitHub id.
     useAppStore.getState().deleteLocalProject(["My App", "PVT_id1"]);
@@ -238,10 +238,10 @@ describe("deleteLocalProject", () => {
   });
 
   it("leaves active meta alone when a different project is deleted", () => {
-    useAppStore.setState({ activeProjectId: "keep", activeProjectName: "Keep", projectsView: "board" });
+    useAppStore.setState({ activeProjectId: "keep", activeProjectName: "Keep", projectsView: "planning" });
     useAppStore.getState().deleteLocalProject(["Gone", "PVT_gone"]);
     expect(useAppStore.getState().activeProjectId).toBe("keep");
-    expect(useAppStore.getState().projectsView).toBe("board");
+    expect(useAppStore.getState().projectsView).toBe("planning");
   });
 
   it("dismissProject records the id once (deduped) so syncs stay filtered", () => {
@@ -677,11 +677,6 @@ describe("commands", () => {
 describe("projects navigation", () => {
   it("defaults to list view", () => {
     expect(useAppStore.getState().projectsView).toBe("list");
-  });
-
-  it("setProjectsView switches to board", () => {
-    useAppStore.getState().setProjectsView("board");
-    expect(useAppStore.getState().projectsView).toBe("board");
   });
 
   it("setProjectsView switches to planning", () => {
