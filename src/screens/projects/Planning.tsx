@@ -28,6 +28,7 @@ import { parseSkillsFile } from "../../lib/skills";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
 import { featureSectionsToIssues, featureSlug, parseFeatureSection } from "./planFeatures";
+import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { ProjectPane, type SyncState } from "./ProjectPane";
 import { buildProjectPaneData } from "./projectPaneData";
 
@@ -799,6 +800,20 @@ export function Planning({ visible }: { visible: boolean }) {
         }
         if (foundAuto) {
           bufRef.current = bufRef.current.replace(/<automation_assign[^/]*\/>/g, "");
+        }
+
+        // ── <mcp_assign name="Postgres" /> (#174) ─────────────────────────────
+        // Assign an MCP server/extension to this project. Reuses the Extensions
+        // subsystem: each assignment adds/enables a catalog-derived ExtensionDef
+        // scoped to this project, so the existing resolveExtensions → paneExtensions
+        // → .mcp.json launch wiring loads it into every build/triage session (no new
+        // store slice). Idempotent — re-emitting the same name just re-scopes it.
+        const mcpNames = parseMcpAssigns(bufRef.current);
+        if (mcpNames.length > 0) {
+          for (const name of mcpNames) {
+            applyMcpAssign(useAppStore.getState(), name, projIdSnap);
+          }
+          bufRef.current = stripMcpAssigns(bufRef.current);
         }
 
         // ── <startup_script repo="owner/repo" mode="dev|triage" path="..." /> ──

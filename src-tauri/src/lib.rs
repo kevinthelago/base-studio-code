@@ -2539,7 +2539,9 @@ once the user agrees. Always scan before you propose; never race ahead.
      emit `<repo_link>` for each confirmed repo before cloning.
 2. **Read the knowledge base.** Read `kb_index.md`, read blocks whose tags match
    the stack, and assign relevant ones with `<kb_assign id="block-id" />`. Read
-   `automations.md` and suggest automations that fit.
+   `automations.md` and `extensions.md`, and run the **Automations & extensions**
+   step (see that section) — assign the MCP servers + automations the project's
+   agents need.
 3. **Walk the discovery checklist as a QUICK orientation** using the
    scan→propose→confirm loop (see "The discovery checklist") — open with a 3–5
    sentence read of what you found, document the core dimensions (goal, users,
@@ -2678,6 +2680,28 @@ For each repo `{short}`:
 
 Keep the scripts plain and self-contained; the session has the repo checked out
 and the plan available, but the script is what gets it moving.
+
+## Automations & extensions
+
+A deliberate step: decide which **MCP servers/extensions** the project's agents
+should use, and which **automations** (scheduled or on-demand commands) the project
+needs. Read `extensions.md` (the catalog of available MCP servers) and
+`automations.md` first.
+
+- **Extensions / MCP** — for each capability the work needs (a Postgres MCP for a
+  DB-backed project, Sentry for error triage, Linear/Notion for issue/doc access,
+  Brave Search for research), assign the server with `<mcp_assign name="Postgres" />`
+  (see "App integration tags"). Each assignment is scoped to THIS project and loaded
+  into every build & triage session the plan launches — written to the session's
+  `.mcp.json` and pre-trusted, so an autonomous agent never blocks on a "trust these
+  MCP servers?" prompt. Assign only what the project actually needs; never invent
+  secret values (tokens/connection strings stay blank for the user to fill in the
+  Extensions screen). A name not in the catalog creates a blank stdio entry to complete.
+- **Automations** — assign scheduled/on-demand commands with `<automation_assign>`
+  (omit `schedule` for on-demand). Suggest the ones that fit the stack (a daily
+  `npm audit`, a lint/test sweep, a dependency-bump check).
+
+Both surface in the project's Automations & extensions UI and persist with the plan.
 
 ## Plan the agent fleet
 
@@ -3099,6 +3123,15 @@ on-demand commands — otherwise it's a cron expression):
 ```
 <automation_assign name="Daily audit" command="npm audit" schedule="0 9 * * 1-5" description="Runs every weekday morning" />
 ```
+**Assign an MCP server/extension** to this project (#174; read `extensions.md`
+for the catalog). `name` is a catalog entry (e.g. `Postgres`, `Sentry`); the
+server is scoped to this project and loaded into every build & triage session the
+plan launches (`.mcp.json`, pre-trusted). Idempotent — re-emitting the same name
+is harmless. Never put secret values in the tag; the user fills env in the
+Extensions screen:
+```
+<mcp_assign name="Postgres" />
+```
 **Register a per-repo starting script** (emit once you've written the file to
 `prompts/`; `mode` is `dev` or `triage`, `path` is relative to this directory).
 The app auto-assigns it so that repo's future sessions launch with it:
@@ -3352,6 +3385,39 @@ async fn setup_workspaces(
         }
     }
     std::fs::write(planning_dir.join("automations.md"), auto_md)
+        .map_err(|e| e.to_string())?;
+
+    // Write the extensions catalogue (#174) so the planner's "Automations &
+    // extensions" step knows which MCP servers it can assign. The names mirror the
+    // frontend catalog (src/lib/extensions.ts CATALOG_TEMPLATES) — the source of
+    // truth for each server's transport/command/env; this file is guidance text.
+    // Each `<mcp_assign>` scopes that server to THIS project; every build & triage
+    // session the plan launches then loads it via its `.mcp.json` (pre-trusted, no
+    // blocking prompt).
+    let ext_md = String::from(
+        "# Extensions Catalogue (MCP servers)\n\n\
+         Assign an MCP server/extension to this project with a single-line tag:\n\
+         `<mcp_assign name=\"Postgres\" />`\n\n\
+         Each assigned server is scoped to THIS project and loaded into every build &\n\
+         triage session this plan launches — written to the session's `.mcp.json` and\n\
+         pre-trusted, so the agent never blocks on a \"trust these MCP servers?\" prompt.\n\
+         Assign only the servers the project's agents actually need.\n\n\
+         ## Available servers\n\n\
+         - **Postgres** — query/inspect a Postgres database (env: POSTGRES_CONNECTION_STRING)\n\
+         - **SQLite** — query a local SQLite database\n\
+         - **Slack** — post/read Slack (env: SLACK_BOT_TOKEN, SLACK_TEAM_ID)\n\
+         - **Brave Search** — web search (env: BRAVE_API_KEY)\n\
+         - **Stripe** — Stripe API tools (env: STRIPE_SECRET_KEY)\n\
+         - **Sentry** — error tracking (HTTP)\n\
+         - **Linear** — issue tracking (HTTP)\n\
+         - **Notion** — docs/notes (HTTP)\n\n\
+         A name not in this list creates a blank stdio MCP entry the user completes in\n\
+         the Extensions screen. Required env values (tokens, connection strings) are left\n\
+         blank for the user to fill — never invent secrets.\n\n\
+         Pair this with `<automation_assign …>` (see automations.md) in the planner's\n\
+         \"Automations & extensions\" step.\n"
+    );
+    std::fs::write(planning_dir.join("extensions.md"), ext_md)
         .map_err(|e| e.to_string())?;
 
     // Write a github_context.md so Claude knows the authenticated user and
@@ -4281,7 +4347,7 @@ async fn read_plan_sections(project_key: String) -> Result<std::collections::Has
     // any topic (guided-dynamic sections) with no fixed key list. `_skipped` (the
     // considered-but-skipped record) and `phases` (.json roadmap) ride along and
     // are handled specially by the UI.
-    const CONTROL: &[&str] = &["CLAUDE.md", "kb_index.md", "automations.md", "github_context.md"];
+    const CONTROL: &[&str] = &["CLAUDE.md", "kb_index.md", "automations.md", "extensions.md", "github_context.md"];
     let mut sections = std::collections::HashMap::new();
     if let Ok(entries) = std::fs::read_dir(&plans_dir) {
         for entry in entries.flatten() {
