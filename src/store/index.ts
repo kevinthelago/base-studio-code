@@ -11,7 +11,7 @@ import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQu
 import { repoPromptKey } from "./../lib/startupPrompt";
 import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "../lib/tabReorder";
 import { resolveStartupPrompt, resolveReferenceContext, type DocAssignments } from "../lib/assignments";
-import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey } from "../lib/projectPaths";
+import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, canonicalProjectKey, findProjectTabIdx, deriveTabIdentity } from "../lib/projectPaths";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
 import { computeNextRun, appendRun, suggestionToAutomation, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
@@ -499,12 +499,17 @@ interface AppStore {
   projectLocalRepos: Record<string, string[]>;
   addProjectRepo: (projectId: string, fullName: string) => void;
   triageStartProject: (projectName: string, repos: string[], projectId?: string) => void;
-  findTriageTabIdx: (projectName: string) => number;
+  // Index of this project's triage tab, matched on its STABLE projectKey (#457) — not
+  // the derived "· triage" name — so a rename never forks a duplicate. Pass the same
+  // (projectName, projectId) used to launch it. -1 when none.
+  findTriageTabIdx: (projectName: string, projectId?: string) => number;
   // Launch the agent fleet: a "· build" tab with the director (if enabled) at the
   // project root and one worker pane per launched stream in its repo clone. Path
   // keys off projectKey (the planning session key — where repos/prompts live).
   fleetStartProject: (projectName: string, fleet: FleetPlan, projectKey: string) => void;
-  findFleetTabIdx: (projectName: string) => number;
+  // Index of this project's primary "· build" tab, matched on its STABLE projectKey
+  // (#457) — pass the same projectKey used to launch the fleet. -1 when none.
+  findFleetTabIdx: (projectKey: string) => number;
   // Coordination (#199 AC#7): paneId ("t{tab}p{pane}") → the AgentStream launched into
   // it. The coordination log keys waiters/producers by PANE id (BSC_AUDIT_PANE), but a
   // stream's produced contracts/issues/owned globs live on the stream by its slug. This
@@ -1267,18 +1272,19 @@ export const useAppStore = create<AppStore>()(
           if (existing.includes(fullName)) return {};
           return { projectLocalRepos: { ...s.projectLocalRepos, [projectId]: [...existing, fullName] } };
         }),
-      findTriageTabIdx: (projectName) => {
-        const tabName = `${projectName} · triage`;
-        return get().tabs.findIndex((t) => t.name === tabName);
-      },
+      findTriageTabIdx: (projectName, projectId = "") =>
+        findProjectTabIdx(get().tabs, canonicalProjectKey(projectName, projectId), "triage"),
       triageStartProject: (projectName, repos, projectId = "") =>
         set((s) => {
           // A triage tab for this project may already exist (re-run): rebuild it in
           // place at the same index. The caller kills the old panes' sessions first
           // and the bumped runId remounts them, so pty_create launches fresh
           // (resuming via --continue + the checkpoint) instead of reconnecting.
+          // Match on the STABLE projectKey, not the derived name, so a project rename
+          // relabels the tab in place instead of forking a duplicate (#457).
           const tabName = `${projectName} · triage`;
-          const existingIdx = s.tabs.findIndex((t) => t.name === tabName);
+          const tabKey = canonicalProjectKey(projectName, projectId);
+          const existingIdx = findProjectTabIdx(s.tabs, tabKey, "triage");
           if (repos.length === 0) return {};
           const newTabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
           const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
@@ -1364,7 +1370,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneRepos[key];
             }
           }
-          const newTab: Tab = { id: newTabId(), name: `${projectName} · triage`, layout, state: "idle", runId };
+          const newTab: Tab = { id: newTabId(), name: tabName, layout, state: "idle", runId, projectKey: tabKey, kind: "triage", seq: 0 };
           return {
             tabs: existingIdx >= 0
               ? s.tabs.map((t, i) => (i === existingIdx ? newTab : t))
@@ -1392,10 +1398,8 @@ export const useAppStore = create<AppStore>()(
           };
         }),
 
-      findFleetTabIdx: (projectName) => {
-        const tabName = `${projectName} · build`;
-        return get().tabs.findIndex((t) => t.name === tabName);
-      },
+      findFleetTabIdx: (projectKey) =>
+        findProjectTabIdx(get().tabs, sanitizeProjectKey(projectKey), "build", 0),
       fleetStartProject: (projectName, fleet, projectKey) =>
         set((s) => {
           // The fleet launches into "· build" tabs (plus "· build 2", "· build 3"…
@@ -1458,7 +1462,10 @@ export const useAppStore = create<AppStore>()(
           for (let t = 0; t < numTabs; t++) {
             const chunk = sessions.slice(t * CAP, t * CAP + CAP);
             const tabName = t === 0 ? baseTabName : `${baseTabName} ${t + 1}`;
-            const existingIdx = tabs.findIndex((tb) => tb.name === tabName);
+            // Match on the STABLE (projectKey, kind, seq), not the derived name, so a
+            // project rename relabels the build tab(s) in place instead of forking a
+            // duplicate "· build" tab with its own director — the "two directors" bug (#457).
+            const existingIdx = findProjectTabIdx(tabs, safeKey, "build", t);
             const tabIdx = existingIdx >= 0 ? existingIdx : tabs.length;
             if (firstTabIdx < 0) firstTabIdx = tabIdx;
             const runId = existingIdx >= 0 ? (tabs[existingIdx].runId ?? 0) + 1 : 0;
@@ -1557,7 +1564,7 @@ export const useAppStore = create<AppStore>()(
               }
             }
 
-            const newTab: Tab = { id: newTabId(), name: tabName, layout, state: "idle", runId };
+            const newTab: Tab = { id: newTabId(), name: tabName, layout, state: "idle", runId, projectKey: safeKey, kind: "build", seq: t };
             tabs = existingIdx >= 0
               ? tabs.map((tb, i) => (i === existingIdx ? newTab : tb))
               : [...tabs, newTab];
@@ -1970,10 +1977,20 @@ export const useAppStore = create<AppStore>()(
       // until the persisted state is in — otherwise screens flash from defaults
       // (e.g. GitHub "not connected" → connected) on every load.
       onRehydrateStorage: () => (state) => {
-        // Backfill stable ids for tabs persisted before #463 so identity is
-        // well-defined immediately (detached set / re-dock / order key off it).
-        if (state && state.tabs.some((t) => !t.id)) {
-          state.tabs = state.tabs.map((t) => (t.id ? t : { ...t, id: newTabId() }));
+        // Back-fill stable identity onto tabs persisted before these fields existed.
+        // #463: a stable `id` (detached set / re-dock / order key off it). #457: the
+        // project-tab identity (projectKey/kind/seq), derived once from the frozen name
+        // so the next fleet/triage launch can find-and-reuse the tab instead of forking
+        // a duplicate. Both are one-time legacy upgrades and no-ops thereafter.
+        if (state?.tabs) {
+          state.tabs = state.tabs.map((t) => {
+            let next = t.id ? t : { ...t, id: newTabId() };
+            if (!next.projectKey && !next.kind) {
+              const ident = deriveTabIdentity(next.name);
+              if (ident) next = { ...next, ...ident };
+            }
+            return next;
+          });
         }
         // Release the gate once hydration settles — on success or error — so the
         // shell never hangs on a blank canvas (on error the store keeps defaults).
