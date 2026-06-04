@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SkillsScreen } from "../screens/skills";
-import { SKILLS } from "../data/skills";
+import { SKILLS, SKILL_CATALOG } from "../data/skills";
 
 // Skill cards carry both `card` and `hrow`; the right-rail panels are `card`
 // only and the catalog rows are `hrow` only — so `.card.hrow` selects exactly
@@ -41,5 +41,35 @@ describe("SkillsScreen", () => {
     const all = segButtons(container).find(b => b.textContent === "all")!;
     fireEvent.click(all);
     expect(container.querySelectorAll(SKILL_CARD).length).toBe(SKILLS.length);
+  });
+
+  it("switches to the Runs view, replacing the library grid with the invocations panel", () => {
+    const { container } = render(<SkillsScreen />);
+    fireEvent.click(screen.getByText("Runs"));
+    // The runs panel renders; no usage log in tests → the empty state.
+    expect(screen.getByText("Invocations")).toBeTruthy();
+    expect(screen.getByText("No runs yet")).toBeTruthy();
+    // The library skill grid is no longer mounted.
+    expect(container.querySelectorAll(SKILL_CARD).length).toBe(0);
+  });
+
+  it("switches to the Catalog view with a search box and add buttons", () => {
+    const { container } = render(<SkillsScreen />);
+    fireEvent.click(screen.getByText("Catalog"));
+    expect(screen.getByPlaceholderText("Search the catalog…")).toBeTruthy();
+    expect(screen.getByText(new RegExp(`of ${SKILL_CATALOG.length} skills`))).toBeTruthy();
+    // Every catalog entry offers an add (or already-added) action.
+    expect(screen.getAllByText(/add to library|✓ added/).length).toBe(SKILL_CATALOG.length);
+    // Not the library grid.
+    expect(container.querySelectorAll(SKILL_CARD).length).toBe(0);
+  });
+
+  it("filters the catalog by the search query", () => {
+    render(<SkillsScreen />);
+    fireEvent.click(screen.getByText("Catalog"));
+    const search = screen.getByPlaceholderText("Search the catalog…");
+    fireEvent.change(search, { target: { value: SKILL_CATALOG[0].name } });
+    expect(screen.getByText(SKILL_CATALOG[0].name)).toBeTruthy();
+    expect(screen.getByText(new RegExp(`of ${SKILL_CATALOG.length} skills`))).toBeTruthy();
   });
 });
