@@ -74,3 +74,111 @@ export function agentWorktreeCwd(baseDir: string, projectKey: string, fullName: 
 export function isKnownPublishedKey(draftKey: string, projectKeyAlias: Record<string, string>): boolean {
   return Object.values(projectKeyAlias).includes(draftKey);
 }
+
+/**
+ * Resolve a planning session's raw key to its single canonical workspace key (#380).
+ *
+ * A project reached via the board carries only its GitHub Project node id, but its plan
+ * files / cloned repos / fleet live under the stable folder key the planner first used;
+ * `projectKeyAlias` maps that node id → folder key. EVERYTHING that reads or writes
+ * per-project data (plan sections, `projectLocalRepos`, fleet) must key off this one
+ * resolved value, so a write under one form and a later read under another can't diverge
+ * — the bug that made a re-triggered planning session clone unrelated repos / lose them.
+ * Returns `rawKey` unchanged when no alias maps it (a local-only draft already uses its
+ * canonical key).
+ */
+export function resolveProjectKey(rawKey: string, projectKeyAlias: Record<string, string>): string {
+  return projectKeyAlias[rawKey] ?? rawKey;
+}
+
+/**
+ * The first item whose title matches `title`, comparing case-insensitively and ignoring
+ * surrounding whitespace; `null` when none (or `title` is blank). One matcher for the
+ * local draft-title conflict guard (#380) and the GitHub board adopt-vs-create check
+ * (#444), so "does a project with this title already exist?" is decided one way.
+ */
+export function findByTitle<T>(items: readonly T[], title: string, getTitle: (item: T) => string): T | null {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const target = norm(title);
+  if (!target) return null;
+  return items.find((it) => norm(getTitle(it)) === target) ?? null;
+}
+
+/**
+ * The canonical, sanitized identity key for a project's workspace + tabs (#457/#380).
+ *
+ * Prefers an explicit `projectId` (a GitHub Project node id — stable across display-name
+ * renames) and falls back to the project's display name when no id exists yet (a
+ * local-only draft). Always passed through {@link sanitizeProjectKey} so callers compare
+ * one canonical form, never a raw name in one place and a sanitized id in another — the
+ * key-divergence that let a rename fork a duplicate tab / clone into the wrong folder.
+ */
+export function canonicalProjectKey(projectName: string, projectId?: string): string {
+  const id = (projectId ?? "").trim();
+  return sanitizeProjectKey(id || projectName);
+}
+
+/** The kind of project-owned console tab (#457): a fleet "· build" tab or a "· triage" tab. */
+export type ProjectTabKind = "build" | "triage";
+
+/**
+ * Minimal shape of a tab for project-identity matching (#457). `Tab` (Tabstrip) is a
+ * structural superset, so callers pass `store.tabs` directly without importing it here.
+ */
+export interface ProjectTabRef {
+  projectKey?: string;
+  kind?: ProjectTabKind;
+  seq?: number;
+}
+
+/**
+ * Index of the fleet/triage tab that belongs to a project, matched on the STABLE
+ * `projectKey` + `kind` (+ build `seq`) — never the derived display name (#457). A
+ * project rename changes the tab's label but not its `projectKey`, so the reuse lookup
+ * still finds it and rebuilds in place instead of forking a duplicate "· build" tab (the
+ * "two directors" bug). Returns -1 when no matching tab exists.
+ *
+ * @param seq 0-based build-tab sequence (0 = primary "· build", 1 = "· build 2", …);
+ *            ignored for triage, which has a single tab per project.
+ */
+export function findProjectTabIdx(
+  tabs: readonly ProjectTabRef[],
+  projectKey: string,
+  kind: ProjectTabKind,
+  seq = 0,
+): number {
+  return tabs.findIndex(
+    (t) =>
+      t.projectKey === projectKey &&
+      t.kind === kind &&
+      (kind === "triage" || (t.seq ?? 0) === seq),
+  );
+}
+
+const TRIAGE_SUFFIX = " · triage";
+// "<name> · build" (seq 0) or "<name> · build N" (seq N-1, N ≥ 2). Greedy name capture so
+// a project whose own name contains " · build" still resolves to the trailing suffix.
+const BUILD_NAME_RE = /^(.*) · build(?: (\d+))?$/;
+
+/**
+ * Back-derive a fleet/triage tab's stable identity from its display name (#457 migration).
+ *
+ * Persisted tabs created before `projectKey`/`kind`/`seq` existed only carry the frozen
+ * `name`. On rehydrate we parse that name once so the reuse lookup has a key to match.
+ * The key is the sanitized name portion — the best available identity for a legacy tab;
+ * tabs created after the migration carry the stable id set at launch. Returns `null` for
+ * a name that is not a project tab (an ad-hoc / manually-named tab keeps no identity).
+ */
+export function deriveTabIdentity(
+  name: string,
+): { projectKey: string; kind: ProjectTabKind; seq: number } | null {
+  if (name.endsWith(TRIAGE_SUFFIX)) {
+    return { projectKey: sanitizeProjectKey(name.slice(0, -TRIAGE_SUFFIX.length)), kind: "triage", seq: 0 };
+  }
+  const m = BUILD_NAME_RE.exec(name);
+  if (m) {
+    const seq = m[2] ? Number(m[2]) - 1 : 0;
+    return { projectKey: sanitizeProjectKey(m[1]), kind: "build", seq };
+  }
+  return null;
+}

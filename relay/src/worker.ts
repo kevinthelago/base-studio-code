@@ -16,9 +16,14 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
 
-    // Liveness probe — never touches a room (cheap, content-free).
+    // Liveness probe — never touches a room (cheap, content-free). Permissive CORS so
+    // the desktop app's webview can run its "Test relay" probe cross-origin; the body is
+    // public liveness metadata (no secrets), so `*` is safe here.
     if (url.pathname === "/health") {
-      return Response.json({ ok: true, service: "msc-tunnel-relay", version: VERSION });
+      return Response.json(
+        { ok: true, service: "msc-tunnel-relay", version: VERSION },
+        { headers: { "Access-Control-Allow-Origin": "*" } },
+      );
     }
 
     // The pairing endpoint: a peer upgrades to a WebSocket on its room.

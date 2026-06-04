@@ -60,6 +60,32 @@ export function roleFor(counts: RoomCounts, requested: string): RoleDecision {
   return { ok: true, role: "guest" };
 }
 
+/**
+ * When the room's next teardown alarm should fire, given when it was created and now.
+ * It's the earlier of two deadlines: the **idle** cutoff (reset on every frame, so a
+ * silent room dies after {@link IDLE_TIMEOUT_MS}) and the **absolute** lifetime cap
+ * (fixed at creation, so even a continuously busy room can't outlive {@link ROOM_TTL_MS}).
+ * Taking the min is what makes the TTL bite — without it the per-frame idle re-arm would
+ * push the alarm forward forever and the absolute cap would never fire.
+ */
+export function nextAlarmAt(
+  createdAt: number,
+  now: number,
+  idleMs: number = IDLE_TIMEOUT_MS,
+  ttlMs: number = ROOM_TTL_MS,
+): number {
+  return Math.min(createdAt + ttlMs, now + idleMs);
+}
+
+/** Whether a room created at `createdAt` has reached its absolute lifetime cap by `now`. */
+export function roomLifetimeExceeded(
+  createdAt: number,
+  now: number,
+  ttlMs: number = ROOM_TTL_MS,
+): boolean {
+  return now - createdAt >= ttlMs;
+}
+
 export interface ConnectTarget {
   room: string;
   role: string;

@@ -5,7 +5,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../../store";
-import { projectRepoCwd, sanitizeProjectKey } from "../../lib/projectPaths";
+import { projectRepoCwd, sanitizeProjectKey, resolveProjectKey } from "../../lib/projectPaths";
+import { ensureGithubProject, canLaunchTriage, triageLockReason } from "../../lib/projectSync";
 import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
@@ -26,6 +27,8 @@ import {
 import { parseSkillsFile } from "../../lib/skills";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
+import { featureSectionsToIssues, featureSlug, parseFeatureSection } from "./planFeatures";
+import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { ProjectPane, type SyncState } from "./ProjectPane";
 import { buildProjectPaneData } from "./projectPaneData";
 
@@ -440,7 +443,9 @@ export function Planning({ visible }: { visible: boolean }) {
   // `activeProjectId` set = the GitHub node id) maps to the stable folder/data
   // key its plan files live under, instead of an empty node-id key.
   const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
-  const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
+  // One canonical resolver (#380) — the same helper everything per-project keys off, so
+  // a write (addProjectRepo) and a later read (the linked-repo list) never diverge.
+  const sessionKeyRef = useRef(resolveProjectKey(rawSessionKey, projectKeyAlias));
   const effectiveProjectId = sessionKeyRef.current;
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
@@ -510,7 +515,11 @@ export function Planning({ visible }: { visible: boolean }) {
     return ordered.map(k => {
       const content = savedSections[k] ?? "";
       const state: SectionState = confirmedSet.has(k) ? "confirmed" : (content ? "drafted" : "pending");
-      return { k, title: titleForKey(k), state, content };
+      // A per-repo feature section (#177) shows its parsed feature title (the section's
+      // heading, else the humanized slug) instead of the raw `feat__slug` topic.
+      const slug = featureSlug(k);
+      const title = slug ? parseFeatureSection(content, slug).title : titleForKey(k);
+      return { k, title, state, content };
     });
   }, [savedSections, confirmedSet]);
 
@@ -562,7 +571,26 @@ export function Planning({ visible }: { visible: boolean }) {
   // publish flow fills in. Kept in sync with handlePublish's own derivation.
   const goalForTitle = sections.find(s => s.k === "goal")?.content ?? "";
   const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
-  const ghStructure  = buildGhStructure(sections, publishRepos, projectTitle, planFleet[effectiveProjectId]);
+
+  // Per-repo feature plans (#177): each `repo__{short}__feat__{slug}` section becomes a
+  // synthetic granular issue, so it flows through the existing structure + publish
+  // machinery (one GitHub issue per feature, pinned to its phase milestone) — supplementing
+  // the per-phase tracking issues. Fold them into the `issues` section the builder reads.
+  const featureIssues = useMemo(
+    () => featureSectionsToIssues(sections, publishRepos),
+    [sections, publishRepos],
+  );
+  const sectionsForGh = useMemo<Section[]>(() => {
+    if (featureIssues.length === 0) return sections;
+    const existing = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
+    const merged = JSON.stringify([...existing, ...featureIssues]);
+    return [
+      ...sections.filter(s => s.k !== "issues"),
+      { k: "issues", title: titleForKey("issues"), state: "drafted" as SectionState, content: merged },
+    ];
+  }, [sections, featureIssues]);
+
+  const ghStructure  = buildGhStructure(sectionsForGh, publishRepos, projectTitle, planFleet[effectiveProjectId]);
 
   // Live status of each GitHub object, keyed by the ids in buildGhStructure.
   const [ghStatus, setGhStatus] = useState<GhStatusMap>({});
@@ -578,7 +606,9 @@ export function Planning({ visible }: { visible: boolean }) {
     () => buildProjectPaneData({
       fleet:    planFleet[effectiveProjectId],
       profiles: agentProfiles,
-      issues:   parseIssuesFile(sections.find(sec => sec.k === "issues")?.content ?? ""),
+      // Hand-authored issues plus the per-repo feature sections (#177) so the pane's
+      // issue list matches the structure card and what publish creates.
+      issues:   [...parseIssuesFile(sections.find(sec => sec.k === "issues")?.content ?? ""), ...featureIssues],
       phases:   parsePhases(sections.find(sec => sec.k === "phases")?.content ?? ""),
       repos:    publishRepos,
       sections,
@@ -588,7 +618,7 @@ export function Planning({ visible }: { visible: boolean }) {
       // (#429). Same overlay the publish-time GitHubStructureCard renders.
       progress: ghProgress,
     }),
-    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, ghProgress],
+    [planFleet, effectiveProjectId, agentProfiles, sections, featureIssues, publishRepos, pinnedContext, ghProgress],
   );
   const [restarting, setRestarting] = useState(false);
 
@@ -770,6 +800,20 @@ export function Planning({ visible }: { visible: boolean }) {
         }
         if (foundAuto) {
           bufRef.current = bufRef.current.replace(/<automation_assign[^/]*\/>/g, "");
+        }
+
+        // ── <mcp_assign name="Postgres" /> (#174) ─────────────────────────────
+        // Assign an MCP server/extension to this project. Reuses the Extensions
+        // subsystem: each assignment adds/enables a catalog-derived ExtensionDef
+        // scoped to this project, so the existing resolveExtensions → paneExtensions
+        // → .mcp.json launch wiring loads it into every build/triage session (no new
+        // store slice). Idempotent — re-emitting the same name just re-scopes it.
+        const mcpNames = parseMcpAssigns(bufRef.current);
+        if (mcpNames.length > 0) {
+          for (const name of mcpNames) {
+            applyMcpAssign(useAppStore.getState(), name, projIdSnap);
+          }
+          bufRef.current = stripMcpAssigns(bufRef.current);
         }
 
         // ── <startup_script repo="owner/repo" mode="dev|triage" path="..." /> ──
@@ -1193,7 +1237,14 @@ export function Planning({ visible }: { visible: boolean }) {
   // Header button → clone the repos and launch the planned agent fleet (recommended workers + director).
   async function launchTriage() {
     const fleet = planFleet[effectiveProjectId];
-    if (publishRepos.length === 0 || !fleet || fleet.streams.length === 0) return;
+    // Mirror the button's gate (#444) so a programmatic / Enter-key path can't launch
+    // triage against an unpublished project (no board, no issues to triage).
+    if (!canLaunchTriage({
+      published: !!activeProjectId,
+      hasRepos: publishRepos.length > 0,
+      hasFleet: !!fleet && fleet.streams.length > 0,
+      busy: triaging,
+    })) return;
     setTriaging(true);
     try {
       await Promise.all(publishRepos.map(fullName =>
@@ -1296,35 +1347,29 @@ export function Planning({ visible }: { visible: boolean }) {
         }
       }
 
-      // ── 2. Project board — reuse existing or create a Projects v2 board ───
+      // ── 2. Project board — link existing, ADOPT a same-title board, or create ──
+      // Routes through ensureGithubProject so a re-sync of an unlinked but already-
+      // published project adopts its board instead of minting a duplicate (#444).
       let projectId = activeProjectId;
       {
         const id = "project";
         upd(id, { status: "running" });
         try {
-          if (projectId) {
+          const ownerLogin = repos[0]?.split("/")[0] || viewerLogin;
+          if (!ownerLogin) throw new Error("no owner to create project under");
+          const res = await ensureGithubProject(gql, { activeProjectId, ownerLogin, title: projectTitle });
+          projectId = res.id;
+          if (res.action === "linked") {
             upd(id, { status: "exists", detail: activeProjectNumber ? `#${activeProjectNumber}` : "linked" });
           } else {
-            const ownerLogin = repos[0]?.split("/")[0] || viewerLogin;
-            if (!ownerLogin) throw new Error("no owner to create project under");
-            const ownerData = await gql(
-              `query($login:String!){ repositoryOwner(login:$login){ id } }`,
-              { login: ownerLogin },
-            ) as { repositoryOwner?: { id?: string } };
-            const ownerId = ownerData.repositoryOwner?.id;
-            if (!ownerId) throw new Error(`could not resolve owner '${ownerLogin}'`);
-            const created = await gql(
-              `mutation($ownerId:ID!,$title:String!){
-                 createProjectV2(input:{ownerId:$ownerId,title:$title}){ projectV2 { id number url } }
-               }`,
-              { ownerId, title: projectTitle },
-            ) as { createProjectV2?: { projectV2?: { id: string; number: number; url: string } } };
-            const pv = created.createProjectV2?.projectV2;
-            if (!pv) throw new Error("project not created");
-            projectId = pv.id;
-            // Reflect in the store so the projects list + future syncs treat it as existing.
-            useAppStore.getState().setActiveProjectMeta(pv.id, projectTitle, repos[0] ?? "", pv.number, repos);
-            upd(id, { status: "created", detail: `#${pv.number}`, url: pv.url });
+            // Adopted an existing same-title board, or created a fresh one — reflect in
+            // the store so the projects list + future syncs treat it as existing.
+            useAppStore.getState().setActiveProjectMeta(res.id, projectTitle, repos[0] ?? "", res.number, repos);
+            upd(id, {
+              status: res.action === "adopted" ? "exists" : "created",
+              detail: `#${res.number}`,
+              url: res.url,
+            });
           }
           // Link every repo to the board (idempotent server-side).
           for (const fullName of repos) {
@@ -1407,7 +1452,12 @@ export function Planning({ visible }: { visible: boolean }) {
       // ── 4. Issues — one GitHub issue per granular PlanIssue (#311), pinned to its
       //      milestone and added to the board, with its labels. Falls back to one
       //      tracking issue per phase when the planner defined none. Idempotent. ──
-      const planIssues = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
+      // Granular issues authored in issues.json PLUS one synthetic issue per per-repo
+      // feature section (#177) — both publish through the same path below.
+      const planIssues = [
+        ...parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? ""),
+        ...featureSectionsToIssues(sections, repos),
+      ];
       const phaseNames = phases.map(p => p.name);
       // Persisted plan-issue -> GitHub-issue linkage (#393 Layer 1): structure
       // node id -> { number, url }. Accumulated across all repos, saved once below.
@@ -1622,14 +1672,26 @@ _Auto-generated by base-studio-code planner._`,
             ? (isExisting ? "syncing…" : "creating…")
             : (isExisting ? "Sync to GitHub" : "Create project")}
         </button>
-        <button
-          className="btn primary"
-          onClick={launchTriage}
-          disabled={triaging || publishRepos.length === 0}
-          title={publishRepos.length === 0 ? "Link a repo first" : "Clone the repos and start a triage session"}
-        >
-          {triaging ? "starting triage…" : "Triage →"}
-        </button>
+        {(() => {
+          // Lock triage until the project is published (#444): no board ⇒ no issues to triage.
+          const gate = {
+            published: !!activeProjectId,
+            hasRepos: publishRepos.length > 0,
+            hasFleet: !!planFleet[effectiveProjectId]?.streams.length,
+            busy: triaging,
+          };
+          const lock = triageLockReason(gate);
+          return (
+            <button
+              className="btn primary"
+              onClick={launchTriage}
+              disabled={!canLaunchTriage(gate)}
+              title={lock ?? "Clone the repos and start a triage session"}
+            >
+              {triaging ? "starting triage…" : "Triage →"}
+            </button>
+          );
+        })()}
       </div>
 
       {/* Repo strip — always visible so state is clear at a glance */}

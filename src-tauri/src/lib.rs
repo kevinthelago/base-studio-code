@@ -502,6 +502,235 @@ fn bash_in_roots(roots: &[std::path::PathBuf], exists: &dyn Fn(&std::path::Path)
     None
 }
 
+// ── Console shell selection (#447) ──────────────────────────────────────────
+//
+// The session shell was always bash (Git Bash on Windows). Users can now pick
+// PowerShell or cmd. `resolve_shell` above stays the POSIX/bash resolver — the
+// preflight/GitHub probes emit POSIX scripts and the bsc-* rc is bash, so they
+// must keep bash semantics regardless of the user's interactive choice. Only the
+// interactive PTY (`pty_create`) honors the selection, via `resolve_interactive_shell`.
+
+/// A concrete console shell the interactive session runs under. `Bash` keeps the
+/// full bsc-* helper experience; `PowerShell`/`Cmd` are Windows-native shells where
+/// the bash-only helpers are explicitly degraded with a visible notice — never
+/// silently broken (#447).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum ShellKind {
+    Bash,
+    PowerShell,
+    Cmd,
+}
+
+/// The persisted console-shell preference (`<base>/shell.pref`). `Auto` defers to
+/// the platform default (Git Bash on Windows, login `$SHELL` elsewhere); the
+/// explicit kinds force a shell, with a sensible fallback when it's unavailable.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum ShellPref {
+    Auto,
+    Bash,
+    PowerShell,
+    Cmd,
+}
+
+impl ShellPref {
+    /// Parse the frontend `ShellKind` string (see `src/lib/diagnostics.ts`). Unknown
+    /// values map to `Auto` so a corrupt pref file never wedges session launches.
+    fn parse(s: &str) -> ShellPref {
+        match s.trim() {
+            "bash" => ShellPref::Bash,
+            "powershell" => ShellPref::PowerShell,
+            "cmd" => ShellPref::Cmd,
+            _ => ShellPref::Auto,
+        }
+    }
+    fn as_str(self) -> &'static str {
+        match self {
+            ShellPref::Auto => "auto",
+            ShellPref::Bash => "bash",
+            ShellPref::PowerShell => "powershell",
+            ShellPref::Cmd => "cmd",
+        }
+    }
+}
+
+/// A resolved interactive shell: the kind (drives init syntax + helper degradation)
+/// and the program to spawn.
+#[derive(Clone, PartialEq, Debug)]
+struct ResolvedShell {
+    kind: ShellKind,
+    program: String,
+}
+
+/// Pure shell selection (#447): turn a preference + the available shell candidates
+/// into the concrete shell to launch. A selected-but-unavailable shell falls back to
+/// bash (the universal floor) rather than failing the launch. Candidates are injected
+/// so the logic is unit-testable off-Windows.
+fn select_shell(
+    pref: ShellPref,
+    env_shell: Option<String>,
+    git_bash: Option<String>,
+    powershell: Option<String>,
+    cmd: Option<String>,
+) -> ResolvedShell {
+    // The bash floor mirrors `resolve_shell`: honor $SHELL, then Git Bash, then bare bash.
+    let bash = ResolvedShell {
+        kind: ShellKind::Bash,
+        program: env_shell
+            .or(git_bash)
+            .unwrap_or_else(|| "bash".to_string()),
+    };
+    match pref {
+        ShellPref::PowerShell => match powershell {
+            Some(p) => ResolvedShell { kind: ShellKind::PowerShell, program: p },
+            None => bash,
+        },
+        ShellPref::Cmd => match cmd {
+            Some(p) => ResolvedShell { kind: ShellKind::Cmd, program: p },
+            None => bash,
+        },
+        ShellPref::Bash | ShellPref::Auto => bash,
+    }
+}
+
+/// Locate PowerShell on Windows: PowerShell 7+ (`pwsh.exe`) on PATH first, then the
+/// always-present Windows PowerShell under `System32`.
+#[cfg(windows)]
+fn locate_powershell() -> Option<String> {
+    if let Some(path) = std::env::var_os("PATH") {
+        for name in ["pwsh.exe", "powershell.exe"] {
+            for dir in std::env::split_paths(&path) {
+                let p = dir.join(name);
+                if p.exists() {
+                    return Some(p.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+    if let Ok(sysroot) = std::env::var("SystemRoot") {
+        let p = std::path::PathBuf::from(sysroot)
+            .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
+        if p.exists() {
+            return Some(p.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+/// Locate `cmd.exe` on Windows (always present at `System32\cmd.exe`; bare name as
+/// a last resort so PATH resolves it).
+#[cfg(windows)]
+fn locate_cmd() -> Option<String> {
+    if let Ok(sysroot) = std::env::var("SystemRoot") {
+        let p = std::path::PathBuf::from(sysroot).join(r"System32\cmd.exe");
+        if p.exists() {
+            return Some(p.to_string_lossy().into_owned());
+        }
+    }
+    Some("cmd.exe".to_string())
+}
+
+/// On-disk path of the persisted shell preference.
+fn shell_pref_path() -> std::path::PathBuf {
+    bsc_base_dir().join("shell.pref")
+}
+
+/// Read the persisted console-shell preference, defaulting to `Auto` when unset or
+/// unreadable.
+fn read_shell_pref() -> ShellPref {
+    std::fs::read_to_string(shell_pref_path())
+        .ok()
+        .map(|s| ShellPref::parse(&s))
+        .unwrap_or(ShellPref::Auto)
+}
+
+/// Resolve the shell the interactive PTY should launch under, honoring the user's
+/// persisted selection (#447) with a bash fallback. Non-Windows builds only ever
+/// resolve to bash/login `$SHELL` (PowerShell/cmd aren't standard there), so a
+/// stray PowerShell/cmd preference degrades to bash.
+fn resolve_interactive_shell() -> ResolvedShell {
+    let pref = read_shell_pref();
+    let env_shell = std::env::var("SHELL")
+        .ok()
+        .filter(|s| !s.is_empty() && std::path::Path::new(s).exists());
+    #[cfg(windows)]
+    {
+        select_shell(pref, env_shell, find_git_bash(), locate_powershell(), locate_cmd())
+    }
+    #[cfg(not(windows))]
+    {
+        select_shell(pref, env_shell, None, None, None)
+    }
+}
+
+/// Build the interactive init line for a non-bash shell (#447). The bsc-* helpers
+/// and startup-prompt baking are bash-only, so under PowerShell/cmd we cd into the
+/// project, clear the screen, and print a VISIBLE notice that those helpers are
+/// unavailable in this session (explicit degradation, never silent), optionally
+/// launching `claude` so the session is still usable. Pure (no I/O) for testing.
+fn non_bash_init(
+    kind: ShellKind,
+    cwd: &str,
+    cwd_missing: bool,
+    effective_cwd: &str,
+    launch_claude: bool,
+) -> String {
+    // The directory to land in: the nearest existing ancestor when the configured
+    // cwd is gone, else the cwd itself (native paths — pwsh/cmd, not bash, syntax).
+    let dir = if cwd.is_empty() {
+        ""
+    } else if cwd_missing {
+        effective_cwd
+    } else {
+        cwd
+    };
+    const NOTICE: &str =
+        "the bsc-* helpers and startup-prompt injection are bash-only and unavailable in this session";
+    match kind {
+        ShellKind::PowerShell => {
+            let mut s = String::new();
+            if !dir.is_empty() {
+                // Single-quote-escape for PowerShell literal strings (' -> '').
+                s.push_str(&format!("Set-Location -LiteralPath '{}'; ", dir.replace('\'', "''")));
+            }
+            if cwd_missing {
+                s.push_str(&format!(
+                    "Write-Host '[bsc] WARNING: configured directory {} does not exist; this session did NOT start in its project directory.' -ForegroundColor Red; ",
+                    cwd.replace('\'', "''"),
+                ));
+            }
+            s.push_str("Clear-Host; ");
+            s.push_str(&format!(
+                "Write-Host '[bsc] Running under PowerShell -- {NOTICE}.' -ForegroundColor Yellow; "
+            ));
+            if launch_claude {
+                s.push_str("claude; ");
+            }
+            s.push('\n');
+            s
+        }
+        ShellKind::Cmd => {
+            let mut s = String::new();
+            if !dir.is_empty() {
+                s.push_str(&format!("cd /d \"{dir}\" & "));
+            }
+            if cwd_missing {
+                s.push_str(&format!(
+                    "echo [bsc] WARNING: configured directory {cwd} does not exist; this session did NOT start in its project directory. & "
+                ));
+            }
+            s.push_str("cls & ");
+            s.push_str(&format!("echo [bsc] Running under cmd.exe -- {NOTICE}. & "));
+            if launch_claude {
+                s.push_str("claude & ");
+            }
+            s.push_str("echo.\n");
+            s
+        }
+        // Bash uses the dedicated rich init path in `pty_create`, not this builder.
+        ShellKind::Bash => String::new(),
+    }
+}
+
 /// Build the environment for a session shell.
 ///
 /// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
@@ -554,7 +783,10 @@ async fn pty_create(
         .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| { log::error!("pty[{pane_id}] openpty failed: {e}"); e.to_string() })?;
 
-    let shell = resolve_shell();
+    // Honor the user's console-shell selection (#447); bash stays the default and
+    // keeps the full bsc-* helper experience, PowerShell/cmd run degraded.
+    let resolved_shell = resolve_interactive_shell();
+    let shell = resolved_shell.program.clone();
     let mut cmd = CommandBuilder::new(&shell);
 
     // Self-heal a corrupt ~/.claude.json before this session can launch claude.
@@ -686,34 +918,47 @@ async fn pty_create(
         Some(p) => Some(claude_launch(p, resume)),
         None => init_cmd.as_deref().filter(|s| !s.is_empty()).map(|s| s.to_string()),
     };
-    let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
-    // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
-    // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
-    let cd_prefix = if cwd.is_empty() {
-        String::new()
-    } else if cwd_missing {
-        // Loud, visible warning instead of a silent home fallback, then sit in the
-        // nearest existing ancestor (not $HOME) so the agent is at least near the project.
-        format!(
-            "printf '\\033[1;31m[bsc] WARNING: configured directory %s does not exist; this session did NOT start in its project directory.\\033[0m\\n' \"{disp}\"; cd \"{anc}\" 2>/dev/null; ",
-            disp = to_bash_path(&cwd), anc = to_bash_path(&effective_cwd),
-        )
-    } else {
-        format!("cd \"{}\" 2>/dev/null; ", to_bash_path(&cwd))
+    // Whether the launch would start `claude` — the only command the degraded
+    // non-bash path replays (an arbitrary bash init_cmd would be invalid there).
+    let launch_claude = launch.as_deref().map(|s| s.contains("claude")).unwrap_or(false);
+    let init_line = match resolved_shell.kind {
+        ShellKind::Bash => {
+            let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
+            // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
+            // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
+            let cd_prefix = if cwd.is_empty() {
+                String::new()
+            } else if cwd_missing {
+                // Loud, visible warning instead of a silent home fallback, then sit in the
+                // nearest existing ancestor (not $HOME) so the agent is at least near the project.
+                format!(
+                    "printf '\\033[1;31m[bsc] WARNING: configured directory %s does not exist; this session did NOT start in its project directory.\\033[0m\\n' \"{disp}\"; cd \"{anc}\" 2>/dev/null; ",
+                    disp = to_bash_path(&cwd), anc = to_bash_path(&effective_cwd),
+                )
+            } else {
+                format!("cd \"{}\" 2>/dev/null; ", to_bash_path(&cwd))
+            };
+            // Source the checkpoint helper into the interactive shell too: BASH_ENV only
+            // covers non-interactive subshells (the agent's Bash tool), so a human typing
+            // `bsc-checkpoint` in the console pane would otherwise not have it.
+            let helpers_src = format!("source \"{}\" 2>/dev/null; ", rc_bash);
+            format!(
+                "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
+                 __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
+                 claude() {{ __bsc_state run; command claude \"$@\"; }}; \
+                 {helpers_src}\
+                 PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
+                 __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
+            )
+        }
+        // PowerShell / cmd: bsc-* helpers, OSC7/state markers, and startup-prompt baking
+        // are bash-only, so run a degraded init that cd's, clears, and prints a visible
+        // notice (no silent breakage, #447).
+        ShellKind::PowerShell | ShellKind::Cmd => {
+            non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude)
+        }
     };
-    // Source the checkpoint helper into the interactive shell too: BASH_ENV only
-    // covers non-interactive subshells (the agent's Bash tool), so a human typing
-    // `bsc-checkpoint` in the console pane would otherwise not have it.
-    let helpers_src = format!("source \"{}\" 2>/dev/null; ", rc_bash);
-    let osc7 = format!(
-        "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
-         __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
-         claude() {{ __bsc_state run; command claude \"$@\"; }}; \
-         {helpers_src}\
-         PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
-         __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
-    );
-    writer.write_all(osc7.as_bytes()).ok();
+    writer.write_all(init_line.as_bytes()).ok();
 
     // Stream PTY output to the frontend, COALESCED to ~one event per frame.
     //
@@ -1506,7 +1751,22 @@ const BSC_CONFINE_RC: &str = concat!(
 /// to `bsc-blocked --on`. Quote `#`-refs (`bsc-merged '#42'`) so the shell doesn't
 /// treat them as comments; a bare number works too. `bsc-failed` reads the reason
 /// from stdin. A real newline separates each function inside the raw string.
+///
+/// The issuer flow (#376) adds two emitters that carry MORE than the 2-payload
+/// `__bsc_coord` shape, so they build their own TSV line (a low-level
+/// `__bsc_coord_log` helper appends a pre-tab-joined payload):
+/// - `bsc-issue --title <t> [--suggested <repo|stream>] [--id <id>]` (body on stdin) —
+///   the issuer captures a shaped issue; emits `issue \t <title> \t <body> \t
+///   <suggested> \t <id>` for the director's intake list. `parseCoordLine` reads
+///   `rest[0..3]` as title/body/suggested/id.
+/// - `bsc-assign <target> [--issue <id>] [--title <t>]` (body on stdin) — the director
+///   routes an issue to a worker; emits `assign \t <target> \t <body> \t <issueId> \t
+///   <title>`, which resumes that worker and injects the work. `parseCoordLine` reads
+///   `rest[0..3]` as target/body/issueId/title.
+/// Multi-word values come through flags (not positionals), and embedded tabs/newlines
+/// are squashed to spaces so the TSV stays single-line and column-aligned.
 const BSC_COORD_EMIT_RC: &str = r#"__bsc_coord() { l="${BSC_COORD_LOG:-}"; [ -z "$l" ] && return 0; mkdir -p "$(dirname "$l")" 2>/dev/null; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; printf '%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" "$2" "$3" >> "$l"; }
+__bsc_coord_log() { l="${BSC_COORD_LOG:-}"; [ -z "$l" ] && return 0; mkdir -p "$(dirname "$l")" 2>/dev/null; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; printf '%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" >> "$l"; }
 bsc-landed() { __bsc_coord landed "$1" ""; }
 bsc-merged() { __bsc_coord merged "$1" ""; }
 bsc-closed() { __bsc_coord closed "$1" ""; }
@@ -1514,6 +1774,8 @@ bsc-failed() { r="$(cat)"; __bsc_coord failed "$1" "$r"; }
 bsc-wait() { r="$(cat)"; __bsc_coord waiting "$r" "${BSC_CHECKPOINT_DOC:-}"; }
 bsc-ask() { r="$(cat | tr '\t\n' '  ')"; __bsc_coord ask "$r" "${BSC_CHECKPOINT_DOC:-}"; }
 bsc-answer() { tgt="$1"; a="$(cat | tr '\t\n' '  ')"; __bsc_coord answer "$tgt" "$a"; }
+bsc-issue() { t=""; s=""; id=""; while [ $# -gt 0 ]; do case "$1" in --title) t="$2"; shift 2 ;; --suggested) s="$2"; shift 2 ;; --id) id="$2"; shift 2 ;; *) shift ;; esac; done; t="$(printf '%s' "$t" | tr '\t\n' '  ')"; s="$(printf '%s' "$s" | tr '\t\n' '  ')"; id="$(printf '%s' "$id" | tr '\t\n' '  ')"; b="$(cat | tr '\t\n' '  ')"; __bsc_coord_log "issue	$t	$b	$s	$id"; }
+bsc-assign() { tgt="$1"; [ $# -gt 0 ] && shift; id=""; t=""; while [ $# -gt 0 ]; do case "$1" in --issue) id="$2"; shift 2 ;; --title) t="$2"; shift 2 ;; *) shift ;; esac; done; tgt="$(printf '%s' "$tgt" | tr '\t\n' '  ')"; id="$(printf '%s' "$id" | tr '\t\n' '  ')"; t="$(printf '%s' "$t" | tr '\t\n' '  ')"; b="$(cat | tr '\t\n' '  ')"; __bsc_coord_log "assign	$tgt	$b	$id	$t"; }
 "#;
 
 /// The `bsc-defer` Stop hook (#369): fires when a fleet WORKER tries to end its turn.
@@ -2277,7 +2539,9 @@ once the user agrees. Always scan before you propose; never race ahead.
      emit `<repo_link>` for each confirmed repo before cloning.
 2. **Read the knowledge base.** Read `kb_index.md`, read blocks whose tags match
    the stack, and assign relevant ones with `<kb_assign id="block-id" />`. Read
-   `automations.md` and suggest automations that fit.
+   `automations.md` and `extensions.md`, and run the **Automations & extensions**
+   step (see that section) — assign the MCP servers + automations the project's
+   agents need.
 3. **Walk the discovery checklist as a QUICK orientation** using the
    scan→propose→confirm loop (see "The discovery checklist") — open with a 3–5
    sentence read of what you found, document the core dimensions (goal, users,
@@ -2374,13 +2638,33 @@ For each repo `{short}`:
    its testing approach, and the current phase's in-scope work for *this* repo.
    Write them as `repo__{short}__{topic}.md` (e.g. `repo__web__api.md`); they
    appear under that repo's group in the panel.
-2. **Record the repo's toolchain commands** the moment you decide its stack — its
+2. **Break this repo into FEATURES — one section per feature (#177).** After the
+   dimensions, decompose this repo's in-scope phase work into named features and
+   write ONE plan section per feature, keyed `repo__{short}__feat__{slug}.md`
+   (e.g. `repo__web__feat__login-form.md`). Each feature section is granular and
+   self-contained — it becomes exactly **one GitHub issue** under its phase
+   milestone at publish (supplementing, not replacing, the per-phase tracking
+   issue). Write each as:
+   - **First line — a phase marker**: `phase: <N or milestone name>` (e.g.
+     `phase: 2` or `phase: Phase 1 — MVP`). This pins the feature's issue to that
+     milestone. Omit only for backlog/unscheduled features.
+   - **A `# Title` heading** — the feature's name; becomes the issue title (falls
+     back to the humanized slug if omitted).
+   - **The approach** (the body) — how it's built: the behavior, the sequence of
+     changes, integration points, the specific libraries/services, and the files
+     or areas it touches.
+   - **Acceptance criteria** as `- [ ]` checkbox lines — the done-when checklist;
+     these are lifted into the issue's acceptance section.
+   Drive each feature down to this level (behavior + acceptance, approach, tools,
+   files) before moving to the next, the same way the feature workshop does —
+   these sections ARE that workshop's per-repo output.
+3. **Record the repo's toolchain commands** the moment you decide its stack — its
    build, test, run, and package-manager binaries (e.g. `cargo`, `npm`, `pnpm`,
    `pytest`, `docker`). Add them under that repo in `commands.json` and emit the
    `<allow_command>` tag (see "App integration tags"). Required, not optional, and
    don't just mention them in prose: without it the repo's console/triage sessions
    block on a permission prompt for every command. `gh`/`git` are always allowed.
-3. **Write two starting scripts** into `prompts/` — these are the first messages
+4. **Write two starting scripts** into `prompts/` — these are the first messages
    future Claude sessions in that repo receive, so write them as direct
    instructions addressed to that session (not notes about it):
    - `prompts/{short}-kickoff.md` — the **dev** kickoff: this repo's role, its
@@ -2389,13 +2673,35 @@ For each repo `{short}`:
    - `prompts/{short}-triage.md` — the **triage** script: how to triage *this*
      repo's open issues (priority labels P0–P3, this repo's label/area
      conventions, what "stale" means here), grounded in the plan's priorities.
-4. **Register both** so the app auto-assigns them as that repo's startup prompts
+5. **Register both** so the app auto-assigns them as that repo's startup prompts
    (see `<startup_script>` under "App integration tags"). Once registered,
    opening this repo's console uses the kickoff and its triage pane uses the
    triage script — no manual assignment needed.
 
 Keep the scripts plain and self-contained; the session has the repo checked out
 and the plan available, but the script is what gets it moving.
+
+## Automations & extensions
+
+A deliberate step: decide which **MCP servers/extensions** the project's agents
+should use, and which **automations** (scheduled or on-demand commands) the project
+needs. Read `extensions.md` (the catalog of available MCP servers) and
+`automations.md` first.
+
+- **Extensions / MCP** — for each capability the work needs (a Postgres MCP for a
+  DB-backed project, Sentry for error triage, Linear/Notion for issue/doc access,
+  Brave Search for research), assign the server with `<mcp_assign name="Postgres" />`
+  (see "App integration tags"). Each assignment is scoped to THIS project and loaded
+  into every build & triage session the plan launches — written to the session's
+  `.mcp.json` and pre-trusted, so an autonomous agent never blocks on a "trust these
+  MCP servers?" prompt. Assign only what the project actually needs; never invent
+  secret values (tokens/connection strings stay blank for the user to fill in the
+  Extensions screen). A name not in the catalog creates a blank stdio entry to complete.
+- **Automations** — assign scheduled/on-demand commands with `<automation_assign>`
+  (omit `schedule` for on-demand). Suggest the ones that fit the stack (a daily
+  `npm audit`, a lint/test sweep, a dependency-bump check).
+
+Both surface in the project's Automations & extensions UI and persist with the plan.
 
 ## Plan the agent fleet
 
@@ -2817,6 +3123,15 @@ on-demand commands — otherwise it's a cron expression):
 ```
 <automation_assign name="Daily audit" command="npm audit" schedule="0 9 * * 1-5" description="Runs every weekday morning" />
 ```
+**Assign an MCP server/extension** to this project (#174; read `extensions.md`
+for the catalog). `name` is a catalog entry (e.g. `Postgres`, `Sentry`); the
+server is scoped to this project and loaded into every build & triage session the
+plan launches (`.mcp.json`, pre-trusted). Idempotent — re-emitting the same name
+is harmless. Never put secret values in the tag; the user fills env in the
+Extensions screen:
+```
+<mcp_assign name="Postgres" />
+```
 **Register a per-repo starting script** (emit once you've written the file to
 `prompts/`; `mode` is `dev` or `triage`, `path` is relative to this directory).
 The app auto-assigns it so that repo's future sessions launch with it:
@@ -3072,6 +3387,39 @@ async fn setup_workspaces(
     std::fs::write(planning_dir.join("automations.md"), auto_md)
         .map_err(|e| e.to_string())?;
 
+    // Write the extensions catalogue (#174) so the planner's "Automations &
+    // extensions" step knows which MCP servers it can assign. The names mirror the
+    // frontend catalog (src/lib/extensions.ts CATALOG_TEMPLATES) — the source of
+    // truth for each server's transport/command/env; this file is guidance text.
+    // Each `<mcp_assign>` scopes that server to THIS project; every build & triage
+    // session the plan launches then loads it via its `.mcp.json` (pre-trusted, no
+    // blocking prompt).
+    let ext_md = String::from(
+        "# Extensions Catalogue (MCP servers)\n\n\
+         Assign an MCP server/extension to this project with a single-line tag:\n\
+         `<mcp_assign name=\"Postgres\" />`\n\n\
+         Each assigned server is scoped to THIS project and loaded into every build &\n\
+         triage session this plan launches — written to the session's `.mcp.json` and\n\
+         pre-trusted, so the agent never blocks on a \"trust these MCP servers?\" prompt.\n\
+         Assign only the servers the project's agents actually need.\n\n\
+         ## Available servers\n\n\
+         - **Postgres** — query/inspect a Postgres database (env: POSTGRES_CONNECTION_STRING)\n\
+         - **SQLite** — query a local SQLite database\n\
+         - **Slack** — post/read Slack (env: SLACK_BOT_TOKEN, SLACK_TEAM_ID)\n\
+         - **Brave Search** — web search (env: BRAVE_API_KEY)\n\
+         - **Stripe** — Stripe API tools (env: STRIPE_SECRET_KEY)\n\
+         - **Sentry** — error tracking (HTTP)\n\
+         - **Linear** — issue tracking (HTTP)\n\
+         - **Notion** — docs/notes (HTTP)\n\n\
+         A name not in this list creates a blank stdio MCP entry the user completes in\n\
+         the Extensions screen. Required env values (tokens, connection strings) are left\n\
+         blank for the user to fill — never invent secrets.\n\n\
+         Pair this with `<automation_assign …>` (see automations.md) in the planner's\n\
+         \"Automations & extensions\" step.\n"
+    );
+    std::fs::write(planning_dir.join("extensions.md"), ext_md)
+        .map_err(|e| e.to_string())?;
+
     // Write a github_context.md so Claude knows the authenticated user and
     // what repos are available without needing to run `gh api user` first.
     let mut gh_ctx = String::from("# GitHub Context\n\n");
@@ -3297,6 +3645,13 @@ standing rules you MUST act on, not merely acknowledge:
 - INTEGRATOR MODE (pr-ci / manual fleets). Workers open PRs (pr-ci) or commit without pushing
   (manual). Review and merge each green PR into develop (e.g. gh pr merge <n> --squash
   --delete-branch), then keep the milestones/board current.
+- ROUTE NEW ISSUES (#376). When the issuer captures new work it surfaces to you as a
+  "[coordinator] new issue: ..." message. Choose the owning worker by matching the issue
+  to a stream's `owns` globs / area in CLAUDE.local.md, then run bsc-assign <session> with
+  the issue body piped on stdin -- e.g. echo "add a retry to the upload path" | bsc-assign
+  t0p1 --title "Retry uploads" --issue 412. That resumes the chosen worker and injects the
+  issue so it picks it up immediately (into the existing PR -> CI -> merge loop). Open a
+  GitHub issue first if the work should be tracked. You route; the issuer never assigns.
 - KEEP THE FLEET MOVING. Any worker that is blocked or waiting is yours to unblock.
 "#;
 
@@ -3474,6 +3829,12 @@ const GH_PATH_MARK: &str = "BSC_GH_PATH_OK";
 const GIT_PATH_MARK: &str = "BSC_GIT_PATH_OK";
 const GH_AUTH_MARK: &str = "BSC_GH_AUTH_OK";
 
+/// Prefix the diagnostics preflight (#446) emits, one tab-delimited line per CLI
+/// tool: `BSC_PREREQ\t<name>\t<path>\t<version>` (path/version empty when the tool
+/// is absent). A distinct prefix keeps parsing a locale-independent substring scan,
+/// like the GitHub-readiness markers above.
+const PREFLIGHT_MARK: &str = "BSC_PREREQ";
+
 /// Parse the probe shell's stdout into `(gh_on_path, git_on_path, gh_authed)`. Pure.
 fn parse_github_probe(stdout: &str) -> (bool, bool, bool) {
     (
@@ -3519,6 +3880,187 @@ async fn github_readiness(
         }
     };
     Ok(serde_json::json!({ "ghOnPath": gh, "gitOnPath": git, "ghAuthed": auth }))
+}
+
+/// One prerequisite's detected state, reported to the Diagnostics UI (#446). Field
+/// names match the frontend `PrereqStatus`.
+#[derive(serde::Serialize, PartialEq, Debug)]
+struct PrereqStatus {
+    /// Display name, e.g. "Git Bash", "claude", "git", "gh", "gh auth".
+    name: String,
+    /// Whether the tool was located (and, for "gh auth", authenticated).
+    found: bool,
+    /// First line of `<tool> --version`, when found.
+    version: Option<String>,
+    /// Resolved on-disk path, when found.
+    path: Option<String>,
+    /// Actionable install/fix hint — empty when `found`.
+    hint: String,
+}
+
+/// Git Bash detection outcome handed to [`interpret_preflight`] so the pure
+/// interpretation stays testable off-Windows. `NotApplicable` omits the entry
+/// (non-Windows, where the session shell IS bash); `Missing`/`Found` map to the
+/// Windows console-shell prerequisite.
+// Each build constructs only its platform's variants — `NotApplicable` off Windows,
+// `Found`/`Missing` on Windows (plus tests exercise all three), so per-platform
+// dead-code analysis would flag the unused ones.
+#[allow(dead_code)]
+#[derive(Clone, PartialEq, Debug)]
+enum GitBashProbe {
+    NotApplicable,
+    Missing,
+    Found(String),
+}
+
+/// Static install/fix hint for a prerequisite that wasn't found. Empty for unknown
+/// names so a present tool never carries a hint.
+fn prereq_hint(tool: &str) -> &'static str {
+    match tool {
+        "claude" => "Install the Claude CLI — see https://docs.claude.com/claude-code",
+        "git" => "Install Git — https://git-scm.com/downloads",
+        "gh" => "Install the GitHub CLI — https://cli.github.com",
+        "gh auth" => "Run `gh auth login` to authenticate the GitHub CLI",
+        "Git Bash" => "Install Git for Windows (provides Git Bash) — https://git-scm.com/download/win",
+        _ => "",
+    }
+}
+
+/// Pure: turn the preflight probe's stdout (+ Git Bash detection) into the ordered
+/// prerequisite list. No I/O, so it is fully unit-testable. `BSC_PREREQ` lines carry
+/// each CLI tool's path/version; `BSC_GH_AUTH_OK` (reused from the GitHub probe)
+/// signals `gh` is authenticated. `gh auth` is only reported authenticated when `gh`
+/// itself is present, so a stale auth marker can't mask a missing CLI.
+fn interpret_preflight(stdout: &str, git_bash: GitBashProbe) -> Vec<PrereqStatus> {
+    // name -> (path, version), both trimmed; empty string means absent.
+    let mut probed: HashMap<String, (String, String)> = HashMap::new();
+    for line in stdout.lines() {
+        let mut parts = line.splitn(4, '\t');
+        if parts.next() != Some(PREFLIGHT_MARK) { continue; }
+        if let Some(name) = parts.next() {
+            let path = parts.next().unwrap_or("").trim().to_string();
+            let version = parts.next().unwrap_or("").trim().to_string();
+            probed.insert(name.to_string(), (path, version));
+        }
+    }
+
+    let mut out: Vec<PrereqStatus> = Vec::new();
+
+    // Git Bash — the Windows console shell; omitted where bash is the native shell.
+    match git_bash {
+        GitBashProbe::NotApplicable => {}
+        GitBashProbe::Missing => out.push(PrereqStatus {
+            name: "Git Bash".into(), found: false, version: None, path: None,
+            hint: prereq_hint("Git Bash").into(),
+        }),
+        GitBashProbe::Found(p) => out.push(PrereqStatus {
+            name: "Git Bash".into(), found: true, version: None, path: Some(p),
+            hint: String::new(),
+        }),
+    }
+
+    // CLI tools probed through the shell, in a fixed order (independent of stdout).
+    for tool in ["claude", "git", "gh"] {
+        let (path, version) = probed.get(tool).cloned().unwrap_or_default();
+        let found = !path.is_empty();
+        out.push(PrereqStatus {
+            name: tool.into(),
+            found,
+            version: if version.is_empty() { None } else { Some(version) },
+            path: if path.is_empty() { None } else { Some(path) },
+            hint: if found { String::new() } else { prereq_hint(tool).into() },
+        });
+    }
+
+    // gh authentication — meaningful only once `gh` itself is present.
+    let gh_found = probed.get("gh").map(|(p, _)| !p.is_empty()).unwrap_or(false);
+    let authed = gh_found && stdout.contains(GH_AUTH_MARK);
+    out.push(PrereqStatus {
+        name: "gh auth".into(),
+        found: authed,
+        version: None,
+        path: None,
+        hint: if authed { String::new() } else { prereq_hint("gh auth").into() },
+    });
+
+    out
+}
+
+/// Resolve the Git Bash prerequisite state for the diagnostics preflight: on
+/// Windows, whether [`find_git_bash`] located a `bash.exe`; elsewhere bash is the
+/// native shell, so Git Bash is not a prerequisite.
+fn detect_git_bash() -> GitBashProbe {
+    #[cfg(windows)]
+    {
+        match find_git_bash() {
+            Some(p) => GitBashProbe::Found(p),
+            None => GitBashProbe::Missing,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        GitBashProbe::NotApplicable
+    }
+}
+
+/// Diagnostics preflight (#446): in one call, report whether each external
+/// prerequisite the app needs is present — the Windows console shell (Git Bash),
+/// the `claude` CLI that runs agents, and `git`/`gh` (+ `gh` auth). Each result
+/// carries presence, version, path, and an install hint so the UI can tell the user
+/// exactly what to install. Runs through the SAME resolved shell + caller env as
+/// agent subshells (login shell, so profile PATH additions count). Best-effort: a
+/// spawn failure reports the CLI tools as missing rather than erroring.
+#[tauri::command]
+async fn preflight(
+    cwd: String,
+    env: Option<std::collections::HashMap<String, String>>,
+) -> Result<Vec<PrereqStatus>, String> {
+    let shell = resolve_shell();
+    // One tab-delimited line per tool: BSC_PREREQ <name> <path> <version>. `tr` drops
+    // CRs/tabs so a Windows version string can't break the field layout.
+    let script = format!(
+        "for t in claude git gh; do \
+           p=\"$(command -v \"$t\" 2>/dev/null)\"; \
+           v=\"$(\"$t\" --version 2>/dev/null | head -1 | tr -d '\\r\\t')\"; \
+           printf '{PREFLIGHT_MARK}\\t%s\\t%s\\t%s\\n' \"$t\" \"$p\" \"$v\"; \
+         done; \
+         gh auth status >/dev/null 2>&1 && echo {GH_AUTH_MARK}",
+    );
+    let mut cmd = std::process::Command::new(&shell);
+    cmd.arg("-lc").arg(&script);
+    if !cwd.is_empty() {
+        cmd.current_dir(&cwd);
+    }
+    let env_map = env.unwrap_or_default();
+    for (k, v) in session_env(&env_map) {
+        cmd.env(k, v);
+    }
+    let stdout = match no_window(&mut cmd).output() {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).into_owned(),
+        Err(e) => {
+            log::warn!("preflight probe failed to spawn ({shell}): {e}");
+            String::new()
+        }
+    };
+    Ok(interpret_preflight(&stdout, detect_git_bash()))
+}
+
+/// Read the persisted console-shell preference (#447) for the Diagnostics selector.
+/// Returns the lowercase kind string (`auto`/`bash`/`powershell`/`cmd`).
+#[tauri::command]
+fn get_preferred_shell() -> String {
+    read_shell_pref().as_str().to_string()
+}
+
+/// Persist the console-shell preference (#447). Takes the frontend `ShellKind`
+/// string; an unrecognized value is normalized to `auto` so the file always holds a
+/// valid token. The next session launch reads it via `resolve_interactive_shell`.
+#[tauri::command]
+fn set_preferred_shell(kind: String) -> Result<(), String> {
+    let pref = ShellPref::parse(&kind);
+    let base = bsc_base_dir();
+    std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    std::fs::write(shell_pref_path(), pref.as_str()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -3805,7 +4347,7 @@ async fn read_plan_sections(project_key: String) -> Result<std::collections::Has
     // any topic (guided-dynamic sections) with no fixed key list. `_skipped` (the
     // considered-but-skipped record) and `phases` (.json roadmap) ride along and
     // are handled specially by the UI.
-    const CONTROL: &[&str] = &["CLAUDE.md", "kb_index.md", "automations.md", "github_context.md"];
+    const CONTROL: &[&str] = &["CLAUDE.md", "kb_index.md", "automations.md", "extensions.md", "github_context.md"];
     let mut sections = std::collections::HashMap::new();
     if let Ok(entries) = std::fs::read_dir(&plans_dir) {
         for entry in entries.flatten() {
@@ -4254,6 +4796,9 @@ pub fn run() {
             write_claude_config,
             ensure_session_settings,
             github_readiness,
+            preflight,
+            get_preferred_shell,
+            set_preferred_shell,
             read_plan_sections,
             write_project_plan,
             delete_project_dir,
@@ -4633,6 +5178,76 @@ mod tests {
     }
 
     #[test]
+    fn bsc_coord_emit_rc_defines_issuer_helpers() {
+        // The issuer flow (#376) adds two emitters to the coord-emit rc; they carry more
+        // columns than `__bsc_coord`, so they go through `__bsc_coord_log` with a
+        // pre-tab-joined payload. coordination.ts `parseCoordLine` reads them back.
+        let rc = super::BSC_COORD_EMIT_RC;
+        assert!(rc.contains("bsc-issue()"), "rc must define bsc-issue");
+        assert!(rc.contains("bsc-assign()"), "rc must define bsc-assign");
+        assert!(rc.contains("__bsc_coord_log()"), "rc must define the multi-column log helper");
+    }
+
+    #[test]
+    fn bsc_issue_and_assign_emit_tab_aligned_coord_lines() {
+        // bsc-issue / bsc-assign must run from the agent's own `bash -c` subshells (rc +
+        // BASH_ENV) and append ONE tab-separated line to $BSC_COORD_LOG whose columns match
+        // what coordination.ts parseCoordLine expects:
+        //   issue:  ts \t pane \t issue  \t title  \t body \t suggested \t id
+        //   assign: ts \t pane \t assign \t target \t body \t issueId   \t title
+        // Multi-word values arrive via flags; the body is read from stdin. Skips where bash
+        // isn't on PATH (same gating as the other helper-run tests).
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc issuer-emit subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-issuer-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_COORD_EMIT_RC).unwrap();
+        // Nested path exercises the helper's `mkdir -p` of the log's parent.
+        let log = dir.join("nested").join("coord.log");
+
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let log_bash = super::to_bash_path(&log.to_string_lossy());
+
+        let run = |cmd: &str, body: &str| {
+            let mut child = Command::new(&shell)
+                .arg("-c").arg(cmd)
+                .env("BASH_ENV", &rc_bash)
+                .env("BSC_COORD_LOG", &log_bash)
+                .env("BSC_AUDIT_PANE", "t0p3")
+                .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+                .spawn().unwrap();
+            child.stdin.take().unwrap().write_all(body.as_bytes()).unwrap();
+            assert!(child.wait().unwrap().success(), "{cmd} should run in the subshell");
+        };
+        run("bsc-issue --title 'Retry uploads' --suggested owner/web --id 412", "add a retry to the upload path");
+        run("bsc-assign t0p1 --issue 412 --title 'Retry uploads'", "do the retry work");
+
+        let text = std::fs::read_to_string(&log).unwrap();
+        let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 2, "expected one line per emitter, got: {text:?}");
+
+        let issue: Vec<&str> = lines[0].split('\t').collect();
+        assert_eq!(issue[1], "t0p3", "pane column");
+        assert_eq!(&issue[2..], &["issue", "Retry uploads", "add a retry to the upload path", "owner/web", "412"]);
+
+        let assign: Vec<&str> = lines[1].split('\t').collect();
+        assert_eq!(assign[1], "t0p3", "pane column");
+        assert_eq!(&assign[2..], &["assign", "t0p1", "do the retry work", "412", "Retry uploads"]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn full_bsc_rc_is_syntactically_valid_bash() {
         // Regression for the rc-glue bug: every rc constant must end with a newline so the
         // bsc-env.sh that pty_create writes keeps each helper on its own line. A missing
@@ -4968,6 +5583,163 @@ mod tests {
 {GH_PATH_MARK}
 ");
         assert_eq!(super::parse_github_probe(&no_auth), (true, true, false));
+    }
+
+    #[test]
+    fn interpret_preflight_reports_each_prerequisite() {
+        use super::{interpret_preflight, GitBashProbe, GH_AUTH_MARK, PREFLIGHT_MARK};
+        // Everything present + authed, on Windows with Git Bash found.
+        let stdout = format!(
+            "{PREFLIGHT_MARK}\tclaude\t/usr/bin/claude\tclaude 1.2.3\n\
+             {PREFLIGHT_MARK}\tgit\t/usr/bin/git\tgit version 2.43.0\n\
+             {PREFLIGHT_MARK}\tgh\t/usr/bin/gh\tgh version 2.40.0\n\
+             {GH_AUTH_MARK}\n"
+        );
+        let r = interpret_preflight(&stdout, GitBashProbe::Found("C:\\Git\\bin\\bash.exe".into()));
+        // Git Bash first (the console shell), then claude, git, gh, gh auth.
+        let names: Vec<&str> = r.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Git Bash", "claude", "git", "gh", "gh auth"]);
+        assert!(r.iter().all(|p| p.found), "all prerequisites should be found");
+        assert!(r.iter().all(|p| p.hint.is_empty()), "found tools carry no hint");
+        let git = r.iter().find(|p| p.name == "git").unwrap();
+        assert_eq!(git.version.as_deref(), Some("git version 2.43.0"));
+        assert_eq!(git.path.as_deref(), Some("/usr/bin/git"));
+    }
+
+    #[test]
+    fn interpret_preflight_flags_missing_tools_with_hints() {
+        use super::{interpret_preflight, GitBashProbe, PREFLIGHT_MARK};
+        // claude + git present; gh missing (empty path), unauthenticated; Git Bash missing.
+        let stdout = format!(
+            "{PREFLIGHT_MARK}\tclaude\t/usr/bin/claude\tclaude 1.2.3\n\
+             {PREFLIGHT_MARK}\tgit\t/usr/bin/git\tgit version 2.43.0\n\
+             {PREFLIGHT_MARK}\tgh\t\t\n"
+        );
+        let r = interpret_preflight(&stdout, GitBashProbe::Missing);
+        let gh = r.iter().find(|p| p.name == "gh").unwrap();
+        assert!(!gh.found);
+        assert!(gh.hint.contains("cli.github.com"));
+        let gh_auth = r.iter().find(|p| p.name == "gh auth").unwrap();
+        assert!(!gh_auth.found, "gh missing -> auth cannot be reported found");
+        assert!(!gh_auth.hint.is_empty());
+        let gitbash = r.iter().find(|p| p.name == "Git Bash").unwrap();
+        assert!(!gitbash.found);
+        assert!(gitbash.hint.contains("git-scm.com"));
+        // Present tools still carry their version/path even when others are missing.
+        assert!(r.iter().find(|p| p.name == "claude").unwrap().found);
+    }
+
+    #[test]
+    fn interpret_preflight_omits_git_bash_off_windows() {
+        use super::{interpret_preflight, GitBashProbe};
+        let r = interpret_preflight("", GitBashProbe::NotApplicable);
+        assert!(!r.iter().any(|p| p.name == "Git Bash"));
+        // Empty probe -> every CLI tool reported missing with a hint.
+        let names: Vec<&str> = r.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["claude", "git", "gh", "gh auth"]);
+        assert!(r.iter().all(|p| !p.found));
+        assert!(r.iter().all(|p| !p.hint.is_empty()));
+    }
+
+    #[test]
+    fn interpret_preflight_gh_auth_requires_gh_present() {
+        // A stale GH_AUTH_OK marker must NOT report auth when gh itself is absent.
+        use super::{interpret_preflight, GitBashProbe, GH_AUTH_MARK, PREFLIGHT_MARK};
+        let stdout = format!("{PREFLIGHT_MARK}\tgh\t\t\n{GH_AUTH_MARK}\n");
+        let r = interpret_preflight(&stdout, GitBashProbe::NotApplicable);
+        assert!(!r.iter().find(|p| p.name == "gh auth").unwrap().found);
+    }
+
+    // ── Console shell selection (#447) ──────────────────────────────────────
+
+    #[test]
+    fn shell_pref_parse_round_trips_known_kinds_and_defaults_unknown() {
+        use super::ShellPref;
+        for (s, expect) in [
+            ("auto", ShellPref::Auto),
+            ("bash", ShellPref::Bash),
+            ("powershell", ShellPref::PowerShell),
+            ("cmd", ShellPref::Cmd),
+            ("  bash\n", ShellPref::Bash), // trimmed
+        ] {
+            assert_eq!(ShellPref::parse(s), expect);
+            assert_eq!(ShellPref::parse(expect.as_str()), expect);
+        }
+        // Unknown / empty -> Auto, so a corrupt pref file never wedges launches.
+        assert_eq!(ShellPref::parse("fish"), ShellPref::Auto);
+        assert_eq!(ShellPref::parse(""), ShellPref::Auto);
+    }
+
+    #[test]
+    fn select_shell_auto_and_bash_resolve_to_the_bash_floor() {
+        use super::{select_shell, ShellKind, ShellPref};
+        // Auto honors $SHELL first, then Git Bash, then bare bash.
+        let r = select_shell(ShellPref::Auto, Some("/usr/bin/zsh".into()), Some("C:/Git/bash.exe".into()), None, None);
+        assert_eq!(r.kind, ShellKind::Bash);
+        assert_eq!(r.program, "/usr/bin/zsh");
+        let r = select_shell(ShellPref::Bash, None, Some("C:/Git/bash.exe".into()), None, None);
+        assert_eq!(r.kind, ShellKind::Bash);
+        assert_eq!(r.program, "C:/Git/bash.exe");
+        let r = select_shell(ShellPref::Auto, None, None, None, None);
+        assert_eq!(r.program, "bash");
+    }
+
+    #[test]
+    fn select_shell_honors_explicit_selection_when_available() {
+        use super::{select_shell, ShellKind, ShellPref};
+        let r = select_shell(ShellPref::PowerShell, None, Some("bash".into()), Some("C:/pwsh.exe".into()), Some("cmd.exe".into()));
+        assert_eq!(r.kind, ShellKind::PowerShell);
+        assert_eq!(r.program, "C:/pwsh.exe");
+        let r = select_shell(ShellPref::Cmd, None, Some("bash".into()), Some("C:/pwsh.exe".into()), Some("C:/cmd.exe".into()));
+        assert_eq!(r.kind, ShellKind::Cmd);
+        assert_eq!(r.program, "C:/cmd.exe");
+    }
+
+    #[test]
+    fn select_shell_falls_back_to_bash_when_chosen_shell_unavailable() {
+        use super::{select_shell, ShellKind, ShellPref};
+        // PowerShell selected but none found (e.g. non-Windows) -> bash floor, not a failure.
+        let r = select_shell(ShellPref::PowerShell, Some("/bin/bash".into()), None, None, None);
+        assert_eq!(r.kind, ShellKind::Bash);
+        assert_eq!(r.program, "/bin/bash");
+        let r = select_shell(ShellPref::Cmd, None, None, None, None);
+        assert_eq!(r.kind, ShellKind::Bash);
+        assert_eq!(r.program, "bash");
+    }
+
+    #[test]
+    fn non_bash_init_is_visibly_degraded_and_shell_shaped() {
+        use super::{non_bash_init, ShellKind};
+        // PowerShell: cd's, clears, prints the degraded notice in yellow, launches claude.
+        let ps = non_bash_init(ShellKind::PowerShell, "C:/repo", false, "C:/repo", true);
+        assert!(ps.contains("Set-Location -LiteralPath 'C:/repo'"));
+        assert!(ps.contains("Clear-Host"));
+        assert!(ps.contains("-ForegroundColor Yellow"));
+        assert!(ps.contains("bash-only and unavailable"), "must visibly state the degradation");
+        assert!(ps.contains("claude"));
+        assert!(ps.ends_with('\n'));
+        // No bash-only constructs leak into the PowerShell init.
+        assert!(!ps.contains("$'"));
+        assert!(!ps.contains("source \""));
+        assert!(!ps.contains("PROMPT_COMMAND"));
+
+        // cmd: uses `&` separators, cls, echo notice; no claude when not launching.
+        let cmd = non_bash_init(ShellKind::Cmd, "C:\\repo", false, "C:\\repo", false);
+        assert!(cmd.contains("cd /d \"C:\\repo\""));
+        assert!(cmd.contains("cls"));
+        assert!(cmd.contains("bash-only and unavailable"));
+        assert!(!cmd.contains("claude"));
+        assert!(cmd.ends_with('\n'));
+    }
+
+    #[test]
+    fn non_bash_init_warns_loudly_when_cwd_is_missing() {
+        use super::{non_bash_init, ShellKind};
+        let ps = non_bash_init(ShellKind::PowerShell, "C:/gone", true, "C:/", false);
+        // Lands in the existing ancestor, not the missing dir, and shouts about it.
+        assert!(ps.contains("Set-Location -LiteralPath 'C:/'"));
+        assert!(ps.contains("does not exist"));
+        assert!(ps.contains("-ForegroundColor Red"));
     }
 
     #[test]

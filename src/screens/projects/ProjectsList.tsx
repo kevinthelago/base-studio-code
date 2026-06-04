@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useAppStore } from "../../store";
-import { sanitizeProjectKey, isKnownPublishedKey } from "../../lib/projectPaths";
+import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../lib/projectPaths";
 
 interface GhProject {
   id: string;
@@ -248,9 +248,9 @@ export function ProjectsList() {
   const visibleProjects = projects.filter(p => !hiddenProjectIds.includes(p.id));
 
   const titleTrimmed = title.trim();
-  const titleConflict = titleTrimmed
-    ? visibleProjects.find(p => p.title.toLowerCase() === titleTrimmed.toLowerCase()) ?? null
-    : null;
+  // One title matcher (#380) — case/whitespace-insensitive — so the guard that no-ops a
+  // re-typed existing-project name agrees with everywhere else "title already taken" is judged.
+  const titleConflict = findByTitle(visibleProjects, titleTrimmed, p => p.title);
 
   async function handleStartPlanning() {
     // Never start over — or delete the folder of — an existing project. The button is disabled

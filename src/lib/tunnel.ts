@@ -10,7 +10,11 @@
 // sees these frames in plaintext. See `docs/tunnel-protocol.md`; the machine-readable
 // contract is `tunnelProtocol.fixtures.json` (asserted in `src/__tests__/tunnel.test.ts`).
 
-/** Pane status as the mobile client models it (`PaneStatus`). */
+// The desktop's canonical per-pane status (#435), the input this module maps FROM.
+import type { PaneStatus as DesktopPaneStatus } from "./paneStatus";
+
+/** Pane status as the mobile client models it (`PaneStatus`) — a distinct wire
+ *  vocabulary the desktop's `DesktopPaneStatus` is mapped into by `mapStatus`. */
 export type PaneStatus = "running" | "idle" | "awaiting_input" | "error";
 
 /** One mirrored pane in the list the mobile client renders (`pane_list`). */
@@ -78,7 +82,7 @@ export function paneCountForLayout(layout: string): number {
  *  to the mobile `PaneStatus` vocabulary. A running pane stays `running` even if
  *  it is (also) flagged awaiting; otherwise an awaiting pane is `awaiting_input`. */
 export function mapStatus(
-  raw: "run" | "on" | "idle" | undefined,
+  raw: DesktopPaneStatus | undefined,
   awaiting: boolean,
 ): PaneStatus {
   if (raw === "run") return "running";
@@ -90,7 +94,7 @@ export interface PanePayloadInput {
   tabs: { layout: string }[];
   paneNames: Record<number, Record<number, string>>;
   paneCwds: Record<string, string>;
-  paneStatuses: Record<string, "run" | "on" | "idle">;
+  paneStatuses: Record<string, DesktopPaneStatus>;
   disabledPanes: Record<string, boolean>;
   /** paneIds (`t{t}p{p}`) currently awaiting user input (from the focus queue). */
   awaiting: ReadonlySet<string>;
