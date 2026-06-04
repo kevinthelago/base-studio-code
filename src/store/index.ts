@@ -423,8 +423,10 @@ interface AppStore {
   // Projects (transient)
   projectsPageMode: "projects" | "fleet";
   setProjectsPageMode: (v: "projects" | "fleet") => void;
-  projectsView: "list" | "board" | "planning";
-  setProjectsView: (v: "list" | "board" | "planning") => void;
+  // The Projects page is list ↔ planning (#499): the board moved to the GitHub
+  // page (#498) and the execution tabs were removed.
+  projectsView: "list" | "planning";
+  setProjectsView: (v: "list" | "planning") => void;
   activeProjectId: string | null;
   activeProjectName: string;
   activeProjectRepo: string;

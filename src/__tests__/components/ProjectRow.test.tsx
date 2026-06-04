@@ -18,9 +18,10 @@ function row(over: Partial<Parameters<typeof ProjectRow>[0]> = {}) {
   return (
     <ProjectRow
       p={mockProject}
+      running={0}
+      paused={0}
       onPlan={() => {}}
       onBoard={() => {}}
-      onWorkspace={() => {}}
       onDelete={() => {}}
       menuOpenId={mockProject.id}
       setMenuOpenId={() => {}}
@@ -33,11 +34,17 @@ function row(over: Partial<Parameters<typeof ProjectRow>[0]> = {}) {
 // was an eager document-mousedown handler that closed the menu before the item's
 // click fired, so delete/board never ran.
 describe("ProjectRow", () => {
-  it("plan is the primary action (#498)", () => {
+  it("clicking the row opens planning (#499)", () => {
     const onPlan = vi.fn();
     render(row({ onPlan }));
-    fireEvent.click(screen.getByText("⌘ plan →"));
+    fireEvent.click(screen.getByText("open planning →"));
     expect(onPlan).toHaveBeenCalledWith(mockProject);
+  });
+
+  it("shows the live fleet pill when agents are running (#499)", () => {
+    render(row({ running: 2, paused: 1 }));
+    expect(screen.getByText(/2 agents running/)).toBeTruthy();
+    expect(screen.getByText(/1 paused/)).toBeTruthy();
   });
 
   it("calls onBoard when 'board on GitHub' is clicked", () => {
