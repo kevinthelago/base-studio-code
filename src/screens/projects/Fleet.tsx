@@ -183,14 +183,17 @@ export function Fleet() {
   const activeProjectName = useAppStore(s => s.activeProjectName);
   const { workers, kpis, counts, hasFleet } = useFleetLive();
   const repos = useMemo(() => [...new Set(workers.map(w => w.repo).filter(Boolean))], [workers]);
-  const gh = useFleetGithub(repos);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const gh = useFleetGithub(repos, refreshNonce);
+  // The opened worker is held as a snapshot (its identity), so the per-agent page
+  // survives the worker leaving the live roster — e.g. when you pause it (#499).
+  // WorkerDetail re-reads live status/paused from the store itself.
+  const [selected, setSelected] = useState<LiveWorker | null>(null);
+  const setProjectsPageMode = useAppStore(s => s.setProjectsPageMode);
+  const setProjectsView = useAppStore(s => s.setProjectsView);
 
-  // A selected worker opens its per-agent page (#499). If it vanishes (fleet
-  // closed), fall back to the board rather than a blank page.
-  const selected = selectedId ? workers.find(w => w.id === selectedId) ?? null : null;
   if (selected) {
-    return <WorkerDetail worker={selected} onBack={() => setSelectedId(null)} />;
+    return <WorkerDetail worker={selected} onBack={() => setSelected(null)} />;
   }
 
   if (!hasFleet) {
@@ -216,6 +219,13 @@ export function Fleet() {
               {activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention
             </div>
           </div>
+          <button className="btn ghost" onClick={() => setRefreshNonce(n => n + 1)} disabled={gh.loading}>
+            {gh.loading ? "refreshing…" : "↻ refresh"}
+          </button>
+          <button className="btn" title="Launch the fleet from this project's plan"
+            onClick={() => { setProjectsPageMode("projects"); setProjectsView("planning"); }}>
+            launch worker
+          </button>
         </div>
 
         <div className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
@@ -229,7 +239,7 @@ export function Fleet() {
 
         <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-            <WorkerBoard workers={workers} onOpen={(w) => setSelectedId(w.id)} />
+            <WorkerBoard workers={workers} onOpen={setSelected} />
             <Throughput gh={gh} />
             <TimeToLand gh={gh} />
           </div>

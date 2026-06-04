@@ -43,7 +43,6 @@ const RESET_STATE = {
   activeProjectRepo: "",
   activeProjectRepos: [] as string[],
   activeProjectNumber: 0,
-  projectsBoardTab: "board" as "board" | "roadmap" | "issues" | "insights",
   projectsDrawerIssue: null as number | null,
   planningPitch: "",
   planningRepo: "",
@@ -695,12 +694,6 @@ describe("projects navigation", () => {
     expect(useAppStore.getState().activeProjectId).toBeNull();
   });
 
-  it("setProjectsBoardTab updates the active tab", () => {
-    useAppStore.getState().setProjectsBoardTab("roadmap");
-    expect(useAppStore.getState().projectsBoardTab).toBe("roadmap");
-    useAppStore.getState().setProjectsBoardTab("board");
-    expect(useAppStore.getState().projectsBoardTab).toBe("board");
-  });
 
   it("setProjectsDrawerIssue opens the drawer", () => {
     useAppStore.getState().setProjectsDrawerIssue(418);

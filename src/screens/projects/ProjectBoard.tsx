@@ -325,7 +325,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
 
 // ── Board ─────────────────────────────────────────────────────────────────────
 
-export function ProjectBoard({ context }: { context?: "projects" | "github" } = {}) {
+export function ProjectBoard() {
   const {
     githubToken,
     activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
@@ -429,7 +429,7 @@ export function ProjectBoard({ context }: { context?: "projects" | "github" } = 
 
   return (
     <>
-      <ProjectsHeader project={project} context={context} />
+      <ProjectsHeader project={project} />
       <section style={{ flex: 1, padding: "14px 16px", overflow: "hidden", background: "var(--bg-canvas)", position: "relative" }}>
         {loading && (
           <div style={{
