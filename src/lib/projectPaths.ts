@@ -76,6 +76,35 @@ export function isKnownPublishedKey(draftKey: string, projectKeyAlias: Record<st
 }
 
 /**
+ * Resolve a planning session's raw key to its single canonical workspace key (#380).
+ *
+ * A project reached via the board carries only its GitHub Project node id, but its plan
+ * files / cloned repos / fleet live under the stable folder key the planner first used;
+ * `projectKeyAlias` maps that node id → folder key. EVERYTHING that reads or writes
+ * per-project data (plan sections, `projectLocalRepos`, fleet) must key off this one
+ * resolved value, so a write under one form and a later read under another can't diverge
+ * — the bug that made a re-triggered planning session clone unrelated repos / lose them.
+ * Returns `rawKey` unchanged when no alias maps it (a local-only draft already uses its
+ * canonical key).
+ */
+export function resolveProjectKey(rawKey: string, projectKeyAlias: Record<string, string>): string {
+  return projectKeyAlias[rawKey] ?? rawKey;
+}
+
+/**
+ * The first item whose title matches `title`, comparing case-insensitively and ignoring
+ * surrounding whitespace; `null` when none (or `title` is blank). One matcher for the
+ * local draft-title conflict guard (#380) and the GitHub board adopt-vs-create check
+ * (#444), so "does a project with this title already exist?" is decided one way.
+ */
+export function findByTitle<T>(items: readonly T[], title: string, getTitle: (item: T) => string): T | null {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const target = norm(title);
+  if (!target) return null;
+  return items.find((it) => norm(getTitle(it)) === target) ?? null;
+}
+
+/**
  * The canonical, sanitized identity key for a project's workspace + tabs (#457/#380).
  *
  * Prefers an explicit `projectId` (a GitHub Project node id — stable across display-name
