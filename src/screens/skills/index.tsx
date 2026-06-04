@@ -111,8 +111,11 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const githubToken      = useAppStore(s => s.githubToken);
 
   const [filter, setFilter] = useState<"all" | SkillKind>("all");
+  const [catalogQuery, setCatalogQuery] = useState("");
   const { tabs: skillTabs, activeId, select, reorder, tearOff } = usePageTabs("skills", SKILL_TABS);
-  void (sectionOverride ?? activeId); // active section (modes are cosmetic today)
+  // The active tab selects which view renders; a detached-section override (#463)
+  // pins the view for a torn-off window.
+  const mode: Mode = (sectionOverride ?? activeId) as Mode;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -314,6 +317,34 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
       .sort((a, b) => b.rate - a.rate);
   }, [merged]);
 
+  // ── Runs view: skills that have actually been invoked, newest-first. ──────────
+  const runRows = useMemo(
+    () => [...merged].filter(s => s.invocations > 0).sort((a, b) => b.invocations - a.invocations),
+    [merged],
+  );
+
+  // ── Catalog view: the browsable catalog, filtered + flagged when already added.
+  const existingSkillNames = useMemo(() => new Set(skills.map(s => s.name)), [skills]);
+  const catalogList = useMemo(() => {
+    const q = catalogQuery.trim().toLowerCase();
+    return q
+      ? SKILL_CATALOG.filter(c =>
+          c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q) || c.by.toLowerCase().includes(q))
+      : SKILL_CATALOG;
+  }, [catalogQuery]);
+
+  // KPI row — shown on both the Library and Runs views.
+  const kpiRow = (
+    <div className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+      <StatCard k="skills" v={String(kpis.total)} sub="in library" tone="fg" />
+      <StatCard k="invocations · today" v={String(invToday)} sub="across all workers" tone="accent" />
+      <StatCard k="avg success" v={kpis.invWeek ? `${kpis.avgSuccess}%` : "—"} sub="weighted by use" tone="success" />
+      <StatCard k="invocations · 7d" v={fmtCount(kpis.invWeek)} sub="fleet-wide" tone="info" />
+      <StatCard k="pinned" v={String(kpis.pinned)} sub="auto-available to fleet" tone="fg" />
+      <StatCard k="active · 7d" v={String(activeCount)} sub="skills used at least once" tone="info" />
+    </div>
+  );
+
   return (
     <div className="skills-screen">
       {!sectionOverride && (
@@ -342,6 +373,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
             <button className="btn primary" onClick={newSkill}>+ new skill</button>
           </div>
 
+          {mode === "library" && (<>
           {/* digest */}
           <div className="card" style={{
             padding: "13px 18px", marginBottom: 14,
@@ -376,14 +408,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
           </div>
 
           {/* KPI row */}
-          <div className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
-            <StatCard k="skills" v={String(kpis.total)} sub="in library" tone="fg" />
-            <StatCard k="invocations · today" v={String(invToday)} sub="across all workers" tone="accent" />
-            <StatCard k="avg success" v={kpis.invWeek ? `${kpis.avgSuccess}%` : "—"} sub="weighted by use" tone="success" />
-            <StatCard k="invocations · 7d" v={fmtCount(kpis.invWeek)} sub="fleet-wide" tone="info" />
-            <StatCard k="pinned" v={String(kpis.pinned)} sub="auto-available to fleet" tone="fg" />
-            <StatCard k="active · 7d" v={String(activeCount)} sub="skills used at least once" tone="info" />
-          </div>
+          {kpiRow}
 
           <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
             <div style={{ minWidth: 0 }}>
@@ -497,6 +522,92 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
               </div>
             </div>
           </div>
+          </>)}
+
+          {mode === "runs" && (<>
+          {kpiRow}
+          <div className="card" style={{ marginTop: 14 }}>
+            <CardHead title="Invocations" hint="live from the skill-usage log · last 7 days"
+              right={<button className="btn ghost" style={{ height: 22, fontSize: 10 }} onClick={() => select("library")}>back to library</button>} />
+            {runRows.length === 0 ? (
+              <div className="empty">
+                <h3 style={{ margin: 0 }}>No runs yet</h3>
+                <p className="hint" style={{ maxWidth: 420, margin: 0 }}>
+                  No skill invocations have been recorded. Run the fleet — each time an agent invokes a
+                  skill it's logged here with its success rate and 7-day trend.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1.6fr 86px 60px 64px 90px", gap: 10, padding: "8px 12px", background: "var(--bg-panel)", fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em" }}>
+                  <span>skill</span>
+                  <span style={{ textAlign: "right" }}>invocations</span>
+                  <span style={{ textAlign: "right" }}>today</span>
+                  <span style={{ textAlign: "right" }}>success</span>
+                  <span style={{ textAlign: "right" }}>7-day</span>
+                </div>
+                {runRows.map((s, i) => {
+                  const kind = KIND[s.kind];
+                  const sc = successColor(s.success);
+                  const today = stats[skillSlug(s.name)]?.today ?? 0;
+                  return (
+                    <div key={s.id} className="hrow" style={{ display: "grid", gridTemplateColumns: "1.6fr 86px 60px 64px 90px", gap: 10, alignItems: "center", padding: "9px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", cursor: "pointer" }}
+                      onClick={() => setSelectedId(s.id)}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                        <span style={{ color: kind.color }}>{kind.glyph}</span>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled skill"}</span>
+                      </span>
+                      <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{fmtCount(s.invocations)}</span>
+                      <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{today}</span>
+                      <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: sc }}>{s.success}%</span>
+                      <span style={{ display: "flex", justifyContent: "flex-end" }}>
+                        {s.trend.length > 1 ? <Spark data={s.trend} color={kind.color} /> : <span className="hint">—</span>}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          </>)}
+
+          {mode === "catalog" && (
+          <div style={{ marginTop: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <input className="input" placeholder="Search the catalog…" value={catalogQuery}
+                onChange={e => setCatalogQuery(e.target.value)} style={{ maxWidth: 320 }} />
+              <span className="hint">{catalogList.length} of {SKILL_CATALOG.length} skills</span>
+            </div>
+            {catalogList.length === 0 ? (
+              <div className="empty">
+                <h3 style={{ margin: 0 }}>No matches</h3>
+                <p className="hint" style={{ margin: 0 }}>Nothing in the catalog matches your search.</p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                {catalogList.map(c => {
+                  const added = existingSkillNames.has(c.name);
+                  return (
+                    <div key={c.name} className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
+                        <span style={{ width: 30, height: 30, borderRadius: 7, flexShrink: 0, background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 15, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{c.glyph}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", fontWeight: 600 }}>{c.name}</div>
+                          <div className="hint" style={{ fontSize: 9.5 }}>by {c.by}</div>
+                        </div>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5, flex: 1 }}>{c.desc}</p>
+                      <button className="btn" disabled={added} onClick={() => addFromCatalog(c.name)}
+                        style={added ? { opacity: 0.6, cursor: "default" } : undefined}>
+                        {added ? "✓ added" : "add to library"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          )}
         </div>
       </section>
 
