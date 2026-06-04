@@ -74,8 +74,8 @@ interface PlanningRepoCloneState {
   cloning: Set<string>;
   /** Per-repo clone error message, keyed by full_name. */
   cloneErrors: Record<string, string>;
-  /** Retry cloning every repo whose last attempt failed. */
-  retryFailed: () => void;
+  /** Start (or retry) cloning a single repo by full_name. */
+  cloneRepo: (fullName: string) => void;
 }
 
 /**
@@ -120,13 +120,88 @@ function usePlanningRepoClone(projectId: string, repos: string[]): PlanningRepoC
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, repoKey]);
 
-  const retryFailed = () => {
-    for (const r of repos) {
-      if (cloneErrors[r] && !cloning.has(r)) clone(r);
-    }
-  };
+  return { clonedNames, cloning, cloneErrors, cloneRepo: clone };
+}
 
-  return { clonedNames, cloning, cloneErrors, retryFailed };
+// Header repo pill: shows the repo count + clone status; click to reveal the
+// per-repo list with clone/retry actions (replaces the old always-visible strip).
+function RepoPill({ repos, state }: { repos: string[]; state: PlanningRepoCloneState }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  if (repos.length === 0) {
+    return (
+      <span className="tag" title="Ask Claude to create or link repositories"
+        style={{ color: "var(--fg-dim)", opacity: 0.7 }}>no repos linked</span>
+    );
+  }
+
+  const clonedSet = new Set(state.clonedNames);
+  const clonedCount = repos.filter(r => clonedSet.has(r)).length;
+  const failed = repos.filter(r => state.cloneErrors[r] && !state.cloning.has(r));
+  const allCloned = clonedCount === repos.length;
+  const n = repos.length;
+  const noun = `repo${n === 1 ? "" : "s"}`;
+  const label =
+    failed.length > 0 ? `${n} ${noun} · clone failed`
+    : state.cloning.size > 0 ? `${n} ${noun} · cloning…`
+    : allCloned ? `${n} cloned ${noun}`
+    : clonedCount > 0 ? `${clonedCount}/${n} cloned`
+    : `${n} ${noun}`;
+
+  return (
+    <span ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+      <span
+        className="tag"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          cursor: "pointer",
+          color: failed.length ? "var(--danger)" : allCloned ? "var(--success)" : undefined,
+          borderColor: failed.length ? "var(--danger)" : undefined,
+        }}
+      >{label} {open ? "▴" : "▾"}</span>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 50,
+          minWidth: 240, maxWidth: 380, padding: 6,
+          background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
+          borderRadius: 8, boxShadow: "0 10px 30px rgba(0,0,0,.4)",
+          display: "flex", flexDirection: "column", gap: 2,
+          fontFamily: "var(--mono)", fontSize: 10.5,
+        }}>
+          {repos.map(r => {
+            const isCloned = clonedSet.has(r);
+            const isCloning = state.cloning.has(r);
+            const err = state.cloneErrors[r];
+            return (
+              <div key={r} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 6px" }}>
+                <span title={r} style={{ flex: 1, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r}</span>
+                {isCloned ? (
+                  <span style={{ color: "var(--success)" }}>● cloned</span>
+                ) : isCloning ? (
+                  <span style={{ color: "var(--accent)" }}>cloning…</span>
+                ) : (
+                  <span onClick={() => state.cloneRepo(r)}
+                    style={{ cursor: "pointer", color: err ? "var(--danger)" : "var(--accent)" }}>
+                    {err ? "retry clone →" : "clone →"}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </span>
+  );
 }
 // ── GitHub structure card ─────────────────────────────────────────────────────
 //
@@ -414,9 +489,8 @@ export function Planning({ visible }: { visible: boolean }) {
   ])].filter(Boolean);
 
   // Auto-clone the canonical repo set into the project hub as it grows; the header
-  // repo pill surfaces the per-repo clone status (hover for the list, click to retry).
-  const { clonedNames, cloning: cloningRepos, cloneErrors, retryFailed } =
-    usePlanningRepoClone(effectiveProjectId, publishRepos);
+  // repo pill surfaces the per-repo clone status (click to reveal the list).
+  const repoClone = usePlanningRepoClone(effectiveProjectId, publishRepos);
 
   // Sections are DYNAMIC: derived from whatever section files Claude has written
   // (surfaced via the store), not a fixed list. The store — populated by the
@@ -1542,7 +1616,7 @@ _Auto-generated by base-studio-code planner._`,
       </div>
 
       {/* Header */}
-      <div style={{ padding: "12px 24px 0", display: "flex", alignItems: "flex-start", gap: 14 }}>
+      <div style={{ padding: "12px 24px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <button
@@ -1581,40 +1655,7 @@ _Auto-generated by base-studio-code planner._`,
               {confirmedCount}/{sections.length} sections confirmed
             </span>
             <span className="tag amber">● {isExisting ? "expanding" : "drafting"}</span>
-            {publishRepos.length > 0 && (() => {
-              const clonedSet = new Set(clonedNames);
-              const clonedCount = publishRepos.filter(r => clonedSet.has(r)).length;
-              const failed = publishRepos.filter(r => cloneErrors[r] && !cloningRepos.has(r));
-              const allCloned = clonedCount === publishRepos.length;
-              const n = publishRepos.length;
-              const noun = `repo${n === 1 ? "" : "s"}`;
-              const label =
-                failed.length > 0 ? `${n} ${noun} · clone failed`
-                : cloningRepos.size > 0 ? `${n} ${noun} · cloning…`
-                : allCloned ? `${n} cloned ${noun}`
-                : clonedCount > 0 ? `${clonedCount}/${n} cloned`
-                : `${n} ${noun}`;
-              // Hover lists every repo with its clone status (replaces the old strip list).
-              const tip = publishRepos.map(r =>
-                `${r}  —  ${clonedSet.has(r) ? "cloned" : cloningRepos.has(r) ? "cloning…" : cloneErrors[r] ? "clone failed" : "not cloned"}`
-              ).join("\n");
-              return (
-                <span
-                  className="tag"
-                  title={tip + (failed.length ? "\n\nclick to retry failed" : "")}
-                  onClick={failed.length ? retryFailed : undefined}
-                  style={{
-                    cursor: failed.length ? "pointer" : "default",
-                    color: failed.length ? "var(--danger)" : allCloned ? "var(--success)" : undefined,
-                    borderColor: failed.length ? "var(--danger)" : undefined,
-                  }}
-                >{label}</span>
-              );
-            })()}
-            {publishRepos.length === 0 && (
-              <span className="tag" title="Ask Claude to create or link repositories"
-                style={{ color: "var(--fg-dim)", opacity: 0.7 }}>no repos linked</span>
-            )}
+            <RepoPill repos={publishRepos} state={repoClone} />
           </div>
         </div>
         <button className="btn ghost" onClick={() => setProjectsView("list")}>
