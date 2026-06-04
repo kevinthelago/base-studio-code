@@ -29,10 +29,23 @@ const TABS = [
 
 type BoardTab = typeof TABS[number]["k"];
 
-const BOARD_TABS: TabItem[] = TABS.map((t) => ({ id: t.k, label: t.label, hint: t.hint }));
+// The GitHub Projects v2 published views live on the GitHub page (#498); the
+// Projects page keeps the execution/repo surfaces. The header shows one set or the
+// other depending on `context`.
+type GithubTab = "board" | "roadmap" | "issues" | "insights";
+const GITHUB_KEYS: GithubTab[] = ["board", "roadmap", "issues", "insights"];
+const tabItem = (k: string): TabItem => {
+  const t = TABS.find((x) => x.k === k)!;
+  return { id: t.k, label: t.label, hint: t.hint };
+};
+const GITHUB_BOARD_TABS: TabItem[] = GITHUB_KEYS.map(tabItem);
+const PROJECT_BOARD_TABS: TabItem[] = TABS.filter((t) => !GITHUB_KEYS.includes(t.k as GithubTab)).map((t) => tabItem(t.k));
 
 interface ProjectsHeaderProps {
   project: ActiveProjectInfo;
+  /** "projects" (default) shows the execution tabs + back-to-list/plan; "github"
+   *  shows the published board tabs + back-to-portfolio, for the GitHub page (#498). */
+  context?: "projects" | "github";
 }
 
 function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
@@ -205,10 +218,22 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
   );
 }
 
-export function ProjectsHeader({ project }: ProjectsHeaderProps) {
-  const { projectsBoardTab, setProjectsBoardTab, setProjectsView, setPlanningContext, setPlanningSession, setScreen, setKbProjectScope } = useAppStore();
+export function ProjectsHeader({ project, context = "projects" }: ProjectsHeaderProps) {
+  const {
+    projectsBoardTab, setProjectsBoardTab, setProjectsView, setPlanningContext, setPlanningSession,
+    setScreen, setKbProjectScope, githubBoardTab, setGithubBoardTab, closeGithubBoard,
+  } = useAppStore();
+  const onGithub = context === "github";
+  // On the GitHub page the header drives the published-board sub-tabs (githubBoardTab);
+  // on the Projects page it drives the execution tabs (projectsBoardTab).
   const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
-    usePageTabs("projects-board", BOARD_TABS, { activeId: projectsBoardTab, setActive: (id) => setProjectsBoardTab(id as BoardTab) });
+    usePageTabs(
+      onGithub ? "github-board" : "projects-board",
+      onGithub ? GITHUB_BOARD_TABS : PROJECT_BOARD_TABS,
+      onGithub
+        ? { activeId: githubBoardTab, setActive: (id) => setGithubBoardTab(id as GithubTab) }
+        : { activeId: projectsBoardTab, setActive: (id) => setProjectsBoardTab(id as BoardTab) },
+    );
 
   // Open the Knowledge Base scoped to this project's documents, keyed by the
   // canonical (title-derived) folder the planner writes to. We intentionally do
@@ -226,6 +251,8 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
     // Key the session by the project name (stable, human-readable, and matches a
     // from-scratch session of the same name). The node id stays in activeProjectId.
     setPlanningSession(project.name);
+    // Planning lives on the Projects page; from the GitHub board, jump there.
+    setScreen("projects");
     setProjectsView("planning");
   }
 
@@ -235,13 +262,13 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <button
-              onClick={() => setProjectsView("list")}
+              onClick={onGithub ? closeGithubBoard : () => setProjectsView("list")}
               style={{
                 background: "none", border: "none", cursor: "pointer",
                 fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
                 padding: 0, marginRight: 4,
               }}
-            >← projects</button>
+            >{onGithub ? "← portfolio" : "← projects"}</button>
             <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{project.number}</span>
             <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600 }}>{project.name}</h2>
             {project.repo && <span className="tag">{project.repo}</span>}
