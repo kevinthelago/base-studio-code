@@ -30,15 +30,17 @@ export function detachedSection(search: string = window.location.search): { page
   return page && section ? { page, section } : null;
 }
 
-/** Open a page's section (e.g. github → repos) in its own window (tear-off). */
-export function openDetachedSection(page: string, section: string, title?: string): void {
+/** Open a page's section (e.g. github → repos) in its own window (tear-off).
+ *  `onClose` fires when that window is destroyed (best-effort re-dock). */
+export function openDetachedSection(page: string, section: string, title?: string, onClose?: () => void): void {
   seq += 1;
   const label = `tab-${page}-${section}-${seq}`.replace(/[^A-Za-z0-9/:_-]/g, "_");
   const u = new URL(window.location.href);
   u.hash = "";
   u.search = `?detach=${encodeURIComponent(page)}&section=${encodeURIComponent(section)}`;
   try {
-    new WebviewWindow(label, { url: u.href, title: title || section, width: 1100, height: 800, decorations: false });
+    const w = new WebviewWindow(label, { url: u.href, title: title || section, width: 1100, height: 800, decorations: false });
+    if (onClose) w.once("tauri://destroyed", () => onClose());
   } catch (e) {
     console.error("openDetachedSection failed:", e);
   }

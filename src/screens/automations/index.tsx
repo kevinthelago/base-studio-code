@@ -5,7 +5,6 @@ import { HistoryTab } from "./History";
 import { fmtClock } from "./format";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { usePageTabs } from "../../hooks/usePageTabs";
-import { openDetachedSection } from "../../lib/detachWindow";
 import type { RunStatus, Every } from "../../lib/scheduler";
 import "./automations.css";
 
@@ -33,7 +32,7 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
     { id: "history", label: "History", count: totalRuns },
   ], [automations.length, armed, totalRuns]);
 
-  const { tabs: tabItems, activeId, select, reorder } = usePageTabs("automations", defs);
+  const { tabs: tabItems, activeId, select, reorder, tearOff } = usePageTabs("automations", defs);
   const active = sectionOverride ?? activeId;
 
   function createAndSelect() {
@@ -68,7 +67,7 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
             activeId={activeId}
             onSelect={select}
             onReorder={reorder}
-            onTearOff={(id) => openDetachedSection("automations", id, `Automations — ${id}`)}
+            onTearOff={tearOff}
             right={
               <>
                 <span className="quick-stat">

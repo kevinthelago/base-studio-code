@@ -354,6 +354,11 @@ interface AppStore {
    *  on re-dock or app restart — so the tab returns to its persisted place. */
   detachedTabIds: string[];
   setTabDetached: (id: string, detached: boolean) => void;
+  /** Per-page section ids currently shown in their own window (#430). Session-only
+   *  (NOT persisted), like detachedTabIds — hidden from the page's tab bar while
+   *  detached, returned on re-dock/restart to their persisted place. */
+  detachedSections: Record<string, string[]>;
+  setSectionDetached: (page: string, id: string, detached: boolean) => void;
 
   // Settings
   settingsSection: string;
@@ -961,6 +966,15 @@ export const useAppStore = create<AppStore>()(
             ? (s.detachedTabIds.includes(id) ? s.detachedTabIds : [...s.detachedTabIds, id])
             : s.detachedTabIds.filter((x) => x !== id),
         })),
+      detachedSections: {},
+      setSectionDetached: (page, id, detached) =>
+        set((s) => {
+          const cur = s.detachedSections[page] ?? [];
+          const next = detached
+            ? (cur.includes(id) ? cur : [...cur, id])
+            : cur.filter((x) => x !== id);
+          return { detachedSections: { ...s.detachedSections, [page]: next } };
+        }),
 
       settingsSection: "github",
       setSettingsSection: (section) => set({ settingsSection: section }),
