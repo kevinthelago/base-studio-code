@@ -91,13 +91,12 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
           display: projectsView !== "planning" ? "flex" : "none",
           flex: 1, flexDirection: "column", minHeight: 0,
         }}>
-          {projectsView === "board" && projectsBoardTab === "roadmap"  && <Roadmap />}
-          {projectsView === "board" && projectsBoardTab === "board"    && <ProjectBoard />}
-          {projectsView === "board" && projectsBoardTab === "issues"   && <Issues />}
-          {projectsView === "board" && projectsBoardTab === "insights" && <Insights />}
+          {/* The GitHub-published views (board/roadmap/issues/insights) now live on
+              the GitHub page (#498). The Projects board view keeps the execution /
+              repo surfaces; coordination is the default. */}
           {projectsView === "board" && projectsBoardTab === "hooks"    && <HooksView />}
-          {projectsView === "board" && projectsBoardTab === "coordination" && <CoordinatorInbox />}
           {projectsView === "board" && projectsBoardTab === "pipelines" && <PipelinesLane />}
+          {projectsView === "board" && projectsBoardTab !== "hooks" && projectsBoardTab !== "pipelines" && <CoordinatorInbox />}
           {projectsView !== "board" && <ProjectsList />}
         </div>
       </div>

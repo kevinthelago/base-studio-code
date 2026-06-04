@@ -48,14 +48,15 @@ function timeAgo(iso: string): string {
 
 interface ProjectRowProps {
   p: GhProject;
-  onOpen: (p: GhProject) => void;
-  onEdit: (p: GhProject) => void;
+  onPlan: (p: GhProject) => void;
+  onBoard: (p: GhProject) => void;
+  onWorkspace: (p: GhProject) => void;
   onDelete: (p: GhProject) => void;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
 }
 
-export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpenId }: ProjectRowProps) {
+export function ProjectRow({ p, onPlan, onBoard, onWorkspace, onDelete, menuOpenId, setMenuOpenId }: ProjectRowProps) {
   const repo    = p.repositories?.nodes?.[0]?.nameWithOwner ?? "";
   const menuRef = useRef<HTMLDivElement>(null);
   const isOpen  = menuOpenId === p.id;
@@ -111,9 +112,9 @@ export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpe
         <button
           className="btn primary"
           style={{ height: 28, fontSize: 10.5, padding: "0 12px", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}
-          onClick={() => onOpen(p)}
+          onClick={() => onPlan(p)}
         >
-          open board <ExternalLink size={12} strokeWidth={2.2} />
+          ⌘ plan →
         </button>
 
         {/* ⋯ menu */}
@@ -136,9 +137,15 @@ export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpe
             }}>
               <button
                 className="menu-item"
-                onClick={() => { setMenuOpenId(null); onEdit(p); }}
+                onClick={() => { setMenuOpenId(null); onBoard(p); }}
               >
-                <Pencil size={12} /> plan / edit
+                <ExternalLink size={12} /> board on GitHub
+              </button>
+              <button
+                className="menu-item"
+                onClick={() => { setMenuOpenId(null); onWorkspace(p); }}
+              >
+                <Pencil size={12} /> coordination
               </button>
               <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
               <button
@@ -156,7 +163,7 @@ export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpe
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setProjectsView, setProjectsBoardTab, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -193,10 +200,19 @@ export function ProjectsList() {
     if (activeScreen === "projects") fetchProjects();
   }, [activeScreen, fetchProjects]);
 
-  function handleOpenBoard(p: GhProject) {
+  // The GitHub Projects v2 board now lives on the GitHub page (#498).
+  function handleOpenGithubBoard(p: GhProject) {
     const repos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
-    const repo  = repos[0] ?? "";
-    setActiveProjectMeta(p.id, p.title, repo, p.number, repos);
+    setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
+    setScreen("github");
+    openGithubBoard("board");
+  }
+
+  // The Projects-page execution surfaces (coordination / pipelines / hooks).
+  function handleOpenWorkspace(p: GhProject) {
+    const repos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
+    setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
+    setProjectsBoardTab("coordination");
     setProjectsView("board");
   }
 
@@ -465,8 +481,9 @@ export function ProjectsList() {
             <ProjectRow
               key={p.id}
               p={p}
-              onOpen={handleOpenBoard}
-              onEdit={handleEditPlan}
+              onPlan={handleEditPlan}
+              onBoard={handleOpenGithubBoard}
+              onWorkspace={handleOpenWorkspace}
               onDelete={setDeleteTarget}
               menuOpenId={menuOpenId}
               setMenuOpenId={setMenuOpenId}

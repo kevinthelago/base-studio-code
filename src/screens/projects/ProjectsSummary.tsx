@@ -756,10 +756,16 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
   repoIssues: Record<string, GhIssue[]>;
   loading: boolean;
 }) {
-  const { setProjectsPageMode, setScreen } = useAppStore();
-  // This portfolio now lives in the GitHub screen (#421); drilling in jumps to the
-  // Projects tab and shows the project list/board.
+  const { setProjectsPageMode, setScreen, setActiveProjectMeta, openGithubBoard } = useAppStore();
+  // This portfolio lives in the GitHub screen (#421); "view list" jumps to the
+  // Projects tab for planning, while opening a card shows that project's board
+  // right here on the GitHub page (#498).
   const openProjects = () => { setScreen("projects"); setProjectsPageMode("projects"); };
+  const openBoard = (p: GhProject) => {
+    const repos = p.repositories?.nodes?.map(r => r.nameWithOwner) ?? [];
+    setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
+    openGithubBoard("board");
+  };
 
   const projectsWithStats = useMemo(() => {
     return projects.map((p, i) => {
@@ -797,7 +803,7 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
         {projectsWithStats.map(({ p, c, status, spark, repo }) => (
-          <div key={p.id} onClick={openProjects} style={{
+          <div key={p.id} onClick={() => openBoard(p)} style={{
             padding: "12px 14px", borderRadius: 6,
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             cursor: "pointer", minWidth: 0, overflow: "hidden",
