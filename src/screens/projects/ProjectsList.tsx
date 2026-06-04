@@ -44,6 +44,19 @@ function GroupLabel({ label, count }: { label: string; count: number }) {
   );
 }
 
+/** Milestone-progress bar: fraction of the project's items that are closed. */
+function ProgressBar({ pct }: { pct: number }) {
+  return (
+    <span title={`${Math.round(pct * 100)}% of items closed`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span style={{ width: 56, height: 4, borderRadius: 99, background: "var(--bg-elev2)", overflow: "hidden", display: "inline-block" }}>
+        <span style={{ display: "block", height: "100%", width: `${pct * 100}%`, background: pct >= 1 ? "var(--success)" : "var(--accent)" }} />
+      </span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{Math.round(pct * 100)}%</span>
+    </span>
+  );
+}
+
+interface GhProjectItem { content: { __typename?: string; state?: string } | null }
 interface GhProject {
   id: string;
   number: number;
@@ -52,8 +65,21 @@ interface GhProject {
   url: string;
   closed: boolean;
   updatedAt: string;
-  items: { totalCount: number };
+  items: { totalCount: number; nodes: GhProjectItem[] };
   repositories: { nodes: Array<{ nameWithOwner: string }> };
+}
+
+// Open count + closed fraction from the fetched item states (capped at 100 items;
+// totalCount is the true item count, used for the headline number).
+function projectProgress(p: GhProject): { open: number; pct: number } {
+  let open = 0, closed = 0;
+  for (const n of p.items?.nodes ?? []) {
+    const s = n.content?.state;
+    if (s === "OPEN") open++;
+    else if (s === "CLOSED" || s === "MERGED") closed++;
+  }
+  const total = open + closed;
+  return { open, pct: total ? closed / total : 0 };
 }
 
 const PROJECTS_QUERY = `{
@@ -61,7 +87,10 @@ const PROJECTS_QUERY = `{
     projectsV2(first: 20) {
       nodes {
         id number title shortDescription url closed updatedAt
-        items { totalCount }
+        items(first: 100) {
+          totalCount
+          nodes { content { __typename ... on Issue { state } ... on PullRequest { state } } }
+        }
         repositories(first: 20) { nodes { nameWithOwner } }
       }
     }
@@ -103,6 +132,7 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
   const [hover, setHover] = useState(false);
   const status = projStatus(p);
   const repos  = (p.repositories?.nodes ?? []).map(r => r.nameWithOwner.split("/")[1] ?? r.nameWithOwner);
+  const { open, pct } = projectProgress(p);
 
   // Close the menu on an outside mousedown, but NOT on a mousedown inside it —
   // otherwise the menu unmounts before a menu item's click fires.
@@ -138,7 +168,9 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
         </div>
         <div style={{ display: "flex", gap: 16, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", flexWrap: "wrap" }}>
           {p.items.totalCount > 0 && <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>}
+          {open > 0 && <span><b style={{ color: "var(--fg)" }}>{open}</b> open</span>}
           {status === "drafting" && <span style={{ color: "var(--accent)" }}>plan in progress</span>}
+          {p.items.totalCount > 0 && <ProgressBar pct={pct} />}
           <span style={{ color: "var(--fg-dim)" }}>updated {timeAgo(p.updatedAt)}</span>
         </div>
       </div>
