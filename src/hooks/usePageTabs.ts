@@ -44,8 +44,16 @@ export interface PageTabs {
  * the active id (defaults to the first/front visible tab — the user's
  * preference), and select/reorder/tearOff handlers. `pageKey` namespaces both
  * the persisted order and the (session-only) detached set.
+ *
+ * Pass `controlled` when the active tab lives in the store and is shared across
+ * components (e.g. the Projects board, where the bar and the content are separate
+ * components) — the hook then reads/writes that instead of local state.
  */
-export function usePageTabs(pageKey: string, defs: TabItem[]): PageTabs {
+export function usePageTabs(
+  pageKey: string,
+  defs: TabItem[],
+  controlled?: { activeId: string; setActive: (id: string) => void },
+): PageTabs {
   const order = useAppStore((s) => s.pageTabOrder[pageKey]);
   const setOrder = useAppStore((s) => s.setPageTabOrder);
   const detached = useAppStore((s) => s.detachedSections[pageKey]) ?? EMPTY;
@@ -53,12 +61,14 @@ export function usePageTabs(pageKey: string, defs: TabItem[]): PageTabs {
 
   const ordered = useMemo(() => orderTabs(defs, order), [defs, order]);
   const tabs = useMemo(() => ordered.filter((t) => !detached.includes(t.id)), [ordered, detached]);
-  const [activeId, setActiveId] = useState<string>(() => tabs[0]?.id ?? "");
+  const [localActive, setLocalActive] = useState<string>(() => tabs[0]?.id ?? "");
+  const activeId = controlled ? controlled.activeId : localActive;
+  const setActiveId = controlled ? controlled.setActive : setLocalActive;
 
   // Keep the active id valid if the visible set changes (order/defs/detach shift).
   useEffect(() => {
     if (!tabs.some((t) => t.id === activeId)) setActiveId(tabs[0]?.id ?? "");
-  }, [tabs, activeId]);
+  }, [tabs, activeId, setActiveId]);
 
   // Reorder operates on visible positions; translate to the full ordered list so
   // detached sections keep their place.
@@ -78,7 +88,7 @@ export function usePageTabs(pageKey: string, defs: TabItem[]): PageTabs {
       const next = tabs.find((t) => t.id !== id);
       if (next) setActiveId(next.id);
     }
-  }, [pageKey, ordered, tabs, activeId, setDetached]);
+  }, [pageKey, ordered, tabs, activeId, setDetached, setActiveId]);
 
   return { tabs, activeId, select: setActiveId, reorder, tearOff };
 }

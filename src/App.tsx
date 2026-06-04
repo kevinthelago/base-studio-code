@@ -298,6 +298,10 @@ export default function App() {
     const sectionScreens: Record<string, (s: string) => React.ReactNode> = {
       automations: (s) => <AutomationsScreen sectionOverride={s} />,
       skills: (s) => <SkillsScreen sectionOverride={s} />,
+      extensions: (s) => <ExtensionsScreen sectionOverride={s} />,
+      agents: (s) => <AgentsScreen sectionOverride={s} />,
+      github: (s) => <GitHubScreen sectionOverride={s} />,
+      projects: (s) => <ProjectsScreen sectionOverride={s} />,
     };
     return (
       <div className="app">
