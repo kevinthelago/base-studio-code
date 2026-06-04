@@ -609,7 +609,7 @@ async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -623,6 +623,15 @@ async fn pty_create(
     // app-wide log, tagged with the pane id via BSC_AUDIT_PANE. Set for every pane
     // (harmless — only panes whose settings install the hook actually write).
     cmd.env("BSC_SKILL_LOG", to_bash_path(&base.join("skills.log").to_string_lossy()));
+    // Token + cost accounting (#416): the `bsc-tokens` Stop/SubagentStop hook (added to
+    // gated panes' settings.json by the frontend) pipes Claude Code's hook JSON — which
+    // carries `session_id` + `transcript_path` — into this; it appends one TSV line
+    // (`ts \t pane \t session_id \t transcript_path`) to this app-wide log, tagged with
+    // the pane id via BSC_AUDIT_PANE. The transcript itself holds the per-message usage;
+    // `read_token_usage` parses + prices it. Set for every pane (harmless — only panes
+    // whose settings install the hook actually write). Claude Code hooks don't expose
+    // token usage as a field, so the transcript is the only per-session source.
+    cmd.env("BSC_TOKENS_LOG", to_bash_path(&base.join("tokens.log").to_string_lossy()));
     // Coordination log (#199): `bsc-blocked --on <ref>` appends a structured
     // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
     // merge/close append satisfy events later. Set for every pane; only --on writes.
@@ -1465,6 +1474,20 @@ const BSC_SKILL_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-tokens` helper (#416): a Stop / SubagentStop hook on a gated pane pipes
+/// Claude Code's hook JSON into this; it extracts the `session_id` and `transcript_path`
+/// (Claude Code's hooks carry these but NOT token usage, so the transcript is the only
+/// per-session source) and appends one TAB-separated line — `ts \t pane \t session_id \t
+/// transcript_path` — to the app-wide `$BSC_TOKENS_LOG`, tagged with `$BSC_AUDIT_PANE`.
+/// The session id is sanitized like bsc-skill's fields (strip tabs/newlines, cap length);
+/// the transcript path is left verbatim (a JSON-escaped native path) for `read_token_usage`
+/// to decode + parse. Best-effort + always exits 0 so it never blocks a stop. A raw string
+/// keeps the embedded quotes/regex readable.
+const BSC_TOKENS_RC: &str = concat!(
+    r#"bsc-tokens() { l="${BSC_TOKENS_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat | tr '\t\n' '  ')"; sid="$(printf '%s' "$j" | grep -oE '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; tp="$(printf '%s' "$j" | grep -oE '"transcript_path"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"' | head -1 | sed -E 's/^"transcript_path"[[:space:]]*:[[:space:]]*"(.*)"$/\1/')"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$sid" "$tp" >> "$l"; return 0; }"#,
+    "\n",
+);
+
 /// The `bsc-confine` helper (#158): a PreToolUse hook for the file tools on a gated
 /// pane. It reads Claude Code's tool JSON, extracts the target `file_path` /
 /// `notebook_path`, and BLOCKS (return 2 + stderr) when the path escapes the session's
@@ -1522,6 +1545,186 @@ fn read_skill_log(limit: usize) -> Vec<String> {
     lines.reverse();
     lines.truncate(limit);
     lines
+}
+
+// ── Token + cost accounting (#416) ──────────────────────────────────────────────
+//
+// Claude Code hooks don't expose token usage, so the only per-session source is the
+// session transcript (JSONL, one message per line, each assistant line carrying a
+// per-message `usage` object). The `bsc-tokens` Stop hook records `pane → session_id →
+// transcript_path` to `tokens.log`; `read_token_usage` takes the latest transcript per
+// pane, sums its usage, prices it, and returns one record per pane. Pricing + parsing
+// live here (testable) rather than in the bash helper.
+
+/// Per-pane token + cost accounting, one record per pane (#416). Serialized to the
+/// frontend so the Fleet tokens/spend panel renders real numbers instead of a
+/// "not measured yet" note.
+#[derive(serde::Serialize, Debug, PartialEq)]
+struct TokenUsage {
+    pane: String,
+    session_id: String,
+    model: String,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_creation_tokens: u64,
+    cache_read_tokens: u64,
+    cost_usd: f64,
+}
+
+/// Dollars-per-million-token prices for one model family.
+struct Pricing {
+    input: f64,
+    output: f64,
+    cache_write: f64,
+    cache_read: f64,
+}
+
+/// Price table keyed by model-family substring (USD per million tokens). `cache_write`
+/// is the 5-minute cache-write rate (1.25x base input), `cache_read` the cache-read rate
+/// (0.1x base input). Unknown / empty models fall back to Sonnet — the app's default
+/// model (`claude-sonnet-4-6`) — so an unrecognized id is priced conservatively rather
+/// than as $0. These are list prices and may drift; they live in one place to update.
+fn model_pricing(model: &str) -> Pricing {
+    let m = model.to_ascii_lowercase();
+    if m.contains("opus") {
+        Pricing { input: 15.0, output: 75.0, cache_write: 18.75, cache_read: 1.50 }
+    } else if m.contains("haiku") {
+        Pricing { input: 1.0, output: 5.0, cache_write: 1.25, cache_read: 0.10 }
+    } else {
+        // sonnet + anything unrecognized
+        Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 }
+    }
+}
+
+/// Summed usage across a transcript, plus the last-seen model for pricing.
+#[derive(Default, Debug, PartialEq)]
+struct TranscriptTotals {
+    model: String,
+    input: u64,
+    output: u64,
+    cache_creation: u64,
+    cache_read: u64,
+}
+
+impl TranscriptTotals {
+    fn is_empty(&self) -> bool {
+        self.input == 0 && self.output == 0 && self.cache_creation == 0 && self.cache_read == 0
+    }
+}
+
+/// Sum the per-message `usage` across every assistant line of a Claude Code transcript
+/// (JSONL). Usage is reported per-message (not cumulative), so the session total is the
+/// sum. Captures the last non-empty model seen for pricing. Tolerant: malformed/non-JSON
+/// lines and lines without a `usage` object are skipped, so a partially-written
+/// transcript still yields a partial total.
+fn parse_transcript_usage(jsonl: &str) -> TranscriptTotals {
+    let mut t = TranscriptTotals::default();
+    for line in jsonl.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let v: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let msg = &v["message"];
+        let usage = &msg["usage"];
+        if !usage.is_object() {
+            continue;
+        }
+        t.input += usage["input_tokens"].as_u64().unwrap_or(0);
+        t.output += usage["output_tokens"].as_u64().unwrap_or(0);
+        t.cache_creation += usage["cache_creation_input_tokens"].as_u64().unwrap_or(0);
+        t.cache_read += usage["cache_read_input_tokens"].as_u64().unwrap_or(0);
+        if let Some(model) = msg["model"].as_str() {
+            if !model.is_empty() {
+                t.model = model.to_string();
+            }
+        }
+    }
+    t
+}
+
+/// Total USD cost for a transcript's usage, priced by its model.
+fn compute_cost(t: &TranscriptTotals) -> f64 {
+    let p = model_pricing(&t.model);
+    (t.input as f64 * p.input
+        + t.output as f64 * p.output
+        + t.cache_creation as f64 * p.cache_write
+        + t.cache_read as f64 * p.cache_read)
+        / 1_000_000.0
+}
+
+/// Decode a JSON-escaped path stored verbatim in `tokens.log` (`bsc-tokens` writes the
+/// hook's `transcript_path` field without unescaping). Reverses the escapes a JSON string
+/// can carry for a filesystem path — `\\` → `\` (Windows separators) and `\/` → `/`.
+fn json_unescape_path(p: &str) -> String {
+    p.replace("\\\\", "\\").replace("\\/", "/")
+}
+
+/// The latest `(pane, session_id, transcript_path)` per pane from a `tokens.log` body,
+/// newest pane first. The log is append-only oldest-first, so a later line for a pane
+/// supersedes earlier ones (a resumed `--continue` session keeps the same transcript,
+/// which already accumulates all usage). Pure (no fs) so it's unit-testable.
+fn latest_transcript_per_pane(log_text: &str) -> Vec<(String, String, String)> {
+    use std::collections::HashMap;
+    // pane -> (order, session_id, transcript_path)
+    let mut latest: HashMap<String, (usize, String, String)> = HashMap::new();
+    for (i, line) in log_text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 4 {
+            continue;
+        }
+        let (pane, sid, tp) = (f[1].to_string(), f[2].to_string(), f[3].to_string());
+        if pane.is_empty() || tp.is_empty() {
+            continue;
+        }
+        latest.insert(pane, (i, sid, tp));
+    }
+    let mut rows: Vec<(usize, String, String, String)> =
+        latest.into_iter().map(|(pane, (ord, sid, tp))| (ord, pane, sid, tp)).collect();
+    rows.sort_by_key(|r| std::cmp::Reverse(r.0)); // newest line first
+    rows.into_iter().map(|(_, pane, sid, tp)| (pane, sid, tp)).collect()
+}
+
+/// Read per-pane token + cost accounting (#416). Reads `tokens.log`, takes the latest
+/// transcript per pane, parses + prices its usage, and returns up to `limit` records
+/// (newest pane first). Panes whose transcript is missing/unreadable or carries no usage
+/// are skipped — honest empties, never fabricated numbers.
+#[tauri::command]
+fn read_token_usage(limit: usize) -> Vec<TokenUsage> {
+    let path = bsc_base_dir().join("tokens.log");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut out: Vec<TokenUsage> = Vec::new();
+    for (pane, session_id, tp) in latest_transcript_per_pane(&text) {
+        if out.len() >= limit {
+            break;
+        }
+        let jsonl = match std::fs::read_to_string(json_unescape_path(&tp)) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let totals = parse_transcript_usage(&jsonl);
+        if totals.is_empty() {
+            continue;
+        }
+        let cost = compute_cost(&totals);
+        out.push(TokenUsage {
+            pane,
+            session_id,
+            model: totals.model,
+            input_tokens: totals.input,
+            output_tokens: totals.output,
+            cache_creation_tokens: totals.cache_creation,
+            cache_read_tokens: totals.cache_read,
+            cost_usd: cost,
+        });
+    }
+    out
 }
 
 /// Read the coordination log (#199): up to the newest `limit` TSV lines, in
@@ -2392,6 +2595,31 @@ Tracing: one span per migration. Alert: page on migration failure rate above 0.
 ]</plan_update>
 ```
 
+### Worked example — dissecting a hard unit
+A hard unit becomes a **sourced approach → a generated Skill → the sub-issues that
+consume it** (see "Hard topics" in the feature workshop). One unit, end to end:
+
+*Unit: "Render 10k+ nodes in the graph view at 60 fps" — too vague to hand off, so
+dissect it.*
+
+1. **Sourced approach** — WebGL instanced rendering via `three` (r160) `InstancedMesh`;
+   one draw call for all nodes, per-instance matrices updated on layout tick; GPU
+   picking via an id-color buffer. Pitfall: per-frame matrix churn → batch into a
+   `Float32Array` and `needsUpdate` once.
+2. **Generated Skill** (written into `skills.json`, scoped to this project + pinned so
+   the fleet picks it up — see "Manage the Skills library"):
+```
+[{"name":"WebGL instanced graph render","kind":"scaffold","description":"Set up a three.js InstancedMesh scene graph with GPU picking for 10k+ nodes at 60 fps","prompt":"1. Create the InstancedMesh with a capacity of N. 2. On each layout tick, write per-node matrices into one Float32Array and set instanceMatrix.needsUpdate. 3. Add an id-color picking pass on a separate render target. 4. Verify 60 fps at 10k nodes via the perf harness.","tools":["Read","Edit","Bash"],"profiles":["build"],"projects":["<this-project-key>"],"pinned":true}]
+```
+3. **Sub-issues that consume it** (each `dependsOn` the prior; the skill carries the how):
+```
+<plan_update section="issues">[
+  {"ref":"G1","title":"InstancedMesh scene graph for nodes","phase":2,"acceptance":["one draw call for all nodes","capacity grows without re-alloc churn"],"owns":["src/graph/render/scene.ts"],"dependsOn":[],"labels":["scope:core","area:graph"],"stream":"graph-render"},
+  {"ref":"G2","title":"Per-tick instance-matrix batching","phase":2,"acceptance":["matrices written into one Float32Array","instanceMatrix.needsUpdate set once per tick","60 fps at 10k nodes in the perf harness"],"owns":["src/graph/render/layoutSync.ts"],"dependsOn":["G1"],"labels":["scope:core","area:graph"],"stream":"graph-render"},
+  {"ref":"G3","title":"GPU id-color picking pass","phase":2,"acceptance":["hover/click resolves the node under the cursor","picking target separate from the visible pass"],"owns":["src/graph/render/picking.ts"],"dependsOn":["G1"],"labels":["scope:core","area:graph"],"stream":"graph-render"}
+]</plan_update>
+```
+
 ## Special sections
 
 - **`goal`** — always document it; its first sentence becomes the GitHub project
@@ -2456,33 +2684,51 @@ error/empty/loading states, the edge cases, what data it migrates, what it break
 elsewhere, and the cross-repo contracts it depends on. Each problem you surface is
 itself an issue — a unit is not "mapped" until the issues it BRINGS are mapped too.
 
-**Hard topics — research and source before you decompose.** When a unit needs a
-non-trivial or specialized solution — a physics / protein-folding simulation, a
-neural-net architecture, 3D graphics/rendering, a novel algorithm, anything where
-"build it somehow" would leave the agent stuck — STOP and ground the approach
-before you write its issues:
-- **Name the established approach** from what you know: the standard technique, the
-  canonical library/framework, the reference architecture.
-- **Source it.** Ask the user for papers / docs / a reference implementation they
-  trust, and `WebFetch` any concrete URL you or they name (a library API page, a
-  spec, a GitHub raw file) to verify it. You can fetch a known URL but not search —
-  so ask for the link rather than guessing.
-- **Pin the specifics**: the exact library + version, the algorithm/architecture,
-  the data structures, the known pitfalls, and the perf/accuracy constraints.
-- **Fold it into the issues (preferred).** The grounded approach becomes each
-  issue's **How / build approach** and **Tools & tech** (named, not "a library"),
-  sharpens its **acceptance** (e.g. "renders 10k instances at 60 fps via
-  InstancedMesh"), and drives the **epic → sub-issue decomposition** the technique
-  implies (e.g. an epic "WebGL renderer" → sub-issues for scene graph, instancing,
-  picking). The agent building it should never have to re-derive the approach.
-- **Capture the source** so the agent inherits it: write a short reference section
-  (a `{topic}.md` plan section, e.g. `research_renderer.md`) and/or assign a
-  Knowledge Base block (`<kb_assign>`) scoped to the project so it lands in the
-  agent's prompt — preferred over a loose note; failing that, link the source in
-  the issue body.
+**Hard topics — dissect into a sourced approach + reusable Skills.** When a unit
+needs a non-trivial or specialized solution — a physics / protein-folding
+simulation, a neural-net architecture, 3D graphics/rendering, a novel algorithm, a
+gnarly migration, anything where "build it somehow" would leave the agent stuck —
+STOP and ground the approach before you write its issues. **This dissection is the
+single highest-leverage moment in planning**: the user's understanding of the hard
+problem should leave as a durable, reusable **Skill** the building agent can invoke,
+not a one-off prose sketch it has to re-derive:
+
+1. **Research + source.** Name the established approach from what you know (the
+   standard technique, the canonical library/framework, the reference architecture).
+   Source it: ask the user for papers / docs / a reference implementation they trust,
+   and `WebFetch` any concrete URL you or they name (a library API page, a spec, a
+   GitHub raw file) to verify it — you can fetch a known URL but not search, so ask
+   for the link rather than guessing. **Pin the specifics**: the exact library +
+   version, the algorithm/architecture, the data structures, the known pitfalls, and
+   the perf/accuracy constraints.
+2. **Break the problem into one or more Skills.** Instead of leaving the grounded
+   approach as prose, emit a **Skill** — a reusable capability bundle (prompt +
+   bundled tools + profile guardrails) — into `skills.json` (see "Manage the Skills
+   library"). The skill encodes the procedure you and the user worked out: the ordered
+   steps, the named tools, the guardrails, and the success checks. The agent that
+   builds the unit **invokes the skill** rather than re-deriving the approach.
+   - **Scope it to this project** so the fleet picks it up: set the skill's
+     `projects` to this project's key and leave it `pinned` (the default) — pinned,
+     project-scoped skills are auto-available to every worker on the project. (There
+     is no per-stream assignment tag; the `skills.json` entry + `projects`/`pinned`
+     scoping IS the assignment.)
+   - Planner-generated skills are carried into each worker's worktree at fleet launch
+     (`.claude/skills/<slug>/SKILL.md`), the same way `CLAUDE.local.md` is.
+3. **Fold the grounded approach into the issues.** The sourced approach becomes each
+   issue's **How / build approach** and **Tools & tech** (named, not "a library"),
+   sharpens its **acceptance** (e.g. "renders 10k instances at 60 fps via
+   InstancedMesh"), and drives the **epic → sub-issue decomposition** the technique
+   implies (e.g. an epic "WebGL renderer" → sub-issues for scene graph, instancing,
+   picking). The agent building it should never have to re-derive the approach.
+4. **Capture the source** so the agent inherits the provenance: write a short
+   reference section (a `{topic}.md` plan section, e.g. `research_renderer.md`)
+   and/or assign a Knowledge Base block (`<kb_assign>`) scoped to the project so it
+   lands in the agent's prompt — preferred over a loose note; failing that, link the
+   source in the issue body.
 
 A hard unit left as a generic sketch is a happy-path stub — treat it like a missing
-issue: research, source, and decompose it before the plan is "done."
+issue: research, source, **dissect into Skills**, and decompose it before the plan is
+"done." (See "Worked example — dissecting a hard unit" for the end-to-end shape.)
 
 ### Drive a unit (feature or section) down to its issues
 For the current unit, propose a complete spec, then interrogate to correct and fill
@@ -2623,18 +2869,30 @@ or `push=none` for a pure reviewer/explorer.
 ```
 
 **Manage the Skills library** (reusable procedures the fleet can invoke). Write
-`skills.json` in this directory — the authoritative channel the app polls (there is
-no inline tag; the file is the only channel). It is a JSON array of skill objects;
-overwrite the whole file to update the set:
+`skills.json` in this directory — the authoritative channel the app polls (the file
+is the channel of record). It is a JSON array of skill objects; overwrite the whole
+file to update the set. This is where the feature workshop's **"dissect hard problems
+→ Skills"** step deposits each capability it distils (see "Hard topics"):
 ```
-[{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"pinned":true}]
+[{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"projects":["<this-project-key>"],"pinned":true}]
 ```
-- `kind` — one of `workflow|scaffold|codemod|review|docs`.
-- `description` — one line summarizing what the skill does.
+- `kind` — one of `workflow|scaffold|codemod|review|docs` (defaults to `workflow`).
+- `description` — one line summarizing what the skill does (the parser also accepts `desc`).
 - `prompt` — the reusable procedure body the agent follows when it invokes the skill.
 - `tools` — the tool names bundled with the skill.
-- `profiles` — the permission profiles allowed to invoke it (`build|review|docs|auto|sandbox`).
-- `pinned` — when true, the skill is auto-available to the fleet.
+- `profiles` — the permission profiles allowed to invoke it (`build|review|docs|auto|sandbox`; defaults to `build`).
+- `projects` — the project keys this skill is scoped to. Set it to **this project's
+  key** so the skill is the fleet's, not global noise.
+- `pinned` — defaults to `true` for planner skills; pinned + project-scoped skills are
+  **auto-available to every worker on the project**.
+
+**Assignment is by scoping, not a tag.** There is no per-stream assignment and no
+inline tag — a skill's `projects` + `pinned` fields ARE its assignment. The app
+upserts each `skills.json` entry into the global Skills library and, at fleet launch,
+copies every pinned skill scoped to this project into each worker's worktree
+(`.claude/skills/<slug>/SKILL.md`), the same way `CLAUDE.local.md` is. So to "hand the
+agent the means to solve a hard unit," write the skill into `skills.json` with this
+project's key in `projects` and leave it pinned.
 
 ## GitHub tools
 
@@ -3967,6 +4225,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
         .manage(PtyState(Mutex::new(HashMap::new())))
         .manage(tunnel::TunnelState::new())
         .invoke_handler(tauri::generate_handler![
@@ -4011,6 +4270,7 @@ pub fn run() {
             tunnel::tunnel_set_sessions,
             read_audit_log,
             read_skill_log,
+            read_token_usage,
             read_coord_log,
             append_coord_woke,
             read_git_hooks,
@@ -4387,11 +4647,12 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
             super::BSC_SKILL_RC,
+            super::BSC_TOKENS_RC,
             super::BSC_CONFINE_RC,
             super::BSC_COORD_EMIT_RC,
             super::BSC_DEFER_RC,
@@ -4506,6 +4767,136 @@ mod tests {
         assert_eq!(fields[2], "PreToolUse", "event field should be hook_event_name");
         assert_eq!(fields[3], "open-a-clean-pr", "skill field should be skill_name");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bsc_tokens_helper_appends_a_session_line() {
+        // Like bsc-skill, bsc-tokens must work from the agent's own `bash -c` subshells
+        // via the rc file + BASH_ENV. It reads the Stop-hook JSON on stdin and appends one
+        // TSV line — `ts \t pane \t session_id \t transcript_path` — to $BSC_TOKENS_LOG.
+        // The transcript path is preserved VERBATIM (JSON-escaped) so read_token_usage can
+        // decode it. Skips where bash isn't on PATH (same gating as the other helper tests).
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_tokens subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-tokens-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_TOKENS_RC).unwrap();
+        // Nested path exercises the helper's `mkdir -p` of the log's parent.
+        let log = dir.join("nested").join("tokens.log");
+
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let log_bash = super::to_bash_path(&log.to_string_lossy());
+
+        let mut child = Command::new(&shell)
+            .arg("-c").arg("bsc-tokens")
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_TOKENS_LOG", &log_bash)
+            .env("BSC_AUDIT_PANE", "t1p2")
+            .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().unwrap();
+        // A Windows-style transcript path with JSON-escaped backslashes — the helper must
+        // keep them verbatim for read_token_usage's json_unescape_path to decode.
+        child.stdin.take().unwrap()
+            .write_all(br#"{"hook_event_name":"Stop","session_id":"abc-123","transcript_path":"C:\\Users\\k\\.claude\\projects\\p\\abc-123.jsonl","cwd":"C:\\repo"}"#)
+            .unwrap();
+        assert!(child.wait().unwrap().success(), "bsc-tokens should run in the subshell");
+
+        let line = std::fs::read_to_string(&log).unwrap();
+        let line = line.trim_end();
+        let fields: Vec<&str> = line.split('\t').collect();
+        assert_eq!(fields.len(), 4, "expected 4 TAB-separated fields, got: {line:?}");
+        assert_eq!(fields[1], "t1p2", "pane field should be the BSC_AUDIT_PANE tag");
+        assert_eq!(fields[2], "abc-123", "session_id field should be parsed");
+        assert_eq!(
+            fields[3], r"C:\\Users\\k\\.claude\\projects\\p\\abc-123.jsonl",
+            "transcript_path should be preserved verbatim (still JSON-escaped)"
+        );
+        // And the verbatim field decodes to a native Windows path.
+        assert_eq!(
+            super::json_unescape_path(fields[3]),
+            r"C:\Users\k\.claude\projects\p\abc-123.jsonl",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_transcript_usage_sums_per_message_usage() {
+        // Usage is per-message (not cumulative), so the session total is the sum across
+        // assistant lines. The last non-empty model is captured for pricing; non-JSON
+        // lines and lines without `usage` are skipped (partial transcripts still total).
+        let jsonl = concat!(
+            r#"{"type":"user","message":{"role":"user","content":"hi"}}"#, "\n",
+            r#"{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":10,"output_tokens":20,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000}}}"#, "\n",
+            "not json at all\n",
+            r#"{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":5,"output_tokens":7,"cache_creation_input_tokens":0,"cache_read_input_tokens":2000}}}"#, "\n",
+        );
+        let t = super::parse_transcript_usage(jsonl);
+        assert_eq!(t.input, 15);
+        assert_eq!(t.output, 27);
+        assert_eq!(t.cache_creation, 100);
+        assert_eq!(t.cache_read, 3000);
+        assert_eq!(t.model, "claude-sonnet-4-6");
+        assert!(!t.is_empty());
+        // An empty / usage-free transcript yields a zero total flagged empty.
+        assert!(super::parse_transcript_usage("").is_empty());
+        assert!(super::parse_transcript_usage(r#"{"type":"user","message":{"role":"user"}}"#).is_empty());
+    }
+
+    #[test]
+    fn compute_cost_prices_each_model_family() {
+        // Cost = sum(tokens * per-million-rate) / 1e6. Sonnet is the fallback for
+        // unknown/empty models so they never price as $0. Spot-check each family with
+        // 1M tokens of each kind so the rate equals the table entry directly.
+        let make = |model: &str| super::TranscriptTotals {
+            model: model.to_string(),
+            input: 1_000_000,
+            output: 1_000_000,
+            cache_creation: 1_000_000,
+            cache_read: 1_000_000,
+        };
+        // Sonnet: 3 + 15 + 3.75 + 0.30 = 22.05
+        assert!((super::compute_cost(&make("claude-sonnet-4-6")) - 22.05).abs() < 1e-9);
+        // Unknown / empty model falls back to Sonnet pricing.
+        assert!((super::compute_cost(&make("")) - 22.05).abs() < 1e-9);
+        // Opus: 15 + 75 + 18.75 + 1.50 = 110.25
+        assert!((super::compute_cost(&make("claude-opus-4-8")) - 110.25).abs() < 1e-9);
+        // Haiku: 1 + 5 + 1.25 + 0.10 = 7.35
+        assert!((super::compute_cost(&make("claude-haiku-4-5")) - 7.35).abs() < 1e-9);
+        // A realistic small total prices to a small positive number.
+        let small = super::TranscriptTotals { model: "claude-sonnet-4-6".into(), input: 10, output: 20, cache_creation: 100, cache_read: 1000 };
+        let c = super::compute_cost(&small);
+        assert!(c > 0.0 && c < 0.01, "got {c}");
+    }
+
+    #[test]
+    fn latest_transcript_per_pane_dedupes_to_newest_line() {
+        // tokens.log is append-only oldest-first; a later line for a pane supersedes
+        // earlier ones, and the result is newest-pane-first. Malformed/short lines and
+        // empty pane/path fields are dropped.
+        let log = concat!(
+            "ts1\tp1\tsidA\t/tA1.jsonl\n",
+            "ts2\tp2\tsidB\t/tB.jsonl\n",
+            "bad line with no tabs\n",
+            "ts3\tp1\tsidA\t/tA2.jsonl\n",   // supersedes p1's first line
+            "ts4\tp3\t\t/tC.jsonl\n",        // dropped: empty session id is OK, but...
+            "ts5\tp4\tsidD\t\n",             // dropped: empty transcript path
+        );
+        let rows = super::latest_transcript_per_pane(log);
+        // p1 (latest, ts3), p2, and p3 (empty session id is allowed) — p4 dropped.
+        let panes: Vec<&str> = rows.iter().map(|(p, _, _)| p.as_str()).collect();
+        assert_eq!(panes, vec!["p3", "p1", "p2"], "newest line first; p4 dropped");
+        let p1 = rows.iter().find(|(p, _, _)| p == "p1").unwrap();
+        assert_eq!(p1.2, "/tA2.jsonl", "p1 should resolve to its newest transcript");
     }
 
     #[test]

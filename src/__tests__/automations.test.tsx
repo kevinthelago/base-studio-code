@@ -62,9 +62,9 @@ describe("AutomationsScreen (wired to the store)", () => {
     const t = Date.now();
     useAppStore.getState().recordAutomationRun(id, { at: t, status: "ok", note: "ran command" });
     useAppStore.getState().recordAutomationRun(id, { at: t + 1, status: "skipped", note: "target not open" });
-    useAppStore.setState({ automationsTab: "history" });
 
     const { container } = render(<AutomationsScreen />);
+    fireEvent.click(screen.getByText("History")); // switch to the History tab
     expect(screen.getByText("success rate")).toBeTruthy();
     const dataRows = () => container.querySelectorAll(".hist-table .hist-row:not(.head)").length;
     expect(dataRows()).toBe(2);

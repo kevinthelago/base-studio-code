@@ -16,6 +16,8 @@ import {
 } from "../../lib/skills";
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "../../lib/skillTelemetry";
 import { Spark, HBars, type HBarRow } from "./SkillsCharts";
+import { TabBar, type TabItem } from "../../components/chrome/TabBar";
+import { usePageTabs } from "../../hooks/usePageTabs";
 import "./skills.css";
 
 type Mode = "library" | "runs" | "catalog";
@@ -95,9 +97,10 @@ const MODES: Array<{ k: Mode; label: string; hint?: string }> = [
   { k: "runs", label: "Runs" },
   { k: "catalog", label: "Catalog" },
 ];
+const SKILL_TABS: TabItem[] = MODES.map((m) => ({ id: m.k, label: m.label }));
 
 // ── page ─────────────────────────────────────────────────────────────────────
-export function SkillsScreen() {
+export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   const skills           = useAppStore(s => s.skills);
   const addSkill         = useAppStore(s => s.addSkill);
   const updateSkill      = useAppStore(s => s.updateSkill);
@@ -108,7 +111,8 @@ export function SkillsScreen() {
   const githubToken      = useAppStore(s => s.githubToken);
 
   const [filter, setFilter] = useState<"all" | SkillKind>("all");
-  const [mode, setMode] = useState<Mode>("library");
+  const { tabs: skillTabs, activeId, select, reorder, tearOff } = usePageTabs("skills", SKILL_TABS);
+  void (sectionOverride ?? activeId); // active section (modes are cosmetic today)
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -312,15 +316,16 @@ export function SkillsScreen() {
 
   return (
     <div className="skills-screen">
-      <div className="modestrip">
-        {MODES.map(m => (
-          <button key={m.k} className={"m" + (m.k === mode ? " on" : "")} onClick={() => setMode(m.k)}>
-            {m.label}{m.k === mode && m.hint && <span className="mh">· {m.hint}</span>}
-          </button>
-        ))}
-        <div style={{ flex: 1 }} />
-        <span className="sync">● github sync</span>
-      </div>
+      {!sectionOverride && (
+        <TabBar
+          tabs={skillTabs}
+          activeId={activeId}
+          onSelect={select}
+          onReorder={reorder}
+          onTearOff={tearOff}
+          right={<span className="sync">● github sync</span>}
+        />
+      )}
 
       <section className="an-page">
         <div className="an-wrap">
@@ -355,7 +360,7 @@ export function SkillsScreen() {
                   <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".06em" }}>skills · library</span>
                   <span className="hint">reusable capability bundles · invoked by the fleet</span>
                   <div style={{ flex: 1 }} />
-                  <button className="btn ghost" style={{ height: 22, fontSize: 10 }} onClick={() => setMode("runs")}>view runs</button>
+                  <button className="btn ghost" style={{ height: 22, fontSize: 10 }} onClick={() => select("runs")}>view runs</button>
                 </div>
                 <p style={{ margin: 0 }}>
                   <b style={{ color: "var(--fg)" }}>{kpis.total} skills</b> available to the fleet.
@@ -476,7 +481,7 @@ export function SkillsScreen() {
               </div>
 
               <div className="card">
-                <CardHead title="Add a skill" hint="from the catalog" right={<button className="btn ghost" style={{ height: 22, fontSize: 10 }} onClick={() => setMode("catalog")}>browse all</button>} />
+                <CardHead title="Add a skill" hint="from the catalog" right={<button className="btn ghost" style={{ height: 22, fontSize: 10 }} onClick={() => select("catalog")}>browse all</button>} />
                 <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
                   {SKILL_CATALOG.map((c, i) => (
                     <div key={c.name} className="hrow" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>

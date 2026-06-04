@@ -12,7 +12,13 @@ export type SessionRole =
   | "planner" | "worker" | "director" | "triage"
   // Pipeline-stage roles (#220): tester runs build/tests, reviewer reads + reviews,
   // conductor sequences stages. All are least-privilege (read-only, no code writes).
-  | "tester" | "reviewer" | "conductor";
+  | "tester" | "reviewer" | "conductor"
+  // Issuer (#376): intake-only — shapes user requests into issues and may open GitHub
+  // issues, but never touches code or git; routing is the director's job.
+  | "issuer"
+  // Juror (#394): a scoped reviewer that independently judges a landing against an
+  // anchor (acceptance criteria / lens / subsystem slice). Read-only, like reviewer.
+  | "juror";
 
 /** Access to a capability: none < read < write. */
 export type AccessTier = "none" | "read" | "write";
@@ -44,6 +50,11 @@ export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = {
   tester: { role: "tester", github: "read", git: "read", code: "none", writeGlobs: [] },
   reviewer: { role: "reviewer", github: "read", git: "read", code: "none", writeGlobs: [] },
   conductor: { role: "conductor", github: "read", git: "read", code: "none", writeGlobs: [] },
+  // #376 issuer -- may open GitHub issues (github:write) but never writes code or git;
+  // it only shapes intake and hands off to the director.
+  issuer: { role: "issuer", github: "write", git: "read", code: "none", writeGlobs: [] },
+  // #394 juror -- a scoped, read-only reviewer; judges, never edits or merges.
+  juror: { role: "juror", github: "read", git: "read", code: "none", writeGlobs: [] },
 };
 
 /** A role capability, optionally narrowed/widened per assignment (e.g. writeGlobs). */

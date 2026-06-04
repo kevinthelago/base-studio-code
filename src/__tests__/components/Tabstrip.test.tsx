@@ -24,7 +24,7 @@ describe("Tabstrip rendering", () => {
   });
 
   it("renders an add button", () => {
-    render(<Tabstrip tabs={TABS} />);
+    render(<Tabstrip tabs={TABS} onAdd={() => {}} />);
     expect(screen.getByText("+")).toBeInTheDocument();
   });
 
@@ -54,7 +54,7 @@ describe("Tabstrip interactions", () => {
 
   it("does not call onSelect when the × button is clicked", () => {
     const onSelect = vi.fn();
-    render(<Tabstrip tabs={TABS} onSelect={onSelect} />);
+    render(<Tabstrip tabs={TABS} onSelect={onSelect} onClose={() => {}} />);
     fireEvent.click(screen.getAllByText("×")[0]);
     expect(onSelect).not.toHaveBeenCalled();
   });
@@ -69,13 +69,13 @@ describe("Tabstrip interactions", () => {
 
 describe("Tabstrip inline rename", () => {
   it("shows an input on double-click of the tab name", () => {
-    render(<Tabstrip tabs={TABS} />);
+    render(<Tabstrip tabs={TABS} onRename={() => {}} />);
     fireEvent.dblClick(screen.getByText("orchestrator"));
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
   it("pre-fills the input with the current tab name", () => {
-    render(<Tabstrip tabs={TABS} />);
+    render(<Tabstrip tabs={TABS} onRename={() => {}} />);
     fireEvent.dblClick(screen.getByText("orchestrator"));
     const input = screen.getByRole("textbox") as HTMLInputElement;
     expect(input.value).toBe("orchestrator");
@@ -120,6 +120,116 @@ describe("Tabstrip inline rename", () => {
     fireEvent.change(input, { target: { value: "   " } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onRename).not.toHaveBeenCalled();
+  });
+});
+
+describe("Tabstrip drag-to-reorder", () => {
+  // jsdom has no layout, so give each tab a deterministic 100px-wide box
+  // ([0-100], [100-200], [200-300]) for the cursor→gap math.
+  function layoutTabs(container: HTMLElement) {
+    container.querySelectorAll<HTMLElement>(".tab").forEach((el, i) => {
+      el.getBoundingClientRect = () => ({
+        left: i * 100, right: i * 100 + 100, width: 100,
+        top: 0, bottom: 28, height: 28, x: i * 100, y: 0, toJSON: () => ({}),
+      }) as DOMRect;
+    });
+    const strip = container.querySelector(".tabstrip") as HTMLElement;
+    // Strip box [0..300]×[0..34] so the app-wide tear-off detection has real bounds.
+    strip.getBoundingClientRect = () => ({
+      left: 0, right: 300, top: 0, bottom: 34, width: 300, height: 34, x: 0, y: 0, toJSON: () => ({}),
+    }) as DOMRect;
+    return strip;
+  }
+
+  // RTL's fireEvent.dragOver doesn't carry clientX through jsdom; dispatch a real
+  // MouseEvent of type "dragover" (which does) so the gap math sees the cursor.
+  function dragOverAt(strip: HTMLElement, clientX: number) {
+    fireEvent(strip, new MouseEvent("dragover", { bubbles: true, cancelable: true, clientX }));
+  }
+
+  it("reorders to the gap nearest the cursor (drop zone is the whole strip)", () => {
+    const onReorder = vi.fn();
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={onReorder} />);
+    const strip = layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
+    dragOverAt(strip, 160); // tab2's left half → gap index 2
+    fireEvent.drop(strip, { clientX: 160 });
+    expect(onReorder).toHaveBeenCalledWith(0, 1); // gap 2 with from=0 → final index 1
+  });
+
+  it("can drop past the last tab to move it to the end", () => {
+    const onReorder = vi.fn();
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={onReorder} />);
+    const strip = layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
+    dragOverAt(strip, 290); // within the strip, past the last tab's midpoint → gap index 3
+    fireEvent.drop(strip, { clientX: 290 });
+    expect(onReorder).toHaveBeenCalledWith(0, 2);
+  });
+
+  it("does not reorder when dropped in its own slot", () => {
+    const onReorder = vi.fn();
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={onReorder} />);
+    const strip = layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[1]);
+    dragOverAt(strip, 130); // tab1's left half → gap index 1 (own slot)
+    fireEvent.drop(strip, { clientX: 130 });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("shows the tear-off preview when the tab is dragged out of the strip", () => {
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} onTearOff={vi.fn()} />);
+    layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
+    // cursor pulled well below the strip → outside → preview appears (portaled to body)
+    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 150, clientY: 220 }));
+    expect(document.querySelector(".tab-tearoff-preview")).toBeInTheDocument();
+    // back inside the strip → preview is dismissed, reordering resumes
+    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 150, clientY: 12 }));
+    expect(document.querySelector(".tab-tearoff-preview")).toBeNull();
+  });
+
+  it("tears off (onTearOff) when the tab is dropped outside the strip", () => {
+    const onTearOff = vi.fn();
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} onTearOff={onTearOff} />);
+    layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[1]);
+    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 150, clientY: 220 }));
+    fireEvent(window, new MouseEvent("drop", { bubbles: true, clientX: 150, clientY: 220 }));
+    expect(onTearOff).toHaveBeenCalledWith(1);
+  });
+
+  it("does not tear off when the tab is dropped inside the strip", () => {
+    const onTearOff = vi.fn();
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} onTearOff={onTearOff} />);
+    const strip = layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
+    dragOverAt(strip, 150);
+    fireEvent.drop(strip, { clientX: 150 });
+    expect(onTearOff).not.toHaveBeenCalled();
+  });
+
+  it("hides tabs whose id is in hiddenIds (detached into a window)", () => {
+    const T: Tab[] = [
+      { id: "a", name: "Alpha", layout: "1×1" },
+      { id: "b", name: "Beta", layout: "1×1" },
+      { id: "c", name: "Gamma", layout: "1×1" },
+    ];
+    render(<Tabstrip tabs={T} hiddenIds={["b"]} />);
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
+    expect(screen.queryByText("Beta")).toBeNull();
+    expect(screen.getByText("Gamma")).toBeInTheDocument();
+  });
+
+  it("highlights the strip and marks the drop gap during a drag", () => {
+    const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} />);
+    const strip = layoutTabs(container);
+    fireEvent.dragStart(container.querySelectorAll(".tab")[0]);
+    dragOverAt(strip, 250); // gap at tab2 (left of it)
+    expect(strip).toHaveClass("dragging");
+    // the gap tab carries the insertion bar as an inline box-shadow
+    const tabs = container.querySelectorAll<HTMLElement>(".tab");
+    expect(tabs[2].style.boxShadow).toContain("var(--accent)");
   });
 });
 

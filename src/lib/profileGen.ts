@@ -18,6 +18,10 @@ const TOOLS_BY_ROLE: Record<SessionRole, Record<ToolKey, Tier>> = {
   tester:    { read: "allow", grep: "allow", glob: "allow", edit: "deny",  write: "deny",  bash: "allow", web: "deny", task: "allow" },
   reviewer:  { read: "allow", grep: "allow", glob: "allow", edit: "deny",  write: "deny",  bash: "ask",   web: "deny", task: "allow" },
   conductor: { read: "allow", grep: "allow", glob: "allow", edit: "deny",  write: "deny",  bash: "ask",   web: "deny", task: "allow" },
+  // #376 issuer -- intake only: read + shape, open issues via gh (bash ask), never edit code.
+  issuer:    { read: "allow", grep: "allow", glob: "allow", edit: "deny",  write: "deny",  bash: "ask",   web: "ask",  task: "allow" },
+  // #394 juror -- read-only reviewer that judges a landing; never edits or merges.
+  juror:     { read: "allow", grep: "allow", glob: "allow", edit: "deny",  write: "deny",  bash: "ask",   web: "deny", task: "allow" },
 };
 
 /** Whether a tool policy permits any file modification. */

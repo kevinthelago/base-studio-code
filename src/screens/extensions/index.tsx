@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
+import { TabBar, type TabItem } from "../../components/chrome/TabBar";
+import { usePageTabs } from "../../hooks/usePageTabs";
 import { EXT_CATALOG, SCOPE_COPY, type CatalogItem } from "../../data/extensions";
 import {
   defFromCatalog, blankExtension,
@@ -9,7 +11,6 @@ import {
 import "./extensions.css";
 
 type Scope = "global" | "project";
-type Tab = "installed" | "catalog";
 
 /** A GitHub Project (subset of the GraphQL `projectsV2` node). */
 interface GhProject {
@@ -49,7 +50,7 @@ function kindLabel(e: ExtensionDef): string {
  * `[]` projects = global (every project). Health, call counts, and logs are not
  * monitored yet and render as neutral placeholders.
  */
-export function ExtensionsScreen() {
+export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   const extensions       = useAppStore(s => s.extensions);
   const addExtension     = useAppStore(s => s.addExtension);
   const updateExtension  = useAppStore(s => s.updateExtension);
@@ -58,10 +59,6 @@ export function ExtensionsScreen() {
   const setExtensionProjects = useAppStore(s => s.setExtensionProjects);
   const githubToken      = useAppStore(s => s.githubToken);
 
-  // Default to the catalog when nothing is installed yet — the installed tab would
-  // be empty, and the catalog is where you start. (Hydration completes before this
-  // screen mounts, so the count is reliable.)
-  const [tab, setTab] = useState<Tab>(() => (extensions.length === 0 ? "catalog" : "installed"));
   const [scope, setScope] = useState<Scope>("global");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -84,6 +81,12 @@ export function ExtensionsScreen() {
   }, [githubToken]);
 
   const enabledCount = extensions.filter(e => e.enabled).length;
+  const extDefs: TabItem[] = useMemo(() => [
+    { id: "installed", label: "Installed", count: enabledCount, hint: "· active capabilities" },
+    { id: "catalog", label: "Catalog", count: EXT_CATALOG.length },
+  ], [enabledCount]);
+  const { tabs: extTabs, activeId, select, reorder, tearOff } = usePageTabs("extensions", extDefs);
+  const tab = sectionOverride ?? activeId; // active section
   const selected = selectedId ? extensions.find(e => e.id === selectedId) ?? null : null;
 
   // ── helpers ────────────────────────────────────────────────────────────────
@@ -160,7 +163,7 @@ export function ExtensionsScreen() {
           <p className="hint" style={{ maxWidth: 380, margin: 0 }}>
             Add MCP servers and hooks from the catalog to give your agents new tools and lifecycle automations.
           </p>
-          <button className="btn primary" onClick={() => setTab("catalog")}>Browse the catalog →</button>
+          <button className="btn primary" onClick={() => select("catalog")}>Browse the catalog →</button>
         </div>
       );
     }
@@ -415,44 +418,45 @@ export function ExtensionsScreen() {
   return (
     <div className="ext-screen">
       <div className="ext-page">
-        {/* sub-tabs / page header */}
-        <div className="subtabs">
-          <div className={"t" + (tab === "installed" ? " on" : "")} onClick={() => setTab("installed")}>
-            Installed <span className="count">{enabledCount}</span>
-            <span className="hint-inline">· active capabilities</span>
-          </div>
-          <div className={"t" + (tab === "catalog" ? " on" : "")} onClick={() => setTab("catalog")}>
-            Catalog <span className="count">{EXT_CATALOG.length}</span>
-          </div>
-          <div className="right">
-            <span className="hint" style={{ fontFamily: "var(--mono)" }}>{summary}</span>
-            <span className="scope-label">scope</span>
-            <div className="scope">
-              {(["global", "project"] as Scope[]).map(s => (
-                <button key={s} className={scope === s ? "on" : ""} onClick={() => setScope(s)}>
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </button>
-              ))}
-            </div>
-            <div style={{ position: "relative" }}>
-              <button className="btn primary" onClick={() => setAddOpen(o => !o)}>+ Add Extension</button>
-              {addOpen && (
-                <div style={{
-                  position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 10,
-                  background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-                  borderRadius: "var(--r-md)", padding: 4, minWidth: 180,
-                  display: "flex", flexDirection: "column", gap: 2,
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-                }}>
-                  <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => addCustom("mcp")}>Custom MCP server</button>
-                  <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => addCustom("hook")}>Custom hook</button>
-                  <div style={{ borderTop: "1px solid var(--border-soft)", margin: "2px 0" }} />
-                  <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => { setAddOpen(false); setTab("catalog"); }}>Browse catalog…</button>
+        {!sectionOverride && (
+          <TabBar
+            tabs={extTabs}
+            activeId={activeId}
+            onSelect={select}
+            onReorder={reorder}
+            onTearOff={tearOff}
+            right={
+              <>
+                <span className="hint" style={{ fontFamily: "var(--mono)" }}>{summary}</span>
+                <span className="scope-label">scope</span>
+                <div className="scope">
+                  {(["global", "project"] as Scope[]).map(s => (
+                    <button key={s} className={scope === s ? "on" : ""} onClick={() => setScope(s)}>
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </button>
+                  ))}
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
+                <div style={{ position: "relative" }}>
+                  <button className="btn primary" onClick={() => setAddOpen(o => !o)}>+ Add Extension</button>
+                  {addOpen && (
+                    <div style={{
+                      position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 10,
+                      background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+                      borderRadius: "var(--r-md)", padding: 4, minWidth: 180,
+                      display: "flex", flexDirection: "column", gap: 2,
+                      boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+                    }}>
+                      <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => addCustom("mcp")}>Custom MCP server</button>
+                      <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => addCustom("hook")}>Custom hook</button>
+                      <div style={{ borderTop: "1px solid var(--border-soft)", margin: "2px 0" }} />
+                      <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => { setAddOpen(false); select("catalog"); }}>Browse catalog…</button>
+                    </div>
+                  )}
+                </div>
+              </>
+            }
+          />
+        )}
 
         <div className="ext-body">{body}</div>
       </div>

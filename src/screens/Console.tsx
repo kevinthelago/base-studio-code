@@ -128,7 +128,7 @@ function DisabledConsole({ onEnable }: { onEnable: () => void }) {
   );
 }
 
-export function ConsoleScreen() {
+export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = {}) {
   // #199: the always-on coordinator — auto-wakes ready parked panes when enabled.
   // Mounted here because ConsoleScreen stays mounted across every screen (#187).
   useCoordinator();
@@ -140,7 +140,10 @@ export function ConsoleScreen() {
   // screen actually reads. Was a meaningful source of render churn on multi-pane
   // grids per #52.
   const tabs              = useAppStore((s) => s.tabs);
-  const activeTabIdx      = useAppStore((s) => s.activeTabIdx);
+  const storeActiveTabIdx = useAppStore((s) => s.activeTabIdx);
+  // A detached tab window pins this screen to one tab (#430) — render that tab,
+  // decoupled from the shared `activeTabIdx`, without ever writing it.
+  const activeTabIdx      = tabIdxOverride ?? storeActiveTabIdx;
   const paneMenuOpenIdx   = useAppStore((s) => s.paneMenuOpenIdx);
   const focusedPaneIdx    = useAppStore((s) => s.focusedPaneIdx);
   const fullscreenPaneIdx = useAppStore((s) => s.fullscreenPaneIdx);

@@ -120,6 +120,38 @@ html, body {
   border:1px solid transparent; border-bottom:0;
   cursor:pointer; max-width:200px;
 }
+/* drag-to-reorder: highlight the whole strip as the active drop zone. The
+   insertion bar itself is an outset box-shadow on the gap tab (set inline). */
+.tabstrip.dragging{
+  background:color-mix(in oklch, var(--accent), var(--bg-panel) 88%);
+  box-shadow:inset 0 -2px 0 0 var(--accent-dim);
+}
+.tabstrip.dragging .tab{ cursor:grabbing; }
+/* TabBar count badge + trailing actions slot (shared by section pages). */
+.tab .count{
+  margin-left:5px; padding:0 5px; border-radius:8px; font-size:9.5px;
+  background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);
+}
+.tabbar-right{ display:flex; align-items:center; gap:10px; padding-right:6px; align-self:center; }
+/* tear-off preview: a small window mock that follows the cursor when a tab is
+   dragged out of the strip (drop = open in a new window, #430). */
+.tab-tearoff-preview{
+  width:230px; border-radius:8px; overflow:hidden;
+  background:var(--bg-panel); border:1px solid var(--accent-dim);
+  box-shadow:0 12px 32px rgba(0,0,0,.5); opacity:.95;
+  font-family:var(--mono);
+}
+.tab-tearoff-preview .ttp-bar{
+  display:flex; align-items:center; gap:5px; height:24px; padding:0 9px;
+  background:var(--bg-elev); border-bottom:1px solid var(--border-soft);
+}
+.tab-tearoff-preview .ttp-light{ width:7px; height:7px; border-radius:50%; background:var(--border); flex:0 0 7px; }
+.tab-tearoff-preview .ttp-title{
+  margin-left:6px; font-size:10.5px; color:var(--fg); overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap;
+}
+.tab-tearoff-preview .ttp-body{ padding:18px 12px; display:flex; justify-content:center; }
+.tab-tearoff-preview .ttp-hint{ font-size:10px; color:var(--accent); }
 .tab.active{ background:var(--bg-canvas); color:var(--fg); border-color:var(--border-soft); }
 .tab .dot{ width:6px; height:6px; border-radius:50%; background:var(--success); flex:0 0 6px; }
 .tab .dot.idle{ background:var(--fg-dim); }
