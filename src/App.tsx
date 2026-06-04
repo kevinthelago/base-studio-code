@@ -295,21 +295,24 @@ export default function App() {
 
   // Detached page-section window: minimal chrome, just that page's section.
   if (detSection) {
-    const sectionScreens: Record<string, (s: string) => React.ReactNode> = {
-      automations: (s) => <AutomationsScreen sectionOverride={s} />,
-      skills: (s) => <SkillsScreen sectionOverride={s} />,
-      extensions: (s) => <ExtensionsScreen sectionOverride={s} />,
-      agents: (s) => <AgentsScreen sectionOverride={s} />,
-      github: (s) => <GitHubScreen sectionOverride={s} />,
-      projects: (s) => <ProjectsScreen sectionOverride={s} />,
-    };
+    // A Map (not an object) so the URL-supplied `page` can't dispatch to a
+    // prototype method — lookup is a pure key match.
+    const sectionScreens = new Map<string, (s: string) => React.ReactNode>([
+      ["automations", (s) => <AutomationsScreen sectionOverride={s} />],
+      ["skills", (s) => <SkillsScreen sectionOverride={s} />],
+      ["extensions", (s) => <ExtensionsScreen sectionOverride={s} />],
+      ["agents", (s) => <AgentsScreen sectionOverride={s} />],
+      ["github", (s) => <GitHubScreen sectionOverride={s} />],
+      ["projects", (s) => <ProjectsScreen sectionOverride={s} />],
+    ]);
+    const renderSection = sectionScreens.get(detSection.page);
     return (
       <div className="app">
         <Titlebar workspace={`${detSection.page} · ${detSection.section}`} />
         <div className="shell">
           <div className="main">
             <div className="page">
-              {hasHydrated && (sectionScreens[detSection.page]?.(detSection.section) ?? (
+              {hasHydrated && (renderSection ? renderSection(detSection.section) : (
                 <div style={{ padding: 24, fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>
                   Unknown detached page: {detSection.page}
                 </div>
