@@ -45,7 +45,7 @@ function BurnDown({ open, closed }: { open: number; closed: number }) {
   );
 }
 
-export function Roadmap() {
+export function Roadmap({ context }: { context?: "projects" | "github" } = {}) {
   const {
     githubToken,
     activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
@@ -105,7 +105,7 @@ export function Roadmap() {
 
   return (
     <>
-      <ProjectsHeader project={project} />
+      <ProjectsHeader project={project} context={context} />
       <section style={{ flex: 1, overflow: "auto", padding: "18px 24px" }}>
         <div style={{ maxWidth: 1240, margin: "0 auto" }}>
           {error && (

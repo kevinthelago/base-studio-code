@@ -485,6 +485,15 @@ interface AppStore {
   setKbProjectScope: (scope: { keys: string[]; label: string } | null) => void;
   projectsBoardTab: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination" | "pipelines";
   setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination" | "pipelines") => void;
+  // The GitHub Projects v2 board now lives on the GitHub page (#498). When a project
+  // is opened from the GitHub portfolio, this flips on and its board renders there
+  // with `githubBoardTab` selecting the sub-view. Session-only (not persisted).
+  githubBoardOpen: boolean;
+  githubBoardTab: "board" | "roadmap" | "issues" | "insights";
+  /** Open the GitHub-page board for the active project at a given sub-tab. */
+  openGithubBoard: (tab?: "board" | "roadmap" | "issues" | "insights") => void;
+  setGithubBoardTab: (t: "board" | "roadmap" | "issues" | "insights") => void;
+  closeGithubBoard: () => void;
   projectsDrawerIssue: number | null;
   setProjectsDrawerIssue: (n: number | null) => void;
   planningPitch: string;
@@ -1285,6 +1294,11 @@ export const useAppStore = create<AppStore>()(
       setKbProjectScope: (scope) => set({ kbProjectScope: scope }),
       projectsBoardTab: "board",
       setProjectsBoardTab: (t) => set({ projectsBoardTab: t }),
+      githubBoardOpen: false,
+      githubBoardTab: "board",
+      openGithubBoard: (tab = "board") => set({ githubBoardOpen: true, githubBoardTab: tab }),
+      setGithubBoardTab: (t) => set({ githubBoardTab: t }),
+      closeGithubBoard: () => set({ githubBoardOpen: false }),
       wakePane: (paneId, prompt) => {
         const m = /^t(\d+)p\d+$/.exec(paneId);
         if (!m) return false;
