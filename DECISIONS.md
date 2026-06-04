@@ -12,3 +12,7 @@
 
 - edited src/__tests__/ProjectPane.test.tsx (tests for my owned ProjectPane.tsx; no other stream owns it) to add acceptance-required render tests for #337/#345/#349/#352 and fix the describe string v4->v2 per the goal
 
+- relay: enforced ROOM_TTL_MS absolute room lifetime cap (was a defined-but-unused constant; idle re-arm kept busy rooms open forever). Added pure nextAlarmAt + roomLifetimeExceeded helpers (unit-tested), createdAt anchoring in room.ts via storage (hibernation-safe), alarm() closes with correct reason + wipes storage.
+
+- relay: added standalone relay/vitest.config.ts (node env, root=relay) so the relay worker tests run in isolation instead of climbing to the repo-root jsdom/react vitest config and failing to load.
+

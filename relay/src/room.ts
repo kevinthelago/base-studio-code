@@ -4,7 +4,7 @@
 // from memory and costs ~nothing. It never inspects payloads (Noise ciphertext).
 
 import { DurableObject } from "cloudflare:workers";
-import { IDLE_TIMEOUT_MS, roleFor, tooLarge, type Role } from "./protocol";
+import { nextAlarmAt, roleFor, roomLifetimeExceeded, tooLarge, type Role } from "./protocol";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<RelayRoom>;
@@ -17,6 +17,30 @@ interface SocketMeta {
 }
 
 export class RelayRoom extends DurableObject<Env> {
+  /** When this room first accepted a peer — the anchor for the absolute TTL. Cached in
+   *  memory (the DO stays resident while sockets are live) and backed by storage so it
+   *  survives hibernation; lazily (re)loaded by {@link ensureCreatedAt}. */
+  private createdAt?: number;
+
+  /** The room's birth time, persisted on first use so the absolute TTL is anchored even
+   *  across hibernation. */
+  private async ensureCreatedAt(): Promise<number> {
+    if (this.createdAt !== undefined) return this.createdAt;
+    let ts = await this.ctx.storage.get<number>("createdAt");
+    if (ts === undefined) {
+      ts = Date.now();
+      await this.ctx.storage.put("createdAt", ts);
+    }
+    this.createdAt = ts;
+    return ts;
+  }
+
+  /** Re-arm the teardown alarm at the earlier of the idle cutoff and the absolute TTL. */
+  private async armAlarm(): Promise<void> {
+    const createdAt = await this.ensureCreatedAt();
+    await this.ctx.storage.setAlarm(nextAlarmAt(createdAt, Date.now()));
+  }
+
   /** Accept a peer's WebSocket upgrade, assigning host/guest by current occupancy. */
   override async fetch(req: Request): Promise<Response> {
     if (req.headers.get("Upgrade") !== "websocket") {
@@ -41,8 +65,8 @@ export class RelayRoom extends DurableObject<Env> {
     const meta: SocketMeta = { role: decision.role, joinedAt: Date.now() };
     server.serializeAttachment(meta);
 
-    // (Re)arm the idle timeout — closes the room after IDLE_TIMEOUT_MS of silence.
-    await this.ctx.storage.setAlarm(Date.now() + IDLE_TIMEOUT_MS);
+    // (Re)arm the teardown alarm (idle cutoff or absolute TTL, whichever is sooner).
+    await this.armAlarm();
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -62,8 +86,8 @@ export class RelayRoom extends DurableObject<Env> {
         // A peer mid-teardown; its close handler will clean it up.
       }
     }
-    // Activity resets the idle timer.
-    await this.ctx.storage.setAlarm(Date.now() + IDLE_TIMEOUT_MS);
+    // Activity resets the idle timer, but never past the absolute TTL.
+    await this.armAlarm();
   }
 
   override async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
@@ -79,14 +103,21 @@ export class RelayRoom extends DurableObject<Env> {
     // Hibernation surfaces socket errors here; nothing to do — the runtime drops it.
   }
 
-  /** Idle timeout fired: tear the room down. */
+  /** Teardown alarm fired — from either the idle cutoff or the absolute TTL. Close every
+   *  peer and wipe the room's storage so a later reuse of this id starts a fresh lifetime. */
   override async alarm(): Promise<void> {
+    const createdAt = (await this.ctx.storage.get<number>("createdAt")) ?? Date.now();
+    const reason = roomLifetimeExceeded(createdAt, Date.now())
+      ? "room lifetime exceeded"
+      : "room idle timeout";
     for (const ws of this.ctx.getWebSockets()) {
       try {
-        ws.close(1000, "room idle timeout");
+        ws.close(1000, reason);
       } catch {
         // Already gone.
       }
     }
+    this.createdAt = undefined;
+    await this.ctx.storage.deleteAll();
   }
 }
