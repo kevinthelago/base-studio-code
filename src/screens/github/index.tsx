@@ -5,6 +5,10 @@ import { usePageTabs } from "../../hooks/usePageTabs";
 import { GitHubEmpty } from "./Empty";
 import { GitHubSummary } from "./GitHubSummary";
 import { ProjectsSummary } from "../projects/ProjectsSummary";
+import { ProjectBoard } from "../projects/ProjectBoard";
+import { Roadmap } from "../projects/Roadmap";
+import { Issues } from "../projects/Issues";
+import { Insights } from "../projects/Insights";
 import { Pulse } from "./Pulse";
 
 const GITHUB_TABS: TabItem[] = [
@@ -24,6 +28,7 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
     githubConnected,
     githubRepos, activeRepoName, setActiveRepo,
     disconnectGithub,
+    githubBoardOpen, githubBoardTab,
   } = useAppStore();
 
   // Drag-resizable repo sidebar (mirrors the Knowledge Store / planning splitters).
@@ -39,6 +44,20 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
     );
   }
 
+  // A project's board drills in over the whole GitHub page (#498): opening it from
+  // the portfolio takes over until "← portfolio" (closeGithubBoard) returns to the
+  // tabbed view. Each board view renders its own project header + sub-tabs.
+  if (githubBoardOpen && !sectionOverride) {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        {githubBoardTab === "board"    && <ProjectBoard context="github" />}
+        {githubBoardTab === "roadmap"  && <Roadmap context="github" />}
+        {githubBoardTab === "issues"   && <Issues context="github" />}
+        {githubBoardTab === "insights" && <Insights context="github" />}
+      </div>
+    );
+  }
+
   const activeRepo = githubRepos.find(r => r.full_name === activeRepoName) ?? githubRepos[0] ?? null;
 
   return (
@@ -50,8 +69,8 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
       {/* Summary page */}
       {mode === "summary" && <GitHubSummary />}
 
-      {/* Projects portfolio — the GitHub Projects analytics (moved from the
-          Projects tab, #421). Between Summary and Repositories. */}
+      {/* Projects portfolio analytics (#421). Opening a project drills into its
+          board, handled by the short-circuit above (#498). */}
       {mode === "projects" && <ProjectsSummary />}
 
       {/* Repositories view — repo picker + the per-repo Pulse dashboard (progress,

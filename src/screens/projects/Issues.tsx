@@ -408,7 +408,7 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
 
 // ── Issues screen ─────────────────────────────────────────────────────────────
 
-export function Issues() {
+export function Issues({ context }: { context?: "projects" | "github" } = {}) {
   const {
     githubToken,
     activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
@@ -526,7 +526,7 @@ export function Issues() {
 
   return (
     <>
-      <ProjectsHeader project={project} />
+      <ProjectsHeader project={project} context={context} />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, position: "relative" }}>
         <FilterBar
           filters={filters}

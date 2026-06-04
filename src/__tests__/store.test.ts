@@ -1470,3 +1470,24 @@ describe("appearance", () => {
     expect(useAppStore.getState().terminalFontSize).toBe(8);
   });
 });
+
+describe("github board routing (#498)", () => {
+  it("openGithubBoard flips the board open at a sub-tab; closeGithubBoard resets", () => {
+    useAppStore.setState({ githubBoardOpen: false, githubBoardTab: "board" });
+    useAppStore.getState().openGithubBoard("issues");
+    expect(useAppStore.getState().githubBoardOpen).toBe(true);
+    expect(useAppStore.getState().githubBoardTab).toBe("issues");
+
+    useAppStore.getState().setGithubBoardTab("roadmap");
+    expect(useAppStore.getState().githubBoardTab).toBe("roadmap");
+
+    useAppStore.getState().closeGithubBoard();
+    expect(useAppStore.getState().githubBoardOpen).toBe(false);
+  });
+
+  it("openGithubBoard defaults to the board sub-tab", () => {
+    useAppStore.setState({ githubBoardOpen: false, githubBoardTab: "issues" });
+    useAppStore.getState().openGithubBoard();
+    expect(useAppStore.getState().githubBoardTab).toBe("board");
+  });
+});
