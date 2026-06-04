@@ -153,6 +153,9 @@ export function TabBar({
             key={t.id}
             data-tab
             className={"tab " + (t.id === activeId ? "active" : "")}
+            // The hint is an on-hover tooltip rather than inline text (#488), so it
+            // never competes with the label for the tab's 200px cap.
+            title={t.hint ? `${t.label} — ${t.hint}` : t.label}
             draggable={canDrag && editingId !== t.id}
             onClick={() => { if (editingId !== t.id) onSelect(t.id); }}
             onContextMenu={renderMenu ? (e) => {
@@ -191,13 +194,14 @@ export function TabBar({
               />
             ) : (
               <span
-                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                // Flex-shrinkable so the title (not a trailing element) ellipsizes
+                // when the tab hits its width cap.
+                style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 onDoubleClick={onRename ? (e) => { e.stopPropagation(); setEditingId(t.id); setEditingName(t.label); } : undefined}
               >
                 {t.label}
               </span>
             )}
-            {t.hint && <span style={{ color: "var(--fg-dim)", marginLeft: 4, fontSize: 10 }}>{t.hint}</span>}
             {t.count !== undefined && <span className="count">{t.count}</span>}
             {t.meta && <span style={{ color: "var(--fg-dim)", marginLeft: 4, fontSize: 10 }}>{t.meta}</span>}
             {onClose && (
