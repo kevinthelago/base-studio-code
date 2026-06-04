@@ -125,6 +125,25 @@ function ConsoleEmptyState({ onNew }: { onNew: () => void }) {
   );
 }
 
+// Render a detached page's section. A switch over literal cases (not a dynamic
+// lookup keyed by the URL-supplied `page`) so there's no user-controlled dispatch.
+function renderDetachedSection(page: string, section: string): React.ReactNode {
+  switch (page) {
+    case "automations": return <AutomationsScreen sectionOverride={section} />;
+    case "skills":      return <SkillsScreen sectionOverride={section} />;
+    case "extensions":  return <ExtensionsScreen sectionOverride={section} />;
+    case "agents":      return <AgentsScreen sectionOverride={section} />;
+    case "github":      return <GitHubScreen sectionOverride={section} />;
+    case "projects":    return <ProjectsScreen sectionOverride={section} />;
+    default:
+      return (
+        <div style={{ padding: 24, fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>
+          Unknown detached page: {page}
+        </div>
+      );
+  }
+}
+
 // ── App shell ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -295,28 +314,13 @@ export default function App() {
 
   // Detached page-section window: minimal chrome, just that page's section.
   if (detSection) {
-    // A Map (not an object) so the URL-supplied `page` can't dispatch to a
-    // prototype method — lookup is a pure key match.
-    const sectionScreens = new Map<string, (s: string) => React.ReactNode>([
-      ["automations", (s) => <AutomationsScreen sectionOverride={s} />],
-      ["skills", (s) => <SkillsScreen sectionOverride={s} />],
-      ["extensions", (s) => <ExtensionsScreen sectionOverride={s} />],
-      ["agents", (s) => <AgentsScreen sectionOverride={s} />],
-      ["github", (s) => <GitHubScreen sectionOverride={s} />],
-      ["projects", (s) => <ProjectsScreen sectionOverride={s} />],
-    ]);
-    const renderSection = sectionScreens.get(detSection.page);
     return (
       <div className="app">
         <Titlebar workspace={`${detSection.page} · ${detSection.section}`} />
         <div className="shell">
           <div className="main">
             <div className="page">
-              {hasHydrated && (renderSection ? renderSection(detSection.section) : (
-                <div style={{ padding: 24, fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>
-                  Unknown detached page: {detSection.page}
-                </div>
-              ))}
+              {hasHydrated && renderDetachedSection(detSection.page, detSection.section)}
             </div>
           </div>
         </div>
