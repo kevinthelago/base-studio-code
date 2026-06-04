@@ -6,7 +6,7 @@ import { adjustFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { nextFullscreen } from "../lib/consoleFocus";
 import { CLEAR_INPUT_BYTES } from "../lib/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/paneSelect";
-import type { Screen } from "../components/chrome/Rail";
+import { SCREEN_KEY_MAP } from "../lib/shortcuts";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 function keyToTermBytes(e: KeyboardEvent): string | null {
@@ -52,15 +52,6 @@ function keyToTermBytes(e: KeyboardEvent): string | null {
 
   return null;
 }
-
-const SCREEN_KEYS: Record<string, Screen> = {
-  F1: "console",
-  F2: "knowledge",
-  F3: "automation",
-  F4: "github",
-  F5: "projects",
-  F6: "settings",
-};
 
 const VIEWS_ORDER: ViewKey[] = ["console", "files", "branches", "changes", "log"];
 
@@ -228,9 +219,9 @@ export function useHotkeys() {
       if (inInput && !e.ctrlKey && !e.metaKey && !e.altKey) return;
 
       // F1–F6: navigate screens
-      if (SCREEN_KEYS[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      if (SCREEN_KEY_MAP[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
         e.preventDefault();
-        setScreen(SCREEN_KEYS[e.key]);
+        setScreen(SCREEN_KEY_MAP[e.key]);
         return;
       }
 
