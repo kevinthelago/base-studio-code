@@ -29,11 +29,14 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
     githubRepos, activeRepoName, setActiveRepo,
     disconnectGithub,
     githubBoardOpen, githubBoardTab,
+    githubTab, setGithubTab,
   } = useAppStore();
 
   // Drag-resizable repo sidebar (mirrors the Knowledge Store / planning splitters).
   const sidebar = useDragResize({ initial: 220, min: 160, max: 460, axis: "x" });
-  const { tabs: ghTabs, activeId, select, reorder, tearOff } = usePageTabs("github", GITHUB_TABS);
+  // Store-controlled active tab so other screens can deep-link to it (#499).
+  const { tabs: ghTabs, activeId, select, reorder, tearOff } =
+    usePageTabs("github", GITHUB_TABS, { activeId: githubTab, setActive: setGithubTab });
   const mode = sectionOverride ?? activeId;
 
   if (!githubConnected) {
@@ -50,10 +53,10 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
   if (githubBoardOpen && !sectionOverride) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        {githubBoardTab === "board"    && <ProjectBoard context="github" />}
-        {githubBoardTab === "roadmap"  && <Roadmap context="github" />}
-        {githubBoardTab === "issues"   && <Issues context="github" />}
-        {githubBoardTab === "insights" && <Insights context="github" />}
+        {githubBoardTab === "board"    && <ProjectBoard />}
+        {githubBoardTab === "roadmap"  && <Roadmap />}
+        {githubBoardTab === "issues"   && <Issues />}
+        {githubBoardTab === "insights" && <Insights />}
       </div>
     );
   }

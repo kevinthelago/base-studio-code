@@ -184,7 +184,7 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setScreen, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -226,6 +226,7 @@ export function ProjectsList() {
   function handleOpenGithubBoard(p: GhProject) {
     const repos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
     setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
+    setGithubTab("projects"); // so "← portfolio" returns to the Projects tab
     setScreen("github");
     openGithubBoard("board");
   }
@@ -349,8 +350,8 @@ export function ProjectsList() {
     return order.map(s => [s, by[s]] as const).filter(([, arr]) => arr.length > 0);
   }, [visibleProjects]);
 
-  // Jump to the GitHub Portfolio (where the analytics + live Fleet now live, #498).
-  function gotoPortfolio() { setScreen("github"); }
+  // Jump to the GitHub Portfolio tab (where the analytics + live Fleet now live, #498).
+  function gotoPortfolio() { setGithubTab("projects"); setScreen("github"); }
 
   return (
     <section style={{ flex: 1, overflow: "auto", padding: "24px 32px", minWidth: 0 }}>

@@ -8,31 +8,27 @@ const project: ActiveProjectInfo = {
   id: "PVT_1", number: 7, name: "My App", repo: "o/a", repos: [], description: "",
 };
 
-describe("ProjectsHeader · context (#498)", () => {
+describe("ProjectsHeader (GitHub board header, #499)", () => {
   beforeEach(() => {
     useAppStore.setState({ githubBoardOpen: true, githubBoardTab: "board" });
   });
 
-  it("github context shows the published board tabs + a back-to-portfolio link", () => {
-    render(<ProjectsHeader project={project} context="github" />);
+  it("shows the published board tabs + a back-to-portfolio link", () => {
+    render(<ProjectsHeader project={project} />);
     expect(screen.getByText("← portfolio")).toBeTruthy();
     expect(screen.getByText("Board")).toBeTruthy();
     expect(screen.getByText("Roadmap")).toBeTruthy();
     expect(screen.getByText("Issues")).toBeTruthy();
     expect(screen.getByText("Insights")).toBeTruthy();
-    // The execution tabs are NOT on the GitHub board.
+    // The removed execution tabs are gone (#499).
     expect(screen.queryByText("Coordination")).toBeNull();
     expect(screen.queryByText("Pipelines")).toBeNull();
+    expect(screen.queryByText("Hooks")).toBeNull();
   });
 
-  it("projects context shows the execution tabs + a back-to-projects link", () => {
-    render(<ProjectsHeader project={project} context="projects" />);
-    expect(screen.getByText("← projects")).toBeTruthy();
-    expect(screen.getByText("Coordination")).toBeTruthy();
-    expect(screen.getByText("Pipelines")).toBeTruthy();
-    expect(screen.getByText("Hooks")).toBeTruthy();
-    // The GitHub-published views are NOT on the Projects page header.
-    expect(screen.queryByText("Board")).toBeNull();
-    expect(screen.queryByText("Insights")).toBeNull();
+  it("offers the plan jump + documents", () => {
+    render(<ProjectsHeader project={project} />);
+    expect(screen.getByText("⌘ plan →")).toBeTruthy();
+    expect(screen.getByText("📄 documents")).toBeTruthy();
   });
 });

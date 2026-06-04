@@ -3,13 +3,14 @@
 // permissions (its AgentProfile), execution flow (its AgentFlow), owned issues
 // (its stream), and live status; per-stream analytics not yet tracked show explicit
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CardHead, StatCard, Avatar } from "../../components/charts";
 import { useAppStore } from "../../store";
 import { STATUS } from "../../data/fleet";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
+import { parseAuditLog, type AuditRecord } from "../agents/auditLog";
 import type { LiveWorker } from "../../lib/fleetLive";
 
 const TIER_COLOR: Record<string, string> = {
@@ -52,16 +53,35 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setFocusedPane = useAppStore((s) => s.setFocusedPane);
   const setPaneDisabled = useAppStore((s) => s.setPaneDisabled);
+  const setPaneProfile = useAppStore((s) => s.setPaneProfile);
+  const paused = useAppStore((s) => !!s.disabledPanes[worker.id]);
 
   const profile = profileId ? agentProfiles.find((p) => p.id === profileId) : undefined;
   const flow = resolveFlow(paneFlow ?? stream?.flow);
   const owned = stream?.issues ?? [];
   const st = STATUS[worker.status];
 
-  const [modal, setModal] = useState<null | "steer" | "answer" | "stop">(null);
+  const [modal, setModal] = useState<null | "steer" | "answer" | "stop" | "profile">(null);
   const [draft, setDraft] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   function flash(m: string) { setToast(m); setTimeout(() => setToast(null), 2200); }
+
+  // Real per-worker activity from the bsc-audit log (#257): tool attempts tagged
+  // with this pane id, polled while the page is open, newest first.
+  const [audit, setAudit] = useState<AuditRecord[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => invoke<string[]>("read_audit_log", { limit: 4000 })
+      .then((lines) => {
+        if (cancelled) return;
+        const rows = parseAuditLog((lines ?? []).join("\n")).filter((r) => r.pane === worker.id);
+        setAudit(rows.slice(-12).reverse());
+      })
+      .catch(() => {});
+    load();
+    const t = setInterval(load, 4000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [worker.id]);
 
   function openSession() {
     const c = paneCoords(worker.id);
@@ -96,8 +116,8 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                 <span style={{ fontFamily: "var(--mono)", fontSize: 15, color: "var(--fg)" }}>{worker.name}</span>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 10.5, color: st.color }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 99, background: st.color }} />{st.label}
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 10.5, color: paused ? "var(--fg-dim)" : st.color }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 99, background: paused ? "var(--fg-dim)" : st.color }} />{paused ? "paused" : st.label}
                 </span>
               </div>
               <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>
@@ -107,10 +127,12 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {worker.status === "asking" && <button className="btn primary" onClick={() => setModal("answer")}>answer question →</button>}
+            <button className="btn" onClick={() => { setPaneDisabled(worker.id, !paused); flash(paused ? "Worker resumed" : "Worker paused"); }}>
+              {paused ? "▶ resume" : "⏸ pause"}
+            </button>
             <button className="btn ghost" onClick={() => setModal("steer")}>✎ steer</button>
             <button className="btn ghost" onClick={openSession}>▤ open session</button>
-            <button className="btn ghost" onClick={() => flash("Reassign isn't wired yet")}>⇄ reassign</button>
-            <button className="btn ghost" onClick={() => { setScreen("settings"); }}>⛉ profile</button>
+            <button className="btn ghost" onClick={() => setModal("profile")}>⛉ profile</button>
             <div style={{ flex: 1 }} />
             <button className="btn danger" onClick={() => setModal("stop")}>stop &amp; remove</button>
           </div>
@@ -159,8 +181,23 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
             </div>
             <Placeholder title="Throughput" hint="per-stream · not measured yet"
               body="Per-stream issues-landed / PRs-merged tracking isn't wired up yet. Fleet-wide throughput is on the Fleet board; per-worker history will appear here once it lands." />
-            <Placeholder title="Activity & audit" hint="this worker · not wired yet"
-              body="Per-worker tool-attempt history (from the bsc-audit log) will stream here. For now, open the session to watch it live." />
+            <div className="card">
+              <CardHead title="Activity & audit" hint={`this worker · ${audit.length ? "tool attempts, newest first" : "from the bsc-audit log"}`} />
+              {audit.length === 0
+                ? <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
+                    No tool attempts logged yet for this worker. Gated panes append one line per tool use here.
+                  </div>
+                : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+                    {audit.map((a, i) => (
+                      <div key={i} className="hrow" style={{ display: "grid", gridTemplateColumns: "62px 1fr", gap: 8, alignItems: "center", padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>{a.toolName}</span>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.target || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+            </div>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
@@ -243,6 +280,25 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
           <div style={{ fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
             This stops <b style={{ color: "var(--fg)" }}>{worker.name}</b>'s session (disables its pane). Its worktree is
             preserved; re-enable the console to resume.
+          </div>
+        </Modal>
+      )}
+      {modal === "profile" && (
+        <Modal title="Change profile" onClose={() => setModal(null)}>
+          <div className="hint" style={{ marginBottom: 10 }}>Switch the least-privilege profile this worker runs under (applies on its next launch).</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 360, overflow: "auto" }}>
+            {agentProfiles.map((p) => (
+              <button key={p.id} onClick={() => { setPaneProfile(worker.id, p.id); setModal(null); flash(`Profile → ${p.name}`); }} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", textAlign: "left", cursor: "pointer",
+                background: p.id === profileId ? "var(--bg-elev2)" : "var(--bg-elev)", color: "var(--fg)",
+                border: "1px solid " + (p.id === profileId ? p.color : "var(--border-soft)"), borderRadius: 8,
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color, flexShrink: 0 }} />
+                <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, flex: 1 }}>{p.name}</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>base {p.mode}</span>
+                {p.id === profileId && <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: p.color }}>current</span>}
+              </button>
+            ))}
           </div>
         </Modal>
       )}

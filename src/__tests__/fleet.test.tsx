@@ -116,4 +116,29 @@ describe("Fleet screen", () => {
     fireEvent.click(screen.getByText("← fleet"));
     expect(screen.getByText("Worker board")).toBeTruthy();
   });
+
+  it("per-agent pause/resume + profile modal are wired to the store (#499)", () => {
+    useAppStore.setState({
+      fleetPaneStreams: { t0p0: stream({ name: "api", issues: ["#1"], profile: "pf_build" }) },
+      paneStatus: { t0p0: "run" },
+      paneProfiles: { t0p0: "pf_build" } as never,
+      paneFlows: {} as never,
+      agentProfiles: [{
+        id: "pf_build", name: "Build & test", color: "#fff", category: "generated", origin: "by planner",
+        desc: "", mode: "ask", commands: [],
+        tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "ask", web: "ask", task: "allow" },
+        paths: { allow: ["src/**"], deny: ["**/.env"] }, net: { allow: ["crates.io"] }, builtin: false,
+      }] as never,
+      tabs: [{ name: "proj · build", layout: "1×1", state: "run" }] as never,
+      disabledPanes: {},
+    });
+    render(<Fleet />);
+    fireEvent.click(screen.getByText("api"));
+    // Pause disables the pane in the store.
+    fireEvent.click(screen.getByText("⏸ pause"));
+    expect(useAppStore.getState().disabledPanes.t0p0).toBe(true);
+    // Profile modal lists the profiles.
+    fireEvent.click(screen.getByText("⛉ profile"));
+    expect(screen.getByText("Change profile")).toBeTruthy();
+  });
 });
