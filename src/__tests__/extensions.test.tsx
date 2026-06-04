@@ -16,7 +16,7 @@ const SEED: ExtensionDef[] = [
 const ENABLED = SEED.filter(e => e.enabled).length; // 2
 
 function installedCount(container: HTMLElement): string {
-  const installedTab = container.querySelectorAll(".subtabs .t")[0];
+  const installedTab = container.querySelectorAll(".tabstrip .tab")[0];
   return installedTab.querySelector(".count")!.textContent ?? "";
 }
 
@@ -50,14 +50,14 @@ describe("ExtensionsScreen", () => {
 
   it("switches to the catalog tab and renders EXT_CATALOG", () => {
     const { container } = render(<ExtensionsScreen />);
-    fireEvent.click(container.querySelectorAll(".subtabs .t")[1]);
+    fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]);
     expect(screen.getByText("Browse")).toBeTruthy();
     expect(screen.getByText(EXT_CATALOG[0].name)).toBeTruthy(); // Sentry
   });
 
   it("filters the catalog by the search input", () => {
     const { container } = render(<ExtensionsScreen />);
-    fireEvent.click(container.querySelectorAll(".subtabs .t")[1]);
+    fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]);
     const searchBox = container.querySelector(".ext-body input") as HTMLInputElement;
     fireEvent.change(searchBox, { target: { value: "linear" } });
     expect(screen.getByText("Linear")).toBeTruthy();
@@ -67,7 +67,7 @@ describe("ExtensionsScreen", () => {
   it("adds a catalog item to the store and opens it in the drawer", () => {
     const { container } = render(<ExtensionsScreen />);
     const before = useAppStore.getState().extensions.length;
-    fireEvent.click(container.querySelectorAll(".subtabs .t")[1]);
+    fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]);
     // Click the first "add" button in the catalog.
     const addBtn = within(screen.getByText("Sentry").closest(".cat-card") as HTMLElement).getByText("add");
     fireEvent.click(addBtn);
@@ -99,16 +99,16 @@ describe("ExtensionsScreen", () => {
     expect((container.querySelector(".drawer") as HTMLElement).className).not.toContain("on");
   });
 
-  it("defaults to the catalog and shows an empty-state CTA when nothing is installed", () => {
-    useAppStore.setState({ extensions: [] });
+  it("opens the first tab; empty installed shows a CTA to the catalog", () => {
+    useAppStore.setState({ extensions: [], pageTabOrder: {}, detachedSections: {} });
     const { container } = render(<ExtensionsScreen />);
-    // With nothing installed, the catalog tab is active by default.
-    expect(container.querySelectorAll(".subtabs .t")[1].className).toContain("on");
-    expect(screen.getByText(EXT_CATALOG[0].name)).toBeTruthy();
-    // The installed tab shows a clear CTA back to the catalog.
-    fireEvent.click(container.querySelectorAll(".subtabs .t")[0]);
+    // New model (#463): the page opens its front tab (installed) — empty installed
+    // renders a clear CTA into the catalog.
+    expect(container.querySelectorAll(".tabstrip .tab")[0].className).toContain("active");
     expect(screen.getByText("No extensions installed")).toBeTruthy();
+    // The CTA switches to the catalog tab.
     fireEvent.click(screen.getByText("Browse the catalog →"));
-    expect(container.querySelectorAll(".subtabs .t")[1].className).toContain("on");
+    expect(container.querySelectorAll(".tabstrip .tab")[1].className).toContain("active");
+    expect(screen.getByText(EXT_CATALOG[0].name)).toBeTruthy();
   });
 });
