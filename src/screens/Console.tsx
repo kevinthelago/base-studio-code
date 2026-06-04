@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, memo } from "react";
+import { useEffect, useRef, useCallback, memo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PaneShell } from "../components/pane/PaneShell";
 import { TerminalView } from "../components/pane/views/TerminalView";
@@ -167,7 +167,6 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   const setPaneStatus        = useAppStore((s) => s.setPaneStatus);
   const setPaneDisabled      = useAppStore((s) => s.setPaneDisabled);
   const setFocusedAgentName  = useAppStore((s) => s.setFocusedAgentName);
-  const setTabState          = useAppStore((s) => s.setTabState);
   const enqueueFocus         = useAppStore((s) => s.enqueueFocus);
   const advanceFocus         = useAppStore((s) => s.advanceFocus);
   const reconcileFocusQueue  = useAppStore((s) => s.reconcileFocusQueue);
@@ -184,9 +183,11 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
     setFocusedAgentName(name);
   }, [focusedPaneIdx, activeTabIdx, paneNames, setFocusedAgentName]);
 
-  // Per-pane status ("run" | "idle"), keyed by paneId string.
-  // Kept local — not persisted, resets on reload.
-  const [paneStatuses, setPaneStatuses] = useState<Record<string, "run" | "on" | "idle">>({});
+  // Per-pane status ("run" | "on" | "idle"), keyed by paneId string. The STORE is
+  // the single source of truth (#435) — it owns the tab-level rollup and clears
+  // stale statuses on close/remount; this screen subscribes for rendering and
+  // forwards status events through setPaneStatus. Transient (not persisted).
+  const paneStatuses = useAppStore((s) => s.paneStatus);
   // Ref so the callback passed to TerminalView always has the latest value without re-registering
   const paneStatusesRef = useRef(paneStatuses);
   useEffect(() => { paneStatusesRef.current = paneStatuses; }, [paneStatuses]);
@@ -202,9 +203,6 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   const handleStatusChange = useCallback((tabIdx: number, paneIdx: number, status: "run" | "idle") => {
     const pid = paneId(tabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
-    // Mirror into the store so other screens (the Fleet board, #412) can read
-    // live worker run/idle without owning the focus-queue machinery.
-    setPaneStatus(pid, status);
 
     // Focus queue is screen-level (one cursor across the app), and after #77
     // it now spans every tab — a background-tab agent finishing also joins
@@ -224,25 +222,11 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
       }
     }
 
-    setPaneStatuses((current) => {
-      const next = { ...current, [pid]: status };
-      // Aggregate to tab-level state: any "run" → run, else any "on" → on, else idle.
-      // Source-tab's own paneCount — background-tab rollups must not be limited by
-      // the active tab's grid size.
-      const tab = useAppStore.getState().tabs[tabIdx];
-      if (!tab) return next;
-      const [tcols, trows] = tab.layout.split("×").map(Number);
-      const tPaneCount = (tcols || 1) * (trows || 1);
-      let tabState: "run" | "on" | "idle" = "idle";
-      for (let i = 0; i < tPaneCount; i++) {
-        const s = next[paneId(tabIdx, i)] ?? "idle";
-        if (s === "run") { tabState = "run"; break; }
-        if (s === "on") tabState = "on";
-      }
-      setTabState(tabIdx, tabState);
-      return next;
-    });
-  }, [autoAdvanceOnReply, setTabState, enqueueFocus, advanceFocus, setPaneStatus]);
+    // Record the status and re-roll the owning tab's state in the store — the single
+    // source of truth aggregates over the source tab's live (non-disabled) panes, so a
+    // background tab's rollup is never clamped by the active tab's grid size (#435).
+    setPaneStatus(pid, status);
+  }, [autoAdvanceOnReply, setPaneStatus, enqueueFocus, advanceFocus]);
 
   // Reconcile the focus queue with reality: a session stays queued only while
   // it's idle, so whenever statuses change, drop any queued pane that's no
@@ -295,7 +279,8 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
       invoke("pty_kill", { paneId: pid }).catch(console.error);
       // Re-arm the launch gate so a later batch re-enable is serialized again.
       resetLaunchGate(pid);
-      setPaneStatuses((s) => ({ ...s, [pid]: "idle" }));
+      // Disabling kills the PTY; force the pane idle (store re-rolls the tab, excluding
+      // the now-disabled cell) so a stale "run" can't keep the tab dot lit (#435).
       setPaneStatus(pid, "idle");
       // Screen-level focus / fullscreen only matter for the active tab — only
       // clear them when this disable came from the active tab.

@@ -38,7 +38,7 @@ describe("fleetStartProject — reference context delivery", () => {
     useAppStore.setState({ refContextDefault: ["documents/global.md"] });
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("Proj");
+    const idx = st.findFleetTabIdx("proj-key");
     // director + both workers all see the global block
     expect(st.paneReferenceDocs[`t${idx}p0`]).toEqual(["documents/global.md"]);
     expect(st.paneReferenceDocs[`t${idx}p1`]).toEqual(["documents/global.md"]);
@@ -52,7 +52,7 @@ describe("fleetStartProject — reference context delivery", () => {
     });
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("Proj");
+    const idx = st.findFleetTabIdx("proj-key");
     expect(st.paneReferenceDocs[`t${idx}p1`]).toEqual(["documents/global.md", "documents/proj.md"]);
   });
 
@@ -62,7 +62,7 @@ describe("fleetStartProject — reference context delivery", () => {
     });
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("Proj");
+    const idx = st.findFleetTabIdx("proj-key");
     expect(st.paneReferenceDocs[`t${idx}p1`]).toEqual(["documents/web.md"]); // own/web worker
     expect(st.paneReferenceDocs[`t${idx}p2`]).toBeUndefined();               // own/api worker — none
   });
@@ -70,7 +70,7 @@ describe("fleetStartProject — reference context delivery", () => {
   it("leaves paneReferenceDocs unset when nothing is assigned", () => {
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("Proj");
+    const idx = st.findFleetTabIdx("proj-key");
     expect(st.paneReferenceDocs[`t${idx}p0`]).toBeUndefined();
     expect(st.paneReferenceDocs[`t${idx}p1`]).toBeUndefined();
   });
