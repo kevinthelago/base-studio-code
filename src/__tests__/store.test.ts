@@ -1435,3 +1435,23 @@ describe("issue links (#393 Layer 1)", () => {
     expect(st().issueLinks["proj-b"]).toEqual({ "issue:acme/web:W1": { number: 3, url: "https://gh/3" } });
   });
 });
+
+describe("model selection", () => {
+  it("setDefaultModel updates the persisted global default", () => {
+    useAppStore.setState({ defaultModel: "sonnet-4.5" });
+    useAppStore.getState().setDefaultModel("opus-4.5");
+    expect(useAppStore.getState().defaultModel).toBe("opus-4.5");
+  });
+
+  it("setPaneModel sets a per-pane override keyed by paneId, independently", () => {
+    useAppStore.setState({ paneModels: {} });
+    useAppStore.getState().setPaneModel("t0p0", "haiku-4.5");
+    useAppStore.getState().setPaneModel("t0p1", "opus-4.5");
+    expect(useAppStore.getState().paneModels["t0p0"]).toBe("haiku-4.5");
+    expect(useAppStore.getState().paneModels["t0p1"]).toBe("opus-4.5");
+    // A later write for the same pane overwrites only that entry.
+    useAppStore.getState().setPaneModel("t0p0", "sonnet-4.5");
+    expect(useAppStore.getState().paneModels["t0p0"]).toBe("sonnet-4.5");
+    expect(useAppStore.getState().paneModels["t0p1"]).toBe("opus-4.5");
+  });
+});

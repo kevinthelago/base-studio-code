@@ -1,4 +1,5 @@
 import { useAppStore } from "../../store";
+import { GeneralSettings } from "./General";
 import { GitHubSettings } from "./GitHub";
 import { IntegrationsSettings } from "./Integrations";
 import { AgentsSettings } from "./Agents";
@@ -53,6 +54,7 @@ export function SettingsScreen() {
           })}
         </aside>
         <section style={{ flex: 1, padding: 24, overflow: "auto", minWidth: 0 }}>
+          {settingsSection === "general"       && <GeneralSettings />}
           {settingsSection === "github"        && <GitHubSettings />}
           {settingsSection === "integrations"  && <IntegrationsSettings />}
           {settingsSection === "agents"        && <AgentsSettings />}
@@ -61,7 +63,7 @@ export function SettingsScreen() {
           {settingsSection === "diagnostics"  && <DiagnosticsSettings />}
           {settingsSection === "developer"    && <DeveloperSettings />}
           {settingsSection === "achievements" && <AchievementsSettings />}
-          {settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && settingsSection !== "tunnel" && settingsSection !== "diagnostics" && settingsSection !== "developer" && settingsSection !== "achievements" && (
+          {settingsSection !== "general" && settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && settingsSection !== "tunnel" && settingsSection !== "diagnostics" && settingsSection !== "developer" && settingsSection !== "achievements" && (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               height: "100%", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)",

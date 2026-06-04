@@ -29,11 +29,13 @@ interface PaneMenuProps {
   onClose?: () => void;
   onRename?: () => void;
   onViewChange?: (view: ViewKey) => void;
+  /** Set this pane's model. Applies to `claude --model` on the pane's next launch. */
+  onModel?: (model: ModelId) => void;
 }
 
 export function PaneMenu({
   agent, model, active, available, maxHeight, fullscreen, disabled,
-  onToggleFullscreen, onToggleDisable, onPickDirectory, onClose, onRename, onViewChange,
+  onToggleFullscreen, onToggleDisable, onPickDirectory, onClose, onRename, onViewChange, onModel,
 }: PaneMenuProps) {
   return (
     <div style={{
@@ -68,7 +70,7 @@ export function PaneMenu({
         {MODELS.map((m) => {
           const on = m.id === model;
           return (
-            <MenuRow key={m.id} on={on}>
+            <MenuRow key={m.id} on={on} onClick={onModel ? () => { onModel(m.id); onClose?.(); } : undefined}>
               <span style={{
                 width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
                 background: on ? "var(--accent)" : "var(--border)",
@@ -79,6 +81,9 @@ export function PaneMenu({
             </MenuRow>
           );
         })}
+        <div style={{ padding: "4px 8px 0", fontSize: 9, color: "var(--fg-dim)" }}>
+          applies on the pane's next launch (disable → enable to apply now)
+        </div>
       </MenuSection>
 
       {/* Views */}
