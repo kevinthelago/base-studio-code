@@ -68,6 +68,11 @@ The desktop connects, allocates a room, and shows the pairing QR.
   once it reaches the cap, so the idle re-arm can't keep a session open indefinitely.
 - **Logging is metadata-only** — the relay cannot log content it cannot read.
 
+> **Not in v1:** per-IP connection rate-limiting (KV counters). It's intentionally out of
+> scope — the controls above already bound abuse on a single-user BYO relay, and a KV
+> binding would add friction to the one-click deploy. Tracked as a follow-up under epic
+> [#210](https://github.com/kevinthelago/base-studio-code/issues/210).
+
 ## Develop & test
 
 ```bash
