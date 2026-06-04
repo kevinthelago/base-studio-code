@@ -462,6 +462,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         paneWasClaude: !!st.paneWasClaude[paneId],
         autoResumeClaude: st.autoResumeClaude,
       });
+      // The model new claude launches use (per-pane override, else the global
+      // default). The backend maps it to `claude --model <alias>`; an unknown id
+      // is a no-op (Claude Code's own default). Only meaningful when this pane
+      // launches claude.
+      const paneModel = st.paneModels[paneId] ?? st.defaultModel;
       const isNew = await invoke<boolean>("pty_create", {
         paneId,
         cols: term.cols,
@@ -469,6 +474,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         cwd:     initialCwd ?? "",
         initCmd: effectiveInitCmd,
         startupPrompt,
+        model:   paneModel,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
         // Per-repo triage checkpoint doc, so the bsc-checkpoint helper can write it.

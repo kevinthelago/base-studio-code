@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { Screen } from "../components/chrome/Rail";
 import type { Tab } from "../components/chrome/Tabstrip";
 import type { ViewKey } from "../components/pane/ViewTabs";
+import type { ModelId } from "../components/pane/PaneMenu";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
@@ -653,6 +654,14 @@ interface AppStore {
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;
   setAutoResumeClaude: (v: boolean) => void;
+  /** Default Claude model new console panes open with (persisted; configured in
+   *  Settings → General). Per-pane override lives in the pane hamburger menu. */
+  defaultModel: ModelId;
+  setDefaultModel: (m: ModelId) => void;
+  /** Per-pane model override, keyed by paneId. A pane with no entry falls back to
+   *  {@link defaultModel}. Applied to `claude --model` at the pane's next launch. */
+  paneModels: Record<string, ModelId>;
+  setPaneModel: (paneId: string, m: ModelId) => void;
 }
 
 // (Re)mount a pipeline run's pane for its CURRENT stage (#220): a single-pane
@@ -1970,6 +1979,12 @@ export const useAppStore = create<AppStore>()(
       setAutoResumeClaude: (v) => set({ autoResumeClaude: v }),
       coordAutoWake: false,
       setCoordAutoWake: (v) => set({ coordAutoWake: v }),
+
+      defaultModel: "sonnet-4.5",
+      setDefaultModel: (m) => set({ defaultModel: m }),
+      paneModels: {},
+      setPaneModel: (paneId, m) =>
+        set((s) => ({ paneModels: { ...s.paneModels, [paneId]: m } })),
     }),
     {
       name: "app-state",
@@ -2015,6 +2030,8 @@ export const useAppStore = create<AppStore>()(
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         coordAutoWake:        s.coordAutoWake,
+        defaultModel:         s.defaultModel,
+        paneModels:           s.paneModels,
         focusTarget:          s.focusTarget,
         fleetPaneStreams:     s.fleetPaneStreams,
         pipelineRuns:         s.pipelineRuns,
