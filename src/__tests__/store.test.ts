@@ -4,6 +4,8 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { QueuedPane } from "../lib/focusQueue";
 import type { FleetPlan } from "../screens/projects/planSections";
 import type { ExtensionDef } from "../lib/extensions";
+import { defaultStageConfig } from "../screens/projects/planStages";
+import { starterBlueprints } from "../screens/projects/blueprints";
 
 const RESET_STATE = {
   tabs: [
@@ -1505,5 +1507,52 @@ describe("plan stage config (#512)", () => {
     useAppStore.getState().setStageEnabled("a", "skills", false);
     expect(useAppStore.getState().planStageConfig["b"]).toBeUndefined();
     expect(useAppStore.getState().planStageConfig["a"].enabled.skills).toBe(false);
+  });
+
+  it("setProjectStageConfig wholesale-seeds a project's config", () => {
+    const d = defaultStageConfig();
+    const order = ["repos", "context", "ui", "structure", "permissions", "automations", "skills"] as const;
+    useAppStore.getState().setProjectStageConfig("seed", { enabled: d.enabled, order: [...order] });
+    expect(useAppStore.getState().planStageConfig["seed"].order[0]).toBe("repos");
+  });
+});
+
+describe("blueprints library (#513)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ blueprints: starterBlueprints(), activeBlueprintId: "web-app" });
+  });
+
+  it("seeds the starter presets and a default active", () => {
+    expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(4);
+    expect(useAppStore.getState().activeBlueprintId).toBe("web-app");
+  });
+
+  it("addBlueprint appends a non-builtin and returns its id", () => {
+    const before = useAppStore.getState().blueprints.length;
+    const id = useAppStore.getState().addBlueprint("Custom", defaultStageConfig());
+    const bps = useAppStore.getState().blueprints;
+    expect(bps.length).toBe(before + 1);
+    expect(bps.find((b) => b.id === id)?.builtin).toBeFalsy();
+  });
+
+  it("setActiveBlueprint switches the active id", () => {
+    useAppStore.getState().setActiveBlueprint("cli-tool");
+    expect(useAppStore.getState().activeBlueprintId).toBe("cli-tool");
+  });
+
+  it("setBlueprintStageEnabled edits only that blueprint", () => {
+    useAppStore.getState().setBlueprintStageEnabled("web-app", "automations", false);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "web-app")!.config.enabled.automations).toBe(false);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "3d-app")!.config.enabled.automations).toBe(true);
+  });
+
+  it("deleteBlueprint refuses builtins but removes a custom one, reassigning active", () => {
+    const id = useAppStore.getState().addBlueprint("Temp", defaultStageConfig());
+    useAppStore.getState().setActiveBlueprint(id);
+    useAppStore.getState().deleteBlueprint("web-app"); // builtin -> no-op
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "web-app")).toBeTruthy();
+    useAppStore.getState().deleteBlueprint(id); // custom -> removed
+    expect(useAppStore.getState().blueprints.find((b) => b.id === id)).toBeUndefined();
+    expect(useAppStore.getState().activeBlueprintId).not.toBe(id);
   });
 });

@@ -31,6 +31,7 @@ import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
+import { starterBlueprints, cloneStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint } from "../screens/projects/blueprints";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
@@ -422,8 +423,8 @@ interface AppStore {
   recordAutomationRun: (id: string, run: AutomationRun) => void;
 
   // Projects (transient)
-  projectsPageMode: "projects" | "fleet";
-  setProjectsPageMode: (v: "projects" | "fleet") => void;
+  projectsPageMode: "projects" | "fleet" | "blueprints";
+  setProjectsPageMode: (v: "projects" | "fleet" | "blueprints") => void;
   // The Projects page is list ↔ planning (#499): the board moved to the GitHub
   // page (#498) and the execution tabs were removed.
   projectsView: "list" | "planning";
@@ -573,6 +574,19 @@ interface AppStore {
   planStageConfig:    Record<string, StageConfig>;
   setStageEnabled:    (projectId: string, stageId: StageId, enabled: boolean) => void;
   reorderStages:      (projectId: string, order: StageId[]) => void;
+  /** Wholesale-set a project's stage config (used to seed it from a blueprint). */
+  setProjectStageConfig: (projectId: string, config: StageConfig) => void;
+  // Blueprints (#513): named, reusable stage configs. The active one seeds new
+  // projects. Seeded with the starter presets; persisted.
+  blueprints:         Blueprint[];
+  activeBlueprintId:  string;
+  addBlueprint:       (name: string, config: StageConfig) => string;
+  duplicateBlueprint: (id: string) => void;
+  updateBlueprintMeta: (id: string, patch: { name?: string; description?: string }) => void;
+  deleteBlueprint:    (id: string) => void;
+  setActiveBlueprint: (id: string) => void;
+  setBlueprintStageEnabled: (id: string, stageId: StageId, enabled: boolean) => void;
+  reorderBlueprintStages: (id: string, order: StageId[]) => void;
   // Agent fleet — the parallel-execution plan (work streams + optional director +
   // the optimal concurrent session count). Persisted per project.
   planFleet:             Record<string, FleetPlan>;
@@ -1796,6 +1810,51 @@ export const useAppStore = create<AppStore>()(
             planStageConfig: { ...s.planStageConfig, [projectId]: { ...cur, order } },
           };
         }),
+      setProjectStageConfig: (projectId, config) =>
+        set((s) => ({ planStageConfig: { ...s.planStageConfig, [projectId]: config } })),
+
+      blueprints: starterBlueprints(),
+      activeBlueprintId: DEFAULT_BLUEPRINT_ID,
+      addBlueprint: (name, config) => {
+        const id = `bp-${Date.now().toString(36)}`;
+        set((s) => ({ blueprints: [...s.blueprints, { id, name, description: "", config: cloneStageConfig(config) }] }));
+        return id;
+      },
+      duplicateBlueprint: (id) =>
+        set((s) => {
+          const src = s.blueprints.find((b) => b.id === id);
+          if (!src) return {};
+          const copy: Blueprint = {
+            id: `bp-${Date.now().toString(36)}`,
+            name: `${src.name} copy`,
+            description: src.description,
+            config: cloneStageConfig(src.config),
+          };
+          return { blueprints: [...s.blueprints, copy] };
+        }),
+      updateBlueprintMeta: (id, patch) =>
+        set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, ...patch } : b)) })),
+      deleteBlueprint: (id) =>
+        set((s) => {
+          const bp = s.blueprints.find((b) => b.id === id);
+          if (!bp || bp.builtin) return {}; // builtins are not deletable
+          const blueprints = s.blueprints.filter((b) => b.id !== id);
+          const activeBlueprintId = s.activeBlueprintId === id
+            ? (blueprints[0]?.id ?? DEFAULT_BLUEPRINT_ID)
+            : s.activeBlueprintId;
+          return { blueprints, activeBlueprintId };
+        }),
+      setActiveBlueprint: (id) => set({ activeBlueprintId: id }),
+      setBlueprintStageEnabled: (id, stageId, enabled) =>
+        set((s) => ({
+          blueprints: s.blueprints.map((b) =>
+            b.id === id ? { ...b, config: { ...b.config, enabled: { ...b.config.enabled, [stageId]: enabled } } } : b,
+          ),
+        })),
+      reorderBlueprintStages: (id, order) =>
+        set((s) => ({
+          blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, config: { ...b.config, order } } : b)),
+        })),
 
       planFleet: {},
       pinnedContext: {},
@@ -2107,6 +2166,8 @@ export const useAppStore = create<AppStore>()(
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,
+        blueprints:            s.blueprints,
+        activeBlueprintId:     s.activeBlueprintId,
         planFleet:             s.planFleet,
         pinnedContext:         s.pinnedContext,
         extensions:            s.extensions,
