@@ -1076,9 +1076,11 @@ describe("agent fleet store", () => {
     useAppStore.setState({ bscBaseDir: "/base" });
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("Proj");
+    const idx = st.findFleetTabIdx("proj-key"); // found by stable projectKey, not name (#457)
     expect(idx).toBe(3);
     expect(st.tabs[idx].name).toBe("Proj · build");
+    expect(st.tabs[idx].projectKey).toBe("proj-key");
+    expect(st.tabs[idx].kind).toBe("build");
     expect(st.tabs[idx].layout).toBe("2×2"); // director + 2 workers = 3 panes
 
     // pane 0 = director at the project hub, doc-based kickoff
@@ -1135,7 +1137,7 @@ describe("agent fleet store", () => {
     };
     useAppStore.getState().fleetStartProject("DirN", dirFleet, "k");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("DirN");
+    const idx = st.findFleetTabIdx("k");
     // trailing-slash dir -> subtree glob; a file path is left as-is
     expect(st.paneRoleGlobs[`t${idx}p0`]).toEqual(["src/x/**", "src/y.ts"]);
   });
@@ -1171,7 +1173,7 @@ describe("agent fleet store", () => {
       ],
     };
     useAppStore.getState().fleetStartProject("Co", coFleet, "k");
-    const idx = useAppStore.getState().findFleetTabIdx("Co");
+    const idx = useAppStore.getState().findFleetTabIdx("k");
     const st1 = useAppStore.getState();
     // Two agents in own/web get separate worktree cwds — no shared working tree.
     expect(st1.paneCwds[`t${idx}p0`]).toBe("/base/projects/k/.worktrees/web--web-a");
@@ -1199,7 +1201,7 @@ describe("agent fleet store", () => {
     const bigFleet: FleetPlan = { recommended: 20, reasoning: "", director: { enabled: false }, streams };
     useAppStore.getState().fleetStartProject("Big", bigFleet, "big");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("Big");
+    const idx = st.findFleetTabIdx("big");
     // 20 workers → 16 in tab 1, 4 in tab 2.
     expect(st.tabs[idx].name).toBe("Big · build");
     expect(st.tabs[idx].layout).toBe("4×4");
@@ -1214,11 +1216,138 @@ describe("agent fleet store", () => {
     useAppStore.setState({ bscBaseDir: "/base" });
     useAppStore.getState().fleetStartProject("Cap", { ...fleet, recommended: 1 }, "k");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("Cap");
+    const idx = st.findFleetTabIdx("k");
     expect(st.tabs[idx].layout).toBe("2×1"); // 1 worker + director = 2 panes
     expect(st.paneNames[idx][0]).toBe("director");
     expect(st.paneNames[idx][1]).toBe("Auth UI");
     expect(st.paneNames[idx][2]).toBeUndefined();
+  });
+
+  // #457 — the "two directors" bug: a project rename froze tab.name, so the
+  // reuse lookup (by name) missed the existing tab and forked a duplicate
+  // "· build" tab with its own director. Matching on the stable projectKey fixes it.
+  it("reuses the SAME build tab across a project rename (no duplicate director) and relabels it", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const before = useAppStore.getState().tabs.length;
+    // Launch for "Alpha" under a stable key.
+    useAppStore.getState().fleetStartProject("Alpha", fleet, "stable-key");
+    const idx = useAppStore.getState().findFleetTabIdx("stable-key");
+    expect(useAppStore.getState().tabs.length).toBe(before + 1);
+    expect(useAppStore.getState().tabs[idx].name).toBe("Alpha · build");
+    expect(useAppStore.getState().tabs[idx].runId).toBe(0);
+
+    // Rename the project (display name changes, key is stable) and relaunch.
+    useAppStore.getState().fleetStartProject("Beta", fleet, "stable-key");
+    const after = useAppStore.getState();
+    // No new tab — same index reused, runId bumped so panes remount.
+    expect(after.tabs.length).toBe(before + 1);
+    expect(after.findFleetTabIdx("stable-key")).toBe(idx);
+    expect(after.tabs[idx].runId).toBe(1);
+    // Label tracks the current project name; key unchanged.
+    expect(after.tabs[idx].name).toBe("Beta · build");
+    expect(after.tabs[idx].projectKey).toBe("stable-key");
+    // Exactly one director pane exists for this project (no fork).
+    const buildTabs = after.tabs.filter(t => t.projectKey === "stable-key" && t.kind === "build");
+    expect(buildTabs).toHaveLength(1);
+  });
+
+  it("reuses each overflow build tab by (projectKey, seq) across a rename", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const streams = Array.from({ length: 20 }, (_, i) => ({
+      id: `s${i}`, name: `S${i}`, repo: "own/web", owns: [], issues: [], dependsOn: [],
+    }));
+    const big: FleetPlan = { recommended: 20, reasoning: "", director: { enabled: false }, streams };
+    useAppStore.getState().fleetStartProject("Big", big, "bigkey");
+    const lenAfterFirst = useAppStore.getState().tabs.length;
+    const idx = useAppStore.getState().findFleetTabIdx("bigkey");
+    expect(useAppStore.getState().tabs[idx + 1].seq).toBe(1);
+
+    // Relaunch under a new display name, same key → both tabs reused in place.
+    useAppStore.getState().fleetStartProject("Renamed", big, "bigkey");
+    const st = useAppStore.getState();
+    expect(st.tabs.length).toBe(lenAfterFirst);
+    expect(st.tabs[idx].name).toBe("Renamed · build");
+    expect(st.tabs[idx + 1].name).toBe("Renamed · build 2");
+    expect(st.tabs.filter(t => t.projectKey === "bigkey" && t.kind === "build")).toHaveLength(2);
+  });
+
+  it("sets a stable projectKey + kind on triage tabs and reuses across a rename", () => {
+    const before = useAppStore.getState().tabs.length;
+    // projectId is the stable identity; the display name drifts.
+    useAppStore.getState().triageStartProject("Alpha", ["o/a", "o/b"], "PID1");
+    const idx = useAppStore.getState().findTriageTabIdx("Alpha", "PID1");
+    expect(idx).toBe(before);
+    expect(useAppStore.getState().tabs[idx].kind).toBe("triage");
+    expect(useAppStore.getState().tabs[idx].projectKey).toBe("PID1");
+
+    // Rename (name → "Beta", same projectId) reuses the tab in place.
+    useAppStore.getState().triageStartProject("Beta", ["o/a", "o/b"], "PID1");
+    const st = useAppStore.getState();
+    expect(st.tabs.length).toBe(before + 1);
+    expect(st.findTriageTabIdx("Beta", "PID1")).toBe(idx);
+    expect(st.tabs[idx].name).toBe("Beta · triage");
+    expect(st.tabs[idx].runId).toBe(1);
+  });
+});
+
+describe("pane status — store single source of truth (#435)", () => {
+  it("setPaneStatus records the status and rolls it up to tab.state", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "ps-a", layout: "2×2" });
+    const idx = before;
+    useAppStore.getState().clearTabStatuses(idx); // isolate from shared-store state
+    useAppStore.getState().setPaneStatus(`t${idx}p0`, "on");
+    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBe("on");
+    expect(useAppStore.getState().tabs[idx].state).toBe("on");
+    // Any running pane dominates the rollup.
+    useAppStore.getState().setPaneStatus(`t${idx}p1`, "run");
+    expect(useAppStore.getState().tabs[idx].state).toBe("run");
+    // Back to idle when every live pane is idle.
+    useAppStore.getState().setPaneStatus(`t${idx}p0`, "idle");
+    useAppStore.getState().setPaneStatus(`t${idx}p1`, "idle");
+    expect(useAppStore.getState().tabs[idx].state).toBe("idle");
+  });
+
+  it("re-rolls the tab when a running pane is disabled (no stale 'run' dot)", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "ps-dis", layout: "2×2" });
+    const idx = before;
+    useAppStore.getState().clearTabStatuses(idx);
+    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
+    expect(useAppStore.getState().tabs[idx].state).toBe("run");
+    useAppStore.getState().setPaneDisabled(`t${idx}p0`, true);
+    expect(useAppStore.getState().tabs[idx].state).toBe("idle");
+  });
+
+  it("re-rolls the tab on a layout shrink that trims a running pane", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "ps-layout", layout: "2×2" });
+    const idx = before;
+    useAppStore.getState().clearTabStatuses(idx);
+    useAppStore.getState().setPaneStatus(`t${idx}p3`, "run");
+    expect(useAppStore.getState().tabs[idx].state).toBe("run");
+    useAppStore.getState().setTabLayout(idx, "1×1"); // trims pane 3 out of the grid
+    expect(useAppStore.getState().tabs[idx].state).toBe("idle");
+  });
+
+  it("clearTabStatuses drops a tab's statuses and re-rolls it to idle (remount)", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "ps-clear", layout: "2×2" });
+    const idx = before;
+    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
+    useAppStore.getState().clearTabStatuses(idx);
+    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBeUndefined();
+    expect(useAppStore.getState().tabs[idx].state).toBe("idle");
+  });
+
+  it("closeTab clears the closed tab's pane statuses", () => {
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "ps-close", layout: "2×2" });
+    const idx = before;
+    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
+    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBe("run");
+    useAppStore.getState().closeTab(idx);
+    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBeUndefined();
   });
 });
 
@@ -1253,7 +1382,7 @@ describe("extensions store", () => {
       streams: [{ id: "s0", name: "S0", repo: "own/web", owns: [], issues: [], dependsOn: [] }],
     };
     useAppStore.getState().fleetStartProject("ExtP", fleet, "proj-key");
-    const idx = useAppStore.getState().findFleetTabIdx("ExtP");
+    const idx = useAppStore.getState().findFleetTabIdx("proj-key");
     const ids = (useAppStore.getState().paneExtensions[`t${idx}p0`] ?? []).map(e => e.id);
     expect(ids).toEqual(["g", "p"]);
   });

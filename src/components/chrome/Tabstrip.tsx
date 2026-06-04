@@ -19,6 +19,18 @@ export interface Tab {
   // Bumped when a tab's sessions are relaunched (e.g. triage re-run) so the panes
   // remount with fresh PTYs. Woven into ConsoleScreen's pane key; transient.
   runId?: number;
+  // Stable project identity for fleet/triage tabs (#457): the sanitized projectKey
+  // (a GitHub node id where possible). The reuse lookup matches on THIS, not the
+  // derived `name`, so renaming the project relabels the tab without forking a
+  // duplicate "· build"/"· triage" tab (the "two directors" bug). Absent for
+  // ad-hoc / manually-named tabs.
+  projectKey?: string;
+  // Which kind of project tab this is (#457) — pairs with `projectKey` (+ `seq`) in
+  // the reuse lookup. Absent for ad-hoc tabs.
+  kind?: "build" | "triage";
+  // 0-based build-tab sequence for multi-tab fleets (#457): 0 = primary "· build",
+  // 1 = "· build 2", … Ignored for triage. Absent ⇒ 0.
+  seq?: number;
 }
 
 const LAYOUTS = ["1×1", "2×1", "1×2", "2×2", "3×2", "3×3"] as const;

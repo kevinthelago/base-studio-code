@@ -63,7 +63,15 @@ The desktop connects, allocates a room, and shows the pairing QR.
 - **Idle timeout**: a room with no traffic for `IDLE_TIMEOUT_MS` is torn down via a
   Durable Object alarm. The **WebSocket Hibernation API** evicts idle rooms from memory
   so they cost ~nothing.
+- **Absolute TTL**: a room is also capped at `ROOM_TTL_MS` from creation
+  (`nextAlarmAt` / `roomLifetimeExceeded`) — even a continuously busy room is torn down
+  once it reaches the cap, so the idle re-arm can't keep a session open indefinitely.
 - **Logging is metadata-only** — the relay cannot log content it cannot read.
+
+> **Not in v1:** per-IP connection rate-limiting (KV counters). It's intentionally out of
+> scope — the controls above already bound abuse on a single-user BYO relay, and a KV
+> binding would add friction to the one-click deploy. Tracked as a follow-up under epic
+> [#210](https://github.com/kevinthelago/base-studio-code/issues/210).
 
 ## Develop & test
 

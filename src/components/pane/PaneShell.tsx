@@ -4,7 +4,10 @@ import { MoreHorizontal, Maximize2, Minimize2 } from "lucide-react";
 import { VIEW_DEFS, type ViewKey } from "./ViewTabs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
 
-export type PaneStatus = "run" | "on" | "idle";
+// The canonical pane-status vocabulary lives in lib/paneStatus (#435); re-exported
+// here so existing PaneShell importers keep their import path.
+export type { PaneStatus } from "../../lib/paneStatus";
+import type { PaneStatus } from "../../lib/paneStatus";
 
 interface PaneShellProps {
   agent: string;
