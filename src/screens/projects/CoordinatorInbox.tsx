@@ -10,6 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { actuateWake } from "../../lib/coordinatorActuate";
 import { heartbeatDirectorPrompt } from "./directorDrive";
+import { ProjectsHeader, useActiveProjectInfo } from "./ProjectsHeader";
 import {
   ingestCoordLog, coordinationSummary, wakePromptFor, waitingWakePrompt, emptyCoordState,
   buildProducerOf, producesFromPaneStreams,
@@ -91,8 +92,11 @@ export function CoordinatorInbox() {
   const stalled = views.filter((v) => v.stalled).length;
   const deadlocked = views.filter((v) => v.deadlocked).length;
   const nothing = ready.length === 0 && views.length === 0 && state.waiting.length === 0 && state.asking.length === 0;
+  const project = useActiveProjectInfo();
 
   return (
+    <>
+    <ProjectsHeader project={project} />
     <section style={{ flex: 1, overflow: "auto", padding: "18px 22px", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
         <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600 }}>Coordination</h2>
@@ -242,5 +246,6 @@ export function CoordinatorInbox() {
         </div>
       ))}
     </section>
+    </>
   );
 }

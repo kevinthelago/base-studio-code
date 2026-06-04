@@ -17,6 +17,17 @@ export interface ActiveProjectInfo {
   description: string;
 }
 
+/** The active project derived from the store, for board tabs that render
+ *  <ProjectsHeader>. Shared so every board tab builds it identically. */
+export function useActiveProjectInfo(): ActiveProjectInfo {
+  const id = useAppStore((s) => s.activeProjectId);
+  const number = useAppStore((s) => s.activeProjectNumber);
+  const name = useAppStore((s) => s.activeProjectName);
+  const repo = useAppStore((s) => s.activeProjectRepo);
+  const repos = useAppStore((s) => s.activeProjectRepos);
+  return { id: id ?? "", number, name, repo, repos, description: "" };
+}
+
 const TABS = [
   { k: "board",    label: "Board",    hint: "kanban · per column" },
   { k: "roadmap",  label: "Roadmap",  hint: "milestones over time" },

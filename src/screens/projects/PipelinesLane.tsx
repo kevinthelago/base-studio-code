@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { useAppStore } from "../../store";
 import { PIPELINE_PRESETS } from "../../lib/pipeline";
+import { ProjectsHeader, useActiveProjectInfo } from "./ProjectsHeader";
 
 function statusColor(status: string): string {
   return status === "done" ? "var(--success)" : status === "escalated" ? "var(--danger)" : "var(--accent)";
@@ -19,8 +20,11 @@ export function PipelinesLane() {
   const [item, setItem] = useState("");
 
   const entries = Object.entries(runs);
+  const project = useActiveProjectInfo();
 
   return (
+    <>
+    <ProjectsHeader project={project} />
     <section style={{ flex: 1, overflow: "auto", padding: "18px 22px", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
         <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600 }}>Pipelines</h2>
@@ -97,5 +101,6 @@ export function PipelinesLane() {
         );
       })}
     </section>
+    </>
   );
 }

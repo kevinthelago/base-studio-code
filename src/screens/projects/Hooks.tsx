@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { projectRepoCwd } from "../../lib/projectPaths";
+import { ProjectsHeader, useActiveProjectInfo } from "./ProjectsHeader";
 
 interface GitHook {
   name: string;
@@ -99,8 +100,11 @@ export function HooksView() {
   const activeProjectName = useAppStore((s) => s.activeProjectName);
   const activeProjectRepos = useAppStore((s) => s.activeProjectRepos);
   const bscBaseDir = useAppStore((s) => s.bscBaseDir);
+  const project = useActiveProjectInfo();
 
   return (
+    <>
+    <ProjectsHeader project={project} />
     <section style={{ flex: 1, overflow: "auto", padding: "18px 22px", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
         <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600 }}>Git hooks</h2>
@@ -117,5 +121,6 @@ export function HooksView() {
         ))
       )}
     </section>
+    </>
   );
 }
