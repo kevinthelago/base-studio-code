@@ -17,11 +17,11 @@ import { resolveDirectorDrive } from "./directorDrive";
 // types). This adapter imports those shapes and re-exports them so existing
 // import sites that reach for them via "./projectPaneData" keep working.
 import type {
-  Posture, Perm, Agent, Repo, Issue, Milestone, ContextFile, ProjectPaneData,
+  Posture, Perm, Agent, Repo, Issue, Milestone, PhaseGroup, ContextFile, ProjectPaneData,
 } from "./projectPane.types";
 
 export type {
-  Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone,
+  Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone, PhaseGroup,
   ContextFile, ProjectPaneData,
 } from "./projectPane.types";
 
@@ -124,16 +124,14 @@ function buildRepos(input: BuildProjectPaneInput): Repo[] {
   }));
 }
 
-function buildStructure(input: BuildProjectPaneInput): Milestone[] {
-  const { phases, issues, repos, progress } = input;
-  if (phases.length === 0 && issues.length === 0) return [];
+/** Shared issue derivation used by both the repo-first and phase-first builders:
+ *  how an issue attributes to a repo, whether it's closed (live overlay → static
+ *  label fallback), the render shape, and a closed-fraction helper. */
+function issueHelpers(input: BuildProjectPaneInput) {
+  const { phases, repos, progress } = input;
   const phaseNames = phases.map(p => p.name);
   const firstAgent = input.fleet?.streams[0]?.id ?? "";
-
-  // Attribute each issue to a repo (its explicit `repo`, else the first publish
-  // repo) and render milestones PER repo: a milestone is a (repo, phase) pair
-  // that actually has issues, so the repo-first structure view shows each repo's
-  // own work tree and empty (repo, phase) pairs don't appear.
+  // Attribute each issue to a repo: its explicit `repo`, else the first publish repo.
   const fallbackRepo = repos[0] ?? "";
   const repoOf = (p: PlanIssue): string => p.repo || fallbackRepo;
 
@@ -157,10 +155,62 @@ function buildStructure(input: BuildProjectPaneInput): Milestone[] {
     // issue's done state; otherwise leave them open (the overlay tracks per-issue,
     // not per-criterion, state).
     sub: p.acceptance.map(a => ({ t: a, done: issueClosed(p) })),
+    repo: repoOf(p),
   });
   const pct = (group: PlanIssue[]): number =>
     group.length ? group.filter(issueClosed).length / group.length : 0;
+  return { phaseNames, repoOf, issueClosed, toIssue, pct };
+}
 
+/** A stable-ish phase id from its name (the persisted stable id lands in slice 2). */
+function phaseSlug(name: string, i: number): string {
+  const s = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return s ? `phase-${s}` : `phase-${i}`;
+}
+
+/**
+ * Phase-first, PROJECT-SCOPED structure (#497): one {@link PhaseGroup} per phase
+ * spanning every repo, with its issues (each carrying `repo`) and a single
+ * closed/total/pct rollup. Every phase is shown (the roadmap), even with no issues
+ * yet; issues whose phase doesn't resolve fall to a trailing "Unscheduled" group.
+ */
+function buildPhaseStructure(input: BuildProjectPaneInput): PhaseGroup[] {
+  const { phases, issues } = input;
+  if (phases.length === 0 && issues.length === 0) return [];
+  const { phaseNames, issueClosed, toIssue } = issueHelpers(input);
+
+  const byPhase = new Map<number, PlanIssue[]>();
+  const unscheduled: PlanIssue[] = [];
+  for (const p of issues) {
+    const idx = resolvePhaseIndex(p.phase, phaseNames);
+    if (idx === undefined) { unscheduled.push(p); continue; }
+    const list = byPhase.get(idx) ?? [];
+    list.push(p);
+    byPhase.set(idx, list);
+  }
+
+  const group = (list: PlanIssue[], id: string, name: string, order: number, doneWhen?: string): PhaseGroup => {
+    const total = list.length;
+    const closed = list.filter(issueClosed).length;
+    return { id, name, doneWhen, order, issues: list.map(toIssue), closed, total, pct: total ? closed / total : 0 };
+  };
+
+  const out: PhaseGroup[] = phases.map((ph, i) =>
+    group(byPhase.get(i) ?? [], phaseSlug(ph.name, i), ph.name, i, ph.description));
+  if (unscheduled.length > 0) {
+    out.push(group(unscheduled, "unscheduled", "Unscheduled", phases.length));
+  }
+  return out;
+}
+
+function buildStructure(input: BuildProjectPaneInput): Milestone[] {
+  const { phases, issues, repos } = input;
+  if (phases.length === 0 && issues.length === 0) return [];
+  const { phaseNames, repoOf, toIssue, pct } = issueHelpers(input);
+
+  // Render milestones PER repo: a milestone is a (repo, phase) pair that actually
+  // has issues, so the repo-first view shows each repo's own work tree and empty
+  // (repo, phase) pairs don't appear.
   const repoOrder: string[] = [...repos];
   for (const p of issues) {
     const r = repoOf(p);
@@ -241,6 +291,7 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     agents: buildAgents(input),
     repos: buildRepos(input),
     structure: buildStructure(input),
+    phaseStructure: buildPhaseStructure(input),
     context: buildContext(input),
     director: {
       enabled: input.fleet?.director.enabled ?? false,
