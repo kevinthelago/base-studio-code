@@ -1479,3 +1479,31 @@ describe("github board routing (#498)", () => {
     expect(useAppStore.getState().githubBoardTab).toBe("board");
   });
 });
+
+describe("plan stage config (#512)", () => {
+  beforeEach(() => useAppStore.setState({ planStageConfig: {} }));
+
+  it("setStageEnabled seeds from defaults (all-on) then flips one stage", () => {
+    useAppStore.getState().setStageEnabled("proj", "automations", false);
+    const cfg = useAppStore.getState().planStageConfig["proj"];
+    expect(cfg.enabled.automations).toBe(false);
+    // other stages keep their default-on value
+    expect(cfg.enabled.context).toBe(true);
+    expect(cfg.enabled.structure).toBe(true);
+  });
+
+  it("reorderStages stores the new order without touching enabled flags", () => {
+    useAppStore.getState().setStageEnabled("proj", "ui", false);
+    const order = ["repos", "context", "ui", "structure", "permissions", "automations", "skills"] as const;
+    useAppStore.getState().reorderStages("proj", [...order]);
+    const cfg = useAppStore.getState().planStageConfig["proj"];
+    expect(cfg.order).toEqual([...order]);
+    expect(cfg.enabled.ui).toBe(false);
+  });
+
+  it("config is per-project", () => {
+    useAppStore.getState().setStageEnabled("a", "skills", false);
+    expect(useAppStore.getState().planStageConfig["b"]).toBeUndefined();
+    expect(useAppStore.getState().planStageConfig["a"].enabled.skills).toBe(false);
+  });
+});

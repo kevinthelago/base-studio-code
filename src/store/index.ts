@@ -30,6 +30,7 @@ import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
+import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
@@ -566,6 +567,12 @@ interface AppStore {
   planAutomations:    Record<string, AutomationSuggestion[]>;
   addPlanAutomation:  (projectId: string, a: AutomationSuggestion) => void;
   clearPlanAutomations: (projectId: string) => void;
+  // Modular planning stages (#512): per-project on/off + ordering of the planning
+  // stages. Defaults (all-on, registry order) are resolved lazily via
+  // defaultStageConfig, so an unset project behaves exactly as today.
+  planStageConfig:    Record<string, StageConfig>;
+  setStageEnabled:    (projectId: string, stageId: StageId, enabled: boolean) => void;
+  reorderStages:      (projectId: string, order: StageId[]) => void;
   // Agent fleet — the parallel-execution plan (work streams + optional director +
   // the optimal concurrent session count). Persisted per project.
   planFleet:             Record<string, FleetPlan>;
@@ -1231,6 +1238,7 @@ export const useAppStore = create<AppStore>()(
             planConfirmedSections:  byKey(s.planConfirmedSections),
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
+            planStageConfig:        byKey(s.planStageConfig),
             planFleet:              byKey(s.planFleet),
             pinnedContext:          byKey(s.pinnedContext),
             projectKeyAlias:        byKey(s.projectKeyAlias),
@@ -1256,7 +1264,7 @@ export const useAppStore = create<AppStore>()(
       resetProjectData: () =>
         set({
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
-          planAutomations: {}, planFleet: {}, pinnedContext: {},
+          planAutomations: {}, planStageConfig: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
@@ -1770,6 +1778,25 @@ export const useAppStore = create<AppStore>()(
       clearPlanAutomations: (projectId) =>
         set((s) => ({ planAutomations: { ...s.planAutomations, [projectId]: [] } })),
 
+      planStageConfig: {},
+      setStageEnabled: (projectId, stageId, enabled) =>
+        set((s) => {
+          const cur = s.planStageConfig[projectId] ?? defaultStageConfig();
+          return {
+            planStageConfig: {
+              ...s.planStageConfig,
+              [projectId]: { ...cur, enabled: { ...cur.enabled, [stageId]: enabled } },
+            },
+          };
+        }),
+      reorderStages: (projectId, order) =>
+        set((s) => {
+          const cur = s.planStageConfig[projectId] ?? defaultStageConfig();
+          return {
+            planStageConfig: { ...s.planStageConfig, [projectId]: { ...cur, order } },
+          };
+        }),
+
       planFleet: {},
       pinnedContext: {},
       togglePinnedContext: (projectId, name) =>
@@ -2079,6 +2106,7 @@ export const useAppStore = create<AppStore>()(
         planConfirmedSections: s.planConfirmedSections,
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
+        planStageConfig:       s.planStageConfig,
         planFleet:             s.planFleet,
         pinnedContext:         s.pinnedContext,
         extensions:            s.extensions,
