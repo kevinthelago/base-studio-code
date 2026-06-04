@@ -30,6 +30,7 @@ interface PaneShellProps {
   onFocus?: () => void;
   onRename?: (name: string) => void;
   onPickDirectory?: () => void;
+  onModel?: (model: ModelId) => void;
   children: React.ReactNode;
 }
 
@@ -52,6 +53,7 @@ export function PaneShell({
   onFocus,
   onRename,
   onPickDirectory,
+  onModel,
   children,
 }: PaneShellProps) {
   const [viewOpen, setViewOpen] = useState(false);
@@ -312,6 +314,7 @@ export function PaneShell({
             onClose={onMenuToggle}
             onRename={() => { setDraftName(agent); setEditingName(true); onMenuToggle?.(); }}
             onViewChange={onViewChange}
+            onModel={onModel}
           />
         </div>,
         document.body
