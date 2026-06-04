@@ -297,6 +297,7 @@ export default function App() {
   if (detSection) {
     const sectionScreens: Record<string, (s: string) => React.ReactNode> = {
       automations: (s) => <AutomationsScreen sectionOverride={s} />,
+      skills: (s) => <SkillsScreen sectionOverride={s} />,
     };
     return (
       <div className="app">
