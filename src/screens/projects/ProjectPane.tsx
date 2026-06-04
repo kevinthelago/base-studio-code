@@ -1022,10 +1022,15 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
             ? `${phaseStructure.length} phase${phaseStructure.length !== 1 ? "s" : ""}`
             : `${repos.length} repos · ${structure.length} milestones`}
           open={true}
+          // Phase/repo lens lives inline in the header (where the publish button
+          // used to be, #506); stop the click so toggling the lens doesn't also
+          // collapse the section.
+          right={
+            <span onClick={(e) => e.stopPropagation()}>
+              <Seg options={["phase", "repo"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo")} tiny />
+            </span>
+          }
         >
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-            <Seg options={["phase", "repo"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo")} tiny />
-          </div>
           {structView === "phase"
             ? <PhaseStructure phases={phaseStructure} agents={agents} />
             : <RepoStructure structure={structure} repos={repos} agents={agents} />}
