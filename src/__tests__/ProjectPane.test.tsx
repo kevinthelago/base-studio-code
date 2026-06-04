@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ProjectPane } from "../screens/projects/ProjectPane";
 import type {
-  ProjectPaneData, Agent, Perm, Milestone, ContextFile,
+  ProjectPaneData, Agent, Perm, Milestone, PhaseGroup, ContextFile,
 } from "../screens/projects/projectPane.types";
 
 // ── fixtures for the real-data (hasData) path ────────────────────────────────
@@ -22,6 +22,7 @@ function data(over: Partial<ProjectPaneData> = {}): ProjectPaneData {
     agents: [agent({ focus: true })],
     repos: [{ id: "o/api", branch: "main", ahead: 0, behind: 0, agents: ["auth"], primary: true, branches: [] }],
     structure: [],
+    phaseStructure: [],
     context: [],
     director: { enabled: false, drive: "event" },
     ...over,
@@ -37,6 +38,7 @@ describe("ProjectPane (v2)", () => {
 
   it("renders the repo-first structure (repo cards; first repo open shows its milestones)", () => {
     render(<ProjectPane />);
+    fireEvent.click(screen.getByText("repo")); // repo-first is the secondary lens (#497)
     // both repository cards are present as collapsible headers
     expect(screen.getByText("acme/payments")).toBeTruthy();
     expect(screen.getByText("acme/web-dashboard")).toBeTruthy();
@@ -76,6 +78,7 @@ describe("ProjectPane (v2)", () => {
     // A repo present but no structure for it -> the open repo card shows the
     // muted placeholder rather than an empty epic.
     render(<ProjectPane data={data({ structure: [] })} projectName="P" projectId="p" />);
+    fireEvent.click(screen.getByText("repo"));
     expect(screen.getByText("no milestones decomposed yet")).toBeTruthy();
   });
 
@@ -118,10 +121,33 @@ describe("ProjectPane (v2)", () => {
       },
     ];
     render(<ProjectPane data={data({ structure })} projectName="P" projectId="p" />);
+    fireEvent.click(screen.getByText("repo"));
     expect(screen.getByText("Phase 1")).toBeTruthy();
     expect(screen.getByText("Build the thing")).toBeTruthy();
     expect(screen.getByText("Wire the other thing")).toBeTruthy();
     // per-milestone progress percentage rendered (0.5 -> 50%)
     expect(screen.getByText("50%")).toBeTruthy();
+  });
+
+  // ── #497: phase-first structure is the default view ─────────────────────────
+  it("renders the phase-first structure by default — one phase spanning repos", () => {
+    const phaseStructure: PhaseGroup[] = [
+      {
+        id: "phase-mvp", name: "MVP", doneWhen: "ships end to end", order: 0,
+        closed: 1, total: 2, pct: 0.5,
+        issues: [
+          { n: "F1", t: "Build the thing", state: "done", owner: "auth", ac: 2, branch: "F1", deps: [], sub: [], repo: "o/api" },
+          { n: "W1", t: "Wire the UI", state: "backlog", owner: "auth", ac: 1, branch: "W1", deps: ["F1"], sub: [], repo: "o/web" },
+        ],
+      },
+    ];
+    render(<ProjectPane data={data({ phaseStructure })} projectName="P" projectId="p" />);
+    // phase header + "done when" + project-wide rollup, no per-repo milestone dup
+    expect(screen.getByText("MVP")).toBeTruthy();
+    expect(screen.getByText("ships end to end")).toBeTruthy();
+    expect(screen.getByText("50%")).toBeTruthy();
+    // issues from BOTH repos appear under the one phase
+    expect(screen.getByText("Build the thing")).toBeTruthy();
+    expect(screen.getByText("Wire the UI")).toBeTruthy();
   });
 });
