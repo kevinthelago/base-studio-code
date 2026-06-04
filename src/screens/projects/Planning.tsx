@@ -5,7 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../../store";
-import { projectRepoCwd, sanitizeProjectKey, resolveProjectKey } from "../../lib/projectPaths";
+import { sanitizeProjectKey, resolveProjectKey } from "../../lib/projectPaths";
 import { ensureGithubProject, canLaunchTriage, triageLockReason } from "../../lib/projectSync";
 import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
@@ -67,143 +67,66 @@ function stripAnsi(s: string): string {
 }
 
 
-interface PlanningRepoStripProps {
-  projectId: string;
-  repos: string[];
+interface PlanningRepoCloneState {
+  /** Full_names known to be cloned into the project hub. */
+  clonedNames: string[];
+  /** Full_names with a clone in flight. */
+  cloning: Set<string>;
+  /** Per-repo clone error message, keyed by full_name. */
+  cloneErrors: Record<string, string>;
+  /** Retry cloning every repo whose last attempt failed. */
+  retryFailed: () => void;
 }
 
-function PlanningRepoStrip({ projectId, repos }: PlanningRepoStripProps) {
-  const { projectLocalRepos, bscBaseDir } = useAppStore();
+/**
+ * Auto-clone every linked repo into the app-managed project directory as soon as
+ * it appears, reporting per-repo clone status. Headless — the planning header's
+ * repo pill surfaces the state (and triggers {@link PlanningRepoCloneState.retryFailed}
+ * on click). Idempotent: a repo already cloned or mid-clone is skipped, so it is
+ * safe to call with the canonical `publishRepos` set on every render.
+ */
+function usePlanningRepoClone(projectId: string, repos: string[]): PlanningRepoCloneState {
+  const projectLocalRepos = useAppStore(s => s.projectLocalRepos);
   const clonedNames = projectLocalRepos[projectId] ?? [];
-  const [cloning, setCloning]     = useState<Set<string>>(new Set());
+  const [cloning, setCloning] = useState<Set<string>>(new Set());
   const [cloneErrors, setCloneErrors] = useState<Record<string, string>>({});
-  const [expanded, setExpanded]   = useState(false);
-  // Ref guards against starting the same clone twice when `repos` grows.
+  // Ref guards against starting the same clone twice across renders.
   const cloningRef = useRef<Set<string>>(new Set());
-  const multi = repos.length > 1;
 
-  // Auto-clone every repo into the app-managed directory as soon as it appears.
+  const clone = (fullName: string) => {
+    cloningRef.current.add(fullName);
+    setCloning(s => new Set([...s, fullName]));
+    setCloneErrors(e => { const n = { ...e }; delete n[fullName]; return n; });
+    invoke<string>("clone_repo", { project: projectId, fullName })
+      .then(() => useAppStore.getState().addProjectRepo(projectId, fullName))
+      .catch(e => setCloneErrors(prev => ({ ...prev, [fullName]: String(e) })))
+      .finally(() => {
+        cloningRef.current.delete(fullName);
+        setCloning(s => { const n = new Set(s); n.delete(fullName); return n; });
+      });
+  };
+
+  // Auto-clone as soon as a repo appears. Keyed on the joined repo set (not the
+  // array identity) so a new repo_link / repos.json entry triggers a pass without
+  // re-running every render — and a failed clone is left for explicit retry rather
+  // than hammered each render.
+  const repoKey = repos.join(",");
   useEffect(() => {
     if (!projectId) return;
     const currentCloned = new Set(useAppStore.getState().projectLocalRepos[projectId] ?? []);
-    const unresolved = repos.filter(r => !currentCloned.has(r) && !cloningRef.current.has(r));
-    for (const fullName of unresolved) {
-      cloningRef.current.add(fullName);
-      setCloning(s => new Set([...s, fullName]));
-      invoke<string>("clone_repo", { project: projectId, fullName })
-        .then(() => {
-          useAppStore.getState().addProjectRepo(projectId, fullName);
-        })
-        .catch(e => setCloneErrors(prev => ({ ...prev, [fullName]: String(e) })))
-        .finally(() => {
-          cloningRef.current.delete(fullName);
-          setCloning(s => { const n = new Set(s); n.delete(fullName); return n; });
-        });
+    for (const fullName of repos) {
+      if (!currentCloned.has(fullName) && !cloningRef.current.has(fullName)) clone(fullName);
     }
-  // repos in deps so new repo_link entries trigger a clone pass.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, repos]);
+  }, [projectId, repoKey]);
 
-  async function handleClone(fullName: string) {
-    setCloning(s => new Set([...s, fullName]));
-    setCloneErrors(e => { const n = { ...e }; delete n[fullName]; return n; });
-    try {
-      await invoke<string>("clone_repo", { project: projectId, fullName });
-      useAppStore.getState().addProjectRepo(projectId, fullName);
-    } catch (e) {
-      setCloneErrors(prev => ({ ...prev, [fullName]: String(e) }));
-    } finally {
-      setCloning(s => { const n = new Set(s); n.delete(fullName); return n; });
+  const retryFailed = () => {
+    for (const r of repos) {
+      if (cloneErrors[r] && !cloning.has(r)) clone(r);
     }
-  }
+  };
 
-  if (repos.length === 0) return null;
-
-  const resolvedCount = repos.filter(r => clonedNames.includes(r)).length;
-  const failedRepos   = repos.filter(r => !!cloneErrors[r] && !cloning.has(r));
-
-  function RepoRow({ fullName }: { fullName: string }) {
-    const isCloned  = clonedNames.includes(fullName);
-    const isCloning = cloning.has(fullName);
-    const err       = cloneErrors[fullName];
-    const localPath = projectRepoCwd(bscBaseDir, projectId, fullName);
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <span style={{ color: "var(--fg-muted)" }}>{fullName}</span>
-        {isCloned ? (
-          <span title={localPath} style={{ color: "var(--success)", fontSize: 10 }}>
-            ● {fullName.split("/")[1]}
-          </span>
-        ) : isCloning ? (
-          <span style={{ color: "var(--accent)" }}>cloning…</span>
-        ) : (
-          <span
-            onClick={() => handleClone(fullName)}
-            style={{
-              padding: "1px 6px", borderRadius: 3,
-              background: "var(--bg-elev)", border: "1px solid var(--border)",
-              color: err ? "var(--danger)" : "var(--fg-muted)",
-              cursor: "pointer", fontSize: 10,
-            }}
-          >{err ? "retry clone" : "clone →"}</span>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ padding: "6px 24px 0", fontFamily: "var(--mono)", fontSize: 10.5 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ color: "var(--fg-dim)" }}>repos</span>
-
-        {multi ? (
-          <button
-            onClick={() => setExpanded(e => !e)}
-            style={{
-              background: "none", border: "none", padding: 0, cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 6,
-              fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
-            }}
-          >
-            <span style={{
-              display: "inline-block", fontSize: 8, color: "var(--fg-dim)",
-              transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
-              transition: "transform 0.15s",
-            }}>▼</span>
-            <span>
-              {repos.length} repositories
-              {resolvedCount > 0 && <span style={{ color: "var(--success)" }}> · {resolvedCount} cloned</span>}
-              {cloning.size > 0 && <span style={{ color: "var(--accent)" }}> · cloning…</span>}
-            </span>
-          </button>
-        ) : (
-          <RepoRow fullName={repos[0]} />
-        )}
-
-        {failedRepos.length > 0 && (
-          <span
-            onClick={() => failedRepos.forEach(r => handleClone(r))}
-            style={{
-              padding: "1px 8px", borderRadius: 3,
-              background: "var(--bg-elev)", border: "1px solid var(--border)",
-              color: "var(--danger)", cursor: "pointer", fontSize: 10,
-              fontFamily: "var(--mono)",
-            }}
-          >retry failed →</span>
-        )}
-      </div>
-
-      {multi && expanded && (
-        <div style={{
-          marginTop: 6, paddingLeft: 16,
-          display: "flex", flexDirection: "column", gap: 5,
-          borderLeft: "2px solid var(--border-soft)",
-        }}>
-          {repos.map(fullName => <RepoRow key={fullName} fullName={fullName} />)}
-        </div>
-      )}
-    </div>
-  );
+  return { clonedNames, cloning, cloneErrors, retryFailed };
 }
 // ── GitHub structure card ─────────────────────────────────────────────────────
 //
@@ -490,6 +413,11 @@ export function Planning({ visible }: { visible: boolean }) {
     ...(planningRepo ? [planningRepo] : []),
   ])].filter(Boolean);
 
+  // Auto-clone the canonical repo set into the project hub as it grows; the header
+  // repo pill surfaces the per-repo clone status (hover for the list, click to retry).
+  const { clonedNames, cloning: cloningRepos, cloneErrors, retryFailed } =
+    usePlanningRepoClone(effectiveProjectId, publishRepos);
+
   // Sections are DYNAMIC: derived from whatever section files Claude has written
   // (surfaced via the store), not a fixed list. The store — populated by the
   // <plan_update> tag parser and the 2s file poll — is the single source of
@@ -753,7 +681,7 @@ export function Planning({ visible }: { visible: boolean }) {
           setRepoLinkFullNames(prev =>
             prev.includes(fullName) ? prev : [...prev, fullName]
           );
-          // PlanningRepoStrip auto-clones when repoLinkFullNames grows — no action needed here.
+          // usePlanningRepoClone auto-clones when the repo set grows — no action needed here.
           foundLink = true;
         }
         if (foundLink) {
@@ -1653,9 +1581,39 @@ _Auto-generated by base-studio-code planner._`,
               {confirmedCount}/{sections.length} sections confirmed
             </span>
             <span className="tag amber">● {isExisting ? "expanding" : "drafting"}</span>
-            {publishRepos.length === 1 && <span className="tag">{publishRepos[0]}</span>}
-            {publishRepos.length > 1 && (
-              <span className="tag" title={publishRepos.join("\n")}>{publishRepos.length} repos</span>
+            {publishRepos.length > 0 && (() => {
+              const clonedSet = new Set(clonedNames);
+              const clonedCount = publishRepos.filter(r => clonedSet.has(r)).length;
+              const failed = publishRepos.filter(r => cloneErrors[r] && !cloningRepos.has(r));
+              const allCloned = clonedCount === publishRepos.length;
+              const n = publishRepos.length;
+              const noun = `repo${n === 1 ? "" : "s"}`;
+              const label =
+                failed.length > 0 ? `${n} ${noun} · clone failed`
+                : cloningRepos.size > 0 ? `${n} ${noun} · cloning…`
+                : allCloned ? `${n} cloned ${noun}`
+                : clonedCount > 0 ? `${clonedCount}/${n} cloned`
+                : `${n} ${noun}`;
+              // Hover lists every repo with its clone status (replaces the old strip list).
+              const tip = publishRepos.map(r =>
+                `${r}  —  ${clonedSet.has(r) ? "cloned" : cloningRepos.has(r) ? "cloning…" : cloneErrors[r] ? "clone failed" : "not cloned"}`
+              ).join("\n");
+              return (
+                <span
+                  className="tag"
+                  title={tip + (failed.length ? "\n\nclick to retry failed" : "")}
+                  onClick={failed.length ? retryFailed : undefined}
+                  style={{
+                    cursor: failed.length ? "pointer" : "default",
+                    color: failed.length ? "var(--danger)" : allCloned ? "var(--success)" : undefined,
+                    borderColor: failed.length ? "var(--danger)" : undefined,
+                  }}
+                >{label}</span>
+              );
+            })()}
+            {publishRepos.length === 0 && (
+              <span className="tag" title="Ask Claude to create or link repositories"
+                style={{ color: "var(--fg-dim)", opacity: 0.7 }}>no repos linked</span>
             )}
           </div>
         </div>
@@ -1695,20 +1653,6 @@ _Auto-generated by base-studio-code planner._`,
           );
         })()}
       </div>
-
-      {/* Repo strip — always visible so state is clear at a glance */}
-      {(() => {
-        const stripRepos = [...new Set([...effectiveRepos, ...repoLinkFullNames])];
-        if (stripRepos.length > 0) {
-          return <PlanningRepoStrip projectId={effectiveProjectId} repos={stripRepos} />;
-        }
-        return (
-          <div style={{ padding: "6px 24px 0", display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10.5 }}>
-            <span style={{ color: "var(--fg-dim)" }}>repos</span>
-            <span style={{ color: "var(--fg-dim)", opacity: 0.55 }}>none linked — ask Claude to create or link repositories</span>
-          </div>
-        );
-      })()}
 
       {/* Split panel */}
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", borderTop: "1px solid var(--border-soft)" }}>
