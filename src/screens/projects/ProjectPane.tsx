@@ -936,7 +936,7 @@ function DirectorBar({ director, fleetStrategy, onDirectorDrive }: {
  * no write-back in this slice.
  */
 export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onStrategy, onTogglePin,
-  onDirectorDrive, onSyncStructure, onSyncDocs, onSyncLabels, syncState }: {
+  onDirectorDrive, onSyncLabels, syncState }: {
   data?: ProjectPaneData;
   projectName?: string;
   projectId?: string;
@@ -946,10 +946,11 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   onStrategy?: (streamId: string, strategy: IntegrationStrategy | undefined) => void;
   onTogglePin?: (name: string) => void;
   onDirectorDrive?: (drive: DirectorDrive) => void;
-  onSyncStructure?: () => void;
-  onSyncDocs?: () => void;
+  // Publish is owned by the planning header's button and the app's Publish flow
+  // (#506/#503): the per-section "Sync to GitHub →" / "Push docs →" buttons were
+  // removed as redundant. Only label application remains pane-local.
   onSyncLabels?: () => void;
-  syncState?: { structure?: SyncState; docs?: SyncState; labels?: SyncState };
+  syncState?: { labels?: SyncState };
 }) {
   const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.phaseStructure.length > 0 || data.context.length > 0);
   const agents:    Agent[]       = hasData ? data!.agents         : AGENTS;
@@ -1012,7 +1013,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
       </div>
 
       <div className="pp-scroll">
-        <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false} right={<SyncBtn label="Push docs →" state={syncState?.docs} onClick={onSyncDocs} />}>
+        <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false}>
           <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />
         </Sec>
         <Sec
@@ -1021,11 +1022,15 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
             ? `${phaseStructure.length} phase${phaseStructure.length !== 1 ? "s" : ""}`
             : `${repos.length} repos · ${structure.length} milestones`}
           open={true}
-          right={<SyncBtn label="Sync to GitHub →" state={syncState?.structure} onClick={onSyncStructure} />}
+          // Phase/repo lens lives inline in the header (where the publish button
+          // used to be, #506); stop the click so toggling the lens doesn't also
+          // collapse the section.
+          right={
+            <span onClick={(e) => e.stopPropagation()}>
+              <Seg options={["phase", "repo"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo")} tiny />
+            </span>
+          }
         >
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-            <Seg options={["phase", "repo"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo")} tiny />
-          </div>
           {structView === "phase"
             ? <PhaseStructure phases={phaseStructure} agents={agents} />
             : <RepoStructure structure={structure} repos={repos} agents={agents} />}
