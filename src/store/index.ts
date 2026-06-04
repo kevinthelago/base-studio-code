@@ -9,6 +9,7 @@ import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET, type QueuedPane, type FocusTarget } from "../lib/focusQueue";
 import { repoPromptKey } from "./../lib/startupPrompt";
+import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "../lib/tabReorder";
 import { resolveStartupPrompt, resolveReferenceContext, type DocAssignments } from "../lib/assignments";
 import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey } from "../lib/projectPaths";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoint";
@@ -31,6 +32,15 @@ import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/di
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
 import { resolveSkills, seedSkills, type SkillDef } from "../lib/skills";
+
+/** Mint a stable tab id (#463). Prefers crypto.randomUUID; falls back for older
+ *  webviews. Used for every tab the store creates + backfilled on hydration. */
+function newTabId(): string {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return `tab_${crypto.randomUUID()}`;
+  } catch { /* fall through */ }
+  return `tab_${Date.now()}_${Math.floor(Math.random() * 1e9).toString(36)}`;
+}
 
 /**
  * Lifts the store's flat assignment fields into the {@link DocAssignments}
@@ -294,6 +304,10 @@ interface AppStore {
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
   closeTab: (idx: number) => void;
+  /** Reorder a tab from index `from` to `to`, remapping all index-keyed pane
+   *  state (names/cwds/status/disabled/extensions/allowed-commands/focus queue)
+   *  so nothing bleeds onto the wrong tab (#461). */
+  moveTab: (from: number, to: number) => void;
   renameTab: (idx: number, name: string) => void;
   setTabLayout: (tabIdx: number, layout: string) => void;
   setTabState: (tabIdx: number, state: Tab["state"]) => void;
@@ -330,6 +344,21 @@ interface AppStore {
   // Automations
   automationsTab: "schedules" | "history";
   setAutomationsTab: (tab: AppStore["automationsTab"]) => void;
+  /** Persisted, user-arranged tab order per page (keyed by page id). A page opens
+   *  whatever tab the user dragged to the front, so the order IS the preference
+   *  (#463). Unknown/new tabs append; stale ids are ignored. */
+  pageTabOrder: Record<string, string[]>;
+  setPageTabOrder: (page: string, order: string[]) => void;
+  /** Console tab ids currently shown in their own window (#430). Session-only
+   *  (NOT persisted): hidden from this window's tab bar while detached, cleared
+   *  on re-dock or app restart — so the tab returns to its persisted place. */
+  detachedTabIds: string[];
+  setTabDetached: (id: string, detached: boolean) => void;
+  /** Per-page section ids currently shown in their own window (#430). Session-only
+   *  (NOT persisted), like detachedTabIds — hidden from the page's tab bar while
+   *  detached, returned on re-dock/restart to their persisted place. */
+  detachedSections: Record<string, string[]>;
+  setSectionDetached: (page: string, id: string, detached: boolean) => void;
 
   // Settings
   settingsSection: string;
@@ -647,7 +676,7 @@ function mountState(s: AppStore, item: string, run: PipelineRun) {
   const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
   const key = `t${tabIdx}p0`;
   const cwd = s.activeProjectName ? projectHubCwd(s.bscBaseDir, s.activeProjectName) : "";
-  const newTab: Tab = { name: tabName, layout: "1×1", state: "idle", runId };
+  const newTab: Tab = { id: newTabId(), name: tabName, layout: "1×1", state: "idle", runId };
   const tabs = existingIdx >= 0 ? s.tabs.map((tb, i) => (i === existingIdx ? newTab : tb)) : [...s.tabs, newTab];
   const disabledPanes = { ...s.disabledPanes };
   delete disabledPanes[key];
@@ -806,7 +835,7 @@ export const useAppStore = create<AppStore>()(
       setActiveTab: (idx) => set({ activeTabIdx: idx, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: -1 }),
       addTab: (tab) =>
         set((s) => ({
-          tabs: [...s.tabs, tab],
+          tabs: [...s.tabs, { ...tab, id: tab.id ?? newTabId() }],
           activeTabIdx: s.tabs.length,
           focusedPaneIdx: -1,
           fullscreenPaneIdx: -1,
@@ -820,6 +849,24 @@ export const useAppStore = create<AppStore>()(
           if (idx < s.activeTabIdx) activeTabIdx -= 1;
           else if (idx === s.activeTabIdx) activeTabIdx = Math.min(activeTabIdx, tabs.length - 1);
           return { tabs, activeTabIdx, focusQueue: [] };
+        }),
+      moveTab: (from, to) =>
+        set((s) => {
+          if (from === to || from < 0 || to < 0 || from >= s.tabs.length || to >= s.tabs.length) return {};
+          // OLD tab index → NEW tab index; remap every index-keyed structure so
+          // a reordered tab keeps its panes' names/cwd/status/disabled/etc.
+          const map = tabIndexMap(s.tabs.length, from, to);
+          return {
+            tabs: moveInArray(s.tabs, from, to),
+            activeTabIdx: map[s.activeTabIdx] ?? s.activeTabIdx,
+            paneNames: rekeyByTab(s.paneNames, map),
+            paneCwds: rekeyByPaneId(s.paneCwds, map),
+            paneStatus: rekeyByPaneId(s.paneStatus, map),
+            disabledPanes: rekeyByPaneId(s.disabledPanes, map),
+            paneExtensions: rekeyByPaneId(s.paneExtensions, map),
+            paneAllowedCommands: rekeyByPaneId(s.paneAllowedCommands, map),
+            focusQueue: remapFocusQueue(s.focusQueue, map),
+          };
         }),
       renameTab: (idx, name) =>
         set((s) => {
@@ -909,6 +956,25 @@ export const useAppStore = create<AppStore>()(
 
       automationsTab: "schedules",
       setAutomationsTab: (tab) => set({ automationsTab: tab }),
+      pageTabOrder: {},
+      setPageTabOrder: (page, order) =>
+        set((s) => ({ pageTabOrder: { ...s.pageTabOrder, [page]: order } })),
+      detachedTabIds: [],
+      setTabDetached: (id, detached) =>
+        set((s) => ({
+          detachedTabIds: detached
+            ? (s.detachedTabIds.includes(id) ? s.detachedTabIds : [...s.detachedTabIds, id])
+            : s.detachedTabIds.filter((x) => x !== id),
+        })),
+      detachedSections: {},
+      setSectionDetached: (page, id, detached) =>
+        set((s) => {
+          const cur = s.detachedSections[page] ?? [];
+          const next = detached
+            ? (cur.includes(id) ? cur : [...cur, id])
+            : cur.filter((x) => x !== id);
+          return { detachedSections: { ...s.detachedSections, [page]: next } };
+        }),
 
       settingsSection: "github",
       setSettingsSection: (section) => set({ settingsSection: section }),
@@ -1298,7 +1364,7 @@ export const useAppStore = create<AppStore>()(
               delete newPaneRepos[key];
             }
           }
-          const newTab: Tab = { name: `${projectName} · triage`, layout, state: "idle", runId };
+          const newTab: Tab = { id: newTabId(), name: `${projectName} · triage`, layout, state: "idle", runId };
           return {
             tabs: existingIdx >= 0
               ? s.tabs.map((t, i) => (i === existingIdx ? newTab : t))
@@ -1491,7 +1557,7 @@ export const useAppStore = create<AppStore>()(
               }
             }
 
-            const newTab: Tab = { name: tabName, layout, state: "idle", runId };
+            const newTab: Tab = { id: newTabId(), name: tabName, layout, state: "idle", runId };
             tabs = existingIdx >= 0
               ? tabs.map((tb, i) => (i === existingIdx ? newTab : tb))
               : [...tabs, newTab];
@@ -1853,6 +1919,7 @@ export const useAppStore = create<AppStore>()(
         githubRepos:     s.githubRepos,
         activeRepoName:  s.activeRepoName,
         automationsTab:  s.automationsTab,
+        pageTabOrder:    s.pageTabOrder,
         settingsSection: s.settingsSection,
         tunnelRelayUrl:  s.tunnelRelayUrl,
         agentProfiles:   s.agentProfiles,
@@ -1903,6 +1970,11 @@ export const useAppStore = create<AppStore>()(
       // until the persisted state is in — otherwise screens flash from defaults
       // (e.g. GitHub "not connected" → connected) on every load.
       onRehydrateStorage: () => (state) => {
+        // Backfill stable ids for tabs persisted before #463 so identity is
+        // well-defined immediately (detached set / re-dock / order key off it).
+        if (state && state.tabs.some((t) => !t.id)) {
+          state.tabs = state.tabs.map((t) => (t.id ? t : { ...t, id: newTabId() }));
+        }
         // Release the gate once hydration settles — on success or error — so the
         // shell never hangs on a blank canvas (on error the store keeps defaults).
         (state ?? useAppStore.getState()).setHasHydrated(true);

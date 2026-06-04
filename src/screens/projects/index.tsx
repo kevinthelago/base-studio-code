@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { useAppStore } from "../../store";
 import { ProjectsEmpty } from "./Empty";
 import { ProjectsList } from "./ProjectsList";
@@ -14,7 +14,7 @@ import { ProjectsPageModeStrip } from "./ProjectsSummary";
 import { Fleet } from "./Fleet";
 import { useProjectScan } from "./useProjectScan";
 
-export function ProjectsScreen() {
+export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   // Re-resolve the active project's repos + plan on tab open / project change.
   useProjectScan();
 
@@ -39,6 +39,19 @@ export function ProjectsScreen() {
   // older sessions working if the key was never set.
   const rawPlanningKey = planningSessionKey || activeProjectId || `${planningTitle}::${planningPitch}`;
   const planningKey = projectKeyAlias[rawPlanningKey] ?? rawPlanningKey;
+
+  // Detached board-section window: render just that board view, no chrome (#430).
+  if (sectionOverride) {
+    const BOARD: Record<string, ReactNode> = {
+      roadmap: <Roadmap />, board: <ProjectBoard />, issues: <Issues />, insights: <Insights />,
+      hooks: <HooksView />, coordination: <CoordinatorInbox />, pipelines: <PipelinesLane />,
+    };
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        {BOARD[sectionOverride] ?? <ProjectsList />}
+      </div>
+    );
+  }
 
   if (!githubConnected) {
     return (

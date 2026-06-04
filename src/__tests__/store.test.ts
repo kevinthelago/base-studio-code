@@ -378,6 +378,47 @@ describe("tab management", () => {
     expect(useAppStore.getState().tabs[1].state).toBe("run");
     expect(useAppStore.getState().tabs[2].state).toBe("idle");
   });
+
+  it("moveTab reorders tabs and remaps all index-keyed pane state (#461)", () => {
+    useAppStore.setState({
+      tabs: [
+        { name: "A", layout: "1×1", state: "idle" },
+        { name: "B", layout: "1×1", state: "idle" },
+        { name: "C", layout: "1×1", state: "idle" },
+      ],
+      activeTabIdx: 0,
+      paneNames: { 0: { 0: "a0" }, 1: { 0: "b0" }, 2: { 0: "c0" } },
+      paneCwds: { "t0p0": "/a", "t1p0": "/b", "t2p0": "/c" },
+      paneStatus: { "t0p0": "run", "t2p0": "idle" },
+      disabledPanes: { "t1p0": true },
+      focusQueue: [{ tab: 2, pane: 0 }],
+    });
+    // Move A (0) to position 2 → order becomes [B, C, A].
+    useAppStore.getState().moveTab(0, 2);
+    const s = useAppStore.getState();
+    expect(s.tabs.map(t => t.name)).toEqual(["B", "C", "A"]);
+    // Active tab A followed its move to index 2.
+    expect(s.activeTabIdx).toBe(2);
+    // Pane state followed: A's pane is now t2, B's is t0, C's is t1.
+    expect(s.paneNames[2][0]).toBe("a0");
+    expect(s.paneNames[0][0]).toBe("b0");
+    expect(s.paneCwds["t2p0"]).toBe("/a");
+    expect(s.paneCwds["t0p0"]).toBe("/b");
+    expect(s.paneStatus["t2p0"]).toBe("run");
+    expect(s.disabledPanes["t0p0"]).toBe(true); // B (was t1) → t0
+    expect(s.focusQueue).toEqual([{ tab: 1, pane: 0 }]); // C (was tab 2) → tab 1
+  });
+
+  it("moveTab is a no-op for from===to or out-of-range", () => {
+    useAppStore.setState({
+      tabs: [{ name: "A", layout: "1×1", state: "idle" }, { name: "B", layout: "1×1", state: "idle" }],
+      activeTabIdx: 0,
+    });
+    useAppStore.getState().moveTab(1, 1);
+    expect(useAppStore.getState().tabs.map(t => t.name)).toEqual(["A", "B"]);
+    useAppStore.getState().moveTab(0, 9);
+    expect(useAppStore.getState().tabs.map(t => t.name)).toEqual(["A", "B"]);
+  });
 });
 
 // ── Pane state ────────────────────────────────────────────────────────────────

@@ -1,9 +1,17 @@
 import { useAppStore } from "../../store";
 import { useDragResize } from "../../hooks/useDragResize";
+import { TabBar, type TabItem } from "../../components/chrome/TabBar";
+import { usePageTabs } from "../../hooks/usePageTabs";
 import { GitHubEmpty } from "./Empty";
-import { GitHubSummary, GitHubPageModeStrip } from "./GitHubSummary";
+import { GitHubSummary } from "./GitHubSummary";
 import { ProjectsSummary } from "../projects/ProjectsSummary";
 import { Pulse } from "./Pulse";
+
+const GITHUB_TABS: TabItem[] = [
+  { id: "summary", label: "Summary", hint: "all repos · analytics" },
+  { id: "projects", label: "Projects", hint: "portfolio · analytics" },
+  { id: "repos", label: "Repositories", hint: "progress · changes · CI" },
+];
 
 function langTag(lang: string | null): string {
   if (!lang) return "—";
@@ -11,15 +19,17 @@ function langTag(lang: string | null): string {
   return map[lang] ?? lang.toLowerCase().slice(0, 4);
 }
 
-export function GitHubScreen() {
+export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   const {
-    githubConnected, githubPageMode,
+    githubConnected,
     githubRepos, activeRepoName, setActiveRepo,
     disconnectGithub,
   } = useAppStore();
 
   // Drag-resizable repo sidebar (mirrors the Knowledge Store / planning splitters).
   const sidebar = useDragResize({ initial: 220, min: 160, max: 460, axis: "x" });
+  const { tabs: ghTabs, activeId, select, reorder, tearOff } = usePageTabs("github", GITHUB_TABS);
+  const mode = sectionOverride ?? activeId;
 
   if (!githubConnected) {
     return (
@@ -33,19 +43,21 @@ export function GitHubScreen() {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <GitHubPageModeStrip />
+      {!sectionOverride && (
+        <TabBar tabs={ghTabs} activeId={activeId} onSelect={select} onReorder={reorder} onTearOff={tearOff} />
+      )}
 
       {/* Summary page */}
-      {githubPageMode === "summary" && <GitHubSummary />}
+      {mode === "summary" && <GitHubSummary />}
 
       {/* Projects portfolio — the GitHub Projects analytics (moved from the
           Projects tab, #421). Between Summary and Repositories. */}
-      {githubPageMode === "projects" && <ProjectsSummary />}
+      {mode === "projects" && <ProjectsSummary />}
 
       {/* Repositories view — repo picker + the per-repo Pulse dashboard (progress,
           changes, CI, contributors) with the branch graph folded in (#413). */}
       <div style={{
-        display: githubPageMode === "repos" ? "flex" : "none",
+        display: mode === "repos" ? "flex" : "none",
         flex: 1, minHeight: 0,
       }}>
         {/* Repo sidebar */}

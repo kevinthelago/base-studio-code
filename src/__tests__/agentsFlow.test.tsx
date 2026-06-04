@@ -25,7 +25,7 @@ function seedCoordLog(coordLines: string[]) {
 
 /** Click the "Flow" subtab. */
 function openFlow(container: HTMLElement) {
-  const tab = Array.from(container.querySelectorAll(".subtabs .t"))
+  const tab = Array.from(container.querySelectorAll(".tabstrip .tab"))
     .find((t) => (t.textContent ?? "").includes("Flow"))!;
   fireEvent.click(tab);
 }
