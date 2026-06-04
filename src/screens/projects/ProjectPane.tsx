@@ -11,7 +11,7 @@ import {
   resolveStrategy, strategySettings,
 } from "./integrationStrategy";
 import type {
-  Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
+  Posture, Perm, Flow, Agent, Repo, Issue, Milestone, PhaseGroup, SubItem, ContextFile,
   ProjectPaneData,
 } from "./projectPane.types";
 
@@ -503,32 +503,10 @@ function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }
                       </div>
                       {/* issues for this milestone (epics flattened) */}
                       <div style={{ borderLeft: "1px solid var(--border-soft)", marginLeft: 6, paddingLeft: 8, display: "flex", flexDirection: "column", gap: 5 }}>
-                        {m.epics.flatMap((e) => e.issues).map((is) => {
-                          const io = openIss === is.n;
-                          return (
-                            <div key={is.n} style={{ borderRadius: 6, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-                              <div onClick={() => setOpenIss(io ? null : is.n)} style={{ padding: "7px 9px", cursor: "pointer" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <MStateDot state={is.state} />
-                                  <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>#{is.n}</span>
-                                  <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 10.5, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{is.t}</span>
-                                  <span title={"@" + is.owner}><Avatar id={is.owner} sz={14} agents={agents} /></span>
-                                </div>
-                                <div style={{ display: "flex", gap: 5, marginTop: 5, paddingLeft: 20, alignItems: "center", flexWrap: "wrap" }}>
-                                  <BranchChip n={is.branch} />
-                                  <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--success)" }}>✓ {is.ac} AC</span>
-                                  {is.sub.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>⌱ {is.sub.length} sub</span>}
-                                  {is.deps.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--accent)" }}>⇠ #{is.deps.join(" #")}</span>}
-                                </div>
-                              </div>
-                              {io && is.sub.length > 0 && (
-                                <div style={{ padding: "0 9px 8px", borderTop: "1px solid var(--border-soft)" }}>
-                                  <SubList sub={is.sub} pad={4} />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                        {m.epics.flatMap((e) => e.issues).map((is) => (
+                          <IssueRow key={is.n} is={is} agents={agents}
+                            open={openIss === is.n} onToggle={() => setOpenIss(openIss === is.n ? null : is.n)} />
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -541,6 +519,127 @@ function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }
     </div>
   );
 }
+
+// One issue row — shared by the repo-first and phase-first structure views.
+// Collapsible: clicking toggles the acceptance-criteria drill-in.
+function IssueRow({ is, agents, open, onToggle, showRepo }: {
+  is: Issue; agents: Agent[]; open: boolean; onToggle: () => void; showRepo?: boolean;
+}) {
+  return (
+    <div style={{ borderRadius: 6, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+      <div onClick={onToggle} style={{ padding: "7px 9px", cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <MStateDot state={is.state} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>#{is.n}</span>
+          <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 10.5, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{is.t}</span>
+          {showRepo && is.repo && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{is.repo.split("/")[1] ?? is.repo}</span>}
+          <span title={"@" + is.owner}><Avatar id={is.owner} sz={14} agents={agents} /></span>
+        </div>
+        <div style={{ display: "flex", gap: 5, marginTop: 5, paddingLeft: 20, alignItems: "center", flexWrap: "wrap" }}>
+          <BranchChip n={is.branch} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--success)" }}>✓ {is.ac} AC</span>
+          {is.sub.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>⌱ {is.sub.length} sub</span>}
+          {is.deps.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--accent)" }}>⇠ #{is.deps.join(" #")}</span>}
+        </div>
+      </div>
+      {open && is.sub.length > 0 && (
+        <div style={{ padding: "0 9px 8px", borderTop: "1px solid var(--border-soft)" }}>
+          <SubList sub={is.sub} pad={4} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Phase-first, PROJECT-SCOPED structure (#497): each phase is one milestone
+// spanning every repo, with a single progress bar; its issues are grouped by repo
+// beneath it. Replaces the repo→milestone→epic→issue tree as the primary lens.
+function PhaseStructure({ phases, agents }: { phases: PhaseGroup[]; agents: Agent[] }) {
+  const [openPhase, setOpenPhase] = useState<string | null>(phases[0]?.id ?? null);
+  const [openIss, setOpenIss] = useState<number | string | null>(null);
+  const totalIssues = phases.reduce((a, p) => a + p.total, 0);
+  return (
+    <div>
+      <div style={{ padding: "0 2px 10px", fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+        the plan · {phases.length} phase{phases.length !== 1 ? "s" : ""} · {totalIssues} issue{totalIssues !== 1 ? "s" : ""}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {phases.map((ph) => {
+          const on = openPhase === ph.id;
+          const byRepo = new Map<string, Issue[]>();
+          for (const is of ph.issues) {
+            const r = is.repo ?? "";
+            const l = byRepo.get(r) ?? [];
+            l.push(is);
+            byRepo.set(r, l);
+          }
+          return (
+            <div key={ph.id} style={{
+              borderRadius: 7, overflow: "hidden",
+              border: "1px solid var(--border-soft)", background: "var(--bg-canvas)",
+            }}>
+              {/* phase header — collapsible */}
+              <div onClick={() => setOpenPhase(on ? null : ph.id)} style={{ padding: "9px 11px", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <span style={{ width: 8, fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{on ? "▾" : "▸"}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>P{ph.order + 1}</span>
+                  <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg)" }}>{ph.name}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{ph.closed}/{ph.total}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{Math.round(ph.pct * 100)}%</span>
+                  <span style={{ width: 40 }}><Track pct={ph.pct} /></span>
+                </div>
+                {ph.doneWhen && (
+                  <div style={{ marginTop: 5, paddingLeft: 15, fontFamily: "var(--sans)", fontSize: 9.5, color: "var(--fg-dim)" }}>{ph.doneWhen}</div>
+                )}
+              </div>
+
+              {on && (
+                <div style={{ padding: "4px 10px 10px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
+                  {ph.issues.length === 0 ? (
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", padding: "6px 4px" }}>
+                      no issues yet
+                    </div>
+                  ) : [...byRepo.entries()].map(([repo, issues]) => (
+                    <div key={repo} style={{ marginTop: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 4px" }}>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-muted)" }}>{repo || "—"}</span>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{issues.length} issue{issues.length !== 1 ? "s" : ""}</span>
+                      </div>
+                      <div style={{ borderLeft: "1px solid var(--border-soft)", marginLeft: 6, paddingLeft: 8, display: "flex", flexDirection: "column", gap: 5 }}>
+                        {issues.map((is) => (
+                          <IssueRow key={String(is.n)} is={is} agents={agents}
+                            open={openIss === is.n} onToggle={() => setOpenIss(openIss === is.n ? null : is.n)} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Sample phase-first structure for the empty/illustrative state — derived from the
+// repo-first STRUCTURE sample by grouping its milestones by phase name.
+const PHASE_STRUCTURE: PhaseGroup[] = (() => {
+  const byName = new Map<string, Issue[]>();
+  for (const m of STRUCTURE) {
+    const issues = m.epics.flatMap((e) => e.issues).map((is) => ({ ...is, repo: m.repo }));
+    byName.set(m.title, [...(byName.get(m.title) ?? []), ...issues]);
+  }
+  let order = 0;
+  return [...byName.entries()].map(([name, issues]) => {
+    const closed = issues.filter((i) => i.state === "done").length;
+    return {
+      id: `sample-phase-${order}`, name, order: order++, issues,
+      closed, total: issues.length, pct: issues.length ? closed / issues.length : 0,
+    };
+  });
+})();
 
 /* =================================================================
    pp-agents.jsx — Seg, AgentEditor, AgentsA
@@ -852,11 +951,14 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   onSyncLabels?: () => void;
   syncState?: { structure?: SyncState; docs?: SyncState; labels?: SyncState };
 }) {
-  const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.context.length > 0);
-  const agents:    Agent[]       = hasData ? data!.agents    : AGENTS;
-  const repos:     Repo[]        = hasData ? data!.repos      : REPOS;
-  const structure: Milestone[]   = hasData ? data!.structure  : STRUCTURE;
-  const context:   ContextFile[] = hasData ? data!.context    : CONTEXT;
+  const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.phaseStructure.length > 0 || data.context.length > 0);
+  const agents:    Agent[]       = hasData ? data!.agents         : AGENTS;
+  const repos:     Repo[]        = hasData ? data!.repos          : REPOS;
+  const structure: Milestone[]   = hasData ? data!.structure      : STRUCTURE;
+  const phaseStructure: PhaseGroup[] = hasData ? data!.phaseStructure : PHASE_STRUCTURE;
+  const context:   ContextFile[] = hasData ? data!.context        : CONTEXT;
+  // Phase-first is the primary lens (#497); the repo-first tree is the secondary one.
+  const [structView, setStructView] = useState<"phase" | "repo">("phase");
 
   const running = agents.filter((a) => a.status === "run").length;
   const onCount = agents.filter((a) => a.status === "on").length;
@@ -913,8 +1015,20 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
         <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false} right={<SyncBtn label="Push docs →" state={syncState?.docs} onClick={onSyncDocs} />}>
           <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />
         </Sec>
-        <Sec title="Repository · Structure" count={`${repos.length} repos · ${structure.length} milestones`} open={true} right={<SyncBtn label="Sync to GitHub →" state={syncState?.structure} onClick={onSyncStructure} />}>
-          <RepoStructure structure={structure} repos={repos} agents={agents} />
+        <Sec
+          title="Milestones · Structure"
+          count={structView === "phase"
+            ? `${phaseStructure.length} phase${phaseStructure.length !== 1 ? "s" : ""}`
+            : `${repos.length} repos · ${structure.length} milestones`}
+          open={true}
+          right={<SyncBtn label="Sync to GitHub →" state={syncState?.structure} onClick={onSyncStructure} />}
+        >
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+            <Seg options={["phase", "repo"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo")} tiny />
+          </div>
+          {structView === "phase"
+            ? <PhaseStructure phases={phaseStructure} agents={agents} />
+            : <RepoStructure structure={structure} repos={repos} agents={agents} />}
         </Sec>
         <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
           <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />

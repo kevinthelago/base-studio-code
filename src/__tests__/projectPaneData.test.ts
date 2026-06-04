@@ -254,3 +254,48 @@ describe("buildProjectPaneData", () => {
     expect(d.context[0].pinned).toBe(false);
   });
 });
+
+describe("buildProjectPaneData · phaseStructure (#497)", () => {
+  it("groups issues by phase PROJECT-WIDE (across repos), one phase per roadmap entry", () => {
+    const issues: PlanIssue[] = [
+      { ref: "A1", title: "API thing", phase: 1, acceptance: ["x"], owns: [], dependsOn: [], labels: [], repo: "o/api" },
+      { ref: "W1", title: "Web thing", phase: 1, acceptance: [], owns: [], dependsOn: ["A1"], labels: [], repo: "o/web" },
+      { ref: "A2", title: "Phase 2 thing", phase: 2, acceptance: [], owns: [], dependsOn: [], labels: [], repo: "o/api" },
+    ];
+    const phases = [{ name: "MVP", description: "ships e2e" }, { name: "Polish" }];
+    const d = buildProjectPaneData(base({ issues, phases, repos: ["o/api", "o/web"] }));
+
+    // One PhaseGroup per phase (the roadmap), in order — not per (repo, phase).
+    expect(d.phaseStructure.map(p => p.name)).toEqual(["MVP", "Polish"]);
+    const mvp = d.phaseStructure[0];
+    expect(mvp.doneWhen).toBe("ships e2e");
+    expect(mvp.order).toBe(0);
+    // MVP spans BOTH repos.
+    expect(mvp.total).toBe(2);
+    expect(mvp.issues.map(i => i.repo).sort()).toEqual(["o/api", "o/web"]);
+  });
+
+  it("rolls up closed/total/pct per phase from the live overlay + static labels", () => {
+    const issues: PlanIssue[] = [
+      { ref: "A1", title: "done one", phase: 1, acceptance: [], owns: [], dependsOn: [], labels: ["closed"], repo: "o/api" },
+      { ref: "A2", title: "open one", phase: 1, acceptance: [], owns: [], dependsOn: [], labels: [], repo: "o/api" },
+    ];
+    const d = buildProjectPaneData(base({ issues, phases: [{ name: "P1" }], repos: ["o/api"] }));
+    const p1 = d.phaseStructure[0];
+    expect(p1.closed).toBe(1);
+    expect(p1.total).toBe(2);
+    expect(p1.pct).toBe(0.5);
+  });
+
+  it("shows empty phases (the roadmap) and sweeps unresolved issues into Unscheduled", () => {
+    const issues: PlanIssue[] = [
+      { ref: "U1", title: "no phase", phase: undefined as unknown as number, acceptance: [], owns: [], dependsOn: [], labels: [], repo: "o/api" },
+    ];
+    const phases = [{ name: "P1" }, { name: "P2" }];
+    const d = buildProjectPaneData(base({ issues, phases, repos: ["o/api"] }));
+    // Both phases present even with no issues, plus a trailing Unscheduled group.
+    expect(d.phaseStructure.map(p => p.name)).toEqual(["P1", "P2", "Unscheduled"]);
+    expect(d.phaseStructure[0].total).toBe(0);
+    expect(d.phaseStructure[2].issues[0].n).toBe("U1");
+  });
+});
