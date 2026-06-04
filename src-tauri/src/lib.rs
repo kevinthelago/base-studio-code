@@ -1751,7 +1751,22 @@ const BSC_CONFINE_RC: &str = concat!(
 /// to `bsc-blocked --on`. Quote `#`-refs (`bsc-merged '#42'`) so the shell doesn't
 /// treat them as comments; a bare number works too. `bsc-failed` reads the reason
 /// from stdin. A real newline separates each function inside the raw string.
+///
+/// The issuer flow (#376) adds two emitters that carry MORE than the 2-payload
+/// `__bsc_coord` shape, so they build their own TSV line (a low-level
+/// `__bsc_coord_log` helper appends a pre-tab-joined payload):
+/// - `bsc-issue --title <t> [--suggested <repo|stream>] [--id <id>]` (body on stdin) —
+///   the issuer captures a shaped issue; emits `issue \t <title> \t <body> \t
+///   <suggested> \t <id>` for the director's intake list. `parseCoordLine` reads
+///   `rest[0..3]` as title/body/suggested/id.
+/// - `bsc-assign <target> [--issue <id>] [--title <t>]` (body on stdin) — the director
+///   routes an issue to a worker; emits `assign \t <target> \t <body> \t <issueId> \t
+///   <title>`, which resumes that worker and injects the work. `parseCoordLine` reads
+///   `rest[0..3]` as target/body/issueId/title.
+/// Multi-word values come through flags (not positionals), and embedded tabs/newlines
+/// are squashed to spaces so the TSV stays single-line and column-aligned.
 const BSC_COORD_EMIT_RC: &str = r#"__bsc_coord() { l="${BSC_COORD_LOG:-}"; [ -z "$l" ] && return 0; mkdir -p "$(dirname "$l")" 2>/dev/null; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; printf '%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" "$2" "$3" >> "$l"; }
+__bsc_coord_log() { l="${BSC_COORD_LOG:-}"; [ -z "$l" ] && return 0; mkdir -p "$(dirname "$l")" 2>/dev/null; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; printf '%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" >> "$l"; }
 bsc-landed() { __bsc_coord landed "$1" ""; }
 bsc-merged() { __bsc_coord merged "$1" ""; }
 bsc-closed() { __bsc_coord closed "$1" ""; }
@@ -1759,6 +1774,8 @@ bsc-failed() { r="$(cat)"; __bsc_coord failed "$1" "$r"; }
 bsc-wait() { r="$(cat)"; __bsc_coord waiting "$r" "${BSC_CHECKPOINT_DOC:-}"; }
 bsc-ask() { r="$(cat | tr '\t\n' '  ')"; __bsc_coord ask "$r" "${BSC_CHECKPOINT_DOC:-}"; }
 bsc-answer() { tgt="$1"; a="$(cat | tr '\t\n' '  ')"; __bsc_coord answer "$tgt" "$a"; }
+bsc-issue() { t=""; s=""; id=""; while [ $# -gt 0 ]; do case "$1" in --title) t="$2"; shift 2 ;; --suggested) s="$2"; shift 2 ;; --id) id="$2"; shift 2 ;; *) shift ;; esac; done; t="$(printf '%s' "$t" | tr '\t\n' '  ')"; s="$(printf '%s' "$s" | tr '\t\n' '  ')"; id="$(printf '%s' "$id" | tr '\t\n' '  ')"; b="$(cat | tr '\t\n' '  ')"; __bsc_coord_log "issue	$t	$b	$s	$id"; }
+bsc-assign() { tgt="$1"; [ $# -gt 0 ] && shift; id=""; t=""; while [ $# -gt 0 ]; do case "$1" in --issue) id="$2"; shift 2 ;; --title) t="$2"; shift 2 ;; *) shift ;; esac; done; tgt="$(printf '%s' "$tgt" | tr '\t\n' '  ')"; id="$(printf '%s' "$id" | tr '\t\n' '  ')"; t="$(printf '%s' "$t" | tr '\t\n' '  ')"; b="$(cat | tr '\t\n' '  ')"; __bsc_coord_log "assign	$tgt	$b	$id	$t"; }
 "#;
 
 /// The `bsc-defer` Stop hook (#369): fires when a fleet WORKER tries to end its turn.
@@ -3542,6 +3559,13 @@ standing rules you MUST act on, not merely acknowledge:
 - INTEGRATOR MODE (pr-ci / manual fleets). Workers open PRs (pr-ci) or commit without pushing
   (manual). Review and merge each green PR into develop (e.g. gh pr merge <n> --squash
   --delete-branch), then keep the milestones/board current.
+- ROUTE NEW ISSUES (#376). When the issuer captures new work it surfaces to you as a
+  "[coordinator] new issue: ..." message. Choose the owning worker by matching the issue
+  to a stream's `owns` globs / area in CLAUDE.local.md, then run bsc-assign <session> with
+  the issue body piped on stdin -- e.g. echo "add a retry to the upload path" | bsc-assign
+  t0p1 --title "Retry uploads" --issue 412. That resumes the chosen worker and injects the
+  issue so it picks it up immediately (into the existing PR -> CI -> merge loop). Open a
+  GitHub issue first if the work should be tracked. You route; the issuer never assigns.
 - KEEP THE FLEET MOVING. Any worker that is blocked or waiting is yours to unblock.
 "#;
 
@@ -5065,6 +5089,76 @@ mod tests {
         assert!(rc.contains("bsc-note()"), "rc must define bsc-note");
         assert!(rc.contains("bsc-blocked()"), "rc must define bsc-blocked");
         assert!(rc.contains("BSC_DECISIONS_DOC"), "helpers must target the decisions doc env var");
+    }
+
+    #[test]
+    fn bsc_coord_emit_rc_defines_issuer_helpers() {
+        // The issuer flow (#376) adds two emitters to the coord-emit rc; they carry more
+        // columns than `__bsc_coord`, so they go through `__bsc_coord_log` with a
+        // pre-tab-joined payload. coordination.ts `parseCoordLine` reads them back.
+        let rc = super::BSC_COORD_EMIT_RC;
+        assert!(rc.contains("bsc-issue()"), "rc must define bsc-issue");
+        assert!(rc.contains("bsc-assign()"), "rc must define bsc-assign");
+        assert!(rc.contains("__bsc_coord_log()"), "rc must define the multi-column log helper");
+    }
+
+    #[test]
+    fn bsc_issue_and_assign_emit_tab_aligned_coord_lines() {
+        // bsc-issue / bsc-assign must run from the agent's own `bash -c` subshells (rc +
+        // BASH_ENV) and append ONE tab-separated line to $BSC_COORD_LOG whose columns match
+        // what coordination.ts parseCoordLine expects:
+        //   issue:  ts \t pane \t issue  \t title  \t body \t suggested \t id
+        //   assign: ts \t pane \t assign \t target \t body \t issueId   \t title
+        // Multi-word values arrive via flags; the body is read from stdin. Skips where bash
+        // isn't on PATH (same gating as the other helper-run tests).
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc issuer-emit subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-issuer-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_COORD_EMIT_RC).unwrap();
+        // Nested path exercises the helper's `mkdir -p` of the log's parent.
+        let log = dir.join("nested").join("coord.log");
+
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let log_bash = super::to_bash_path(&log.to_string_lossy());
+
+        let run = |cmd: &str, body: &str| {
+            let mut child = Command::new(&shell)
+                .arg("-c").arg(cmd)
+                .env("BASH_ENV", &rc_bash)
+                .env("BSC_COORD_LOG", &log_bash)
+                .env("BSC_AUDIT_PANE", "t0p3")
+                .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+                .spawn().unwrap();
+            child.stdin.take().unwrap().write_all(body.as_bytes()).unwrap();
+            assert!(child.wait().unwrap().success(), "{cmd} should run in the subshell");
+        };
+        run("bsc-issue --title 'Retry uploads' --suggested owner/web --id 412", "add a retry to the upload path");
+        run("bsc-assign t0p1 --issue 412 --title 'Retry uploads'", "do the retry work");
+
+        let text = std::fs::read_to_string(&log).unwrap();
+        let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 2, "expected one line per emitter, got: {text:?}");
+
+        let issue: Vec<&str> = lines[0].split('\t').collect();
+        assert_eq!(issue[1], "t0p3", "pane column");
+        assert_eq!(&issue[2..], &["issue", "Retry uploads", "add a retry to the upload path", "owner/web", "412"]);
+
+        let assign: Vec<&str> = lines[1].split('\t').collect();
+        assert_eq!(assign[1], "t0p3", "pane column");
+        assert_eq!(&assign[2..], &["assign", "t0p1", "do the retry work", "412", "Retry uploads"]);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
