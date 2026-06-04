@@ -14,11 +14,11 @@ let seq = 0;
  * The detached tab index encoded in a window's URL, or null for the main window.
  * Pure (search is injectable) so it's unit-testable.
  */
-export function detachedTabIndex(search: string = window.location.search): number | null {
-  const v = new URLSearchParams(search).get("detachTab");
-  if (v === null) return null;
-  const n = Number(v);
-  return Number.isInteger(n) && n >= 0 ? n : null;
+/** The detached console tab's stable id (`?detachTab=<id>`), or null for the
+ *  main / section windows. Id-based so the window pins to the tab across
+ *  reorders. Pure. */
+export function detachedTabId(search: string = window.location.search): string | null {
+  return new URLSearchParams(search).get("detachTab");
 }
 
 /** A detached page-section window's target (`?detach=<page>&section=<id>`), or
@@ -48,24 +48,27 @@ export function openDetachedSection(page: string, section: string, title?: strin
  * Open tab `idx` in its own OS window. Best-effort: logs and swallows failures
  * so a denied/edge case never breaks the drag gesture.
  */
-export function openDetachedTab(idx: number, title?: string): void {
+export function openDetachedTab(tabId: string, title?: string, onClose?: () => void): void {
   seq += 1;
-  const label = `tab-${idx}-${seq}`;
+  const label = `tab-${tabId}-${seq}`.replace(/[^A-Za-z0-9/:_-]/g, "_");
   // Load the SAME app this window is already running, just with the detach marker.
   // Deriving from window.location is robust across dev (http://localhost:1420) and
   // prod (the asset protocol) — a bare relative "index.html" doesn't reliably
   // resolve under the dev server and yields a blank window.
   const u = new URL(window.location.href);
   u.hash = "";
-  u.search = `?detachTab=${idx}`;
+  u.search = `?detachTab=${encodeURIComponent(tabId)}`;
   try {
-    new WebviewWindow(label, {
+    const w = new WebviewWindow(label, {
       url: u.href,
-      title: title || `Console — tab ${idx + 1}`,
+      title: title || "Console",
       width: 960,
       height: 720,
       decorations: false, // use the app's custom titlebar, not the native OS frame
     });
+    // Re-dock when the detached window closes (best-effort; restart recovers it
+    // regardless, since the detached set is session-only).
+    if (onClose) w.once("tauri://destroyed", () => onClose());
   } catch (e) {
     console.error("openDetachedTab failed:", e);
   }

@@ -1,19 +1,24 @@
 import { describe, it, expect } from "vitest";
-import { detachedTabIndex } from "../lib/detachWindow";
+import { detachedTabId, detachedSection } from "../lib/detachWindow";
 
-describe("detachedTabIndex", () => {
-  it("parses a valid detachTab index", () => {
-    expect(detachedTabIndex("?detachTab=0")).toBe(0);
-    expect(detachedTabIndex("?detachTab=3")).toBe(3);
-    expect(detachedTabIndex("?foo=1&detachTab=2")).toBe(2);
+describe("detachedTabId", () => {
+  it("parses the detached tab's stable id", () => {
+    expect(detachedTabId("?detachTab=tab_abc")).toBe("tab_abc");
+    expect(detachedTabId("?foo=1&detachTab=tab_xyz")).toBe("tab_xyz");
   });
-  it("returns null when the param is absent (main window)", () => {
-    expect(detachedTabIndex("")).toBeNull();
-    expect(detachedTabIndex("?other=1")).toBeNull();
+  it("returns null when absent (main window)", () => {
+    expect(detachedTabId("")).toBeNull();
+    expect(detachedTabId("?other=1")).toBeNull();
   });
-  it("returns null for non-integer / negative values", () => {
-    expect(detachedTabIndex("?detachTab=x")).toBeNull();
-    expect(detachedTabIndex("?detachTab=-1")).toBeNull();
-    expect(detachedTabIndex("?detachTab=1.5")).toBeNull();
+});
+
+describe("detachedSection", () => {
+  it("parses ?detach=<page>&section=<id>", () => {
+    expect(detachedSection("?detach=github&section=repos")).toEqual({ page: "github", section: "repos" });
+  });
+  it("returns null when either part is missing", () => {
+    expect(detachedSection("?detach=github")).toBeNull();
+    expect(detachedSection("?section=repos")).toBeNull();
+    expect(detachedSection("")).toBeNull();
   });
 });

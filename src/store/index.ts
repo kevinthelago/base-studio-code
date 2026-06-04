@@ -349,6 +349,11 @@ interface AppStore {
    *  (#463). Unknown/new tabs append; stale ids are ignored. */
   pageTabOrder: Record<string, string[]>;
   setPageTabOrder: (page: string, order: string[]) => void;
+  /** Console tab ids currently shown in their own window (#430). Session-only
+   *  (NOT persisted): hidden from this window's tab bar while detached, cleared
+   *  on re-dock or app restart — so the tab returns to its persisted place. */
+  detachedTabIds: string[];
+  setTabDetached: (id: string, detached: boolean) => void;
 
   // Settings
   settingsSection: string;
@@ -949,6 +954,13 @@ export const useAppStore = create<AppStore>()(
       pageTabOrder: {},
       setPageTabOrder: (page, order) =>
         set((s) => ({ pageTabOrder: { ...s.pageTabOrder, [page]: order } })),
+      detachedTabIds: [],
+      setTabDetached: (id, detached) =>
+        set((s) => ({
+          detachedTabIds: detached
+            ? (s.detachedTabIds.includes(id) ? s.detachedTabIds : [...s.detachedTabIds, id])
+            : s.detachedTabIds.filter((x) => x !== id),
+        })),
 
       settingsSection: "github",
       setSettingsSection: (section) => set({ settingsSection: section }),

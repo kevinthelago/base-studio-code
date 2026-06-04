@@ -23,7 +23,7 @@ import { AgentsScreen } from "./screens/agents";
 import { SKILL_KPIS } from "./data/skills";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
-import { openDetachedTab, detachedTabIndex, detachedSection } from "./lib/detachWindow";
+import { openDetachedTab, detachedTabId, detachedSection } from "./lib/detachWindow";
 
 // ── New-tab dialog ────────────────────────────────────────────────────────────
 
@@ -135,6 +135,7 @@ export default function App() {
     activeScreen, setScreen,
     tabs, activeTabIdx, setActiveTab,
     addTab, closeTab, renameTab, setTabLayout, moveTab,
+    detachedTabIds, setTabDetached,
     focusedAgentName,
     activeRepoName,
     automationsTab,
@@ -144,10 +145,11 @@ export default function App() {
     hasHydrated,
   } = useAppStore();
 
-  // Detached tab window (#430): when opened via tear-off (?detachTab=N), this
-  // window renders only that console tab — pinned via ConsoleScreen's override so
-  // it never touches the shared `activeTabIdx`. Computed once per window load.
-  const [detachIdx] = useState(() => detachedTabIndex());
+  // Detached tab window (#430): when opened via tear-off (?detachTab=<id>), this
+  // window renders only that console tab — pinned by stable id (resolved to an
+  // index for ConsoleScreen's override). Computed once per window load.
+  const [detachId] = useState(() => detachedTabId());
+  const detachIdx = detachId !== null ? tabs.findIndex((t) => t.id === detachId) : -1;
   // Detached page-section window (#463): ?detach=<page>&section=<id> renders just
   // that page's section, no chrome. Computed once per window load.
   const [detSection] = useState(() => detachedSection());
@@ -315,14 +317,14 @@ export default function App() {
   }
 
   // Detached tab window: minimal chrome (no rail/tabstrip), just this tab's console.
-  if (detachIdx !== null) {
+  if (detachId !== null) {
     return (
       <div className="app">
-        <Titlebar workspace={tabs[detachIdx]?.name ?? "Console"} />
+        <Titlebar workspace={detachIdx >= 0 ? (tabs[detachIdx]?.name ?? "Console") : "Console"} />
         <div className="shell">
           <div className="main">
             <div className="page">
-              {hasHydrated && tabs.length > 0 && (
+              {hasHydrated && detachIdx >= 0 && (
                 <div style={{ display: "flex", flex: 1, flexDirection: "column", minHeight: 0 }}>
                   <ConsoleScreen tabIdxOverride={detachIdx} />
                 </div>
@@ -351,7 +353,19 @@ export default function App() {
               onRename={renameTab}
               onChangeLayout={handleLayoutChange}
               onReorder={moveTab}
-              onTearOff={(idx) => openDetachedTab(idx, tabs[idx]?.name)}
+              hiddenIds={detachedTabIds}
+              onTearOff={(idx) => {
+                const t = tabs[idx];
+                if (!t?.id) return;
+                openDetachedTab(t.id, t.name, () => setTabDetached(t.id!, false));
+                setTabDetached(t.id, true);
+                // If the active tab was the one torn off, move focus to the first
+                // tab still in the bar so the window isn't left on a hidden tab.
+                if (activeTabIdx === idx) {
+                  const next = tabs.findIndex((x, i) => i !== idx && !detachedTabIds.includes(x.id ?? ""));
+                  if (next >= 0) setActiveTab(next);
+                }
+              }}
             />
           )}
           {/* ConsoleScreen stays mounted across all screen navigations so xterm

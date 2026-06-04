@@ -33,6 +33,8 @@ interface TabstripProps {
   onChangeLayout?: (idx: number, layout: string) => void;
   onReorder?: (from: number, to: number) => void;
   onTearOff?: (idx: number) => void;
+  /** Tab ids to hide from the bar (detached into their own window, #430). */
+  hiddenIds?: string[];
 }
 
 function LayoutMenu({ layout, onRename, onPick }: {
@@ -91,15 +93,17 @@ function LayoutMenu({ layout, onRename, onPick }: {
 }
 
 export function Tabstrip({
-  tabs, activeIdx = 0, onSelect, onClose, onAdd, onRename, onChangeLayout, onReorder, onTearOff,
+  tabs, activeIdx = 0, onSelect, onClose, onAdd, onRename, onChangeLayout, onReorder, onTearOff, hiddenIds = [],
 }: TabstripProps) {
   // Identity is the stable tab id; fall back to the array index for legacy/test
   // tabs that predate ids. All console callbacks are index-based, so map back.
   const idOf = (i: number) => tabs[i]?.id ?? String(i);
   const idxOf = (id: string) => tabs.findIndex((_, i) => idOf(i) === id);
-  const items: TabItem[] = tabs.map((t, i) => ({
-    id: idOf(i), label: t.name, status: t.state, meta: t.layout,
-  }));
+  // Detached tabs are hidden from the bar (still in the array, so their place is
+  // kept). Reorder positions are in this visible subset → translate to full idx.
+  const items: TabItem[] = tabs
+    .map((t, i) => ({ id: idOf(i), label: t.name, status: t.state, meta: t.layout }))
+    .filter((it) => !hiddenIds.includes(it.id));
   return (
     <TabBar
       tabs={items}
@@ -108,7 +112,7 @@ export function Tabstrip({
       onAdd={onAdd}
       onClose={onClose ? (id) => onClose(idxOf(id)) : undefined}
       onRename={onRename ? (id, name) => onRename(idxOf(id), name) : undefined}
-      onReorder={onReorder}
+      onReorder={onReorder ? (from, to) => onReorder(idxOf(items[from].id), idxOf(items[to].id)) : undefined}
       onTearOff={onTearOff ? (id) => onTearOff(idxOf(id)) : undefined}
       renderMenu={(id, ctx) => (
         <LayoutMenu

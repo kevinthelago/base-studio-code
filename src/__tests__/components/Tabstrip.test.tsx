@@ -209,6 +209,18 @@ describe("Tabstrip drag-to-reorder", () => {
     expect(onTearOff).not.toHaveBeenCalled();
   });
 
+  it("hides tabs whose id is in hiddenIds (detached into a window)", () => {
+    const T: Tab[] = [
+      { id: "a", name: "Alpha", layout: "1×1" },
+      { id: "b", name: "Beta", layout: "1×1" },
+      { id: "c", name: "Gamma", layout: "1×1" },
+    ];
+    render(<Tabstrip tabs={T} hiddenIds={["b"]} />);
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
+    expect(screen.queryByText("Beta")).toBeNull();
+    expect(screen.getByText("Gamma")).toBeInTheDocument();
+  });
+
   it("highlights the strip and marks the drop gap during a drag", () => {
     const { container } = render(<Tabstrip tabs={TABS} onReorder={vi.fn()} />);
     const strip = layoutTabs(container);
