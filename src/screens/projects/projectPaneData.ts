@@ -13,6 +13,9 @@ import type { NodeProgress } from "./ghProgress";
 import { resolvePhaseIndex } from "./planIssues";
 import { resolveFlow } from "./agentFlow";
 import { resolveDirectorDrive } from "./directorDrive";
+import { gradePlan } from "../../lib/planGrade";
+
+export type { PlanGrade, IssueGrade, MilestoneGrade, RepoGrade, Letter } from "../../lib/planGrade";
 // The render-shape contract lives in projectPane.types (#356, the shared pane
 // types). This adapter imports those shapes and re-exports them so existing
 // import sites that reach for them via "./projectPaneData" keep working.
@@ -299,5 +302,6 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
       drive: resolveDirectorDrive(input.fleet?.director.drive),
     },
     fleetStrategy: input.fleet?.strategy,
+    grade: gradePlan(input.issues, input.phases, input.repos),
   };
 }
