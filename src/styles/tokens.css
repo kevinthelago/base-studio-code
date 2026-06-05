@@ -13,6 +13,7 @@
   --accent-dim: oklch(0.55 0.10 70);
   --success:    oklch(0.74 0.13 145);
   --info:       oklch(0.72 0.10 230);
+  --violet:     oklch(0.72 0.12 300);
   --danger:     oklch(0.68 0.18 25);
 
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -190,6 +191,47 @@ html, body {
 .btn.primary:hover{ filter:brightness(1.05); }
 .btn.ghost{ background:transparent; }
 .btn.danger{ color:var(--danger); border-color:color-mix(in oklch, var(--danger), transparent 70%); }
+.btn.sm{ height:24px; font-size:10.5px; padding:0 9px; }
+.btn:disabled{ opacity:.4; cursor:default; }
+
+/* ===== blueprints page (#513/#514) ===== */
+/* toggle switch */
+.sw{ width:30px; height:17px; border-radius:99px; background:var(--bg-elev2); border:1px solid var(--border);
+  position:relative; cursor:pointer; flex:0 0 auto; transition:background .15s, border-color .15s; }
+.sw.on{ background:color-mix(in oklch, var(--accent), transparent 30%); border-color:var(--accent-dim); }
+.sw i{ position:absolute; top:1.5px; left:1.5px; width:12px; height:12px; border-radius:50%;
+  background:var(--fg-muted); transition:left .15s, background .15s; }
+.sw.on i{ left:14px; background:#1a120a; }
+.sw.dis{ opacity:.5; cursor:default; }
+/* prompt-module textarea */
+.pm{ width:100%; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-md);
+  color:var(--fg-muted); font-family:var(--mono); font-size:11px; line-height:1.65; padding:10px 12px; resize:vertical; min-height:96px; outline:none; }
+.pm:focus{ border-color:var(--accent-dim); color:var(--fg); }
+/* small select + text input */
+.sel{ height:24px; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-sm);
+  color:var(--fg-muted); font-family:var(--mono); font-size:10px; padding:0 6px; cursor:pointer; outline:none; }
+.sel:focus{ border-color:var(--accent-dim); }
+.ti{ height:28px; width:100%; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-md);
+  color:var(--fg); font-family:var(--mono); font-size:11px; padding:0 10px; outline:none; }
+.ti:focus{ border-color:var(--accent-dim); }
+/* drag handles + drop indicators */
+.drag-handle{ cursor:grab; color:var(--fg-dim); font-size:13px; line-height:1; user-select:none; }
+.drag-handle:active{ cursor:grabbing; }
+.dragging{ opacity:.4; }
+.drop-before{ box-shadow:inset 0 2px 0 0 var(--accent); }
+.drop-after{ box-shadow:inset 0 -2px 0 0 var(--accent); }
+/* small icon button */
+.icon-btn{ width:24px; height:24px; border-radius:5px; border:1px solid transparent; background:transparent; color:var(--fg-dim);
+  cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:13px; }
+.icon-btn:hover{ background:var(--bg-elev2); color:var(--fg); }
+.icon-btn.danger:hover{ color:var(--danger); }
+/* modal */
+.overlay{ position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; }
+.modal{ width:480px; max-width:92vw; max-height:82vh; overflow:auto; background:var(--bg-elev); border:1px solid var(--border);
+  border-radius:var(--r-lg); box-shadow:0 20px 60px rgba(0,0,0,.5); }
+/* pulsing status dot */
+@keyframes bp-pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
+.pulse-dot{ width:6px; height:6px; border-radius:50%; background:var(--success); animation:bp-pulse 1.4s ease-in-out infinite; display:inline-block; }
 
 .input{
   height:28px; padding:0 10px; border-radius:var(--r-md);

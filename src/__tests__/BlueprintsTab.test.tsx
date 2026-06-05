@@ -1,0 +1,50 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { Blueprints } from "../screens/projects/BlueprintsTab";
+import { useAppStore } from "../store";
+import { makeBlueprints } from "../screens/projects/blueprints";
+
+describe("Blueprints tab (#513/#514)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });
+  });
+
+  it("renders the section list, the library, and the active marker", () => {
+    render(<Blueprints />);
+    expect(screen.getByText("Context")).toBeTruthy();
+    expect(screen.getByText("Structure")).toBeTruthy();
+    expect(screen.getByText("Full-stack web app")).toBeTruthy(); // library entry
+    expect(screen.getByText("★ active")).toBeTruthy();            // default marked active
+  });
+
+  it("expanding a section reveals its prompt module + pipelines", () => {
+    render(<Blueprints />);
+    fireEvent.click(screen.getByText("UI"));
+    expect(screen.getByText("Prompt module")).toBeTruthy();
+    expect(screen.getByText("Render preview")).toBeTruthy(); // UI seeds this pipeline
+  });
+
+  it("toggling the first section persists its enabled flag", () => {
+    const { container } = render(<Blueprints />);
+    const before = useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections[0].enabled;
+    fireEvent.click(container.querySelector(".sw")!); // first switch = first section (Context)
+    const after = useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections[0].enabled;
+    expect(after).toBe(!before);
+  });
+
+  it("set active from the library updates the active blueprint", () => {
+    render(<Blueprints />);
+    fireEvent.click(screen.getByText("Mobile MVP"));
+    fireEvent.click(screen.getAllByText("set as active")[0]);
+    expect(useAppStore.getState().activeBlueprintId).toBe("mobile");
+  });
+
+  it("Add pipeline opens the picker and adds a pipeline to the section", () => {
+    render(<Blueprints />);
+    fireEvent.click(screen.getByText("Permissions")); // empty pipelines -> empty state
+    fireEvent.click(screen.getAllByText("+ Add pipeline")[0]);
+    fireEvent.click(screen.getByText("Scope streams")); // suggested for permissions
+    const perms = useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "permissions")!;
+    expect(perms.pipelines.some((p) => p.id === "scope-streams")).toBe(true);
+  });
+});
