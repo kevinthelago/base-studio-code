@@ -378,6 +378,36 @@ fn clear_all_plan_files() -> Result<u32, String> {
     Ok(removed)
 }
 
+/// Delete every plan section file (`.md` / `.json`) in a single project's hub
+/// directory, leaving subdirectories (cloned repos, `.worktrees`, `prompts/`,
+/// `.claude/`) intact. The section poll re-reads from disk, so this must run
+/// before the store is cleared — otherwise the next poll repopulates the store.
+/// Returns how many files were deleted. Best-effort: any unreadable file is skipped.
+#[tauri::command]
+fn clear_project_plan_files(project_key: String) -> Result<u32, String> {
+    if sanitize_project_key(&project_key).is_empty() {
+        return Err("clear_project_plan_files: empty project_key".to_string());
+    }
+    let proj = plan_dir_for(&project_key);
+    if !proj.exists() {
+        return Ok(0);
+    }
+    let entries = std::fs::read_dir(&proj).map_err(|e| format!("clear_project_plan_files: {e}"))?;
+    let mut removed = 0u32;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_file() { continue; }
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if (ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("json"))
+            && std::fs::remove_file(&p).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    log::info!("clear_project_plan_files({project_key}): removed {removed} files");
+    Ok(removed)
+}
+
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
 ///
 /// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
@@ -2646,8 +2676,8 @@ const PLANNING_PROCESS_MD: &str = r##"
 | **Write**        | Create or overwrite any file — section files, CLAUDE.md, workflow YAMLs |
 | **Edit**         | Patch a single file in-place                                            |
 | **WebFetch**     | Fetch any URL — package registries, docs, GitHub raw content            |
-| **Bash(git \*)** | Any git subcommand — clone, commit, push, log, diff, status, etc.      |
-| **Bash(gh \*)**  | Any gh CLI subcommand — repos, issues, PRs, labels, milestones, etc.   |
+| **Bash(git \*)** | Read-only git — log, diff, status, show (context only; no commit/push) |
+| **Bash(gh \*)**  | Read-only gh — repo list, issue list, pr list (no create/merge/push)   |
 
 **Not available:** generic shell commands (`cp`, `ls`, `cat`, `mkdir`, etc.) and
 WebSearch. Use **Read**/**Write** wherever you would reach for `cat`/`cp`, and
@@ -4909,6 +4939,7 @@ pub fn run() {
             write_project_plan,
             delete_project_dir,
             clear_all_plan_files,
+            clear_project_plan_files,
             list_documents,
             read_document,
             write_document,
