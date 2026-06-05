@@ -3150,8 +3150,14 @@ issue: research, source, **dissect into Skills**, and decompose it before the pl
 ### Drive a unit (feature or section) down to its issues
 For the current unit, propose a complete spec, then interrogate to correct and fill
 it before moving on. Do not move on until ALL of these are concrete:
-- **Behavior + acceptance** — exactly what it does, and the done-when checklist the
-  agent verifies against.
+- **Behavior + acceptance** — the HARD GATE. A feature cannot produce issues until
+  BOTH are documented: (a) the behavior — the approach/body with a description of
+  what the feature does, AND explicit edge/error/empty states (what happens when
+  things fail, the list is empty, a conflict occurs, a timeout fires — enumerate
+  these; do NOT skip them); (b) at least one acceptance criterion (the done-when
+  checklist the agent verifies against). A feature-section file (`- [ ]` lines = AC)
+  that has no approach text or no acceptance criteria will NOT be published to GitHub.
+  Interrogate each unit until BOTH are present before writing the section file.
 - **The issues it brings** — every problem the unit introduces: error/empty/loading
   states, edge cases, validation, migrations/backfills, security and auth needs, and
   the cross-repo contracts it depends on. Make each its own issue — this is what
