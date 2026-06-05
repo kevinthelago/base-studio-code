@@ -14,10 +14,11 @@ import { PlanPreviewPane } from "../screens/projects/PlanPreviewPane";
 describe("PlanPreviewPane (#531)", () => {
   beforeEach(() => useAppStore.setState({ stagePreview: {}, stagePipelineRuns: {} }));
 
-  it("shows the empty state with a render-demo action", () => {
+  it("shows the empty state with skeleton + demo actions", () => {
     render(<PlanPreviewPane projectKey="proj" />);
     expect(screen.getByText("No preview yet")).toBeTruthy();
-    expect(screen.getByText("render demo →")).toBeTruthy();
+    expect(screen.getByText("load from skeleton →")).toBeTruthy();
+    expect(screen.getByText("demo")).toBeTruthy();
   });
 
   it("renders the preview the store holds for this project", () => {
@@ -28,7 +29,7 @@ describe("PlanPreviewPane (#531)", () => {
 
   it("running the demo routes through the render-preview pipeline → store → iframe", async () => {
     const { container } = render(<PlanPreviewPane projectKey="proj" />);
-    fireEvent.click(screen.getByText("render demo →"));
+    fireEvent.click(screen.getByText("demo"));
     await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
     // the pipeline wrote the bundled srcdoc to the store
     expect(useAppStore.getState().stagePreview["proj"]?.srcDoc).toContain("BUNDLE_JS");
