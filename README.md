@@ -1,8 +1,10 @@
 # base-studio-code
 
+> **The CDE — Claude Development Environment.** It's like an IDE, except the thing you build *with* is a roomful of Claudes running in parallel. (Yes, we made the acronym up. No, we're not taking it back.) 🤖
+
 Desktop host application for a multi-agent AI development workflow platform. Run many Claude coding agents in parallel across multiple repositories, with standardized knowledge injected per project based on its tech stack.
 
-Pairs with **mobile-studio-code**, a companion app that tunnels into the desktop session so agents can be orchestrated from anywhere.
+Pairs **optionally** with **mobile-studio-code**, a standalone companion app that can tunnel into a desktop session over a **zero-knowledge Cloudflare relay** — end-to-end encrypted (Noise IK), paired by QR — so the same agents can be driven from your phone, from anywhere.
 
 ## Roadmap
 
@@ -34,6 +36,7 @@ Tracked as [GitHub milestones](https://github.com/kevinthelago/base-studio-code/
 
 ## Features
 
+- **Project planning → fleet orchestration** — a dedicated planning session turns a pitch or repo set into a publishable GitHub structure (milestones, granular issues, `stream:` labels), then launches a fleet: one least-privilege worker per stream in its own git worktree, coordinated by a director
 - **Parallel agent sessions** — multiple PTY-backed console panes per workspace tab, each tied to its own Claude instance
 - **Live git context** — repo name, branch, and dirty status auto-detected from the shell's working directory
 - **Knowledge Store** — named markdown blocks tagged by tech stack, injected into agent system prompts
@@ -105,7 +108,7 @@ base-studio-code/
 │   ├── components/
 │   │   ├── chrome/     # Titlebar, Rail, Tabstrip, StatusBar
 │   │   └── pane/       # PaneShell, ViewTabs, PaneMenu, views/
-│   ├── screens/        # Console, KnowledgeStore, GitHub, Automations, Settings
+│   ├── screens/        # Console, Projects (planning), Agents (profiles), KnowledgeStore, GitHub, Automations, Settings
 │   ├── store/          # Zustand store
 │   └── data/           # Mock/sample data
 ├── design/             # ⚠️ Reference prototype only — do not edit
@@ -116,10 +119,10 @@ base-studio-code/
 
 ```
 base-studio-code (desktop host)
-├── Agent Orchestrator   — parallel Claude API sessions
+├── Agent Orchestrator   — parallel Claude sessions (PTY) + planning/fleet
 ├── GitHub Integration   — OAuth, repos, PRs, Actions, hooks
 ├── Knowledge Store      — context blocks keyed by stack tag
-├── WebSocket Server     — tunnel for mobile-studio-code
+├── Mobile relay client  — dials the zero-knowledge Cloudflare relay (Noise IK E2E)
 └── UI Shell             — Tauri WebView + React frontend
 ```
 
