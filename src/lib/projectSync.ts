@@ -82,7 +82,7 @@ export async function ensureGithubProject(
   return { action: "created", id: pv.id, number: pv.number, url: pv.url };
 }
 
-/** Inputs to the triage launch gate (#444). */
+/** Inputs to the triage launch gate (#444, #551). */
 export interface TriageGateState {
   /** The project is published to GitHub — a board exists (activeProjectId set). */
   published: boolean;
@@ -92,20 +92,22 @@ export interface TriageGateState {
   hasFleet: boolean;
   /** A launch is already in flight. */
   busy: boolean;
+  /** Every enabled planning stage is complete or N/A (#551). */
+  planReady: boolean;
 }
 
 /**
- * Whether "Triage →" may launch (#444): the project must be published (so issues exist
- * to triage), have repos + a planned fleet, and not already be starting. Locking triage
- * until publish stops a triage session spinning up against a project with no board/issues.
+ * Whether "Triage →" may launch (#444/#551): plan must be complete, the project must be
+ * published (so issues exist to triage), have repos + a planned fleet, and not be starting.
  */
 export function canLaunchTriage(s: TriageGateState): boolean {
-  return s.published && s.hasRepos && s.hasFleet && !s.busy;
+  return s.planReady && s.published && s.hasRepos && s.hasFleet && !s.busy;
 }
 
-/** Why triage is locked (tooltip), or null when it can launch (#444). */
+/** Why triage is locked (tooltip), or null when it can launch (#444/#551). */
 export function triageLockReason(s: TriageGateState): string | null {
   if (s.busy) return "starting…";
+  if (!s.planReady) return "Finish the plan first";
   if (!s.published) return "Publish the project to GitHub first";
   if (!s.hasRepos) return "Link at least one repository first";
   if (!s.hasFleet) return "Plan the agent fleet first";

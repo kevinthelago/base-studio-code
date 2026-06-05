@@ -378,6 +378,36 @@ fn clear_all_plan_files() -> Result<u32, String> {
     Ok(removed)
 }
 
+/// Delete every plan section file (`.md` / `.json`) in a single project's hub
+/// directory, leaving subdirectories (cloned repos, `.worktrees`, `prompts/`,
+/// `.claude/`) intact. The section poll re-reads from disk, so this must run
+/// before the store is cleared — otherwise the next poll repopulates the store.
+/// Returns how many files were deleted. Best-effort: any unreadable file is skipped.
+#[tauri::command]
+fn clear_project_plan_files(project_key: String) -> Result<u32, String> {
+    if sanitize_project_key(&project_key).is_empty() {
+        return Err("clear_project_plan_files: empty project_key".to_string());
+    }
+    let proj = plan_dir_for(&project_key);
+    if !proj.exists() {
+        return Ok(0);
+    }
+    let entries = std::fs::read_dir(&proj).map_err(|e| format!("clear_project_plan_files: {e}"))?;
+    let mut removed = 0u32;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_file() { continue; }
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if (ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("json"))
+            && std::fs::remove_file(&p).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    log::info!("clear_project_plan_files({project_key}): removed {removed} files");
+    Ok(removed)
+}
+
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
 ///
 /// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
@@ -2318,6 +2348,11 @@ struct AutomationData {
     schedule: Option<String>,
 }
 
+/// Bump when the planning template (CLAUDE.md) changes in a way that affects
+/// the session context. The signature written by `setup_workspaces` includes
+/// this version so Planning.tsx can detect template upgrades (#175).
+const PLANNING_TEMPLATE_VERSION: u8 = 1;
+
 #[derive(serde::Serialize)]
 struct WorkspacePaths {
     kb_dir:       String,
@@ -2646,8 +2681,8 @@ const PLANNING_PROCESS_MD: &str = r##"
 | **Write**        | Create or overwrite any file — section files, CLAUDE.md, workflow YAMLs |
 | **Edit**         | Patch a single file in-place                                            |
 | **WebFetch**     | Fetch any URL — package registries, docs, GitHub raw content            |
-| **Bash(git \*)** | Any git subcommand — clone, commit, push, log, diff, status, etc.      |
-| **Bash(gh \*)**  | Any gh CLI subcommand — repos, issues, PRs, labels, milestones, etc.   |
+| **Bash(git \*)** | Read-only git — log, diff, status, show (context only; no commit/push) |
+| **Bash(gh \*)**  | Read-only gh — repo list, issue list, pr list (no create/merge/push)   |
 
 **Not available:** generic shell commands (`cp`, `ls`, `cat`, `mkdir`, etc.) and
 WebSearch. Use **Read**/**Write** wherever you would reach for `cat`/`cp`, and
@@ -3561,10 +3596,38 @@ async fn setup_workspaces(
     std::fs::write(planning_dir.join("github_context.md"), gh_ctx)
         .map_err(|e| e.to_string())?;
 
+    // Write a deterministic context signature so Planning.tsx can surface a
+    // "context updated · refresh" badge when inputs diverge from this baseline (#175).
+    {
+        let mut repos = repo_full_names.clone();
+        repos.sort();
+        let mut kb_ids: Vec<&str> = kb_blocks.iter().map(|b| b.id.as_str()).collect();
+        kb_ids.sort();
+        let mut stages_sorted = enabled_stages.clone();
+        stages_sorted.sort();
+        let sig = format!(
+            "v{}|{}|{}|{}",
+            PLANNING_TEMPLATE_VERSION,
+            repos.join(","),
+            kb_ids.join(","),
+            stages_sorted.join(","),
+        );
+        std::fs::write(planning_dir.join("context_signature.txt"), sig)
+            .map_err(|e| e.to_string())?;
+    }
+
     Ok(WorkspacePaths {
         kb_dir:       kb_dir.to_string_lossy().into_owned(),
         planning_dir: planning_dir.to_string_lossy().into_owned(),
     })
+}
+
+/// Read back the context signature that `setup_workspaces` last wrote (#175).
+/// Returns an empty string when the file doesn't exist yet.
+#[tauri::command]
+fn get_context_signature(project_key: String) -> String {
+    let path = project_dir(&project_key).join("context_signature.txt");
+    std::fs::read_to_string(path).unwrap_or_default()
 }
 
 // ── Claude config file management ────────────────────────────────────────────
@@ -4909,6 +4972,8 @@ pub fn run() {
             write_project_plan,
             delete_project_dir,
             clear_all_plan_files,
+            clear_project_plan_files,
+            get_context_signature,
             list_documents,
             read_document,
             write_document,

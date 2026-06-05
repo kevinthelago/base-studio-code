@@ -71,11 +71,15 @@ describe("ensureGithubProject (#444 adopt-or-create)", () => {
   });
 });
 
-describe("canLaunchTriage / triageLockReason (#444 triage gate)", () => {
-  const ok = { published: true, hasRepos: true, hasFleet: true, busy: false };
-  it("allows launch only when published + repos + fleet + not busy", () => {
+describe("canLaunchTriage / triageLockReason (#444/#551 triage gate)", () => {
+  const ok = { published: true, hasRepos: true, hasFleet: true, busy: false, planReady: true };
+  it("allows launch only when plan ready + published + repos + fleet + not busy", () => {
     expect(canLaunchTriage(ok)).toBe(true);
     expect(triageLockReason(ok)).toBeNull();
+  });
+  it("locks until the plan is complete (#551)", () => {
+    expect(canLaunchTriage({ ...ok, planReady: false })).toBe(false);
+    expect(triageLockReason({ ...ok, planReady: false })).toMatch(/plan/i);
   });
   it("locks until the project is published", () => {
     expect(canLaunchTriage({ ...ok, published: false })).toBe(false);
@@ -88,6 +92,9 @@ describe("canLaunchTriage / triageLockReason (#444 triage gate)", () => {
     expect(canLaunchTriage({ ...ok, busy: true })).toBe(false);
   });
   it("busy takes precedence in the reason", () => {
-    expect(triageLockReason({ published: false, hasRepos: false, hasFleet: false, busy: true })).toBe("starting…");
+    expect(triageLockReason({ published: false, hasRepos: false, hasFleet: false, busy: true, planReady: false })).toBe("starting…");
+  });
+  it("planReady lock precedes publish lock in the reason", () => {
+    expect(triageLockReason({ ...ok, planReady: false, published: false })).toMatch(/plan/i);
   });
 });

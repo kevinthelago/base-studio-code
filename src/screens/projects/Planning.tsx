@@ -21,7 +21,7 @@ import {
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, REPOS_KEY, SKILLS_KEY, parseReposFile, titleForKey, groupSections,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, REPOS_KEY, SKILLS_KEY, parseReposFile, titleForKey, groupSections, parseSectionKey,
   parseFleetFile,
 } from "./planSections";
 import { parseSkillsFile } from "../../lib/skills";
@@ -30,7 +30,7 @@ import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssue
 import { PlanStageBar } from "./PlanStageBar";
 import { derivePlanStageState } from "./planStageDerive";
 import { isGateBlocked } from "./pipelineRuntime";
-import { defaultStageConfig, enabledOrderedStages } from "./planStages";
+import { defaultStageConfig, enabledOrderedStages, stageStatus } from "./planStages";
 import { blueprintToStageConfig } from "./blueprints";
 import { featureSectionsToIssues, featureSlug, parseFeatureSection } from "./planFeatures";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
@@ -698,11 +698,37 @@ export function Planning({ visible }: { visible: boolean }) {
   const [restarting, setRestarting] = useState(false);
   // Restart is destructive (ends the live session), so it's gated behind a confirm (#548).
   const [confirmRestart, setConfirmRestart] = useState(false);
+  // Signature of the inputs that were active when setup_workspaces last ran (#175).
+  // Compared against currentSig to show the "context updated" badge.
+  const [lastSetupSig, setLastSetupSig] = useState<string | null>(null);
   // Third pane: the live UI preview (#530). Toggled here; #531 opens it at the UI stage.
   const [showPreview, setShowPreview] = useState(false);
 
   const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  // Every enabled stage complete/N/A → plan is ready to triage (#551).
+  const planReady = useMemo(
+    () => enabledOrderedStages(stageConfig).every(s => {
+      const { status } = stageStatus(s, stageState, stageConfig);
+      return status === "complete" || status === "na";
+    }),
+    [stageConfig, stageState],
+  );
+
+  // Signature of the current inputs — changes when repos/kb/stages change (#175).
+  // Compared against lastSetupSig to decide whether to show the "context updated" badge.
+  const currentSig = useMemo(() => {
+    const repos  = [...linkedRepos].sort().join(",");
+    const kb     = kbBlocks.map(b => b.id).sort().join(",");
+    const stages = enabledOrderedStages(stageConfig).map(s => s.id).sort().join(",");
+    return `v1|${repos}|${kb}|${stages}`;
+  }, [linkedRepos, kbBlocks, stageConfig]);
+  const contextStale = lastSetupSig !== null && currentSig !== lastSetupSig;
+
   const [triaging, setTriaging] = useState(false);
+  // Worktree creation error shown inline by the Triage button (#551).
+  const [triageError, setTriageError] = useState<string | null>(null);
   type PublishPhase = "idle" | "running" | "done" | "error";
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
 
@@ -1011,6 +1037,11 @@ export function Planning({ visible }: { visible: boolean }) {
         console.error("workspace setup failed:", e);
         return null;
       });
+      // Record which inputs were used so the "context updated" badge activates when
+      // they later diverge from this baseline (#175).
+      setLastSetupSig(
+        `v1|${[...repoSnapshot].sort().join(",")}|${kbSnapshot.map(b => b.id).sort().join(",")}|${stageIdsFor(projIdSnap).sort().join(",")}`
+      );
 
       // Launch claude inside the isolated planning directory.
       // Inject the stored GitHub token so `gh` CLI and direct API calls work
@@ -1215,6 +1246,15 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [visible, ghStructSig]);
 
 
+  // Seed lastSetupSig from the signature file written by setup_workspaces (#175).
+  // Uses `prev ?? stored` so we don't overwrite a value the mount effect already set.
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    invoke<string>("get_context_signature", { projectKey: effectiveProjectId })
+      .then(stored => { if (stored) setLastSetupSig(prev => prev ?? stored); })
+      .catch(() => {});
+  }, [effectiveProjectId]);
+
   // Re-sync CLAUDE.md whenever a repo resolves after the initial mount.
   // kbBlocks is captured via ref to avoid including it in deps (it's large and
   // stable — we don't want to re-run on every KB edit).
@@ -1246,9 +1286,24 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [linkedRepos]);
 
 
+  async function handleClearPlan() {
+    setConfirmClear(false);
+    // Delete the section files on disk first so the 2s poll can't re-populate
+    // the store before we wipe it. Best-effort: errors are non-fatal.
+    await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
+    // Wipe the in-memory plan state for this project.
+    useAppStore.setState(s => ({
+      planSections:          { ...s.planSections,          [effectiveProjectId]: {} },
+      planConfirmedSections: { ...s.planConfirmedSections, [effectiveProjectId]: [] },
+    }));
+    useAppStore.getState().clearPlanAutomations(effectiveProjectId);
+    useAppStore.getState().clearPlanFleet(effectiveProjectId);
+  }
+
   async function handleRestart() {
     const term = termRef.current;
     if (!term || restarting) return;
+    setConfirmRestart(false);
     setRestarting(true);
     bufRef.current = "";
     term.clear();
@@ -1274,6 +1329,10 @@ export function Planning({ visible }: { visible: boolean }) {
         enabledStages: stageIdsFor(effectiveProjectId),
       },
     ).catch((e: unknown) => { console.error("restart setup failed:", e); return null; });
+    // Record the inputs used so the badge resets after restart (#175).
+    setLastSetupSig(
+      `v1|${[...linkedRepos].sort().join(",")}|${kbBlocks.map(b => b.id).sort().join(",")}|${stageIdsFor(effectiveProjectId).sort().join(",")}`
+    );
     const token = store.githubToken;
     const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
     await invoke("pty_create", {
@@ -1281,7 +1340,7 @@ export function Planning({ visible }: { visible: boolean }) {
       cols: term.cols,
       rows: term.rows,
       cwd: paths?.planning_dir ?? "",
-      initCmd: "claude",
+      initCmd: "claude --continue 2>/dev/null || claude",
       env: ghEnv,
     }).catch(console.error);
     setRestarting(false);
@@ -1319,7 +1378,9 @@ export function Planning({ visible }: { visible: boolean }) {
       hasRepos: publishRepos.length > 0,
       hasFleet: !!fleet && fleet.streams.length > 0,
       busy: triaging,
+      planReady,
     })) return;
+    setTriageError(null);
     setTriaging(true);
     try {
       await Promise.all(publishRepos.map(fullName =>
@@ -1332,14 +1393,22 @@ export function Planning({ visible }: { visible: boolean }) {
       // the fleet back with the now-assigned profile ids.
       useAppStore.getState().generateFleetProfiles(effectiveProjectId);
       const launchPlan = useAppStore.getState().planFleet[effectiveProjectId] ?? fleet;
-      // Create each worker's git worktree (idempotent) before the panes spawn,
-      // so every agent's cwd exists and it starts in its own checkout+branch.
-      // Without this the worktree-based cwd does not exist and the agent lands
-      // in a fallback dir (#359).
-      await Promise.all(launchPlan.streams.map(st =>
-        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
-          .catch(e => console.error(`worktree ${st.id} failed:`, e)),
-      ));
+      // Create each worker's git worktree (fail closed — #551/#359): if any
+      // worktree can't be created, abort the launch so no agent starts in a
+      // fallback dir.
+      const worktreeResults = await Promise.all(
+        launchPlan.streams.map(st =>
+          invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
+            .then(path => ({ id: st.id, path, err: null as string | null }))
+            .catch(e => ({ id: st.id, path: null as string | null, err: String(e) })),
+        ),
+      );
+      const failed = worktreeResults.filter(r => r.err || !r.path);
+      if (failed.length > 0) {
+        const first = failed[0];
+        setTriageError(`${first.id}: ${first.err ?? "empty path"}`);
+        return;
+      }
       // Give the director its standing protocol at the hub (#375) so it answers worker
       // questions via bsc-answer and merges green PRs.
       if (launchPlan.director.enabled) {
@@ -1687,9 +1756,41 @@ _Auto-generated by base-studio-code planner._`,
     }
   }
 
+  // Derived display values for the section progress bar.
+  const sectionByKey = useMemo(() => new Map(sections.map(s => [s.k, s])), [sections]);
+  const { project: projectKeys, repos: repoGroups } = useMemo(
+    () => groupSections(sections.map(s => s.k)),
+    [sections],
+  );
 
   return (
     <>
+      {/* Section progress bar — half-tucked at the very top so it bleeds into
+          the header row below (#508). Negative bottom margin pulls the header up
+          so the bar sits as a thin decorative stripe rather than taking its own
+          vertical slot. */}
+      <div style={{ padding: "0 24px", marginBottom: -2, display: "flex", gap: 4, alignItems: "center" }}>
+        {(() => {
+          const seg = (k: string) => {
+            const s = sectionByKey.get(k);
+            const tone = s?.state === "confirmed" ? "var(--accent)"
+                       : s?.state === "drafted"   ? "color-mix(in oklch, var(--accent), transparent 50%)"
+                       : "var(--bg-elev2)";
+            const info = parseSectionKey(k);
+            const label = info.tier === "repo" ? `${info.repo} · ${titleForKey(k)}` : titleForKey(k);
+            return <div key={k} style={{ flex: 1, height: 3, borderRadius: 2, background: tone }} title={label} />;
+          };
+          const divider = (id: string) => (
+            <div key={id} title="per-repo sections"
+              style={{ flex: "0 0 auto", width: 1, height: 6, borderRadius: 1, background: "var(--border)" }} />
+          );
+          return [
+            ...projectKeys.map(seg),
+            ...repoGroups.flatMap(g => [divider(`div-${g.repo}`), ...g.keys.map(seg)]),
+          ];
+        })()}
+      </div>
+
       {/* Header */}
       <div style={{ padding: "12px 24px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
@@ -1736,6 +1837,21 @@ _Auto-generated by base-studio-code planner._`,
         <button className="btn ghost" onClick={() => setProjectsView("list")}>
           save & exit
         </button>
+        {/* Clear plan (#505) — inline two-step confirmation so an accidental click
+            can't wipe the plan. The confirm state auto-dismisses when focus leaves. */}
+        {confirmClear ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)" }}>clear plan?</span>
+            <button className="btn ghost" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+              onClick={handleClearPlan}>yes, clear</button>
+            <button className="btn ghost" onClick={() => setConfirmClear(false)}>cancel</button>
+          </div>
+        ) : (
+          <button className="btn ghost" onClick={() => setConfirmClear(true)}
+            title="Remove all plan sections for this project">
+            Clear plan
+          </button>
+        )}
         <button
           className="btn ghost"
           onClick={handlePublish}
@@ -1749,12 +1865,13 @@ _Auto-generated by base-studio-code planner._`,
             : (isExisting ? "Sync to GitHub" : "Create project")}
         </button>
         {(() => {
-          // Lock triage until the project is published (#444): no board ⇒ no issues to triage.
+          // Lock triage until plan is done and the project is published (#444/#551).
           const gate = {
             published: !!activeProjectId,
             hasRepos: publishRepos.length > 0,
             hasFleet: !!planFleet[effectiveProjectId]?.streams.length,
             busy: triaging,
+            planReady,
           };
           const lock = triageLockReason(gate);
           return (
@@ -1769,6 +1886,19 @@ _Auto-generated by base-studio-code planner._`,
           );
         })()}
       </div>
+      {triageError && (
+        <div style={{
+          padding: "4px 24px", display: "flex", alignItems: "center", gap: 8,
+          fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)",
+          background: "color-mix(in oklch, var(--danger), transparent 92%)",
+        }}>
+          <span>worktree failed: {triageError}</span>
+          <button
+            onClick={() => setTriageError(null)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 10 }}
+          >✕</button>
+        </div>
+      )}
 
       {/* Planning progress — macro stages from the modular registry (#512), tucked
           against the header's bottom edge (half-clipped, mirrors #508). Disabled and
@@ -1797,6 +1927,21 @@ _Auto-generated by base-studio-code planner._`,
                 color: showPreview ? "var(--accent)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
               }}
             >▣ preview</button>
+            {contextStale && (
+              <button
+                onClick={() => { void handleRestart(); }}
+                disabled={restarting}
+                title="Repos, knowledge blocks, or enabled stages changed since this session started — click to refresh"
+                style={{
+                  padding: "2px 8px", borderRadius: 3,
+                  cursor: restarting ? "not-allowed" : "pointer",
+                  background: "color-mix(in oklch, var(--accent), transparent 84%)",
+                  border: "1px solid color-mix(in oklch, var(--accent), transparent 50%)",
+                  color: "var(--accent)", fontFamily: "var(--mono)", fontSize: 10,
+                  opacity: restarting ? 0.5 : 1,
+                }}
+              >context updated · refresh</button>
+            )}
             <button
               onClick={() => setConfirmRestart(true)}
               disabled={restarting}

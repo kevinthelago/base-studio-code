@@ -94,4 +94,16 @@ describe("resolvePhaseIndex", () => {
     expect(resolvePhaseIndex(9, names)).toBeUndefined();
     expect(resolvePhaseIndex("Nope", names)).toBeUndefined();
   });
+  it("prefix-matches a short tag against a longer phase name (#550)", () => {
+    const withSuffix = ["0.9.7 - Finish line: everything we can land now", "1.0.0 - GA"];
+    // "0.9.7" is a prefix of the first phase name → resolves to index 0
+    expect(resolvePhaseIndex("0.9.7", withSuffix)).toBe(0);
+    // "1.0" prefix matches the second
+    expect(resolvePhaseIndex("1.0", withSuffix)).toBe(1);
+    // exact match still takes precedence — "0.9.7 - Finish line: everything we can land now" exact
+    expect(resolvePhaseIndex("0.9.7 - Finish line: everything we can land now", withSuffix)).toBe(0);
+    // ambiguous prefix picks first match
+    const ambiguous = ["0.9 - Alpha", "0.9.7 - Beta"];
+    expect(resolvePhaseIndex("0.9", ambiguous)).toBe(0);
+  });
 });
