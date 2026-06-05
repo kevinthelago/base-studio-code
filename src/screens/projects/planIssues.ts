@@ -113,7 +113,6 @@ export function validateIssues(issues: PlanIssue[], phaseNames: string[] = []): 
   if (phaseNames.length > 0) {
     for (const i of issues) {
       if (i.phase === undefined) continue;
-      const tag = typeof i.phase === "string" ? i.phase.toLowerCase() : "";
       const known = typeof i.phase === "number"
         ? i.phase >= 1 && i.phase <= phaseNames.length
         : phaseNames.filter((n) => phaseTagMatches(n, String(i.phase))).length === 1;
