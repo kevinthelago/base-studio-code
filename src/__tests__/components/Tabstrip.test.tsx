@@ -17,10 +17,15 @@ describe("Tabstrip rendering", () => {
     expect(screen.getByText("scratch")).toBeInTheDocument();
   });
 
-  it("renders each tab's layout", () => {
-    render(<Tabstrip tabs={TABS} />);
-    expect(screen.getAllByText("3×3")).toHaveLength(1);
-    expect(screen.getAllByText("2×2")).toHaveLength(1);
+  it("renders each tab's layout as a title attribute, not inline text", () => {
+    const { container } = render(<Tabstrip tabs={TABS} />);
+    // Layout must NOT be visible text (it would clip the tab title)
+    expect(screen.queryByText("3×3")).toBeNull();
+    expect(screen.queryByText("2×2")).toBeNull();
+    // Layout IS accessible via the title tooltip
+    const tabEls = container.querySelectorAll(".tab");
+    expect(tabEls[0]).toHaveAttribute("title", "orchestrator · 3×3");
+    expect(tabEls[1]).toHaveAttribute("title", "feat/tunnel · 2×2");
   });
 
   it("renders an add button", () => {

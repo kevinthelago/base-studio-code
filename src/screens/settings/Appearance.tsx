@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useAppStore } from "../../store";
 import {
   MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE, DEFAULT_TERMINAL_FONT_SIZE,
@@ -5,8 +6,24 @@ import {
 } from "../../lib/terminal";
 import { ACCENT_PRESETS, accentVars } from "../../lib/appearance";
 
+const THEME_KEY = "bsc-theme";
+type Theme = "dark" | "light";
+
+function useTheme() {
+  const [theme, setThemeState] = useState<Theme>(() => {
+    const stored = localStorage.getItem(THEME_KEY);
+    return stored === "light" ? "light" : "dark";
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+  return { theme, setTheme: setThemeState };
+}
+
 export function AppearanceSettings() {
   const { terminalFontSize, setTerminalFontSize, accent, setAccent } = useAppStore();
+  const { theme, setTheme } = useTheme();
 
   return (
     <div style={{ maxWidth: 820 }}>
@@ -103,13 +120,28 @@ export function AppearanceSettings() {
       <div style={{ height: 18 }} />
 
       <div className="card">
-        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 8, gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
           <h3 style={{ margin: 0 }}>Theme</h3>
-          <span className="tag">Dark</span>
         </div>
-        <div className="hint">
-          base-studio-code is dark-only today. A light / system theme is planned — it needs the
-          remaining hardcoded surfaces (terminal palette, shadows) moved onto the token system first.
+        <div style={{ display: "flex", gap: 8 }}>
+          {(["dark", "light"] as const).map((t) => (
+            <button
+              key={t}
+              aria-pressed={theme === t}
+              onClick={() => setTheme(t)}
+              style={{
+                padding: "6px 18px", borderRadius: 6, cursor: "pointer",
+                fontFamily: "var(--mono)", fontSize: 11.5,
+                background: theme === t ? "var(--accent)" : "var(--bg-elev)",
+                color: theme === t ? "#fff" : "var(--fg-muted)",
+                border: "1px solid " + (theme === t ? "transparent" : "var(--border-soft)"),
+              }}
+            >{t.charAt(0).toUpperCase() + t.slice(1)}</button>
+          ))}
+        </div>
+        <div className="hint" style={{ marginTop: 10 }}>
+          Persisted across restarts. Light mode moves all surfaces to the token layer —
+          a few hardcoded terminal palette values may still appear dark.
         </div>
       </div>
     </div>
