@@ -32,7 +32,7 @@ function StageChip({ id, enabled, required, onToggle }: {
     <button
       onClick={isClickable ? () => onToggle!(id) : undefined}
       disabled={required}
-      title={required ? `${stage.name} (required)` : stage.description}
+      title={required ? `${stage.label} (required)` : stage.description}
       style={{
         display: "inline-flex", alignItems: "center", gap: 4,
         padding: "3px 8px", borderRadius: 5,
