@@ -15,6 +15,7 @@ import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, PhaseGroup, SubItem, ContextFile,
   ProjectPaneData,
 } from "./projectPane.types";
+import { SeamGraphView } from "./SeamGraphView";
 
 /* =================================================================
    types -- the render shapes live in projectPane.types.ts (#356, the shared
@@ -978,9 +979,10 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   const structure: Milestone[]   = hasData ? data!.structure      : STRUCTURE;
   const phaseStructure: PhaseGroup[] = hasData ? data!.phaseStructure : PHASE_STRUCTURE;
   const context:   ContextFile[] = hasData ? data!.context        : CONTEXT;
-  const grade = hasData ? data!.grade : undefined;
-  // Phase-first is the primary lens (#497); the repo-first tree is the secondary one.
-  const [structView, setStructView] = useState<"phase" | "repo">("phase");
+  const grade     = hasData ? data!.grade     : undefined;
+  const seamGraph = hasData ? data!.seamGraph : undefined;
+  // Phase-first is the primary lens (#497); repo-first and graph are the secondary ones.
+  const [structView, setStructView] = useState<"phase" | "repo" | "graph">("phase");
 
   // Build a flat ref → IssueGrade lookup for per-row chips (#445).
   const issueGradeMap = new Map<string | number, IssueGrade>();
@@ -1033,7 +1035,9 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
               {grade && <GradeChip letter={grade.letter} />}
               {structView === "phase"
                 ? `${phaseStructure.length} phase${phaseStructure.length !== 1 ? "s" : ""}`
-                : `${repos.length} repos · ${structure.length} milestones`}
+                : structView === "repo"
+                  ? `${repos.length} repos · ${structure.length} milestones`
+                  : `${seamGraph?.nodes.length ?? 0} nodes · ${seamGraph?.edges.length ?? 0} edges`}
             </span>
           }
           open={true}
@@ -1042,7 +1046,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
           // collapse the section.
           right={
             <span onClick={(e) => e.stopPropagation()}>
-              <Seg options={["phase", "repo"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo")} tiny />
+              <Seg options={["phase", "repo", "graph"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo" | "graph")} tiny />
             </span>
           }
         >
@@ -1059,7 +1063,11 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
           )}
           {structView === "phase"
             ? <PhaseStructure phases={phaseStructure} agents={agents} gradeMap={issueGradeMap} />
-            : <RepoStructure structure={structure} repos={repos} agents={agents} gradeMap={issueGradeMap} />}
+            : structView === "repo"
+              ? <RepoStructure structure={structure} repos={repos} agents={agents} gradeMap={issueGradeMap} />
+              : seamGraph
+                ? <SeamGraphView graph={seamGraph} />
+                : <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", padding: "12px 0" }}>No plan data yet.</div>}
         </Sec>
         <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
           <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />

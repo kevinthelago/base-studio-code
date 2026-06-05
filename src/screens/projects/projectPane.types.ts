@@ -9,8 +9,10 @@
 import type { DirectorDrive } from "./directorDrive";
 import type { IntegrationStrategy } from "./integrationStrategy";
 import type { PlanGrade } from "../../lib/planGrade";
+import type { SeamGraph } from "../../lib/planSeamGraph";
 
 export type { PlanGrade };
+export type { SeamGraph };
 
 export type Posture = "allow" | "ask" | "deny";
 export type Perm = Record<string, Posture>;
@@ -96,4 +98,6 @@ export interface ProjectPaneData {
   fleetStrategy?: IntegrationStrategy;
   /** Deterministic agent-readiness grade (#445): overall rollup + per-repo/milestone/issue breakdowns. */
   grade?: PlanGrade;
+  /** Dependency DAG for the seam/contract graph view (#294): nodes (features) and edges (dependsOn). */
+  seamGraph?: SeamGraph;
 }
