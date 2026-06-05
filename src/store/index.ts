@@ -636,6 +636,7 @@ interface AppStore {
   setPlanDirector:       (projectId: string, enabled: boolean, role?: string) => void;
   setPlanDirectorDrive:  (projectId: string, drive: DirectorDrive) => void;
   clearPlanFleet:        (projectId: string) => void;
+  clearPlan:             (key: string) => void;
 
   // Extensions — MCP servers + hooks the user configures, each scoped via its
   // `projects` ([] = global). Written into a launched session's .mcp.json /
@@ -2013,6 +2014,23 @@ export const useAppStore = create<AppStore>()(
         }),
       clearPlanFleet: (projectId) =>
         set((s) => ({ planFleet: { ...s.planFleet, [projectId]: emptyFleet() } })),
+      clearPlan: (key) =>
+        set((s) => {
+          const omitKey = <T,>(m: Record<string, T>): Record<string, T> => {
+            const n = { ...m }; delete n[key]; return n;
+          };
+          return {
+          planSections:          omitKey(s.planSections),
+          planConfirmedSections: omitKey(s.planConfirmedSections),
+          planKbAssignments:     omitKey(s.planKbAssignments),
+          planAutomations:       omitKey(s.planAutomations),
+          planStageConfig:       omitKey(s.planStageConfig),
+          uiScreens:             omitKey(s.uiScreens),
+          uiApproved:            omitKey(s.uiApproved),
+          planFleet:             omitKey(s.planFleet),
+          issueLinks:            omitKey(s.issueLinks),
+          };
+        }),
 
       extensions: [],
       addExtension: (def) =>

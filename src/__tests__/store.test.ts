@@ -1650,3 +1650,39 @@ describe("stage pipeline runs (#528/#529)", () => {
     expect(useAppStore.getState().stagePipelineRuns["b"]["pl-1"].status).toBe("blocked");
   });
 });
+
+describe("clearPlan (#505)", () => {
+  beforeEach(() =>
+    useAppStore.setState({
+      planSections: { myproj: { goal: "# Goal" }, other: { scope: "# Scope" } },
+      planConfirmedSections: { myproj: ["goal"], other: [] },
+      planKbAssignments: { myproj: ["kb-1"] },
+      planAutomations: { myproj: [] },
+      planStageConfig: {},
+      uiScreens: { myproj: ["Home"] },
+      uiApproved: { myproj: ["Home"] },
+      planFleet: {},
+      issueLinks: { myproj: { F1: { number: 1, url: "u" } } },
+    })
+  );
+
+  it("clears all plan buckets for the given key without touching other projects", () => {
+    useAppStore.getState().clearPlan("myproj");
+    const s = useAppStore.getState();
+    expect(s.planSections["myproj"]).toBeUndefined();
+    expect(s.planConfirmedSections["myproj"]).toBeUndefined();
+    expect(s.planKbAssignments["myproj"]).toBeUndefined();
+    expect(s.planAutomations["myproj"]).toBeUndefined();
+    expect(s.uiScreens["myproj"]).toBeUndefined();
+    expect(s.uiApproved["myproj"]).toBeUndefined();
+    expect(s.issueLinks["myproj"]).toBeUndefined();
+    // other project untouched
+    expect(s.planSections["other"]).toEqual({ scope: "# Scope" });
+  });
+
+  it("is a no-op for a key that has no plan data", () => {
+    useAppStore.getState().clearPlan("nonexistent");
+    const s = useAppStore.getState();
+    expect(s.planSections["myproj"]).toEqual({ goal: "# Goal" });
+  });
+});
