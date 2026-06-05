@@ -33,6 +33,8 @@ export interface Pipeline extends PipelineDef {
   uid: string;
   trigger: PipelineTrigger;
   enabled: boolean;
+  /** A gate pipeline blocks its stage from completing until it passes (#532). */
+  gate?: boolean;
 }
 
 export const PIPELINE_LIB: PipelineDef[] = [

@@ -94,10 +94,10 @@ export async function runPipeline(pipeline: Pipeline, ctx: StageContext): Promis
 
 // ── gate predicate (#532 builds on this) ─────────────────────────────────────
 /**
- * Whether a stage is blocked by a gating pipeline: any enabled pipeline whose last
- * recorded run is `blocked`. Pipelines with no recorded run don't block. (#532 adds an
- * explicit per-pipeline `gate` flag and folds this into the stage's #512 gate.)
+ * Whether a stage is blocked by a gating pipeline (#532): any enabled pipeline marked
+ * `gate` whose last run has not passed (`ok`). An unrun or in-progress gate blocks too
+ * — the stage stays incomplete until the gate passes. Non-gate pipelines never block.
  */
 export function isGateBlocked(pipelines: Pipeline[], runs: Record<string, PipelineRunState>): boolean {
-  return pipelines.some((p) => p.enabled && runs[p.uid]?.status === "blocked");
+  return pipelines.some((p) => p.enabled && p.gate && runs[p.uid]?.status !== "ok");
 }
