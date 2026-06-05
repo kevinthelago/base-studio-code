@@ -235,7 +235,7 @@ export function ProjectsList() {
     setActiveProjectMeta(p.id, p.title, r[0] ?? "", p.number, r);
     setGithubTab("projects");
     setScreen("github");
-    openGithubBoard("board");
+    openGithubBoard("overview");
   }
   function handleEditPlan(p: GhProject) {
     const all = p.repositories?.nodes?.map((x) => x.nameWithOwner) ?? [];

@@ -495,10 +495,10 @@ interface AppStore {
   // is opened from the GitHub portfolio, this flips on and its board renders there
   // with `githubBoardTab` selecting the sub-view. Session-only (not persisted).
   githubBoardOpen: boolean;
-  githubBoardTab: "board" | "roadmap" | "issues" | "insights";
+  githubBoardTab: "overview" | "board" | "roadmap" | "issues" | "insights";
   /** Open the GitHub-page board for the active project at a given sub-tab. */
-  openGithubBoard: (tab?: "board" | "roadmap" | "issues" | "insights") => void;
-  setGithubBoardTab: (t: "board" | "roadmap" | "issues" | "insights") => void;
+  openGithubBoard: (tab?: "overview" | "board" | "roadmap" | "issues" | "insights") => void;
+  setGithubBoardTab: (t: "overview" | "board" | "roadmap" | "issues" | "insights") => void;
   closeGithubBoard: () => void;
   projectsDrawerIssue: number | null;
   setProjectsDrawerIssue: (n: number | null) => void;
@@ -1321,8 +1321,8 @@ export const useAppStore = create<AppStore>()(
       githubTab: "summary",
       setGithubTab: (t) => set({ githubTab: t }),
       githubBoardOpen: false,
-      githubBoardTab: "board",
-      openGithubBoard: (tab = "board") => set({ githubBoardOpen: true, githubBoardTab: tab }),
+      githubBoardTab: "overview",
+      openGithubBoard: (tab = "overview") => set({ githubBoardOpen: true, githubBoardTab: tab }),
       setGithubBoardTab: (t) => set({ githubBoardTab: t }),
       closeGithubBoard: () => set({ githubBoardOpen: false }),
       wakePane: (paneId, prompt) => {

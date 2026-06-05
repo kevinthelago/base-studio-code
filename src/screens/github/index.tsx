@@ -5,6 +5,7 @@ import { usePageTabs } from "../../hooks/usePageTabs";
 import { GitHubEmpty } from "./Empty";
 import { GitHubSummary } from "./GitHubSummary";
 import { ProjectsSummary } from "../projects/ProjectsSummary";
+import { ProjectOverview } from "../projects/ProjectOverview";
 import { ProjectBoard } from "../projects/ProjectBoard";
 import { Roadmap } from "../projects/Roadmap";
 import { Issues } from "../projects/Issues";
@@ -53,6 +54,7 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
   if (githubBoardOpen && !sectionOverride) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        {githubBoardTab === "overview" && <ProjectOverview />}
         {githubBoardTab === "board"    && <ProjectBoard />}
         {githubBoardTab === "roadmap"  && <Roadmap />}
         {githubBoardTab === "issues"   && <Issues />}

@@ -20,8 +20,9 @@ export interface ActiveProjectInfo {
 // The project header lives on the GitHub page (#498/#499): the published board
 // sub-tabs (board · roadmap · issues · insights), a back-to-portfolio link, and a
 // "plan →" jump to the planning session on the Projects page.
-type GithubTab = "board" | "roadmap" | "issues" | "insights";
+type GithubTab = "overview" | "board" | "roadmap" | "issues" | "insights";
 const GITHUB_BOARD_TABS: TabItem[] = [
+  { id: "overview", label: "Overview", hint: "project home · fleet · repos" },
   { id: "board",    label: "Board",    hint: "kanban · per column" },
   { id: "roadmap",  label: "Roadmap",  hint: "milestones over time" },
   { id: "issues",   label: "Issues",   hint: "flat list · filter & sort" },

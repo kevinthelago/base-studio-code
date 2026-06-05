@@ -765,7 +765,7 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
   const openBoard = (p: GhProject) => {
     const repos = p.repositories?.nodes?.map(r => r.nameWithOwner) ?? [];
     setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
-    openGithubBoard("board");
+    openGithubBoard("overview");
   };
 
   const projectsWithStats = useMemo(() => {

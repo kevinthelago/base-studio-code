@@ -1475,10 +1475,10 @@ describe("github board routing (#498)", () => {
     expect(useAppStore.getState().githubBoardOpen).toBe(false);
   });
 
-  it("openGithubBoard defaults to the board sub-tab", () => {
+  it("openGithubBoard defaults to the overview sub-tab (#523)", () => {
     useAppStore.setState({ githubBoardOpen: false, githubBoardTab: "issues" });
     useAppStore.getState().openGithubBoard();
-    expect(useAppStore.getState().githubBoardTab).toBe("board");
+    expect(useAppStore.getState().githubBoardTab).toBe("overview");
   });
 });
 
