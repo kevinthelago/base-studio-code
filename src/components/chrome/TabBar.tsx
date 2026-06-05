@@ -153,9 +153,10 @@ export function TabBar({
             key={t.id}
             data-tab
             className={"tab " + (t.id === activeId ? "active" : "")}
-            // The hint is an on-hover tooltip rather than inline text (#488), so it
-            // never competes with the label for the tab's 200px cap.
-            title={t.hint ? `${t.label} — ${t.hint}` : t.label}
+            // Both hint and meta are tooltip-only (#488) — never inline text — so they
+            // never compete with the label for the tab's width cap.
+            // hint uses em-dash (label — hint); meta appends with · (…label · meta).
+            title={[t.hint ? `${t.label} — ${t.hint}` : t.label, t.meta].filter(Boolean).join(" · ")}
             draggable={canDrag && editingId !== t.id}
             onClick={() => { if (editingId !== t.id) onSelect(t.id); }}
             onContextMenu={renderMenu ? (e) => {
@@ -203,7 +204,6 @@ export function TabBar({
               </span>
             )}
             {t.count !== undefined && <span className="count">{t.count}</span>}
-            {t.meta && <span style={{ color: "var(--fg-dim)", marginLeft: 4, fontSize: 10 }}>{t.meta}</span>}
             {onClose && (
               <span className="x" onClick={(e) => { e.stopPropagation(); onClose(t.id); }}>×</span>
             )}
