@@ -65,6 +65,11 @@ describe("planStages — applicability", () => {
     const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, ui: { approved: 0, total: 3 } });
     expect(status("ui", s)).toBe("in-progress");
   });
+
+  it("ui completes when the preview is approved (#544)", () => {
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, ui: { approved: 1, total: 1 } });
+    expect(status("ui", s)).toBe("complete");
+  });
 });
 
 describe("planStages — dependency gating", () => {

@@ -29,6 +29,8 @@ const DEMO_FILES: Record<string, string> = {
 export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; onClose?: () => void }) {
   const preview = useAppStore((s) => s.stagePreview[projectKey] ?? null);
   const run = useAppStore((s) => s.stagePipelineRuns[projectKey]?.[RENDER_PREVIEW_ID]);
+  const approved = useAppStore((s) => s.uiApproved[projectKey] ?? false);
+  const setUiApproved = useAppStore((s) => s.setUiApproved);
   const status = run?.status ?? "idle";
   const [frameError, setFrameError] = useState<string>("");
 
@@ -55,6 +57,17 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
         {preview && <span className="tag" style={{ fontSize: 9 }}>{preview.mode}</span>}
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 10, color: statusColor }}>{statusLabel}</span>
+        {/* Approving the rendered UI completes the UI stage (#544). */}
+        {preview && (
+          <button
+            className={approved ? "btn sm" : "btn ghost sm"}
+            onClick={() => setUiApproved(projectKey, !approved)}
+            title={approved ? "UI approved — click to revoke" : "Approve this UI to complete the UI stage"}
+            style={approved ? { color: "var(--success)", borderColor: "var(--success)" } : undefined}
+          >
+            {approved ? "✓ approved" : "approve"}
+          </button>
+        )}
         {preview && <button className="btn ghost sm" onClick={renderDemo} title="Rebuild">↻</button>}
         {onClose && <button className="btn ghost sm" onClick={onClose} title="Close preview">✕</button>}
       </div>

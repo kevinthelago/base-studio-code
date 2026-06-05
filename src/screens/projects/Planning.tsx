@@ -432,6 +432,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planFleet,
     planAutomations,
     planStageConfig,
+    uiApproved,
     blueprints,
     activeBlueprintId,
     stagePipelineRuns,
@@ -594,8 +595,9 @@ export function Planning({ visible }: { visible: boolean }) {
 
   // Modular planning stages (#512): the per-project config (defaulting to all-on)
   // and the live snapshot the stage gates read, feeding the macro progress bar.
-  // requiresUi + the explicit ack/profile signals are wired in later slices, so
-  // those stages read N/A or in-progress for now (no fabricated completion).
+  // The UI stage is gated on the blueprint (requiresUi = the `ui` stage being enabled,
+  // #544) and completes when the generated preview is approved (uiApproved). The other
+  // explicit ack/profile signals are wired in later slices.
   // Seed a new project's stage config from the active blueprint on first plan, so it
   // inherits the chosen preset, then diverges per-project as the user edits stages.
   useEffect(() => {
@@ -607,6 +609,9 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [effectiveProjectId]);
 
   const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
+  // A project "needs UI" when its blueprint enables the `ui` stage (#544); the UI stage
+  // then shows in the N-bar and completes once the preview is approved.
+  const requiresUi = stageConfig.enabled.ui;
   // The enabled stage ids (in order) for a project — passed to setup_workspaces so the
   // planner's CLAUDE.md is scoped to the blueprint's stages (#542). Read fresh.
   const stageIdsFor = (key: string) =>
@@ -623,10 +628,10 @@ export function Planning({ visible }: { visible: boolean }) {
       fleetProfilesComplete: streams.length > 0 && streams.every(st => agentProfiles.some(p => p.id === st.id)),
       automationsAck: (planAutomations[effectiveProjectId]?.length ?? 0) > 0,
       skillsAck: false,
-      requiresUi: false,
-      ui: { approved: 0, total: 0 },
+      requiresUi,
+      ui: { approved: requiresUi && uiApproved[effectiveProjectId] ? 1 : 0, total: requiresUi ? 1 : 0 },
     });
-  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId]);
+  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiApproved]);
 
   // Stages blocked by an unpassed gate pipeline (#532): map the active blueprint's
   // gating sections against this project's pipeline runs.
