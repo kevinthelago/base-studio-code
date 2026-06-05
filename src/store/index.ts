@@ -2127,7 +2127,7 @@ export const useAppStore = create<AppStore>()(
       paneAllowedCommands: {},
 
       autoFocusMode: DEFAULT_AUTO_FOCUS_MODE,
-      setAutoFocusMode: (mode) => set((s) => ({ autoFocusMode: mode, autoAdvanceOnReply: mode !== "off" })),
+      setAutoFocusMode: (mode) => set({ autoFocusMode: mode, autoAdvanceOnReply: mode !== "off" }),
       autoAdvanceOnReply: true,
       // Back-compat: syncs to autoFocusMode.
       setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v, autoFocusMode: v ? "cycle-on-reply" : "off" }),
