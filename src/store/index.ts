@@ -31,6 +31,7 @@ import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
+import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import { makeBlueprints, cloneSections, mkSection, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
@@ -587,6 +588,11 @@ interface AppStore {
   duplicateBlueprint: (id: string) => string;
   updateBlueprintMeta: (id: string, patch: { name?: string; desc?: string }) => void;
   setBlueprintSections: (id: string, sections: BlueprintSection[]) => void;
+  // Stage-pipeline run state (#528/#529): per-project, per-pipeline run status, keyed
+  // projectKey -> pipelineUid -> state. Distinct from the fleet conductor's
+  // `pipelineRuns` (#220). Session-only (not persisted).
+  stagePipelineRuns: Record<string, Record<string, PipelineRunState>>;
+  setStagePipelineRun: (projectKey: string, pipelineUid: string, state: PipelineRunState) => void;
   // Agent fleet — the parallel-execution plan (work streams + optional director +
   // the optimal concurrent session count). Persisted per project.
   planFleet:             Record<string, FleetPlan>;
@@ -1278,7 +1284,7 @@ export const useAppStore = create<AppStore>()(
       resetProjectData: () =>
         set({
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
-          planAutomations: {}, planStageConfig: {}, planFleet: {}, pinnedContext: {},
+          planAutomations: {}, planStageConfig: {}, stagePipelineRuns: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
@@ -1843,6 +1849,15 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, ...patch } : b)) })),
       setBlueprintSections: (id, sections) =>
         set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, sections } : b)) })),
+
+      stagePipelineRuns: {},
+      setStagePipelineRun: (projectKey, pipelineUid, state) =>
+        set((s) => ({
+          stagePipelineRuns: {
+            ...s.stagePipelineRuns,
+            [projectKey]: { ...(s.stagePipelineRuns[projectKey] ?? {}), [pipelineUid]: state },
+          },
+        })),
 
       planFleet: {},
       pinnedContext: {},
