@@ -21,6 +21,10 @@ export interface StageContext {
   /** Stage artifacts as relpath → contents (read-only). */
   artifacts: Readonly<Record<string, string>>;
   trigger: FiredTrigger;
+  /** The artifact a focused run targets (e.g. the screen for render-preview). */
+  entry?: string;
+  /** Free-form mode the handler reads (render-preview uses "2d" | "3d"). */
+  mode?: string;
 }
 
 export type PipelineOutcome = "ok" | "fail" | "blocked";
@@ -29,6 +33,8 @@ export type PipelineStatus = "idle" | "running" | PipelineOutcome;
 export interface PipelineRunResult {
   status: PipelineOutcome;
   message?: string;
+  /** Handler-specific payload (e.g. render-preview returns the iframe srcDoc). */
+  output?: unknown;
 }
 
 export interface PipelineRunState {
