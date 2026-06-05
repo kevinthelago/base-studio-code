@@ -432,6 +432,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planFleet,
     planAutomations,
     planStageConfig,
+    uiScreens,
     uiApproved,
     blueprints,
     activeBlueprintId,
@@ -610,8 +611,16 @@ export function Planning({ visible }: { visible: boolean }) {
 
   const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
   // A project "needs UI" when its blueprint enables the `ui` stage (#544); the UI stage
-  // then shows in the N-bar and completes once the preview is approved.
+  // then shows in the N-bar and completes once every declared screen is approved (#546).
   const requiresUi = stageConfig.enabled.ui;
+  // Per-screen progress: total = screens the planner declared, approved = those signed
+  // off (intersected with the declared set, so a removed screen never inflates approval).
+  const uiCounts = useMemo(() => {
+    if (!requiresUi) return { approved: 0, total: 0 };
+    const declared = uiScreens[effectiveProjectId] ?? [];
+    const approvedSet = new Set(uiApproved[effectiveProjectId] ?? []);
+    return { approved: declared.filter((s) => approvedSet.has(s)).length, total: declared.length };
+  }, [requiresUi, uiScreens, uiApproved, effectiveProjectId]);
   // The enabled stage ids (in order) for a project — passed to setup_workspaces so the
   // planner's CLAUDE.md is scoped to the blueprint's stages (#542). Read fresh.
   const stageIdsFor = (key: string) =>
@@ -629,9 +638,9 @@ export function Planning({ visible }: { visible: boolean }) {
       automationsAck: (planAutomations[effectiveProjectId]?.length ?? 0) > 0,
       skillsAck: false,
       requiresUi,
-      ui: { approved: requiresUi && uiApproved[effectiveProjectId] ? 1 : 0, total: requiresUi ? 1 : 0 },
+      ui: uiCounts,
     });
-  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiApproved]);
+  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts]);
 
   // Stages blocked by an unpassed gate pipeline (#532): map the active blueprint's
   // gating sections against this project's pipeline runs.
@@ -837,12 +846,15 @@ export function Planning({ visible }: { visible: boolean }) {
         if (previews.length > 0) {
           bufRef.current = stripUiPreviewTags(bufRef.current);
           const last = previews[previews.length - 1];
+          // Register every declared screen so the UI stage's denominator is complete
+          // even when only the last tag is rendered (#546).
+          for (const p of previews) useAppStore.getState().addUiScreen(projIdSnap, p.screen);
           setShowPreview(true);
           void (async () => {
             try {
               const files = await invoke<[string, string][]>("read_ui_skeleton", { projectKey: projIdSnap });
               if (files.length === 0) return;
-              await dispatchRenderPreview({ projectKey: projIdSnap, artifacts: Object.fromEntries(files), entry: last.screen, mode: last.mode });
+              await dispatchRenderPreview({ projectKey: projIdSnap, artifacts: Object.fromEntries(files), entry: last.screen, mode: last.mode, screen: last.screen });
             } catch (e) {
               console.error("ui_preview trigger failed", e);
             }

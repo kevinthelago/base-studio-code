@@ -1517,6 +1517,40 @@ describe("plan stage config (#512)", () => {
   });
 });
 
+describe("per-screen UI approval (#546)", () => {
+  beforeEach(() => useAppStore.setState({ uiScreens: {}, uiApproved: {} }));
+
+  it("addUiScreen appends declared screens in order, deduped", () => {
+    const { addUiScreen } = useAppStore.getState();
+    addUiScreen("proj", "Login");
+    addUiScreen("proj", "Dashboard");
+    addUiScreen("proj", "Login"); // duplicate ignored
+    expect(useAppStore.getState().uiScreens["proj"]).toEqual(["Login", "Dashboard"]);
+  });
+
+  it("setUiScreenApproved adds and removes a screen by name", () => {
+    const { setUiScreenApproved } = useAppStore.getState();
+    setUiScreenApproved("proj", "Login", true);
+    setUiScreenApproved("proj", "Dashboard", true);
+    expect(useAppStore.getState().uiApproved["proj"]).toEqual(["Login", "Dashboard"]);
+    setUiScreenApproved("proj", "Login", false);
+    expect(useAppStore.getState().uiApproved["proj"]).toEqual(["Dashboard"]);
+  });
+
+  it("approving the same screen twice does not duplicate it", () => {
+    const { setUiScreenApproved } = useAppStore.getState();
+    setUiScreenApproved("proj", "Login", true);
+    setUiScreenApproved("proj", "Login", true);
+    expect(useAppStore.getState().uiApproved["proj"]).toEqual(["Login"]);
+  });
+
+  it("approval is per-project", () => {
+    useAppStore.getState().setUiScreenApproved("a", "Login", true);
+    expect(useAppStore.getState().uiApproved["b"]).toBeUndefined();
+    expect(useAppStore.getState().uiApproved["a"]).toEqual(["Login"]);
+  });
+});
+
 describe("blueprints library (#513/#514)", () => {
   beforeEach(() => {
     useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });

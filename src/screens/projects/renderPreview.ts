@@ -16,7 +16,7 @@ import {
 import type { Pipeline } from "./blueprints";
 
 export type PreviewMode = "2d" | "3d";
-export interface PreviewOutput { srcDoc: string; mode: PreviewMode }
+export interface PreviewOutput { srcDoc: string; mode: PreviewMode; screen?: string }
 
 export const RENDER_PREVIEW_ID = "render-preview";
 
@@ -55,7 +55,7 @@ const RENDER_PREVIEW_PIPELINE: Pipeline = {
  * the integration point the triggers (#533) call.
  */
 export async function dispatchRenderPreview(args: {
-  projectKey: string; stageId?: string; artifacts: Record<string, string>; entry?: string; mode?: PreviewMode;
+  projectKey: string; stageId?: string; artifacts: Record<string, string>; entry?: string; mode?: PreviewMode; screen?: string;
 }): Promise<PipelineRunResult> {
   const store = useAppStore.getState();
   store.setStagePipelineRun(args.projectKey, RENDER_PREVIEW_ID, { status: "running", lastRun: null });
@@ -65,7 +65,8 @@ export async function dispatchRenderPreview(args: {
   };
   const result = await runPipeline(RENDER_PREVIEW_PIPELINE, ctx);
   if (result.status === "ok" && result.output) {
-    store.setStagePreview(args.projectKey, result.output as PreviewOutput);
+    // Tag the stored preview with the screen so the pane's approve button targets it (#546).
+    store.setStagePreview(args.projectKey, { ...(result.output as PreviewOutput), screen: args.screen ?? args.entry });
   }
   store.setStagePipelineRun(args.projectKey, RENDER_PREVIEW_ID, { status: result.status, lastRun: Date.now(), message: result.message });
   return result;
