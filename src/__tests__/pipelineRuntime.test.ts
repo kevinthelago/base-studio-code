@@ -70,22 +70,26 @@ describe("pipelineRuntime — runPipeline", () => {
   });
 });
 
-describe("pipelineRuntime — isGateBlocked", () => {
+describe("pipelineRuntime — isGateBlocked (gate-flag semantics #532)", () => {
   const runs = (m: Record<string, PipelineRunState["status"]>): Record<string, PipelineRunState> =>
     Object.fromEntries(Object.entries(m).map(([k, status]) => [k, { status, lastRun: 1 }]));
 
-  it("blocks when an enabled pipeline's last run is blocked", () => {
-    const ps = [pipe({ uid: "a" }), pipe({ uid: "b" })];
-    expect(isGateBlocked(ps, runs({ a: "ok", b: "blocked" }))).toBe(true);
+  it("a gate pipeline that hasn't passed blocks the stage (not-ok, unrun, or in-progress)", () => {
+    const g = (over = {}) => pipe({ uid: "g", gate: true, ...over });
+    expect(isGateBlocked([g()], runs({ g: "blocked" }))).toBe(true);
+    expect(isGateBlocked([g()], runs({ g: "fail" }))).toBe(true);
+    expect(isGateBlocked([g()], runs({ g: "running" }))).toBe(true);
+    expect(isGateBlocked([g()], {})).toBe(true); // unrun gate blocks
   });
-  it("does not block on ok/fail/idle or unrun pipelines", () => {
-    const ps = [pipe({ uid: "a" }), pipe({ uid: "b" })];
-    expect(isGateBlocked(ps, runs({ a: "ok", b: "fail" }))).toBe(false);
-    expect(isGateBlocked(ps, {})).toBe(false);
+  it("a passing gate does not block", () => {
+    expect(isGateBlocked([pipe({ uid: "g", gate: true })], runs({ g: "ok" }))).toBe(false);
   });
-  it("ignores disabled pipelines even if blocked", () => {
-    const ps = [pipe({ uid: "a", enabled: false })];
-    expect(isGateBlocked(ps, runs({ a: "blocked" }))).toBe(false);
+  it("non-gate pipelines never block, even when blocked/failing", () => {
+    expect(isGateBlocked([pipe({ uid: "a" })], runs({ a: "blocked" }))).toBe(false);
+    expect(isGateBlocked([pipe({ uid: "a", gate: false })], runs({ a: "fail" }))).toBe(false);
+  });
+  it("ignores disabled gate pipelines", () => {
+    expect(isGateBlocked([pipe({ uid: "g", gate: true, enabled: false })], runs({ g: "fail" }))).toBe(false);
   });
 });
 

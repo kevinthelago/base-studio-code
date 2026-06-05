@@ -15,7 +15,7 @@ function fillColor(status: string): string {
   }
 }
 
-export function PlanStageBar({ config, state }: { config: StageConfig; state: PlanStageState }) {
+export function PlanStageBar({ config, state, blocked }: { config: StageConfig; state: PlanStageState; blocked?: Set<string> }) {
   // N/A stages (e.g. UI when the project needs no UI) are hidden entirely.
   const segments = enabledOrderedStages(config)
     .map((stage) => ({ stage, ...stageStatus(stage, state, config) }))
@@ -24,14 +24,15 @@ export function PlanStageBar({ config, state }: { config: StageConfig; state: Pl
   return (
     <div style={{ height: 6, overflow: "hidden", display: "flex", gap: 6, padding: "0 24px", alignItems: "flex-start", flex: "0 0 auto" }}>
       {segments.map(({ stage, status, fraction }) => {
+        const isBlocked = blocked?.has(stage.id) ?? false;
         const pct = Math.round((status === "complete" ? 1 : fraction) * 100);
         return (
           <div
             key={stage.id}
-            title={`${stage.label} — ${status}`}
+            title={`${stage.label} — ${status}${isBlocked ? " · gate blocked" : ""}`}
             style={{ flex: 1, height: 12, borderRadius: 6, background: "var(--bg-elev2)", overflow: "hidden", position: "relative" }}
           >
-            <div style={{ position: "absolute", inset: 0, width: `${pct}%`, background: fillColor(status), borderRadius: 6 }} />
+            <div style={{ position: "absolute", inset: 0, width: `${pct}%`, background: isBlocked ? "var(--danger)" : fillColor(status), borderRadius: 6 }} />
           </div>
         );
       })}
