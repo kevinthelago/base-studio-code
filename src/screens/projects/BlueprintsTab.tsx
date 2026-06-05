@@ -29,6 +29,14 @@ interface BpApi {
   movePipeline: (su: string, from: string, to: string, before: boolean) => void;
 }
 
+// Drag tracking shared across sibling rows. Exposed as callbacks (not a raw ref)
+// so children never mutate a prop — the ref is owned here, satisfying the compiler.
+interface DragCtl { start: (u: string) => void; get: () => string | null; clear: () => void }
+function useDragCtl(): DragCtl {
+  const ref = useRef<string | null>(null);
+  return { start: (u) => { ref.current = u; }, get: () => ref.current, clear: () => { ref.current = null; } };
+}
+
 function Switch({ on, disabled, onClick }: { on: boolean; disabled?: boolean; onClick: () => void }) {
   return (
     <div
@@ -40,16 +48,16 @@ function Switch({ on, disabled, onClick }: { on: boolean; disabled?: boolean; on
 
 // ── pipeline row ───────────────────────────────────────────────────────────────
 function PipelineRow({ pl, secUid, locked, api, drag }: {
-  pl: Pipeline; secUid: string; locked: boolean; api: BpApi; drag: React.MutableRefObject<string | null>;
+  pl: Pipeline; secUid: string; locked: boolean; api: BpApi; drag: DragCtl;
 }) {
   const [over, setOver] = useState<"before" | "after" | null>(null);
   return (
     <div
       draggable={!locked}
-      onDragStart={(e) => { e.stopPropagation(); drag.current = pl.uid; }}
-      onDragOver={(e) => { if (drag.current && drag.current !== pl.uid) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setOver(e.clientY < r.top + r.height / 2 ? "before" : "after"); } }}
+      onDragStart={(e) => { e.stopPropagation(); drag.start(pl.uid); }}
+      onDragOver={(e) => { const d = drag.get(); if (d && d !== pl.uid) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setOver(e.clientY < r.top + r.height / 2 ? "before" : "after"); } }}
       onDragLeave={() => setOver(null)}
-      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (drag.current && drag.current !== pl.uid) api.movePipeline(secUid, drag.current, pl.uid, over === "before"); drag.current = null; setOver(null); }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const d = drag.get(); if (d && d !== pl.uid) api.movePipeline(secUid, d, pl.uid, over === "before"); drag.clear(); setOver(null); }}
       className={over ? "drop-" + over : ""}
       style={{
         display: "grid", gridTemplateColumns: "16px 30px 1fr auto auto", gap: 10, alignItems: "center",
@@ -80,16 +88,9 @@ function PipelineRow({ pl, secUid, locked, api, drag }: {
 }
 
 // ── add-pipeline picker ──────────────────────────────────────────────────────
-function AddPipelineModal({ section, api, onClose }: { section: BlueprintSection; api: BpApi; onClose: () => void }) {
-  const [name, setName] = useState("");
-  const [desc, setDesc] = useState("");
-  const suggested = PIPELINE_LIB.filter((p) => p.suits.includes(section.key));
-  const others = PIPELINE_LIB.filter((p) => !p.suits.includes(section.key) && p.suits.includes("*"));
-  const more = PIPELINE_LIB.filter((p) => !p.suits.includes(section.key) && !p.suits.includes("*"));
-  const pick = (p: PipelineDef) => { api.addPipeline(section.uid, { ...p, uid: uid("pl"), trigger: "on completion", enabled: true }); onClose(); };
-
-  const Item = ({ p }: { p: PipelineDef }) => (
-    <div onClick={() => pick(p)} style={{
+function PickItem({ p, onPick }: { p: PipelineDef; onPick: (p: PipelineDef) => void }) {
+  return (
+    <div onClick={() => onPick(p)} style={{
       display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", cursor: "pointer",
       borderRadius: "var(--r-md)", border: "1px solid var(--border-soft)", background: "var(--bg-panel)",
     }}
@@ -103,12 +104,24 @@ function AddPipelineModal({ section, api, onClose }: { section: BlueprintSection
       <span style={{ color: "var(--accent)", fontFamily: "var(--mono)", fontSize: 14 }}>+</span>
     </div>
   );
-  const Group = ({ label, items }: { label: string; items: PipelineDef[] }) => items.length === 0 ? null : (
+}
+function PickGroup({ label, items, onPick }: { label: string; items: PipelineDef[]; onPick: (p: PipelineDef) => void }) {
+  if (items.length === 0) return null;
+  return (
     <>
       <div className="hint" style={{ textTransform: "uppercase", letterSpacing: ".08em", margin: "12px 2px 6px" }}>{label}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{items.map((p) => <Item key={p.id} p={p} />)}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{items.map((p) => <PickItem key={p.id} p={p} onPick={onPick} />)}</div>
     </>
   );
+}
+
+function AddPipelineModal({ section, api, onClose }: { section: BlueprintSection; api: BpApi; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  const suggested = PIPELINE_LIB.filter((p) => p.suits.includes(section.key));
+  const others = PIPELINE_LIB.filter((p) => !p.suits.includes(section.key) && p.suits.includes("*"));
+  const more = PIPELINE_LIB.filter((p) => !p.suits.includes(section.key) && !p.suits.includes("*"));
+  const pick = (p: PipelineDef) => { api.addPipeline(section.uid, { ...p, uid: uid("pl"), trigger: "on completion", enabled: true }); onClose(); };
 
   return (
     <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -120,9 +133,9 @@ function AddPipelineModal({ section, api, onClose }: { section: BlueprintSection
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
         <div className="hint" style={{ marginBottom: 4 }}>Pipelines run on this stage's output. Pick a built-in, an integration, or wire your own.</div>
-        <Group label={"suggested for " + section.name} items={suggested} />
-        <Group label="works on any stage" items={others} />
-        <Group label="more" items={more} />
+        <PickGroup label={"suggested for " + section.name} items={suggested} onPick={pick} />
+        <PickGroup label="works on any stage" items={others} onPick={pick} />
+        <PickGroup label="more" items={more} onPick={pick} />
 
         <div className="hint" style={{ textTransform: "uppercase", letterSpacing: ".08em", margin: "14px 2px 6px" }}>custom / external tool</div>
         <div style={{ padding: 12, borderRadius: "var(--r-md)", border: "1px dashed var(--border)", background: "var(--bg-canvas)", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -148,11 +161,11 @@ function SectionRow({ s, idx, status, statusAll, byKey, api, drag, onAdd }: {
   status: { locked: boolean; unmet: string[]; satisfied: boolean };
   statusAll: Record<string, { satisfied: boolean }>;
   byKey: Record<string, BlueprintSection>;
-  api: BpApi; drag: React.MutableRefObject<string | null>;
+  api: BpApi; drag: DragCtl;
   onAdd: (s: BlueprintSection) => void;
 }) {
   const [over, setOver] = useState<"before" | "after" | null>(null);
-  const plDrag = useRef<string | null>(null);
+  const plDrag = useDragCtl();
   const disabled = !s.enabled;
   const locked = status.locked;
 
@@ -168,10 +181,10 @@ function SectionRow({ s, idx, status, statusAll, byKey, api, drag, onAdd }: {
       style={{ border: "1px solid " + (s.expanded ? "var(--border)" : "var(--border-soft)"), borderRadius: "var(--r-lg)", background: "var(--bg-panel)", overflow: "hidden" }}>
       <div
         draggable
-        onDragStart={() => { drag.current = s.uid; }}
-        onDragOver={(e) => { if (drag.current && drag.current !== s.uid) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setOver(e.clientY < r.top + r.height / 2 ? "before" : "after"); } }}
+        onDragStart={() => { drag.start(s.uid); }}
+        onDragOver={(e) => { const d = drag.get(); if (d && d !== s.uid) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setOver(e.clientY < r.top + r.height / 2 ? "before" : "after"); } }}
         onDragLeave={() => setOver(null)}
-        onDrop={(e) => { e.preventDefault(); if (drag.current && drag.current !== s.uid) api.moveSection(drag.current, s.uid, over === "before"); drag.current = null; setOver(null); }}
+        onDrop={(e) => { e.preventDefault(); const d = drag.get(); if (d && d !== s.uid) api.moveSection(d, s.uid, over === "before"); drag.clear(); setOver(null); }}
         onClick={() => api.toggleExpand(s.uid)}
         style={{ display: "flex", flexDirection: "column", gap: 7, padding: "12px 14px", cursor: "pointer" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
@@ -244,7 +257,7 @@ function SectionRow({ s, idx, status, statusAll, byKey, api, drag, onAdd }: {
 
 // ── section list (center stage) ──────────────────────────────────────────────
 function SectionList({ bp, api }: { bp: Blueprint; api: BpApi }) {
-  const drag = useRef<string | null>(null);
+  const drag = useDragCtl();
   const [adding, setAdding] = useState(false);
   const [addName, setAddName] = useState("");
   const [pickFor, setPickFor] = useState<BlueprintSection | null>(null);
