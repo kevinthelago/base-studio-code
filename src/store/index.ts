@@ -597,6 +597,10 @@ interface AppStore {
   // bundled iframe srcdoc here; PlanPreviewPane renders it. Session-only.
   stagePreview: Record<string, { srcDoc: string; mode: "2d" | "3d" } | null>;
   setStagePreview: (projectKey: string, value: { srcDoc: string; mode: "2d" | "3d" } | null) => void;
+  // Whether the project's generated UI has been approved in the preview pane (#544).
+  // Completes the UI stage (ui.approved >= ui.total). Persisted — a real approval signal.
+  uiApproved: Record<string, boolean>;
+  setUiApproved: (projectKey: string, approved: boolean) => void;
   // Agent fleet — the parallel-execution plan (work streams + optional director +
   // the optimal concurrent session count). Persisted per project.
   planFleet:             Record<string, FleetPlan>;
@@ -1263,6 +1267,7 @@ export const useAppStore = create<AppStore>()(
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
+            uiApproved:             byKey(s.uiApproved),
             planFleet:              byKey(s.planFleet),
             pinnedContext:          byKey(s.pinnedContext),
             projectKeyAlias:        byKey(s.projectKeyAlias),
@@ -1288,7 +1293,7 @@ export const useAppStore = create<AppStore>()(
       resetProjectData: () =>
         set({
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
-          planAutomations: {}, planStageConfig: {}, stagePipelineRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
+          planAutomations: {}, planStageConfig: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
@@ -1865,6 +1870,9 @@ export const useAppStore = create<AppStore>()(
       stagePreview: {},
       setStagePreview: (projectKey, value) =>
         set((s) => ({ stagePreview: { ...s.stagePreview, [projectKey]: value } })),
+      uiApproved: {},
+      setUiApproved: (projectKey, approved) =>
+        set((s) => ({ uiApproved: { ...s.uiApproved, [projectKey]: approved } })),
 
       planFleet: {},
       pinnedContext: {},
@@ -2176,6 +2184,7 @@ export const useAppStore = create<AppStore>()(
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,
+        uiApproved:            s.uiApproved,
         blueprints:            s.blueprints,
         activeBlueprintId:     s.activeBlueprintId,
         planFleet:             s.planFleet,
