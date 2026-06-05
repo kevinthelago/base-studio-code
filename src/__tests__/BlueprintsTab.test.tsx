@@ -47,4 +47,13 @@ describe("Blueprints tab (#513/#514)", () => {
     const perms = useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "permissions")!;
     expect(perms.pipelines.some((p) => p.id === "scope-streams")).toBe(true);
   });
+
+  it("toggles a pipeline as a gate (#532)", () => {
+    render(<Blueprints />);
+    fireEvent.click(screen.getByText("UI")); // expand UI (has pipelines)
+    const ui0 = () => useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "ui")!.pipelines[0];
+    expect(ui0().gate).toBeFalsy();
+    fireEvent.click(screen.getAllByText("⛉ gate")[0]);
+    expect(ui0().gate).toBe(true);
+  });
 });

@@ -42,4 +42,10 @@ describe("PlanStageBar", () => {
     const { container } = render(<PlanStageBar config={defaultStageConfig()} state={state} />);
     expect(titlesIn(container).some((t) => t === "Repos — complete")).toBe(true);
   });
+
+  it("flags a gate-blocked stage in its tooltip (#532)", () => {
+    const state = buildPlanStageState({ repoCount: 2 });
+    const { container } = render(<PlanStageBar config={defaultStageConfig()} state={state} blocked={new Set(["repos"])} />);
+    expect(titlesIn(container).some((t) => t.includes("gate blocked"))).toBe(true);
+  });
 });
