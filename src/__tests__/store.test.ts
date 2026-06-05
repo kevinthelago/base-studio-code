@@ -1567,3 +1567,23 @@ describe("blueprints library (#513/#514)", () => {
     expect(bp.desc).toBe("New desc");
   });
 });
+
+describe("stage pipeline runs (#528/#529)", () => {
+  beforeEach(() => useAppStore.setState({ stagePipelineRuns: {} }));
+
+  it("records a per-project, per-pipeline run state", () => {
+    useAppStore.getState().setStagePipelineRun("proj", "pl-1", { status: "running", lastRun: null });
+    expect(useAppStore.getState().stagePipelineRuns["proj"]["pl-1"].status).toBe("running");
+    useAppStore.getState().setStagePipelineRun("proj", "pl-1", { status: "ok", lastRun: 123 });
+    expect(useAppStore.getState().stagePipelineRuns["proj"]["pl-1"]).toEqual({ status: "ok", lastRun: 123 });
+  });
+
+  it("is per-project and per-pipeline (no cross-talk)", () => {
+    useAppStore.getState().setStagePipelineRun("a", "pl-1", { status: "ok", lastRun: 1 });
+    useAppStore.getState().setStagePipelineRun("a", "pl-2", { status: "fail", lastRun: 2 });
+    useAppStore.getState().setStagePipelineRun("b", "pl-1", { status: "blocked", lastRun: 3 });
+    expect(useAppStore.getState().stagePipelineRuns["a"]["pl-1"].status).toBe("ok");
+    expect(useAppStore.getState().stagePipelineRuns["a"]["pl-2"].status).toBe("fail");
+    expect(useAppStore.getState().stagePipelineRuns["b"]["pl-1"].status).toBe("blocked");
+  });
+});
