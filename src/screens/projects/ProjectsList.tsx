@@ -430,75 +430,43 @@ export function ProjectsList() {
           <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--info)" }}>view analytics →</span>
         </div>
 
-        {/* Plan new project CTA */}
+        {/* Plan new project — slim inline bar (#522) */}
         <div style={{
-          background: "linear-gradient(135deg, color-mix(in oklch, var(--accent), transparent 86%), var(--bg-panel) 70%)",
-          border: "1px solid var(--accent-dim)",
-          borderRadius: 12,
-          padding: "18px 20px",
-          marginBottom: 20,
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "7px 10px", marginBottom: 14,
+          background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-            <div style={{
-              width: 26, height: 26, borderRadius: 6,
-              background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
-              color: "#1a120a", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 12,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>C</div>
-            <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>Plan a new project</h3>
-            <span className="tag amber" style={{ fontSize: 9.5 }}>creates milestones + issues on github</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {/* Title row */}
-            <div style={{
-              padding: "8px 14px",
-              background: "var(--bg-canvas)", borderRadius: 8,
-              border: "1px solid " + (titleConflict ? "var(--danger)" : "var(--border-soft)"),
-              display: "flex", alignItems: "center", gap: 10,
-            }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>title</span>
-              <input
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                onKeyDown={e => { if (e.key === "Tab") e.preventDefault(); }}
-                placeholder="project title…"
-                autoFocus
-                style={{
-                  flex: 1, background: "none", border: "none", outline: "none",
-                  fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
-                }}
-              />
-              {titleConflict && (
-                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>
-                  ⚠ already exists
-                </span>
-              )}
-            </div>
-            {/* Pitch row */}
-            <div style={{
-              padding: "8px 14px",
-              background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8,
-              display: "flex", alignItems: "center", gap: 10,
-            }}>
-              <span style={{ color: "var(--accent)", fontFamily: "var(--mono)", fontSize: 13 }}>▸</span>
-              <input
-                value={pitch}
-                onChange={e => setPitch(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); }}
-                placeholder="describe what you want to build… (optional)"
-                style={{
-                  flex: 1, background: "none", border: "none", outline: "none",
-                  fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
-                }}
-              />
-              <button
-                onClick={handleStartPlanning}
-                disabled={!titleTrimmed || !!titleConflict}
-                className="btn primary"
-                style={{ height: 26, fontSize: 11, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4 }}
-              >start planning →</button>
-            </div>
-          </div>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>+ plan</span>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            onKeyDown={e => { if (e.key === "Tab") e.preventDefault(); }}
+            placeholder="project title…"
+            style={{
+              flex: "0 0 160px", background: "none", border: "none", outline: "none",
+              fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
+              borderRight: "1px solid var(--border-soft)", paddingRight: 8,
+            }}
+          />
+          {titleConflict && (
+            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>⚠ exists</span>
+          )}
+          <input
+            value={pitch}
+            onChange={e => setPitch(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); }}
+            placeholder="describe what you want to build… (optional)"
+            style={{
+              flex: 1, background: "none", border: "none", outline: "none",
+              fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
+            }}
+          />
+          <button
+            onClick={handleStartPlanning}
+            disabled={!titleTrimmed || !!titleConflict}
+            className="btn primary"
+            style={{ height: 24, fontSize: 10.5, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4, whiteSpace: "nowrap" }}
+          >start planning →</button>
         </div>
 
         {error && (
