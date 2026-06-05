@@ -6558,4 +6558,29 @@ mod tests {
 
         std::fs::remove_dir_all(&home).ok();
     }
+
+    #[test]
+    fn clear_project_plan_files_removes_md_and_json_only() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("cpf");
+        let key = "test-plan-clear".to_string();
+        let proj = super::bsc_base_dir().join("projects").join(&key);
+        let sub = proj.join("my-repo");
+        std::fs::create_dir_all(&sub).unwrap();
+        write_file(&proj.join("goal.md"), "goal");
+        write_file(&proj.join("phases.json"), "[]");
+        write_file(&sub.join("README.md"), "# repo"); // inside subdir -- preserved
+
+        let removed = super::clear_project_plan_files(key.clone()).unwrap();
+        assert_eq!(removed, 2, "goal.md + phases.json removed");
+        assert!(!proj.join("goal.md").exists());
+        assert!(!proj.join("phases.json").exists());
+        assert!(sub.join("README.md").exists(), "subdir entry preserved");
+
+        // Missing project -> Ok(0), no panic.
+        let n = super::clear_project_plan_files("no-such-bsc-cpf-key".to_string()).unwrap();
+        assert_eq!(n, 0);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
 }
