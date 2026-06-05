@@ -3307,6 +3307,38 @@ fn sanitize_project_key(key: &str) -> String {
     s.chars().take(80).collect()
 }
 
+/// One-line directive per planning stage (#542) for the assembled active-stages
+/// section. Unknown ids fall back to a generic line.
+fn stage_directive(id: &str) -> String {
+    let line = match id {
+        "context"     => "**Context** — run the discovery checklist (goal, users, scope, UX, stack, architecture, …), one topic at a time.",
+        "repos"       => "**Repos** — decide and link the repositories (emit `<repo_link>`, write `repos.json`).",
+        "ui"          => "**UI** — design the screens: write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live.",
+        "structure"   => "**Structure** — run the feature workshop, then `phases.json` + agent-ready `issues.json`.",
+        "permissions" => "**Permissions** — plan the agent fleet (`fleet.json`): non-overlapping streams + least-privilege profiles.",
+        "automations" => "**Automations** — propose cron automations (emit `<automation_assign>`).",
+        "skills"      => "**Skills** — select reusable skills from the library (`skills.json`).",
+        other         => return format!("**{other}** — configured stage."),
+    };
+    line.to_string()
+}
+
+/// Assemble the "Active planning stages" section from the project's ENABLED stages
+/// (in order). Stages not listed are declared out of scope, so a disabled stage is
+/// never instructed (#512/#542). Empty input ⇒ "" (section omitted; no behavior change).
+fn build_active_stages_md(stages: &[String]) -> String {
+    if stages.is_empty() {
+        return String::new();
+    }
+    let mut s = String::from(
+        "\n## Active planning stages\n\nWork these stages, in this order. **Stages not listed here are OUT OF SCOPE for this project — do not produce their artifacts.**\n\n",
+    );
+    for (i, id) in stages.iter().enumerate() {
+        s.push_str(&format!("{}. {}\n", i + 1, stage_directive(id)));
+    }
+    s
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 async fn setup_workspaces(
@@ -3320,6 +3352,7 @@ async fn setup_workspaces(
     project_key: String,
     github_login: String,
     github_name: String,
+    enabled_stages: Vec<String>,
 ) -> Result<WorkspacePaths, String> {
     let _perf = PerfSpan::new("setup_workspaces");
     sanitize_claude_config();
@@ -3372,6 +3405,14 @@ async fn setup_workspaces(
     } else {
         format!("{}{}", PLANNING_NEW_INTRO.replace("{PITCH}", &pitch), PLANNING_PROCESS_MD)
     };
+
+    // Modular planning stages (#512/#542): prepend the project's enabled stages (from
+    // its blueprint) as the authoritative scope — disabled stages are declared out of
+    // scope so the planner doesn't produce them. Empty ⇒ no change (all-stages default).
+    let stages_md = build_active_stages_md(&enabled_stages);
+    if !stages_md.is_empty() {
+        planning_md.push_str(&stages_md);
+    }
 
     // Append linked repos section for existing projects (always, even when
     // empty, so Claude knows the current state and acts accordingly).
@@ -5008,6 +5049,24 @@ mod tests {
         // Missing folder → empty, never panics.
         assert!(super::read_skeleton_dir(&root.join("nope")).is_empty());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn build_active_stages_md_includes_enabled_excludes_disabled() {
+        // Empty → omitted (all-stages default, no behavior change).
+        assert_eq!(super::build_active_stages_md(&[]), "");
+
+        let md = super::build_active_stages_md(&["context".into(), "structure".into()]);
+        assert!(md.contains("Active planning stages"));
+        assert!(md.contains("OUT OF SCOPE"), "must declare unlisted stages out of scope");
+        assert!(md.contains("**Context**") && md.contains("**Structure**"));
+        // a stage not in the enabled list is absent
+        assert!(!md.contains("**UI**"), "disabled stage must not be instructed");
+        // ordered + numbered
+        assert!(md.find("**Context**").unwrap() < md.find("**Structure**").unwrap());
+
+        // unknown id → generic line, never panics
+        assert!(super::build_active_stages_md(&["custom-x".into()]).contains("**custom-x**"));
     }
 
     /// Loadbearing claim of the orphan-kill fix: dropping the job handle kills
