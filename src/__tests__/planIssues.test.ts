@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseIssuesFile, validateIssues, renderIssueBody, resolvePhaseIndex, type PlanIssue } from "../screens/projects/planIssues";
+import { parseIssuesFile, validateIssues, renderIssueBody, resolvePhaseIndex, phaseTagMatches, type PlanIssue } from "../screens/projects/planIssues";
 
 const issue = (p: Partial<PlanIssue>): PlanIssue => ({
   ref: "F1", title: "Do the thing", acceptance: [], owns: [], dependsOn: [], labels: [], ...p,
@@ -105,5 +105,54 @@ describe("resolvePhaseIndex", () => {
     // ambiguous prefix picks first match
     const ambiguous = ["0.9 - Alpha", "0.9.7 - Beta"];
     expect(resolvePhaseIndex("0.9", ambiguous)).toBe(0);
+  });
+});
+
+describe("phaseTagMatches (#550)", () => {
+  it("exact match", () => {
+    expect(phaseTagMatches("Phase 1", "Phase 1")).toBe(true);
+  });
+  it("case-insensitive match", () => {
+    expect(phaseTagMatches("Phase 1", "phase 1")).toBe(true);
+  });
+  it("version-prefix with space separator", () => {
+    expect(phaseTagMatches("0.9.7 - Finish line: everything", "0.9.7")).toBe(true);
+  });
+  it("does not match a partial prefix without a space boundary", () => {
+    expect(phaseTagMatches("0.9.71 - Other phase", "0.9.7")).toBe(false);
+    expect(phaseTagMatches("0.9.70 - Third", "0.9.7")).toBe(false);
+  });
+  it("does not match an unrelated name", () => {
+    expect(phaseTagMatches("1.0.0 - Release", "0.9.7")).toBe(false);
+  });
+});
+
+describe("resolvePhaseIndex - version-prefix matching (#550)", () => {
+  it("resolves a version-prefix tag to the single matching phase", () => {
+    const names = ["0.9.7 - Finish line: everything", "1.0.0 - GA"];
+    expect(resolvePhaseIndex("0.9.7", names)).toBe(0);
+    expect(resolvePhaseIndex("1.0.0", names)).toBe(1);
+  });
+  it("returns undefined when two phases share the prefix (ambiguous)", () => {
+    const names = ["0.9.7 - Phase A", "0.9.7 - Phase B"];
+    expect(resolvePhaseIndex("0.9.7", names)).toBeUndefined();
+  });
+  it("returns undefined when no phase matches", () => {
+    expect(resolvePhaseIndex("999", ["0.9.7 - Finish"])).toBeUndefined();
+  });
+});
+
+describe("validateIssues + resolvePhaseIndex parity (#550)", () => {
+  it("validate accepts what resolve resolves (version-prefix)", () => {
+    const phases = ["0.9.7 - Finish line"];
+    const v = validateIssues([issue({ ref: "A", phase: "0.9.7", acceptance: ["x"] })], phases);
+    expect(v.unknownPhases).toEqual([]);
+    expect(resolvePhaseIndex("0.9.7", phases)).toBe(0);
+  });
+  it("validate rejects what resolve returns undefined for (ambiguous prefix)", () => {
+    const phases = ["0.9.7 - Phase A", "0.9.7 - Phase B"];
+    const v = validateIssues([issue({ ref: "A", phase: "0.9.7", acceptance: ["x"] })], phases);
+    expect(v.unknownPhases).toHaveLength(1);
+    expect(resolvePhaseIndex("0.9.7", phases)).toBeUndefined();
   });
 });
