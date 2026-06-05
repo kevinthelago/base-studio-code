@@ -7,8 +7,16 @@ name: CodeQL
 
 on:
   # CodeQL on pull requests + the weekly schedule (not on every push).
+  # Skip docs-only PRs: CodeQL analyzes JS/TS, so a markdown/docs change cannot
+  # affect findings. `paths-ignore` skips the run only when EVERY changed file is
+  # docs — any code change still triggers a full scan. CodeQL is not a required
+  # check (the always-run "CI gate" in ci.yml is), so a skipped run won't wedge a PR.
   pull_request:
     branches: [main, develop]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
   schedule:
     - cron: "0 7 * * 1" # Mondays 07:00 UTC — catch newly-published rules
 
