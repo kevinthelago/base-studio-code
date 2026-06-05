@@ -113,9 +113,10 @@ export function validateIssues(issues: PlanIssue[], phaseNames: string[] = []): 
   if (phaseNames.length > 0) {
     for (const i of issues) {
       if (i.phase === undefined) continue;
+      const tag = typeof i.phase === "string" ? i.phase.toLowerCase() : "";
       const known = typeof i.phase === "number"
         ? i.phase >= 1 && i.phase <= phaseNames.length
-        : phaseNames.some((n) => n === i.phase || n.toLowerCase() === String(i.phase).toLowerCase());
+        : phaseNames.some((n) => n.toLowerCase() === tag || n.toLowerCase().startsWith(tag));
       if (!known) unknownPhases.push({ ref: i.ref, phase: i.phase });
     }
   }
@@ -140,7 +141,10 @@ export function validateIssues(issues: PlanIssue[], phaseNames: string[] = []): 
 export function resolvePhaseIndex(phase: number | string | undefined, phaseNames: string[]): number | undefined {
   if (phase === undefined) return undefined;
   if (typeof phase === "number") return phase >= 1 && phase <= phaseNames.length ? phase - 1 : undefined;
-  const idx = phaseNames.findIndex((n) => n === phase || n.toLowerCase() === String(phase).toLowerCase());
+  const tag = String(phase).toLowerCase();
+  // Exact match first, then prefix match so "0.9.7" resolves "0.9.7 - Finish line: …"
+  let idx = phaseNames.findIndex((n) => n.toLowerCase() === tag);
+  if (idx < 0) idx = phaseNames.findIndex((n) => n.toLowerCase().startsWith(tag));
   return idx >= 0 ? idx : undefined;
 }
 

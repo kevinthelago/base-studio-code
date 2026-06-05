@@ -839,12 +839,6 @@ function AgentsA({ agents = AGENTS, fleetStrategy, onPerm, onPreset, onFlow, onS
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
                     <PostureBar perm={a.perm} />
-                    <span style={{
-                      fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}>
-                      {a.owns[0]}{a.owns.length > 1 ? ` +${a.owns.length - 1}` : ""}
-                    </span>
                   </div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
