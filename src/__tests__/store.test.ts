@@ -181,6 +181,22 @@ describe("focus queue", () => {
     expect(useAppStore.getState().autoAdvanceOnReply).toBe(false);
   });
 
+  it("setAutoFocusMode syncs autoAdvanceOnReply back-compat field (#434)", () => {
+    useAppStore.getState().setAutoFocusMode("off");
+    expect(useAppStore.getState().autoFocusMode).toBe("off");
+    expect(useAppStore.getState().autoAdvanceOnReply).toBe(false);
+    useAppStore.getState().setAutoFocusMode("cycle-on-reply");
+    expect(useAppStore.getState().autoFocusMode).toBe("cycle-on-reply");
+    expect(useAppStore.getState().autoAdvanceOnReply).toBe(true);
+  });
+
+  it("setAutoAdvanceOnReply keeps autoFocusMode in sync (#434)", () => {
+    useAppStore.getState().setAutoAdvanceOnReply(false);
+    expect(useAppStore.getState().autoFocusMode).toBe("off");
+    useAppStore.getState().setAutoAdvanceOnReply(true);
+    expect(useAppStore.getState().autoFocusMode).toBe("cycle-on-reply");
+  });
+
   it("reconcileFocusQueue prunes panes across every tab whose waiting set is supplied (#77)", () => {
     useAppStore.setState({ focusQueue: [
       { tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 },
@@ -1202,15 +1218,28 @@ describe("agent fleet store", () => {
     expect(st.paneCwds[`t${idx + 1}p0`]).toBe("/base/projects/big/.worktrees/web--s16");
   });
 
-  it("fleetStartProject caps launched workers at the recommended count", () => {
+  // #479 — no silent drop: ALL workers launch regardless of the recommended count.
+  it("fleetStartProject launches ALL workers even when recommended < stream count", () => {
     useAppStore.setState({ bscBaseDir: "/base" });
+    // fleet has 2 streams; launch with recommended=1 — both should still launch.
     useAppStore.getState().fleetStartProject("Cap", { ...fleet, recommended: 1 }, "k");
     const st = useAppStore.getState();
     const idx = st.findFleetTabIdx("k");
-    expect(st.tabs[idx].layout).toBe("2×1"); // 1 worker + director = 2 panes
+    // director + both workers = 3 panes
     expect(st.paneNames[idx][0]).toBe("director");
-    expect(st.paneNames[idx][1]).toBe("Auth UI");
-    expect(st.paneNames[idx][2]).toBeUndefined();
+    expect(st.paneNames[idx][1]).not.toBeUndefined();
+    expect(st.paneNames[idx][2]).not.toBeUndefined();
+  });
+
+  it("fleetStartProject sets focusTarget based on fleet structure (#459)", () => {
+    useAppStore.setState({ bscBaseDir: "/base", focusTarget: "everything" });
+    useAppStore.getState().fleetStartProject("FT", fleet, "ft-key");
+    // fleet.director.enabled is true in the fixture; expect focusTarget = "director"
+    expect(useAppStore.getState().focusTarget).toBe("director");
+    // a fleet without a director should set focusTarget = "fleet"
+    useAppStore.setState({ bscBaseDir: "/base", focusTarget: "everything" });
+    useAppStore.getState().fleetStartProject("FTno", { ...fleet, director: { ...fleet.director, enabled: false } }, "ft-nd-key");
+    expect(useAppStore.getState().focusTarget).toBe("fleet");
   });
 
   // #457 — the "two directors" bug: a project rename froze tab.name, so the

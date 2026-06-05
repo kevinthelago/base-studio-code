@@ -9,7 +9,7 @@ import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { DEFAULT_ACCENT } from "../lib/appearance";
-import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET, type QueuedPane, type FocusTarget } from "../lib/focusQueue";
+import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET, type QueuedPane, type FocusTarget, DEFAULT_AUTO_FOCUS_MODE, type ConsoleAutoFocusMode } from "../lib/focusQueue";
 import { repoPromptKey } from "./../lib/startupPrompt";
 import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "../lib/tabReorder";
 import { resolveStartupPrompt, resolveReferenceContext, type DocAssignments } from "../lib/assignments";
@@ -699,8 +699,12 @@ interface AppStore {
   setDeniedCommands: (commands: string[]) => void;
 
   // Console behavior
-  // When a response is sent to the active console, cycle focus to the next pane
-  // waiting in the focus queue (persisted; configured in Settings → Integrations).
+  // Selectable auto-focus mode (#434): controls whether and when focus advances
+  // after you reply. Persisted; configured in Settings → Integrations.
+  // Replaces the old boolean; autoAdvanceOnReply is kept for Console.tsx back-compat.
+  autoFocusMode: ConsoleAutoFocusMode;
+  setAutoFocusMode: (mode: ConsoleAutoFocusMode) => void;
+  // Back-compat derived field: true when autoFocusMode is not "off".
   autoAdvanceOnReply: boolean;
   setAutoAdvanceOnReply: (v: boolean) => void;
   // When true, panes that had claude running at last shutdown auto-relaunch
@@ -1554,14 +1558,13 @@ export const useAppStore = create<AppStore>()(
           const newPaneDirectorMode      = { ...s.paneDirectorMode };
           const newPaneStream            = { ...s.paneStream };
 
-          // Independents first so the launched wave is what can run now; the
-          // recommended count caps how many workers start (no 16 cap — we go multi-tab).
+          // Independents first so the launched wave is what can run now.
+          // ALL intended workers are launched across however many build tabs are needed
+          // (#479 — no silent drop past the recommended count; recommended is advisory).
           const ordered = [...fleet.streams].sort(
             (a, b) => (a.dependsOn.length ? 1 : 0) - (b.dependsOn.length ? 1 : 0),
           );
-          const rec = fleet.recommended > 0 ? fleet.recommended : ordered.length;
-          const workerCount = Math.min(ordered.length, Math.max(ordered.length ? 1 : 0, rec));
-          const workers = ordered.slice(0, workerCount);
+          const workers = ordered;
 
           // Flat session list, chunked into tabs of ≤16. `null` marks the director slot.
           const sessions: (AgentStream | null)[] = [...(hasDirector ? [null] : []), ...workers];
@@ -1717,9 +1720,14 @@ export const useAppStore = create<AppStore>()(
           }
 
           const addedAutos = activateAutomations(s, s.activeProjectId ?? "", baseTabName);
+          // #459: structure-aware auto-focus — set focusTarget based on fleet shape:
+          // director present → only the director surfaces (workers run dark);
+          // no director → all fleet panes queue (fall back to fleet-wide focus).
+          const structureFocusTarget = hasDirector ? "director" : "fleet";
           return {
             tabs,
             activeTabIdx: firstTabIdx,
+            focusTarget: structureFocusTarget,
             automations: [...s.automations, ...addedAutos],
             focusedPaneIdx: -1,
             fullscreenPaneIdx: -1,
@@ -2118,8 +2126,11 @@ export const useAppStore = create<AppStore>()(
         }),
       paneAllowedCommands: {},
 
+      autoFocusMode: DEFAULT_AUTO_FOCUS_MODE,
+      setAutoFocusMode: (mode) => set({ autoFocusMode: mode, autoAdvanceOnReply: mode !== "off" }),
       autoAdvanceOnReply: true,
-      setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v }),
+      // Back-compat: syncs to autoFocusMode.
+      setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v, autoFocusMode: v ? "cycle-on-reply" : "off" }),
 
       autoResumeClaude: true,
       setAutoResumeClaude: (v) => set({ autoResumeClaude: v }),
@@ -2174,6 +2185,7 @@ export const useAppStore = create<AppStore>()(
         deniedCommands:       s.deniedCommands,
         projectAllowedCommands: s.projectAllowedCommands,
         repoAllowedCommands:    s.repoAllowedCommands,
+        autoFocusMode:        s.autoFocusMode,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         coordAutoWake:        s.coordAutoWake,
