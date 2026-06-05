@@ -116,7 +116,7 @@ export function validateIssues(issues: PlanIssue[], phaseNames: string[] = []): 
       const tag = typeof i.phase === "string" ? i.phase.toLowerCase() : "";
       const known = typeof i.phase === "number"
         ? i.phase >= 1 && i.phase <= phaseNames.length
-        : phaseNames.some((n) => n.toLowerCase() === tag || n.toLowerCase().startsWith(tag));
+        : phaseNames.filter((n) => phaseTagMatches(n, String(i.phase))).length === 1;
       if (!known) unknownPhases.push({ ref: i.ref, phase: i.phase });
     }
   }
@@ -138,14 +138,26 @@ export function validateIssues(issues: PlanIssue[], phaseNames: string[] = []): 
  * undefined for an absent or unmatched phase (the issue lands unmilestoned). Name
  * matching is case-insensitive, mirroring {@link validateIssues}.
  */
+/**
+ * True when a phase  from  matches a planner-supplied . Accepts:
+ * - exact or case-insensitive full-name match
+ * - boundary-anchored version-prefix: name starts with tag + " " (e.g. "0.9.7" matches
+ *   "0.9.7 - Finish line: …" without matching "0.9.71 - …").
+ * The same predicate is used by both {@link resolvePhaseIndex} and {@link validateIssues}
+ * so the gate and resolver never disagree (#550).
+ */
+export function phaseTagMatches(name: string, tag: string): boolean {
+  const lo = name.toLowerCase();
+  const t = tag.toLowerCase();
+  return name === tag || lo === t || lo.startsWith(t + " ");
+}
+
 export function resolvePhaseIndex(phase: number | string | undefined, phaseNames: string[]): number | undefined {
   if (phase === undefined) return undefined;
   if (typeof phase === "number") return phase >= 1 && phase <= phaseNames.length ? phase - 1 : undefined;
-  const tag = String(phase).toLowerCase();
-  // Exact match first, then prefix match so "0.9.7" resolves "0.9.7 - Finish line: …"
-  let idx = phaseNames.findIndex((n) => n.toLowerCase() === tag);
-  if (idx < 0) idx = phaseNames.findIndex((n) => n.toLowerCase().startsWith(tag));
-  return idx >= 0 ? idx : undefined;
+  const tag = String(phase);
+  const matches = phaseNames.reduce<number[]>((acc, n, i) => phaseTagMatches(n, tag) ? [...acc, i] : acc, []);
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 /**
