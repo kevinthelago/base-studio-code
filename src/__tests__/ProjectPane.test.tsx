@@ -169,4 +169,15 @@ describe("ProjectPane (v2)", () => {
     expect(screen.queryByText("Push docs →")).toBeNull();
     expect(screen.getByText("Apply labels →")).toBeTruthy();
   });
+
+  // ── #548: the whole fleet pulse strip (counters + fake github) is removed ─────
+  it("no longer renders the fleet pulse strip (on/idle counters + fake github) (#548)", () => {
+    render(<ProjectPane data={data()} projectName="P" projectId="p" />);
+    // The on/idle counters and the hardcoded "● github 4m" glance line are gone.
+    expect(screen.queryByText(/\bon\b ·/)).toBeNull();
+    expect(screen.queryByText(/\d+ idle/)).toBeNull();
+    expect(screen.queryByText(/github 4m/)).toBeNull();
+    // The legitimate running count survives only inside the Agents section header.
+    expect(screen.getByText(/agents · \d+ running/i)).toBeTruthy();
+  });
 });

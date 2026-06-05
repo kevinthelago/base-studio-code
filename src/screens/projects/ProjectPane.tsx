@@ -962,8 +962,6 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   const [structView, setStructView] = useState<"phase" | "repo">("phase");
 
   const running = agents.filter((a) => a.status === "run").length;
-  const onCount = agents.filter((a) => a.status === "on").length;
-  const idleCount = agents.filter((a) => a.status === "idle").length;
   const pinnedCount = context.filter((c) => c.pinned).length;
   const director = hasData ? data!.director : { enabled: true, drive: "event" as DirectorDrive };
   const fleetStrategy = hasData ? data!.fleetStrategy : undefined;
@@ -991,25 +989,6 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
         <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)" }}>{hasData ? (projectName || "Project") : "Settlement webhooks v2"}</span>
         <span style={{ flex: 1 }} />
         <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{hasData ? (projectId || "") : "prj_2fa"}</span>
-      </div>
-
-      {/* fleet pulse strip — always-visible glance line */}
-      <div style={{
-        flex: "0 0 auto", padding: "7px 12px", borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 9,
-        color: "var(--fg-muted)", background: "var(--bg-panel)",
-      }}>
-        <span style={{ display: "flex", gap: -4 }}>
-          {agents.map((a, i) => (
-            <span key={a.id} style={{ marginLeft: i ? -4 : 0, position: "relative" }}>
-              <span className="av" style={{ width: 16, height: 16, background: a.color, fontSize: 9 }}>{a.initial}</span>
-            </span>
-          ))}
-        </span>
-        <span style={{ color: "var(--accent)" }}>{running} running</span>
-        <span style={{ color: "var(--fg-dim)" }}>· {onCount} on · {idleCount} idle</span>
-        <span style={{ flex: 1 }} />
-        <span style={{ color: "var(--success)" }}>● github 4m</span>
       </div>
 
       <div className="pp-scroll">

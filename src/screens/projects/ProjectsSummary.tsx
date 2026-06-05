@@ -228,9 +228,6 @@ export function ProjectsPageModeStrip() {
         );
       })}
       <div style={{ flex: 1 }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
-        <span style={{ color: "var(--success)" }}>● github sync</span>
-      </div>
     </div>
   );
 }
