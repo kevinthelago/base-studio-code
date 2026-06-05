@@ -733,6 +733,7 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [linkedRepos, kbBlocks, stageConfig]);
   const contextStale = lastSetupSig !== null && currentSig !== lastSetupSig;
 
+
   const [triaging, setTriaging] = useState(false);
   // Worktree creation error shown inline by the Triage button (#551).
   const [triageError, setTriageError] = useState<string | null>(null);
