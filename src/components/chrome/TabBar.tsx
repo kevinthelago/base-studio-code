@@ -155,7 +155,8 @@ export function TabBar({
             className={"tab " + (t.id === activeId ? "active" : "")}
             // Both hint and meta are tooltip-only (#488) — never inline text — so they
             // never compete with the label for the tab's width cap.
-            title={[t.label, t.hint, t.meta].filter(Boolean).join(" · ")}
+            // hint uses em-dash (label — hint); meta appends with · (…label · meta).
+            title={[t.hint ? `${t.label} — ${t.hint}` : t.label, t.meta].filter(Boolean).join(" · ")}
             draggable={canDrag && editingId !== t.id}
             onClick={() => { if (editingId !== t.id) onSelect(t.id); }}
             onContextMenu={renderMenu ? (e) => {

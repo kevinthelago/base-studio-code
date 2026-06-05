@@ -94,6 +94,7 @@ describe("AppearanceSettings font size controls", () => {
   });
 
   it("calls setTerminalFontSize with default when reset is clicked", () => {
+    terminalFontSize = DEFAULT_TERMINAL_FONT_SIZE + 2;
     render(<AppearanceSettings />);
     fireEvent.click(screen.getByText("reset"));
     expect(setTerminalFontSize).toHaveBeenCalledWith(DEFAULT_TERMINAL_FONT_SIZE);
