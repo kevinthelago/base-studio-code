@@ -1,41 +1,36 @@
-THIS APPLICATION CREATES BY DEFAULT ISSUES, MILESTONES, REPOSITORIES, ECT. please be aware! the project planning page will show you everything that will be done
-
 # base-studio-code
+
+[![CI](https://github.com/kevinthelago/base-studio-code/actions/workflows/ci.yml/badge.svg)](https://github.com/kevinthelago/base-studio-code/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/kevinthelago/base-studio-code/actions/workflows/codeql.yml/badge.svg)](https://github.com/kevinthelago/base-studio-code/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/kevinthelago/base-studio-code?include_prereleases&sort=semver)](https://github.com/kevinthelago/base-studio-code/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Built with Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app/)
+
+> **The CDE — Claude Development Environment.** It's like an IDE, except the thing you build *with* is a roomful of Claudes running in parallel. (Yes, we made the acronym up. No, we're not taking it back.) 🤖
 
 Desktop host application for a multi-agent AI development workflow platform. Run many Claude coding agents in parallel across multiple repositories, with standardized knowledge injected per project based on its tech stack.
 
-Pairs with **mobile-studio-code**, a companion app that tunnels into the desktop session so agents can be orchestrated from anywhere.
+Pairs **optionally** with **mobile-studio-code**, a standalone companion app that can tunnel into a desktop session over a **zero-knowledge Cloudflare relay** — end-to-end encrypted (Noise IK), paired by QR — so the same agents can be driven from your phone, from anywhere.
 
-## Roadmap
+## Project Blueprints & Pipelines
 
-Building toward **1.0.0** — the first official release — one focused release at a time. Work runs in parallel across milestones; **0.6.0 (Knowledge Base)** is the named development preview, while the multi-agent **planning + fleet orchestration** (0.7.0) is where most of the active work is right now.
+*The current focus of active development.* Planning is built from two composable pieces.
 
-| Version | Focus | Status |
-|---|---|---|
-| 0.6.0 | **Knowledge Base** — UX rework, T-layout, doc-assignment, resizable panes | in progress (~4/7) |
-| 0.7.0 | **Automations & multi-agent planning** — cron scheduling + plan → publish → fleet | in progress (~11/15) |
-| 0.8.0 | **Extensions (MCP)** — agent-facing tooling via an in-process MCP host + hooks | early (~1/3) |
-| 0.9.0 | **Tunneling, mobile & security** — token-authed WS tunnel + relay + pairing + repo-scoped credentials | in progress (~9/12) |
-| 1.0.0 | **First official release (GA)** — feature pages polished, code signing, packaging, publish | planned (~7/12) |
+**Blueprints** are reusable planning templates. A Blueprint is an ordered list of planning **stages** — context, repos, UI design, structure, permissions, automations, skills — each with its own prompt module and attached pipelines. Pick one (built-ins: Default, Full-stack web app, Mobile MVP, API microservice) and it seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
 
-### In flight now — the planning → orchestration loop (0.7.0)
+**Pipelines** are pluggable actions that run on a stage's output — on entering a stage, when an artifact changes, on completion, or manually. Some are **gates**: the stage can't complete until the pipeline passes. Built-ins include:
 
-- **Project planning page** — repo-first milestone/issue structure, per-agent permission + flow editor, context-file viewer
-- **Plan → GitHub sync** — milestones, issues, and `stream:` labels created per pane section; plan docs pushed to each repo
-- **Fleet launch** — one worker per stream in its own git worktree + branch, least-privilege profiles, a director at the project hub
-- **Console hardening** — broadcast mode, pane/tab/view navigation hotkeys, font zoom
+- **render-preview** — bundles the UI stage's generated screen skeletons with `esbuild-wasm` and renders them as a live, interactive **2D/3D walkthrough** in a sandboxed iframe, right inside the planning page — no preview server, no leaving the app. Approve screens one at a time to advance the UI stage.
+- **lint-plan** — scans a stage's artifacts for gaps (empty files, unresolved placeholders) and blocks completion until they're resolved.
+- …plus publish-side actions: issue generation, milestone sync, stream scoping, and skill indexing.
 
-### Still to do before 1.0.0
+Together they drive the planning arc: **pitch → plan, stage by stage → live preview → gate checks → publish to GitHub → launch the fleet.**
 
-- **0.6.0** — finish the Knowledge Base page (remaining UX + empty/first-run states)
-- **0.8.0** — the in-process MCP extension host + server-management UI
-- **1.0.0** — GitHub-screen review polish, Windows/macOS code signing + packaging, the release pipeline
-
-Tracked as [GitHub milestones](https://github.com/kevinthelago/base-studio-code/milestones). The `0.x` series is a development preview — see [Versioning & Releases](#versioning--releases).
-
+> 🚧 Blueprints & Pipelines are under active development. The stage registry, the Blueprint editor, and the render-preview / lint-plan pipelines work today; the wider pipeline library and the execution-side conductor (staged build → test → review → integrate) are still being wired up.
 
 ## Features
 
+- **Project planning → fleet orchestration** — a dedicated planning session turns a pitch or repo set into a publishable GitHub structure (milestones, granular issues, `stream:` labels), then launches a fleet: one least-privilege worker per stream in its own git worktree, coordinated by a director
 - **Parallel agent sessions** — multiple PTY-backed console panes per workspace tab, each tied to its own Claude instance
 - **Live git context** — repo name, branch, and dirty status auto-detected from the shell's working directory
 - **Knowledge Store** — named markdown blocks tagged by tech stack, injected into agent system prompts
@@ -107,7 +102,7 @@ base-studio-code/
 │   ├── components/
 │   │   ├── chrome/     # Titlebar, Rail, Tabstrip, StatusBar
 │   │   └── pane/       # PaneShell, ViewTabs, PaneMenu, views/
-│   ├── screens/        # Console, KnowledgeStore, GitHub, Automations, Settings
+│   ├── screens/        # Console, Projects (planning), Agents (profiles), KnowledgeStore, GitHub, Automations, Settings
 │   ├── store/          # Zustand store
 │   └── data/           # Mock/sample data
 ├── design/             # ⚠️ Reference prototype only — do not edit
@@ -118,16 +113,16 @@ base-studio-code/
 
 ```
 base-studio-code (desktop host)
-├── Agent Orchestrator   — parallel Claude API sessions
+├── Agent Orchestrator   — parallel Claude sessions (PTY) + planning/fleet
 ├── GitHub Integration   — OAuth, repos, PRs, Actions, hooks
 ├── Knowledge Store      — context blocks keyed by stack tag
-├── WebSocket Server     — tunnel for mobile-studio-code
+├── Mobile relay client  — dials the zero-knowledge Cloudflare relay (Noise IK E2E)
 └── UI Shell             — Tauri WebView + React frontend
 ```
 
 ## Versioning & Releases
 
-base-studio-code is pre-1.0 and under active development. The `0.x` series is a **development preview** — features and internals may change between releases, and builds are published as drafts for testing rather than general use.
+base-studio-code is pre-1.0 and under active development. The `0.x` series is a **development preview** — features and internals may change between releases, and builds are published as previews for testing rather than general use.
 
 **`1.0.0` will be the first official release** — the first version considered stable and ready for general use. Until then, versions are bumped conservatively (patch bumps for fixes, minor for features) so that `1.0.0` stays a meaningful milestone rather than just the next number.
 
