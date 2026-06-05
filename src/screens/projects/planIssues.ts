@@ -155,8 +155,16 @@ export function resolvePhaseIndex(phase: number | string | undefined, phaseNames
   if (phase === undefined) return undefined;
   if (typeof phase === "number") return phase >= 1 && phase <= phaseNames.length ? phase - 1 : undefined;
   const tag = String(phase);
-  const matches = phaseNames.reduce<number[]>((acc, n, i) => phaseTagMatches(n, tag) ? [...acc, i] : acc, []);
-  return matches.length === 1 ? matches[0] : undefined;
+  const spaceMatches = phaseNames.reduce<number[]>((acc, n, i) => phaseTagMatches(n, tag) ? [...acc, i] : acc, []);
+  if (spaceMatches.length === 1) return spaceMatches[0];
+  if (spaceMatches.length > 1) return undefined;
+  // Dot-delimited fallback: "1.0" matches "1.0.0 - GA" when no space-prefix match exists
+  const t = tag.toLowerCase();
+  const dotMatches = phaseNames.reduce<number[]>(
+    (acc, n, i) => n.toLowerCase().startsWith(t + ".") ? [...acc, i] : acc, []
+  );
+  if (dotMatches.length === 1) return dotMatches[0];
+  return undefined;
 }
 
 /**
