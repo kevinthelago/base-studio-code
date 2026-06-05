@@ -593,6 +593,10 @@ interface AppStore {
   // `pipelineRuns` (#220). Session-only (not persisted).
   stagePipelineRuns: Record<string, Record<string, PipelineRunState>>;
   setStagePipelineRun: (projectKey: string, pipelineUid: string, state: PipelineRunState) => void;
+  // The current UI preview per project (#531): the render-preview pipeline writes the
+  // bundled iframe srcdoc here; PlanPreviewPane renders it. Session-only.
+  stagePreview: Record<string, { srcDoc: string; mode: "2d" | "3d" } | null>;
+  setStagePreview: (projectKey: string, value: { srcDoc: string; mode: "2d" | "3d" } | null) => void;
   // Agent fleet — the parallel-execution plan (work streams + optional director +
   // the optimal concurrent session count). Persisted per project.
   planFleet:             Record<string, FleetPlan>;
@@ -1284,7 +1288,7 @@ export const useAppStore = create<AppStore>()(
       resetProjectData: () =>
         set({
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
-          planAutomations: {}, planStageConfig: {}, stagePipelineRuns: {}, planFleet: {}, pinnedContext: {},
+          planAutomations: {}, planStageConfig: {}, stagePipelineRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
@@ -1858,6 +1862,9 @@ export const useAppStore = create<AppStore>()(
             [projectKey]: { ...(s.stagePipelineRuns[projectKey] ?? {}), [pipelineUid]: state },
           },
         })),
+      stagePreview: {},
+      setStagePreview: (projectKey, value) =>
+        set((s) => ({ stagePreview: { ...s.stagePreview, [projectKey]: value } })),
 
       planFleet: {},
       pinnedContext: {},

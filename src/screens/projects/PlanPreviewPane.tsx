@@ -1,101 +1,72 @@
-// The third pane of the planning page (#530): a live UI preview. Bundles a skeleton
-// (esbuild-wasm) → sandboxed iframe (previewBundle). #531 feeds it the real skeleton
-// from the render-preview pipeline; here it also renders a built-in demo so the
-// transport is verifiable on its own.
+// The third pane of the planning page (#530/#531): the live UI preview. It renders
+// whatever the render-preview pipeline (#531) writes to the store for this project;
+// the "render demo" action routes a built-in skeleton through that same pipeline so
+// the full path (engine → bundle → store → pane) is verifiable on its own. #533 wires
+// the real triggers (the planner's <ui_preview> tag + a watch on .ui-skeleton/).
 
-import { useState, useEffect, useCallback } from "react";
-import { bundleSkeleton, buildPreviewSrcDoc } from "./previewBundle";
+import { useState, useCallback } from "react";
+import { useAppStore } from "../../store";
 import { PreviewFrame, type PreviewStatus } from "./PreviewFrame";
+import { dispatchRenderPreview, RENDER_PREVIEW_ID } from "./renderPreview";
 
-export interface PreviewSkeleton { files: Record<string, string>; entry: string; label?: string }
-
-const DEMO_SKELETON: PreviewSkeleton = {
-  label: "demo",
-  entry: "Demo.jsx",
-  files: {
-    "Demo.jsx":
+const DEMO_FILES: Record<string, string> = {
+  "Demo.jsx":
 `export default function Demo() {
   return (
     <div style={{ padding: 40, fontFamily: "Inter, system-ui, sans-serif" }}>
       <h1 style={{ color: "#e0a050", margin: 0 }}>Preview pane</h1>
       <p style={{ color: "#bbb", maxWidth: 460, lineHeight: 1.6 }}>
-        esbuild-wasm bundled this in the WebView and rendered it in a sandboxed iframe,
-        pulling React from esm.sh. The UI stage will render your generated screens here.
+        The render-preview pipeline bundled this skeleton (esbuild-wasm) and rendered it
+        in a sandboxed iframe, pulling React from esm.sh. The UI stage will render your
+        generated screens here.
       </p>
     </div>
   );
 }`,
-  },
 };
 
-type Phase = "idle" | "building" | "ready" | "error";
+export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; onClose?: () => void }) {
+  const preview = useAppStore((s) => s.stagePreview[projectKey] ?? null);
+  const run = useAppStore((s) => s.stagePipelineRuns[projectKey]?.[RENDER_PREVIEW_ID]);
+  const status = run?.status ?? "idle";
+  const [frameError, setFrameError] = useState<string>("");
 
-export function PlanPreviewPane({ skeleton, onClose }: { skeleton?: PreviewSkeleton | null; onClose?: () => void }) {
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [srcDoc, setSrcDoc] = useState<string | null>(null);
-  const [message, setMessage] = useState<string>("");
-  const [active, setActive] = useState<PreviewSkeleton | null>(skeleton ?? null);
+  const renderDemo = () => void dispatchRenderPreview({ projectKey, artifacts: DEMO_FILES, entry: "Demo.jsx", mode: "2d" });
+  const onStatus = useCallback((s: PreviewStatus) => { setFrameError(s.status === "error" ? (s.message ?? "") : ""); }, []);
 
-  const run = useCallback(async (sk: PreviewSkeleton) => {
-    setPhase("building");
-    setMessage("");
-    setActive(sk);
-    try {
-      const js = await bundleSkeleton(sk.files, sk.entry);
-      setSrcDoc(buildPreviewSrcDoc(js));
-    } catch (e) {
-      setSrcDoc(null);
-      setPhase("error");
-      setMessage(String(e));
-    }
-  }, []);
-
-  // Re-bundle when the incoming skeleton changes (the pipeline feeds this in #531).
-  useEffect(() => {
-    if (skeleton) void run(skeleton);
-  }, [skeleton, run]);
-
-  const onStatus = useCallback((s: PreviewStatus) => {
-    setPhase(s.status === "ready" ? "ready" : "error");
-    if (s.status === "error") setMessage(s.message ?? "");
-  }, []);
+  const statusLabel = status === "running" ? "building…" : frameError ? "error" : status;
+  const statusColor = frameError || status === "fail" ? "var(--danger)" : status === "ok" ? "var(--success)" : "var(--fg-dim)";
 
   return (
     <section style={{ flex: "0 0 auto", width: 420, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderLeft: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
-      {/* header */}
       <div style={{
         padding: "10px 14px", borderBottom: "1px solid var(--border-soft)",
         display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
       }}>
         <span style={{ color: "var(--accent)" }}>▸ preview</span>
-        {active?.label && <span style={{ color: "var(--fg-dim)" }}>{active.label}</span>}
+        {preview && <span className="tag" style={{ fontSize: 9 }}>{preview.mode}</span>}
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 10, color: phase === "error" ? "var(--danger)" : phase === "ready" ? "var(--success)" : "var(--fg-dim)" }}>
-          {phase === "building" ? "building…" : phase}
-        </span>
-        {active && (
-          <button className="btn ghost sm" onClick={() => run(active)} title="Rebuild">↻</button>
-        )}
+        <span style={{ fontSize: 10, color: statusColor }}>{statusLabel}</span>
+        {preview && <button className="btn ghost sm" onClick={renderDemo} title="Rebuild">↻</button>}
         {onClose && <button className="btn ghost sm" onClick={onClose} title="Close preview">✕</button>}
       </div>
 
-      {/* body */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, position: "relative" }}>
-        {phase === "error" ? (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        {status === "fail" ? (
           <div style={{ padding: 16, fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)", whiteSpace: "pre-wrap", overflow: "auto" }}>
-            {message || "Preview failed to build."}
+            {run?.message || "Preview failed to build."}
           </div>
-        ) : srcDoc ? (
-          <PreviewFrame srcDoc={srcDoc} onStatus={onStatus} />
+        ) : preview?.srcDoc ? (
+          <PreviewFrame srcDoc={preview.srcDoc} onStatus={onStatus} />
         ) : (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
             <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>
-              {phase === "building" ? "Bundling…" : "No preview yet"}
+              {status === "running" ? "Bundling…" : "No preview yet"}
             </div>
             <div className="hint" style={{ maxWidth: 280 }}>
-              The UI stage renders generated screens here. Try the transport with a demo:
+              The UI stage renders generated screens here via the render-preview pipeline. Try it with a demo:
             </div>
-            <button className="btn" onClick={() => run(DEMO_SKELETON)} disabled={phase === "building"}>render demo →</button>
+            <button className="btn" onClick={renderDemo} disabled={status === "running"}>render demo →</button>
           </div>
         )}
       </div>
