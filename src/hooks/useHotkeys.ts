@@ -9,6 +9,38 @@ import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/paneSelect"
 import { SCREEN_KEY_MAP } from "../lib/shortcuts";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
+export interface ShortcutDef {
+  id: string;
+  label: string;
+  keys: string;
+  description: string;
+  /** Screen context where the shortcut is active; undefined means global. */
+  context?: string;
+}
+
+/** Single source of truth for every keyboard shortcut in the app.
+ *  The Keyboard settings page derives its reference list from this registry. */
+export const SHORTCUT_REGISTRY: ShortcutDef[] = [
+  { id: "screen-console",      label: "Go to Console",            keys: "F1",                  description: "Switch to the Console screen" },
+  { id: "screen-knowledge",    label: "Go to Knowledge Store",    keys: "F2",                  description: "Switch to the Knowledge Store screen" },
+  { id: "screen-automation",   label: "Go to Automations",        keys: "F3",                  description: "Switch to the Automations screen" },
+  { id: "screen-github",       label: "Go to GitHub",             keys: "F4",                  description: "Switch to the GitHub screen" },
+  { id: "screen-projects",     label: "Go to Projects",           keys: "F5",                  description: "Switch to the Projects screen" },
+  { id: "screen-settings",     label: "Go to Settings",           keys: "F6",                  description: "Switch to the Settings screen" },
+  { id: "tab-switch",          label: "Switch tab",               keys: "Ctrl+1–9",            description: "Jump to workspace tab by index" },
+  { id: "broadcast-toggle",    label: "Toggle broadcast",         keys: "Ctrl+Shift+C",        description: "Mirror keystrokes to every console in the active tab", context: "Console" },
+  { id: "fullscreen-toggle",   label: "Fullscreen pane",          keys: "Ctrl+Shift+F",        description: "Maximize or restore the focused console pane",         context: "Console" },
+  { id: "focus-next-waiting",  label: "Next waiting pane",        keys: "Ctrl+Shift+N",        description: "Cycle focus to the next agent waiting for a reply",    context: "Console" },
+  { id: "clear-input",         label: "Clear pane input",         keys: "Ctrl+Shift+Backspace", description: "Send Ctrl+U to kill the current input line",           context: "Console" },
+  { id: "pane-select",         label: "Select pane",              keys: "Ctrl+Shift+1–9",      description: "Focus or fullscreen a console pane by number",         context: "Console" },
+  { id: "zoom-in",             label: "Zoom terminal in",         keys: "Ctrl++",              description: "Increase terminal font size",                          context: "Console" },
+  { id: "zoom-out",            label: "Zoom terminal out",        keys: "Ctrl+−",              description: "Decrease terminal font size",                          context: "Console" },
+  { id: "zoom-reset",          label: "Reset terminal zoom",      keys: "Ctrl+0",              description: "Reset terminal font size to the default",              context: "Console" },
+  { id: "send-all-enter",      label: "Broadcast Enter",          keys: "Alt+Shift+Enter",     description: "Send Enter to every pane in the active tab",           context: "Console" },
+  { id: "view-switch",         label: "Switch pane view",         keys: "Alt+1–5",             description: "Switch focused pane's view (console/files/branches/changes/log)", context: "Console" },
+  { id: "view-switch-all",     label: "Switch all pane views",    keys: "Alt+Shift+1–5",       description: "Switch every pane's view at once",                     context: "Console" },
+];
+
 function keyToTermBytes(e: KeyboardEvent): string | null {
   const { key, ctrlKey, altKey, shiftKey } = e;
 
