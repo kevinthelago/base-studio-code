@@ -4,6 +4,8 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { QueuedPane } from "../lib/focusQueue";
 import type { FleetPlan } from "../screens/projects/planSections";
 import type { ExtensionDef } from "../lib/extensions";
+import { defaultStageConfig } from "../screens/projects/planStages";
+import { makeBlueprints } from "../screens/projects/blueprints";
 
 const RESET_STATE = {
   tabs: [
@@ -1505,5 +1507,63 @@ describe("plan stage config (#512)", () => {
     useAppStore.getState().setStageEnabled("a", "skills", false);
     expect(useAppStore.getState().planStageConfig["b"]).toBeUndefined();
     expect(useAppStore.getState().planStageConfig["a"].enabled.skills).toBe(false);
+  });
+
+  it("setProjectStageConfig wholesale-seeds a project's config", () => {
+    const d = defaultStageConfig();
+    const order = ["repos", "context", "ui", "structure", "permissions", "automations", "skills"] as const;
+    useAppStore.getState().setProjectStageConfig("seed", { enabled: d.enabled, order: [...order] });
+    expect(useAppStore.getState().planStageConfig["seed"].order[0]).toBe("repos");
+  });
+});
+
+describe("blueprints library (#513/#514)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });
+  });
+
+  it("seeds the starter library with a default active", () => {
+    expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(4);
+    expect(useAppStore.getState().activeBlueprintId).toBe("default");
+  });
+
+  it("addBlueprint appends an untitled blueprint with a seed section and returns its id", () => {
+    const before = useAppStore.getState().blueprints.length;
+    const id = useAppStore.getState().addBlueprint();
+    const bp = useAppStore.getState().blueprints.find((b) => b.id === id)!;
+    expect(useAppStore.getState().blueprints.length).toBe(before + 1);
+    expect(bp.sections.length).toBeGreaterThan(0);
+  });
+
+  it("setActiveBlueprint switches the active id", () => {
+    useAppStore.getState().setActiveBlueprint("api");
+    expect(useAppStore.getState().activeBlueprintId).toBe("api");
+  });
+
+  it("duplicateBlueprint inserts an independent copy after the source", () => {
+    const id = useAppStore.getState().duplicateBlueprint("default");
+    const copy = useAppStore.getState().blueprints.find((b) => b.id === id)!;
+    expect(copy.name).toMatch(/copy/);
+    // editing the copy doesn't touch the source
+    const edited = copy.sections.map((s, i) => (i === 0 ? { ...s, enabled: false } : s));
+    useAppStore.getState().setBlueprintSections(id, edited);
+    const src = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
+    expect(src.sections[0].enabled).toBe(true);
+  });
+
+  it("setBlueprintSections persists the new sections for that blueprint only", () => {
+    const def = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
+    const flipped = def.sections.map((s) => (s.key === "context" ? { ...s, enabled: false } : s));
+    useAppStore.getState().setBlueprintSections("default", flipped);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "context")!.enabled).toBe(false);
+    // a sibling blueprint is untouched
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
+  });
+
+  it("updateBlueprintMeta edits name/desc", () => {
+    useAppStore.getState().updateBlueprintMeta("default", { name: "Renamed", desc: "New desc" });
+    const bp = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
+    expect(bp.name).toBe("Renamed");
+    expect(bp.desc).toBe("New desc");
   });
 });

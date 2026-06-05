@@ -30,6 +30,7 @@ import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssue
 import { PlanStageBar } from "./PlanStageBar";
 import { derivePlanStageState } from "./planStageDerive";
 import { defaultStageConfig } from "./planStages";
+import { blueprintToStageConfig } from "./blueprints";
 import { featureSectionsToIssues, featureSlug, parseFeatureSection } from "./planFeatures";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { ProjectPane, type SyncState } from "./ProjectPane";
@@ -588,6 +589,16 @@ export function Planning({ visible }: { visible: boolean }) {
   // and the live snapshot the stage gates read, feeding the macro progress bar.
   // requiresUi + the explicit ack/profile signals are wired in later slices, so
   // those stages read N/A or in-progress for now (no fabricated completion).
+  // Seed a new project's stage config from the active blueprint on first plan, so it
+  // inherits the chosen preset, then diverges per-project as the user edits stages.
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    const st = useAppStore.getState();
+    if (st.planStageConfig[effectiveProjectId]) return; // already has its own copy
+    const active = st.blueprints.find((b) => b.id === st.activeBlueprintId);
+    if (active) st.setProjectStageConfig(effectiveProjectId, blueprintToStageConfig(active));
+  }, [effectiveProjectId]);
+
   const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
   const stageState = useMemo(() => {
     const streams = planFleet[effectiveProjectId]?.streams ?? [];
