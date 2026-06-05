@@ -8,6 +8,9 @@
 
 import type { DirectorDrive } from "./directorDrive";
 import type { IntegrationStrategy } from "./integrationStrategy";
+import type { PlanGrade } from "../../lib/planGrade";
+
+export type { PlanGrade };
 
 export type Posture = "allow" | "ask" | "deny";
 export type Perm = Record<string, Posture>;
@@ -91,4 +94,6 @@ export interface ProjectPaneData {
   director: { enabled: boolean; role?: string; drive: DirectorDrive };
   /** Project-default integration strategy (#378); undefined ⇒ DEFAULT_STRATEGY. */
   fleetStrategy?: IntegrationStrategy;
+  /** Deterministic agent-readiness grade (#445): overall rollup + per-repo/milestone/issue breakdowns. */
+  grade?: PlanGrade;
 }

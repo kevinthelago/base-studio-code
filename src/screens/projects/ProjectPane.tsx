@@ -4,6 +4,7 @@
 // Context Files, Repository · Structure, Agents · Permissions). Styling lives in
 // projectPane.css and uses the app's design tokens.
 import { useState, useEffect } from "react";
+import type { IssueGrade, Letter } from "../../lib/planGrade";
 import "./projectPane.css";
 import { type DirectorDrive, DIRECTOR_DRIVES } from "./directorDrive";
 import {
@@ -287,6 +288,24 @@ function SyncBtn({ label, state = "idle", onClick }: { label: string; state?: Sy
   );
 }
 
+// grade letter chip — color-coded A/B/C/D/F badge
+function GradeChip({ letter }: { letter: Letter }) {
+  const color = letter === "A" ? "var(--success)"
+    : letter === "B" ? "var(--accent)"
+    : letter === "C" ? "oklch(0.74 0.14 90)"
+    : letter === "D" ? "oklch(0.72 0.15 55)"
+    : "var(--danger)";
+  return (
+    <span title={`Plan grade: ${letter}`} style={{
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+      background: `color-mix(in oklch, ${color}, transparent 80%)`,
+      border: `1px solid color-mix(in oklch, ${color}, transparent 50%)`,
+      fontFamily: "var(--mono)", fontSize: 9, fontWeight: 700, color, lineHeight: 1,
+    }}>{letter}</span>
+  );
+}
+
 // collapsible section shell
 function Sec({ title, count, open = true, right, children }: {
   title: string; count?: React.ReactNode; open?: boolean; right?: React.ReactNode; children: React.ReactNode;
@@ -440,8 +459,9 @@ function repoRollup(repoId: string, structure: Milestone[] = STRUCTURE): { ms: M
 // REPO-FIRST — a collapsible repository card holding its own work tree:
 // milestones (the phases decomposed for THAT repo) → issues → acceptance sub-list.
 // Mirrors the design's RepoA variant; reuses structFor/MStateDot/SubList/etc.
-function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }: {
+function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS, gradeMap }: {
   structure?: Milestone[]; repos?: Repo[]; agents?: Agent[];
+  gradeMap?: Map<string | number, IssueGrade>;
 }) {
   const [openRepo, setOpenRepo] = useState<string | null>(repos[0]?.id ?? null);
   const [openIss, setOpenIss] = useState<number | string | null>(null);
@@ -504,7 +524,7 @@ function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }
                       {/* issues for this milestone (epics flattened) */}
                       <div style={{ borderLeft: "1px solid var(--border-soft)", marginLeft: 6, paddingLeft: 8, display: "flex", flexDirection: "column", gap: 5 }}>
                         {m.epics.flatMap((e) => e.issues).map((is) => (
-                          <IssueRow key={is.n} is={is} agents={agents}
+                          <IssueRow key={is.n} is={is} agents={agents} gradeMap={gradeMap}
                             open={openIss === is.n} onToggle={() => setOpenIss(openIss === is.n ? null : is.n)} />
                         ))}
                       </div>
@@ -522,9 +542,11 @@ function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }
 
 // One issue row — shared by the repo-first and phase-first structure views.
 // Collapsible: clicking toggles the acceptance-criteria drill-in.
-function IssueRow({ is, agents, open, onToggle, showRepo }: {
+function IssueRow({ is, agents, open, onToggle, showRepo, gradeMap }: {
   is: Issue; agents: Agent[]; open: boolean; onToggle: () => void; showRepo?: boolean;
+  gradeMap?: Map<string | number, IssueGrade>;
 }) {
+  const ig = gradeMap?.get(is.n);
   return (
     <div style={{ borderRadius: 6, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", overflow: "hidden" }}>
       <div onClick={onToggle} style={{ padding: "7px 9px", cursor: "pointer" }}>
@@ -533,6 +555,7 @@ function IssueRow({ is, agents, open, onToggle, showRepo }: {
           <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>#{is.n}</span>
           <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 10.5, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{is.t}</span>
           {showRepo && is.repo && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{is.repo.split("/")[1] ?? is.repo}</span>}
+          {ig && <GradeChip letter={ig.letter} />}
           <span title={"@" + is.owner}><Avatar id={is.owner} sz={14} agents={agents} /></span>
         </div>
         <div style={{ display: "flex", gap: 5, marginTop: 5, paddingLeft: 20, alignItems: "center", flexWrap: "wrap" }}>
@@ -554,7 +577,10 @@ function IssueRow({ is, agents, open, onToggle, showRepo }: {
 // Phase-first, PROJECT-SCOPED structure (#497): each phase is one milestone
 // spanning every repo, with a single progress bar; its issues are grouped by repo
 // beneath it. Replaces the repo→milestone→epic→issue tree as the primary lens.
-function PhaseStructure({ phases, agents }: { phases: PhaseGroup[]; agents: Agent[] }) {
+function PhaseStructure({ phases, agents, gradeMap }: {
+  phases: PhaseGroup[]; agents: Agent[];
+  gradeMap?: Map<string | number, IssueGrade>;
+}) {
   const [openPhase, setOpenPhase] = useState<string | null>(phases[0]?.id ?? null);
   const [openIss, setOpenIss] = useState<number | string | null>(null);
   const totalIssues = phases.reduce((a, p) => a + p.total, 0);
@@ -607,7 +633,7 @@ function PhaseStructure({ phases, agents }: { phases: PhaseGroup[]; agents: Agen
                       </div>
                       <div style={{ borderLeft: "1px solid var(--border-soft)", marginLeft: 6, paddingLeft: 8, display: "flex", flexDirection: "column", gap: 5 }}>
                         {issues.map((is) => (
-                          <IssueRow key={String(is.n)} is={is} agents={agents}
+                          <IssueRow key={String(is.n)} is={is} agents={agents} gradeMap={gradeMap}
                             open={openIss === is.n} onToggle={() => setOpenIss(openIss === is.n ? null : is.n)} />
                         ))}
                       </div>
@@ -952,8 +978,19 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   const structure: Milestone[]   = hasData ? data!.structure      : STRUCTURE;
   const phaseStructure: PhaseGroup[] = hasData ? data!.phaseStructure : PHASE_STRUCTURE;
   const context:   ContextFile[] = hasData ? data!.context        : CONTEXT;
+  const grade = hasData ? data!.grade : undefined;
   // Phase-first is the primary lens (#497); the repo-first tree is the secondary one.
   const [structView, setStructView] = useState<"phase" | "repo">("phase");
+
+  // Build a flat ref → IssueGrade lookup for per-row chips (#445).
+  const issueGradeMap = new Map<string | number, IssueGrade>();
+  if (grade) {
+    for (const rg of grade.repoGrades) {
+      for (const mg of rg.milestoneGrades) {
+        for (const ig of mg.issueGrades) { issueGradeMap.set(ig.ref, ig); }
+      }
+    }
+  }
 
   const running = agents.filter((a) => a.status === "run").length;
   const pinnedCount = context.filter((c) => c.pinned).length;
@@ -991,9 +1028,14 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
         </Sec>
         <Sec
           title="Milestones · Structure"
-          count={structView === "phase"
-            ? `${phaseStructure.length} phase${phaseStructure.length !== 1 ? "s" : ""}`
-            : `${repos.length} repos · ${structure.length} milestones`}
+          count={
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              {grade && <GradeChip letter={grade.letter} />}
+              {structView === "phase"
+                ? `${phaseStructure.length} phase${phaseStructure.length !== 1 ? "s" : ""}`
+                : `${repos.length} repos · ${structure.length} milestones`}
+            </span>
+          }
           open={true}
           // Phase/repo lens lives inline in the header (where the publish button
           // used to be, #506); stop the click so toggling the lens doesn't also
@@ -1004,9 +1046,20 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
             </span>
           }
         >
+          {grade && grade.score < 0.60 && (
+            <div style={{
+              margin: "0 0 8px", padding: "7px 10px", borderRadius: 5,
+              background: "color-mix(in oklch, var(--danger), transparent 88%)",
+              border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
+              fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--danger)", lineHeight: 1.55,
+            }}>
+              Plan grade {grade.letter} ({Math.round(grade.score * 100)}%) — consider adding acceptance criteria and ownership before launching agents.
+              {grade.reasons.length > 0 && <span> {grade.reasons[0]}.</span>}
+            </div>
+          )}
           {structView === "phase"
-            ? <PhaseStructure phases={phaseStructure} agents={agents} />
-            : <RepoStructure structure={structure} repos={repos} agents={agents} />}
+            ? <PhaseStructure phases={phaseStructure} agents={agents} gradeMap={issueGradeMap} />
+            : <RepoStructure structure={structure} repos={repos} agents={agents} gradeMap={issueGradeMap} />}
         </Sec>
         <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
           <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />
