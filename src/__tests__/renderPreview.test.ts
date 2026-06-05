@@ -50,4 +50,14 @@ describe("renderPreview — dispatch writes the store", () => {
     expect(useAppStore.getState().stagePreview["proj"]?.srcDoc).toContain("BUNDLE_JS");
     expect(useAppStore.getState().stagePipelineRuns["proj"][RENDER_PREVIEW_ID].status).toBe("ok");
   });
+
+  it("tags the stored preview with the screen name (#546)", async () => {
+    await dispatchRenderPreview({ projectKey: "proj", artifacts: { "Login.jsx": "x" }, entry: "Login.jsx", mode: "2d", screen: "Login" });
+    expect(useAppStore.getState().stagePreview["proj"]?.screen).toBe("Login");
+  });
+
+  it("falls back to the entry as the screen when none is given (#546)", async () => {
+    await dispatchRenderPreview({ projectKey: "proj", artifacts: { "Login.jsx": "x" }, entry: "Login.jsx", mode: "2d" });
+    expect(useAppStore.getState().stagePreview["proj"]?.screen).toBe("Login.jsx");
+  });
 });

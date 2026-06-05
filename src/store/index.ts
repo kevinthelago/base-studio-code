@@ -594,13 +594,18 @@ interface AppStore {
   stagePipelineRuns: Record<string, Record<string, PipelineRunState>>;
   setStagePipelineRun: (projectKey: string, pipelineUid: string, state: PipelineRunState) => void;
   // The current UI preview per project (#531): the render-preview pipeline writes the
-  // bundled iframe srcdoc here; PlanPreviewPane renders it. Session-only.
-  stagePreview: Record<string, { srcDoc: string; mode: "2d" | "3d" } | null>;
-  setStagePreview: (projectKey: string, value: { srcDoc: string; mode: "2d" | "3d" } | null) => void;
-  // Whether the project's generated UI has been approved in the preview pane (#544).
-  // Completes the UI stage (ui.approved >= ui.total). Persisted — a real approval signal.
-  uiApproved: Record<string, boolean>;
-  setUiApproved: (projectKey: string, approved: boolean) => void;
+  // bundled iframe srcdoc here; PlanPreviewPane renders it. `screen` names which screen
+  // is showing (#546), so its approve button targets the right one. Session-only.
+  stagePreview: Record<string, { srcDoc: string; mode: "2d" | "3d"; screen?: string } | null>;
+  setStagePreview: (projectKey: string, value: { srcDoc: string; mode: "2d" | "3d"; screen?: string } | null) => void;
+  // Per-screen UI approval (#544/#546). `uiScreens` is the set of screens the planner
+  // has declared via <ui_preview> tags (the denominator); `uiApproved` is the names the
+  // user has signed off in the preview pane (the numerator). The UI stage completes only
+  // when every declared screen is approved. Both persisted — real approval signals.
+  uiScreens: Record<string, string[]>;
+  addUiScreen: (projectKey: string, screen: string) => void;
+  uiApproved: Record<string, string[]>;
+  setUiScreenApproved: (projectKey: string, screen: string, approved: boolean) => void;
   // Agent fleet — the parallel-execution plan (work streams + optional director +
   // the optimal concurrent session count). Persisted per project.
   planFleet:             Record<string, FleetPlan>;
@@ -1267,6 +1272,7 @@ export const useAppStore = create<AppStore>()(
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
+            uiScreens:              byKey(s.uiScreens),
             uiApproved:             byKey(s.uiApproved),
             planFleet:              byKey(s.planFleet),
             pinnedContext:          byKey(s.pinnedContext),
@@ -1293,7 +1299,7 @@ export const useAppStore = create<AppStore>()(
       resetProjectData: () =>
         set({
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
-          planAutomations: {}, planStageConfig: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
+          planAutomations: {}, planStageConfig: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
@@ -1870,9 +1876,20 @@ export const useAppStore = create<AppStore>()(
       stagePreview: {},
       setStagePreview: (projectKey, value) =>
         set((s) => ({ stagePreview: { ...s.stagePreview, [projectKey]: value } })),
+      uiScreens: {},
+      addUiScreen: (projectKey, screen) =>
+        set((s) => {
+          const cur = s.uiScreens[projectKey] ?? [];
+          if (cur.includes(screen)) return {} as Partial<typeof s>;
+          return { uiScreens: { ...s.uiScreens, [projectKey]: [...cur, screen] } };
+        }),
       uiApproved: {},
-      setUiApproved: (projectKey, approved) =>
-        set((s) => ({ uiApproved: { ...s.uiApproved, [projectKey]: approved } })),
+      setUiScreenApproved: (projectKey, screen, approved) =>
+        set((s) => {
+          const cur = s.uiApproved[projectKey] ?? [];
+          const next = approved ? (cur.includes(screen) ? cur : [...cur, screen]) : cur.filter((x) => x !== screen);
+          return { uiApproved: { ...s.uiApproved, [projectKey]: next } };
+        }),
 
       planFleet: {},
       pinnedContext: {},
@@ -2184,6 +2201,7 @@ export const useAppStore = create<AppStore>()(
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,
+        uiScreens:             s.uiScreens,
         uiApproved:            s.uiApproved,
         blueprints:            s.blueprints,
         activeBlueprintId:     s.activeBlueprintId,
