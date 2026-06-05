@@ -30,7 +30,7 @@ import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssue
 import { PlanStageBar } from "./PlanStageBar";
 import { derivePlanStageState } from "./planStageDerive";
 import { isGateBlocked } from "./pipelineRuntime";
-import { defaultStageConfig } from "./planStages";
+import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { blueprintToStageConfig } from "./blueprints";
 import { featureSectionsToIssues, featureSlug, parseFeatureSection } from "./planFeatures";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
@@ -607,6 +607,10 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [effectiveProjectId]);
 
   const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
+  // The enabled stage ids (in order) for a project — passed to setup_workspaces so the
+  // planner's CLAUDE.md is scoped to the blueprint's stages (#542). Read fresh.
+  const stageIdsFor = (key: string) =>
+    enabledOrderedStages(useAppStore.getState().planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
   const stageState = useMemo(() => {
     const streams = planFleet[effectiveProjectId]?.streams ?? [];
     const issueCount =
@@ -981,6 +985,7 @@ export function Planning({ visible }: { visible: boolean }) {
           projectKey:    projIdSnap,
           githubLogin:   ghLoginSnap,
           githubName:    ghNameSnap,
+          enabledStages: stageIdsFor(projIdSnap),
         },
       ).catch((e: unknown) => {
         console.error("workspace setup failed:", e);
@@ -1215,6 +1220,7 @@ export function Planning({ visible }: { visible: boolean }) {
       projectKey:    effectiveProjectId,
       githubLogin:   useAppStore.getState().githubUser?.login ?? "",
       githubName:    useAppStore.getState().githubUser?.name  ?? "",
+      enabledStages: stageIdsFor(effectiveProjectId),
     }).catch(console.error);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedRepos]);
@@ -1245,6 +1251,7 @@ export function Planning({ visible }: { visible: boolean }) {
         projectKey: effectiveProjectId,
         githubLogin: store.githubUser?.login ?? "",
         githubName:  store.githubUser?.name  ?? "",
+        enabledStages: stageIdsFor(effectiveProjectId),
       },
     ).catch((e: unknown) => { console.error("restart setup failed:", e); return null; });
     const token = store.githubToken;
