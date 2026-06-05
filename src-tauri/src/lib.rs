@@ -2021,6 +2021,42 @@ fn read_token_usage(limit: usize) -> Vec<TokenUsage> {
     out
 }
 
+/// Collect a UI-skeleton directory as (relpath, contents) pairs — source files only,
+/// size-capped, recursive. Pure over a path so it's unit-testable (#533).
+fn read_skeleton_dir(root: &std::path::Path) -> Vec<(String, String)> {
+    fn ok_ext(p: &std::path::Path) -> bool {
+        matches!(p.extension().and_then(|s| s.to_str()), Some("jsx" | "tsx" | "js" | "ts" | "css" | "json"))
+    }
+    fn walk(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, String)>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(base, &p, out);
+            } else if ok_ext(&p) {
+                let small = std::fs::metadata(&p).map(|m| m.len() <= 512 * 1024).unwrap_or(false);
+                if small {
+                    if let (Ok(rel), Ok(content)) = (p.strip_prefix(base), std::fs::read_to_string(&p)) {
+                        out.push((rel.to_string_lossy().replace('\\', "/"), content));
+                    }
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Read a project's `.ui-skeleton/` folder (relpath → contents) for the render-preview
+/// pipeline (#533): the lightweight, functionless UI the planner generates. Empty when
+/// the folder doesn't exist yet.
+#[tauri::command]
+fn read_ui_skeleton(project_key: String) -> Vec<(String, String)> {
+    read_skeleton_dir(&project_dir(&project_key).join(".ui-skeleton"))
+}
+
 /// Read the coordination log (#199): up to the newest `limit` TSV lines, in
 /// chronological (oldest-first) order so the coordinator can replay them.
 #[tauri::command]
@@ -2430,6 +2466,12 @@ the user is happy with the current topic.
 5. **Stop and wait.** Do not draft the next topic. When the user approves it in
    the UI you receive a line like `[The user confirmed the "Goal" section … —
    continue to the next section.]` — that is your signal to advance.
+
+When designing the UI, render it live: write a lightweight, **functionless** React
+skeleton of each screen (mock data, no logic) to `.ui-skeleton/<Screen>.jsx`, then
+emit `<ui_preview screen="<Screen>.jsx" mode="2d" />` (`mode="3d"` for a 3D scene —
+render an `@react-three/fiber` `<Canvas>`). The app bundles it and shows it in the
+preview pane; re-emit the tag after each change to refresh.
 
 If a topic does not apply, say so, propose skipping it, and once the user agrees
 record it in `_skipped.md` and move on. Never race ahead to fill everything.
@@ -4840,6 +4882,7 @@ pub fn run() {
             read_skill_log,
             read_token_usage,
             read_coord_log,
+            read_ui_skeleton,
             append_coord_woke,
             read_git_hooks,
         ])
@@ -4943,6 +4986,29 @@ mod tests {
     #[cfg(any(windows, unix))]
     use super::PtyJob;
     use std::collections::HashMap;
+
+    #[test]
+    fn read_skeleton_dir_collects_source_files_recursively() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("bsc_skel_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("parts")).unwrap();
+        fs::write(root.join("Login.jsx"), "export default () => null;").unwrap();
+        fs::write(root.join("parts/Field.tsx"), "export const F = 1;").unwrap();
+        fs::write(root.join("notes.md"), "ignore me").unwrap();        // wrong ext → skipped
+        fs::write(root.join("data.json"), "{}").unwrap();
+
+        let files = super::read_skeleton_dir(&root);
+        let keys: Vec<&str> = files.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"Login.jsx"), "got {keys:?}");
+        assert!(keys.contains(&"parts/Field.tsx"), "nested + forward-slash relpath");
+        assert!(keys.contains(&"data.json"));
+        assert!(!keys.iter().any(|k| k.ends_with(".md")), "non-source files skipped");
+
+        // Missing folder → empty, never panics.
+        assert!(super::read_skeleton_dir(&root.join("nope")).is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
 
     /// Loadbearing claim of the orphan-kill fix: dropping the job handle kills
     /// every assigned process (and its descendants). Spawn a ~30 s `ping` —
