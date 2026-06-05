@@ -10,6 +10,9 @@ import { useAppStore } from "../../store";
 import { PreviewFrame, type PreviewStatus } from "./PreviewFrame";
 import { dispatchRenderPreview, RENDER_PREVIEW_ID } from "./renderPreview";
 
+// Stable empty default so the selector doesn't churn a new array on every store change.
+const EMPTY: string[] = [];
+
 const DEMO_FILES: Record<string, string> = {
   "Demo.jsx":
 `export default function Demo() {
@@ -29,10 +32,16 @@ const DEMO_FILES: Record<string, string> = {
 export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; onClose?: () => void }) {
   const preview = useAppStore((s) => s.stagePreview[projectKey] ?? null);
   const run = useAppStore((s) => s.stagePipelineRuns[projectKey]?.[RENDER_PREVIEW_ID]);
-  const approved = useAppStore((s) => s.uiApproved[projectKey] ?? false);
-  const setUiApproved = useAppStore((s) => s.setUiApproved);
+  const declared = useAppStore((s) => s.uiScreens[projectKey]) ?? EMPTY;
+  const approvedList = useAppStore((s) => s.uiApproved[projectKey]) ?? EMPTY;
+  const setUiScreenApproved = useAppStore((s) => s.setUiScreenApproved);
   const status = run?.status ?? "idle";
   const [frameError, setFrameError] = useState<string>("");
+
+  // Per-screen approval (#546): the approve button targets whichever screen is rendered.
+  const currentScreen = preview?.screen;
+  const currentApproved = !!currentScreen && approvedList.includes(currentScreen);
+  const approvedCount = declared.filter((s) => approvedList.includes(s)).length;
 
   const renderDemo = () => void dispatchRenderPreview({ projectKey, artifacts: DEMO_FILES, entry: "Demo.jsx", mode: "2d" });
   // Manual trigger: read the project's real .ui-skeleton from disk and render it.
@@ -57,15 +66,15 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
         {preview && <span className="tag" style={{ fontSize: 9 }}>{preview.mode}</span>}
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 10, color: statusColor }}>{statusLabel}</span>
-        {/* Approving the rendered UI completes the UI stage (#544). */}
-        {preview && (
+        {/* Approve the screen that's rendered; each approval advances the UI stage (#546). */}
+        {preview && currentScreen && (
           <button
-            className={approved ? "btn sm" : "btn ghost sm"}
-            onClick={() => setUiApproved(projectKey, !approved)}
-            title={approved ? "UI approved — click to revoke" : "Approve this UI to complete the UI stage"}
-            style={approved ? { color: "var(--success)", borderColor: "var(--success)" } : undefined}
+            className={currentApproved ? "btn sm" : "btn ghost sm"}
+            onClick={() => setUiScreenApproved(projectKey, currentScreen, !currentApproved)}
+            title={currentApproved ? `${currentScreen} approved — click to revoke` : `Approve ${currentScreen}`}
+            style={currentApproved ? { color: "var(--success)", borderColor: "var(--success)" } : undefined}
           >
-            {approved ? "✓ approved" : "approve"}
+            {currentApproved ? "✓ approved" : "approve"}
           </button>
         )}
         {preview && <button className="btn ghost sm" onClick={renderDemo} title="Rebuild">↻</button>}
@@ -94,6 +103,37 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
           </div>
         )}
       </div>
+
+      {/* Declared screens + their per-screen approval (#546). The UI stage completes
+          when every row is checked. Click a row to toggle its approval. */}
+      {declared.length > 0 && (
+        <div style={{ borderTop: "1px solid var(--border-soft)", padding: "8px 12px", maxHeight: 180, overflow: "auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
+            <span>screens</span>
+            <span style={{ flex: 1 }} />
+            <span style={{ color: approvedCount === declared.length ? "var(--success)" : "var(--fg-dim)" }}>
+              {approvedCount}/{declared.length} approved
+            </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {declared.map((s) => {
+              const ok = approvedList.includes(s);
+              return (
+                <button
+                  key={s}
+                  className="btn ghost sm"
+                  onClick={() => setUiScreenApproved(projectKey, s, !ok)}
+                  title={ok ? `${s} approved — click to revoke` : `Approve ${s}`}
+                  style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-start", textAlign: "left", fontFamily: "var(--mono)", fontSize: 11 }}
+                >
+                  <span style={{ color: ok ? "var(--success)" : "var(--fg-dim)" }}>{ok ? "✓" : "○"}</span>
+                  <span style={{ color: s === currentScreen ? "var(--accent)" : "var(--fg)" }}>{s}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
