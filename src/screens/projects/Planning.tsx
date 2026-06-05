@@ -30,7 +30,7 @@ import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssue
 import { PlanStageBar } from "./PlanStageBar";
 import { derivePlanStageState } from "./planStageDerive";
 import { defaultStageConfig } from "./planStages";
-import { cloneStageConfig } from "./blueprints";
+import { blueprintToStageConfig } from "./blueprints";
 import { featureSectionsToIssues, featureSlug, parseFeatureSection } from "./planFeatures";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { ProjectPane, type SyncState } from "./ProjectPane";
@@ -596,7 +596,7 @@ export function Planning({ visible }: { visible: boolean }) {
     const st = useAppStore.getState();
     if (st.planStageConfig[effectiveProjectId]) return; // already has its own copy
     const active = st.blueprints.find((b) => b.id === st.activeBlueprintId);
-    if (active) st.setProjectStageConfig(effectiveProjectId, cloneStageConfig(active.config));
+    if (active) st.setProjectStageConfig(effectiveProjectId, blueprintToStageConfig(active));
   }, [effectiveProjectId]);
 
   const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();

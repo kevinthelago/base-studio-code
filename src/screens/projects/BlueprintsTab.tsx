@@ -1,154 +1,401 @@
-// Blueprints tab (#513): the configuration surface for the modular planning stages
-// (#512). Left = the library of saved blueprints; right = the active/selected
-// blueprint's stage editor (toggle on/off + reorder). The active blueprint seeds
-// every new project's stage config.
+// Blueprints tab (#513/#514). Center stage: an expandable list of planning
+// SECTIONS, each owning its prompt module + its PIPELINES. Secondary: the blueprint
+// library. The active blueprint seeds every new project's planning session.
+//
+// Matches design/base-studio-code-projects/Blueprints.html, wired to the store.
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAppStore } from "../../store";
-import { PLAN_STAGES, STAGE_BY_ID, type StageId } from "./planStages";
+import {
+  PIPELINE_LIB, TRIGGERS, SECTION_DEFS, computeStatus, reorder, uid,
+  type Blueprint, type BlueprintSection, type Pipeline, type PipelineDef, type PipelineKind, type PipelineTrigger,
+} from "./blueprints";
 
+const KIND_COLOR: Record<PipelineKind, string> = { builtin: "var(--accent)", external: "var(--info)", custom: "var(--violet, oklch(0.72 0.12 300))" };
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+// The set of edit operations the rows call — each computes a new sections array and
+// persists it via the store (setBlueprintSections), mirroring the design's `patch`.
+interface BpApi {
+  toggleSection: (u: string) => void;
+  toggleExpand: (u: string) => void;
+  editPrompt: (u: string, v: string) => void;
+  moveSection: (from: string, to: string, before: boolean) => void;
+  addSection: (name: string) => void;
+  addPipeline: (su: string, pl: Pipeline) => void;
+  removePipeline: (su: string, pu: string) => void;
+  togglePipeline: (su: string, pu: string) => void;
+  setTrigger: (su: string, pu: string, v: PipelineTrigger) => void;
+  movePipeline: (su: string, from: string, to: string, before: boolean) => void;
+}
+
+function Switch({ on, disabled, onClick }: { on: boolean; disabled?: boolean; onClick: () => void }) {
+  return (
+    <div
+      className={"sw" + (on ? " on" : "") + (disabled ? " dis" : "")}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) onClick(); }}
+    ><i /></div>
+  );
+}
+
+// ── pipeline row ───────────────────────────────────────────────────────────────
+function PipelineRow({ pl, secUid, locked, api, drag }: {
+  pl: Pipeline; secUid: string; locked: boolean; api: BpApi; drag: React.MutableRefObject<string | null>;
+}) {
+  const [over, setOver] = useState<"before" | "after" | null>(null);
+  return (
+    <div
+      draggable={!locked}
+      onDragStart={(e) => { e.stopPropagation(); drag.current = pl.uid; }}
+      onDragOver={(e) => { if (drag.current && drag.current !== pl.uid) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setOver(e.clientY < r.top + r.height / 2 ? "before" : "after"); } }}
+      onDragLeave={() => setOver(null)}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (drag.current && drag.current !== pl.uid) api.movePipeline(secUid, drag.current, pl.uid, over === "before"); drag.current = null; setOver(null); }}
+      className={over ? "drop-" + over : ""}
+      style={{
+        display: "grid", gridTemplateColumns: "16px 30px 1fr auto auto", gap: 10, alignItems: "center",
+        padding: "9px 12px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
+        borderRadius: "var(--r-md)", opacity: pl.enabled ? 1 : 0.55,
+      }}
+    >
+      <span className="drag-handle" title="Drag to reorder">⠿</span>
+      <Switch on={pl.enabled} disabled={locked} onClick={() => api.togglePipeline(secUid, pl.uid)} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap" }}>{pl.name}</span>
+          <span className="tag" style={{ color: KIND_COLOR[pl.kind], borderColor: "color-mix(in oklch," + KIND_COLOR[pl.kind] + ",transparent 70%)" }}>{pl.kind}</span>
+        </div>
+        <div style={{ fontSize: 10.5, color: "var(--fg-muted)", marginTop: 2 }}>{pl.desc}</div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span className="hint">trigger</span>
+        <select className="sel" value={pl.trigger} disabled={locked}
+          onChange={(e) => api.setTrigger(secUid, pl.uid, e.target.value as PipelineTrigger)}>
+          {TRIGGERS.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+      <button className="icon-btn danger" title="Remove pipeline" disabled={locked}
+        onClick={() => api.removePipeline(secUid, pl.uid)}>✕</button>
+    </div>
+  );
+}
+
+// ── add-pipeline picker ──────────────────────────────────────────────────────
+function AddPipelineModal({ section, api, onClose }: { section: BlueprintSection; api: BpApi; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  const suggested = PIPELINE_LIB.filter((p) => p.suits.includes(section.key));
+  const others = PIPELINE_LIB.filter((p) => !p.suits.includes(section.key) && p.suits.includes("*"));
+  const more = PIPELINE_LIB.filter((p) => !p.suits.includes(section.key) && !p.suits.includes("*"));
+  const pick = (p: PipelineDef) => { api.addPipeline(section.uid, { ...p, uid: uid("pl"), trigger: "on completion", enabled: true }); onClose(); };
+
+  const Item = ({ p }: { p: PipelineDef }) => (
+    <div onClick={() => pick(p)} style={{
+      display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", cursor: "pointer",
+      borderRadius: "var(--r-md)", border: "1px solid var(--border-soft)", background: "var(--bg-panel)",
+    }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent-dim)")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-soft)")}>
+      <span className="tag" style={{ color: KIND_COLOR[p.kind], borderColor: "color-mix(in oklch," + KIND_COLOR[p.kind] + ",transparent 70%)" }}>{p.kind}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{p.name}</div>
+        <div style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>{p.desc}</div>
+      </div>
+      <span style={{ color: "var(--accent)", fontFamily: "var(--mono)", fontSize: 14 }}>+</span>
+    </div>
+  );
+  const Group = ({ label, items }: { label: string; items: PipelineDef[] }) => items.length === 0 ? null : (
+    <>
+      <div className="hint" style={{ textTransform: "uppercase", letterSpacing: ".08em", margin: "12px 2px 6px" }}>{label}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{items.map((p) => <Item key={p.id} p={p} />)}</div>
+    </>
+  );
+
+  return (
+    <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{ padding: "18px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          <span style={{ fontSize: 15 }}>{section.glyph}</span>
+          <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 14 }}>Add pipeline to {section.name}</h3>
+          <div style={{ flex: 1 }} />
+          <button className="icon-btn" onClick={onClose}>✕</button>
+        </div>
+        <div className="hint" style={{ marginBottom: 4 }}>Pipelines run on this stage's output. Pick a built-in, an integration, or wire your own.</div>
+        <Group label={"suggested for " + section.name} items={suggested} />
+        <Group label="works on any stage" items={others} />
+        <Group label="more" items={more} />
+
+        <div className="hint" style={{ textTransform: "uppercase", letterSpacing: ".08em", margin: "14px 2px 6px" }}>custom / external tool</div>
+        <div style={{ padding: 12, borderRadius: "var(--r-md)", border: "1px dashed var(--border)", background: "var(--bg-canvas)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <input className="ti" placeholder="pipeline name (e.g. Run Storybook build)" value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="ti" placeholder="command or webhook — what it does" value={desc} onChange={(e) => setDesc(e.target.value)} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="hint">▸ runs your own command, container, or HTTP webhook</span>
+            <div style={{ flex: 1 }} />
+            <button className="btn primary sm" disabled={!name.trim()}
+              onClick={() => { api.addPipeline(section.uid, { uid: uid("pl"), id: "custom-" + uid("c"), name: name.trim(), desc: desc.trim() || "Custom integration", kind: "custom", suits: ["*"], trigger: "manual", enabled: true }); onClose(); }}>
+              add custom →
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── section row ──────────────────────────────────────────────────────────────
+function SectionRow({ s, idx, status, statusAll, byKey, api, drag, onAdd }: {
+  s: BlueprintSection; idx: number;
+  status: { locked: boolean; unmet: string[]; satisfied: boolean };
+  statusAll: Record<string, { satisfied: boolean }>;
+  byKey: Record<string, BlueprintSection>;
+  api: BpApi; drag: React.MutableRefObject<string | null>;
+  onAdd: (s: BlueprintSection) => void;
+}) {
+  const [over, setOver] = useState<"before" | "after" | null>(null);
+  const plDrag = useRef<string | null>(null);
+  const disabled = !s.enabled;
+  const locked = status.locked;
+
+  const statusChip = disabled
+    ? <span className="tag" style={{ color: "var(--fg-dim)" }}>○ off</span>
+    : locked
+      ? <span className="tag" style={{ color: "var(--accent)", borderColor: "color-mix(in oklch,var(--accent),transparent 65%)", background: "color-mix(in oklch,var(--accent),transparent 90%)" }}>
+          🔒 locked · needs {status.unmet.map((d) => byKey[d]?.name || d).join(", ")}</span>
+      : <span className="tag" style={{ color: "var(--success)", borderColor: "color-mix(in oklch,var(--success),transparent 70%)" }}><span className="pulse-dot" /> ready</span>;
+
+  return (
+    <div className={over ? "drop-" + over : ""}
+      style={{ border: "1px solid " + (s.expanded ? "var(--border)" : "var(--border-soft)"), borderRadius: "var(--r-lg)", background: "var(--bg-panel)", overflow: "hidden" }}>
+      <div
+        draggable
+        onDragStart={() => { drag.current = s.uid; }}
+        onDragOver={(e) => { if (drag.current && drag.current !== s.uid) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setOver(e.clientY < r.top + r.height / 2 ? "before" : "after"); } }}
+        onDragLeave={() => setOver(null)}
+        onDrop={(e) => { e.preventDefault(); if (drag.current && drag.current !== s.uid) api.moveSection(drag.current, s.uid, over === "before"); drag.current = null; setOver(null); }}
+        onClick={() => api.toggleExpand(s.uid)}
+        style={{ display: "flex", flexDirection: "column", gap: 7, padding: "12px 14px", cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          <span className="drag-handle" title="Drag to reorder stage" onClick={(e) => e.stopPropagation()}>⠿</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: disabled ? "var(--fg-dim)" : "var(--accent)", width: 18 }}>{pad2(idx + 1)}</span>
+          <Switch on={s.enabled} onClick={() => api.toggleSection(s.uid)} />
+          <span style={{ fontSize: 16, opacity: disabled ? 0.5 : 1 }}>{s.glyph}</span>
+          <span style={{ fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600, color: disabled ? "var(--fg-dim)" : "var(--fg)" }}>{s.name}</span>
+          {statusChip}
+          <div style={{ flex: 1 }} />
+          <span className="tag">{`${s.pipelines.length} ${s.pipelines.length === 1 ? "pipeline" : "pipelines"}`}</span>
+          <span style={{ color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 12, transform: s.expanded ? "rotate(90deg)" : "none", transition: "transform .15s", width: 14, textAlign: "center" }}>›</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 29, opacity: disabled ? 0.6 : 1, flexWrap: "wrap" }}>
+          <span className="hint" style={{ color: "var(--fg-muted)" }}>{s.blurb}</span>
+          <span className="tag" style={{ color: "var(--fg-muted)" }}>gate: {s.gate}</span>
+          {s.deps.length > 0 && (
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <span className="hint">after</span>
+              {s.deps.map((d) => {
+                const dep = byKey[d];
+                const label = SECTION_DEFS[d]?.name || dep?.name || d;
+                if (!dep) return <span key={d} className="tag" title="not part of this blueprint — treated as met" style={{ color: "var(--fg-dim)" }}>◦ {label}</span>;
+                const met = statusAll[d]?.satisfied;
+                const c = met ? "var(--success)" : "var(--danger)";
+                return <span key={d} className="tag" style={{ color: c, borderColor: "color-mix(in oklch," + c + ",transparent 70%)" }}>{met ? "✓" : "✕"} {label}</span>;
+              })}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {s.expanded && (
+        <div style={{ borderTop: "1px solid var(--border-soft)", padding: "14px 16px 16px", background: "var(--bg-canvas)" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 7 }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", textTransform: "uppercase", letterSpacing: ".05em" }}>Prompt module</span>
+            <span className="hint">the instruction block Claude receives when planning this stage</span>
+          </div>
+          <textarea className="pm" value={s.prompt} onChange={(e) => api.editPrompt(s.uid, e.target.value)} spellCheck={false} />
+
+          <div style={{ marginTop: 16, paddingLeft: 12, borderLeft: "2px solid color-mix(in oklch,var(--accent),transparent 65%)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 9 }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", textTransform: "uppercase", letterSpacing: ".05em" }}>Pipelines</span>
+              <span className="hint">pluggable actions that run on this stage's output</span>
+              <div style={{ flex: 1 }} />
+              <button className="btn sm" onClick={() => onAdd(s)}>+ Add pipeline</button>
+            </div>
+
+            {locked && s.pipelines.length > 0 && (
+              <div className="hint" style={{ marginBottom: 8, color: "var(--accent)" }}>stage locked — pipelines won't run until dependencies are met.</div>
+            )}
+
+            {s.pipelines.length === 0 ? (
+              <div style={{ padding: "20px 16px", borderRadius: "var(--r-md)", border: "1px dashed var(--border)", textAlign: "center", background: "var(--bg-panel)" }}>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>No pipelines yet</div>
+                <div className="hint" style={{ margin: "4px 0 10px" }}>Bind an action that runs when this stage produces its plan.</div>
+                <button className="btn primary sm" onClick={() => onAdd(s)}>+ Add pipeline</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, pointerEvents: locked ? "none" : "auto", opacity: locked ? 0.6 : 1 }}>
+                {s.pipelines.map((pl) => <PipelineRow key={pl.uid} pl={pl} secUid={s.uid} locked={locked} api={api} drag={plDrag} />)}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── section list (center stage) ──────────────────────────────────────────────
+function SectionList({ bp, api }: { bp: Blueprint; api: BpApi }) {
+  const drag = useRef<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [pickFor, setPickFor] = useState<BlueprintSection | null>(null);
+  const status = computeStatus(bp.sections);
+  const byKey: Record<string, BlueprintSection> = Object.fromEntries(bp.sections.map((s) => [s.key, s]));
+
+  return (
+    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 9 }}>
+      {bp.sections.map((s, i) => (
+        <SectionRow key={s.uid} s={s} idx={i} status={status[s.key]} statusAll={status} byKey={byKey} api={api} drag={drag} onAdd={setPickFor} />
+      ))}
+
+      {adding ? (
+        <div style={{ display: "flex", gap: 8, padding: "10px 12px", border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", background: "var(--bg-panel)" }}>
+          <input className="ti" autoFocus placeholder="custom stage name (e.g. Compliance review)" value={addName}
+            onChange={(e) => setAddName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && addName.trim()) { api.addSection(addName.trim()); setAddName(""); setAdding(false); } }} />
+          <button className="btn primary sm" disabled={!addName.trim()} onClick={() => { api.addSection(addName.trim()); setAddName(""); setAdding(false); }}>add</button>
+          <button className="btn ghost sm" onClick={() => { setAdding(false); setAddName(""); }}>cancel</button>
+        </div>
+      ) : (
+        <button className="btn ghost" style={{ alignSelf: "flex-start", color: "var(--fg-muted)" }} onClick={() => setAdding(true)}>+ Add custom stage</button>
+      )}
+
+      {pickFor && <AddPipelineModal section={bp.sections.find((x) => x.uid === pickFor.uid) || pickFor} api={api} onClose={() => setPickFor(null)} />}
+    </div>
+  );
+}
+
+// ── library (secondary) ──────────────────────────────────────────────────────
+function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActive, onDuplicate }: {
+  blueprints: Blueprint[]; selectedId: string; activeId: string;
+  onSelect: (id: string) => void; onNew: () => void; onSetActive: (id: string) => void; onDuplicate: (id: string) => void;
+}) {
+  return (
+    <aside style={{ width: 256, flex: "0 0 256px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", textTransform: "uppercase", letterSpacing: ".05em" }}>Library</h3>
+        <div style={{ flex: 1 }} />
+        <button className="btn sm" onClick={onNew}>+ New</button>
+      </div>
+      <div className="hint">The active blueprint seeds every new project.</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {blueprints.map((b) => {
+          const sel = b.id === selectedId;
+          const active = b.id === activeId;
+          const plCount = b.sections.reduce((n, s) => n + s.pipelines.length, 0);
+          const onCount = b.sections.filter((s) => s.enabled).length;
+          return (
+            <div key={b.id} onClick={() => onSelect(b.id)} style={{
+              padding: "11px 12px", borderRadius: "var(--r-lg)", cursor: "pointer",
+              background: sel ? "var(--bg-elev)" : "var(--bg-panel)",
+              border: "1px solid " + (sel ? "var(--accent-dim)" : "var(--border-soft)"),
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <span style={{ fontFamily: "var(--sans)", fontSize: 12.5, fontWeight: 600, color: "var(--fg)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</span>
+                {active && <span className="tag" style={{ color: "var(--accent)", borderColor: "color-mix(in oklch,var(--accent),transparent 65%)", background: "color-mix(in oklch,var(--accent),transparent 90%)" }}>★ active</span>}
+              </div>
+              <div className="hint" style={{ marginTop: 3 }}>{b.desc}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+                <span>{onCount}/{b.sections.length} stages</span><span>·</span><span>{plCount} pipelines</span>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
+                {!active && <button className="btn sm" style={{ flex: 1 }} onClick={(e) => { e.stopPropagation(); onSetActive(b.id); }}>set active</button>}
+                {active && <button className="btn sm" style={{ flex: 1, cursor: "default", color: "var(--fg-dim)" }} disabled>seeds new projects</button>}
+                <button className="icon-btn" title="Duplicate" onClick={(e) => { e.stopPropagation(); onDuplicate(b.id); }}>⧉</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+// ── page ─────────────────────────────────────────────────────────────────────
 export function Blueprints() {
   const {
     blueprints, activeBlueprintId,
-    setActiveBlueprint, addBlueprint, duplicateBlueprint, deleteBlueprint,
-    updateBlueprintMeta, setBlueprintStageEnabled, reorderBlueprintStages,
+    setActiveBlueprint, addBlueprint, duplicateBlueprint, setBlueprintSections,
   } = useAppStore();
 
-  // Which blueprint is being edited (defaults to the active one).
   const [selectedId, setSelectedId] = useState(activeBlueprintId);
   const selected = blueprints.find((b) => b.id === selectedId) ?? blueprints.find((b) => b.id === activeBlueprintId) ?? blueprints[0];
 
-  function move(order: StageId[], id: StageId, dir: -1 | 1): StageId[] {
-    const i = order.indexOf(id);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= order.length) return order;
-    const next = [...order];
-    [next[i], next[j]] = [next[j], next[i]];
-    return next;
+  // All section/pipeline edits compute a new sections array and persist it.
+  const setSecs = (updater: (secs: BlueprintSection[]) => BlueprintSection[]) =>
+    selected && setBlueprintSections(selected.id, updater(selected.sections));
+  const mapSec = (u: string, fn: (s: BlueprintSection) => BlueprintSection) =>
+    setSecs((secs) => secs.map((s) => (s.uid === u ? fn(s) : s)));
+
+  const api: BpApi = {
+    toggleSection: (u) => mapSec(u, (s) => ({ ...s, enabled: !s.enabled })),
+    toggleExpand: (u) => mapSec(u, (s) => ({ ...s, expanded: !s.expanded })),
+    editPrompt: (u, v) => mapSec(u, (s) => ({ ...s, prompt: v })),
+    moveSection: (from, to, before) => setSecs((secs) => reorder(secs, from, to, before)),
+    addSection: (name) => setSecs((secs) => [...secs, {
+      uid: uid("sec"), key: "custom-" + uid("k"), name, glyph: "✚", gate: "stage complete", deps: [],
+      blurb: "Custom planning stage.", prompt: "Describe what Claude should produce in this stage, and the gate that marks it complete.",
+      enabled: true, expanded: true, pipelines: [],
+    }]),
+    addPipeline: (su, pl) => mapSec(su, (s) => ({ ...s, pipelines: [...s.pipelines, pl] })),
+    removePipeline: (su, pu) => mapSec(su, (s) => ({ ...s, pipelines: s.pipelines.filter((p) => p.uid !== pu) })),
+    togglePipeline: (su, pu) => mapSec(su, (s) => ({ ...s, pipelines: s.pipelines.map((p) => (p.uid === pu ? { ...p, enabled: !p.enabled } : p)) })),
+    setTrigger: (su, pu, v) => mapSec(su, (s) => ({ ...s, pipelines: s.pipelines.map((p) => (p.uid === pu ? { ...p, trigger: v } : p)) })),
+    movePipeline: (su, from, to, before) => mapSec(su, (s) => ({ ...s, pipelines: reorder(s.pipelines, from, to, before) })),
+  };
+
+  if (!selected) {
+    return <div style={{ padding: 24, fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>No blueprints.</div>;
   }
 
+  const onCount = selected.sections.filter((s) => s.enabled).length;
+  const plCount = selected.sections.reduce((n, s) => n + s.pipelines.length, 0);
+
   return (
-    <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-      {/* Library */}
-      <div style={{
-        width: 240, flex: "0 0 240px", borderRight: "1px solid var(--border-soft)",
-        display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-panel)",
-      }}>
-        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border-soft)", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
-          Library
-        </div>
-        <div style={{ flex: 1, overflow: "auto", padding: 6, display: "flex", flexDirection: "column", gap: 2 }}>
-          {blueprints.map((b) => {
-            const isActive = b.id === activeBlueprintId;
-            const isSel = b.id === selected?.id;
-            return (
-              <div
-                key={b.id}
-                onClick={() => setSelectedId(b.id)}
-                style={{
-                  padding: "6px 8px", borderRadius: 6, cursor: "pointer",
-                  background: isSel ? "var(--bg-elev2)" : "transparent",
-                  border: "1px solid " + (isSel ? "var(--border)" : "transparent"),
-                  display: "flex", alignItems: "center", gap: 6,
-                  fontFamily: "var(--mono)", fontSize: 11,
-                }}
-              >
-                <span style={{ color: isActive ? "var(--accent)" : "var(--fg-dim)", width: 10 }}>{isActive ? "●" : ""}</span>
-                <span style={{ flex: 1, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</span>
-                {b.builtin && <span style={{ color: "var(--fg-dim)", fontSize: 9 }}>preset</span>}
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ padding: 8, borderTop: "1px solid var(--border-soft)", display: "flex", flexDirection: "column", gap: 6 }}>
-          <button className="btn" style={{ fontFamily: "var(--mono)", fontSize: 11 }}
-            onClick={() => { const id = addBlueprint("New blueprint", (selected ?? blueprints[0]).config); setSelectedId(id); }}>
-            + New blueprint
-          </button>
-          {selected && (
-            <button className="btn ghost" style={{ fontFamily: "var(--mono)", fontSize: 11 }}
-              onClick={() => duplicateBlueprint(selected.id)}>
-              ⧉ Duplicate
-            </button>
-          )}
-          {selected && !selected.builtin && (
-            <button className="btn ghost" style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)" }}
-              onClick={() => { const next = blueprints.find((b) => b.id !== selected.id); deleteBlueprint(selected.id); if (next) setSelectedId(next.id); }}>
-              🗑 Delete
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Active / selected blueprint editor */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "auto" }}>
-        {!selected ? (
-          <div style={{ padding: 24, fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>No blueprint selected.</div>
-        ) : (
-          <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <input
-                value={selected.name}
-                onChange={(e) => updateBlueprintMeta(selected.id, { name: e.target.value })}
-                style={{
-                  background: "none", border: "none", outline: "none",
-                  fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600, color: "var(--fg)", padding: 0,
-                  minWidth: 120, maxWidth: 360,
-                }}
-              />
-              {selected.id === activeBlueprintId
-                ? <span className="tag" style={{ color: "var(--accent)" }}>● active</span>
-                : <button className="btn" style={{ fontFamily: "var(--mono)", fontSize: 11 }} onClick={() => setActiveBlueprint(selected.id)}>Set active</button>}
-            </div>
-            <input
-              value={selected.description}
-              onChange={(e) => updateBlueprintMeta(selected.id, { description: e.target.value })}
-              placeholder="description…"
-              style={{
-                background: "none", border: "none", outline: "none",
-                fontFamily: "var(--sans)", fontSize: 12, color: "var(--fg-muted)", padding: 0, maxWidth: 520,
-              }}
-            />
-
-            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", marginTop: 4 }}>
-              Stages — toggle on/off · reorder. The active blueprint seeds every new project.
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 560 }}>
-              {selected.config.order.map((id) => {
-                const stage = STAGE_BY_ID[id];
-                if (!stage) return null;
-                const on = selected.config.enabled[id];
-                return (
-                  <div key={id} style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    padding: "8px 10px", borderRadius: 6,
-                    background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
-                    fontFamily: "var(--mono)", fontSize: 12,
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      onChange={(e) => setBlueprintStageEnabled(selected.id, id, e.target.checked)}
-                      aria-label={`${stage.label} enabled`}
-                    />
-                    <span style={{ flex: 1, color: on ? "var(--fg)" : "var(--fg-dim)" }}>{stage.label}</span>
-                    {stage.dependsOn.length > 0 && (
-                      <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>needs {stage.dependsOn.join(", ")}</span>
-                    )}
-                    <button title="move up" className="btn ghost" style={{ padding: "0 6px", fontSize: 11 }}
-                      onClick={() => reorderBlueprintStages(selected.id, move(selected.config.order, id, -1))}>↑</button>
-                    <button title="move down" className="btn ghost" style={{ padding: "0 6px", fontSize: 11 }}
-                      onClick={() => reorderBlueprintStages(selected.id, move(selected.config.order, id, 1))}>↓</button>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>
-              {PLAN_STAGES.length} stages available · {selected.config.order.filter((id) => selected.config.enabled[id]).length} enabled
+    <section style={{ flex: 1, overflow: "auto", padding: "20px 26px", minWidth: 0 }}>
+      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
+        {/* header */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 16 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 19, fontWeight: 600 }}>Blueprints</h2>
+            <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 5, lineHeight: 1.5, maxWidth: 640 }}>
+              A blueprint is a reusable planning configuration — an ordered list of stages, each with its prompt module and its pipelines — that seeds every new project's planning session.
             </div>
           </div>
-        )}
+        </div>
+
+        {/* editing context bar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", marginBottom: 16, background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)" }}>
+          <span className="hint">editing</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg)" }}>{selected.name}</span>
+          {selected.id === activeBlueprintId
+            ? <span className="tag" style={{ color: "var(--accent)", borderColor: "color-mix(in oklch,var(--accent),transparent 65%)", background: "color-mix(in oklch,var(--accent),transparent 90%)" }}>★ active · seeds new projects</span>
+            : <button className="btn sm" onClick={() => setActiveBlueprint(selected.id)}>set as active</button>}
+          <div style={{ flex: 1 }} />
+          <span className="hint">{onCount}/{selected.sections.length} stages on · {plCount} pipelines</span>
+        </div>
+
+        {/* two-column: section list (star) + library (secondary) */}
+        <div style={{ display: "flex", gap: 22, alignItems: "flex-start" }}>
+          <SectionList bp={selected} api={api} />
+          <Library
+            blueprints={blueprints} selectedId={selectedId} activeId={activeBlueprintId}
+            onSelect={setSelectedId}
+            onNew={() => setSelectedId(addBlueprint())}
+            onSetActive={setActiveBlueprint}
+            onDuplicate={(id) => setSelectedId(duplicateBlueprint(id))}
+          />
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

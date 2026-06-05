@@ -5,7 +5,7 @@ import type { QueuedPane } from "../lib/focusQueue";
 import type { FleetPlan } from "../screens/projects/planSections";
 import type { ExtensionDef } from "../lib/extensions";
 import { defaultStageConfig } from "../screens/projects/planStages";
-import { starterBlueprints } from "../screens/projects/blueprints";
+import { makeBlueprints } from "../screens/projects/blueprints";
 
 const RESET_STATE = {
   tabs: [
@@ -1517,42 +1517,53 @@ describe("plan stage config (#512)", () => {
   });
 });
 
-describe("blueprints library (#513)", () => {
+describe("blueprints library (#513/#514)", () => {
   beforeEach(() => {
-    useAppStore.setState({ blueprints: starterBlueprints(), activeBlueprintId: "web-app" });
+    useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });
   });
 
-  it("seeds the starter presets and a default active", () => {
+  it("seeds the starter library with a default active", () => {
     expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(4);
-    expect(useAppStore.getState().activeBlueprintId).toBe("web-app");
+    expect(useAppStore.getState().activeBlueprintId).toBe("default");
   });
 
-  it("addBlueprint appends a non-builtin and returns its id", () => {
+  it("addBlueprint appends an untitled blueprint with a seed section and returns its id", () => {
     const before = useAppStore.getState().blueprints.length;
-    const id = useAppStore.getState().addBlueprint("Custom", defaultStageConfig());
-    const bps = useAppStore.getState().blueprints;
-    expect(bps.length).toBe(before + 1);
-    expect(bps.find((b) => b.id === id)?.builtin).toBeFalsy();
+    const id = useAppStore.getState().addBlueprint();
+    const bp = useAppStore.getState().blueprints.find((b) => b.id === id)!;
+    expect(useAppStore.getState().blueprints.length).toBe(before + 1);
+    expect(bp.sections.length).toBeGreaterThan(0);
   });
 
   it("setActiveBlueprint switches the active id", () => {
-    useAppStore.getState().setActiveBlueprint("cli-tool");
-    expect(useAppStore.getState().activeBlueprintId).toBe("cli-tool");
+    useAppStore.getState().setActiveBlueprint("api");
+    expect(useAppStore.getState().activeBlueprintId).toBe("api");
   });
 
-  it("setBlueprintStageEnabled edits only that blueprint", () => {
-    useAppStore.getState().setBlueprintStageEnabled("web-app", "automations", false);
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "web-app")!.config.enabled.automations).toBe(false);
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "3d-app")!.config.enabled.automations).toBe(true);
+  it("duplicateBlueprint inserts an independent copy after the source", () => {
+    const id = useAppStore.getState().duplicateBlueprint("default");
+    const copy = useAppStore.getState().blueprints.find((b) => b.id === id)!;
+    expect(copy.name).toMatch(/copy/);
+    // editing the copy doesn't touch the source
+    const edited = copy.sections.map((s, i) => (i === 0 ? { ...s, enabled: false } : s));
+    useAppStore.getState().setBlueprintSections(id, edited);
+    const src = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
+    expect(src.sections[0].enabled).toBe(true);
   });
 
-  it("deleteBlueprint refuses builtins but removes a custom one, reassigning active", () => {
-    const id = useAppStore.getState().addBlueprint("Temp", defaultStageConfig());
-    useAppStore.getState().setActiveBlueprint(id);
-    useAppStore.getState().deleteBlueprint("web-app"); // builtin -> no-op
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "web-app")).toBeTruthy();
-    useAppStore.getState().deleteBlueprint(id); // custom -> removed
-    expect(useAppStore.getState().blueprints.find((b) => b.id === id)).toBeUndefined();
-    expect(useAppStore.getState().activeBlueprintId).not.toBe(id);
+  it("setBlueprintSections persists the new sections for that blueprint only", () => {
+    const def = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
+    const flipped = def.sections.map((s) => (s.key === "context" ? { ...s, enabled: false } : s));
+    useAppStore.getState().setBlueprintSections("default", flipped);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "context")!.enabled).toBe(false);
+    // a sibling blueprint is untouched
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
+  });
+
+  it("updateBlueprintMeta edits name/desc", () => {
+    useAppStore.getState().updateBlueprintMeta("default", { name: "Renamed", desc: "New desc" });
+    const bp = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
+    expect(bp.name).toBe("Renamed");
+    expect(bp.desc).toBe("New desc");
   });
 });

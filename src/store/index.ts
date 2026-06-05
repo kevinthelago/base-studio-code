@@ -31,7 +31,7 @@ import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
-import { starterBlueprints, cloneStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint } from "../screens/projects/blueprints";
+import { makeBlueprints, cloneSections, mkSection, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
@@ -576,17 +576,17 @@ interface AppStore {
   reorderStages:      (projectId: string, order: StageId[]) => void;
   /** Wholesale-set a project's stage config (used to seed it from a blueprint). */
   setProjectStageConfig: (projectId: string, config: StageConfig) => void;
-  // Blueprints (#513): named, reusable stage configs. The active one seeds new
-  // projects. Seeded with the starter presets; persisted.
+  // Blueprints (#513/#514): named, reusable configs — an ordered list of planning
+  // sections, each owning its prompt module + pipelines. The active one seeds new
+  // projects. Seeded with the starter library; persisted. Section/pipeline edits go
+  // through setBlueprintSections (the component computes the new sections array).
   blueprints:         Blueprint[];
   activeBlueprintId:  string;
-  addBlueprint:       (name: string, config: StageConfig) => string;
-  duplicateBlueprint: (id: string) => void;
-  updateBlueprintMeta: (id: string, patch: { name?: string; description?: string }) => void;
-  deleteBlueprint:    (id: string) => void;
   setActiveBlueprint: (id: string) => void;
-  setBlueprintStageEnabled: (id: string, stageId: StageId, enabled: boolean) => void;
-  reorderBlueprintStages: (id: string, order: StageId[]) => void;
+  addBlueprint:       () => string;
+  duplicateBlueprint: (id: string) => string;
+  updateBlueprintMeta: (id: string, patch: { name?: string; desc?: string }) => void;
+  setBlueprintSections: (id: string, sections: BlueprintSection[]) => void;
   // Agent fleet — the parallel-execution plan (work streams + optional director +
   // the optimal concurrent session count). Persisted per project.
   planFleet:             Record<string, FleetPlan>;
@@ -1813,48 +1813,36 @@ export const useAppStore = create<AppStore>()(
       setProjectStageConfig: (projectId, config) =>
         set((s) => ({ planStageConfig: { ...s.planStageConfig, [projectId]: config } })),
 
-      blueprints: starterBlueprints(),
+      blueprints: makeBlueprints(),
       activeBlueprintId: DEFAULT_BLUEPRINT_ID,
-      addBlueprint: (name, config) => {
+      setActiveBlueprint: (id) => set({ activeBlueprintId: id }),
+      addBlueprint: () => {
         const id = `bp-${Date.now().toString(36)}`;
-        set((s) => ({ blueprints: [...s.blueprints, { id, name, description: "", config: cloneStageConfig(config) }] }));
+        set((s) => ({
+          blueprints: [...s.blueprints, {
+            id, name: "Untitled blueprint", desc: "New configuration",
+            sections: [mkSection("context", { expanded: true })],
+          }],
+        }));
         return id;
       },
-      duplicateBlueprint: (id) =>
+      duplicateBlueprint: (id) => {
+        const nid = `bp-${Date.now().toString(36)}`;
         set((s) => {
           const src = s.blueprints.find((b) => b.id === id);
           if (!src) return {};
-          const copy: Blueprint = {
-            id: `bp-${Date.now().toString(36)}`,
-            name: `${src.name} copy`,
-            description: src.description,
-            config: cloneStageConfig(src.config),
-          };
-          return { blueprints: [...s.blueprints, copy] };
-        }),
+          const copy: Blueprint = { ...src, id: nid, name: `${src.name} copy`, sections: cloneSections(src.sections) };
+          const i = s.blueprints.findIndex((b) => b.id === id);
+          const blueprints = [...s.blueprints];
+          blueprints.splice(i + 1, 0, copy);
+          return { blueprints };
+        });
+        return nid;
+      },
       updateBlueprintMeta: (id, patch) =>
         set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, ...patch } : b)) })),
-      deleteBlueprint: (id) =>
-        set((s) => {
-          const bp = s.blueprints.find((b) => b.id === id);
-          if (!bp || bp.builtin) return {}; // builtins are not deletable
-          const blueprints = s.blueprints.filter((b) => b.id !== id);
-          const activeBlueprintId = s.activeBlueprintId === id
-            ? (blueprints[0]?.id ?? DEFAULT_BLUEPRINT_ID)
-            : s.activeBlueprintId;
-          return { blueprints, activeBlueprintId };
-        }),
-      setActiveBlueprint: (id) => set({ activeBlueprintId: id }),
-      setBlueprintStageEnabled: (id, stageId, enabled) =>
-        set((s) => ({
-          blueprints: s.blueprints.map((b) =>
-            b.id === id ? { ...b, config: { ...b.config, enabled: { ...b.config.enabled, [stageId]: enabled } } } : b,
-          ),
-        })),
-      reorderBlueprintStages: (id, order) =>
-        set((s) => ({
-          blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, config: { ...b.config, order } } : b)),
-        })),
+      setBlueprintSections: (id, sections) =>
+        set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, sections } : b)) })),
 
       planFleet: {},
       pinnedContext: {},
