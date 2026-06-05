@@ -36,6 +36,8 @@ import { featureSectionsToIssues, featureSlug, parseFeatureSection } from "./pla
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { ProjectPane, type SyncState } from "./ProjectPane";
 import { PlanPreviewPane } from "./PlanPreviewPane";
+import { parseUiPreviewTags, stripUiPreviewTags } from "./uiPreviewTag";
+import { dispatchRenderPreview } from "./renderPreview";
 import { buildProjectPaneData } from "./projectPaneData";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -817,6 +819,25 @@ export function Planning({ visible }: { visible: boolean }) {
             new RegExp(`<repo_link\\s+full_name=${Q}[^\\u0022\\u201c\\u201d]+${Q}\\s*\\/>`, 'g'),
             ""
           );
+        }
+
+        // ── <ui_preview screen="..." mode="2d|3d" /> ─────────────────────────
+        // The render-preview trigger (#533): read the project's .ui-skeleton from
+        // disk and render the named screen live in the third pane. Last tag wins.
+        const previews = parseUiPreviewTags(bufRef.current);
+        if (previews.length > 0) {
+          bufRef.current = stripUiPreviewTags(bufRef.current);
+          const last = previews[previews.length - 1];
+          setShowPreview(true);
+          void (async () => {
+            try {
+              const files = await invoke<[string, string][]>("read_ui_skeleton", { projectKey: projIdSnap });
+              if (files.length === 0) return;
+              await dispatchRenderPreview({ projectKey: projIdSnap, artifacts: Object.fromEntries(files), entry: last.screen, mode: last.mode });
+            } catch (e) {
+              console.error("ui_preview trigger failed", e);
+            }
+          })();
         }
 
         // ── <kb_assign id="block-id" /> ───────────────────────────────────────

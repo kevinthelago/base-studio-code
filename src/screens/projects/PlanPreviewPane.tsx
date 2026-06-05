@@ -5,6 +5,7 @@
 // the real triggers (the planner's <ui_preview> tag + a watch on .ui-skeleton/).
 
 import { useState, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { PreviewFrame, type PreviewStatus } from "./PreviewFrame";
 import { dispatchRenderPreview, RENDER_PREVIEW_ID } from "./renderPreview";
@@ -32,6 +33,13 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
   const [frameError, setFrameError] = useState<string>("");
 
   const renderDemo = () => void dispatchRenderPreview({ projectKey, artifacts: DEMO_FILES, entry: "Demo.jsx", mode: "2d" });
+  // Manual trigger: read the project's real .ui-skeleton from disk and render it.
+  const loadSkeleton = async () => {
+    try {
+      const files = await invoke<[string, string][]>("read_ui_skeleton", { projectKey });
+      if (files.length > 0) await dispatchRenderPreview({ projectKey, artifacts: Object.fromEntries(files), mode: "2d" });
+    } catch (e) { setFrameError(String(e)); }
+  };
   const onStatus = useCallback((s: PreviewStatus) => { setFrameError(s.status === "error" ? (s.message ?? "") : ""); }, []);
 
   const statusLabel = status === "running" ? "building…" : frameError ? "error" : status;
@@ -64,9 +72,12 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
               {status === "running" ? "Bundling…" : "No preview yet"}
             </div>
             <div className="hint" style={{ maxWidth: 280 }}>
-              The UI stage renders generated screens here via the render-preview pipeline. Try it with a demo:
+              The UI stage renders generated screens here via the render-preview pipeline.
             </div>
-            <button className="btn" onClick={renderDemo} disabled={status === "running"}>render demo →</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn" onClick={loadSkeleton} disabled={status === "running"}>load from skeleton →</button>
+              <button className="btn ghost" onClick={renderDemo} disabled={status === "running"}>demo</button>
+            </div>
           </div>
         )}
       </div>
