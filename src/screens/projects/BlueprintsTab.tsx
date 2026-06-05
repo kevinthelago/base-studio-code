@@ -26,6 +26,7 @@ interface BpApi {
   removePipeline: (su: string, pu: string) => void;
   togglePipeline: (su: string, pu: string) => void;
   setTrigger: (su: string, pu: string, v: PipelineTrigger) => void;
+  setGate: (su: string, pu: string, gate: boolean) => void;
   movePipeline: (su: string, from: string, to: string, before: boolean) => void;
 }
 
@@ -60,7 +61,7 @@ function PipelineRow({ pl, secUid, locked, api, drag }: {
       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const d = drag.get(); if (d && d !== pl.uid) api.movePipeline(secUid, d, pl.uid, over === "before"); drag.clear(); setOver(null); }}
       className={over ? "drop-" + over : ""}
       style={{
-        display: "grid", gridTemplateColumns: "16px 30px 1fr auto auto", gap: 10, alignItems: "center",
+        display: "grid", gridTemplateColumns: "16px 30px 1fr auto auto auto", gap: 10, alignItems: "center",
         padding: "9px 12px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
         borderRadius: "var(--r-md)", opacity: pl.enabled ? 1 : 0.55,
       }}
@@ -81,6 +82,17 @@ function PipelineRow({ pl, secUid, locked, api, drag }: {
           {TRIGGERS.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
+      <span
+        className="tag"
+        title={pl.gate ? "Gate: blocks the stage until this passes" : "Mark as a gate (blocks the stage until it passes)"}
+        onClick={() => api.setGate(secUid, pl.uid, !pl.gate)}
+        style={{
+          cursor: "pointer", fontSize: 9.5,
+          color: pl.gate ? "var(--accent)" : "var(--fg-dim)",
+          borderColor: pl.gate ? "color-mix(in oklch,var(--accent),transparent 65%)" : "var(--border-soft)",
+          background: pl.gate ? "color-mix(in oklch,var(--accent),transparent 90%)" : "transparent",
+        }}
+      >⛉ gate</span>
       <button className="icon-btn danger" title="Remove pipeline" disabled={locked}
         onClick={() => api.removePipeline(secUid, pl.uid)}>✕</button>
     </div>
@@ -363,6 +375,7 @@ export function Blueprints() {
     removePipeline: (su, pu) => mapSec(su, (s) => ({ ...s, pipelines: s.pipelines.filter((p) => p.uid !== pu) })),
     togglePipeline: (su, pu) => mapSec(su, (s) => ({ ...s, pipelines: s.pipelines.map((p) => (p.uid === pu ? { ...p, enabled: !p.enabled } : p)) })),
     setTrigger: (su, pu, v) => mapSec(su, (s) => ({ ...s, pipelines: s.pipelines.map((p) => (p.uid === pu ? { ...p, trigger: v } : p)) })),
+    setGate: (su, pu, gate) => mapSec(su, (s) => ({ ...s, pipelines: s.pipelines.map((p) => (p.uid === pu ? { ...p, gate } : p)) })),
     movePipeline: (su, from, to, before) => mapSec(su, (s) => ({ ...s, pipelines: reorder(s.pipelines, from, to, before) })),
   };
 
