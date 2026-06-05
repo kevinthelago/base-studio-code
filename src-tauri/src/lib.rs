@@ -2348,6 +2348,11 @@ struct AutomationData {
     schedule: Option<String>,
 }
 
+/// Bump when the planning template (CLAUDE.md) changes in a way that affects
+/// the session context. The signature written by `setup_workspaces` includes
+/// this version so Planning.tsx can detect template upgrades (#175).
+const PLANNING_TEMPLATE_VERSION: u8 = 1;
+
 #[derive(serde::Serialize)]
 struct WorkspacePaths {
     kb_dir:       String,
@@ -3591,10 +3596,38 @@ async fn setup_workspaces(
     std::fs::write(planning_dir.join("github_context.md"), gh_ctx)
         .map_err(|e| e.to_string())?;
 
+    // Write a deterministic context signature so Planning.tsx can surface a
+    // "context updated · refresh" badge when inputs diverge from this baseline (#175).
+    {
+        let mut repos = repo_full_names.clone();
+        repos.sort();
+        let mut kb_ids: Vec<&str> = kb_blocks.iter().map(|b| b.id.as_str()).collect();
+        kb_ids.sort();
+        let mut stages_sorted = enabled_stages.clone();
+        stages_sorted.sort();
+        let sig = format!(
+            "v{}|{}|{}|{}",
+            PLANNING_TEMPLATE_VERSION,
+            repos.join(","),
+            kb_ids.join(","),
+            stages_sorted.join(","),
+        );
+        std::fs::write(planning_dir.join("context_signature.txt"), sig)
+            .map_err(|e| e.to_string())?;
+    }
+
     Ok(WorkspacePaths {
         kb_dir:       kb_dir.to_string_lossy().into_owned(),
         planning_dir: planning_dir.to_string_lossy().into_owned(),
     })
+}
+
+/// Read back the context signature that `setup_workspaces` last wrote (#175).
+/// Returns an empty string when the file doesn't exist yet.
+#[tauri::command]
+fn get_context_signature(project_key: String) -> String {
+    let path = project_dir(&project_key).join("context_signature.txt");
+    std::fs::read_to_string(path).unwrap_or_default()
 }
 
 // ── Claude config file management ────────────────────────────────────────────
@@ -4940,6 +4973,7 @@ pub fn run() {
             delete_project_dir,
             clear_all_plan_files,
             clear_project_plan_files,
+            get_context_signature,
             list_documents,
             read_document,
             write_document,
