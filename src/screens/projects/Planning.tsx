@@ -6,7 +6,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../../store";
 import { sanitizeProjectKey, resolveProjectKey } from "../../lib/projectPaths";
-import { ensureGithubProject, canLaunchTriage, triageLockReason } from "../../lib/projectSync";
+import { ensureGithubProject, canLaunchTriage, triageLockReason, type TriageGateState } from "../../lib/projectSync";
 import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
@@ -28,17 +28,23 @@ import { parseSkillsFile } from "../../lib/skills";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, validateIssues } from "./planIssues";
 import { PlanStageBar } from "./PlanStageBar";
-import { derivePlanStageState } from "./planStageDerive";
+import { derivePlanStageState, planStateToSignals } from "./planStageDerive";
 import { isGateBlocked } from "./pipelineRuntime";
-import { defaultStageConfig, enabledOrderedStages, stageStatus } from "./planStages";
-import { blueprintToStageConfig } from "./blueprints";
+import { defaultStageConfig, enabledOrderedStages } from "./planStages";
+import { pipelineScreen, type PipelineScreenComponent } from "./pipelineScreens";
+import { RENDER_PREVIEW_ID } from "./renderPreview";
+import { dispatchPipelineCommand } from "./pipelineCommands";
+import { parsePipelineTags, stripPipelineTags } from "./pipelineTag";
+import {
+  blueprintToStageConfig, incompleteSections, planSectionsComplete, currentSection, mkSection,
+  type BlueprintSection, type IncompleteSection,
+} from "./blueprints";
 import { featureSectionsToIssues, featureSlug, parseFeatureSection, incompleteFeatureSections } from "./planFeatures";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { ProjectPane, type SyncState } from "./ProjectPane";
-import { PlanPreviewPane } from "./PlanPreviewPane";
 import { Dialog } from "../../components/Dialog";
 import { parseUiPreviewTags, stripUiPreviewTags } from "./uiPreviewTag";
-import { dispatchRenderPreview } from "./renderPreview";
+import { dispatchGradePlan } from "./gradePlan";
 import { buildProjectPaneData } from "./projectPaneData";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -649,17 +655,46 @@ export function Planning({ visible }: { visible: boolean }) {
     });
   }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts]);
 
-  // Stages blocked by an unpassed gate pipeline (#532): map the active blueprint's
-  // gating sections against this project's pipeline runs.
-  const blockedStages = useMemo(() => {
+  // The authoritative plan sections come from the BLUEPRINT object — not the hardcoded
+  // PLAN_STAGES enum (#…). Each section carries its own declarative gate, applicability,
+  // deps, and pipelines, so a built-in or a cloud-distributed section is treated the
+  // same. The N-bar, readiness, current-section, and "what's incomplete" all read these.
+  // Fallback (no active blueprint) synthesizes built-in sections from the project's
+  // enabled stage ids so the page still renders.
+  const planSecs = useMemo<BlueprintSection[]>(() => {
     const bp = blueprints.find(b => b.id === activeBlueprintId);
+    if (bp) return bp.sections;
+    return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
+  }, [blueprints, activeBlueprintId, stageConfig]);
+
+  // The flat, serializable signal bag the declarative section gates read.
+  const signals = useMemo(() => planStateToSignals(stageState), [stageState]);
+
+  // Sections blocked by an unpassed gate pipeline (#532), straight from the blueprint.
+  const blockedStages = useMemo(() => {
     const runs = stagePipelineRuns[effectiveProjectId] ?? {};
     const set = new Set<string>();
-    for (const sec of bp?.sections ?? []) {
+    for (const sec of planSecs) {
       if (isGateBlocked(sec.pipelines, runs)) set.add(sec.key);
     }
     return set;
-  }, [blueprints, activeBlueprintId, stagePipelineRuns, effectiveProjectId]);
+  }, [planSecs, stagePipelineRuns, effectiveProjectId]);
+
+  // The current (reached) planning section — drives which pipelines' second screens show.
+  const currentStageId = useMemo(() => currentSection(planSecs, signals)?.key, [planSecs, signals]);
+
+  // Pipeline second screens for the reached section: its enabled pipelines that declare
+  // a screen. Sections own the page; pipelines render their own second surface here.
+  const stageScreens = useMemo(() => {
+    const section = planSecs.find(s => s.key === currentStageId && s.enabled);
+    const out: { uid: string; id: string; name: string; Screen: PipelineScreenComponent }[] = [];
+    for (const p of section?.pipelines ?? []) {
+      if (!p.enabled) continue;
+      const Screen = pipelineScreen(p.id);
+      if (Screen) out.push({ uid: p.uid, id: p.id, name: p.name, Screen });
+    }
+    return out;
+  }, [planSecs, currentStageId]);
 
   const sectionsForGh = useMemo<Section[]>(() => {
     if (featureIssues.length === 0) return sections;
@@ -701,6 +736,25 @@ export function Planning({ visible }: { visible: boolean }) {
     }),
     [planFleet, effectiveProjectId, agentProfiles, sections, featureIssues, publishRepos, pinnedContext, ghProgress],
   );
+
+  // Run the grade-plan pipeline whenever the structure inputs actually change, so the
+  // always-visible ProjectPane's readiness report stays current (#445 → pipeline). The
+  // pipeline is the single source of truth — the pane reads stagePlanGrade.
+  //
+  // Gate on a stable CONTENT signature, not on the input references: publishRepos is a
+  // fresh array every render, so depending on it directly would re-fire the effect every
+  // render → dispatch → store write → re-render → … an infinite loop that floods the
+  // persist layer (storage.setItem/save) until the process OOMs.
+  const gradeIssuesContent = sections.find(s => s.k === "issues")?.content ?? "";
+  const gradePhasesContent = sections.find(s => s.k === "phases")?.content ?? "";
+  const gradeInputSig = JSON.stringify([effectiveProjectId, publishRepos, gradeIssuesContent, gradePhasesContent, featureIssues]);
+  useEffect(() => {
+    const issues = [...parseIssuesFile(gradeIssuesContent), ...featureIssues];
+    const phases = parsePhases(gradePhasesContent);
+    void dispatchGradePlan({ projectKey: effectiveProjectId, issues, phases, repos: publishRepos });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gradeInputSig]);
+
   const [restarting, setRestarting] = useState(false);
   // Restart is destructive (ends the live session), so it's gated behind a confirm (#548).
   const [confirmRestart, setConfirmRestart] = useState(false);
@@ -712,16 +766,9 @@ export function Planning({ visible }: { visible: boolean }) {
   const [showPreview, setShowPreview] = useState(false);
 
   const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
-  const [confirmClear, setConfirmClear] = useState(false);
 
-  // Every enabled stage complete/N/A → plan is ready to triage (#551).
-  const planReady = useMemo(
-    () => enabledOrderedStages(stageConfig).every(s => {
-      const { status } = stageStatus(s, stageState, stageConfig);
-      return status === "complete" || status === "na";
-    }),
-    [stageConfig, stageState],
-  );
+  // Every enabled, applicable blueprint section complete/N/A → ready to triage (#551).
+  const planReady = useMemo(() => planSectionsComplete(planSecs, signals), [planSecs, signals]);
 
   // Signature of the current inputs — changes when repos/kb/stages change (#175).
   // Compared against lastSetupSig to decide whether to show the "context updated" badge.
@@ -736,6 +783,14 @@ export function Planning({ visible }: { visible: boolean }) {
   const [triaging, setTriaging] = useState(false);
   // Worktree creation error shown inline by the Triage button (#551).
   const [triageError, setTriageError] = useState<string | null>(null);
+  // Locked-Triage feedback (#…): which sections to flag, and the "what's incomplete"
+  // banner. Clicking a locked Triage reveals exactly what's left to finish.
+  const [highlightSections, setHighlightSections] = useState<Set<string>>(new Set());
+  const [triageBlock, setTriageBlock] = useState<{ headline: string; items: IncompleteSection[] } | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (highlightTimer.current) clearTimeout(highlightTimer.current); }, []);
+  // Once the plan is ready the feedback is stale — clear it.
+  useEffect(() => { if (planReady) { setTriageBlock(null); setHighlightSections(new Set()); } }, [planReady]);
   type PublishPhase = "idle" | "running" | "done" | "error";
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
   const [publishEarlyError, setPublishEarlyError] = useState<string | null>(null);
@@ -887,15 +942,24 @@ export function Planning({ visible }: { visible: boolean }) {
           // even when only the last tag is rendered (#546).
           for (const p of previews) useAppStore.getState().addUiScreen(projIdSnap, p.screen);
           setShowPreview(true);
-          void (async () => {
-            try {
-              const files = await invoke<[string, string][]>("read_ui_skeleton", { projectKey: projIdSnap });
-              if (files.length === 0) return;
-              await dispatchRenderPreview({ projectKey: projIdSnap, artifacts: Object.fromEntries(files), entry: last.screen, mode: last.mode, screen: last.screen });
-            } catch (e) {
-              console.error("ui_preview trigger failed", e);
-            }
-          })();
+          // <ui_preview> is an alias for render-preview's `run`: route it through the
+          // command bus so it shares the single command path (the pipeline owns reading
+          // the skeleton + dispatching the render).
+          void dispatchPipelineCommand(RENDER_PREVIEW_ID, "run", {
+            projectKey: projIdSnap, args: { screen: last.screen, mode: last.mode },
+          });
+        }
+
+        // ── <pipeline id="…" cmd="…" …args /> ─────────────────────────────────
+        // The standardized command surface (#…): Claude drives any registered pipeline
+        // through the bus. <ui_preview> above is the render-preview alias; every other
+        // pipeline command flows through here. The pipeline owns what each command does.
+        const pipeTags = parsePipelineTags(bufRef.current);
+        if (pipeTags.length > 0) {
+          bufRef.current = stripPipelineTags(bufRef.current);
+          for (const t of pipeTags) {
+            void dispatchPipelineCommand(t.id, t.cmd, { projectKey: projIdSnap, args: t.args });
+          }
         }
 
         // ── <kb_assign id="block-id" /> ───────────────────────────────────────
@@ -1294,20 +1358,6 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [linkedRepos]);
 
 
-  async function handleClearPlan() {
-    setConfirmClear(false);
-    // Delete the section files on disk first so the 2s poll can't re-populate
-    // the store before we wipe it. Best-effort: errors are non-fatal.
-    await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
-    // Wipe the in-memory plan state for this project.
-    useAppStore.setState(s => ({
-      planSections:          { ...s.planSections,          [effectiveProjectId]: {} },
-      planConfirmedSections: { ...s.planConfirmedSections, [effectiveProjectId]: [] },
-    }));
-    useAppStore.getState().clearPlanAutomations(effectiveProjectId);
-    useAppStore.getState().clearPlanFleet(effectiveProjectId);
-  }
-
   async function handleRestart() {
     const term = termRef.current;
     if (!term || restarting) return;
@@ -1374,6 +1424,17 @@ export function Planning({ visible }: { visible: boolean }) {
       console.error("sync labels failed:", e);
       setLabelsSync("error");
     }
+  }
+
+  // Locked-Triage feedback: surface exactly what's left. Flags the incomplete sections
+  // (pulse in the N-bar + the right pane) and shows a banner listing each with its gate
+  // reason, plus the top-level lock reason (publish / repos / fleet) as the headline.
+  function revealIncomplete(gate: TriageGateState) {
+    const items = incompleteSections(planSecs, signals);
+    setHighlightSections(new Set(items.map(i => i.key)));
+    setTriageBlock({ headline: triageLockReason(gate) ?? "Not ready to triage", items });
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightSections(new Set()), 3200);
   }
 
   // Header button → clone the repos and launch the planned agent fleet (recommended workers + director).
@@ -1785,11 +1846,6 @@ _Auto-generated by base-studio-code planner._`,
 
   return (
     <>
-      {/* Planning progress — half-clipped pill-strip flush under the titlebar (#508).
-          The pill height is 12px inside a 6px container so only the bottom rounded
-          half shows, reading as emerging from beneath the window bar. */}
-      <PlanStageBar config={stageConfig} state={stageState} blocked={blockedStages} />
-
       {/* Header */}
       <div style={{ padding: "12px 24px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
@@ -1854,21 +1910,6 @@ _Auto-generated by base-studio-code planner._`,
         <button className="btn ghost" onClick={() => setProjectsView("list")}>
           save & exit
         </button>
-        {/* Clear plan (#505) — inline two-step confirmation so an accidental click
-            can't wipe the plan. The confirm state auto-dismisses when focus leaves. */}
-        {confirmClear ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)" }}>clear plan?</span>
-            <button className="btn ghost" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
-              onClick={handleClearPlan}>yes, clear</button>
-            <button className="btn ghost" onClick={() => setConfirmClear(false)}>cancel</button>
-          </div>
-        ) : (
-          <button className="btn ghost" onClick={() => setConfirmClear(true)}
-            title="Remove all plan sections for this project">
-            Clear plan
-          </button>
-        )}
         <button
           className="btn ghost"
           onClick={handlePublish}
@@ -1891,18 +1932,49 @@ _Auto-generated by base-studio-code planner._`,
             planReady,
           };
           const lock = triageLockReason(gate);
+          const ready = canLaunchTriage(gate);
           return (
             <button
               className="btn primary"
-              onClick={launchTriage}
-              disabled={!canLaunchTriage(gate)}
+              // When locked, the button stays clickable and reveals what's incomplete
+              // instead of being inert (#…). Only an in-flight launch disables it.
+              onClick={() => { if (ready) { void launchTriage(); } else { revealIncomplete(gate); } }}
+              disabled={triaging}
               title={lock ?? "Clone the repos and start a triage session"}
+              style={!ready ? { opacity: 0.55 } : undefined}
             >
               {triaging ? "starting triage…" : "Triage →"}
             </button>
           );
         })()}
       </div>
+      {triageBlock && (
+        <div style={{
+          padding: "8px 24px", display: "flex", flexDirection: "column", gap: 5,
+          fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg)",
+          background: "color-mix(in oklch, var(--danger), transparent 92%)",
+          borderTop: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: "var(--danger)", fontWeight: 600 }}>⚠ {triageBlock.headline}</span>
+            <span style={{ flex: 1 }} />
+            <button
+              onClick={() => { setTriageBlock(null); setHighlightSections(new Set()); }}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 10 }}
+            >✕</button>
+          </div>
+          {triageBlock.items.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 14px" }}>
+              {triageBlock.items.map(it => (
+                <span key={it.key} style={{ color: "var(--fg-muted)" }}>
+                  <span style={{ color: it.status === "locked" ? "var(--fg-dim)" : "var(--fg)" }}>{it.name}</span>
+                  {" — "}{it.status === "locked" ? "blocked · " : ""}{it.reason}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {triageError && (
         <div style={{
           padding: "4px 24px", display: "flex", alignItems: "center", gap: 8,
@@ -1916,6 +1988,12 @@ _Auto-generated by base-studio-code planner._`,
           >✕</button>
         </div>
       )}
+
+      {/* Planning progress — one segment per enabled blueprint section, tucked against
+          the header's bottom edge (#508): the 12px pills sit in a 6px top-aligned clip,
+          so only each segment's top rounded half shows, hugging the divider below.
+          Incomplete sections pulse when the user clicks a locked Triage button. */}
+      <PlanStageBar sections={planSecs} signals={signals} blocked={blockedStages} highlight={highlightSections} />
 
       {/* Split panel */}
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", borderTop: "1px solid var(--border-soft)" }}>
@@ -1978,8 +2056,20 @@ _Auto-generated by base-studio-code planner._`,
           />
         </section>
 
-        {/* UI preview — centered between the session and the planning panel (#548). */}
-        {showPreview && <PlanPreviewPane projectKey={effectiveProjectId} onClose={() => setShowPreview(false)} />}
+        {/* Pipeline second screens — read from the active blueprint and rendered when
+            their stage is reached (sections own the page; pipelines own their surface).
+            The manual preview toggle still force-shows render-preview off-stage. */}
+        {(() => {
+          const entries: { uid: string; id: string; Screen: PipelineScreenComponent; onClose?: () => void }[] =
+            stageScreens.map(e => ({ uid: e.uid, id: e.id, Screen: e.Screen }));
+          if (showPreview && !entries.some(e => e.id === RENDER_PREVIEW_ID)) {
+            const Screen = pipelineScreen(RENDER_PREVIEW_ID);
+            if (Screen) entries.push({ uid: "preview-manual", id: RENDER_PREVIEW_ID, Screen, onClose: () => setShowPreview(false) });
+          }
+          return entries.map(({ uid, Screen, onClose }) => (
+            <Screen key={uid} projectKey={effectiveProjectId} onClose={onClose} />
+          ));
+        })()}
 
         {/* Drag handle between the preview/terminal and the plan-sections panel (#43). */}
         <div className="resize-x" {...sectionsPanel.handleProps} title="Drag to resize" />
@@ -2023,6 +2113,8 @@ _Auto-generated by base-studio-code planner._`,
               onDirectorDrive={(drive) => setPlanDirectorDrive(effectiveProjectId, drive)}
               onSyncLabels={githubToken && publishRepos.length > 0 ? handleSyncLabels : undefined}
               syncState={{ labels: labelsSync }}
+              sectionKeys={planSecs.filter(s => s.enabled).map(s => s.key)}
+              highlight={highlightSections}
             />
           ) : (
             <>

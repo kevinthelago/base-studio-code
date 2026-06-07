@@ -1,10 +1,12 @@
-// The planning progress bar, driven by the modular stage registry (#512). One
-// segment per ENABLED stage (in configured order), each a track with a fill sized
-// by that stage's progress and colored by its status. Keeps the half-clipped
-// "tucked under the divider" look from #508: the 12px pills sit in a 6px clipping
-// strip, so only their top rounded half shows.
+// The planning progress bar — one segment per ENABLED blueprint SECTION (in declared
+// order), each a track with a fill sized by that section's progress and colored by its
+// status. Driven entirely by the blueprint's sections + the signal bag (#…): no
+// PLAN_STAGES enum, so a custom / cloud-distributed section renders here too. Keeps the
+// half-clipped "tucked under the divider" look from #508: the 12px pills sit in a 6px
+// clipping strip, so only their top rounded half shows.
 
-import { enabledOrderedStages, stageStatus, type PlanStageState, type StageConfig } from "./planStages";
+import { sectionStatus, type BlueprintSection } from "./blueprints";
+import type { PlanSignals } from "./stageGate";
 
 function fillColor(status: string): string {
   switch (status) {
@@ -15,22 +17,35 @@ function fillColor(status: string): string {
   }
 }
 
-export function PlanStageBar({ config, state, blocked }: { config: StageConfig; state: PlanStageState; blocked?: Set<string> }) {
-  // N/A stages (e.g. UI when the project needs no UI) are hidden entirely.
-  const segments = enabledOrderedStages(config)
-    .map((stage) => ({ stage, ...stageStatus(stage, state, config) }))
+export function PlanStageBar({ sections, signals, blocked, highlight }: {
+  sections: BlueprintSection[];
+  signals: PlanSignals;
+  /** Section keys with an unpassed gate pipeline (#532). */
+  blocked?: Set<string>;
+  /** Section keys to flag for attention (e.g. a locked-Triage click); they pulse. */
+  highlight?: Set<string>;
+}) {
+  // N/A sections (e.g. UI when the project needs no UI) are hidden entirely.
+  const segments = sections
+    .filter((s) => s.enabled)
+    .map((section) => ({ section, ...sectionStatus(section, sections, signals) }))
     .filter((s) => s.status !== "na");
 
   return (
     <div style={{ height: 6, overflow: "hidden", display: "flex", gap: 6, padding: "0 24px", alignItems: "flex-start", flex: "0 0 auto" }}>
-      {segments.map(({ stage, status, fraction }) => {
-        const isBlocked = blocked?.has(stage.id) ?? false;
+      {segments.map(({ section, status, fraction }) => {
+        const isBlocked = blocked?.has(section.key) ?? false;
+        const isHighlit = highlight?.has(section.key) ?? false;
         const pct = Math.round((status === "complete" ? 1 : fraction) * 100);
         return (
           <div
-            key={stage.id}
-            title={`${stage.label} — ${status}${isBlocked ? " · gate blocked" : ""}`}
-            style={{ flex: 1, height: 12, borderRadius: 6, background: "var(--bg-elev2)", overflow: "hidden", position: "relative" }}
+            key={section.key}
+            className={isHighlit ? "attn-pulse" : undefined}
+            title={`${section.name} — ${status}${isBlocked ? " · gate blocked" : ""}${isHighlit ? " · incomplete" : ""}`}
+            style={{
+              flex: 1, height: 12, borderRadius: 6, overflow: "hidden", position: "relative",
+              background: isHighlit ? "color-mix(in oklch, var(--danger), transparent 70%)" : "var(--bg-elev2)",
+            }}
           >
             <div style={{ position: "absolute", inset: 0, width: `${pct}%`, background: isBlocked ? "var(--danger)" : fillColor(status), borderRadius: 6 }} />
           </div>

@@ -94,6 +94,7 @@ export interface ProjectPaneData {
   director: { enabled: boolean; role?: string; drive: DirectorDrive };
   /** Project-default integration strategy (#378); undefined ⇒ DEFAULT_STRATEGY. */
   fleetStrategy?: IntegrationStrategy;
-  /** Deterministic agent-readiness grade (#445): overall rollup + per-repo/milestone/issue breakdowns. */
-  grade?: PlanGrade;
+  // The agent-readiness grade (#445) is no longer carried on the pane data: it is now
+  // produced by the grade-plan pipeline and read from the store (stagePlanGrade) by the
+  // pane directly. PlanGrade is still re-exported here for the report component's types.
 }

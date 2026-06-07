@@ -1,51 +1,66 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { PlanStageBar } from "../screens/projects/PlanStageBar";
-import { defaultStageConfig, buildPlanStageState, enabledOrderedStages } from "../screens/projects/planStages";
-import type { StageConfig } from "../screens/projects/planStages";
+import { makeBlueprints, type BlueprintSection } from "../screens/projects/blueprints";
+import { planStateToSignals } from "../screens/projects/planStageDerive";
+import { buildPlanStageState } from "../screens/projects/planStages";
 
 function titlesIn(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll("[title]")).map((el) => el.getAttribute("title") ?? "");
 }
+const defaultSections = (): BlueprintSection[] => makeBlueprints()[0].sections;
+const setEnabled = (sections: BlueprintSection[], key: string, enabled: boolean): BlueprintSection[] =>
+  sections.map((s) => (s.key === key ? { ...s, enabled } : s));
+const signalsFrom = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
+  planStateToSignals(buildPlanStageState(over));
 
 describe("PlanStageBar", () => {
-  it("renders one segment per enabled, applicable stage (UI hidden when not required)", () => {
-    const cfg = defaultStageConfig();
-    const state = buildPlanStageState({ requiresUi: false }); // ui -> N/A, hidden
-    const { container } = render(<PlanStageBar config={cfg} state={state} />);
+  it("renders one segment per enabled, applicable section (UI hidden when not required)", () => {
+    const sections = defaultSections();
+    const { container } = render(<PlanStageBar sections={sections} signals={signalsFrom({ requiresUi: false })} />);
     const titles = titlesIn(container);
-    // all enabled stages except the N/A ui stage
-    const expected = enabledOrderedStages(cfg).filter((s) => s.id !== "ui").length;
+    const expected = sections.filter((s) => s.enabled && s.key !== "ui").length;
     expect(titles.length).toBe(expected);
     expect(titles.some((t) => t.startsWith("UI"))).toBe(false);
     expect(titles.some((t) => t.startsWith("Context"))).toBe(true);
   });
 
-  it("shows the UI stage when the project requires a UI", () => {
-    const state = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true } });
-    const { container } = render(<PlanStageBar config={defaultStageConfig()} state={state} />);
+  it("shows the UI section when the project requires a UI", () => {
+    const signals = signalsFrom({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true } });
+    const { container } = render(<PlanStageBar sections={defaultSections()} signals={signals} />);
     expect(titlesIn(container).some((t) => t.startsWith("UI"))).toBe(true);
   });
 
-  it("omits disabled stages", () => {
-    const d = defaultStageConfig();
-    const cfg: StageConfig = { ...d, enabled: { ...d.enabled, skills: false, automations: false } };
-    const state = buildPlanStageState({ requiresUi: false });
-    const { container } = render(<PlanStageBar config={cfg} state={state} />);
+  it("omits disabled sections", () => {
+    let sections = defaultSections();
+    sections = setEnabled(sections, "skills", false);
+    sections = setEnabled(sections, "automations", false);
+    const { container } = render(<PlanStageBar sections={sections} signals={signalsFrom({ requiresUi: false })} />);
     const titles = titlesIn(container);
     expect(titles.some((t) => t.startsWith("Skills"))).toBe(false);
     expect(titles.some((t) => t.startsWith("Automations"))).toBe(false);
   });
 
-  it("marks a satisfied stage complete in its tooltip", () => {
-    const state = buildPlanStageState({ repoCount: 2 }); // repos gate done
-    const { container } = render(<PlanStageBar config={defaultStageConfig()} state={state} />);
+  it("marks a satisfied section complete in its tooltip", () => {
+    const sections = setEnabled(defaultSections(), "repos", true);
+    const { container } = render(<PlanStageBar sections={sections} signals={signalsFrom({ repoCount: 2 })} />);
     expect(titlesIn(container).some((t) => t === "Repos — complete")).toBe(true);
   });
 
-  it("flags a gate-blocked stage in its tooltip (#532)", () => {
-    const state = buildPlanStageState({ repoCount: 2 });
-    const { container } = render(<PlanStageBar config={defaultStageConfig()} state={state} blocked={new Set(["repos"])} />);
+  it("flags a gate-blocked section in its tooltip (#532)", () => {
+    const sections = setEnabled(defaultSections(), "repos", true);
+    const { container } = render(
+      <PlanStageBar sections={sections} signals={signalsFrom({ repoCount: 2 })} blocked={new Set(["repos"])} />,
+    );
     expect(titlesIn(container).some((t) => t.includes("gate blocked"))).toBe(true);
+  });
+
+  it("pulses + flags a highlighted incomplete section (locked-Triage feedback)", () => {
+    const sections = defaultSections();
+    const { container } = render(
+      <PlanStageBar sections={sections} signals={signalsFrom({ requiresUi: false })} highlight={new Set(["context"])} />,
+    );
+    expect(container.querySelector(".attn-pulse")).not.toBeNull();
+    expect(titlesIn(container).some((t) => t.startsWith("Context") && t.includes("incomplete"))).toBe(true);
   });
 });
