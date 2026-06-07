@@ -222,6 +222,18 @@ export function enabledOrderedStages(cfg: StageConfig): Stage[] {
   return cfg.order.filter((id) => cfg.enabled[id]).map((id) => STAGE_BY_ID[id]).filter(Boolean);
 }
 
+/**
+ * The current ("reached") stage: the first enabled + applicable stage that is neither
+ * complete nor locked — the in-progress frontier. When every stage is complete it
+ * falls back to the last enabled+applicable stage, so a finished plan still resolves
+ * to one. Drives which pipelines' second screens render in the planning page.
+ */
+export function currentStage(cfg: StageConfig, s: PlanStageState): Stage | undefined {
+  const stages = enabledOrderedStages(cfg).filter((st) => applies(st, s));
+  const active = stages.find((st) => stageStatus(st, s, cfg).status === "in-progress");
+  return active ?? stages[stages.length - 1];
+}
+
 /** The default set of enabled stage ids for a new plan. */
 export const DEFAULT_ENABLED_STAGES: StageId[] = PLAN_STAGES.map(s => s.id);
 

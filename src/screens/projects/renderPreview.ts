@@ -7,12 +7,14 @@
 // pane chrome. The dispatch glue runs the pipeline through the engine (#529) and
 // writes the result to the store; #533 wires the triggers (tag / watch / manual).
 
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { bundleSkeleton, buildPreviewSrcDoc } from "./previewBundle";
 import {
   registerPipelineHandler, runPipeline,
   type PipelineHandler, type StageContext, type PipelineRunResult,
 } from "./pipelineRuntime";
+import { registerPipeline } from "./pipelineCommands";
 import type { Pipeline } from "./blueprints";
 
 export type PreviewMode = "2d" | "3d";
@@ -71,3 +73,21 @@ export async function dispatchRenderPreview(args: {
   store.setStagePipelineRun(args.projectKey, RENDER_PREVIEW_ID, { status: result.status, lastRun: Date.now(), message: result.message });
   return result;
 }
+
+// Register render-preview as the first command module. Its `run` reads the project's
+// .ui-skeleton and dispatches a render for the requested screen/mode — the behavior the
+// <ui_preview> tag triggers today. Richer commands (save/confirm/persist, navigation)
+// are render-preview's OWN later behavior; the bus stays generic. Idempotent on import.
+registerPipeline({
+  id: RENDER_PREVIEW_ID,
+  async command(cmd, ctx) {
+    if (cmd !== "run") return; // other commands are this pipeline's future behavior
+    const screen = ctx.args.screen || undefined;
+    const mode: PreviewMode = ctx.args.mode === "3d" ? "3d" : "2d";
+    const files = await invoke<[string, string][]>("read_ui_skeleton", { projectKey: ctx.projectKey });
+    if (files.length === 0) return;
+    await dispatchRenderPreview({
+      projectKey: ctx.projectKey, artifacts: Object.fromEntries(files), entry: screen, mode, screen,
+    });
+  },
+});

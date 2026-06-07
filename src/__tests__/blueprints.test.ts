@@ -1,9 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkSection, computeStatus, reorder, cloneSections, blueprintToStageConfig,
-  PIPELINE_LIB, SECTION_DEFS,
+  sectionStatus, incompleteSections, planSectionsComplete, currentSection,
+  PIPELINE_LIB, SECTION_DEFS, type BlueprintSection,
 } from "../screens/projects/blueprints";
-import { PLAN_STAGES } from "../screens/projects/planStages";
+import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
+import { planStateToSignals } from "../screens/projects/planStageDerive";
+
+const sig = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
+  planStateToSignals(buildPlanStageState(over));
+const setEnabled = (secs: BlueprintSection[], key: string, enabled: boolean): BlueprintSection[] =>
+  secs.map((s) => (s.key === key ? { ...s, enabled } : s));
 
 describe("blueprints — seed library", () => {
   it("seeds the starter blueprints with a 'default'", () => {
@@ -63,6 +70,67 @@ describe("blueprints — helpers", () => {
     const copy = cloneSections(src);
     expect(copy[0].uid).not.toBe(src[0].uid);
     expect(copy[0].pipelines[0].uid).not.toBe(src[0].pipelines[0].uid);
+  });
+});
+
+describe("blueprints — section status (declarative, blueprint-driven gates)", () => {
+  // structure depends on context+repos+ui; build a set where those are satisfiable.
+  const baseSecs = () => [
+    mkSection("context"), mkSection("repos"), mkSection("ui"), mkSection("structure"),
+    mkSection("permissions"), mkSection("skills"),
+  ];
+  const doneCtx = { context: { resolved: 1, total: 1, coreConfirmed: true }, repoCount: 1, requiresUi: false };
+
+  it("evaluates a section's own declarative gate (not a hardcoded enum)", () => {
+    const secs = baseSecs();
+    const repos = secs.find((s) => s.key === "repos")!;
+    expect(sectionStatus(repos, secs, sig({ repoCount: 0 })).status).toBe("in-progress");
+    expect(sectionStatus(repos, secs, sig({ repoCount: 2 })).status).toBe("complete");
+  });
+
+  it("UI section is N/A when the project needs no UI (appliesWhen)", () => {
+    const secs = baseSecs();
+    const ui = secs.find((s) => s.key === "ui")!;
+    expect(sectionStatus(ui, secs, sig({ requiresUi: false })).status).toBe("na");
+  });
+
+  it("locks a section whose enabled dependency is incomplete", () => {
+    const secs = baseSecs();
+    const structure = secs.find((s) => s.key === "structure")!;
+    // context not confirmed → structure locked
+    expect(sectionStatus(structure, secs, sig({ requiresUi: false })).status).toBe("locked");
+  });
+
+  it("a section with no registry analog (testing) is informational → complete", () => {
+    const secs = [mkSection("context"), mkSection("testing")];
+    const testing = secs.find((s) => s.key === "testing")!;
+    expect(sectionStatus(testing, secs, sig()).status).toBe("complete");
+  });
+
+  it("incompleteSections lists each unfinished section with its gate reason", () => {
+    const secs = baseSecs();
+    const inc = incompleteSections(secs, sig({ requiresUi: false }));
+    const ctx = inc.find((i) => i.key === "context");
+    expect(ctx?.reason).toBe(SECTION_DEFS.context.gate);
+    // ui is N/A here, so it must not appear
+    expect(inc.some((i) => i.key === "ui")).toBe(false);
+  });
+
+  it("planSectionsComplete is true only when every enabled, applicable section is done", () => {
+    const secs = setEnabled(baseSecs(), "ui", false); // drop ui to simplify
+    expect(planSectionsComplete(secs, sig(doneCtx))).toBe(false); // structure/permissions/skills unmet
+    const allDone = {
+      ...doneCtx, phasesConfirmed: true, issueCount: 3,
+      fleet: { streams: 2, profilesComplete: true }, skillsAck: true,
+    };
+    expect(planSectionsComplete(secs, sig(allDone))).toBe(true);
+  });
+
+  it("currentSection is the first in-progress section, skipping N/A", () => {
+    const secs = baseSecs();
+    // context complete, repos incomplete, ui N/A → repos is the frontier
+    const s = sig({ context: { resolved: 1, total: 1, coreConfirmed: true }, repoCount: 0, requiresUi: false });
+    expect(currentSection(secs, s)?.key).toBe("repos");
   });
 
   it("blueprintToStageConfig maps enabled+order over known stages, dropping non-registry sections", () => {

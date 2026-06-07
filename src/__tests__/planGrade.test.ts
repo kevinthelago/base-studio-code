@@ -163,3 +163,51 @@ describe("gradePlan (#445 overall rollup)", () => {
     expect(g.reasons.some(r => /unlinked repo/i.test(r))).toBe(true);
   });
 });
+
+// ── category breakdown + suggestions (renderable report) ───────────────────────
+
+describe("gradePlan — categories", () => {
+  it("emits one row per rubric dimension plus a granularity row, with reasonings", () => {
+    const issues = [
+      issue({ ref: "A", repo: "acme/web", acceptance: ["a", "b"], owns: ["src/**"] }),
+      issue({ ref: "B", repo: "acme/web", acceptance: ["c", "d"], owns: ["src/**"] }),
+    ];
+    const g = gradePlan(issues, phases, ["acme/web"]);
+    const ids = g.categories.map(c => c.id);
+    expect(ids).toEqual(["acceptance", "ownership", "milestones", "streams", "titles", "granularity"]);
+    const acc = g.categories.find(c => c.id === "acceptance")!;
+    expect(acc.score).toBe(1);          // both issues have ≥2 criteria
+    expect(acc.detail).toMatch(/2\/2 issues/);
+  });
+
+  it("scores a category by the satisfied fraction and lists shortfall examples", () => {
+    const issues = [
+      issue({ ref: "HAS", repo: "acme/web", owns: ["src/**"] }),
+      issue({ ref: "MISS", repo: "acme/web", owns: [] }),
+    ];
+    const own = gradePlan(issues, phases, ["acme/web"]).categories.find(c => c.id === "ownership")!;
+    expect(own.score).toBe(0.5);
+    expect(own.examples).toContain("MISS");
+    expect(own.examples).not.toContain("HAS");
+  });
+});
+
+describe("gradePlan — suggestions", () => {
+  it("a fully-ready plan produces no suggestions", () => {
+    const issues = [
+      issue({ ref: "A", repo: "acme/web", acceptance: ["a", "b"], owns: ["src/**"] }),
+      issue({ ref: "B", repo: "acme/web", acceptance: ["c", "d"], owns: ["src/**"] }),
+    ];
+    expect(gradePlan(issues, phases, ["acme/web"]).suggestions).toHaveLength(0);
+  });
+
+  it("a weak plan yields prioritized suggestions, acceptance ranked highest", () => {
+    const issues = [issue({ ref: "W", repo: "acme/web", acceptance: [], owns: [], stream: undefined, title: "x" })];
+    const sug = gradePlan(issues, phases, ["acme/web"]).suggestions;
+    expect(sug.length).toBeGreaterThan(0);
+    expect(sug[0].priority).toBe("high");
+    // acceptance carries the most weight, so a fully-missing acceptance dimension leads.
+    expect(sug[0].category).toBe("acceptance");
+    expect(sug.some(s => /acceptance/i.test(s.title))).toBe(true);
+  });
+});
