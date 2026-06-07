@@ -1123,6 +1123,10 @@ async fn pty_create(
         init_cmd.as_deref().filter(|s| !s.is_empty()).unwrap_or("<none>"),
     );
 
+    // Tell the mobile tunnel this pane's grid size so it renders at the desktop width
+    // (before pane_id is moved into the session map).
+    tunnel_set_pane_size(&app, &pane_id, cols, rows);
+
     let active = {
         let mut map = state.0.lock().unwrap();
         map.insert(pane_id, PtySession { writer, master: pair.master, child, _job: job });
@@ -1177,14 +1181,19 @@ async fn pty_resize(
     pane_id: String,
     cols: u16,
     rows: u16,
+    app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<(), String> {
-    let sessions = state.0.lock().unwrap();
-    if let Some(s) = sessions.get(&pane_id) {
-        s.master
-            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-            .map_err(|e| { log::warn!("pty[{pane_id}] resize to {cols}x{rows} failed: {e}"); e.to_string() })?;
+    {
+        let sessions = state.0.lock().unwrap();
+        if let Some(s) = sessions.get(&pane_id) {
+            s.master
+                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+                .map_err(|e| { log::warn!("pty[{pane_id}] resize to {cols}x{rows} failed: {e}"); e.to_string() })?;
+        }
     }
+    // Mirror the new grid size to any paired phone so it re-fits to the desktop width.
+    tunnel_set_pane_size(&app, &pane_id, cols, rows);
     Ok(())
 }
 
@@ -1225,12 +1234,25 @@ pub(crate) fn tunnel_write_pty(app: &AppHandle, pane_id: &str, data: &str) {
 
 /// Resize a pane's PTY from a mobile client. No-op for a missing pane.
 pub(crate) fn tunnel_resize_pty(app: &AppHandle, pane_id: &str, cols: u16, rows: u16) {
-    let state = app.state::<PtyState>();
-    let sessions = state.0.lock().unwrap();
-    if let Some(s) = sessions.get(pane_id) {
-        let _ = s
-            .master
-            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
+    {
+        let state = app.state::<PtyState>();
+        let sessions = state.0.lock().unwrap();
+        if let Some(s) = sessions.get(pane_id) {
+            let _ = s
+                .master
+                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
+        }
+    }
+    // Keep the broadcast size in sync so all viewers agree on the current grid.
+    tunnel_set_pane_size(app, pane_id, cols, rows);
+}
+
+/// Record + broadcast a pane's PTY grid size to the mobile tunnel so it can render at
+/// the same width as the desktop (the byte stream's wrapping + cursor moves are baked
+/// for this size). No-op when the tunnel state isn't present (#…).
+pub(crate) fn tunnel_set_pane_size(app: &AppHandle, pane_id: &str, cols: u16, rows: u16) {
+    if let Some(ts) = app.try_state::<tunnel::TunnelState>() {
+        ts.set_pane_size(pane_id, cols, rows);
     }
 }
 

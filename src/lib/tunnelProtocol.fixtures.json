@@ -10,6 +10,7 @@
       ]
     },
     "pane_output": { "type": "pane_output", "paneId": "t0p0", "data": "$ ls\r\n", "coarse": false },
+    "pane_size": { "type": "pane_size", "paneId": "t0p0", "cols": 80, "rows": 24 },
     "session_state": {
       "type": "session_state",
       "paneId": "t0p0",
