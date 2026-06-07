@@ -844,7 +844,14 @@ mod transport {
                     let frame = inbound?;
                     match decode_room_msg(&mut noise_tx, &frame) {
                         Ok(msg) => handle_client_msg(app, msg, &mut focused),
-                        Err(e) => return Err(e),
+                        // A malformed/unknown mobile frame can't be parsed — name it before
+                        // the session tears down + reconnects, so a wrong client shape (e.g.
+                        // a `pane_input` missing `data`) is diagnosable rather than a silent
+                        // reconnect loop.
+                        Err(e) => {
+                            log::warn!("tunnel: failed to decode mobile frame ({} bytes): {e}", frame.len());
+                            return Err(e);
+                        }
                     }
                 }
                 out = out_rx.recv() => match out {
@@ -905,9 +912,13 @@ mod transport {
             ClientMsg::PaneResize { pane_id, cols, rows } => {
                 crate::tunnel_resize_pty(app, &pane_id, cols, rows)
             }
-            ClientMsg::PaneFocus { pane_id } => *focused = Some(pane_id),
+            ClientMsg::PaneFocus { pane_id } => {
+                log::debug!("tunnel: focus → pane[{pane_id}]");
+                *focused = Some(pane_id);
+            }
             ClientMsg::PaneSetState { pane_id, state } => {
                 if state == "streaming" {
+                    log::debug!("tunnel: stream → pane[{pane_id}]");
                     *focused = Some(pane_id);
                 }
             }

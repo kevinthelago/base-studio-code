@@ -1225,10 +1225,18 @@ pub(crate) fn tunnel_write_pty(app: &AppHandle, pane_id: &str, data: &str) {
     use std::io::Write;
     let state = app.state::<PtyState>();
     let mut sessions = state.0.lock().unwrap();
-    if let Some(s) = sessions.get_mut(pane_id) {
-        if let Err(e) = s.writer.write_all(data.as_bytes()) {
-            log::warn!("tunnel: pty[{pane_id}] write failed: {e}");
-        }
+    match sessions.get_mut(pane_id) {
+        Some(s) => match s.writer.write_all(data.as_bytes()) {
+            // Confirms mobile keystrokes reached the PTY (debug-level; enable to trace).
+            Ok(()) => log::debug!("tunnel: pane[{pane_id}] input {} byte(s) written", data.len()),
+            Err(e) => log::warn!("tunnel: pane[{pane_id}] write failed: {e}"),
+        },
+        // The #1 silent failure: mobile sent a pane id with no live PTY (wrong/stale id,
+        // or a pane that isn't running). Warn so it surfaces without debug logging.
+        None => log::warn!(
+            "tunnel: input for unmatched pane '{pane_id}' ({} byte(s) dropped) — mobile sent a pane id with no live PTY",
+            data.len()
+        ),
     }
 }
 
