@@ -125,6 +125,12 @@ describe("shared protocol fixture", () => {
     );
   });
 
+  it("server pane_size uses paneId/cols/rows", () => {
+    expect(Object.keys(serverToClient.pane_size).sort()).toEqual(
+      ["cols", "paneId", "rows", "type"],
+    );
+  });
+
   it("server session_state uses the mobile camelCase fields", () => {
     expect(Object.keys(serverToClient.session_state).sort()).toEqual(
       ["currentTask", "lastActivity", "paneId", "prompt", "status", "type"],

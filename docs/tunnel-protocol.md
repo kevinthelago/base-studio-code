@@ -77,6 +77,7 @@ Multi-word field names are **camelCase** (`paneId`, `currentTask`, `lastActivity
 | `auth_ok`        | —                                                            | Token accepted. Sent before any other frame. |
 | `pane_list`      | `panes: [{ id, cwd, name, status }]`                          | Current panes. Replayed on connect + on change. |
 | `pane_output`    | `paneId`, `data`, `coarse`                                    | PTY output for the client's focused pane. |
+| `pane_size`      | `paneId`, `cols`, `rows`                                      | The PTY grid size `pane_output` is rendered for. The client must size its terminal to these `cols`/`rows` so the stream's baked line-wrapping + cursor positioning line up. Replayed on connect + sent whenever the desktop PTY resizes. |
 | `session_state`  | `paneId`, `status`, `currentTask`, `lastActivity`, `prompt`   | Per-pane agent state. `prompt` set when `status == "awaiting_input"`. |
 | `user_request`   | `paneId`, `prompt`                                           | A pane newly needs input. |
 
@@ -88,7 +89,7 @@ Multi-word field names are **camelCase** (`paneId`, `currentTask`, `lastActivity
 2. Mobile scans the QR, dials the same relay/room (as guest).
 3. The two peers complete the **Noise IK** handshake through the relay (the relay only
    forwards ciphertext). The desktop authenticates the `auth` frame inside the session.
-4. Desktop sends `pane_list`, then a `session_state` per known pane.
+4. Desktop sends `pane_list`, a `session_state` per known pane, then a `pane_size` per known pane.
 5. Mobile focuses a pane (`pane_focus` / `pane_set_state: streaming`); desktop streams
    that pane's `pane_output`. Output for non-focused panes is not sent.
 6. Mobile sends `pane_input` / `pane_resize`; desktop routes them to the PTY.
