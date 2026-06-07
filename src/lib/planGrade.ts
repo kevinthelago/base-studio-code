@@ -188,10 +188,141 @@ export function gradeRepo(
 // ── Overall plan grade ────────────────────────────────────────────────────────
 
 export interface PlanGrade {
-  score:       number;
-  letter:      Letter;
-  reasons:     string[];
-  repoGrades:  RepoGrade[];
+  score:        number;
+  letter:       Letter;
+  reasons:      string[];
+  repoGrades:   RepoGrade[];
+  /** Plan-wide rubric breakdown, one row per dimension (renderable report). */
+  categories:   CategoryGrade[];
+  /** Prioritized, actionable fixes derived from the weakest categories. */
+  suggestions:  Suggestion[];
+}
+
+// ── Category breakdown + suggestions (the renderable report) ────────────────────
+
+export type Priority = "high" | "medium" | "low";
+
+/** One rubric dimension rolled up across every issue — the report's score rows. */
+export interface CategoryGrade {
+  id:        string;
+  label:     string;
+  /** Fraction of issues (or milestones, for granularity) that satisfy this dimension. */
+  score:     number;
+  letter:    Letter;
+  /** Weight in the per-issue rubric (0 for the milestone-shaped granularity row). */
+  weight:    number;
+  /** Human reasoning, e.g. "12/18 issues define ≥2 acceptance criteria". */
+  detail:    string;
+  /** Up to a few issue refs (or milestone names) that fall short. */
+  examples:  string[];
+}
+
+/** An actionable recommendation surfaced from a category that scored below 100%. */
+export interface Suggestion {
+  priority:  Priority;
+  /** The CategoryGrade.id this came from. */
+  category:  string;
+  title:     string;
+  detail:    string;
+}
+
+interface Dimension {
+  id:     string;
+  label:  string;
+  weight: number;
+  ok:     (i: PlanIssue) => boolean;
+  /** Satisfied-phrasing for the detail line ("define ≥2 acceptance criteria"). */
+  good:   string;
+  /** Imperative remedy for the suggestion title ("add ≥2 acceptance criteria"). */
+  fix:    string;
+  /** Why it matters — the suggestion's detail line. */
+  why:    string;
+}
+
+// Mirrors the per-issue rubric weights in gradeIssue so the breakdown is faithful.
+const DIMENSIONS: Dimension[] = [
+  { id: "acceptance", label: "Acceptance criteria", weight: 0.35, ok: i => i.acceptance.length >= 2,
+    good: "define ≥2 acceptance criteria", fix: "add ≥2 acceptance criteria",
+    why: "Acceptance criteria are the done-when contract — without them an agent can't tell when it's finished." },
+  { id: "ownership", label: "File ownership", weight: 0.20, ok: i => i.owns.length > 0,
+    good: "declare owned files/globs", fix: "declare the files or globs they own",
+    why: "Owned globs are the boundary the agent works within, so parallel streams don't collide." },
+  { id: "milestones", label: "Milestone assignment", weight: 0.20, ok: i => i.phase !== undefined,
+    good: "are assigned to a milestone", fix: "assign a milestone/phase",
+    why: "An unscheduled issue lands nowhere on the roadmap and never publishes under a milestone." },
+  { id: "streams", label: "Stream ownership", weight: 0.15, ok: i => !!i.stream,
+    good: "name an owning stream", fix: "name an owning stream",
+    why: "Without an owning stream there's coordination ambiguity over which agent picks it up." },
+  { id: "titles", label: "Title clarity", weight: 0.10, ok: i => i.title.trim().length >= 10,
+    good: "have a descriptive title", fix: "give a descriptive (≥10 char) title",
+    why: "A one-word title is too vague for an agent to act on without re-reading the whole issue." },
+];
+
+function priorityFor(impact: number): Priority {
+  if (impact >= 0.12) return "high";
+  if (impact >= 0.05) return "medium";
+  return "low";
+}
+
+/** Roll each rubric dimension up across all issues, plus a milestone-granularity row. */
+function buildCategories(issues: PlanIssue[], repoGrades: RepoGrade[]): CategoryGrade[] {
+  const n = issues.length;
+  const cats: CategoryGrade[] = DIMENSIONS.map(d => {
+    const fails  = issues.filter(i => !d.ok(i));
+    const passed = n - fails.length;
+    const score  = n > 0 ? passed / n : 0;
+    return {
+      id: d.id, label: d.label, score, letter: letterFromScore(score), weight: d.weight,
+      detail: `${passed}/${n} issues ${d.good}`,
+      examples: fails.slice(0, 4).map(i => i.ref),
+    };
+  });
+
+  // Granularity is milestone-shaped, not issue-shaped: score by the share of
+  // milestones sized within [MIN, MAX] issues.
+  const milestones = repoGrades.flatMap(r => r.milestoneGrades).filter(m => m.issueGrades.length > 0);
+  const sized   = (m: MilestoneGrade) => m.issueGrades.length >= MILESTONE_MIN_ISSUES && m.issueGrades.length <= MILESTONE_MAX_ISSUES;
+  const wellSized = milestones.filter(sized);
+  const offSize   = milestones.filter(m => !sized(m));
+  const granScore = milestones.length > 0 ? wellSized.length / milestones.length : 0;
+  cats.push({
+    id: "granularity", label: "Milestone granularity", score: granScore, letter: letterFromScore(granScore), weight: 0,
+    detail: milestones.length > 0
+      ? `${wellSized.length}/${milestones.length} milestones sized ${MILESTONE_MIN_ISSUES}–${MILESTONE_MAX_ISSUES} issues`
+      : "no milestones resolved",
+    examples: offSize.slice(0, 4).map(m => `${m.name} (${m.issueGrades.length})`),
+  });
+  return cats;
+}
+
+/** Turn every below-100% category into a prioritized, example-bearing suggestion. */
+function buildSuggestions(categories: CategoryGrade[], issueCount: number): Suggestion[] {
+  const byId = new Map(DIMENSIONS.map(d => [d.id, d]));
+  const out: Suggestion[] = categories.flatMap(c => {
+    if (c.score >= 0.999) return [];
+    const shortfall = 1 - c.score;
+    const impact    = (c.weight || 0.10) * shortfall;
+    const ex        = c.examples.length > 0 ? ` (e.g. ${c.examples.join(", ")})` : "";
+
+    if (c.id === "granularity") {
+      const k = c.examples.length;
+      return [{
+        priority: priorityFor(impact), category: c.id,
+        title: `Re-scope ${k} milestone${k === 1 ? "" : "s"} toward ${MILESTONE_MIN_ISSUES}–${MILESTONE_MAX_ISSUES} issues`,
+        detail: `Milestones outside that range read as under- or over-scoped.${ex}`,
+      }];
+    }
+
+    const d = byId.get(c.id);
+    const k = Math.round(shortfall * issueCount);
+    return [{
+      priority: priorityFor(impact), category: c.id,
+      title: `${k} issue${k === 1 ? "" : "s"}: ${d?.fix ?? "improve this dimension"}`,
+      detail: `${d?.why ?? ""}${ex}`,
+    }];
+  });
+  const rank: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
+  return out.sort((a, b) => rank[a.priority] - rank[b.priority]);
 }
 
 /**
@@ -207,10 +338,10 @@ export function gradePlan(
   const reasons: string[] = [];
 
   if (issues.length === 0) {
-    return { score: 0, letter: "F", reasons: ["no issues defined"], repoGrades: [] };
+    return { score: 0, letter: "F", reasons: ["no issues defined"], repoGrades: [], categories: [], suggestions: [] };
   }
   if (repos.length === 0) {
-    return { score: 0, letter: "F", reasons: ["no repos linked"], repoGrades: [] };
+    return { score: 0, letter: "F", reasons: ["no repos linked"], repoGrades: [], categories: [], suggestions: [] };
   }
 
   const fallback = repos[0];
@@ -235,5 +366,7 @@ export function gradePlan(
     : 0;
 
   const score = Math.min(1, weightedScore);
-  return { score, letter: letterFromScore(score), reasons, repoGrades };
+  const categories  = buildCategories(normalised, repoGrades);
+  const suggestions = buildSuggestions(categories, normalised.length);
+  return { score, letter: letterFromScore(score), reasons, repoGrades, categories, suggestions };
 }

@@ -8,6 +8,7 @@ import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { PreviewFrame, type PreviewStatus } from "./PreviewFrame";
+import { PipelineScreenFrame } from "./PipelineScreenFrame";
 import { dispatchRenderPreview, RENDER_PREVIEW_ID } from "./renderPreview";
 
 // Stable empty default so the selector doesn't churn a new array on every store change.
@@ -57,56 +58,29 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
   const statusColor = frameError || status === "fail" ? "var(--danger)" : status === "ok" ? "var(--success)" : "var(--fg-dim)";
 
   return (
-    <section style={{ flex: "0 0 auto", width: 420, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderLeft: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
-      <div style={{
-        padding: "10px 14px", borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
-      }}>
-        <span style={{ color: "var(--accent)" }}>▸ preview</span>
-        {preview && <span className="tag" style={{ fontSize: 9 }}>{preview.mode}</span>}
-        <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 10, color: statusColor }}>{statusLabel}</span>
-        {/* Approve the screen that's rendered; each approval advances the UI stage (#546). */}
-        {preview && currentScreen && (
-          <button
-            className={currentApproved ? "btn sm" : "btn ghost sm"}
-            onClick={() => setUiScreenApproved(projectKey, currentScreen, !currentApproved)}
-            title={currentApproved ? `${currentScreen} approved — click to revoke` : `Approve ${currentScreen}`}
-            style={currentApproved ? { color: "var(--success)", borderColor: "var(--success)" } : undefined}
-          >
-            {currentApproved ? "✓ approved" : "approve"}
-          </button>
-        )}
-        {preview && <button className="btn ghost sm" onClick={renderDemo} title="Rebuild">↻</button>}
-        {onClose && <button className="btn ghost sm" onClick={onClose} title="Close preview">✕</button>}
-      </div>
-
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        {status === "fail" ? (
-          <div style={{ padding: 16, fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)", whiteSpace: "pre-wrap", overflow: "auto" }}>
-            {run?.message || "Preview failed to build."}
-          </div>
-        ) : preview?.srcDoc ? (
-          <PreviewFrame srcDoc={preview.srcDoc} onStatus={onStatus} />
-        ) : (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>
-              {status === "running" ? "Bundling…" : "No preview yet"}
-            </div>
-            <div className="hint" style={{ maxWidth: 280 }}>
-              The UI stage renders generated screens here via the render-preview pipeline.
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn" onClick={loadSkeleton} disabled={status === "running"}>load from skeleton →</button>
-              <button className="btn ghost" onClick={renderDemo} disabled={status === "running"}>demo</button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Declared screens + their per-screen approval (#546). The UI stage completes
-          when every row is checked. Click a row to toggle its approval. */}
-      {declared.length > 0 && (
+    <PipelineScreenFrame
+      label="preview"
+      badge={preview && <span className="tag" style={{ fontSize: 9 }}>{preview.mode}</span>}
+      statusLabel={statusLabel}
+      statusColor={statusColor}
+      onClose={onClose}
+      actions={
+        <>
+          {/* Approve the screen that's rendered; each approval advances the UI stage (#546). */}
+          {preview && currentScreen && (
+            <button
+              className={currentApproved ? "btn sm" : "btn ghost sm"}
+              onClick={() => setUiScreenApproved(projectKey, currentScreen, !currentApproved)}
+              title={currentApproved ? `${currentScreen} approved — click to revoke` : `Approve ${currentScreen}`}
+              style={currentApproved ? { color: "var(--success)", borderColor: "var(--success)" } : undefined}
+            >
+              {currentApproved ? "✓ approved" : "approve"}
+            </button>
+          )}
+          {preview && <button className="btn ghost sm" onClick={renderDemo} title="Rebuild">↻</button>}
+        </>
+      }
+      footer={declared.length > 0 && (
         <div style={{ borderTop: "1px solid var(--border-soft)", padding: "8px 12px", maxHeight: 180, overflow: "auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
             <span>screens</span>
@@ -134,6 +108,29 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
           </div>
         </div>
       )}
-    </section>
+    >
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        {status === "fail" ? (
+          <div style={{ padding: 16, fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)", whiteSpace: "pre-wrap", overflow: "auto" }}>
+            {run?.message || "Preview failed to build."}
+          </div>
+        ) : preview?.srcDoc ? (
+          <PreviewFrame srcDoc={preview.srcDoc} onStatus={onStatus} />
+        ) : (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>
+              {status === "running" ? "Bundling…" : "No preview yet"}
+            </div>
+            <div className="hint" style={{ maxWidth: 280 }}>
+              The UI stage renders generated screens here via the render-preview pipeline.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn" onClick={loadSkeleton} disabled={status === "running"}>load from skeleton →</button>
+              <button className="btn ghost" onClick={renderDemo} disabled={status === "running"}>demo</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </PipelineScreenFrame>
   );
 }

@@ -181,3 +181,27 @@ describe("ProjectPane (v2)", () => {
     expect(screen.getByText(/agents · \d+ running/i)).toBeTruthy();
   });
 });
+
+describe("ProjectPane — blueprint-gated sections", () => {
+  it("hides the fleet sections when the permissions stage is disabled", () => {
+    render(<ProjectPane data={data()} projectId="p" sectionKeys={["context", "structure"]} />);
+    expect(screen.getByText("Context Files")).toBeTruthy();
+    expect(screen.getByText("Milestones · Structure")).toBeTruthy();
+    expect(screen.queryByText("Agents · Permissions")).toBeNull();
+    expect(screen.queryByText("Director · Coordination")).toBeNull();
+  });
+
+  it("orders sections by the blueprint's stage order", () => {
+    render(<ProjectPane data={data()} projectId="p" sectionKeys={["permissions", "context", "structure"]} />);
+    const agents = screen.getByText("Agents · Permissions");
+    const context = screen.getByText("Context Files");
+    // permissions first → the Agents panel precedes the Context panel in the DOM.
+    expect(agents.compareDocumentPosition(context) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows all sections when no sectionKeys are provided (back-compat)", () => {
+    render(<ProjectPane data={data()} projectId="p" />);
+    expect(screen.getByText("Agents · Permissions")).toBeTruthy();
+    expect(screen.getByText("Director · Coordination")).toBeTruthy();
+  });
+});

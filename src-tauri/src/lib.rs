@@ -408,6 +408,83 @@ fn clear_project_plan_files(project_key: String) -> Result<u32, String> {
     Ok(removed)
 }
 
+/// Reject a relative path that would escape the project hub: absolute paths, a Windows
+/// drive prefix, a root component, or any `..` segment. Shared by the pipeline file
+/// primitives so a pipeline can never write/read outside its own project dir.
+fn is_safe_relpath(rel: &std::path::Path) -> bool {
+    !rel.is_absolute()
+        && !rel.components().any(|c| matches!(
+            c,
+            std::path::Component::ParentDir
+                | std::path::Component::Prefix(_)
+                | std::path::Component::RootDir
+        ))
+}
+
+/// Write one file into a project's hub — the shared persistence primitive pipelines call
+/// (#…). Pipelines own *what*/*where*/*when* they save; this just performs the path-safe
+/// write under `projects/<key>/`. `relpath` is resolved under the project dir; any attempt
+/// to escape it (absolute, drive prefix, or `..`) is rejected.
+#[tauri::command]
+fn write_project_file(project_key: String, relpath: String, contents: String) -> Result<(), String> {
+    if sanitize_project_key(&project_key).is_empty() {
+        return Err("write_project_file: empty project_key".to_string());
+    }
+    if relpath.trim().is_empty() {
+        return Err("write_project_file: empty relpath".to_string());
+    }
+    let rel = std::path::Path::new(&relpath);
+    if !is_safe_relpath(rel) {
+        return Err(format!("write_project_file: unsafe relpath '{relpath}'"));
+    }
+    let target = project_dir(&project_key).join(rel);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("write_project_file: {e}"))?;
+    }
+    std::fs::write(&target, contents).map_err(|e| format!("write_project_file: {e}"))?;
+    log::info!("write_project_file({project_key}): wrote {relpath}");
+    Ok(())
+}
+
+/// Recursively read every (text) file under `root` as `(relpath → contents)`, capped at
+/// 512 KiB each, skipping unreadable/binary files. relpaths are forward-slashed and
+/// relative to `root`. The generic complement to `read_skeleton_dir` (which filters by
+/// extension) — pipelines persist arbitrary file types (`.vue`, `.svg`, `.html`, …).
+fn read_files_dir(root: &std::path::Path) -> Vec<(String, String)> {
+    fn walk(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, String)>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(base, &p, out);
+            } else {
+                let small = std::fs::metadata(&p).map(|m| m.len() <= 512 * 1024).unwrap_or(false);
+                if small {
+                    if let (Ok(rel), Ok(content)) = (p.strip_prefix(base), std::fs::read_to_string(&p)) {
+                        out.push((rel.to_string_lossy().replace('\\', "/"), content));
+                    }
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Read every file under a project-hub subdir (relpath → contents) so a pipeline can
+/// rehydrate its saved results (#…). Empty when the subdir is missing or `subdir` would
+/// escape the project dir.
+#[tauri::command]
+fn read_project_files(project_key: String, subdir: String) -> Vec<(String, String)> {
+    let rel = std::path::Path::new(&subdir);
+    if !is_safe_relpath(rel) {
+        return Vec::new();
+    }
+    read_files_dir(&project_dir(&project_key).join(rel))
+}
+
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
 ///
 /// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
@@ -4979,6 +5056,8 @@ pub fn run() {
             delete_project_dir,
             clear_all_plan_files,
             clear_project_plan_files,
+            write_project_file,
+            read_project_files,
             get_context_signature,
             list_documents,
             read_document,
@@ -6586,6 +6665,36 @@ mod tests {
         // Missing project -> Ok(0), no panic.
         let n = super::clear_project_plan_files("no-such-bsc-cpf-key".to_string()).unwrap();
         assert_eq!(n, 0);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn project_file_write_then_read_roundtrips_and_blocks_escape() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("ppf");
+        let key = "test-pipeline-files".to_string();
+
+        // Write nested under a pipeline subdir, then read the subdir back.
+        super::write_project_file(key.clone(), "pipelines/vue/button.vue".to_string(), "<template/>".to_string()).unwrap();
+        super::write_project_file(key.clone(), "pipelines/vue/card.vue".to_string(), "<card/>".to_string()).unwrap();
+        let proj = super::bsc_base_dir().join("projects").join(&key);
+        assert!(proj.join("pipelines").join("vue").join("button.vue").exists());
+
+        let mut files = super::read_project_files(key.clone(), "pipelines/vue".to_string());
+        files.sort();
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].0, "button.vue");
+        assert_eq!(files[0].1, "<template/>");
+
+        // Escapes are rejected on write and yield empty on read.
+        assert!(super::write_project_file(key.clone(), "../escape.txt".to_string(), "x".to_string()).is_err());
+        assert!(super::write_project_file(key.clone(), "/abs.txt".to_string(), "x".to_string()).is_err());
+        assert!(super::write_project_file(key.clone(), "  ".to_string(), "x".to_string()).is_err());
+        assert!(super::read_project_files(key.clone(), "../..".to_string()).is_empty());
+
+        // Missing subdir -> empty, no panic.
+        assert!(super::read_project_files(key.clone(), "pipelines/none".to_string()).is_empty());
 
         std::fs::remove_dir_all(&home).ok();
     }

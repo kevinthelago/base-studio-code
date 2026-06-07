@@ -355,6 +355,12 @@ html, body {
 }
 .confirm-flash { animation: confirm-flash 0.6s ease-in-out; }
 
+/* Attention pulse — drawn on incomplete plan sections when the user clicks a locked
+   Triage button. Plays a few times then settles, so the flagged state stays visible
+   without pulsing forever. */
+@keyframes attn-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+.attn-pulse { animation: attn-pulse 0.75s ease-in-out 4; }
+
 /* ===== plan section markdown ===== */
 .plan-md { font-size: 12px; color: var(--fg-muted); line-height: 1.7; }
 .plan-md > * { margin: 0 0 6px; }
