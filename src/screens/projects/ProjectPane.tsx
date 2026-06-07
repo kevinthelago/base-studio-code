@@ -3,8 +3,9 @@
 // composition: pane header + fleet-pulse strip + three collapsible sections —
 // Context Files, Repository · Structure, Agents · Permissions). Styling lives in
 // projectPane.css and uses the app's design tokens.
-import { useState, useEffect } from "react";
-import type { IssueGrade, Letter } from "../../lib/planGrade";
+import { useState, useEffect, type ReactNode } from "react";
+import type { IssueGrade, Letter, PlanGrade } from "../../lib/planGrade";
+import { useAppStore } from "../../store";
 import "./projectPane.css";
 import { type DirectorDrive, DIRECTOR_DRIVES } from "./directorDrive";
 import {
@@ -306,13 +307,112 @@ function GradeChip({ letter }: { letter: Letter }) {
   );
 }
 
+// score → bar/letter color (shared by the category bars).
+function scoreColor(score: number): string {
+  return score >= 0.75 ? "var(--success)"
+    : score >= 0.60 ? "var(--accent)"
+    : score >= 0.45 ? "oklch(0.74 0.14 90)"
+    : "var(--danger)";
+}
+
+const PRIORITY_COLOR: Record<string, string> = {
+  high:   "var(--danger)",
+  medium: "oklch(0.74 0.14 90)",
+  low:    "var(--fg-dim)",
+};
+
+// The renderable grade report (#445 → pipeline): the overall letter, a per-category
+// rubric breakdown with score reasonings, and prioritized suggestions. Collapsible;
+// auto-expands when there's headroom to improve (< B).
+function GradeReport({ grade }: { grade: PlanGrade }) {
+  const [open, setOpen] = useState(grade.score < 0.75);
+  const pct = Math.round(grade.score * 100);
+  return (
+    <div style={{
+      margin: "0 0 10px", borderRadius: 6, overflow: "hidden",
+      border: "1px solid var(--border-soft)", background: "var(--bg-elev)",
+    }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 8,
+          padding: "7px 10px", background: "none", border: "none", cursor: "pointer",
+          fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", textAlign: "left",
+        }}
+      >
+        <GradeChip letter={grade.letter} />
+        <span style={{ color: "var(--fg)" }}>Plan readiness</span>
+        <span style={{ color: scoreColor(grade.score) }}>{pct}%</span>
+        <span style={{ flex: 1 }} />
+        {grade.suggestions.length > 0 && (
+          <span style={{ color: "var(--fg-dim)" }}>
+            {grade.suggestions.length} suggestion{grade.suggestions.length !== 1 ? "s" : ""}
+          </span>
+        )}
+        <span style={{ fontSize: 8, color: "var(--fg-dim)" }}>{open ? "▾" : "▸"}</span>
+      </button>
+
+      {open && (
+        <div style={{ padding: "2px 10px 10px", borderTop: "1px solid var(--border-soft)" }}>
+          {/* Per-category rubric breakdown with score reasonings. */}
+          <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", margin: "8px 0 5px" }}>
+            categories
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {grade.categories.map(c => (
+              <div key={c.id} title={c.detail} style={{ display: "grid", gridTemplateColumns: "108px 1fr 14px", gap: 8, alignItems: "center" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}</span>
+                <div style={{ height: 5, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${Math.round(c.score * 100)}%`, background: scoreColor(c.score), borderRadius: 3 }} />
+                </div>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 9, fontWeight: 700, color: scoreColor(c.score), textAlign: "right" }}>{c.letter}</span>
+                <span style={{ gridColumn: "1 / -1", fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)", lineHeight: 1.45 }}>{c.detail}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Prioritized, actionable suggestions. */}
+          {grade.suggestions.length > 0 && (
+            <>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", margin: "10px 0 5px" }}>
+                suggestions
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {grade.suggestions.map((s, i) => (
+                  <div key={i} style={{ display: "flex", gap: 7, alignItems: "flex-start" }}>
+                    <span style={{
+                      flexShrink: 0, marginTop: 1, padding: "0 5px", borderRadius: 3,
+                      fontFamily: "var(--mono)", fontSize: 8, fontWeight: 700, lineHeight: "13px",
+                      textTransform: "uppercase", letterSpacing: ".04em",
+                      color: PRIORITY_COLOR[s.priority] ?? "var(--fg-dim)",
+                      background: `color-mix(in oklch, ${PRIORITY_COLOR[s.priority] ?? "var(--fg-dim)"}, transparent 85%)`,
+                    }}>{s.priority}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg)" }}>{s.title}</div>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)", lineHeight: 1.45 }}>{s.detail}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // collapsible section shell
-function Sec({ title, count, open = true, right, children }: {
-  title: string; count?: React.ReactNode; open?: boolean; right?: React.ReactNode; children: React.ReactNode;
+function Sec({ title, count, open = true, right, attention, children }: {
+  title: string; count?: React.ReactNode; open?: boolean; right?: React.ReactNode;
+  /** Flag this section as incomplete (locked-Triage feedback): danger outline + pulse. */
+  attention?: boolean; children: React.ReactNode;
 }) {
   const [o, setO] = useState(open);
   return (
-    <div className="sec">
+    <div className={"sec" + (attention ? " attn-pulse" : "")} style={attention ? {
+      borderRadius: 6, outline: "1px solid color-mix(in oklch, var(--danger), transparent 45%)", outlineOffset: -1,
+    } : undefined}>
       <div className="sec-head" onClick={() => setO(!o)}>
         <span className="chev">{o ? "▼" : "▶"}</span>
         <span className="t">{title}</span>
@@ -956,10 +1056,15 @@ function DirectorBar({ director, fleetStrategy, onDirectorDrive }: {
  * no write-back in this slice.
  */
 export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onStrategy, onTogglePin,
-  onDirectorDrive, onSyncLabels, syncState }: {
+  onDirectorDrive, onSyncLabels, syncState, sectionKeys, highlight }: {
   data?: ProjectPaneData;
   projectName?: string;
   projectId?: string;
+  /** Enabled stage ids in blueprint order — gates + orders the pane's sections.
+   *  Undefined ⇒ show every section in the default order (sample/standalone use). */
+  sectionKeys?: string[];
+  /** Stage keys to flag as incomplete (locked-Triage feedback): danger outline + pulse. */
+  highlight?: Set<string>;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
@@ -978,7 +1083,9 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   const structure: Milestone[]   = hasData ? data!.structure      : STRUCTURE;
   const phaseStructure: PhaseGroup[] = hasData ? data!.phaseStructure : PHASE_STRUCTURE;
   const context:   ContextFile[] = hasData ? data!.context        : CONTEXT;
-  const grade = hasData ? data!.grade : undefined;
+  // The grade is now produced by the grade-plan pipeline and read from the store
+  // (single source of truth, #445 → pipeline) rather than recomputed on the pane data.
+  const grade = useAppStore(s => (projectId ? s.stagePlanGrade[projectId] : null)) ?? undefined;
   // Phase-first is the primary lens (#497); the repo-first tree is the secondary one.
   const [structView, setStructView] = useState<"phase" | "repo">("phase");
 
@@ -1023,50 +1130,62 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
       </div>
 
       <div className="pp-scroll">
-        <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false}>
-          <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />
-        </Sec>
-        <Sec
-          title="Milestones · Structure"
-          count={
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              {grade && <GradeChip letter={grade.letter} />}
-              {structView === "phase"
-                ? `${phaseStructure.length} phase${phaseStructure.length !== 1 ? "s" : ""}`
-                : `${repos.length} repos · ${structure.length} milestones`}
-            </span>
-          }
-          open={true}
-          // Phase/repo lens lives inline in the header (where the publish button
-          // used to be, #506); stop the click so toggling the lens doesn't also
-          // collapse the section.
-          right={
-            <span onClick={(e) => e.stopPropagation()}>
-              <Seg options={["phase", "repo"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo")} tiny />
-            </span>
-          }
-        >
-          {grade && grade.score < 0.60 && (
-            <div style={{
-              margin: "0 0 8px", padding: "7px 10px", borderRadius: 5,
-              background: "color-mix(in oklch, var(--danger), transparent 88%)",
-              border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
-              fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--danger)", lineHeight: 1.55,
-            }}>
-              Plan grade {grade.letter} ({Math.round(grade.score * 100)}%) — consider adding acceptance criteria and ownership before launching agents.
-              {grade.reasons.length > 0 && <span> {grade.reasons[0]}.</span>}
-            </div>
-          )}
-          {structView === "phase"
-            ? <PhaseStructure phases={phaseStructure} agents={agents} gradeMap={issueGradeMap} />
-            : <RepoStructure structure={structure} repos={repos} agents={agents} gradeMap={issueGradeMap} />}
-        </Sec>
-        <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
-          <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />
-        </Sec>
-        <Sec title="Director · Coordination" count={director.enabled ? `drive: ${director.drive}` : "disabled"} open={false}>
-          <DirectorBar director={director} fleetStrategy={fleetStrategy} onDirectorDrive={onDirectorDrive} />
-        </Sec>
+        {(() => {
+          // Sections are static and keyed to a planning stage; which show (and in what
+          // order) follows the blueprint's enabled stages (#…). context/structure are
+          // required so they always render; the fleet panels ride the `permissions`
+          // stage, so disabling it in the blueprint hides them.
+          const sectionNodes: { stage: string; node: ReactNode }[] = [
+            { stage: "context", node: (
+              <Sec key="sec-context" title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false} attention={highlight?.has("context")}>
+                <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />
+              </Sec>
+            ) },
+            { stage: "structure", node: (
+              <Sec
+                key="sec-structure"
+                title="Milestones · Structure"
+                attention={highlight?.has("structure")}
+                count={
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    {grade && <GradeChip letter={grade.letter} />}
+                    {structView === "phase"
+                      ? `${phaseStructure.length} phase${phaseStructure.length !== 1 ? "s" : ""}`
+                      : `${repos.length} repos · ${structure.length} milestones`}
+                  </span>
+                }
+                open={true}
+                // Phase/repo lens lives inline in the header (where the publish button
+                // used to be, #506); stop the click so toggling the lens doesn't also
+                // collapse the section.
+                right={
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <Seg options={["phase", "repo"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo")} tiny />
+                  </span>
+                }
+              >
+                {grade && <GradeReport grade={grade} />}
+                {structView === "phase"
+                  ? <PhaseStructure phases={phaseStructure} agents={agents} gradeMap={issueGradeMap} />
+                  : <RepoStructure structure={structure} repos={repos} agents={agents} gradeMap={issueGradeMap} />}
+              </Sec>
+            ) },
+            { stage: "permissions", node: (
+              <Sec key="sec-agents" title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} attention={highlight?.has("permissions")} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
+                <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />
+              </Sec>
+            ) },
+            { stage: "permissions", node: (
+              <Sec key="sec-director" title="Director · Coordination" count={director.enabled ? `drive: ${director.drive}` : "disabled"} open={false}>
+                <DirectorBar director={director} fleetStrategy={fleetStrategy} onDirectorDrive={onDirectorDrive} />
+              </Sec>
+            ) },
+          ];
+          const shown = sectionKeys
+            ? sectionKeys.flatMap(k => sectionNodes.filter(s => s.stage === k))
+            : sectionNodes;
+          return shown.map(s => s.node);
+        })()}
       </div>
 
       {viewing && (

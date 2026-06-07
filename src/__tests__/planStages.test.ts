@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   PLAN_STAGES, STAGE_BY_ID, defaultStageConfig, buildPlanStageState,
-  stageStatus, enabledOrderedStages,
+  stageStatus, enabledOrderedStages, currentStage,
   type StageConfig, type StageId,
 } from "../screens/projects/planStages";
 
@@ -100,5 +100,42 @@ describe("planStages — enabledOrderedStages", () => {
       order: ["repos", "context", "structure", "permissions", "automations", "ui", "skills"],
     });
     expect(enabledOrderedStages(c).map((s) => s.id)).toEqual(["repos", "context", "structure", "permissions", "automations"]);
+  });
+});
+
+describe("planStages — currentStage (reached frontier)", () => {
+  it("is the first in-progress stage when nothing is done yet", () => {
+    expect(currentStage(cfg(), buildPlanStageState())?.id).toBe("context");
+  });
+
+  it("advances past a completed stage to the next in-progress one", () => {
+    const state = buildPlanStageState({
+      context: { resolved: 6, total: 6, coreConfirmed: true }, // context complete
+      requiresUi: false,                                       // ui n/a
+      // repos not linked → repos is the next in-progress stage
+    });
+    expect(currentStage(cfg(), state)?.id).toBe("repos");
+  });
+
+  it("skips N/A stages (ui when the project needs no UI)", () => {
+    const state = buildPlanStageState({
+      context: { resolved: 6, total: 6, coreConfirmed: true },
+      repoCount: 1,        // repos complete
+      requiresUi: false,   // ui n/a → skipped
+    });
+    expect(currentStage(cfg(), state)?.id).toBe("structure");
+  });
+
+  it("falls back to the last enabled+applicable stage when all are complete", () => {
+    const allDone = buildPlanStageState({
+      context: { resolved: 1, total: 1, coreConfirmed: true },
+      repoCount: 1,
+      requiresUi: false,
+      phasesConfirmed: true, issueCount: 3,
+      fleet: { streams: 2, profilesComplete: true },
+      automationsAck: true,
+      skillsAck: true,
+    });
+    expect(currentStage(cfg(), allDone)?.id).toBe("skills");
   });
 });

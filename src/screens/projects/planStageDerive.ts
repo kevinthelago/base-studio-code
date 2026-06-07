@@ -7,6 +7,7 @@
 import { buildPlanStageState, type PlanStageState } from "./planStages";
 import { parseSectionKey } from "./planSections";
 import type { SectionState } from "./ghStructure";
+import type { PlanSignals } from "./stageGate";
 
 /** The four discovery topics the planner template always confirms. */
 const CORE = ["goal", "scope", "stack", "architecture"];
@@ -54,4 +55,28 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
     automationsAck: input.automationsAck,
     skillsAck: input.skillsAck,
   });
+}
+
+/**
+ * Flatten the typed {@link PlanStageState} into the serializable {@link PlanSignals}
+ * bag that declarative section gates read. This is the bridge between the app's live
+ * state derivation and the data-driven gate evaluator — the published signal
+ * vocabulary that built-in and cloud-distributed sections alike compose against.
+ */
+export function planStateToSignals(s: PlanStageState): PlanSignals {
+  return {
+    coreConfirmed: s.context.coreConfirmed,
+    topicsResolved: s.context.resolved,
+    topicsTotal: s.context.total,
+    repoCount: s.repoCount,
+    requiresUi: s.requiresUi,
+    screensApproved: s.ui.approved,
+    screensTotal: s.ui.total,
+    phasesConfirmed: s.phasesConfirmed,
+    issueCount: s.issueCount,
+    fleetStreams: s.fleet.streams,
+    profilesComplete: s.fleet.profilesComplete,
+    automationsAck: s.automationsAck,
+    skillsAck: s.skillsAck,
+  };
 }
