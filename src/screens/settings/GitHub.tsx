@@ -10,7 +10,8 @@ type DeviceStart = DeviceStartInfo;
 
 // `project` is required to read AND create GitHub Projects v2 (the Projects page
 // + planning publish); without it the API returns "token lacks read:project".
-const DEVICE_SCOPE = "repo read:org read:user project";
+// `gist` lets the app publish blueprints/extensions as gists (#598 M2).
+const DEVICE_SCOPE = "repo read:org read:user project gist";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
