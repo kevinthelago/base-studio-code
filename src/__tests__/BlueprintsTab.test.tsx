@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
+import { invoke } from "@tauri-apps/api/core";
 import { Blueprints } from "../screens/projects/BlueprintsTab";
 import { useAppStore } from "../store";
 import { makeBlueprints } from "../screens/projects/blueprints";
@@ -75,6 +76,32 @@ describe("Blueprints tab (#513/#514)", () => {
     expect(after.length).toBe(before + 1);
     // imported under a fresh id (not "mobile")
     expect(after.filter((b) => b.name === "Mobile MVP").length).toBe(2);
+  });
+
+  it("publishes a blueprint to a gist and shows the URL (#598 M2)", async () => {
+    useAppStore.setState({ githubToken: "tok" });
+    vi.mocked(invoke).mockResolvedValueOnce({ id: "gid", html_url: "https://gist.github.com/u/gid" });
+    render(<Blueprints />);
+    let card: HTMLElement | null = screen.getByText("Mobile MVP");
+    while (card && !within(card).queryByTitle(/Publish to Gist/)) card = card.parentElement;
+    fireEvent.click(within(card!).getByTitle(/Publish to Gist/));
+    expect(await screen.findByText(/Published · URL copied/)).toBeInTheDocument();
+    expect(vi.mocked(invoke).mock.calls.some(([c]) => c === "gist_create")).toBe(true);
+  });
+
+  it("imports a blueprint from a gist URL (#598 M2)", async () => {
+    const { blueprintToManifest } = await import("../screens/projects/blueprintShare");
+    const m = blueprintToManifest(makeBlueprints().find((b) => b.id === "mobile")!);
+    vi.mocked(invoke).mockResolvedValueOnce({
+      id: "gid", files: { "extension.json": { content: JSON.stringify(m), filename: "extension.json" } },
+    });
+    render(<Blueprints />);
+    const before = useAppStore.getState().blueprints.length;
+    fireEvent.click(screen.getByText("Import"));
+    fireEvent.change(screen.getByPlaceholderText(/share code/i), { target: { value: "https://gist.github.com/u/0123456789abcdef" } });
+    const importBtns = screen.getAllByRole("button", { name: /^Import$/ });
+    fireEvent.click(importBtns[importBtns.length - 1]);
+    await waitFor(() => expect(useAppStore.getState().blueprints.length).toBe(before + 1));
   });
 
   it("deletes a stage from the blueprint (#597)", () => {
