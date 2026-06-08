@@ -12,6 +12,7 @@ import {
 } from "./blueprints";
 import { blueprintToManifest, manifestToBlueprint } from "./blueprintShare";
 import { encodeShareCode, decodeShareCode, parseManifest } from "../../lib/extensions/manifest";
+import { gistIdFromUrl, installFromGist, publishGist } from "../../lib/extensions/gist";
 
 const KIND_COLOR: Record<PipelineKind, string> = { builtin: "var(--accent)", external: "var(--info)", custom: "var(--violet, oklch(0.72 0.12 300))" };
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -310,19 +311,28 @@ function SectionList({ bp, api }: { bp: Blueprint; api: BpApi }) {
 // ── import modal ─────────────────────────────────────────────────────────────
 // Paste a share code (or exported JSON) → validate the envelope → reconstruct the
 // blueprint → add it under a fresh id. The same path a gist install will reuse (#598).
-function ImportBlueprintModal({ onImport, onClose }: { onImport: (bp: Blueprint) => void; onClose: () => void }) {
+function ImportBlueprintModal({ onImport, onClose, token }: { onImport: (bp: Blueprint) => void; onClose: () => void; token: string }) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const doImport = () => {
+  const [busy, setBusy] = useState(false);
+  const doImport = async () => {
     const raw = text.trim();
-    if (!raw) { setError("Paste a share code first."); return; }
-    // Accept a share code or raw exported JSON.
-    const validated = raw.startsWith("{") ? parseManifest(raw) : decodeShareCode(raw);
-    if (!validated.ok) { setError(validated.error); return; }
-    const bp = manifestToBlueprint(validated.manifest);
-    if (!bp.ok) { setError(bp.error); return; }
-    onImport(bp.blueprint);
-    onClose();
+    if (!raw) { setError("Paste a share code, gist URL, or exported JSON."); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      // Accept raw JSON, a gist URL/id (fetched), or a share code.
+      const validated = raw.startsWith("{") ? parseManifest(raw)
+        : gistIdFromUrl(raw) ? await installFromGist(raw, token)
+        : decodeShareCode(raw);
+      if (!validated.ok) { setError(validated.error); return; }
+      const bp = manifestToBlueprint(validated.manifest);
+      if (!bp.ok) { setError(bp.error); return; }
+      onImport(bp.blueprint);
+      onClose();
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -332,16 +342,16 @@ function ImportBlueprintModal({ onImport, onClose }: { onImport: (bp: Blueprint)
           <div style={{ flex: 1 }} />
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
-        <div className="hint" style={{ marginBottom: 8 }}>Paste a blueprint share code (or exported JSON).</div>
+        <div className="hint" style={{ marginBottom: 8 }}>Paste a blueprint share code, a gist URL, or exported JSON.</div>
         <textarea
           className="input" value={text} onChange={(e) => { setText(e.target.value); setError(null); }}
-          placeholder="bp share code…" rows={5}
+          placeholder="share code, gist URL, or JSON…" rows={5}
           style={{ width: "100%", fontFamily: "var(--mono)", fontSize: 11, resize: "vertical" }}
         />
         {error && <div style={{ color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11, marginTop: 8 }}>{error}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
           <button className="btn ghost" onClick={onClose}>cancel</button>
-          <button className="btn primary" onClick={doImport}>Import</button>
+          <button className="btn primary" onClick={doImport} disabled={busy}>{busy ? "Importing…" : "Import"}</button>
         </div>
       </div>
     </div>
@@ -349,11 +359,12 @@ function ImportBlueprintModal({ onImport, onClose }: { onImport: (bp: Blueprint)
 }
 
 // ── library (secondary) ──────────────────────────────────────────────────────
-function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActive, onDuplicate, onDelete, onExport, onImport }: {
+function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActive, onDuplicate, onDelete, onExport, onImport, onPublish, canPublish }: {
   blueprints: Blueprint[]; selectedId: string; activeId: string;
   onSelect: (id: string) => void; onNew: () => void; onSetActive: (id: string) => void;
   onDuplicate: (id: string) => void; onDelete: (id: string) => void;
   onExport: (id: string) => void; onImport: () => void;
+  onPublish: (id: string) => void; canPublish: boolean;
 }) {
   return (
     <aside style={{ width: 256, flex: "0 0 256px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -388,6 +399,12 @@ function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActiv
                 {!active && <button className="btn sm" style={{ flex: 1 }} onClick={(e) => { e.stopPropagation(); onSetActive(b.id); }}>set active</button>}
                 {active && <button className="btn sm" style={{ flex: 1, cursor: "default", color: "var(--fg-dim)" }} disabled>seeds new projects</button>}
                 <button className="icon-btn" title="Copy share code" onClick={(e) => { e.stopPropagation(); onExport(b.id); }}>↗</button>
+                <button
+                  className="icon-btn"
+                  title={canPublish ? "Publish to Gist (copies URL)" : "Connect GitHub to publish to a gist"}
+                  disabled={!canPublish}
+                  onClick={(e) => { e.stopPropagation(); onPublish(b.id); }}
+                >☁</button>
                 <button className="icon-btn" title="Duplicate" onClick={(e) => { e.stopPropagation(); onDuplicate(b.id); }}>⧉</button>
                 <button
                   className="icon-btn danger"
@@ -407,17 +424,32 @@ function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActiv
 // ── page ─────────────────────────────────────────────────────────────────────
 export function Blueprints() {
   const {
-    blueprints, activeBlueprintId,
+    blueprints, activeBlueprintId, githubToken,
     setActiveBlueprint, addBlueprint, duplicateBlueprint, setBlueprintSections, removeBlueprint, importBlueprint,
   } = useAppStore();
 
   const [selectedId, setSelectedId] = useState(activeBlueprintId);
   const [importOpen, setImportOpen] = useState(false);
+  const [published, setPublished] = useState<{ url: string } | { error: string } | null>(null);
 
   // Export = copy the blueprint's share code to the clipboard.
   const copyShareCode = (id: string) => {
     const bp = blueprints.find((b) => b.id === id);
     if (bp) navigator.clipboard?.writeText(encodeShareCode(blueprintToManifest(bp))).catch(() => {});
+  };
+
+  // Publish = create a secret gist and copy its URL to the clipboard.
+  const publishToGist = async (id: string) => {
+    const bp = blueprints.find((b) => b.id === id);
+    if (!bp || !githubToken) return;
+    setPublished(null);
+    try {
+      const { htmlUrl } = await publishGist(githubToken, blueprintToManifest(bp));
+      navigator.clipboard?.writeText(htmlUrl).catch(() => {});
+      setPublished({ url: htmlUrl });
+    } catch (e) {
+      setPublished({ error: String(e) });
+    }
   };
   const selected = blueprints.find((b) => b.id === selectedId) ?? blueprints.find((b) => b.id === activeBlueprintId) ?? blueprints[0];
 
@@ -489,13 +521,34 @@ export function Blueprints() {
             onDelete={(id) => { removeBlueprint(id); setSelectedId(activeBlueprintId); }}
             onExport={copyShareCode}
             onImport={() => setImportOpen(true)}
+            onPublish={publishToGist}
+            canPublish={!!githubToken}
           />
         </div>
       </div>
+      {published && (
+        <div style={{
+          position: "fixed", bottom: 18, right: 18, zIndex: 60, maxWidth: 420,
+          padding: "10px 14px", borderRadius: "var(--r-md)",
+          background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+          display: "flex", alignItems: "center", gap: 10, fontFamily: "var(--mono)", fontSize: 11,
+        }}>
+          {"url" in published ? (
+            <>
+              <span style={{ color: "var(--success)" }}>✓ Published · URL copied</span>
+              <a href={published.url} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{published.url.replace(/^https?:\/\//, "")}</a>
+            </>
+          ) : (
+            <span style={{ color: "var(--danger)" }}>Publish failed: {published.error}</span>
+          )}
+          <button className="icon-btn" onClick={() => setPublished(null)}>✕</button>
+        </div>
+      )}
       {importOpen && (
         <ImportBlueprintModal
           onImport={(bp) => setSelectedId(importBlueprint(bp))}
           onClose={() => setImportOpen(false)}
+          token={githubToken}
         />
       )}
     </section>
