@@ -452,6 +452,7 @@ export function Planning({ visible }: { visible: boolean }) {
     addProjectRepo, fleetStartProject, removeDraftProject, clearPlan,
     agentProfiles,
     commands, schedules,
+    pendingPlannerPrompt, clearPlannerPrompt,
   } = useAppStore();
 
   // The session key (set once at session entry) is the single source of truth
@@ -471,6 +472,15 @@ export function Planning({ visible }: { visible: boolean }) {
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
   const paneId = `planning_${effectiveProjectId.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 80)}`;
+
+  // Deliver a queued planner prompt (e.g. the file-intake "Route" action) into the live
+  // planner PTY — a deliberate, user-triggered inject — then clear it. (#604)
+  const queuedPrompt = pendingPlannerPrompt[effectiveProjectId];
+  useEffect(() => {
+    if (!queuedPrompt) return;
+    invoke("pty_write", { paneId, data: `${queuedPrompt}\r` }).catch(console.error);
+    clearPlannerPrompt(effectiveProjectId);
+  }, [queuedPrompt, paneId, effectiveProjectId, clearPlannerPrompt]);
 
   // Prefer activeProjectRepos (populated from board items) but fall back to
   // any previously-cloned repos for this project if the board hasn't loaded yet.
