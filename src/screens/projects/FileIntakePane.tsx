@@ -5,10 +5,11 @@
 
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useAppStore } from "../../store";
 import { PipelineScreenFrame } from "./PipelineScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
-  INTAKE_MANIFEST, type IntakeEntry, type IntakeKind,
+  INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
 } from "./fileIntake";
 import type { PipelineScreenProps } from "./pipelineScreens";
 
@@ -27,10 +28,12 @@ async function fileToBase64(file: File): Promise<string> {
 }
 
 export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
+  const requestPlannerPrompt = useAppStore((s) => s.requestPlannerPrompt);
   const [entries, setEntries] = useState<IntakeEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [routed, setRouted] = useState(false);
 
   // Load any already-staged manifest on open.
   useEffect(() => {
@@ -112,9 +115,17 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
                 <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{(e.size / 1024).toFixed(1)}k</span>
               </div>
             ))}
-            <div className="hint" style={{ marginTop: 4 }}>
-              Staged in the project. The planner will route these to the right repo — explicit “Route” action arrives next.
-            </div>
+            <button
+              className="btn primary"
+              style={{ marginTop: 6, width: "100%", justifyContent: "center" }}
+              disabled={busy}
+              onClick={() => { requestPlannerPrompt(projectKey, ROUTE_PROMPT); setRouted(true); }}
+            >Route to project →</button>
+            {routed && (
+              <div className="hint" style={{ color: "var(--success)" }}>
+                Sent to the planner — it will classify each file and route it to the right repo (it may ask you when a destination is ambiguous).
+              </div>
+            )}
           </div>
         )}
       </div>
