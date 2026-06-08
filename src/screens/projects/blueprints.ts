@@ -43,6 +43,7 @@ export interface Pipeline extends PipelineDef {
 
 export const PIPELINE_LIB: PipelineDef[] = [
   { id: "render-preview",  name: "Render preview",      desc: "Visualize screens as a 2D / 3D walkthrough", suits: ["ui"],          kind: "builtin"  },
+  { id: "file-intake",     name: "Drop files",          desc: "Drag in design or any files; the planner routes them to the right repo", suits: ["ui", "*"], kind: "builtin" },
   { id: "push-figma",      name: "Push to Figma",       desc: "Export generated frames to a Figma file",    suits: ["ui"],          kind: "external" },
   { id: "generate-issues", name: "Generate issues",     desc: "Turn phases into granular GitHub issues",    suits: ["structure"],   kind: "builtin"  },
   { id: "grade-plan",      name: "Grade plan",          desc: "Score agent-readiness and suggest fixes",    suits: ["structure"],   kind: "builtin"  },
