@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { FileIntakePane } from "../screens/projects/FileIntakePane";
+import { ROUTE_PROMPT } from "../screens/projects/fileIntake";
+import { useAppStore } from "../store";
 
 describe("FileIntakePane (#604)", () => {
-  beforeEach(() => vi.mocked(invoke).mockReset());
+  beforeEach(() => {
+    vi.mocked(invoke).mockReset();
+    useAppStore.setState({ pendingPlannerPrompt: {} });
+  });
 
   it("renders the drop zone", () => {
     vi.mocked(invoke).mockResolvedValue([]);
@@ -19,5 +24,25 @@ describe("FileIntakePane (#604)", () => {
     render(<FileIntakePane projectKey="p" />);
     expect(await screen.findByText("hero.png")).toBeInTheDocument();
     expect(screen.getByText("image")).toBeInTheDocument(); // kind chip
+  });
+
+  it("the Route button queues the route prompt for the planner (#604 slice 2)", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce([
+      ["intake.json", JSON.stringify([{ name: "hero.png", kind: "image", size: 1 }])],
+    ]);
+    render(<FileIntakePane projectKey="proj-x" />);
+    fireEvent.click(await screen.findByRole("button", { name: /Route to project/i }));
+    expect(useAppStore.getState().pendingPlannerPrompt["proj-x"]).toBe(ROUTE_PROMPT);
+  });
+});
+
+describe("planner prompt queue store actions (#604)", () => {
+  it("request sets and clear removes per-project", () => {
+    useAppStore.setState({ pendingPlannerPrompt: {} });
+    useAppStore.getState().requestPlannerPrompt("a", "do X");
+    useAppStore.getState().requestPlannerPrompt("b", "do Y");
+    expect(useAppStore.getState().pendingPlannerPrompt).toEqual({ a: "do X", b: "do Y" });
+    useAppStore.getState().clearPlannerPrompt("a");
+    expect(useAppStore.getState().pendingPlannerPrompt).toEqual({ b: "do Y" });
   });
 });
