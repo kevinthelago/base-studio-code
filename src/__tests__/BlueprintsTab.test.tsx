@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { Blueprints } from "../screens/projects/BlueprintsTab";
 import { useAppStore } from "../store";
 import { makeBlueprints } from "../screens/projects/blueprints";
@@ -46,6 +46,18 @@ describe("Blueprints tab (#513/#514)", () => {
     fireEvent.click(screen.getByText("Scope streams")); // suggested for permissions
     const perms = useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "permissions")!;
     expect(perms.pipelines.some((p) => p.id === "scope-streams")).toBe(true);
+  });
+
+  it("deletes a blueprint from the library (#598)", () => {
+    render(<Blueprints />);
+    const before = useAppStore.getState().blueprints.length;
+    // Climb from the Mobile MVP label to the card that also holds its delete control.
+    let card: HTMLElement | null = screen.getByText("Mobile MVP");
+    while (card && !within(card).queryByTitle("Delete blueprint")) card = card.parentElement;
+    fireEvent.click(within(card!).getByTitle("Delete blueprint"));
+    const after = useAppStore.getState().blueprints;
+    expect(after.length).toBe(before - 1);
+    expect(after.some((b) => b.id === "mobile")).toBe(false);
   });
 
   it("toggles a pipeline as a gate (#532)", () => {

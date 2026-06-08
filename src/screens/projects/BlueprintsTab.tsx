@@ -300,9 +300,10 @@ function SectionList({ bp, api }: { bp: Blueprint; api: BpApi }) {
 }
 
 // ── library (secondary) ──────────────────────────────────────────────────────
-function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActive, onDuplicate }: {
+function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActive, onDuplicate, onDelete }: {
   blueprints: Blueprint[]; selectedId: string; activeId: string;
-  onSelect: (id: string) => void; onNew: () => void; onSetActive: (id: string) => void; onDuplicate: (id: string) => void;
+  onSelect: (id: string) => void; onNew: () => void; onSetActive: (id: string) => void;
+  onDuplicate: (id: string) => void; onDelete: (id: string) => void;
 }) {
   return (
     <aside style={{ width: 256, flex: "0 0 256px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -336,6 +337,12 @@ function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActiv
                 {!active && <button className="btn sm" style={{ flex: 1 }} onClick={(e) => { e.stopPropagation(); onSetActive(b.id); }}>set active</button>}
                 {active && <button className="btn sm" style={{ flex: 1, cursor: "default", color: "var(--fg-dim)" }} disabled>seeds new projects</button>}
                 <button className="icon-btn" title="Duplicate" onClick={(e) => { e.stopPropagation(); onDuplicate(b.id); }}>⧉</button>
+                <button
+                  className="icon-btn danger"
+                  title={blueprints.length <= 1 ? "Can't delete the only blueprint" : "Delete blueprint"}
+                  disabled={blueprints.length <= 1}
+                  onClick={(e) => { e.stopPropagation(); onDelete(b.id); }}
+                >✕</button>
               </div>
             </div>
           );
@@ -349,7 +356,7 @@ function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActiv
 export function Blueprints() {
   const {
     blueprints, activeBlueprintId,
-    setActiveBlueprint, addBlueprint, duplicateBlueprint, setBlueprintSections,
+    setActiveBlueprint, addBlueprint, duplicateBlueprint, setBlueprintSections, removeBlueprint,
   } = useAppStore();
 
   const [selectedId, setSelectedId] = useState(activeBlueprintId);
@@ -419,6 +426,7 @@ export function Blueprints() {
             onNew={() => setSelectedId(addBlueprint())}
             onSetActive={setActiveBlueprint}
             onDuplicate={(id) => setSelectedId(duplicateBlueprint(id))}
+            onDelete={(id) => { removeBlueprint(id); setSelectedId(activeBlueprintId); }}
           />
         </div>
       </div>
