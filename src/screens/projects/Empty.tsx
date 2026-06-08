@@ -2,6 +2,7 @@ import { useAppStore } from "../../store";
 
 export function ProjectsEmpty() {
   const setScreen = useAppStore((s) => s.setScreen);
+  const setSettingsSection = useAppStore((s) => s.setSettingsSection);
 
   return (
     <section style={{
@@ -37,7 +38,9 @@ export function ProjectsEmpty() {
 
           <button
             className="btn primary"
-            onClick={() => setScreen("settings")}
+            // Land on the GitHub settings tab, not just the Settings screen (mirrors
+            // the GitHub screen's own empty state).
+            onClick={() => { setSettingsSection("github"); setScreen("settings"); }}
             style={{ height: 38, padding: "0 22px", fontSize: 13, fontWeight: 600, width: "100%", justifyContent: "center", gap: 10 }}
           >
             <span style={{ fontFamily: "var(--mono)", fontSize: 15 }}>⎇</span>

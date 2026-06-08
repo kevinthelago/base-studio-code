@@ -23,6 +23,7 @@ interface BpApi {
   toggleExpand: (u: string) => void;
   editPrompt: (u: string, v: string) => void;
   moveSection: (from: string, to: string, before: boolean) => void;
+  removeSection: (u: string) => void;
   addSection: (name: string) => void;
   addPipeline: (su: string, pl: Pipeline) => void;
   removePipeline: (su: string, pu: string) => void;
@@ -210,6 +211,11 @@ function SectionRow({ s, idx, status, statusAll, byKey, api, drag, onAdd }: {
           {statusChip}
           <div style={{ flex: 1 }} />
           <span className="tag">{`${s.pipelines.length} ${s.pipelines.length === 1 ? "pipeline" : "pipelines"}`}</span>
+          <button
+            className="icon-btn danger"
+            title="Delete stage"
+            onClick={(e) => { e.stopPropagation(); api.removeSection(s.uid); }}
+          >✕</button>
           <span style={{ color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 12, transform: s.expanded ? "rotate(90deg)" : "none", transition: "transform .15s", width: 14, textAlign: "center" }}>›</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 29, opacity: disabled ? 0.6 : 1, flexWrap: "wrap" }}>
@@ -426,6 +432,7 @@ export function Blueprints() {
     toggleExpand: (u) => mapSec(u, (s) => ({ ...s, expanded: !s.expanded })),
     editPrompt: (u, v) => mapSec(u, (s) => ({ ...s, prompt: v })),
     moveSection: (from, to, before) => setSecs((secs) => reorder(secs, from, to, before)),
+    removeSection: (u) => setSecs((secs) => secs.filter((s) => s.uid !== u)),
     addSection: (name) => setSecs((secs) => [...secs, {
       uid: uid("sec"), key: "custom-" + uid("k"), name, glyph: "✚", gate: "stage complete", deps: [],
       blurb: "Custom planning stage.", prompt: "Describe what Claude should produce in this stage, and the gate that marks it complete.",
