@@ -2533,7 +2533,7 @@ struct AutomationData {
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-const PLANNING_TEMPLATE_VERSION: u8 = 1;
+const PLANNING_TEMPLATE_VERSION: u8 = 2;
 
 #[derive(serde::Serialize)]
 struct WorkspacePaths {
@@ -2995,6 +2995,31 @@ needs. Read `extensions.md` (the catalog of available MCP servers) and
   `npm audit`, a lint/test sweep, a dependency-bump check).
 
 Both surface in the project's Automations & extensions UI and persist with the plan.
+
+## File intake — route files the user drops in
+
+The user can drag files (design exports, mockups, components, anything) into the
+**file-intake** pipeline. Dropped files are staged under `.intake/` in the project
+hub, with a manifest at `.intake/intake.json` (`[{ name, kind, size }]`, where `kind`
+is a hint: image / vector / markup / style / component / data / doc). When the user
+clicks **Route** you are asked to place them; you may also check `.intake/` whenever
+the user mentions added files.
+
+For each staged file: examine it, then route it to the right place using `repos.json`
+(the linked repos and their roles):
+
+- Pick the relevant repo — e.g. design assets and UI components go to the repo that
+  owns the UI. In a multi-repo project, **only attach UI assets to the UI-bearing
+  repo**, never to a headless service repo.
+- Copy the file into that repo's directory (a sensible subpath like
+  `<repo>/design/` or `<repo>/src/components/`), and **reference it in the relevant
+  section file** (e.g. cite a mockup in the repo's `ui` section, or wire a dropped
+  component into the structure issues that consume it).
+- If a file's destination is genuinely ambiguous, **ask the user** before placing it
+  rather than guessing.
+
+The pipeline only stages files; the routing decision is yours — that's why it hands
+them to you instead of dropping them somewhere fixed.
 
 ## Plan the agent fleet
 
