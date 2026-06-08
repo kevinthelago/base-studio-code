@@ -1811,6 +1811,53 @@ async fn github_request(
     Ok(json)
 }
 
+/// Create a GitHub gist (#598 M2) — publish an extension bundle (manifest + files) and
+/// return the created gist JSON (`id`, `html_url`, `files[].raw_url`). Requires the
+/// `gist` OAuth scope on the token. Reading a gist back uses `github_request("gists/<id>")`.
+#[tauri::command]
+async fn gist_create(
+    token: String,
+    files: std::collections::HashMap<String, String>,
+    description: String,
+    public: bool,
+) -> Result<serde_json::Value, String> {
+    let _perf = PerfSpan::new("gist_create");
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
+    if files.is_empty() {
+        return Err("gist_create: no files to publish".to_string());
+    }
+    // GitHub's gist API shape: files = { "<name>": { "content": "<text>" } }.
+    let files_json: serde_json::Map<String, serde_json::Value> = files
+        .into_iter()
+        .map(|(name, content)| (name, serde_json::json!({ "content": content })))
+        .collect();
+    let body = serde_json::json!({ "description": description, "public": public, "files": files_json });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.github.com/gists")
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "base-studio-code/0.2.0")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("gist_create request failed: {e}"))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("gist_create: failed to parse response: {e}"))?;
+    if !status.is_success() {
+        let msg = json["message"].as_str().unwrap_or("unknown error");
+        return Err(format!("gist_create HTTP {status}: {msg}"));
+    }
+    Ok(json)
+}
+
 // ── Workspaces ───────────────────────────────────────────────────────────────
 //
 // Two roots under ~/.base-studio-code/:
@@ -5055,6 +5102,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             kb_chat,
             github_request,
+            gist_create,
             github_cache_clear,
             github_graphql,
             github_post,
