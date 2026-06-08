@@ -3,16 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppStore, type GithubUser, type GithubRepo } from "../../store";
 import { clearGithubCache } from "../../lib/github";
-import { mapDevicePoll, type DevicePollResult } from "../../lib/githubDeviceFlow";
+import { runDeviceFlow, type DeviceStartInfo, type DevicePollResult } from "../../lib/githubDeviceFlow";
 
 /** Mirror of the backend `DeviceStart` struct (`github_device_start`). */
-interface DeviceStart {
-  device_code: string;
-  user_code: string;
-  verification_uri: string;
-  interval: number;
-  expires_in: number;
-}
+type DeviceStart = DeviceStartInfo;
 
 // `project` is required to read AND create GitHub Projects v2 (the Projects page
 // + planning publish); without it the API returns "token lacks read:project".
@@ -32,12 +26,17 @@ function ConnectCard() {
   const [clientId, setClientId] = useState<string | null>(null);
   const [device, setDevice] = useState<DeviceStart | null>(null);
   const [deviceBusy, setDeviceBusy] = useState(false);
-  // Cancels an in-flight poll loop (unmount, or the user starting over).
-  const pollCancel = useRef(false);
+  // Generation token: bumped each time a flow starts, so starting over cancels the
+  // previous loop — WITHOUT tying cancellation to unmount. Navigating away no longer
+  // aborts an in-flight authorization (#594); the flow runs to completion and the
+  // store write in finishConnect lands regardless of which screen is shown.
+  const runIdRef = useRef(0);
+  // Guards component-state setters so they no-op after unmount (the store write does not).
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     invoke<string>("github_client_id").then(setClientId).catch(() => setClientId(""));
-    return () => { pollCancel.current = true; };
+    return () => { mountedRef.current = false; };
   }, []);
 
   // Exchange a validated token for the user + repo list and flip to connected.
@@ -73,49 +72,35 @@ function ConnectCard() {
   }
 
   async function handleDeviceConnect() {
-    setError(null);
-    setDeviceBusy(true);
-    pollCancel.current = false;
+    const myRun = ++runIdRef.current;
+    // Update component state only if still mounted AND this is the current run.
+    const ui = (fn: () => void) => { if (mountedRef.current && runIdRef.current === myRun) fn(); };
+    ui(() => { setError(null); setDeviceBusy(true); });
     try {
-      const start = await invoke<DeviceStart>("github_device_start", { scope: DEVICE_SCOPE });
-      setDevice(start);
-      openUrl(start.verification_uri).catch(() => { /* user can use the shown URL/code manually */ });
-
-      const deadline = Date.now() + start.expires_in * 1000;
-      let intervalSec = start.interval;
-      // Poll until authorized, error, expiry, or cancellation.
-      while (!pollCancel.current && Date.now() < deadline) {
-        await sleep(intervalSec * 1000);
-        if (pollCancel.current) return;
-        const res = await invoke<DevicePollResult>("github_device_poll", {
-          deviceCode: start.device_code,
-        });
-        const action = mapDevicePoll(res, intervalSec);
-        if (action.kind === "success") {
-          await finishConnect(action.token);
-          return; // connected — the card unmounts
-        }
-        if (action.kind === "error") {
-          setError(action.message);
-          setDevice(null);
-          return;
-        }
-        intervalSec = action.intervalSec; // honor slow_down
-      }
-      if (!pollCancel.current) {
-        setError("The code expired before you authorized. Please try again.");
-        setDevice(null);
-      }
+      await runDeviceFlow({
+        start: () => invoke<DeviceStart>("github_device_start", { scope: DEVICE_SCOPE }),
+        poll: (deviceCode) => invoke<DevicePollResult>("github_device_poll", { deviceCode }),
+        sleep,
+        // Cancelled only when the user starts a new flow — never on unmount (#594).
+        isCancelled: () => runIdRef.current !== myRun,
+        onDevice: (start) => {
+          ui(() => setDevice(start));
+          openUrl(start.verification_uri).catch(() => { /* user can use the shown URL/code manually */ });
+        },
+        // The store write must complete even if the user navigated away — no ui() guard.
+        onSuccess: (token) => finishConnect(token),
+        onError: (message) => ui(() => { setError(message); setDevice(null); }),
+      });
     } catch (e) {
-      setError(String(e));
-      setDevice(null);
+      ui(() => { setError(String(e)); setDevice(null); });
     } finally {
-      setDeviceBusy(false);
+      ui(() => setDeviceBusy(false));
     }
   }
 
   function cancelDevice() {
-    pollCancel.current = true;
+    // Bump the generation token so the in-flight flow's isCancelled() trips.
+    runIdRef.current++;
     setDevice(null);
     setDeviceBusy(false);
   }
