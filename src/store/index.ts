@@ -515,6 +515,12 @@ interface AppStore {
   // can move the working directory out from under an active session.
   planningSessionKey: string;
   setPlanningSession: (key: string) => void;
+  /** A prompt queued for the live planner session of a project, keyed by project key.
+   *  Planning.tsx writes it into the planner PTY (a deliberate, user-triggered inject —
+   *  e.g. the file-intake "Route" action) and clears it. (#604) */
+  pendingPlannerPrompt: Record<string, string>;
+  requestPlannerPrompt: (projectKey: string, text: string) => void;
+  clearPlannerPrompt: (projectKey: string) => void;
   // Links a GitHub Project node id to the stable folder/data key (the title
   // slug the plan files were written under). A project opened from the board
   // only sets `activeProjectId` (the node id); this lets the planning resolver
@@ -1410,6 +1416,16 @@ export const useAppStore = create<AppStore>()(
       setPlanningTitle: (title) => set({ planningTitle: title }),
       planningSessionKey: "",
       setPlanningSession: (key) => set({ planningSessionKey: key }),
+      pendingPlannerPrompt: {},
+      requestPlannerPrompt: (projectKey, text) =>
+        set((s) => ({ pendingPlannerPrompt: { ...s.pendingPlannerPrompt, [projectKey]: text } })),
+      clearPlannerPrompt: (projectKey) =>
+        set((s) => {
+          if (!(projectKey in s.pendingPlannerPrompt)) return {};
+          const next = { ...s.pendingPlannerPrompt };
+          delete next[projectKey];
+          return { pendingPlannerPrompt: next };
+        }),
       projectKeyAlias: {},
       setProjectKeyAlias: (nodeId, key) =>
         set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
