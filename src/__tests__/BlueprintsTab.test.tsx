@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { Blueprints } from "../screens/projects/BlueprintsTab";
 import { useAppStore } from "../store";
 import { makeBlueprints } from "../screens/projects/blueprints";
@@ -46,6 +46,35 @@ describe("Blueprints tab (#513/#514)", () => {
     fireEvent.click(screen.getByText("Scope streams")); // suggested for permissions
     const perms = useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "permissions")!;
     expect(perms.pipelines.some((p) => p.id === "scope-streams")).toBe(true);
+  });
+
+  it("deletes a blueprint from the library (#598)", () => {
+    render(<Blueprints />);
+    const before = useAppStore.getState().blueprints.length;
+    // Climb from the Mobile MVP label to the card that also holds its delete control.
+    let card: HTMLElement | null = screen.getByText("Mobile MVP");
+    while (card && !within(card).queryByTitle("Delete blueprint")) card = card.parentElement;
+    fireEvent.click(within(card!).getByTitle("Delete blueprint"));
+    const after = useAppStore.getState().blueprints;
+    expect(after.length).toBe(before - 1);
+    expect(after.some((b) => b.id === "mobile")).toBe(false);
+  });
+
+  it("imports a blueprint from a pasted share code (#598)", async () => {
+    const { blueprintToManifest } = await import("../screens/projects/blueprintShare");
+    const { encodeShareCode } = await import("../lib/extensions/manifest");
+    const code = encodeShareCode(blueprintToManifest(makeBlueprints().find((b) => b.id === "mobile")!));
+
+    render(<Blueprints />);
+    const before = useAppStore.getState().blueprints.length;
+    fireEvent.click(screen.getByText("Import")); // header button (modal not open yet)
+    fireEvent.change(screen.getByPlaceholderText(/share code/i), { target: { value: code } });
+    const importBtns = screen.getAllByRole("button", { name: /^Import$/ });
+    fireEvent.click(importBtns[importBtns.length - 1]); // the modal's submit
+    const after = useAppStore.getState().blueprints;
+    expect(after.length).toBe(before + 1);
+    // imported under a fresh id (not "mobile")
+    expect(after.filter((b) => b.name === "Mobile MVP").length).toBe(2);
   });
 
   it("deletes a stage from the blueprint (#597)", () => {

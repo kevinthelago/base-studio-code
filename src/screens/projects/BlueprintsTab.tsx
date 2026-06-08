@@ -10,6 +10,8 @@ import {
   PIPELINE_LIB, TRIGGERS, SECTION_DEFS, computeStatus, reorder, uid,
   type Blueprint, type BlueprintSection, type Pipeline, type PipelineDef, type PipelineKind, type PipelineTrigger,
 } from "./blueprints";
+import { blueprintToManifest, manifestToBlueprint } from "./blueprintShare";
+import { encodeShareCode, decodeShareCode, parseManifest } from "../../lib/extensions/manifest";
 
 const KIND_COLOR: Record<PipelineKind, string> = { builtin: "var(--accent)", external: "var(--info)", custom: "var(--violet, oklch(0.72 0.12 300))" };
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -305,16 +307,60 @@ function SectionList({ bp, api }: { bp: Blueprint; api: BpApi }) {
   );
 }
 
+// ── import modal ─────────────────────────────────────────────────────────────
+// Paste a share code (or exported JSON) → validate the envelope → reconstruct the
+// blueprint → add it under a fresh id. The same path a gist install will reuse (#598).
+function ImportBlueprintModal({ onImport, onClose }: { onImport: (bp: Blueprint) => void; onClose: () => void }) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const doImport = () => {
+    const raw = text.trim();
+    if (!raw) { setError("Paste a share code first."); return; }
+    // Accept a share code or raw exported JSON.
+    const validated = raw.startsWith("{") ? parseManifest(raw) : decodeShareCode(raw);
+    if (!validated.ok) { setError(validated.error); return; }
+    const bp = manifestToBlueprint(validated.manifest);
+    if (!bp.ok) { setError(bp.error); return; }
+    onImport(bp.blueprint);
+    onClose();
+  };
+  return (
+    <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{ padding: "18px 20px", width: 480 }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+          <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>Import blueprint</h3>
+          <div style={{ flex: 1 }} />
+          <button className="icon-btn" onClick={onClose}>✕</button>
+        </div>
+        <div className="hint" style={{ marginBottom: 8 }}>Paste a blueprint share code (or exported JSON).</div>
+        <textarea
+          className="input" value={text} onChange={(e) => { setText(e.target.value); setError(null); }}
+          placeholder="bp share code…" rows={5}
+          style={{ width: "100%", fontFamily: "var(--mono)", fontSize: 11, resize: "vertical" }}
+        />
+        {error && <div style={{ color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11, marginTop: 8 }}>{error}</div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" onClick={onClose}>cancel</button>
+          <button className="btn primary" onClick={doImport}>Import</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── library (secondary) ──────────────────────────────────────────────────────
-function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActive, onDuplicate }: {
+function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActive, onDuplicate, onDelete, onExport, onImport }: {
   blueprints: Blueprint[]; selectedId: string; activeId: string;
-  onSelect: (id: string) => void; onNew: () => void; onSetActive: (id: string) => void; onDuplicate: (id: string) => void;
+  onSelect: (id: string) => void; onNew: () => void; onSetActive: (id: string) => void;
+  onDuplicate: (id: string) => void; onDelete: (id: string) => void;
+  onExport: (id: string) => void; onImport: () => void;
 }) {
   return (
     <aside style={{ width: 256, flex: "0 0 256px", display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", textTransform: "uppercase", letterSpacing: ".05em" }}>Library</h3>
         <div style={{ flex: 1 }} />
+        <button className="btn sm" onClick={onImport}>Import</button>
         <button className="btn sm" onClick={onNew}>+ New</button>
       </div>
       <div className="hint">The active blueprint seeds every new project.</div>
@@ -341,7 +387,14 @@ function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActiv
               <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
                 {!active && <button className="btn sm" style={{ flex: 1 }} onClick={(e) => { e.stopPropagation(); onSetActive(b.id); }}>set active</button>}
                 {active && <button className="btn sm" style={{ flex: 1, cursor: "default", color: "var(--fg-dim)" }} disabled>seeds new projects</button>}
+                <button className="icon-btn" title="Copy share code" onClick={(e) => { e.stopPropagation(); onExport(b.id); }}>↗</button>
                 <button className="icon-btn" title="Duplicate" onClick={(e) => { e.stopPropagation(); onDuplicate(b.id); }}>⧉</button>
+                <button
+                  className="icon-btn danger"
+                  title={blueprints.length <= 1 ? "Can't delete the only blueprint" : "Delete blueprint"}
+                  disabled={blueprints.length <= 1}
+                  onClick={(e) => { e.stopPropagation(); onDelete(b.id); }}
+                >✕</button>
               </div>
             </div>
           );
@@ -355,10 +408,17 @@ function Library({ blueprints, selectedId, activeId, onSelect, onNew, onSetActiv
 export function Blueprints() {
   const {
     blueprints, activeBlueprintId,
-    setActiveBlueprint, addBlueprint, duplicateBlueprint, setBlueprintSections,
+    setActiveBlueprint, addBlueprint, duplicateBlueprint, setBlueprintSections, removeBlueprint, importBlueprint,
   } = useAppStore();
 
   const [selectedId, setSelectedId] = useState(activeBlueprintId);
+  const [importOpen, setImportOpen] = useState(false);
+
+  // Export = copy the blueprint's share code to the clipboard.
+  const copyShareCode = (id: string) => {
+    const bp = blueprints.find((b) => b.id === id);
+    if (bp) navigator.clipboard?.writeText(encodeShareCode(blueprintToManifest(bp))).catch(() => {});
+  };
   const selected = blueprints.find((b) => b.id === selectedId) ?? blueprints.find((b) => b.id === activeBlueprintId) ?? blueprints[0];
 
   // All section/pipeline edits compute a new sections array and persist it.
@@ -426,9 +486,18 @@ export function Blueprints() {
             onNew={() => setSelectedId(addBlueprint())}
             onSetActive={setActiveBlueprint}
             onDuplicate={(id) => setSelectedId(duplicateBlueprint(id))}
+            onDelete={(id) => { removeBlueprint(id); setSelectedId(activeBlueprintId); }}
+            onExport={copyShareCode}
+            onImport={() => setImportOpen(true)}
           />
         </div>
       </div>
+      {importOpen && (
+        <ImportBlueprintModal
+          onImport={(bp) => setSelectedId(importBlueprint(bp))}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
     </section>
   );
 }
