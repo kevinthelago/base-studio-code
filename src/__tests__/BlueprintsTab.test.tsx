@@ -48,6 +48,18 @@ describe("Blueprints tab (#513/#514)", () => {
     expect(perms.pipelines.some((p) => p.id === "scope-streams")).toBe(true);
   });
 
+  it("deletes a stage from the blueprint (#597)", () => {
+    render(<Blueprints />);
+    const before = useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections;
+    const ctx = before.find((s) => s.key === "context")!;
+    expect(ctx).toBeTruthy();
+    // The delete control on the Context row (first stage).
+    fireEvent.click(screen.getAllByTitle("Delete stage")[0]);
+    const after = useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections;
+    expect(after.length).toBe(before.length - 1);
+    expect(after.some((s) => s.uid === ctx.uid)).toBe(false);
+  });
+
   it("toggles a pipeline as a gate (#532)", () => {
     render(<Blueprints />);
     fireEvent.click(screen.getByText("UI")); // expand UI (has pipelines)
