@@ -26,17 +26,17 @@ function ConnectCard() {
   const [clientId, setClientId] = useState<string | null>(null);
   const [device, setDevice] = useState<DeviceStart | null>(null);
   const [deviceBusy, setDeviceBusy] = useState(false);
-  // Generation token: bumped each time a flow starts, so starting over cancels the
-  // previous loop — WITHOUT tying cancellation to unmount. Navigating away no longer
-  // aborts an in-flight authorization (#594); the flow runs to completion and the
-  // store write in finishConnect lands regardless of which screen is shown.
+  // Generation token: bumped each time a flow starts (or is cancelled), so a stale run
+  // never updates the UI and starting over supersedes the previous loop — WITHOUT tying
+  // cancellation to unmount. Navigating away no longer aborts an in-flight authorization
+  // (#594); the flow runs to completion and finishConnect's store write lands regardless
+  // of which screen is shown. (No mounted-ref guard: React 18 ignores setState after
+  // unmount, and a mounted-ref stuck false under StrictMode's dev double-mount was itself
+  // a bug — it stopped the device code from rendering.)
   const runIdRef = useRef(0);
-  // Guards component-state setters so they no-op after unmount (the store write does not).
-  const mountedRef = useRef(true);
 
   useEffect(() => {
     invoke<string>("github_client_id").then(setClientId).catch(() => setClientId(""));
-    return () => { mountedRef.current = false; };
   }, []);
 
   // Exchange a validated token for the user + repo list and flip to connected.
@@ -73,8 +73,10 @@ function ConnectCard() {
 
   async function handleDeviceConnect() {
     const myRun = ++runIdRef.current;
-    // Update component state only if still mounted AND this is the current run.
-    const ui = (fn: () => void) => { if (mountedRef.current && runIdRef.current === myRun) fn(); };
+    // Apply UI updates only for the current run (a restart bumps runIdRef and supersedes
+    // a still-running older loop). finishConnect (the store write) is intentionally NOT
+    // guarded — it must land even after navigating away.
+    const ui = (fn: () => void) => { if (runIdRef.current === myRun) fn(); };
     ui(() => { setError(null); setDeviceBusy(true); });
     try {
       await runDeviceFlow({
