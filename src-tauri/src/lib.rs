@@ -446,6 +446,34 @@ fn write_project_file(project_key: String, relpath: String, contents: String) ->
     Ok(())
 }
 
+/// Write a BINARY file into a project's hub from base64 (#604) — the file-intake pipeline
+/// stages dropped files (images, fonts, any binary) this way, since `write_project_file`
+/// only handles text. Same path-safety rules. `b64` is standard base64 of the file bytes.
+#[tauri::command]
+fn write_project_file_bytes(project_key: String, relpath: String, b64: String) -> Result<(), String> {
+    use base64::Engine;
+    if sanitize_project_key(&project_key).is_empty() {
+        return Err("write_project_file_bytes: empty project_key".to_string());
+    }
+    if relpath.trim().is_empty() {
+        return Err("write_project_file_bytes: empty relpath".to_string());
+    }
+    let rel = std::path::Path::new(&relpath);
+    if !is_safe_relpath(rel) {
+        return Err(format!("write_project_file_bytes: unsafe relpath '{relpath}'"));
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64.as_bytes())
+        .map_err(|e| format!("write_project_file_bytes: bad base64: {e}"))?;
+    let target = project_dir(&project_key).join(rel);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("write_project_file_bytes: {e}"))?;
+    }
+    std::fs::write(&target, &bytes).map_err(|e| format!("write_project_file_bytes: {e}"))?;
+    log::info!("write_project_file_bytes({project_key}): wrote {relpath} ({} bytes)", bytes.len());
+    Ok(())
+}
+
 /// Recursively read every (text) file under `root` as `(relpath → contents)`, capped at
 /// 512 KiB each, skipping unreadable/binary files. relpaths are forward-slashed and
 /// relative to `root`. The generic complement to `read_skeleton_dir` (which filters by
@@ -5087,6 +5115,7 @@ pub fn run() {
             clear_all_plan_files,
             clear_project_plan_files,
             write_project_file,
+            write_project_file_bytes,
             read_project_files,
             get_context_signature,
             list_documents,
@@ -6725,6 +6754,29 @@ mod tests {
 
         // Missing subdir -> empty, no panic.
         assert!(super::read_project_files(key.clone(), "pipelines/none".to_string()).is_empty());
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn write_project_file_bytes_decodes_base64_and_blocks_escape() {
+        use base64::Engine;
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("ppfb");
+        let key = "test-intake".to_string();
+
+        // Stage a "binary" file (raw bytes, incl. a NUL) from base64.
+        let bytes: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xFF, 0x10];
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        super::write_project_file_bytes(key.clone(), ".intake/logo.png".to_string(), b64).unwrap();
+        let path = super::bsc_base_dir().join("projects").join(&key).join(".intake").join("logo.png");
+        assert!(path.exists());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "bytes round-trip exactly");
+
+        // Bad base64 + path escapes are rejected.
+        assert!(super::write_project_file_bytes(key.clone(), ".intake/x.png".to_string(), "not base64!!".to_string()).is_err());
+        assert!(super::write_project_file_bytes(key.clone(), "../escape.png".to_string(), "AAAA".to_string()).is_err());
+        assert!(super::write_project_file_bytes(key.clone(), "/abs.png".to_string(), "AAAA".to_string()).is_err());
 
         std::fs::remove_dir_all(&home).ok();
     }

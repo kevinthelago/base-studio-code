@@ -13,6 +13,8 @@
 import type { ComponentType } from "react";
 import { PlanPreviewPane } from "./PlanPreviewPane";
 import { RENDER_PREVIEW_ID } from "./renderPreview";
+import { FileIntakePane } from "./FileIntakePane";
+import { FILE_INTAKE_ID } from "./fileIntake";
 
 /** Props every pipeline second screen receives. `onClose`, when provided, renders a
  *  dismiss affordance (stage-driven screens omit it — they're bound to the stage). */
@@ -26,6 +28,8 @@ export type PipelineScreenComponent = ComponentType<PipelineScreenProps>;
 const PIPELINE_SCREENS: Record<string, PipelineScreenComponent> = {
   // The flagship second screen: the live UI preview, shown when the `ui` stage is reached.
   [RENDER_PREVIEW_ID]: PlanPreviewPane,
+  // Drag-and-drop file intake (#604): stage design/any files for the planner to route.
+  [FILE_INTAKE_ID]: FileIntakePane,
 };
 
 /** The second screen for a pipeline id, or undefined when it has none. */
