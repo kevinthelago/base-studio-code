@@ -589,6 +589,12 @@ interface AppStore {
   duplicateBlueprint: (id: string) => string;
   updateBlueprintMeta: (id: string, patch: { name?: string; desc?: string }) => void;
   setBlueprintSections: (id: string, sections: BlueprintSection[]) => void;
+  /** Delete a blueprint; if it was active, the active id falls back to the first
+   *  remaining (or the default). */
+  removeBlueprint: (id: string) => void;
+  /** Add an imported blueprint under a fresh id + fresh section uids (never overwrites
+   *  an existing one). Returns the new id. */
+  importBlueprint: (bp: Blueprint) => string;
   // Stage-pipeline run state (#528/#529): per-project, per-pipeline run status, keyed
   // projectKey -> pipelineUid -> state. Distinct from the fleet conductor's
   // `pipelineRuns` (#220). Session-only (not persisted).
@@ -1880,6 +1886,19 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, ...patch } : b)) })),
       setBlueprintSections: (id, sections) =>
         set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, sections } : b)) })),
+      removeBlueprint: (id) =>
+        set((s) => {
+          const blueprints = s.blueprints.filter((b) => b.id !== id);
+          const activeBlueprintId = s.activeBlueprintId === id
+            ? (blueprints[0]?.id ?? DEFAULT_BLUEPRINT_ID)
+            : s.activeBlueprintId;
+          return { blueprints, activeBlueprintId };
+        }),
+      importBlueprint: (bp) => {
+        const id = `bp-${Date.now().toString(36)}`;
+        set((s) => ({ blueprints: [...s.blueprints, { ...bp, id, sections: cloneSections(bp.sections) }] }));
+        return id;
+      },
 
       stagePipelineRuns: {},
       setStagePipelineRun: (projectKey, pipelineUid, state) =>
