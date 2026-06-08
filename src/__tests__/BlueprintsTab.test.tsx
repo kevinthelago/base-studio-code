@@ -60,6 +60,23 @@ describe("Blueprints tab (#513/#514)", () => {
     expect(after.some((b) => b.id === "mobile")).toBe(false);
   });
 
+  it("imports a blueprint from a pasted share code (#598)", async () => {
+    const { blueprintToManifest } = await import("../screens/projects/blueprintShare");
+    const { encodeShareCode } = await import("../lib/extensions/manifest");
+    const code = encodeShareCode(blueprintToManifest(makeBlueprints().find((b) => b.id === "mobile")!));
+
+    render(<Blueprints />);
+    const before = useAppStore.getState().blueprints.length;
+    fireEvent.click(screen.getByText("Import")); // header button (modal not open yet)
+    fireEvent.change(screen.getByPlaceholderText(/share code/i), { target: { value: code } });
+    const importBtns = screen.getAllByRole("button", { name: /^Import$/ });
+    fireEvent.click(importBtns[importBtns.length - 1]); // the modal's submit
+    const after = useAppStore.getState().blueprints;
+    expect(after.length).toBe(before + 1);
+    // imported under a fresh id (not "mobile")
+    expect(after.filter((b) => b.name === "Mobile MVP").length).toBe(2);
+  });
+
   it("toggles a pipeline as a gate (#532)", () => {
     render(<Blueprints />);
     fireEvent.click(screen.getByText("UI")); // expand UI (has pipelines)
