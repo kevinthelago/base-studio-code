@@ -71,6 +71,7 @@ export const PIPELINE_META: Record<string, PipelineMeta> = {
   "grade-plan":      { glyph: "fact_check",    h: 70,  gateable: false, defaultTrigger: "on completion" },
   "grade-rubric":    { glyph: "rule",          h: 145, gateable: true,  defaultTrigger: "on completion" },
   "grade-llm":       { glyph: "fact_check",    h: 295, gateable: false, defaultTrigger: "manual" },
+  "scan-dead-code":  { glyph: "rule",          h: 25,  gateable: false, defaultTrigger: "manual" },
   "sync-milestones": { glyph: "sync",          h: 70,  gateable: false, defaultTrigger: "on completion" },
   "scope-streams":   { glyph: "lan",           h: 230, gateable: false, defaultTrigger: "on completion" },
   "sync-skills":     { glyph: "extension",     h: 70,  gateable: false, defaultTrigger: "manual" },
