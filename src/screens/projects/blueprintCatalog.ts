@@ -32,6 +32,7 @@ export const STAGE_KINDS: Record<string, StageKindMeta> = {
   infra:         { title: "Infrastructure",   glyph: "dns",             h: 295, blurb: "Hosting, environments & provisioning." },
   cicd:          { title: "CI/CD",            glyph: "deployed_code",   h: 195, blurb: "Build, test & release pipelines." },
   docs:          { title: "Documentation",    glyph: "menu_book",       h: 70,  blurb: "READMEs, guides & reference docs." },
+  cleanup:       { title: "Dead & legacy code", glyph: "rule",          h: 25,  blurb: "Unused code, dead deps & legacy debt to remove." },
 };
 
 export function stageKind(key: string): StageKindMeta {
