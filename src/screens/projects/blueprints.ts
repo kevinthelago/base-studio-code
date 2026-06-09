@@ -211,6 +211,24 @@ export interface BlueprintSection extends SectionDef {
 /** Where a blueprint came from (#609) — drives the card's origin tag. */
 export type BlueprintOrigin = "built-in" | "local" | "forked" | "imported";
 
+/** Lifecycle intent of a blueprint (#645) — what part of a project's life it serves.
+ *  Greenfield = create from a pitch; transform = restructure existing repos; harden =
+ *  improve quality in place; maintain = ongoing upkeep. Drives library grouping/labels. */
+export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain";
+export const BLUEPRINT_CATEGORIES: BlueprintCategory[] = ["greenfield", "transform", "harden", "maintain"];
+
+/** Whether a blueprint starts from a pitch (create) or runs against existing repos
+ *  (operate) — selects the planner intro at launch. */
+export type BlueprintMode = "create" | "operate";
+
+/** Display metadata per category (label + accent hue for the badge/filter). */
+export const CATEGORY_META: Record<BlueprintCategory, { label: string; h: number }> = {
+  greenfield: { label: "Greenfield", h: 145 },
+  transform:  { label: "Transform",  h: 230 },
+  harden:     { label: "Harden",     h: 25 },
+  maintain:   { label: "Maintain",   h: 70 },
+};
+
 /** Gist link state for a blueprint (#609) — the publish/sync state-machine. Slice 5
  *  populates this; the Library card reads it for the sync badge. Absent ⇒ local-only. */
 export interface BlueprintGist {
@@ -243,6 +261,28 @@ export interface Blueprint {
   /** Blueprint-wide attached skills/knowledge (#636) — applied across every stage,
    *  in addition to each section's own `skills`. Library item ids. */
   skills?: string[];
+  /** Lifecycle intent (#645). Absent ⇒ greenfield (the create-a-project default). */
+  category?: BlueprintCategory;
+  /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
+  mode?: BlueprintMode;
+}
+
+/** A blueprint's category, defaulting to greenfield. */
+export function blueprintCategory(bp: Blueprint): BlueprintCategory {
+  return bp.category ?? "greenfield";
+}
+
+/** Filter blueprints by a free-text query (name/desc/tags) + optional category. Pure;
+ *  drives the Library's search + category filter (#645). */
+export function filterBlueprints(blueprints: Blueprint[], opts: { query?: string; category?: BlueprintCategory | "all" }): Blueprint[] {
+  const q = (opts.query ?? "").trim().toLowerCase();
+  const cat = opts.category ?? "all";
+  return blueprints.filter((b) => {
+    if (cat !== "all" && blueprintCategory(b) !== cat) return false;
+    if (!q) return true;
+    const hay = `${b.name} ${b.desc} ${(b.tags ?? []).join(" ")} ${blueprintCategory(b)}`.toLowerCase();
+    return hay.includes(q);
+  });
 }
 
 export const DEFAULT_BLUEPRINT_ID = "default";
@@ -266,7 +306,7 @@ export function mkSection(
 export function makeBlueprints(): Blueprint[] {
   return [
     {
-      id: "default", name: "Default", desc: "Balanced starting point",
+      id: "default", name: "Default", desc: "Balanced starting point", category: "greenfield", mode: "create",
       sections: [
         mkSection("context",     { pipelines: [["lint-plan", "on completion", true]] }),
         mkSection("repos",       { enabled: false, pipelines: [["index-repos", "on section enter", true]] }),
@@ -278,7 +318,7 @@ export function makeBlueprints(): Blueprint[] {
       ],
     },
     {
-      id: "fullstack", name: "Full-stack web app", desc: "Web client + API + DB",
+      id: "fullstack", name: "Full-stack web app", desc: "Web client + API + DB", category: "greenfield", mode: "create",
       sections: [
         mkSection("context"), mkSection("repos"), mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
@@ -287,7 +327,7 @@ export function makeBlueprints(): Blueprint[] {
       ],
     },
     {
-      id: "mobile", name: "Mobile MVP", desc: "Single app, ship fast",
+      id: "mobile", name: "Mobile MVP", desc: "Single app, ship fast", category: "greenfield", mode: "create",
       sections: [
         mkSection("context"), mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
@@ -295,7 +335,7 @@ export function makeBlueprints(): Blueprint[] {
       ],
     },
     {
-      id: "api", name: "API microservice", desc: "Headless service, no UI",
+      id: "api", name: "API microservice", desc: "Headless service, no UI", category: "greenfield", mode: "create",
       sections: [
         mkSection("context"), mkSection("repos"),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", true]] }),
@@ -305,7 +345,7 @@ export function makeBlueprints(): Blueprint[] {
     },
     {
       id: "refactor", name: "Refactor & Cleanup", desc: "Clean up an existing codebase — find dead/legacy code & refactor",
-      origin: "built-in", icon: "♻", h: 25,
+      origin: "built-in", icon: "♻", h: 25, category: "transform", mode: "operate",
       sections: [
         mkSection("context"),
         mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
