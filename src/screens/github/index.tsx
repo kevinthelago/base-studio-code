@@ -5,6 +5,10 @@ import { usePageTabs } from "../../hooks/usePageTabs";
 import { GitHubEmpty } from "./Empty";
 import { GitHubSummary } from "./GitHubSummary";
 import { ProjectsSummary } from "../projects/ProjectsSummary";
+import { ProjectBoard } from "../projects/ProjectBoard";
+import { Roadmap } from "../projects/Roadmap";
+import { Issues } from "../projects/Issues";
+import { Insights } from "../projects/Insights";
 import { Pulse } from "./Pulse";
 
 const GITHUB_TABS: TabItem[] = [
@@ -24,17 +28,35 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
     githubConnected,
     githubRepos, activeRepoName, setActiveRepo,
     disconnectGithub,
+    githubBoardOpen, githubBoardTab,
+    githubTab, setGithubTab,
   } = useAppStore();
 
   // Drag-resizable repo sidebar (mirrors the Knowledge Store / planning splitters).
   const sidebar = useDragResize({ initial: 220, min: 160, max: 460, axis: "x" });
-  const { tabs: ghTabs, activeId, select, reorder, tearOff } = usePageTabs("github", GITHUB_TABS);
+  // Store-controlled active tab so other screens can deep-link to it (#499).
+  const { tabs: ghTabs, activeId, select, reorder, tearOff } =
+    usePageTabs("github", GITHUB_TABS, { activeId: githubTab, setActive: setGithubTab });
   const mode = sectionOverride ?? activeId;
 
   if (!githubConnected) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <GitHubEmpty />
+      </div>
+    );
+  }
+
+  // A project's board drills in over the whole GitHub page (#498): opening it from
+  // the portfolio takes over until "← portfolio" (closeGithubBoard) returns to the
+  // tabbed view. Each board view renders its own project header + sub-tabs.
+  if (githubBoardOpen && !sectionOverride) {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        {githubBoardTab === "board"    && <ProjectBoard />}
+        {githubBoardTab === "roadmap"  && <Roadmap />}
+        {githubBoardTab === "issues"   && <Issues />}
+        {githubBoardTab === "insights" && <Insights />}
       </div>
     );
   }
@@ -50,8 +72,8 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
       {/* Summary page */}
       {mode === "summary" && <GitHubSummary />}
 
-      {/* Projects portfolio — the GitHub Projects analytics (moved from the
-          Projects tab, #421). Between Summary and Repositories. */}
+      {/* Projects portfolio analytics (#421). Opening a project drills into its
+          board, handled by the short-circuit above (#498). */}
       {mode === "projects" && <ProjectsSummary />}
 
       {/* Repositories view — repo picker + the per-repo Pulse dashboard (progress,

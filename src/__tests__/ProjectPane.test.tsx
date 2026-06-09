@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ProjectPane } from "../screens/projects/ProjectPane";
 import type {
-  ProjectPaneData, Agent, Perm, Milestone, ContextFile,
+  ProjectPaneData, Agent, Perm, Milestone, PhaseGroup, ContextFile,
 } from "../screens/projects/projectPane.types";
 
 // ── fixtures for the real-data (hasData) path ────────────────────────────────
@@ -22,6 +22,7 @@ function data(over: Partial<ProjectPaneData> = {}): ProjectPaneData {
     agents: [agent({ focus: true })],
     repos: [{ id: "o/api", branch: "main", ahead: 0, behind: 0, agents: ["auth"], primary: true, branches: [] }],
     structure: [],
+    phaseStructure: [],
     context: [],
     director: { enabled: false, drive: "event" },
     ...over,
@@ -35,8 +36,27 @@ describe("ProjectPane (v2)", () => {
     expect(screen.getByText("Context Files")).toBeTruthy();
   });
 
+  it("renders a generic card for every blueprint section (#609): dedicated + non-dedicated, in order", () => {
+    render(<ProjectPane data={data()} projectName="P" projectId="p" sections={[
+      { key: "context", name: "Context Files" },
+      { key: "stack", name: "Tech stack", blurb: "Languages & frameworks." },
+      { key: "structure", name: "Milestones · Structure" },
+      { key: "api", name: "API & contracts", blurb: "Endpoints & contracts." },
+    ]} />);
+    // dedicated sections still render their rich panels
+    expect(screen.getByText("Context Files")).toBeTruthy();
+    expect(screen.getByText("Milestones · Structure")).toBeTruthy();
+    // non-dedicated sections now appear as generic cards (previously invisible)
+    expect(screen.getByText("Tech stack")).toBeTruthy();
+    expect(screen.getByText("API & contracts")).toBeTruthy();
+    // expanding a generic card reveals its blurb
+    fireEvent.click(screen.getByText("Tech stack"));
+    expect(screen.getByText("Languages & frameworks.")).toBeTruthy();
+  });
+
   it("renders the repo-first structure (repo cards; first repo open shows its milestones)", () => {
     render(<ProjectPane />);
+    fireEvent.click(screen.getByText("repo")); // repo-first is the secondary lens (#497)
     // both repository cards are present as collapsible headers
     expect(screen.getByText("acme/payments")).toBeTruthy();
     expect(screen.getByText("acme/web-dashboard")).toBeTruthy();
@@ -76,6 +96,7 @@ describe("ProjectPane (v2)", () => {
     // A repo present but no structure for it -> the open repo card shows the
     // muted placeholder rather than an empty epic.
     render(<ProjectPane data={data({ structure: [] })} projectName="P" projectId="p" />);
+    fireEvent.click(screen.getByText("repo"));
     expect(screen.getByText("no milestones decomposed yet")).toBeTruthy();
   });
 
@@ -118,10 +139,87 @@ describe("ProjectPane (v2)", () => {
       },
     ];
     render(<ProjectPane data={data({ structure })} projectName="P" projectId="p" />);
+    fireEvent.click(screen.getByText("repo"));
     expect(screen.getByText("Phase 1")).toBeTruthy();
     expect(screen.getByText("Build the thing")).toBeTruthy();
     expect(screen.getByText("Wire the other thing")).toBeTruthy();
     // per-milestone progress percentage rendered (0.5 -> 50%)
     expect(screen.getByText("50%")).toBeTruthy();
+  });
+
+  // ── #497: phase-first structure is the default view ─────────────────────────
+  it("renders the phase-first structure by default — one phase spanning repos", () => {
+    const phaseStructure: PhaseGroup[] = [
+      {
+        id: "phase-mvp", name: "MVP", doneWhen: "ships end to end", order: 0,
+        closed: 1, total: 2, pct: 0.5,
+        issues: [
+          { n: "F1", t: "Build the thing", state: "done", owner: "auth", ac: 2, branch: "F1", deps: [], sub: [], repo: "o/api" },
+          { n: "W1", t: "Wire the UI", state: "backlog", owner: "auth", ac: 1, branch: "W1", deps: ["F1"], sub: [], repo: "o/web" },
+        ],
+      },
+    ];
+    render(<ProjectPane data={data({ phaseStructure })} projectName="P" projectId="p" />);
+    // phase header + "done when" + project-wide rollup, no per-repo milestone dup
+    expect(screen.getByText("MVP")).toBeTruthy();
+    expect(screen.getByText("ships end to end")).toBeTruthy();
+    expect(screen.getByText("50%")).toBeTruthy();
+    // issues from BOTH repos appear under the one phase
+    expect(screen.getByText("Build the thing")).toBeTruthy();
+    expect(screen.getByText("Wire the UI")).toBeTruthy();
+  });
+
+  // ── #506: redundant per-section sync buttons removed ────────────────────────
+  it("no longer renders the 'Sync to GitHub →' or 'Push docs →' buttons (#506)", () => {
+    // Even with the label-sync affordance wired, the structure/docs publish
+    // buttons are gone — publish is owned by the header button + the app's
+    // Publish flow. Only 'Apply labels →' remains pane-local.
+    render(
+      <ProjectPane
+        data={data()}
+        projectName="P"
+        projectId="p"
+        onSyncLabels={() => {}}
+        syncState={{ labels: "idle" }}
+      />,
+    );
+    expect(screen.queryByText("Sync to GitHub →")).toBeNull();
+    expect(screen.queryByText("Push docs →")).toBeNull();
+    expect(screen.getByText("Apply labels →")).toBeTruthy();
+  });
+
+  // ── #548: the whole fleet pulse strip (counters + fake github) is removed ─────
+  it("no longer renders the fleet pulse strip (on/idle counters + fake github) (#548)", () => {
+    render(<ProjectPane data={data()} projectName="P" projectId="p" />);
+    // The on/idle counters and the hardcoded "● github 4m" glance line are gone.
+    expect(screen.queryByText(/\bon\b ·/)).toBeNull();
+    expect(screen.queryByText(/\d+ idle/)).toBeNull();
+    expect(screen.queryByText(/github 4m/)).toBeNull();
+    // The legitimate running count survives only inside the Agents section header.
+    expect(screen.getByText(/agents · \d+ running/i)).toBeTruthy();
+  });
+});
+
+describe("ProjectPane — blueprint-gated sections", () => {
+  it("hides the fleet sections when the permissions stage is disabled", () => {
+    render(<ProjectPane data={data()} projectId="p" sectionKeys={["context", "structure"]} />);
+    expect(screen.getByText("Context Files")).toBeTruthy();
+    expect(screen.getByText("Milestones · Structure")).toBeTruthy();
+    expect(screen.queryByText("Agents · Permissions")).toBeNull();
+    expect(screen.queryByText("Director · Coordination")).toBeNull();
+  });
+
+  it("orders sections by the blueprint's stage order", () => {
+    render(<ProjectPane data={data()} projectId="p" sectionKeys={["permissions", "context", "structure"]} />);
+    const agents = screen.getByText("Agents · Permissions");
+    const context = screen.getByText("Context Files");
+    // permissions first → the Agents panel precedes the Context panel in the DOM.
+    expect(agents.compareDocumentPosition(context) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows all sections when no sectionKeys are provided (back-compat)", () => {
+    render(<ProjectPane data={data()} projectId="p" />);
+    expect(screen.getByText("Agents · Permissions")).toBeTruthy();
+    expect(screen.getByText("Director · Coordination")).toBeTruthy();
   });
 });

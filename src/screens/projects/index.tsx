@@ -1,17 +1,11 @@
-import { useRef, type ReactNode } from "react";
+import { useRef } from "react";
 import { useAppStore } from "../../store";
 import { ProjectsEmpty } from "./Empty";
 import { ProjectsList } from "./ProjectsList";
-import { ProjectBoard } from "./ProjectBoard";
-import { Roadmap } from "./Roadmap";
-import { Issues } from "./Issues";
-import { Insights } from "./Insights";
-import { HooksView } from "./Hooks";
-import { CoordinatorInbox } from "./CoordinatorInbox";
-import { PipelinesLane } from "./PipelinesLane";
 import { Planning } from "./Planning";
 import { ProjectsPageModeStrip } from "./ProjectsSummary";
 import { Fleet } from "./Fleet";
+import { BlueprintsPage } from "./BlueprintsPage";
 import { useProjectScan } from "./useProjectScan";
 
 export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
@@ -22,7 +16,6 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
     githubConnected,
     projectsPageMode,
     projectsView,
-    projectsBoardTab,
     activeProjectId,
     planningPitch,
     planningTitle,
@@ -40,15 +33,14 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
   const rawPlanningKey = planningSessionKey || activeProjectId || `${planningTitle}::${planningPitch}`;
   const planningKey = projectKeyAlias[rawPlanningKey] ?? rawPlanningKey;
 
-  // Detached board-section window: render just that board view, no chrome (#430).
+  // The Projects page is plan/list/fleet only (#499): the GitHub-published board
+  // moved to the GitHub page (#498), and Coordination/Pipelines/Hooks were removed
+  // (coordination is handled per-agent / through the console). No detached board
+  // sections remain here.
   if (sectionOverride) {
-    const BOARD: Record<string, ReactNode> = {
-      roadmap: <Roadmap />, board: <ProjectBoard />, issues: <Issues />, insights: <Insights />,
-      hooks: <HooksView />, coordination: <CoordinatorInbox />, pipelines: <PipelinesLane />,
-    };
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        {BOARD[sectionOverride] ?? <ProjectsList />}
+        <ProjectsList />
       </div>
     );
   }
@@ -65,14 +57,21 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <ProjectsPageModeStrip />
 
-      {/* Fleet — live orchestration analytics for the active project's agent fleet. */}
+      {/* Fleet — live orchestration; the worker board opens a per-agent page (#499). */}
       {projectsPageMode === "fleet" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           <Fleet />
         </div>
       )}
 
-      {/* Projects views — kept mounted via CSS when in summary so Planning PTY survives */}
+      {/* Blueprints — planning-stage presets; the active one seeds new projects (#513). */}
+      {projectsPageMode === "blueprints" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <BlueprintsPage />
+        </div>
+      )}
+
+      {/* Projects views — kept mounted via CSS when in list so the Planning PTY survives */}
       <div style={{
         display: projectsPageMode === "projects" ? "flex" : "none",
         flex: 1, flexDirection: "column", minHeight: 0,
@@ -91,14 +90,7 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
           display: projectsView !== "planning" ? "flex" : "none",
           flex: 1, flexDirection: "column", minHeight: 0,
         }}>
-          {projectsView === "board" && projectsBoardTab === "roadmap"  && <Roadmap />}
-          {projectsView === "board" && projectsBoardTab === "board"    && <ProjectBoard />}
-          {projectsView === "board" && projectsBoardTab === "issues"   && <Issues />}
-          {projectsView === "board" && projectsBoardTab === "insights" && <Insights />}
-          {projectsView === "board" && projectsBoardTab === "hooks"    && <HooksView />}
-          {projectsView === "board" && projectsBoardTab === "coordination" && <CoordinatorInbox />}
-          {projectsView === "board" && projectsBoardTab === "pipelines" && <PipelinesLane />}
-          {projectsView !== "board" && <ProjectsList />}
+          <ProjectsList />
         </div>
       </div>
     </div>

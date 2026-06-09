@@ -1,9 +1,62 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ExternalLink, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ExternalLink, MoreHorizontal, Trash2, GitFork } from "lucide-react";
 import { useAppStore } from "../../store";
+import { useFleetLive } from "../../hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../lib/projectPaths";
 
+// A project's lifecycle, derived from GitHub state (#499 design).
+type ProjStatus = "active" | "drafting" | "shipped";
+const STATUS_META: Record<ProjStatus, { label: string; cls: string; dot: string }> = {
+  active:   { label: "active",   cls: "green", dot: "var(--success)" },
+  drafting: { label: "drafting", cls: "amber", dot: "var(--accent)" },
+  shipped:  { label: "shipped",  cls: "",      dot: "var(--fg-dim)" },
+};
+function projStatus(p: { closed: boolean; items: { totalCount: number } }): ProjStatus {
+  if (p.closed) return "shipped";
+  return p.items.totalCount === 0 ? "drafting" : "active";
+}
+
+/** Live "N agents running · M paused" pill for a project (matched by repo). */
+function FleetPill({ running, paused }: { running: number; paused: number }) {
+  if (running === 0 && paused === 0) return null;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 9px", borderRadius: 99,
+      fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--success)",
+      background: "color-mix(in oklch, var(--success), transparent 88%)",
+      border: "1px solid color-mix(in oklch, var(--success), transparent 70%)",
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: 99, background: "var(--success)", animation: "pulse 1.4s ease-in-out infinite" }} />
+      <span>{running} agent{running !== 1 ? "s" : ""} running</span>
+      {paused > 0 && <span style={{ color: "var(--fg-dim)" }}>· {paused} paused</span>}
+    </span>
+  );
+}
+
+function GroupLabel({ label, count }: { label: string; count: number }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "2px 2px 0", marginTop: 4 }}>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".08em" }}>{label}</span>
+      <span className="tag" style={{ fontSize: 9 }}>{count}</span>
+      <span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+    </div>
+  );
+}
+
+/** Milestone-progress bar: fraction of the project's items that are closed. */
+function ProgressBar({ pct }: { pct: number }) {
+  return (
+    <span title={`${Math.round(pct * 100)}% of items closed`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span style={{ width: 56, height: 4, borderRadius: 99, background: "var(--bg-elev2)", overflow: "hidden", display: "inline-block" }}>
+        <span style={{ display: "block", height: "100%", width: `${pct * 100}%`, background: pct >= 1 ? "var(--success)" : "var(--accent)" }} />
+      </span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{Math.round(pct * 100)}%</span>
+    </span>
+  );
+}
+
+interface GhProjectItem { content: { __typename?: string; state?: string } | null }
 interface GhProject {
   id: string;
   number: number;
@@ -12,8 +65,21 @@ interface GhProject {
   url: string;
   closed: boolean;
   updatedAt: string;
-  items: { totalCount: number };
+  items: { totalCount: number; nodes: GhProjectItem[] };
   repositories: { nodes: Array<{ nameWithOwner: string }> };
+}
+
+// Open count + closed fraction from the fetched item states (capped at 100 items;
+// totalCount is the true item count, used for the headline number).
+function projectProgress(p: GhProject): { open: number; pct: number } {
+  let open = 0, closed = 0;
+  for (const n of p.items?.nodes ?? []) {
+    const s = n.content?.state;
+    if (s === "OPEN") open++;
+    else if (s === "CLOSED" || s === "MERGED") closed++;
+  }
+  const total = open + closed;
+  return { open, pct: total ? closed / total : 0 };
 }
 
 const PROJECTS_QUERY = `{
@@ -21,7 +87,10 @@ const PROJECTS_QUERY = `{
     projectsV2(first: 20) {
       nodes {
         id number title shortDescription url closed updatedAt
-        items { totalCount }
+        items(first: 100) {
+          totalCount
+          nodes { content { __typename ... on Issue { state } ... on PullRequest { state } } }
+        }
         repositories(first: 20) { nodes { nameWithOwner } }
       }
     }
@@ -48,21 +117,25 @@ function timeAgo(iso: string): string {
 
 interface ProjectRowProps {
   p: GhProject;
-  onOpen: (p: GhProject) => void;
-  onEdit: (p: GhProject) => void;
+  running: number;
+  paused: number;
+  onPlan: (p: GhProject) => void;
+  onBoard: (p: GhProject) => void;
   onDelete: (p: GhProject) => void;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
 }
 
-export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpenId }: ProjectRowProps) {
-  const repo    = p.repositories?.nodes?.[0]?.nameWithOwner ?? "";
+export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menuOpenId, setMenuOpenId }: ProjectRowProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const isOpen  = menuOpenId === p.id;
+  const [hover, setHover] = useState(false);
+  const status = projStatus(p);
+  const repos  = (p.repositories?.nodes ?? []).map(r => r.nameWithOwner.split("/")[1] ?? r.nameWithOwner);
+  const { open, pct } = projectProgress(p);
 
   // Close the menu on an outside mousedown, but NOT on a mousedown inside it —
-  // otherwise the menu unmounts before a menu item's click fires, and delete /
-  // plan-edit never run. (This is why the menuRef exists.)
+  // otherwise the menu unmounts before a menu item's click fires.
   useEffect(() => {
     if (!isOpen) return;
     function onDown(e: MouseEvent) {
@@ -73,54 +146,47 @@ export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpe
   }, [isOpen, setMenuOpenId]);
 
   return (
-    <div className="card" style={{
-      padding: "14px 18px",
-      display: "grid", gridTemplateColumns: "1fr auto", gap: 18, alignItems: "center",
-    }}>
+    <div
+      onClick={() => onPlan(p)}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+        padding: "13px 16px 13px 18px", display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "center",
+        cursor: "pointer", borderLeft: "2px solid " + (hover ? "var(--accent)" : "transparent"),
+        background: hover ? "var(--bg-elev)" : "var(--bg-panel)",
+      }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 5 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5, flexWrap: "wrap" }}>
+          <span style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_META[status].dot, flexShrink: 0 }} />
           <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{p.number}</span>
-          <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 14, color: "var(--fg)" }}>{p.title}</h3>
-          {p.closed
-            ? <span className="tag" style={{ fontSize: 9.5 }}>● closed</span>
-            : <span className="tag green" style={{ fontSize: 9.5 }}>● active</span>
-          }
-          {repo && <span className="tag" style={{ fontSize: 9.5 }}>{repo}</span>}
-          <span style={{
-            padding: "1px 6px", borderRadius: 3,
-            fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--info)",
-            background: "color-mix(in oklch, var(--info), transparent 88%)",
-            border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
-          }}>⎇ synced · gh/projects/{p.number}</span>
+          <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>{p.title}</h3>
+          <span className={"tag " + STATUS_META[status].cls} style={{ fontSize: 9.5 }}>{STATUS_META[status].label}</span>
+          {repos.slice(0, 2).map(r => <span key={r} className="tag" style={{ fontSize: 9.5 }}>{r}</span>)}
+          {repos.length > 2 && <span className="tag" style={{ fontSize: 9.5 }}>+{repos.length - 2}</span>}
         </div>
-        <div style={{ color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.55, marginBottom: 8 }}>
+        <div style={{ color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.5, marginBottom: 9, maxWidth: 620 }}>
           {p.shortDescription ?? "No description."}
         </div>
-        <div style={{ display: "flex", gap: 14, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", flexWrap: "wrap" }}>
-          <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>
-          {(p.repositories?.nodes?.length ?? 0) > 1 && (
-            <span>· {p.repositories.nodes.length} repos</span>
-          )}
+        <div style={{ display: "flex", gap: 16, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", flexWrap: "wrap" }}>
+          {p.items.totalCount > 0 && <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>}
+          {open > 0 && <span><b style={{ color: "var(--fg)" }}>{open}</b> open</span>}
+          {status === "drafting" && <span style={{ color: "var(--accent)" }}>plan in progress</span>}
+          {p.items.totalCount > 0 && <ProgressBar pct={pct} />}
+          <span style={{ color: "var(--fg-dim)" }}>updated {timeAgo(p.updatedAt)}</span>
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginRight: 4 }}>
-          {timeAgo(p.updatedAt)}
-        </span>
-        <button
-          className="btn primary"
-          style={{ height: 28, fontSize: 10.5, padding: "0 12px", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}
-          onClick={() => onOpen(p)}
-        >
-          open board <ExternalLink size={12} strokeWidth={2.2} />
-        </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <FleetPill running={running} paused={paused} />
+        <span style={{
+          fontFamily: "var(--mono)", fontSize: 10.5, whiteSpace: "nowrap",
+          color: hover ? "var(--accent)" : "var(--fg-dim)", transition: "color .12s",
+        }}>open planning →</span>
 
-        {/* ⋯ menu */}
-        <div ref={menuRef} style={{ position: "relative" }}>
+        {/* ⋯ menu — stops row-click propagation */}
+        <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
           <button
             className="btn ghost"
-            style={{ height: 28, width: 28, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+            style={{ height: 26, width: 26, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setMenuOpenId(isOpen ? null : p.id)}
             title="More options"
           >
@@ -131,20 +197,14 @@ export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpe
             <div style={{
               position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
               background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-              borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 160,
+              borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 168,
               boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
             }}>
-              <button
-                className="menu-item"
-                onClick={() => { setMenuOpenId(null); onEdit(p); }}
-              >
-                <Pencil size={12} /> plan / edit
+              <button className="menu-item" onClick={() => { setMenuOpenId(null); onBoard(p); }}>
+                <ExternalLink size={12} /> board on GitHub
               </button>
               <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
-              <button
-                className="menu-item danger"
-                onClick={() => { setMenuOpenId(null); onDelete(p); }}
-              >
+              <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(p); }}>
                 <Trash2 size={12} /> delete project
               </button>
             </div>
@@ -156,7 +216,7 @@ export function ProjectRow({ p, onOpen, onEdit, onDelete, menuOpenId, setMenuOpe
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -167,7 +227,8 @@ export function ProjectsList() {
   const [deleteTarget, setDeleteTarget] = useState<GhProject | null>(null);
   const [deleting, setDeleting]   = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
+  // Live fleet (for the per-project "agents running" pill).
+  const { workers } = useFleetLive();
 
   const fetchProjects = useCallback(() => {
     if (!githubToken) return;
@@ -193,11 +254,13 @@ export function ProjectsList() {
     if (activeScreen === "projects") fetchProjects();
   }, [activeScreen, fetchProjects]);
 
-  function handleOpenBoard(p: GhProject) {
+  // The GitHub Projects v2 board now lives on the GitHub page (#498).
+  function handleOpenGithubBoard(p: GhProject) {
     const repos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
-    const repo  = repos[0] ?? "";
-    setActiveProjectMeta(p.id, p.title, repo, p.number, repos);
-    setProjectsView("board");
+    setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
+    setGithubTab("projects"); // so "← portfolio" returns to the Projects tab
+    setScreen("github");
+    openGithubBoard("board");
   }
 
   function handleEditPlan(p: GhProject) {
@@ -294,6 +357,34 @@ export function ProjectsList() {
 
   const repos = new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? []));
 
+  // Per-project live fleet counts: a worker belongs to a project when its repo is
+  // one of the project's repos (running vs parked = asking/waiting/blocked).
+  const fleetByProject = useMemo(() => {
+    const m: Record<string, { running: number; paused: number }> = {};
+    for (const p of visibleProjects) {
+      const projRepos = new Set((p.repositories?.nodes ?? []).map(r => r.nameWithOwner));
+      let running = 0, paused = 0;
+      for (const w of workers) {
+        if (!projRepos.has(w.repo)) continue;
+        if (w.status === "running") running++;
+        else if (w.status !== "idle") paused++;
+      }
+      m[p.id] = { running, paused };
+    }
+    return m;
+  }, [visibleProjects, workers]);
+
+  // Group the published projects by lifecycle for the sectioned list (#499).
+  const grouped = useMemo(() => {
+    const order: ProjStatus[] = ["active", "drafting", "shipped"];
+    const by: Record<ProjStatus, GhProject[]> = { active: [], drafting: [], shipped: [] };
+    for (const p of visibleProjects) by[projStatus(p)].push(p);
+    return order.map(s => [s, by[s]] as const).filter(([, arr]) => arr.length > 0);
+  }, [visibleProjects]);
+
+  // Jump to the GitHub Portfolio tab (where the analytics + live Fleet now live, #498).
+  function gotoPortfolio() { setGithubTab("projects"); setScreen("github"); }
+
   return (
     <section style={{ flex: 1, overflow: "auto", padding: "24px 32px", minWidth: 0 }}>
       <div style={{ maxWidth: 1080, margin: "0 auto" }}>
@@ -325,75 +416,57 @@ export function ProjectsList() {
           <button className="btn">import existing</button>
         </div>
 
-        {/* Plan new project CTA */}
-        <div style={{
-          background: "linear-gradient(135deg, color-mix(in oklch, var(--accent), transparent 86%), var(--bg-panel) 70%)",
-          border: "1px solid var(--accent-dim)",
-          borderRadius: 12,
-          padding: "18px 20px",
-          marginBottom: 20,
+        {/* Analytics moved-out signpost (#498): the portfolio + live Fleet now live
+            on the GitHub page. */}
+        <div onClick={gotoPortfolio} style={{
+          display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", marginBottom: 16, cursor: "pointer",
+          background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-            <div style={{
-              width: 26, height: 26, borderRadius: 6,
-              background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
-              color: "#1a120a", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 12,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>C</div>
-            <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>Plan a new project</h3>
-            <span className="tag amber" style={{ fontSize: 9.5 }}>creates milestones + issues on github</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {/* Title row */}
-            <div style={{
-              padding: "8px 14px",
-              background: "var(--bg-canvas)", borderRadius: 8,
-              border: "1px solid " + (titleConflict ? "var(--danger)" : "var(--border-soft)"),
-              display: "flex", alignItems: "center", gap: 10,
-            }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>title</span>
-              <input
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                onKeyDown={e => { if (e.key === "Tab") e.preventDefault(); }}
-                placeholder="project title…"
-                autoFocus
-                style={{
-                  flex: 1, background: "none", border: "none", outline: "none",
-                  fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
-                }}
-              />
-              {titleConflict && (
-                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>
-                  ⚠ already exists
-                </span>
-              )}
-            </div>
-            {/* Pitch row */}
-            <div style={{
-              padding: "8px 14px",
-              background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8,
-              display: "flex", alignItems: "center", gap: 10,
-            }}>
-              <span style={{ color: "var(--accent)", fontFamily: "var(--mono)", fontSize: 13 }}>▸</span>
-              <input
-                value={pitch}
-                onChange={e => setPitch(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); }}
-                placeholder="describe what you want to build… (optional)"
-                style={{
-                  flex: 1, background: "none", border: "none", outline: "none",
-                  fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
-                }}
-              />
-              <button
-                onClick={handleStartPlanning}
-                disabled={!titleTrimmed || !!titleConflict}
-                className="btn primary"
-                style={{ height: 26, fontSize: 11, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4 }}
-              >start planning →</button>
-            </div>
-          </div>
+          <GitFork size={13} style={{ color: "var(--info)" }} />
+          <span style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>
+            Portfolio analytics &amp; live <b style={{ color: "var(--fg)" }}>Fleet</b> now live under <b style={{ color: "var(--fg)" }}>GitHub → Projects</b>.
+          </span>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--info)" }}>view analytics →</span>
+        </div>
+
+        {/* Plan new project — slim inline bar (#522) */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "7px 10px", marginBottom: 14,
+          background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
+        }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>+ plan</span>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            onKeyDown={e => { if (e.key === "Tab") e.preventDefault(); }}
+            placeholder="project title…"
+            style={{
+              flex: "0 0 160px", background: "none", border: "none", outline: "none",
+              fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
+              borderRight: "1px solid var(--border-soft)", paddingRight: 8,
+            }}
+          />
+          {titleConflict && (
+            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>⚠ exists</span>
+          )}
+          <input
+            value={pitch}
+            onChange={e => setPitch(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); }}
+            placeholder="describe what you want to build… (optional)"
+            style={{
+              flex: 1, background: "none", border: "none", outline: "none",
+              fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
+            }}
+          />
+          <button
+            onClick={handleStartPlanning}
+            disabled={!titleTrimmed || !!titleConflict}
+            className="btn primary"
+            style={{ height: 24, fontSize: 10.5, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4, whiteSpace: "nowrap" }}
+          >start planning →</button>
         </div>
 
         {error && (
@@ -460,17 +533,28 @@ export function ProjectsList() {
           );
         })()}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {visibleProjects.map(p => (
-            <ProjectRow
-              key={p.id}
-              p={p}
-              onOpen={handleOpenBoard}
-              onEdit={handleEditPlan}
-              onDelete={setDeleteTarget}
-              menuOpenId={menuOpenId}
-              setMenuOpenId={setMenuOpenId}
-            />
+        {/* Grouped published projects: Active · Drafting · Shipped */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {grouped.map(([status, items]) => (
+            <div key={status} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <GroupLabel label={STATUS_META[status].label} count={items.length} />
+              <div style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
+                {items.map((p, i) => (
+                  <div key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
+                    <ProjectRow
+                      p={p}
+                      running={fleetByProject[p.id]?.running ?? 0}
+                      paused={fleetByProject[p.id]?.paused ?? 0}
+                      onPlan={handleEditPlan}
+                      onBoard={handleOpenGithubBoard}
+                      onDelete={setDeleteTarget}
+                      menuOpenId={menuOpenId}
+                      setMenuOpenId={setMenuOpenId}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>

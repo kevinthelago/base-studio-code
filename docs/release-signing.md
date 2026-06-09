@@ -4,18 +4,12 @@ How `base-studio-code` desktop installers are signed and notarized so they insta
 without "Unknown publisher" (Windows) or Gatekeeper (macOS) warnings, and how the
 credentials are wired into CI.
 
-> **Status:** signing credentials are **maintainer-gated, long-lead procurement**
-> (days–weeks). Until they exist, `release.yml` ships **unsigned** artifacts:
-> Windows/Linux are plain unsigned, and macOS is **ad-hoc signed** (`-`) so the
-> universal `.dmg` still builds and the arm64 app launches on Apple Silicon.
->
-> ⚠️ **Do not "leave the Apple secrets wired so signing flips on for free."** That
-> was the original design and it **broke the macOS build** (#440): GitHub sets an
-> *absent* secret to an empty string — present-but-empty — and the Tauri bundler
-> then runs `security import` on the empty `APPLE_CERTIFICATE` and hard-fails. So
-> the `APPLE_*` env vars are **removed** from `release.yml` until real credentials
-> exist; enabling signing is a small, deliberate edit (below), done together with
-> adding the secrets — not a no-op passthrough.
+> **Status:** CI is wired to *consume* signing credentials, but the credentials
+> themselves are **maintainer-gated, long-lead procurement** (days–weeks). Until
+> the secrets below are populated, `release.yml` still builds and attaches
+> **unsigned** artifacts — every signing step is a no-op when its secret is empty,
+> so the pipeline never fails for lack of a cert. Populate the secrets to flip
+> signing on; no code change required.
 >
 > Tracking: **#108** (Windows), **#119** (macOS), `B-macos-procure` (Apple
 > enrollment + credential wiring). The human PURCHASE/ENROLL steps are flagged
@@ -62,35 +56,9 @@ distributed outside the App Store launches cleanly on a clean Mac.
 | `APPLE_TEAM_ID` | the 10-char Team ID | notarytool |
 
 These are the exact env names [`tauri-action`](https://github.com/tauri-apps/tauri-action)
-reads. To turn signing on, **add all six env vars back** to the `Build and release`
-step in `release.yml` (in the same commit that you add the secrets — never leave
-them wired while the secrets are empty, see the ⚠️ above) and **remove** the
-`APPLE_SIGNING_IDENTITY: '-'` ad-hoc line:
-
-```yaml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-```
-
-With all six present the `macos-latest` leg signs with the Developer ID cert and
-notarizes + staples the universal `.dmg` automatically.
-
-### Until then: ad-hoc signing (the current default)
-
-`release.yml` sets `APPLE_SIGNING_IDENTITY: '-'`, so the bundler ad-hoc-signs the
-app — no cert, no notarization. The `.dmg` builds and runs, but Gatekeeper still
-flags it as from an unidentified developer. Users clear the quarantine once after
-installing:
-
-```bash
-xattr -cr /Applications/base-studio-code.app
-```
+reads; `release.yml` already passes them through (empty ⇒ unsigned build, no
+failure). When all six are present, the `macos-latest` matrix leg signs with the
+Developer ID cert and notarizes + staples the universal `.dmg` automatically.
 
 ### Verifying a signed/notarized build
 
@@ -142,21 +110,13 @@ signer's API.
 | `TRUSTED_SIGNING_ACCOUNT` | Trusted Signing account name |
 | `TRUSTED_SIGNING_PROFILE` | certificate profile name |
 
-### Config to enable AFTER procurement (kept OUT of `tauri.conf.json` until then)
+### Config (already wired — auto-activates when secrets are present)
 
-Adding a `signCommand` before the cert exists would make **every** unsigned CI
-build fail, so it is documented here, not committed. Once the secrets above exist,
-add to `tauri.conf.json` under `bundle.windows`:
-
-```jsonc
-"windows": {
-  // Tauri v2 pipes the path of each artifact to sign as %1.
-  "signCommand": "trusted-signing-cli -e %TRUSTED_SIGNING_ENDPOINT% -a %TRUSTED_SIGNING_ACCOUNT% -c %TRUSTED_SIGNING_PROFILE% %1"
-}
-```
-
-…and uncomment the `azure/trusted-signing` step block in `release.yml` (marked
-`# WINDOWS-SIGNING (enable post-procurement, #108)`).
+`tauri.conf.json` has `bundle.windows.signCommand` pointing to
+`scripts/sign-windows.ps1`. That script exits 0 when `AZURE_CLIENT_ID` is absent,
+so unsigned CI builds pass without a cert. When all six secrets are added,
+`release.yml` installs `trusted-signing-cli` automatically and the script signs
+each artifact — no code change required.
 
 `bundle.publisher` is already set in `tauri.conf.json` (cosmetic publisher
 metadata — independent of the cert).

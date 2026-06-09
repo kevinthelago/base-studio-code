@@ -17,19 +17,16 @@ export interface ActiveProjectInfo {
   description: string;
 }
 
-const TABS = [
-  { k: "board",    label: "Board",    hint: "kanban · per column" },
-  { k: "roadmap",  label: "Roadmap",  hint: "milestones over time" },
-  { k: "issues",   label: "Issues",   hint: "flat list · filter & sort" },
-  { k: "insights", label: "Insights", hint: "velocity · burndown" },
-  { k: "hooks",    label: "Hooks",    hint: "git hooks · per repo" },
-  { k: "coordination", label: "Coordination", hint: "blocked sessions · #199" },
-  { k: "pipelines", label: "Pipelines", hint: "staged work-item lifecycle · #220" },
-] as const;
-
-type BoardTab = typeof TABS[number]["k"];
-
-const BOARD_TABS: TabItem[] = TABS.map((t) => ({ id: t.k, label: t.label, hint: t.hint }));
+// The project header lives on the GitHub page (#498/#499): the published board
+// sub-tabs (board · roadmap · issues · insights), a back-to-portfolio link, and a
+// "plan →" jump to the planning session on the Projects page.
+type GithubTab = "board" | "roadmap" | "issues" | "insights";
+const GITHUB_BOARD_TABS: TabItem[] = [
+  { id: "board",    label: "Board",    hint: "kanban · per column" },
+  { id: "roadmap",  label: "Roadmap",  hint: "milestones over time" },
+  { id: "issues",   label: "Issues",   hint: "flat list · filter & sort" },
+  { id: "insights", label: "Insights", hint: "velocity · burndown" },
+];
 
 interface ProjectsHeaderProps {
   project: ActiveProjectInfo;
@@ -206,9 +203,13 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 }
 
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
-  const { projectsBoardTab, setProjectsBoardTab, setProjectsView, setPlanningContext, setPlanningSession, setScreen, setKbProjectScope } = useAppStore();
+  const {
+    setProjectsView, setPlanningContext, setPlanningSession,
+    setScreen, setKbProjectScope, githubBoardTab, setGithubBoardTab, closeGithubBoard,
+  } = useAppStore();
   const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
-    usePageTabs("projects-board", BOARD_TABS, { activeId: projectsBoardTab, setActive: (id) => setProjectsBoardTab(id as BoardTab) });
+    usePageTabs("github-board", GITHUB_BOARD_TABS,
+      { activeId: githubBoardTab, setActive: (id) => setGithubBoardTab(id as GithubTab) });
 
   // Open the Knowledge Base scoped to this project's documents, keyed by the
   // canonical (title-derived) folder the planner writes to. We intentionally do
@@ -226,6 +227,8 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
     // Key the session by the project name (stable, human-readable, and matches a
     // from-scratch session of the same name). The node id stays in activeProjectId.
     setPlanningSession(project.name);
+    // Planning lives on the Projects page; from the GitHub board, jump there.
+    setScreen("projects");
     setProjectsView("planning");
   }
 
@@ -235,13 +238,13 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <button
-              onClick={() => setProjectsView("list")}
+              onClick={closeGithubBoard}
               style={{
                 background: "none", border: "none", cursor: "pointer",
                 fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
                 padding: 0, marginRight: 4,
               }}
-            >← projects</button>
+            >← portfolio</button>
             <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{project.number}</span>
             <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600 }}>{project.name}</h2>
             {project.repo && <span className="tag">{project.repo}</span>}

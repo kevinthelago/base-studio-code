@@ -3,7 +3,10 @@
 // composition: pane header + fleet-pulse strip + three collapsible sections —
 // Context Files, Repository · Structure, Agents · Permissions). Styling lives in
 // projectPane.css and uses the app's design tokens.
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
+import type { IssueGrade, Letter, PlanGrade } from "../../lib/planGrade";
+import { AGENT_READINESS_ID } from "./gradeDispatch";
+import { useAppStore } from "../../store";
 import "./projectPane.css";
 import { type DirectorDrive, DIRECTOR_DRIVES } from "./directorDrive";
 import {
@@ -11,7 +14,7 @@ import {
   resolveStrategy, strategySettings,
 } from "./integrationStrategy";
 import type {
-  Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
+  Posture, Perm, Flow, Agent, Repo, Issue, Milestone, PhaseGroup, SubItem, ContextFile,
   ProjectPaneData,
 } from "./projectPane.types";
 
@@ -287,13 +290,130 @@ function SyncBtn({ label, state = "idle", onClick }: { label: string; state?: Sy
   );
 }
 
+// grade letter chip — color-coded A/B/C/D/F badge
+function GradeChip({ letter }: { letter: Letter }) {
+  const color = letter === "A" ? "var(--success)"
+    : letter === "B" ? "var(--accent)"
+    : letter === "C" ? "oklch(0.74 0.14 90)"
+    : letter === "D" ? "oklch(0.72 0.15 55)"
+    : "var(--danger)";
+  return (
+    <span title={`Plan grade: ${letter}`} style={{
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+      background: `color-mix(in oklch, ${color}, transparent 80%)`,
+      border: `1px solid color-mix(in oklch, ${color}, transparent 50%)`,
+      fontFamily: "var(--mono)", fontSize: 9, fontWeight: 700, color, lineHeight: 1,
+    }}>{letter}</span>
+  );
+}
+
+// score → bar/letter color (shared by the category bars).
+function scoreColor(score: number): string {
+  return score >= 0.75 ? "var(--success)"
+    : score >= 0.60 ? "var(--accent)"
+    : score >= 0.45 ? "oklch(0.74 0.14 90)"
+    : "var(--danger)";
+}
+
+const PRIORITY_COLOR: Record<string, string> = {
+  high:   "var(--danger)",
+  medium: "oklch(0.74 0.14 90)",
+  low:    "var(--fg-dim)",
+};
+
+// The renderable grade report (#445 → pipeline): the overall letter, a per-category
+// rubric breakdown with score reasonings, and prioritized suggestions. Collapsible;
+// auto-expands when there's headroom to improve (< B).
+function GradeReport({ grade }: { grade: PlanGrade }) {
+  const [open, setOpen] = useState(grade.score < 0.75);
+  const pct = Math.round(grade.score * 100);
+  return (
+    <div style={{
+      margin: "0 0 10px", borderRadius: 6, overflow: "hidden",
+      border: "1px solid var(--border-soft)", background: "var(--bg-elev)",
+    }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 8,
+          padding: "7px 10px", background: "none", border: "none", cursor: "pointer",
+          fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", textAlign: "left",
+        }}
+      >
+        <GradeChip letter={grade.letter} />
+        <span style={{ color: "var(--fg)" }}>Plan readiness</span>
+        <span style={{ color: scoreColor(grade.score) }}>{pct}%</span>
+        <span style={{ flex: 1 }} />
+        {grade.suggestions.length > 0 && (
+          <span style={{ color: "var(--fg-dim)" }}>
+            {grade.suggestions.length} suggestion{grade.suggestions.length !== 1 ? "s" : ""}
+          </span>
+        )}
+        <span style={{ fontSize: 8, color: "var(--fg-dim)" }}>{open ? "▾" : "▸"}</span>
+      </button>
+
+      {open && (
+        <div style={{ padding: "2px 10px 10px", borderTop: "1px solid var(--border-soft)" }}>
+          {/* Per-category rubric breakdown with score reasonings. */}
+          <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", margin: "8px 0 5px" }}>
+            categories
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {grade.categories.map(c => (
+              <div key={c.id} title={c.detail} style={{ display: "grid", gridTemplateColumns: "108px 1fr 14px", gap: 8, alignItems: "center" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}</span>
+                <div style={{ height: 5, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${Math.round(c.score * 100)}%`, background: scoreColor(c.score), borderRadius: 3 }} />
+                </div>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 9, fontWeight: 700, color: scoreColor(c.score), textAlign: "right" }}>{c.letter}</span>
+                <span style={{ gridColumn: "1 / -1", fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)", lineHeight: 1.45 }}>{c.detail}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Prioritized, actionable suggestions. */}
+          {grade.suggestions.length > 0 && (
+            <>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", margin: "10px 0 5px" }}>
+                suggestions
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {grade.suggestions.map((s, i) => (
+                  <div key={i} style={{ display: "flex", gap: 7, alignItems: "flex-start" }}>
+                    <span style={{
+                      flexShrink: 0, marginTop: 1, padding: "0 5px", borderRadius: 3,
+                      fontFamily: "var(--mono)", fontSize: 8, fontWeight: 700, lineHeight: "13px",
+                      textTransform: "uppercase", letterSpacing: ".04em",
+                      color: PRIORITY_COLOR[s.priority] ?? "var(--fg-dim)",
+                      background: `color-mix(in oklch, ${PRIORITY_COLOR[s.priority] ?? "var(--fg-dim)"}, transparent 85%)`,
+                    }}>{s.priority}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg)" }}>{s.title}</div>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)", lineHeight: 1.45 }}>{s.detail}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // collapsible section shell
-function Sec({ title, count, open = true, right, children }: {
-  title: string; count?: React.ReactNode; open?: boolean; right?: React.ReactNode; children: React.ReactNode;
+function Sec({ title, count, open = true, right, attention, children }: {
+  title: string; count?: React.ReactNode; open?: boolean; right?: React.ReactNode;
+  /** Flag this section as incomplete (locked-Triage feedback): danger outline + pulse. */
+  attention?: boolean; children: React.ReactNode;
 }) {
   const [o, setO] = useState(open);
   return (
-    <div className="sec">
+    <div className={"sec" + (attention ? " attn-pulse" : "")} style={attention ? {
+      borderRadius: 6, outline: "1px solid color-mix(in oklch, var(--danger), transparent 45%)", outlineOffset: -1,
+    } : undefined}>
       <div className="sec-head" onClick={() => setO(!o)}>
         <span className="chev">{o ? "▼" : "▶"}</span>
         <span className="t">{title}</span>
@@ -440,8 +560,9 @@ function repoRollup(repoId: string, structure: Milestone[] = STRUCTURE): { ms: M
 // REPO-FIRST — a collapsible repository card holding its own work tree:
 // milestones (the phases decomposed for THAT repo) → issues → acceptance sub-list.
 // Mirrors the design's RepoA variant; reuses structFor/MStateDot/SubList/etc.
-function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }: {
+function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS, gradeMap }: {
   structure?: Milestone[]; repos?: Repo[]; agents?: Agent[];
+  gradeMap?: Map<string | number, IssueGrade>;
 }) {
   const [openRepo, setOpenRepo] = useState<string | null>(repos[0]?.id ?? null);
   const [openIss, setOpenIss] = useState<number | string | null>(null);
@@ -503,32 +624,10 @@ function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }
                       </div>
                       {/* issues for this milestone (epics flattened) */}
                       <div style={{ borderLeft: "1px solid var(--border-soft)", marginLeft: 6, paddingLeft: 8, display: "flex", flexDirection: "column", gap: 5 }}>
-                        {m.epics.flatMap((e) => e.issues).map((is) => {
-                          const io = openIss === is.n;
-                          return (
-                            <div key={is.n} style={{ borderRadius: 6, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-                              <div onClick={() => setOpenIss(io ? null : is.n)} style={{ padding: "7px 9px", cursor: "pointer" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <MStateDot state={is.state} />
-                                  <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>#{is.n}</span>
-                                  <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 10.5, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{is.t}</span>
-                                  <span title={"@" + is.owner}><Avatar id={is.owner} sz={14} agents={agents} /></span>
-                                </div>
-                                <div style={{ display: "flex", gap: 5, marginTop: 5, paddingLeft: 20, alignItems: "center", flexWrap: "wrap" }}>
-                                  <BranchChip n={is.branch} />
-                                  <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--success)" }}>✓ {is.ac} AC</span>
-                                  {is.sub.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>⌱ {is.sub.length} sub</span>}
-                                  {is.deps.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--accent)" }}>⇠ #{is.deps.join(" #")}</span>}
-                                </div>
-                              </div>
-                              {io && is.sub.length > 0 && (
-                                <div style={{ padding: "0 9px 8px", borderTop: "1px solid var(--border-soft)" }}>
-                                  <SubList sub={is.sub} pad={4} />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                        {m.epics.flatMap((e) => e.issues).map((is) => (
+                          <IssueRow key={is.n} is={is} agents={agents} gradeMap={gradeMap}
+                            open={openIss === is.n} onToggle={() => setOpenIss(openIss === is.n ? null : is.n)} />
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -541,6 +640,133 @@ function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }
     </div>
   );
 }
+
+// One issue row — shared by the repo-first and phase-first structure views.
+// Collapsible: clicking toggles the acceptance-criteria drill-in.
+function IssueRow({ is, agents, open, onToggle, showRepo, gradeMap }: {
+  is: Issue; agents: Agent[]; open: boolean; onToggle: () => void; showRepo?: boolean;
+  gradeMap?: Map<string | number, IssueGrade>;
+}) {
+  const ig = gradeMap?.get(is.n);
+  return (
+    <div style={{ borderRadius: 6, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+      <div onClick={onToggle} style={{ padding: "7px 9px", cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <MStateDot state={is.state} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>#{is.n}</span>
+          <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 10.5, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{is.t}</span>
+          {showRepo && is.repo && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{is.repo.split("/")[1] ?? is.repo}</span>}
+          {ig && <GradeChip letter={ig.letter} />}
+          <span title={"@" + is.owner}><Avatar id={is.owner} sz={14} agents={agents} /></span>
+        </div>
+        <div style={{ display: "flex", gap: 5, marginTop: 5, paddingLeft: 20, alignItems: "center", flexWrap: "wrap" }}>
+          <BranchChip n={is.branch} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--success)" }}>✓ {is.ac} AC</span>
+          {is.sub.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>⌱ {is.sub.length} sub</span>}
+          {is.deps.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--accent)" }}>⇠ #{is.deps.join(" #")}</span>}
+        </div>
+      </div>
+      {open && is.sub.length > 0 && (
+        <div style={{ padding: "0 9px 8px", borderTop: "1px solid var(--border-soft)" }}>
+          <SubList sub={is.sub} pad={4} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Phase-first, PROJECT-SCOPED structure (#497): each phase is one milestone
+// spanning every repo, with a single progress bar; its issues are grouped by repo
+// beneath it. Replaces the repo→milestone→epic→issue tree as the primary lens.
+function PhaseStructure({ phases, agents, gradeMap }: {
+  phases: PhaseGroup[]; agents: Agent[];
+  gradeMap?: Map<string | number, IssueGrade>;
+}) {
+  const [openPhase, setOpenPhase] = useState<string | null>(phases[0]?.id ?? null);
+  const [openIss, setOpenIss] = useState<number | string | null>(null);
+  const totalIssues = phases.reduce((a, p) => a + p.total, 0);
+  return (
+    <div>
+      <div style={{ padding: "0 2px 10px", fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+        the plan · {phases.length} phase{phases.length !== 1 ? "s" : ""} · {totalIssues} issue{totalIssues !== 1 ? "s" : ""}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {phases.map((ph) => {
+          const on = openPhase === ph.id;
+          const byRepo = new Map<string, Issue[]>();
+          for (const is of ph.issues) {
+            const r = is.repo ?? "";
+            const l = byRepo.get(r) ?? [];
+            l.push(is);
+            byRepo.set(r, l);
+          }
+          return (
+            <div key={ph.id} style={{
+              borderRadius: 7, overflow: "hidden",
+              border: "1px solid var(--border-soft)", background: "var(--bg-canvas)",
+            }}>
+              {/* phase header — collapsible */}
+              <div onClick={() => setOpenPhase(on ? null : ph.id)} style={{ padding: "9px 11px", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <span style={{ width: 8, fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{on ? "▾" : "▸"}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>P{ph.order + 1}</span>
+                  <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg)" }}>{ph.name}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{ph.closed}/{ph.total}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{Math.round(ph.pct * 100)}%</span>
+                  <span style={{ width: 40 }}><Track pct={ph.pct} /></span>
+                </div>
+                {ph.doneWhen && (
+                  <div style={{ marginTop: 5, paddingLeft: 15, fontFamily: "var(--sans)", fontSize: 9.5, color: "var(--fg-dim)" }}>{ph.doneWhen}</div>
+                )}
+              </div>
+
+              {on && (
+                <div style={{ padding: "4px 10px 10px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
+                  {ph.issues.length === 0 ? (
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", padding: "6px 4px" }}>
+                      no issues yet
+                    </div>
+                  ) : [...byRepo.entries()].map(([repo, issues]) => (
+                    <div key={repo} style={{ marginTop: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 4px" }}>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-muted)" }}>{repo || "—"}</span>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{issues.length} issue{issues.length !== 1 ? "s" : ""}</span>
+                      </div>
+                      <div style={{ borderLeft: "1px solid var(--border-soft)", marginLeft: 6, paddingLeft: 8, display: "flex", flexDirection: "column", gap: 5 }}>
+                        {issues.map((is) => (
+                          <IssueRow key={String(is.n)} is={is} agents={agents} gradeMap={gradeMap}
+                            open={openIss === is.n} onToggle={() => setOpenIss(openIss === is.n ? null : is.n)} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Sample phase-first structure for the empty/illustrative state — derived from the
+// repo-first STRUCTURE sample by grouping its milestones by phase name.
+const PHASE_STRUCTURE: PhaseGroup[] = (() => {
+  const byName = new Map<string, Issue[]>();
+  for (const m of STRUCTURE) {
+    const issues = m.epics.flatMap((e) => e.issues).map((is) => ({ ...is, repo: m.repo }));
+    byName.set(m.title, [...(byName.get(m.title) ?? []), ...issues]);
+  }
+  let order = 0;
+  return [...byName.entries()].map(([name, issues]) => {
+    const closed = issues.filter((i) => i.state === "done").length;
+    return {
+      id: `sample-phase-${order}`, name, order: order++, issues,
+      closed, total: issues.length, pct: issues.length ? closed / issues.length : 0,
+    };
+  });
+})();
 
 /* =================================================================
    pp-agents.jsx — Seg, AgentEditor, AgentsA
@@ -740,12 +966,6 @@ function AgentsA({ agents = AGENTS, fleetStrategy, onPerm, onPreset, onFlow, onS
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
                     <PostureBar perm={a.perm} />
-                    <span style={{
-                      fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}>
-                      {a.owns[0]}{a.owns.length > 1 ? ` +${a.owns.length - 1}` : ""}
-                    </span>
                   </div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
@@ -837,30 +1057,59 @@ function DirectorBar({ director, fleetStrategy, onDirectorDrive }: {
  * no write-back in this slice.
  */
 export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onStrategy, onTogglePin,
-  onDirectorDrive, onSyncStructure, onSyncDocs, onSyncLabels, syncState }: {
+  onDirectorDrive, onSyncLabels, syncState, sectionKeys, sections, highlight }: {
   data?: ProjectPaneData;
   projectName?: string;
   projectId?: string;
+  /** Enabled stage ids in blueprint order — gates + orders the pane's sections.
+   *  Undefined ⇒ show every section in the default order (sample/standalone use). */
+  sectionKeys?: string[];
+  /** Enabled blueprint sections (key + display name + blurb), in order. Preferred over
+   *  sectionKeys: sections without a dedicated rich panel render a generic card so EVERY
+   *  blueprint section is visible in the pane — not just context/structure/permissions. */
+  sections?: { key: string; name: string; blurb?: string }[];
+  /** Stage keys to flag as incomplete (locked-Triage feedback): danger outline + pulse. */
+  highlight?: Set<string>;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onStrategy?: (streamId: string, strategy: IntegrationStrategy | undefined) => void;
   onTogglePin?: (name: string) => void;
   onDirectorDrive?: (drive: DirectorDrive) => void;
-  onSyncStructure?: () => void;
-  onSyncDocs?: () => void;
+  // Publish is owned by the planning header's button and the app's Publish flow
+  // (#506/#503): the per-section "Sync to GitHub →" / "Push docs →" buttons were
+  // removed as redundant. Only label application remains pane-local.
   onSyncLabels?: () => void;
-  syncState?: { structure?: SyncState; docs?: SyncState; labels?: SyncState };
+  syncState?: { labels?: SyncState };
 }) {
-  const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.context.length > 0);
-  const agents:    Agent[]       = hasData ? data!.agents    : AGENTS;
-  const repos:     Repo[]        = hasData ? data!.repos      : REPOS;
-  const structure: Milestone[]   = hasData ? data!.structure  : STRUCTURE;
-  const context:   ContextFile[] = hasData ? data!.context    : CONTEXT;
+  const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.phaseStructure.length > 0 || data.context.length > 0);
+  const agents:    Agent[]       = hasData ? data!.agents         : AGENTS;
+  const repos:     Repo[]        = hasData ? data!.repos          : REPOS;
+  const structure: Milestone[]   = hasData ? data!.structure      : STRUCTURE;
+  const phaseStructure: PhaseGroup[] = hasData ? data!.phaseStructure : PHASE_STRUCTURE;
+  const context:   ContextFile[] = hasData ? data!.context        : CONTEXT;
+  // The grade is produced by the grade-plan pipeline and stored as the structure
+  // section's "agent-readiness" grader result (#615 — single source of truth, the
+  // sectionGrades store). Its full PlanGrade rides along as `detail` for this report.
+  const grade = useAppStore(s => {
+    if (!projectId) return undefined;
+    const ar = s.sectionGrades[projectId]?.["structure"]?.find(g => g.graderId === AGENT_READINESS_ID);
+    return (ar?.detail as PlanGrade | undefined) ?? undefined;
+  });
+  // Phase-first is the primary lens (#497); the repo-first tree is the secondary one.
+  const [structView, setStructView] = useState<"phase" | "repo">("phase");
+
+  // Build a flat ref → IssueGrade lookup for per-row chips (#445).
+  const issueGradeMap = new Map<string | number, IssueGrade>();
+  if (grade) {
+    for (const rg of grade.repoGrades) {
+      for (const mg of rg.milestoneGrades) {
+        for (const ig of mg.issueGrades) { issueGradeMap.set(ig.ref, ig); }
+      }
+    }
+  }
 
   const running = agents.filter((a) => a.status === "run").length;
-  const onCount = agents.filter((a) => a.status === "on").length;
-  const idleCount = agents.filter((a) => a.status === "idle").length;
   const pinnedCount = context.filter((c) => c.pinned).length;
   const director = hasData ? data!.director : { enabled: true, drive: "event" as DirectorDrive };
   const fleetStrategy = hasData ? data!.fleetStrategy : undefined;
@@ -890,38 +1139,82 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
         <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{hasData ? (projectId || "") : "prj_2fa"}</span>
       </div>
 
-      {/* fleet pulse strip — always-visible glance line */}
-      <div style={{
-        flex: "0 0 auto", padding: "7px 12px", borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 9,
-        color: "var(--fg-muted)", background: "var(--bg-panel)",
-      }}>
-        <span style={{ display: "flex", gap: -4 }}>
-          {agents.map((a, i) => (
-            <span key={a.id} style={{ marginLeft: i ? -4 : 0, position: "relative" }}>
-              <span className="av" style={{ width: 16, height: 16, background: a.color, fontSize: 9 }}>{a.initial}</span>
-            </span>
-          ))}
-        </span>
-        <span style={{ color: "var(--accent)" }}>{running} running</span>
-        <span style={{ color: "var(--fg-dim)" }}>· {onCount} on · {idleCount} idle</span>
-        <span style={{ flex: 1 }} />
-        <span style={{ color: "var(--success)" }}>● github 4m</span>
-      </div>
-
       <div className="pp-scroll">
-        <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false} right={<SyncBtn label="Push docs →" state={syncState?.docs} onClick={onSyncDocs} />}>
-          <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />
-        </Sec>
-        <Sec title="Repository · Structure" count={`${repos.length} repos · ${structure.length} milestones`} open={true} right={<SyncBtn label="Sync to GitHub →" state={syncState?.structure} onClick={onSyncStructure} />}>
-          <RepoStructure structure={structure} repos={repos} agents={agents} />
-        </Sec>
-        <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
-          <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />
-        </Sec>
-        <Sec title="Director · Coordination" count={director.enabled ? `drive: ${director.drive}` : "disabled"} open={false}>
-          <DirectorBar director={director} fleetStrategy={fleetStrategy} onDirectorDrive={onDirectorDrive} />
-        </Sec>
+        {(() => {
+          // Sections are static and keyed to a planning stage; which show (and in what
+          // order) follows the blueprint's enabled stages (#…). context/structure are
+          // required so they always render; the fleet panels ride the `permissions`
+          // stage, so disabling it in the blueprint hides them.
+          const sectionNodes: { stage: string; node: ReactNode }[] = [
+            { stage: "context", node: (
+              <Sec key="sec-context" title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false} attention={highlight?.has("context")}>
+                <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />
+              </Sec>
+            ) },
+            { stage: "structure", node: (
+              <Sec
+                key="sec-structure"
+                title="Milestones · Structure"
+                attention={highlight?.has("structure")}
+                count={
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    {grade && <GradeChip letter={grade.letter} />}
+                    {structView === "phase"
+                      ? `${phaseStructure.length} phase${phaseStructure.length !== 1 ? "s" : ""}`
+                      : `${repos.length} repos · ${structure.length} milestones`}
+                  </span>
+                }
+                open={true}
+                // Phase/repo lens lives inline in the header (where the publish button
+                // used to be, #506); stop the click so toggling the lens doesn't also
+                // collapse the section.
+                right={
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <Seg options={["phase", "repo"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo")} tiny />
+                  </span>
+                }
+              >
+                {grade && <GradeReport grade={grade} />}
+                {structView === "phase"
+                  ? <PhaseStructure phases={phaseStructure} agents={agents} gradeMap={issueGradeMap} />
+                  : <RepoStructure structure={structure} repos={repos} agents={agents} gradeMap={issueGradeMap} />}
+              </Sec>
+            ) },
+            { stage: "permissions", node: (
+              <Sec key="sec-agents" title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} attention={highlight?.has("permissions")} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
+                <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />
+              </Sec>
+            ) },
+            { stage: "permissions", node: (
+              <Sec key="sec-director" title="Director · Coordination" count={director.enabled ? `drive: ${director.drive}` : "disabled"} open={false}>
+                <DirectorBar director={director} fleetStrategy={fleetStrategy} onDirectorDrive={onDirectorDrive} />
+              </Sec>
+            ) },
+          ];
+          // A generic card for any blueprint section without a dedicated rich panel —
+          // so every enabled section is visible in the pane (#609 follow-up), not just
+          // the three special ones.
+          const genericNode = (sec: { key: string; name: string; blurb?: string }): ReactNode => (
+            <Sec key={`sec-${sec.key}`} title={sec.name} count="plan section" open={false} attention={highlight?.has(sec.key)}>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.6, padding: "2px 2px 6px" }}>
+                {sec.blurb || "Documented by the planner during this stage."}
+              </div>
+            </Sec>
+          );
+          let shown: ReactNode[];
+          if (sections) {
+            // blueprint order: dedicated node(s) when the key has them, else a generic card
+            shown = sections.flatMap(sec => {
+              const ded = sectionNodes.filter(s => s.stage === sec.key).map(s => s.node);
+              return ded.length ? ded : [genericNode(sec)];
+            });
+          } else if (sectionKeys) {
+            shown = sectionKeys.flatMap(k => sectionNodes.filter(s => s.stage === k).map(s => s.node));
+          } else {
+            shown = sectionNodes.map(s => s.node);
+          }
+          return shown;
+        })()}
       </div>
 
       {viewing && (

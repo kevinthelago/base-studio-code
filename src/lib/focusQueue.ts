@@ -62,6 +62,29 @@ export function shouldFocus(role: string | undefined, target: FocusTarget): bool
   }
 }
 
+// ── Configurable auto-focus modes (#434) ──────────────────────────────────────
+//
+// Controls WHEN focus auto-advances after you send a message to the active pane.
+// Replaces the old `autoAdvanceOnReply` boolean (still exported for back-compat).
+
+export type ConsoleAutoFocusMode =
+  | "cycle-on-reply" // advance to the next queued pane each time you reply (was `true`)
+  | "off";           // no automatic advance; use Ctrl+Shift+N manually (was `false`)
+
+/** The presets, in display order — for a picker control. */
+export const AUTO_FOCUS_MODES: ConsoleAutoFocusMode[] = ["cycle-on-reply", "off"];
+
+/** Default auto-focus mode: cycle on reply (the original behavior). */
+export const DEFAULT_AUTO_FOCUS_MODE: ConsoleAutoFocusMode = "cycle-on-reply";
+
+/** Human label for an auto-focus mode. */
+export function autoFocusModeLabel(m: ConsoleAutoFocusMode): string {
+  switch (m) {
+    case "cycle-on-reply": return "Cycle on reply";
+    case "off":            return "Off (manual)";
+  }
+}
+
 const samePane = (a: QueuedPane, b: QueuedPane) => a.tab === b.tab && a.pane === b.pane;
 
 /**

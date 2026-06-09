@@ -24,6 +24,7 @@ import { SKILL_KPIS } from "./data/skills";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/detachWindow";
+import { accentVars } from "./lib/appearance";
 
 // ── New-tab dialog ────────────────────────────────────────────────────────────
 
@@ -159,10 +160,21 @@ export default function App() {
     activeRepoName,
     automationsTab,
     settingsSection,
-    projectsView, activeProjectName, projectsBoardTab,
+    projectsView,
     setBscBaseDir,
+    accent,
     hasHydrated,
   } = useAppStore();
+
+  // Apply the chosen accent to the design-token CSS vars at the document root,
+  // live on change and after persisted state rehydrates. Inline vars on :root
+  // override the stylesheet defaults; the default accent is a no-op restore.
+  useEffect(() => {
+    const { accent: a, accentDim } = accentVars(accent);
+    const root = document.documentElement;
+    root.style.setProperty("--accent", a);
+    root.style.setProperty("--accent-dim", accentDim);
+  }, [accent]);
 
   // Detached tab window (#430): when opened via tear-off (?detachTab=<id>), this
   // window renders only that console tab — pinned by stable id (resolved to an
@@ -224,12 +236,7 @@ export default function App() {
         break;
       case "projects":
         parts.push("Projects");
-        if (projectsView === "planning") {
-          parts.push("planning");
-        } else if (projectsView === "board" && activeProjectName) {
-          parts.push(activeProjectName);
-          parts.push(projectsBoardTab);
-        }
+        if (projectsView === "planning") parts.push("planning");
         break;
       case "skills":
         parts.push("Skills");

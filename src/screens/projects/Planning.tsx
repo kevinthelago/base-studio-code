@@ -5,8 +5,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../../store";
-import { projectRepoCwd, sanitizeProjectKey, resolveProjectKey } from "../../lib/projectPaths";
-import { ensureGithubProject, canLaunchTriage, triageLockReason } from "../../lib/projectSync";
+import { sanitizeProjectKey, resolveProjectKey } from "../../lib/projectPaths";
+import { ensureGithubProject, canLaunchTriage, triageLockReason, type TriageGateState } from "../../lib/projectSync";
 import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
@@ -21,15 +21,31 @@ import {
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, REPOS_KEY, SKILLS_KEY, parseReposFile, titleForKey, groupSections, parseSectionKey,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, REPOS_KEY, SKILLS_KEY, parseReposFile, titleForKey, groupSections,
   parseFleetFile,
 } from "./planSections";
 import { parseSkillsFile } from "../../lib/skills";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
-import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
-import { featureSectionsToIssues, featureSlug, parseFeatureSection } from "./planFeatures";
+import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, validateIssues } from "./planIssues";
+import { PlanStageBar } from "./PlanStageBar";
+import { derivePlanStageState, planStateToSignals } from "./planStageDerive";
+import { isGateBlocked } from "./pipelineRuntime";
+import { defaultStageConfig, enabledOrderedStages } from "./planStages";
+import { pipelineScreen, type PipelineScreenComponent } from "./pipelineScreens";
+import { RENDER_PREVIEW_ID } from "./renderPreview";
+import { dispatchPipelineCommand } from "./pipelineCommands";
+import { parsePipelineTags, stripPipelineTags } from "./pipelineTag";
+import {
+  blueprintToStageConfig, incompleteSections, planSectionsComplete, currentSection, mkSection,
+  type BlueprintSection, type IncompleteSection,
+} from "./blueprints";
+import { writeBlueprintSkillContext } from "./blueprintSkills";
+import { featureSectionsToIssues, featureSlug, parseFeatureSection, incompleteFeatureSections } from "./planFeatures";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { ProjectPane, type SyncState } from "./ProjectPane";
+import { Dialog } from "../../components/Dialog";
+import { parseUiPreviewTags, stripUiPreviewTags } from "./uiPreviewTag";
+import { dispatchGradePlan } from "./gradePlan";
 import { buildProjectPaneData } from "./projectPaneData";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -67,142 +83,140 @@ function stripAnsi(s: string): string {
 }
 
 
-interface PlanningRepoStripProps {
-  projectId: string;
-  repos: string[];
+interface PlanningRepoCloneState {
+  /** Full_names known to be cloned into the project hub. */
+  clonedNames: string[];
+  /** Full_names with a clone in flight. */
+  cloning: Set<string>;
+  /** Per-repo clone error message, keyed by full_name. */
+  cloneErrors: Record<string, string>;
+  /** Start (or retry) cloning a single repo by full_name. */
+  cloneRepo: (fullName: string) => void;
 }
 
-function PlanningRepoStrip({ projectId, repos }: PlanningRepoStripProps) {
-  const { projectLocalRepos, bscBaseDir } = useAppStore();
+/**
+ * Auto-clone every linked repo into the app-managed project directory as soon as
+ * it appears, reporting per-repo clone status. Headless — the planning header's
+ * repo pill surfaces the state (and triggers {@link PlanningRepoCloneState.retryFailed}
+ * on click). Idempotent: a repo already cloned or mid-clone is skipped, so it is
+ * safe to call with the canonical `publishRepos` set on every render.
+ */
+function usePlanningRepoClone(projectId: string, repos: string[]): PlanningRepoCloneState {
+  const projectLocalRepos = useAppStore(s => s.projectLocalRepos);
   const clonedNames = projectLocalRepos[projectId] ?? [];
-  const [cloning, setCloning]     = useState<Set<string>>(new Set());
+  const [cloning, setCloning] = useState<Set<string>>(new Set());
   const [cloneErrors, setCloneErrors] = useState<Record<string, string>>({});
-  const [expanded, setExpanded]   = useState(false);
-  // Ref guards against starting the same clone twice when `repos` grows.
+  // Ref guards against starting the same clone twice across renders.
   const cloningRef = useRef<Set<string>>(new Set());
-  const multi = repos.length > 1;
 
-  // Auto-clone every repo into the app-managed directory as soon as it appears.
+  const clone = (fullName: string) => {
+    cloningRef.current.add(fullName);
+    setCloning(s => new Set([...s, fullName]));
+    setCloneErrors(e => { const n = { ...e }; delete n[fullName]; return n; });
+    invoke<string>("clone_repo", { project: projectId, fullName })
+      .then(() => useAppStore.getState().addProjectRepo(projectId, fullName))
+      .catch(e => setCloneErrors(prev => ({ ...prev, [fullName]: String(e) })))
+      .finally(() => {
+        cloningRef.current.delete(fullName);
+        setCloning(s => { const n = new Set(s); n.delete(fullName); return n; });
+      });
+  };
+
+  // Auto-clone as soon as a repo appears. Keyed on the joined repo set (not the
+  // array identity) so a new repo_link / repos.json entry triggers a pass without
+  // re-running every render — and a failed clone is left for explicit retry rather
+  // than hammered each render.
+  const repoKey = repos.join(",");
   useEffect(() => {
     if (!projectId) return;
     const currentCloned = new Set(useAppStore.getState().projectLocalRepos[projectId] ?? []);
-    const unresolved = repos.filter(r => !currentCloned.has(r) && !cloningRef.current.has(r));
-    for (const fullName of unresolved) {
-      cloningRef.current.add(fullName);
-      setCloning(s => new Set([...s, fullName]));
-      invoke<string>("clone_repo", { project: projectId, fullName })
-        .then(() => {
-          useAppStore.getState().addProjectRepo(projectId, fullName);
-        })
-        .catch(e => setCloneErrors(prev => ({ ...prev, [fullName]: String(e) })))
-        .finally(() => {
-          cloningRef.current.delete(fullName);
-          setCloning(s => { const n = new Set(s); n.delete(fullName); return n; });
-        });
+    for (const fullName of repos) {
+      if (!currentCloned.has(fullName) && !cloningRef.current.has(fullName)) clone(fullName);
     }
-  // repos in deps so new repo_link entries trigger a clone pass.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, repos]);
+  }, [projectId, repoKey]);
 
-  async function handleClone(fullName: string) {
-    setCloning(s => new Set([...s, fullName]));
-    setCloneErrors(e => { const n = { ...e }; delete n[fullName]; return n; });
-    try {
-      await invoke<string>("clone_repo", { project: projectId, fullName });
-      useAppStore.getState().addProjectRepo(projectId, fullName);
-    } catch (e) {
-      setCloneErrors(prev => ({ ...prev, [fullName]: String(e) }));
-    } finally {
-      setCloning(s => { const n = new Set(s); n.delete(fullName); return n; });
-    }
-  }
+  return { clonedNames, cloning, cloneErrors, cloneRepo: clone };
+}
 
-  if (repos.length === 0) return null;
+// Header repo pill: shows the repo count + clone status; click to reveal the
+// per-repo list with clone/retry actions (replaces the old always-visible strip).
+function RepoPill({ repos, state }: { repos: string[]; state: PlanningRepoCloneState }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
 
-  const resolvedCount = repos.filter(r => clonedNames.includes(r)).length;
-  const failedRepos   = repos.filter(r => !!cloneErrors[r] && !cloning.has(r));
-
-  function RepoRow({ fullName }: { fullName: string }) {
-    const isCloned  = clonedNames.includes(fullName);
-    const isCloning = cloning.has(fullName);
-    const err       = cloneErrors[fullName];
-    const localPath = projectRepoCwd(bscBaseDir, projectId, fullName);
+  if (repos.length === 0) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <span style={{ color: "var(--fg-muted)" }}>{fullName}</span>
-        {isCloned ? (
-          <span title={localPath} style={{ color: "var(--success)", fontSize: 10 }}>
-            ● {fullName.split("/")[1]}
-          </span>
-        ) : isCloning ? (
-          <span style={{ color: "var(--accent)" }}>cloning…</span>
-        ) : (
-          <span
-            onClick={() => handleClone(fullName)}
-            style={{
-              padding: "1px 6px", borderRadius: 3,
-              background: "var(--bg-elev)", border: "1px solid var(--border)",
-              color: err ? "var(--danger)" : "var(--fg-muted)",
-              cursor: "pointer", fontSize: 10,
-            }}
-          >{err ? "retry clone" : "clone →"}</span>
-        )}
-      </div>
+      <span className="tag" title="Ask Claude to create or link repositories"
+        style={{ color: "var(--fg-dim)", opacity: 0.7 }}>no repos linked</span>
     );
   }
 
+  const clonedSet = new Set(state.clonedNames);
+  const clonedCount = repos.filter(r => clonedSet.has(r)).length;
+  const failed = repos.filter(r => state.cloneErrors[r] && !state.cloning.has(r));
+  const allCloned = clonedCount === repos.length;
+  const n = repos.length;
+  const noun = `repo${n === 1 ? "" : "s"}`;
+  const label =
+    failed.length > 0 ? `${n} ${noun} · clone failed`
+    : state.cloning.size > 0 ? `${n} ${noun} · cloning…`
+    : allCloned ? `${n} cloned ${noun}`
+    : clonedCount > 0 ? `${clonedCount}/${n} cloned`
+    : `${n} ${noun}`;
+
   return (
-    <div style={{ padding: "6px 24px 0", fontFamily: "var(--mono)", fontSize: 10.5 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ color: "var(--fg-dim)" }}>repos</span>
+    <span ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+      <span
+        className="tag"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          cursor: "pointer",
+          color: failed.length ? "var(--danger)" : allCloned ? "var(--success)" : undefined,
+          borderColor: failed.length ? "var(--danger)" : undefined,
+        }}
+      >{label} {open ? "▴" : "▾"}</span>
 
-        {multi ? (
-          <button
-            onClick={() => setExpanded(e => !e)}
-            style={{
-              background: "none", border: "none", padding: 0, cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 6,
-              fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
-            }}
-          >
-            <span style={{
-              display: "inline-block", fontSize: 8, color: "var(--fg-dim)",
-              transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
-              transition: "transform 0.15s",
-            }}>▼</span>
-            <span>
-              {repos.length} repositories
-              {resolvedCount > 0 && <span style={{ color: "var(--success)" }}> · {resolvedCount} cloned</span>}
-              {cloning.size > 0 && <span style={{ color: "var(--accent)" }}> · cloning…</span>}
-            </span>
-          </button>
-        ) : (
-          <RepoRow fullName={repos[0]} />
-        )}
-
-        {failedRepos.length > 0 && (
-          <span
-            onClick={() => failedRepos.forEach(r => handleClone(r))}
-            style={{
-              padding: "1px 8px", borderRadius: 3,
-              background: "var(--bg-elev)", border: "1px solid var(--border)",
-              color: "var(--danger)", cursor: "pointer", fontSize: 10,
-              fontFamily: "var(--mono)",
-            }}
-          >retry failed →</span>
-        )}
-      </div>
-
-      {multi && expanded && (
+      {open && (
         <div style={{
-          marginTop: 6, paddingLeft: 16,
-          display: "flex", flexDirection: "column", gap: 5,
-          borderLeft: "2px solid var(--border-soft)",
+          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 50,
+          minWidth: 240, maxWidth: 380, padding: 6,
+          background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
+          borderRadius: 8, boxShadow: "0 10px 30px rgba(0,0,0,.4)",
+          display: "flex", flexDirection: "column", gap: 2,
+          fontFamily: "var(--mono)", fontSize: 10.5,
         }}>
-          {repos.map(fullName => <RepoRow key={fullName} fullName={fullName} />)}
+          {repos.map(r => {
+            const isCloned = clonedSet.has(r);
+            const isCloning = state.cloning.has(r);
+            const err = state.cloneErrors[r];
+            return (
+              <div key={r} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 6px" }}>
+                <span title={r} style={{ flex: 1, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r}</span>
+                {isCloned ? (
+                  <span style={{ color: "var(--success)" }}>● cloned</span>
+                ) : isCloning ? (
+                  <span style={{ color: "var(--accent)" }}>cloning…</span>
+                ) : (
+                  <span onClick={() => state.cloneRepo(r)}
+                    style={{ cursor: "pointer", color: err ? "var(--danger)" : "var(--accent)" }}>
+                    {err ? "retry clone →" : "clone →"}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
-    </div>
+    </span>
   );
 }
 // ── GitHub structure card ─────────────────────────────────────────────────────
@@ -424,14 +438,22 @@ export function Planning({ visible }: { visible: boolean }) {
     projectLocalRepos,
     planSections, planConfirmedSections,
     planFleet,
+    planAutomations,
+    planStageConfig,
+    uiScreens,
+    uiApproved,
+    blueprints,
+    activeBlueprintId,
+    stagePipelineRuns,
     projectKeyAlias,
     pinnedContext,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow, setPlanAgentStreamStrategy,
     setPlanDirectorDrive,
     togglePinnedContext,
-    addProjectRepo, fleetStartProject, removeDraftProject,
+    addProjectRepo, fleetStartProject, removeDraftProject, clearPlan,
     agentProfiles,
     commands, schedules,
+    pendingPlannerPrompt, clearPlannerPrompt,
   } = useAppStore();
 
   // The session key (set once at session entry) is the single source of truth
@@ -451,6 +473,15 @@ export function Planning({ visible }: { visible: boolean }) {
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
   const paneId = `planning_${effectiveProjectId.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 80)}`;
+
+  // Deliver a queued planner prompt (e.g. the file-intake "Route" action) into the live
+  // planner PTY — a deliberate, user-triggered inject — then clear it. (#604)
+  const queuedPrompt = pendingPlannerPrompt[effectiveProjectId];
+  useEffect(() => {
+    if (!queuedPrompt) return;
+    invoke("pty_write", { paneId, data: `${queuedPrompt}\r` }).catch(console.error);
+    clearPlannerPrompt(effectiveProjectId);
+  }, [queuedPrompt, paneId, effectiveProjectId, clearPlannerPrompt]);
 
   // Prefer activeProjectRepos (populated from board items) but fall back to
   // any previously-cloned repos for this project if the board hasn't loaded yet.
@@ -490,6 +521,10 @@ export function Planning({ visible }: { visible: boolean }) {
     ...(planningRepo ? [planningRepo] : []),
   ])].filter(Boolean);
 
+  // Auto-clone the canonical repo set into the project hub as it grows; the header
+  // repo pill surfaces the per-repo clone status (click to reveal the list).
+  const repoClone = usePlanningRepoClone(effectiveProjectId, publishRepos);
+
   // Sections are DYNAMIC: derived from whatever section files Claude has written
   // (surfaced via the store), not a fixed list. The store — populated by the
   // <plan_update> tag parser and the 2s file poll — is the single source of
@@ -523,10 +558,6 @@ export function Planning({ visible }: { visible: boolean }) {
     });
   }, [savedSections, confirmedSet]);
 
-  // Tier grouping for rendering, plus a key→section lookup.
-  const sectionByKey = useMemo(() => new Map(sections.map(s => [s.k, s])), [sections]);
-  const { project: projectKeys, repos: repoGroups } =
-    useMemo(() => groupSections(sections.map(s => s.k)), [sections]);
   // Sync the planner's commands.json (the reliable channel — surfaced by the file
   // poll like plan sections, so it can't be lost in the PTY stream) into the
   // per-project/repo command store. Additive: file commands merge in; manual
@@ -580,6 +611,112 @@ export function Planning({ visible }: { visible: boolean }) {
     () => featureSectionsToIssues(sections, publishRepos),
     [sections, publishRepos],
   );
+  // Feature sections that failed the discovery gate (#490) — blocked from issue
+  // generation until they have behavior + acceptance. Surfaced as a UI warning.
+  const incompleteFeatures = useMemo(
+    () => incompleteFeatureSections(sections),
+    [sections],
+  );
+
+  // Modular planning stages (#512): the per-project config (defaulting to all-on)
+  // and the live snapshot the stage gates read, feeding the macro progress bar.
+  // The UI stage is gated on the blueprint (requiresUi = the `ui` stage being enabled,
+  // #544) and completes when the generated preview is approved (uiApproved). The other
+  // explicit ack/profile signals are wired in later slices.
+  // Seed a new project's stage config from the active blueprint on first plan, so it
+  // inherits the chosen preset, then diverges per-project as the user edits stages.
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    const st = useAppStore.getState();
+    if (st.planStageConfig[effectiveProjectId]) return; // already has its own copy
+    const active = st.blueprints.find((b) => b.id === st.activeBlueprintId);
+    if (active) st.setProjectStageConfig(effectiveProjectId, blueprintToStageConfig(active));
+  }, [effectiveProjectId]);
+
+  // Write the active blueprint's attached skills/knowledge to the hub's skills.md so the
+  // planner can read the context for the current stage (#636). Re-writes when the
+  // blueprint (or its attachments) changes; no-op when nothing is attached.
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    const st = useAppStore.getState();
+    const active = st.blueprints.find((b) => b.id === st.activeBlueprintId);
+    if (active) void writeBlueprintSkillContext({ projectKey: effectiveProjectId, blueprint: active, skills: st.skills, kb: st.kbBlocks });
+  }, [effectiveProjectId, activeBlueprintId, blueprints]);
+
+  const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
+  // A project "needs UI" when its blueprint enables the `ui` stage (#544); the UI stage
+  // then shows in the N-bar and completes once every declared screen is approved (#546).
+  const requiresUi = stageConfig.enabled.ui;
+  // Per-screen progress: total = screens the planner declared, approved = those signed
+  // off (intersected with the declared set, so a removed screen never inflates approval).
+  const uiCounts = useMemo(() => {
+    if (!requiresUi) return { approved: 0, total: 0 };
+    const declared = uiScreens[effectiveProjectId] ?? [];
+    const approvedSet = new Set(uiApproved[effectiveProjectId] ?? []);
+    return { approved: declared.filter((s) => approvedSet.has(s)).length, total: declared.length };
+  }, [requiresUi, uiScreens, uiApproved, effectiveProjectId]);
+  // The enabled stage ids (in order) for a project — passed to setup_workspaces so the
+  // planner's CLAUDE.md is scoped to the blueprint's stages (#542). Read fresh.
+  const stageIdsFor = (key: string) =>
+    enabledOrderedStages(useAppStore.getState().planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
+  const stageState = useMemo(() => {
+    const streams = planFleet[effectiveProjectId]?.streams ?? [];
+    const issueCount =
+      parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "").length + featureIssues.length;
+    return derivePlanStageState({
+      sections: sections.map(s => ({ k: s.k, state: s.state })),
+      repoCount: publishRepos.length,
+      issueCount,
+      fleetStreams: streams.length,
+      fleetProfilesComplete: streams.length > 0 && streams.every(st => agentProfiles.some(p => p.id === st.id)),
+      automationsAck: (planAutomations[effectiveProjectId]?.length ?? 0) > 0,
+      skillsAck: false,
+      requiresUi,
+      ui: uiCounts,
+    });
+  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts]);
+
+  // The authoritative plan sections come from the BLUEPRINT object — not the hardcoded
+  // PLAN_STAGES enum (#…). Each section carries its own declarative gate, applicability,
+  // deps, and pipelines, so a built-in or a cloud-distributed section is treated the
+  // same. The N-bar, readiness, current-section, and "what's incomplete" all read these.
+  // Fallback (no active blueprint) synthesizes built-in sections from the project's
+  // enabled stage ids so the page still renders.
+  const planSecs = useMemo<BlueprintSection[]>(() => {
+    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    if (bp) return bp.sections;
+    return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
+  }, [blueprints, activeBlueprintId, stageConfig]);
+
+  // The flat, serializable signal bag the declarative section gates read.
+  const signals = useMemo(() => planStateToSignals(stageState), [stageState]);
+
+  // Sections blocked by an unpassed gate pipeline (#532), straight from the blueprint.
+  const blockedStages = useMemo(() => {
+    const runs = stagePipelineRuns[effectiveProjectId] ?? {};
+    const set = new Set<string>();
+    for (const sec of planSecs) {
+      if (isGateBlocked(sec.pipelines, runs)) set.add(sec.key);
+    }
+    return set;
+  }, [planSecs, stagePipelineRuns, effectiveProjectId]);
+
+  // The current (reached) planning section — drives which pipelines' second screens show.
+  const currentStageId = useMemo(() => currentSection(planSecs, signals)?.key, [planSecs, signals]);
+
+  // Pipeline second screens for the reached section: its enabled pipelines that declare
+  // a screen. Sections own the page; pipelines render their own second surface here.
+  const stageScreens = useMemo(() => {
+    const section = planSecs.find(s => s.key === currentStageId && s.enabled);
+    const out: { uid: string; id: string; name: string; Screen: PipelineScreenComponent }[] = [];
+    for (const p of section?.pipelines ?? []) {
+      if (!p.enabled) continue;
+      const Screen = pipelineScreen(p.id);
+      if (Screen) out.push({ uid: p.uid, id: p.id, name: p.name, Screen });
+    }
+    return out;
+  }, [planSecs, currentStageId]);
+
   const sectionsForGh = useMemo<Section[]>(() => {
     if (featureIssues.length === 0) return sections;
     const existing = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
@@ -620,13 +757,64 @@ export function Planning({ visible }: { visible: boolean }) {
     }),
     [planFleet, effectiveProjectId, agentProfiles, sections, featureIssues, publishRepos, pinnedContext, ghProgress],
   );
-  const [restarting, setRestarting] = useState(false);
 
-  const [docsSync, setDocsSync] = useState<SyncState>("idle");
+  // Run the grade-plan pipeline whenever the structure inputs actually change, so the
+  // always-visible ProjectPane's readiness report stays current (#445 → pipeline). The
+  // pipeline is the single source of truth — the pane reads it from sectionGrades.
+  //
+  // Gate on a stable CONTENT signature, not on the input references: publishRepos is a
+  // fresh array every render, so depending on it directly would re-fire the effect every
+  // render → dispatch → store write → re-render → … an infinite loop that floods the
+  // persist layer (storage.setItem/save) until the process OOMs.
+  const gradeIssuesContent = sections.find(s => s.k === "issues")?.content ?? "";
+  const gradePhasesContent = sections.find(s => s.k === "phases")?.content ?? "";
+  const gradeInputSig = JSON.stringify([effectiveProjectId, publishRepos, gradeIssuesContent, gradePhasesContent, featureIssues]);
+  useEffect(() => {
+    const issues = [...parseIssuesFile(gradeIssuesContent), ...featureIssues];
+    const phases = parsePhases(gradePhasesContent);
+    void dispatchGradePlan({ projectKey: effectiveProjectId, issues, phases, repos: publishRepos });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gradeInputSig]);
+
+  const [restarting, setRestarting] = useState(false);
+  // Restart is destructive (ends the live session), so it's gated behind a confirm (#548).
+  const [confirmRestart, setConfirmRestart] = useState(false);
+  // Signature of the inputs that were active when setup_workspaces last ran (#175).
+  // Compared against currentSig to show the "context updated" badge.
+  const [lastSetupSig, setLastSetupSig] = useState<string | null>(null);
+  const [clearPlanArmed, setClearPlanArmed] = useState(false);
+  // Third pane: the live UI preview (#530). Toggled here; #531 opens it at the UI stage.
+  const [showPreview, setShowPreview] = useState(false);
+
   const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
+
+  // Every enabled, applicable blueprint section complete/N/A → ready to triage (#551).
+  const planReady = useMemo(() => planSectionsComplete(planSecs, signals), [planSecs, signals]);
+
+  // Signature of the current inputs — changes when repos/kb/stages change (#175).
+  // Compared against lastSetupSig to decide whether to show the "context updated" badge.
+  const currentSig = useMemo(() => {
+    const repos  = [...linkedRepos].sort().join(",");
+    const kb     = kbBlocks.map(b => b.id).sort().join(",");
+    const stages = enabledOrderedStages(stageConfig).map(s => s.id).sort().join(",");
+    return `v1|${repos}|${kb}|${stages}`;
+  }, [linkedRepos, kbBlocks, stageConfig]);
+  const contextStale = lastSetupSig !== null && currentSig !== lastSetupSig;
+
   const [triaging, setTriaging] = useState(false);
+  // Worktree creation error shown inline by the Triage button (#551).
+  const [triageError, setTriageError] = useState<string | null>(null);
+  // Locked-Triage feedback (#…): which sections to flag, and the "what's incomplete"
+  // banner. Clicking a locked Triage reveals exactly what's left to finish.
+  const [highlightSections, setHighlightSections] = useState<Set<string>>(new Set());
+  const [triageBlock, setTriageBlock] = useState<{ headline: string; items: IncompleteSection[] } | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (highlightTimer.current) clearTimeout(highlightTimer.current); }, []);
+  // Once the plan is ready the feedback is stale — clear it.
+  useEffect(() => { if (planReady) { setTriageBlock(null); setHighlightSections(new Set()); } }, [planReady]);
   type PublishPhase = "idle" | "running" | "done" | "error";
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
+  const [publishEarlyError, setPublishEarlyError] = useState<string | null>(null);
 
   // The section Claude is currently discussing, driven by <plan_focus> tags.
   // Null until the first focus tag arrives. Highlights the matching card.
@@ -754,7 +942,7 @@ export function Planning({ visible }: { visible: boolean }) {
           setRepoLinkFullNames(prev =>
             prev.includes(fullName) ? prev : [...prev, fullName]
           );
-          // PlanningRepoStrip auto-clones when repoLinkFullNames grows — no action needed here.
+          // usePlanningRepoClone auto-clones when the repo set grows — no action needed here.
           foundLink = true;
         }
         if (foundLink) {
@@ -762,6 +950,37 @@ export function Planning({ visible }: { visible: boolean }) {
             new RegExp(`<repo_link\\s+full_name=${Q}[^\\u0022\\u201c\\u201d]+${Q}\\s*\\/>`, 'g'),
             ""
           );
+        }
+
+        // ── <ui_preview screen="..." mode="2d|3d" /> ─────────────────────────
+        // The render-preview trigger (#533): read the project's .ui-skeleton from
+        // disk and render the named screen live in the third pane. Last tag wins.
+        const previews = parseUiPreviewTags(bufRef.current);
+        if (previews.length > 0) {
+          bufRef.current = stripUiPreviewTags(bufRef.current);
+          const last = previews[previews.length - 1];
+          // Register every declared screen so the UI stage's denominator is complete
+          // even when only the last tag is rendered (#546).
+          for (const p of previews) useAppStore.getState().addUiScreen(projIdSnap, p.screen);
+          setShowPreview(true);
+          // <ui_preview> is an alias for render-preview's `run`: route it through the
+          // command bus so it shares the single command path (the pipeline owns reading
+          // the skeleton + dispatching the render).
+          void dispatchPipelineCommand(RENDER_PREVIEW_ID, "run", {
+            projectKey: projIdSnap, args: { screen: last.screen, mode: last.mode },
+          });
+        }
+
+        // ── <pipeline id="…" cmd="…" …args /> ─────────────────────────────────
+        // The standardized command surface (#…): Claude drives any registered pipeline
+        // through the bus. <ui_preview> above is the render-preview alias; every other
+        // pipeline command flows through here. The pipeline owns what each command does.
+        const pipeTags = parsePipelineTags(bufRef.current);
+        if (pipeTags.length > 0) {
+          bufRef.current = stripPipelineTags(bufRef.current);
+          for (const t of pipeTags) {
+            void dispatchPipelineCommand(t.id, t.cmd, { projectKey: projIdSnap, args: t.args });
+          }
         }
 
         // ── <kb_assign id="block-id" /> ───────────────────────────────────────
@@ -905,11 +1124,17 @@ export function Planning({ visible }: { visible: boolean }) {
           projectKey:    projIdSnap,
           githubLogin:   ghLoginSnap,
           githubName:    ghNameSnap,
+          enabledStages: stageIdsFor(projIdSnap),
         },
       ).catch((e: unknown) => {
         console.error("workspace setup failed:", e);
         return null;
       });
+      // Record which inputs were used so the "context updated" badge activates when
+      // they later diverge from this baseline (#175).
+      setLastSetupSig(
+        `v1|${[...repoSnapshot].sort().join(",")}|${kbSnapshot.map(b => b.id).sort().join(",")}|${stageIdsFor(projIdSnap).sort().join(",")}`
+      );
 
       // Launch claude inside the isolated planning directory.
       // Inject the stored GitHub token so `gh` CLI and direct API calls work
@@ -956,20 +1181,37 @@ export function Planning({ visible }: { visible: boolean }) {
       }
     });
 
-    const ro = new ResizeObserver(() => {
-      // No visibility guard: a hidden panel is display:none → zero client size,
-      // already skipped below. Guarding on a `visible` ref instead raced with
-      // React's commit and dropped the first fit after un-hiding, leaving the
-      // terminal smaller than its container.
+    // Coalesce rapid size changes (a pipeline screen mounting/unmounting, dragging the
+    // sections divider) into ONE fit after the layout settles — otherwise the observer
+    // fires per intermediate frame and each fit reflows xterm + sends a pty_resize,
+    // making the terminal re-render repeatedly while the neighbouring pane animates in.
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastCols = term.cols, lastRows = term.rows;
+    let lastW = 0, lastH = 0;
+    const settleFit = () => {
       const { clientWidth, clientHeight } = el;
+      // No visibility guard: a hidden panel is display:none → zero client size, skipped
+      // here. (Guarding on a `visible` ref raced with React's commit and dropped the
+      // first fit after un-hiding, leaving the terminal smaller than its container.)
       if (clientWidth === 0 || clientHeight === 0) return;
+      if (clientWidth === lastW && clientHeight === lastH) return; // size didn't actually change
+      lastW = clientWidth; lastH = clientHeight;
       fitAddon.fit();
-      invoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+      // Only round-trip to the PTY when the grid actually changed.
+      if (term.cols !== lastCols || term.rows !== lastRows) {
+        lastCols = term.cols; lastRows = term.rows;
+        invoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+      }
+    };
+    const ro = new ResizeObserver(() => {
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(settleFit, 90);
     });
     ro.observe(el);
 
     return () => {
       if (initSendTimer.current !== null) clearTimeout(initSendTimer.current);
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
       unlistenData.current?.();
       unlistenExit.current?.();
       ro.disconnect();
@@ -1114,6 +1356,15 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [visible, ghStructSig]);
 
 
+  // Seed lastSetupSig from the signature file written by setup_workspaces (#175).
+  // Uses `prev ?? stored` so we don't overwrite a value the mount effect already set.
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    invoke<string>("get_context_signature", { projectKey: effectiveProjectId })
+      .then(stored => { if (stored) setLastSetupSig(prev => prev ?? stored); })
+      .catch(() => {});
+  }, [effectiveProjectId]);
+
   // Re-sync CLAUDE.md whenever a repo resolves after the initial mount.
   // kbBlocks is captured via ref to avoid including it in deps (it's large and
   // stable — we don't want to re-run on every KB edit).
@@ -1139,6 +1390,7 @@ export function Planning({ visible }: { visible: boolean }) {
       projectKey:    effectiveProjectId,
       githubLogin:   useAppStore.getState().githubUser?.login ?? "",
       githubName:    useAppStore.getState().githubUser?.name  ?? "",
+      enabledStages: stageIdsFor(effectiveProjectId),
     }).catch(console.error);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedRepos]);
@@ -1147,6 +1399,7 @@ export function Planning({ visible }: { visible: boolean }) {
   async function handleRestart() {
     const term = termRef.current;
     if (!term || restarting) return;
+    setConfirmRestart(false);
     setRestarting(true);
     bufRef.current = "";
     term.clear();
@@ -1169,8 +1422,13 @@ export function Planning({ visible }: { visible: boolean }) {
         projectKey: effectiveProjectId,
         githubLogin: store.githubUser?.login ?? "",
         githubName:  store.githubUser?.name  ?? "",
+        enabledStages: stageIdsFor(effectiveProjectId),
       },
     ).catch((e: unknown) => { console.error("restart setup failed:", e); return null; });
+    // Record the inputs used so the badge resets after restart (#175).
+    setLastSetupSig(
+      `v1|${[...linkedRepos].sort().join(",")}|${kbBlocks.map(b => b.id).sort().join(",")}|${stageIdsFor(effectiveProjectId).sort().join(",")}`
+    );
     const token = store.githubToken;
     const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
     await invoke("pty_create", {
@@ -1178,38 +1436,10 @@ export function Planning({ visible }: { visible: boolean }) {
       cols: term.cols,
       rows: term.rows,
       cwd: paths?.planning_dir ?? "",
-      initCmd: "claude",
+      initCmd: "claude --continue 2>/dev/null || claude",
       env: ghEnv,
     }).catch(console.error);
     setRestarting(false);
-  }
-
-  // Publish the plan to GitHub: repositories → project board → milestones →
-  // issues. Every step is idempotent (check-then-create) so re-running acts as a
-  // sync. Status is reported through ghStatus, keyed by the buildGhStructure ids,
-  // so the GitHubStructureCard reflects each object as it is created.
-  // Context Files → push a consolidated PROJECT_PLAN.md into every repo's .github/.
-  async function handleSyncDocs() {
-    if (!githubToken || publishRepos.length === 0) return;
-    const token = githubToken;
-    setDocsSync("running");
-    try {
-      const put = (path: string, body: unknown) => invoke("github_put", { token, path, body });
-      const rest = <T,>(path: string) => invoke<T>("github_request", { token, path });
-      const parts = [`# ${projectTitle} — Project Plan\n`];
-      for (const s of sections) parts.push(`\n## ${s.title || s.k}\n\n${s.content}\n`);
-      const content = btoa(unescape(encodeURIComponent(parts.join("\n"))));
-      for (const repo of publishRepos) {
-        const path = `repos/${repo}/contents/.github/PROJECT_PLAN.md`;
-        let sha: string | undefined;
-        try { const ex = await rest<{ sha?: string }>(path); sha = ex?.sha; } catch { /* file absent */ }
-        await put(path, { message: "docs: sync project plan", content, ...(sha ? { sha } : {}) });
-      }
-      setDocsSync("done");
-    } catch (e) {
-      console.error("sync docs failed:", e);
-      setDocsSync("error");
-    }
   }
 
   // Agents → ensure each fleet stream's `stream:<id>` label exists in every repo.
@@ -1234,6 +1464,17 @@ export function Planning({ visible }: { visible: boolean }) {
     }
   }
 
+  // Locked-Triage feedback: surface exactly what's left. Flags the incomplete sections
+  // (pulse in the N-bar + the right pane) and shows a banner listing each with its gate
+  // reason, plus the top-level lock reason (publish / repos / fleet) as the headline.
+  function revealIncomplete(gate: TriageGateState) {
+    const items = incompleteSections(planSecs, signals);
+    setHighlightSections(new Set(items.map(i => i.key)));
+    setTriageBlock({ headline: triageLockReason(gate) ?? "Not ready to triage", items });
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightSections(new Set()), 3200);
+  }
+
   // Header button → clone the repos and launch the planned agent fleet (recommended workers + director).
   async function launchTriage() {
     const fleet = planFleet[effectiveProjectId];
@@ -1244,7 +1485,9 @@ export function Planning({ visible }: { visible: boolean }) {
       hasRepos: publishRepos.length > 0,
       hasFleet: !!fleet && fleet.streams.length > 0,
       busy: triaging,
+      planReady,
     })) return;
+    setTriageError(null);
     setTriaging(true);
     try {
       await Promise.all(publishRepos.map(fullName =>
@@ -1257,14 +1500,22 @@ export function Planning({ visible }: { visible: boolean }) {
       // the fleet back with the now-assigned profile ids.
       useAppStore.getState().generateFleetProfiles(effectiveProjectId);
       const launchPlan = useAppStore.getState().planFleet[effectiveProjectId] ?? fleet;
-      // Create each worker's git worktree (idempotent) before the panes spawn,
-      // so every agent's cwd exists and it starts in its own checkout+branch.
-      // Without this the worktree-based cwd does not exist and the agent lands
-      // in a fallback dir (#359).
-      await Promise.all(launchPlan.streams.map(st =>
-        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
-          .catch(e => console.error(`worktree ${st.id} failed:`, e)),
-      ));
+      // Create each worker's git worktree (fail closed — #551/#359): if any
+      // worktree can't be created, abort the launch so no agent starts in a
+      // fallback dir.
+      const worktreeResults = await Promise.all(
+        launchPlan.streams.map(st =>
+          invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
+            .then(path => ({ id: st.id, path, err: null as string | null }))
+            .catch(e => ({ id: st.id, path: null as string | null, err: String(e) })),
+        ),
+      );
+      const failed = worktreeResults.filter(r => r.err || !r.path);
+      if (failed.length > 0) {
+        const first = failed[0];
+        setTriageError(`${first.id}: ${first.err ?? "empty path"}`);
+        return;
+      }
       // Give the director its standing protocol at the hub (#375) so it answers worker
       // questions via bsc-answer and merges green PRs.
       if (launchPlan.director.enabled) {
@@ -1279,6 +1530,10 @@ export function Planning({ visible }: { visible: boolean }) {
     }
   }
 
+  // Publish the plan to GitHub: repositories → project board → milestones →
+  // issues. Every step is idempotent (check-then-create) so re-running acts as a
+  // sync. Status is reported through ghStatus, keyed by the buildGhStructure ids,
+  // so the GitHubStructureCard reflects each object as it is created.
   async function handlePublish() {
     if (!githubToken || publishRepos.length === 0) return;
     const token = githubToken;
@@ -1302,7 +1557,25 @@ export function Planning({ visible }: { visible: boolean }) {
     });
     (fleet?.streams ?? []).forEach(st => { status[`stream:${st.id}`] = { status: "planned" }; });
     setGhStatus({ ...status });
+
+    // Pre-flight: validate plan issues BEFORE any GitHub mutation (#550).
+    const _preFlight = [
+      ...parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? ""),
+      ...featureSectionsToIssues(sections, repos),
+    ];
+    const _phaseNames = phases.map(p => p.name);
+    if (_preFlight.length > 0 && _phaseNames.length > 0) {
+      const { unknownPhases } = validateIssues(_preFlight, _phaseNames);
+      if (unknownPhases.length > 0) {
+        const detail = unknownPhases.map(u => `${u.ref}: phase "${u.phase}" not matched`).join("; ");
+        setPublishPhase("error");
+        setPublishEarlyError(`Unresolved phase tags: ${detail}`);
+        return;
+      }
+    }
+
     setPublishPhase("running");
+    setPublishEarlyError(null);
 
     let anyError = false;
     const upd = (id: string, patch: Partial<GhItemState>) => {
@@ -1612,11 +1885,11 @@ _Auto-generated by base-studio-code planner._`,
   return (
     <>
       {/* Header */}
-      <div style={{ padding: "14px 24px 0", display: "flex", alignItems: "flex-start", gap: 14 }}>
+      <div style={{ padding: "12px 24px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <button
-              onClick={() => setProjectsView(isExisting ? "board" : "list")}
+              onClick={() => setProjectsView("list")}
               style={{
                 background: "none", border: "none", cursor: "pointer",
                 fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
@@ -1647,17 +1920,32 @@ _Auto-generated by base-studio-code planner._`,
                 />
               )
             }
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
+              {confirmedCount}/{sections.length} sections confirmed
+            </span>
             <span className="tag amber">● {isExisting ? "expanding" : "drafting"}</span>
-            {publishRepos.length === 1 && <span className="tag">{publishRepos[0]}</span>}
-            {publishRepos.length > 1 && (
-              <span className="tag" title={publishRepos.join("\n")}>{publishRepos.length} repos</span>
-            )}
-          </div>
-          <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
-            claude cli · interactive pty · {confirmedCount}/{sections.length} sections confirmed
+            <RepoPill repos={publishRepos} state={repoClone} />
           </div>
         </div>
-        <button className="btn ghost" onClick={() => setProjectsView(isExisting ? "board" : "list")}>
+        <button
+          className="btn ghost"
+          title="Clear all plan sections and files for this project (irreversible)"
+          onClick={() => {
+            if (clearPlanArmed) {
+              setClearPlanArmed(false);
+              clearPlan(effectiveProjectId);
+              void invoke("clear_project_plan_files", { projectKey: effectiveProjectId });
+              void handleRestart();
+            } else {
+              setClearPlanArmed(true);
+            }
+          }}
+          onBlur={() => setClearPlanArmed(false)}
+          style={clearPlanArmed ? { color: "var(--danger)", borderColor: "var(--danger)" } : undefined}
+        >
+          {clearPlanArmed ? "confirm clear" : "clear plan"}
+        </button>
+        <button className="btn ghost" onClick={() => setProjectsView("list")}>
           save & exit
         </button>
         <button
@@ -1673,86 +1961,117 @@ _Auto-generated by base-studio-code planner._`,
             : (isExisting ? "Sync to GitHub" : "Create project")}
         </button>
         {(() => {
-          // Lock triage until the project is published (#444): no board ⇒ no issues to triage.
+          // Lock triage until plan is done and the project is published (#444/#551).
           const gate = {
             published: !!activeProjectId,
             hasRepos: publishRepos.length > 0,
             hasFleet: !!planFleet[effectiveProjectId]?.streams.length,
             busy: triaging,
+            planReady,
           };
           const lock = triageLockReason(gate);
+          const ready = canLaunchTriage(gate);
           return (
             <button
               className="btn primary"
-              onClick={launchTriage}
-              disabled={!canLaunchTriage(gate)}
+              // When locked, the button stays clickable and reveals what's incomplete
+              // instead of being inert (#…). Only an in-flight launch disables it.
+              onClick={() => { if (ready) { void launchTriage(); } else { revealIncomplete(gate); } }}
+              disabled={triaging}
               title={lock ?? "Clone the repos and start a triage session"}
+              style={!ready ? { opacity: 0.55 } : undefined}
             >
               {triaging ? "starting triage…" : "Triage →"}
             </button>
           );
         })()}
       </div>
-
-      {/* Repo strip — always visible so state is clear at a glance */}
-      {(() => {
-        const stripRepos = [...new Set([...effectiveRepos, ...repoLinkFullNames])];
-        if (stripRepos.length > 0) {
-          return <PlanningRepoStrip projectId={effectiveProjectId} repos={stripRepos} />;
-        }
-        return (
-          <div style={{ padding: "6px 24px 0", display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10.5 }}>
-            <span style={{ color: "var(--fg-dim)" }}>repos</span>
-            <span style={{ color: "var(--fg-dim)", opacity: 0.55 }}>none linked — ask Claude to create or link repositories</span>
+      {triageBlock && (
+        <div style={{
+          padding: "8px 24px", display: "flex", flexDirection: "column", gap: 5,
+          fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg)",
+          background: "color-mix(in oklch, var(--danger), transparent 92%)",
+          borderTop: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: "var(--danger)", fontWeight: 600 }}>⚠ {triageBlock.headline}</span>
+            <span style={{ flex: 1 }} />
+            <button
+              onClick={() => { setTriageBlock(null); setHighlightSections(new Set()); }}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 10 }}
+            >✕</button>
           </div>
-        );
-      })()}
+          {triageBlock.items.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 14px" }}>
+              {triageBlock.items.map(it => (
+                <span key={it.key} style={{ color: "var(--fg-muted)" }}>
+                  <span style={{ color: it.status === "locked" ? "var(--fg-dim)" : "var(--fg)" }}>{it.name}</span>
+                  {" — "}{it.status === "locked" ? "blocked · " : ""}{it.reason}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {triageError && (
+        <div style={{
+          padding: "4px 24px", display: "flex", alignItems: "center", gap: 8,
+          fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)",
+          background: "color-mix(in oklch, var(--danger), transparent 92%)",
+        }}>
+          <span>worktree failed: {triageError}</span>
+          <button
+            onClick={() => setTriageError(null)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 10 }}
+          >✕</button>
+        </div>
+      )}
 
-      {/* Section progress bar — project tier first, then a divider and each
-          repo's tier so the per-repo dynamic sections are visibly accounted for. */}
-      <div style={{ padding: "14px 24px 12px", display: "flex", gap: 6, alignItems: "center" }}>
-        {(() => {
-          const seg = (k: string) => {
-            const s = sectionByKey.get(k);
-            const tone = s?.state === "confirmed" ? "var(--accent)"
-                       : s?.state === "drafted"   ? "color-mix(in oklch, var(--accent), transparent 50%)"
-                       : "var(--bg-elev2)";
-            const info = parseSectionKey(k);
-            const label = info.tier === "repo" ? `${info.repo} · ${titleForKey(k)}` : titleForKey(k);
-            return <div key={k} style={{ flex: 1, height: 5, borderRadius: 3, background: tone }} title={label} />;
-          };
-          const divider = (id: string) => (
-            <div key={id} title="per-repo sections"
-              style={{ flex: "0 0 auto", width: 2, height: 9, borderRadius: 1, background: "var(--border)" }} />
-          );
-          return [
-            ...projectKeys.map(seg),
-            ...repoGroups.flatMap(g => [divider(`div-${g.repo}`), ...g.keys.map(seg)]),
-          ];
-        })()}
-      </div>
+      {/* Planning progress — one segment per enabled blueprint section, tucked against
+          the header's bottom edge (#508): the 12px pills sit in a 6px top-aligned clip,
+          so only each segment's top rounded half shows, hugging the divider below.
+          Incomplete sections pulse when the user clicks a locked Triage button. */}
+      <PlanStageBar sections={planSecs} signals={signals} blocked={blockedStages} highlight={highlightSections} />
 
       {/* Split panel */}
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", borderTop: "1px solid var(--border-soft)" }}>
         {/* Claude CLI terminal */}
-        <section style={{ flex: "1 1 0", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRight: "1px solid var(--border-soft)" }}>
+        <section style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRight: "1px solid var(--border-soft)" }}>
           <div style={{
             padding: "10px 18px", background: "var(--bg-panel)",
             borderBottom: "1px solid var(--border-soft)",
             display: "flex", alignItems: "center", gap: 8,
             fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
           }}>
-            <span style={{ color: "var(--accent)" }}>▸ claude cli · planning session</span>
+            <span style={{ color: "var(--accent)" }}>▸ planning session</span>
             <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 10, color: "var(--fg-dim)" }}>
-              emit{" "}
-              <code style={{ color: "var(--fg)", background: "var(--bg-elev)", padding: "0 4px", borderRadius: 3 }}>
-                &lt;plan_update section="goal"&gt;…&lt;/plan_update&gt;
-              </code>
-              {" "}to populate sections →
-            </span>
             <button
-              onClick={handleRestart}
+              onClick={() => setShowPreview(p => !p)}
+              title="Toggle the UI preview pane"
+              style={{
+                padding: "2px 8px", borderRadius: 3, cursor: "pointer",
+                background: showPreview ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent",
+                border: "1px solid " + (showPreview ? "var(--accent-dim)" : "var(--border-soft)"),
+                color: showPreview ? "var(--accent)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
+              }}
+            >▣ preview</button>
+            {contextStale && (
+              <button
+                onClick={() => { void handleRestart(); }}
+                disabled={restarting}
+                title="Repos, knowledge blocks, or enabled stages changed since this session started — click to refresh"
+                style={{
+                  padding: "2px 8px", borderRadius: 3,
+                  cursor: restarting ? "not-allowed" : "pointer",
+                  background: "color-mix(in oklch, var(--accent), transparent 84%)",
+                  border: "1px solid color-mix(in oklch, var(--accent), transparent 50%)",
+                  color: "var(--accent)", fontFamily: "var(--mono)", fontSize: 10,
+                  opacity: restarting ? 0.5 : 1,
+                }}
+              >context updated · refresh</button>
+            )}
+            <button
+              onClick={() => setConfirmRestart(true)}
               disabled={restarting}
               style={{
                 padding: "2px 8px", borderRadius: 3, cursor: restarting ? "not-allowed" : "pointer",
@@ -1764,22 +2083,66 @@ _Auto-generated by base-studio-code planner._`,
           </div>
 
 
-          <div
-            ref={containerRef}
-            style={{
-              flex: 1, minHeight: 0, overflow: "hidden",
-              background: TERM_THEME.background as string,
-              display: "flex",
-              padding: "6px 4px",
-            }}
-          />
+          {/* The xterm host is absolutely positioned inside this relative box, so it's
+              OUT of the flex flow: resizing the wrapper (divider drag, a pipeline screen
+              mounting) just clips/repaints the terminal cheaply instead of reflowing it
+              every frame — the session resizes independent of its wrapper, then re-fits
+              once when the size settles (the debounced observer below). */}
+          <div style={{ position: "relative", flex: 1, minWidth: 0, minHeight: 0 }}>
+            <div
+              ref={containerRef}
+              style={{
+                position: "absolute", inset: 0, overflow: "hidden",
+                background: TERM_THEME.background as string,
+                display: "flex",
+                padding: "6px 4px",
+              }}
+            />
+          </div>
         </section>
 
-        {/* Drag handle between the terminal and the plan-sections panel (#43). */}
+        {/* Pipeline second screens — read from the active blueprint and rendered when
+            their stage is reached (sections own the page; pipelines own their surface).
+            The manual preview toggle still force-shows render-preview off-stage. */}
+        {(() => {
+          const entries: { uid: string; id: string; Screen: PipelineScreenComponent; onClose?: () => void }[] =
+            stageScreens.map(e => ({ uid: e.uid, id: e.id, Screen: e.Screen }));
+          if (showPreview && !entries.some(e => e.id === RENDER_PREVIEW_ID)) {
+            const Screen = pipelineScreen(RENDER_PREVIEW_ID);
+            if (Screen) entries.push({ uid: "preview-manual", id: RENDER_PREVIEW_ID, Screen, onClose: () => setShowPreview(false) });
+          }
+          // Section-bound screens (e.g. grading) get the current section's key + content.
+          const secContent = sections.find(s => s.k === currentStageId)?.content ?? "";
+          return entries.map(({ uid, Screen, onClose }) => (
+            <Screen key={uid} projectKey={effectiveProjectId} sectionKey={currentStageId} sectionContent={secContent} onClose={onClose} />
+          ));
+        })()}
+
+        {/* Drag handle between the preview/terminal and the plan-sections panel (#43). */}
         <div className="resize-x" {...sectionsPanel.handleProps} title="Drag to resize" />
 
         {/* Plan sections / publish progress panel */}
         <aside style={{ flex: `0 0 ${sectionsPanel.size}px`, display: "flex", flexDirection: "column", background: "var(--bg-panel)", minHeight: 0, overflow: "hidden" }}>
+          {/* Feature discovery gate warning (#490): blocked features won't publish. */}
+          {publishPhase === "idle" && incompleteFeatures.length > 0 && (
+            <div style={{
+              margin: "6px 10px 0", borderRadius: 6,
+              padding: "8px 10px",
+              background: "color-mix(in oklch, var(--warning, #e6a817), transparent 88%)",
+              border: "1px solid color-mix(in oklch, var(--warning, #e6a817), transparent 50%)",
+              fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg)",
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                {incompleteFeatures.length} feature{incompleteFeatures.length > 1 ? "s" : ""} blocked from publishing
+              </div>
+              {incompleteFeatures.map(f => (
+                <div key={f.key} style={{ marginTop: 2, color: "var(--fg-muted)" }}>
+                  <span style={{ color: "var(--fg)" }}>{f.title}</span>
+                  {" — "}{f.reasons.join("; ")}
+                </div>
+              ))}
+            </div>
+          )}
           {publishPhase === "idle" ? (
             <ProjectPane
               data={paneData}
@@ -1795,10 +2158,10 @@ _Auto-generated by base-studio-code planner._`,
               onStrategy={(id, strategy) => setPlanAgentStreamStrategy(effectiveProjectId, id, strategy)}
               onTogglePin={(name) => togglePinnedContext(effectiveProjectId, name)}
               onDirectorDrive={(drive) => setPlanDirectorDrive(effectiveProjectId, drive)}
-              onSyncStructure={githubToken && publishRepos.length > 0 ? handlePublish : undefined}
-              onSyncDocs={githubToken && publishRepos.length > 0 ? handleSyncDocs : undefined}
               onSyncLabels={githubToken && publishRepos.length > 0 ? handleSyncLabels : undefined}
-              syncState={{ structure: "idle", docs: docsSync, labels: labelsSync }}
+              syncState={{ labels: labelsSync }}
+              sections={planSecs.filter(s => s.enabled).map(s => ({ key: s.key, name: s.name, blurb: s.blurb }))}
+              highlight={highlightSections}
             />
           ) : (
             <>
@@ -1829,6 +2192,11 @@ _Auto-generated by base-studio-code planner._`,
                   >← back to plan</button>
                 )}
               </div>
+              {publishEarlyError && (
+                <div style={{ padding: "6px 18px", color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11 }}>
+                  {publishEarlyError}
+                </div>
+              )}
 
               {/* Live GitHub structure — each node updates as it is created */}
               <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1838,6 +2206,27 @@ _Auto-generated by base-studio-code planner._`,
           )}
         </aside>
       </div>
+
+      {/* Restart confirmation (#548): ending the session is destructive, so confirm first. */}
+      {confirmRestart && (
+        <Dialog
+          title="Restart planning session?"
+          danger
+          onDismiss={() => setConfirmRestart(false)}
+          actions={
+            <>
+              <button className="btn ghost" onClick={() => setConfirmRestart(false)}>cancel</button>
+              <button
+                className="btn danger"
+                onClick={() => { setConfirmRestart(false); void handleRestart(); }}
+              >restart</button>
+            </>
+          }
+        >
+          The current planning session ends and a fresh one launches. Confirmed plan
+          sections are kept, but the in-progress conversation is lost.
+        </Dialog>
+      )}
     </>
   );
 }

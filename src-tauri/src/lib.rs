@@ -378,6 +378,189 @@ fn clear_all_plan_files() -> Result<u32, String> {
     Ok(removed)
 }
 
+/// Delete every plan section file (`.md` / `.json`) in a single project's hub
+/// directory, leaving subdirectories (cloned repos, `.worktrees`, `prompts/`,
+/// `.claude/`) intact. The section poll re-reads from disk, so this must run
+/// before the store is cleared — otherwise the next poll repopulates the store.
+/// Returns how many files were deleted. Best-effort: any unreadable file is skipped.
+#[tauri::command]
+fn clear_project_plan_files(project_key: String) -> Result<u32, String> {
+    if sanitize_project_key(&project_key).is_empty() {
+        return Err("clear_project_plan_files: empty project_key".to_string());
+    }
+    let proj = plan_dir_for(&project_key);
+    if !proj.exists() {
+        return Ok(0);
+    }
+    let entries = std::fs::read_dir(&proj).map_err(|e| format!("clear_project_plan_files: {e}"))?;
+    let mut removed = 0u32;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_file() { continue; }
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if (ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("json"))
+            && std::fs::remove_file(&p).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    log::info!("clear_project_plan_files({project_key}): removed {removed} files");
+    Ok(removed)
+}
+
+/// Reject a relative path that would escape the project hub: absolute paths, a Windows
+/// drive prefix, a root component, or any `..` segment. Shared by the pipeline file
+/// primitives so a pipeline can never write/read outside its own project dir.
+fn is_safe_relpath(rel: &std::path::Path) -> bool {
+    !rel.is_absolute()
+        && !rel.components().any(|c| matches!(
+            c,
+            std::path::Component::ParentDir
+                | std::path::Component::Prefix(_)
+                | std::path::Component::RootDir
+        ))
+}
+
+/// Write one file into a project's hub — the shared persistence primitive pipelines call
+/// (#…). Pipelines own *what*/*where*/*when* they save; this just performs the path-safe
+/// write under `projects/<key>/`. `relpath` is resolved under the project dir; any attempt
+/// to escape it (absolute, drive prefix, or `..`) is rejected.
+#[tauri::command]
+fn write_project_file(project_key: String, relpath: String, contents: String) -> Result<(), String> {
+    if sanitize_project_key(&project_key).is_empty() {
+        return Err("write_project_file: empty project_key".to_string());
+    }
+    if relpath.trim().is_empty() {
+        return Err("write_project_file: empty relpath".to_string());
+    }
+    let rel = std::path::Path::new(&relpath);
+    if !is_safe_relpath(rel) {
+        return Err(format!("write_project_file: unsafe relpath '{relpath}'"));
+    }
+    let target = project_dir(&project_key).join(rel);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("write_project_file: {e}"))?;
+    }
+    std::fs::write(&target, contents).map_err(|e| format!("write_project_file: {e}"))?;
+    log::info!("write_project_file({project_key}): wrote {relpath}");
+    Ok(())
+}
+
+/// Write a BINARY file into a project's hub from base64 (#604) — the file-intake pipeline
+/// stages dropped files (images, fonts, any binary) this way, since `write_project_file`
+/// only handles text. Same path-safety rules. `b64` is standard base64 of the file bytes.
+#[tauri::command]
+fn write_project_file_bytes(project_key: String, relpath: String, b64: String) -> Result<(), String> {
+    use base64::Engine;
+    if sanitize_project_key(&project_key).is_empty() {
+        return Err("write_project_file_bytes: empty project_key".to_string());
+    }
+    if relpath.trim().is_empty() {
+        return Err("write_project_file_bytes: empty relpath".to_string());
+    }
+    let rel = std::path::Path::new(&relpath);
+    if !is_safe_relpath(rel) {
+        return Err(format!("write_project_file_bytes: unsafe relpath '{relpath}'"));
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64.as_bytes())
+        .map_err(|e| format!("write_project_file_bytes: bad base64: {e}"))?;
+    let target = project_dir(&project_key).join(rel);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("write_project_file_bytes: {e}"))?;
+    }
+    std::fs::write(&target, &bytes).map_err(|e| format!("write_project_file_bytes: {e}"))?;
+    log::info!("write_project_file_bytes({project_key}): wrote {relpath} ({} bytes)", bytes.len());
+    Ok(())
+}
+
+/// Result of running a dead-code scanner (#626). `ran` distinguishes "the tool ran"
+/// (parse `stdout`) from "couldn't run it" (`error` set — not installed, bad dir, …).
+#[derive(serde::Serialize)]
+struct ScanResult {
+    tool: String,
+    ran: bool,
+    exit_code: Option<i32>,
+    stdout: String,
+    stderr: String,
+    error: Option<String>,
+}
+
+/// Allowlisted dead-code / unused-dependency scanners → (program, args). Only these may
+/// run — the `tool` arg never becomes an arbitrary command. (#626)
+fn dead_code_cmd(tool: &str) -> Option<(&'static str, &'static [&'static str])> {
+    match tool {
+        "depcheck" => Some(("npx", &["--yes", "depcheck", "--json"])),
+        "ts-prune" => Some(("npx", &["--yes", "ts-prune"])),
+        "cargo-machete" => Some(("cargo", &["machete"])),
+        _ => None,
+    }
+}
+
+/// Run an allowlisted dead-code scanner in `repo_path` and return its raw output for the
+/// frontend to parse. Never panics; a missing tool / bad dir comes back as `error`.
+#[tauri::command]
+fn scan_dead_code(repo_path: String, tool: String) -> ScanResult {
+    let err = |e: String| ScanResult { tool: tool.clone(), ran: false, exit_code: None, stdout: String::new(), stderr: String::new(), error: Some(e) };
+    let dir = std::path::Path::new(&repo_path);
+    if !dir.is_dir() {
+        return err(format!("not a directory: {repo_path}"));
+    }
+    let Some((prog, args)) = dead_code_cmd(&tool) else {
+        return err(format!("unknown scanner '{tool}'"));
+    };
+    match std::process::Command::new(prog).args(args).current_dir(dir).output() {
+        Ok(out) => ScanResult {
+            tool,
+            ran: true,
+            exit_code: out.status.code(),
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            error: None,
+        },
+        Err(e) => err(format!("couldn't run {prog}: {e}")),
+    }
+}
+
+/// Recursively read every (text) file under `root` as `(relpath → contents)`, capped at
+/// 512 KiB each, skipping unreadable/binary files. relpaths are forward-slashed and
+/// relative to `root`. The generic complement to `read_skeleton_dir` (which filters by
+/// extension) — pipelines persist arbitrary file types (`.vue`, `.svg`, `.html`, …).
+fn read_files_dir(root: &std::path::Path) -> Vec<(String, String)> {
+    fn walk(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, String)>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(base, &p, out);
+            } else {
+                let small = std::fs::metadata(&p).map(|m| m.len() <= 512 * 1024).unwrap_or(false);
+                if small {
+                    if let (Ok(rel), Ok(content)) = (p.strip_prefix(base), std::fs::read_to_string(&p)) {
+                        out.push((rel.to_string_lossy().replace('\\', "/"), content));
+                    }
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Read every file under a project-hub subdir (relpath → contents) so a pipeline can
+/// rehydrate its saved results (#…). Empty when the subdir is missing or `subdir` would
+/// escape the project dir.
+#[tauri::command]
+fn read_project_files(project_key: String, subdir: String) -> Vec<(String, String)> {
+    let rel = std::path::Path::new(&subdir);
+    if !is_safe_relpath(rel) {
+        return Vec::new();
+    }
+    read_files_dir(&project_dir(&project_key).join(rel))
+}
+
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
 ///
 /// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
@@ -407,6 +590,20 @@ fn bash_ansi_c_quote(s: &str) -> String {
 fn claude_launch(prompt: &str, continue_session: bool) -> String {
     let flag = if continue_session { "--continue " } else { "" };
     format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
+}
+
+/// Map a UI model id (`sonnet-4.5`, `opus-4.5`, `haiku-4.5`) to the alias Claude
+/// Code's `--model` flag accepts. Returns `None` for anything unrecognized, so the
+/// session falls back to Claude Code's own default and we never interpolate an
+/// arbitrary caller string into the shell command (the match only ever yields a
+/// fixed literal — no injection surface).
+fn claude_model_flag(model: &str) -> Option<&'static str> {
+    match model {
+        "haiku-4.5" => Some("haiku"),
+        "sonnet-4.5" => Some("sonnet"),
+        "opus-4.5" => Some("opus"),
+        _ => None,
+    }
 }
 
 /// Claude Code's on-disk directory name for a launch cwd. Conversations live at
@@ -673,7 +870,11 @@ fn non_bash_init(
     cwd_missing: bool,
     effective_cwd: &str,
     launch_claude: bool,
+    model: Option<&str>,
 ) -> String {
+    // `--model <alias>` for the auto-launched claude when a model is set; the alias
+    // is a fixed literal from claude_model_flag, so this is injection-safe.
+    let model_arg = model.map(|m| format!(" --model {m}")).unwrap_or_default();
     // The directory to land in: the nearest existing ancestor when the configured
     // cwd is gone, else the cwd itself (native paths — pwsh/cmd, not bash, syntax).
     let dir = if cwd.is_empty() {
@@ -703,7 +904,7 @@ fn non_bash_init(
                 "Write-Host '[bsc] Running under PowerShell -- {NOTICE}.' -ForegroundColor Yellow; "
             ));
             if launch_claude {
-                s.push_str("claude; ");
+                s.push_str(&format!("claude{model_arg}; "));
             }
             s.push('\n');
             s
@@ -721,7 +922,7 @@ fn non_bash_init(
             s.push_str("cls & ");
             s.push_str(&format!("echo [bsc] Running under cmd.exe -- {NOTICE}. & "));
             if launch_claude {
-                s.push_str("claude & ");
+                s.push_str(&format!("claude{model_arg} & "));
             }
             s.push_str("echo.\n");
             s
@@ -768,6 +969,7 @@ async fn pty_create(
     startup_prompt: Option<String>,
     continue_session: Option<bool>,
     checkpoint_doc: Option<String>,
+    model: Option<String>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -921,6 +1123,19 @@ async fn pty_create(
     // Whether the launch would start `claude` — the only command the degraded
     // non-bash path replays (an arbitrary bash init_cmd would be invalid there).
     let launch_claude = launch.as_deref().map(|s| s.contains("claude")).unwrap_or(false);
+    // The default `--model` alias for this session (per-pane override or global
+    // default, mapped from the UI model id). None ⇒ Claude Code's own default.
+    let model_alias = model.as_deref().and_then(claude_model_flag);
+    // The `claude()` shell wrapper: it emits the run/idle OSC markers AND injects the
+    // session's default model, so BOTH the auto-launch below and anything the user
+    // types pick it up. Skip the injection when the call already carries `--model`
+    // (whole-word match, so prompt text containing the string can't trip it).
+    let claude_fn = match model_alias {
+        Some(m) => format!(
+            "claude() {{ __bsc_state run; case \" $* \" in *\" --model \"*) command claude \"$@\";; *) command claude --model {m} \"$@\";; esac; }}; "
+        ),
+        None => "claude() { __bsc_state run; command claude \"$@\"; }; ".to_string(),
+    };
     let init_line = match resolved_shell.kind {
         ShellKind::Bash => {
             let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
@@ -945,7 +1160,7 @@ async fn pty_create(
             format!(
                 "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
                  __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
-                 claude() {{ __bsc_state run; command claude \"$@\"; }}; \
+                 {claude_fn}\
                  {helpers_src}\
                  PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
                  __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
@@ -955,7 +1170,7 @@ async fn pty_create(
         // are bash-only, so run a degraded init that cd's, clears, and prints a visible
         // notice (no silent breakage, #447).
         ShellKind::PowerShell | ShellKind::Cmd => {
-            non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude)
+            non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude, model_alias)
         }
     };
     writer.write_all(init_line.as_bytes()).ok();
@@ -1061,6 +1276,10 @@ async fn pty_create(
         init_cmd.as_deref().filter(|s| !s.is_empty()).unwrap_or("<none>"),
     );
 
+    // Tell the mobile tunnel this pane's grid size so it renders at the desktop width
+    // (before pane_id is moved into the session map).
+    tunnel_set_pane_size(&app, &pane_id, cols, rows);
+
     let active = {
         let mut map = state.0.lock().unwrap();
         map.insert(pane_id, PtySession { writer, master: pair.master, child, _job: job });
@@ -1115,14 +1334,19 @@ async fn pty_resize(
     pane_id: String,
     cols: u16,
     rows: u16,
+    app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<(), String> {
-    let sessions = state.0.lock().unwrap();
-    if let Some(s) = sessions.get(&pane_id) {
-        s.master
-            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-            .map_err(|e| { log::warn!("pty[{pane_id}] resize to {cols}x{rows} failed: {e}"); e.to_string() })?;
+    {
+        let sessions = state.0.lock().unwrap();
+        if let Some(s) = sessions.get(&pane_id) {
+            s.master
+                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+                .map_err(|e| { log::warn!("pty[{pane_id}] resize to {cols}x{rows} failed: {e}"); e.to_string() })?;
+        }
     }
+    // Mirror the new grid size to any paired phone so it re-fits to the desktop width.
+    tunnel_set_pane_size(&app, &pane_id, cols, rows);
     Ok(())
 }
 
@@ -1154,21 +1378,42 @@ pub(crate) fn tunnel_write_pty(app: &AppHandle, pane_id: &str, data: &str) {
     use std::io::Write;
     let state = app.state::<PtyState>();
     let mut sessions = state.0.lock().unwrap();
-    if let Some(s) = sessions.get_mut(pane_id) {
-        if let Err(e) = s.writer.write_all(data.as_bytes()) {
-            log::warn!("tunnel: pty[{pane_id}] write failed: {e}");
-        }
+    match sessions.get_mut(pane_id) {
+        Some(s) => match s.writer.write_all(data.as_bytes()) {
+            // Confirms mobile keystrokes reached the PTY (debug-level; enable to trace).
+            Ok(()) => log::debug!("tunnel: pane[{pane_id}] input {} byte(s) written", data.len()),
+            Err(e) => log::warn!("tunnel: pane[{pane_id}] write failed: {e}"),
+        },
+        // The #1 silent failure: mobile sent a pane id with no live PTY (wrong/stale id,
+        // or a pane that isn't running). Warn so it surfaces without debug logging.
+        None => log::warn!(
+            "tunnel: input for unmatched pane '{pane_id}' ({} byte(s) dropped) — mobile sent a pane id with no live PTY",
+            data.len()
+        ),
     }
 }
 
 /// Resize a pane's PTY from a mobile client. No-op for a missing pane.
 pub(crate) fn tunnel_resize_pty(app: &AppHandle, pane_id: &str, cols: u16, rows: u16) {
-    let state = app.state::<PtyState>();
-    let sessions = state.0.lock().unwrap();
-    if let Some(s) = sessions.get(pane_id) {
-        let _ = s
-            .master
-            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
+    {
+        let state = app.state::<PtyState>();
+        let sessions = state.0.lock().unwrap();
+        if let Some(s) = sessions.get(pane_id) {
+            let _ = s
+                .master
+                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
+        }
+    }
+    // Keep the broadcast size in sync so all viewers agree on the current grid.
+    tunnel_set_pane_size(app, pane_id, cols, rows);
+}
+
+/// Record + broadcast a pane's PTY grid size to the mobile tunnel so it can render at
+/// the same width as the desktop (the byte stream's wrapping + cursor moves are baked
+/// for this size). No-op when the tunnel state isn't present (#…).
+pub(crate) fn tunnel_set_pane_size(app: &AppHandle, pane_id: &str, cols: u16, rows: u16) {
+    if let Some(ts) = app.try_state::<tunnel::TunnelState>() {
+        ts.set_pane_size(pane_id, cols, rows);
     }
 }
 
@@ -1642,6 +1887,53 @@ async fn github_request(
     Ok(json)
 }
 
+/// Create a GitHub gist (#598 M2) — publish an extension bundle (manifest + files) and
+/// return the created gist JSON (`id`, `html_url`, `files[].raw_url`). Requires the
+/// `gist` OAuth scope on the token. Reading a gist back uses `github_request("gists/<id>")`.
+#[tauri::command]
+async fn gist_create(
+    token: String,
+    files: std::collections::HashMap<String, String>,
+    description: String,
+    public: bool,
+) -> Result<serde_json::Value, String> {
+    let _perf = PerfSpan::new("gist_create");
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
+    if files.is_empty() {
+        return Err("gist_create: no files to publish".to_string());
+    }
+    // GitHub's gist API shape: files = { "<name>": { "content": "<text>" } }.
+    let files_json: serde_json::Map<String, serde_json::Value> = files
+        .into_iter()
+        .map(|(name, content)| (name, serde_json::json!({ "content": content })))
+        .collect();
+    let body = serde_json::json!({ "description": description, "public": public, "files": files_json });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.github.com/gists")
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "base-studio-code/0.2.0")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("gist_create request failed: {e}"))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("gist_create: failed to parse response: {e}"))?;
+    if !status.is_success() {
+        let msg = json["message"].as_str().unwrap_or("unknown error");
+        return Err(format!("gist_create HTTP {status}: {msg}"));
+    }
+    Ok(json)
+}
+
 // ── Workspaces ───────────────────────────────────────────────────────────────
 //
 // Two roots under ~/.base-studio-code/:
@@ -1989,6 +2281,42 @@ fn read_token_usage(limit: usize) -> Vec<TokenUsage> {
     out
 }
 
+/// Collect a UI-skeleton directory as (relpath, contents) pairs — source files only,
+/// size-capped, recursive. Pure over a path so it's unit-testable (#533).
+fn read_skeleton_dir(root: &std::path::Path) -> Vec<(String, String)> {
+    fn ok_ext(p: &std::path::Path) -> bool {
+        matches!(p.extension().and_then(|s| s.to_str()), Some("jsx" | "tsx" | "js" | "ts" | "css" | "json"))
+    }
+    fn walk(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, String)>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(base, &p, out);
+            } else if ok_ext(&p) {
+                let small = std::fs::metadata(&p).map(|m| m.len() <= 512 * 1024).unwrap_or(false);
+                if small {
+                    if let (Ok(rel), Ok(content)) = (p.strip_prefix(base), std::fs::read_to_string(&p)) {
+                        out.push((rel.to_string_lossy().replace('\\', "/"), content));
+                    }
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Read a project's `.ui-skeleton/` folder (relpath → contents) for the render-preview
+/// pipeline (#533): the lightweight, functionless UI the planner generates. Empty when
+/// the folder doesn't exist yet.
+#[tauri::command]
+fn read_ui_skeleton(project_key: String) -> Vec<(String, String)> {
+    read_skeleton_dir(&project_dir(&project_key).join(".ui-skeleton"))
+}
+
 /// Read the coordination log (#199): up to the newest `limit` TSV lines, in
 /// chronological (oldest-first) order so the coordinator can replay them.
 #[tauri::command]
@@ -2250,6 +2578,11 @@ struct AutomationData {
     schedule: Option<String>,
 }
 
+/// Bump when the planning template (CLAUDE.md) changes in a way that affects
+/// the session context. The signature written by `setup_workspaces` includes
+/// this version so Planning.tsx can detect template upgrades (#175).
+const PLANNING_TEMPLATE_VERSION: u8 = 3;
+
 #[derive(serde::Serialize)]
 struct WorkspacePaths {
     kb_dir:       String,
@@ -2399,6 +2732,12 @@ the user is happy with the current topic.
    the UI you receive a line like `[The user confirmed the "Goal" section … —
    continue to the next section.]` — that is your signal to advance.
 
+When designing the UI, render it live: write a lightweight, **functionless** React
+skeleton of each screen (mock data, no logic) to `.ui-skeleton/<Screen>.jsx`, then
+emit `<ui_preview screen="<Screen>.jsx" mode="2d" />` (`mode="3d"` for a 3D scene —
+render an `@react-three/fiber` `<Canvas>`). The app bundles it and shows it in the
+preview pane; re-emit the tag after each change to refresh.
+
 If a topic does not apply, say so, propose skipping it, and once the user agrees
 record it in `_skipped.md` and move on. Never race ahead to fill everything.
 
@@ -2407,15 +2746,16 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
 1. **Read the knowledge base.** Before asking anything, read every `.md` in
    `../kb/` (team standards, stack conventions, templates). Assign relevant
    blocks with `<kb_assign id="block-id" />`.
-2. **Set up repositories first.** The Publish button stays disabled until at
+2. **Decide the repositories first.** The Publish button stays disabled until at
    least one `<repo_link>` is registered, so do this before deep discovery:
-   - `gh api user --jq .login` for the authenticated owner.
+   - `gh api user --jq .login` for the authenticated owner (read-only).
    - Ask what distinct codebases the project needs (name, purpose, language,
      visibility); skip what the pitch already makes obvious.
-   - For each confirmed repo, immediately: create it
-     (`gh repo create {owner}/{name} --private --description "..."`), clone it
-     (`git clone https://github.com/{owner}/{name} {name}`), write an initial
-     `{name}/CLAUDE.md`, and emit `<repo_link full_name="{owner}/{name}" />`.
+   - For each confirmed repo, emit `<repo_link full_name="{owner}/{name}" />`. Do
+     NOT run `gh repo create` or `git clone` yourself — you are plan-only. The app
+     **creates any missing repo and clones it for you** when Publish runs (and
+     `<repo_link>` triggers an immediate clone into the project hub), so the repos
+     are ready for the build agents without you touching git.
    - **Also write `repos.json`** -- a JSON array of every linked `"owner/repo"`
      (e.g. `["acme/web","acme/api"]`). This is the AUTHORITATIVE, resume-safe repo
      registration: a `<repo_link>` tag is live-stream-only and is lost when the session
@@ -2530,13 +2870,14 @@ once the user agrees. Always scan before you propose; never race ahead.
 
 1. **Link repositories.** Check whether `## Linked repositories` appears at the
    bottom of this file.
-   - **If listed:** for each, emit `<repo_link full_name="owner/repo" />`, clone
-     if the local path is missing, then read its `CLAUDE.md`, top-level
-     manifests, and recent `gh issue list` / `gh pr list` for orientation.
+   - **If listed:** for each, emit `<repo_link full_name="owner/repo" />` (the app
+     clones it into the project hub for you), then read its `CLAUDE.md`, top-level
+     manifests, and recent `gh issue list` / `gh pr list` for orientation. You are
+     plan-only — don't clone or mutate git yourself.
    - **If none listed:** `gh api user --jq .login`, then
      `gh repo list --limit 100 --json nameWithOwner,description,pushedAt`,
      present the likely candidates for **{PROJECT_NAME}**, ask which belong, and
-     emit `<repo_link>` for each confirmed repo before cloning.
+     emit `<repo_link>` for each confirmed repo (the app clones them).
 2. **Read the knowledge base.** Read `kb_index.md`, read blocks whose tags match
    the stack, and assign relevant ones with `<kb_assign id="block-id" />`. Read
    `automations.md` and `extensions.md`, and run the **Automations & extensions**
@@ -2570,8 +2911,8 @@ const PLANNING_PROCESS_MD: &str = r##"
 | **Write**        | Create or overwrite any file — section files, CLAUDE.md, workflow YAMLs |
 | **Edit**         | Patch a single file in-place                                            |
 | **WebFetch**     | Fetch any URL — package registries, docs, GitHub raw content            |
-| **Bash(git \*)** | Any git subcommand — clone, commit, push, log, diff, status, etc.      |
-| **Bash(gh \*)**  | Any gh CLI subcommand — repos, issues, PRs, labels, milestones, etc.   |
+| **Bash(git \*)** | Read-only git — log, diff, status, show (context only; no commit/push) |
+| **Bash(gh \*)**  | Read-only gh — repo list, issue list, pr list (no create/merge/push)   |
 
 **Not available:** generic shell commands (`cp`, `ls`, `cat`, `mkdir`, etc.) and
 WebSearch. Use **Read**/**Write** wherever you would reach for `cat`/`cp`, and
@@ -2702,6 +3043,38 @@ needs. Read `extensions.md` (the catalog of available MCP servers) and
   `npm audit`, a lint/test sweep, a dependency-bump check).
 
 Both surface in the project's Automations & extensions UI and persist with the plan.
+
+## Attached skills & knowledge
+
+If `skills.md` exists at the project root, it holds the reusable skills / knowledge the
+user paired with this blueprint — project-wide and per-stage. **Read the section for the
+stage you're on** and let it inform that stage's work; it's authoritative context the
+user chose for this project.
+
+## File intake — route files the user drops in
+
+The user can drag files (design exports, mockups, components, anything) into the
+**file-intake** pipeline. Dropped files are staged under `.intake/` in the project
+hub, with a manifest at `.intake/intake.json` (`[{ name, kind, size }]`, where `kind`
+is a hint: image / vector / markup / style / component / data / doc). When the user
+clicks **Route** you are asked to place them; you may also check `.intake/` whenever
+the user mentions added files.
+
+For each staged file: examine it, then route it to the right place using `repos.json`
+(the linked repos and their roles):
+
+- Pick the relevant repo — e.g. design assets and UI components go to the repo that
+  owns the UI. In a multi-repo project, **only attach UI assets to the UI-bearing
+  repo**, never to a headless service repo.
+- Copy the file into that repo's directory (a sensible subpath like
+  `<repo>/design/` or `<repo>/src/components/`), and **reference it in the relevant
+  section file** (e.g. cite a mockup in the repo's `ui` section, or wire a dropped
+  component into the structure issues that consume it).
+- If a file's destination is genuinely ambiguous, **ask the user** before placing it
+  rather than guessing.
+
+The pipeline only stages files; the routing decision is yours — that's why it hands
+them to you instead of dropping them somewhere fixed.
 
 ## Plan the agent fleet
 
@@ -3039,8 +3412,14 @@ issue: research, source, **dissect into Skills**, and decompose it before the pl
 ### Drive a unit (feature or section) down to its issues
 For the current unit, propose a complete spec, then interrogate to correct and fill
 it before moving on. Do not move on until ALL of these are concrete:
-- **Behavior + acceptance** — exactly what it does, and the done-when checklist the
-  agent verifies against.
+- **Behavior + acceptance** — the HARD GATE. A feature cannot produce issues until
+  BOTH are documented: (a) the behavior — the approach/body with a description of
+  what the feature does, AND explicit edge/error/empty states (what happens when
+  things fail, the list is empty, a conflict occurs, a timeout fires — enumerate
+  these; do NOT skip them); (b) at least one acceptance criterion (the done-when
+  checklist the agent verifies against). A feature-section file (`- [ ]` lines = AC)
+  that has no approach text or no acceptance criteria will NOT be published to GitHub.
+  Interrogate each unit until BOTH are present before writing the section file.
 - **The issues it brings** — every problem the unit introduces: error/empty/loading
   states, edge cases, validation, migrations/backfills, security and auth needs, and
   the cross-repo contracts it depends on. Make each its own issue — this is what
@@ -3075,37 +3454,28 @@ issues → dependencies) in the panel, and Publish turns it into the real projec
 board — every issue the product of this conversation, carrying everything an agent
 needs to pick it up and finish without asking.
 
-## Publish to GitHub
+## Publish to GitHub — the APP does this, not you
 
-After the user confirms the plan in the right panel, the **Publish** button
-creates the repositories, the project board, one milestone per phase, and one
-GitHub issue per `issues.json` entry (pinned to its milestone, with its labels;
-falling back to a per-phase tracking issue when no issues are defined), and labels
-each fleet stream's owned issues with `stream:<id>`. You can also push detail yourself with the
-`gh` CLI — every step below is idempotent (check-then-create), so re-running is a
-safe sync. Do this in order, per linked repository:
+You are plan-only: do NOT run `gh repo create`, `gh issue create`, `gh label
+create`, `gh api … --method POST`, `git commit`, or `git push`. Those are denied
+for this session and, more importantly, the **app's Publish button owns every
+git/GitHub mutation**. Your job is to get the plan files right; the app turns them
+into the real structure.
 
-**Labels** (`--force` is idempotent):
-```
-gh label create "scope:core" --color "0075ca" --repo owner/repo --force
-gh label create "phase:1"    --color "0e8a16" --repo owner/repo --force
-gh label create "risk:high"  --color "b60205" --repo owner/repo --force
-```
-**Milestones** (one per phase):
-```
-gh api repos/owner/repo/milestones --method POST --field title="Phase 1 — <name>" --field description="<done-when>"
-```
-**Issues** (one per in-scope deliverable, pinned to its milestone):
-```
-gh issue create --repo owner/repo --title "<deliverable>" --body "<acceptance criteria>" --milestone <number> --label "scope:core,phase:1"
-```
-**Repo metadata + plan file:**
-```
-gh repo edit owner/repo --description "<one-line goal>" --add-topic "<language>" --add-topic "<framework>"
-```
-Write the consolidated plan to `{repo}/.github/PROJECT_PLAN.md`, then commit and
-push it (new projects to `main`; existing projects via a `docs/project-plan`
-branch and a PR).
+When the user clicks **Publish**, the app — using the project owner's credentials —
+performs all of this idempotently (check-then-create), per linked repository:
+- **Repositories** — creates any `<repo_link>` repo that doesn't exist yet and clones it.
+- **Project board** — creates / adopts the same-title board (title + description from `goal`).
+- **Milestones** — one per `phases.json` entry.
+- **Issues** — one per `issues.json` entry, pinned to its phase milestone, with its
+  labels + a `stream:<id>` label (falling back to a per-phase tracking issue when no
+  issues are defined).
+- **Labels + repo metadata** + the consolidated **`PROJECT_PLAN.md`** committed into
+  each repo's `.github/`.
+
+So your only outputs are the plan artifacts — the section files, `phases.json`,
+`issues.json`, `fleet.json`, `repos.json`, the `prompts/` kickoffs, and the
+`<repo_link>` / `<plan_update>` tags. Get those right and Publish does the rest.
 
 ## App integration tags
 
@@ -3209,19 +3579,18 @@ copies every pinned skill scoped to this project into each worker's worktree
 agent the means to solve a hard unit," write the skill into `skills.json` with this
 project's key in `projects` and leave it pinned.
 
-## GitHub tools
+## GitHub tools — read-only orientation
 
-`GH_TOKEN` is pre-loaded — use `gh` for all GitHub operations. Read
-`github_context.md` for the authenticated login, linked repos, and command
-examples.
+`GH_TOKEN` is pre-loaded for **reading** GitHub to ground the plan. You are
+plan-only: use `gh` only to inspect (login, repo list, open issues/PRs). Do NOT
+create repos, milestones, issues, or labels, and do NOT commit/push — the app's
+Publish button performs every mutation from your plan files. Read
+`github_context.md` for the authenticated login + linked repos.
 ```
 gh api user --jq .login
-gh repo create owner/name --private --description "..."
 gh repo list --limit 100 --json nameWithOwner,description,pushedAt
 gh issue list --repo owner/repo --state open --limit 20
-gh api repos/owner/repo/milestones --method POST --field title="..."
-gh issue create --repo owner/repo --title "..." --body "..." --milestone N --label "a,b"
-gh repo edit owner/repo --description "..." --add-topic "..."
+gh pr list   --repo owner/repo --state open --limit 20
 ```
 "##;
 
@@ -3241,6 +3610,38 @@ fn sanitize_project_key(key: &str) -> String {
     s.chars().take(80).collect()
 }
 
+/// One-line directive per planning stage (#542) for the assembled active-stages
+/// section. Unknown ids fall back to a generic line.
+fn stage_directive(id: &str) -> String {
+    let line = match id {
+        "context"     => "**Context** — run the discovery checklist (goal, users, scope, UX, stack, architecture, …), one topic at a time.",
+        "repos"       => "**Repos** — decide and link the repositories (emit `<repo_link>`, write `repos.json`).",
+        "ui"          => "**UI** — design the screens: write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live.",
+        "structure"   => "**Structure** — run the feature workshop, then `phases.json` + agent-ready `issues.json`.",
+        "permissions" => "**Permissions** — plan the agent fleet (`fleet.json`): non-overlapping streams + least-privilege profiles.",
+        "automations" => "**Automations** — propose cron automations (emit `<automation_assign>`).",
+        "skills"      => "**Skills** — select reusable skills from the library (`skills.json`).",
+        other         => return format!("**{other}** — configured stage."),
+    };
+    line.to_string()
+}
+
+/// Assemble the "Active planning stages" section from the project's ENABLED stages
+/// (in order). Stages not listed are declared out of scope, so a disabled stage is
+/// never instructed (#512/#542). Empty input ⇒ "" (section omitted; no behavior change).
+fn build_active_stages_md(stages: &[String]) -> String {
+    if stages.is_empty() {
+        return String::new();
+    }
+    let mut s = String::from(
+        "\n## Active planning stages\n\nWork these stages, in this order. **Stages not listed here are OUT OF SCOPE for this project — do not produce their artifacts.**\n\n",
+    );
+    for (i, id) in stages.iter().enumerate() {
+        s.push_str(&format!("{}. {}\n", i + 1, stage_directive(id)));
+    }
+    s
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 async fn setup_workspaces(
@@ -3254,6 +3655,7 @@ async fn setup_workspaces(
     project_key: String,
     github_login: String,
     github_name: String,
+    enabled_stages: Vec<String>,
 ) -> Result<WorkspacePaths, String> {
     let _perf = PerfSpan::new("setup_workspaces");
     sanitize_claude_config();
@@ -3307,6 +3709,14 @@ async fn setup_workspaces(
         format!("{}{}", PLANNING_NEW_INTRO.replace("{PITCH}", &pitch), PLANNING_PROCESS_MD)
     };
 
+    // Modular planning stages (#512/#542): prepend the project's enabled stages (from
+    // its blueprint) as the authoritative scope — disabled stages are declared out of
+    // scope so the planner doesn't produce them. Empty ⇒ no change (all-stages default).
+    let stages_md = build_active_stages_md(&enabled_stages);
+    if !stages_md.is_empty() {
+        planning_md.push_str(&stages_md);
+    }
+
     // Append linked repos section for existing projects (always, even when
     // empty, so Claude knows the current state and acts accordingly).
     if is_existing {
@@ -3317,7 +3727,7 @@ async fn setup_workspaces(
             for full_name in &repo_full_names {
                 let local_path = repo_dir(&project_key, full_name);
                 planning_md.push_str(&format!(
-                    "- **{full_name}**\n  - local path: `{local_path}`\n  - clone if missing: `git clone https://github.com/{full_name} {local_path}`\n",
+                    "- **{full_name}**\n  - local path: `{local_path}` — the app clones it here for you to read; don't clone it yourself.\n",
                     full_name  = full_name,
                     local_path = local_path.display(),
                 ));
@@ -3443,11 +3853,10 @@ async fn setup_workspaces(
         gh_ctx.push('\n');
     }
     gh_ctx.push_str(
-        "## Useful gh commands\n\n\
+        "## Useful gh commands (read-only — the app's Publish button does all writes)\n\n\
          ```\n\
          gh api user                                    # confirm auth\n\
          gh repo list --limit 100 --json nameWithOwner  # all repos\n\
-         gh repo create {login}/{name} --private        # new repo\n\
          gh issue list --repo {owner}/{repo}            # open issues\n\
          gh pr list   --repo {owner}/{repo}             # open PRs\n\
          ```\n"
@@ -3455,10 +3864,38 @@ async fn setup_workspaces(
     std::fs::write(planning_dir.join("github_context.md"), gh_ctx)
         .map_err(|e| e.to_string())?;
 
+    // Write a deterministic context signature so Planning.tsx can surface a
+    // "context updated · refresh" badge when inputs diverge from this baseline (#175).
+    {
+        let mut repos = repo_full_names.clone();
+        repos.sort();
+        let mut kb_ids: Vec<&str> = kb_blocks.iter().map(|b| b.id.as_str()).collect();
+        kb_ids.sort();
+        let mut stages_sorted = enabled_stages.clone();
+        stages_sorted.sort();
+        let sig = format!(
+            "v{}|{}|{}|{}",
+            PLANNING_TEMPLATE_VERSION,
+            repos.join(","),
+            kb_ids.join(","),
+            stages_sorted.join(","),
+        );
+        std::fs::write(planning_dir.join("context_signature.txt"), sig)
+            .map_err(|e| e.to_string())?;
+    }
+
     Ok(WorkspacePaths {
         kb_dir:       kb_dir.to_string_lossy().into_owned(),
         planning_dir: planning_dir.to_string_lossy().into_owned(),
     })
+}
+
+/// Read back the context signature that `setup_workspaces` last wrote (#175).
+/// Returns an empty string when the file doesn't exist yet.
+#[tauri::command]
+fn get_context_signature(project_key: String) -> String {
+    let path = project_dir(&project_key).join("context_signature.txt");
+    std::fs::read_to_string(path).unwrap_or_default()
 }
 
 // ── Claude config file management ────────────────────────────────────────────
@@ -3734,7 +4171,27 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
     if !cur.contains("## Fleet coordination protocol") {
         let _ = std::fs::write(&wt_local, format!("{cur}{FLEET_PROTOCOL_MD}"));
     }
+    // Inline the blueprint's attached skills (#636) so each worker carries the same skill
+    // context the planner had. skills.md lives at the hub (not in the worktree), so the
+    // planner's "read skills.md" note doesn't help a worker — inline it instead.
+    inject_skills(&project_dir(&project_key), &wt_local);
     Ok(wt_str)
+}
+
+/// Inline the hub's attached skills (`skills.md`, #636) into a worker's CLAUDE.local.md
+/// so the worker auto-loads the same skill context the planner had. Idempotent; a no-op
+/// when there are no attached skills (skills.md absent/empty).
+fn inject_skills(hub: &std::path::Path, wt_local: &std::path::Path) {
+    let skills = std::fs::read_to_string(hub.join("skills.md")).unwrap_or_default();
+    let trimmed = skills.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let cur = std::fs::read_to_string(wt_local).unwrap_or_default();
+    if cur.contains("# Attached skills & knowledge") {
+        return; // already injected
+    }
+    let _ = std::fs::write(wt_local, format!("{}\n\n{}\n", cur.trim_end(), trimmed));
 }
 
 /// Append `entry` to a clone's `.git/info/exclude` (idempotent) so app-managed
@@ -4773,6 +5230,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             kb_chat,
             github_request,
+            gist_create,
             github_cache_clear,
             github_graphql,
             github_post,
@@ -4803,6 +5261,12 @@ pub fn run() {
             write_project_plan,
             delete_project_dir,
             clear_all_plan_files,
+            clear_project_plan_files,
+            write_project_file,
+            write_project_file_bytes,
+            scan_dead_code,
+            read_project_files,
+            get_context_signature,
             list_documents,
             read_document,
             write_document,
@@ -4817,6 +5281,7 @@ pub fn run() {
             read_skill_log,
             read_token_usage,
             read_coord_log,
+            read_ui_skeleton,
             append_coord_woke,
             read_git_hooks,
         ])
@@ -4920,6 +5385,47 @@ mod tests {
     #[cfg(any(windows, unix))]
     use super::PtyJob;
     use std::collections::HashMap;
+
+    #[test]
+    fn read_skeleton_dir_collects_source_files_recursively() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("bsc_skel_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("parts")).unwrap();
+        fs::write(root.join("Login.jsx"), "export default () => null;").unwrap();
+        fs::write(root.join("parts/Field.tsx"), "export const F = 1;").unwrap();
+        fs::write(root.join("notes.md"), "ignore me").unwrap();        // wrong ext → skipped
+        fs::write(root.join("data.json"), "{}").unwrap();
+
+        let files = super::read_skeleton_dir(&root);
+        let keys: Vec<&str> = files.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"Login.jsx"), "got {keys:?}");
+        assert!(keys.contains(&"parts/Field.tsx"), "nested + forward-slash relpath");
+        assert!(keys.contains(&"data.json"));
+        assert!(!keys.iter().any(|k| k.ends_with(".md")), "non-source files skipped");
+
+        // Missing folder → empty, never panics.
+        assert!(super::read_skeleton_dir(&root.join("nope")).is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn build_active_stages_md_includes_enabled_excludes_disabled() {
+        // Empty → omitted (all-stages default, no behavior change).
+        assert_eq!(super::build_active_stages_md(&[]), "");
+
+        let md = super::build_active_stages_md(&["context".into(), "structure".into()]);
+        assert!(md.contains("Active planning stages"));
+        assert!(md.contains("OUT OF SCOPE"), "must declare unlisted stages out of scope");
+        assert!(md.contains("**Context**") && md.contains("**Structure**"));
+        // a stage not in the enabled list is absent
+        assert!(!md.contains("**UI**"), "disabled stage must not be instructed");
+        // ordered + numbered
+        assert!(md.find("**Context**").unwrap() < md.find("**Structure**").unwrap());
+
+        // unknown id → generic line, never panics
+        assert!(super::build_active_stages_md(&["custom-x".into()]).contains("**custom-x**"));
+    }
 
     /// Loadbearing claim of the orphan-kill fix: dropping the job handle kills
     /// every assigned process (and its descendants). Spawn a ~30 s `ping` —
@@ -5107,6 +5613,26 @@ mod tests {
     fn claude_launch_adds_continue_flag() {
         // Triage resumes the repo's prior conversation instead of starting fresh.
         assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
+    }
+
+    #[test]
+    fn planner_template_is_plan_only_no_git_mutations() {
+        // The planner is plan-only (#503): it must not be instructed to create repos,
+        // milestones, issues, or labels, nor commit/push — the app's Publish flow owns
+        // every git/GitHub mutation. (The prohibition prose uses bare backticked forms
+        // like `gh repo create`; here we guard the args-bearing INSTRUCTION forms that
+        // only ever appeared as commands to run.)
+        for t in [super::PLANNING_NEW_INTRO, super::PLANNING_EXISTING_INTRO, super::PLANNING_PROCESS_MD] {
+            assert!(!t.contains("--method POST --field"), "planner template instructs `gh api … --method POST`");
+            assert!(!t.contains("gh label create \""), "planner template instructs `gh label create`");
+            assert!(!t.contains("gh issue create --repo"), "planner template instructs `gh issue create`");
+            assert!(!t.contains("gh repo create owner"), "planner template instructs `gh repo create`");
+            assert!(!t.contains("gh repo create {owner}"), "planner template instructs `gh repo create`");
+            assert!(!t.contains("gh repo create {login}"), "planner template instructs `gh repo create`");
+        }
+        // Positive: the plan-only publish framing is present.
+        assert!(super::PLANNING_PROCESS_MD.contains("Publish button"), "publish-by-app framing missing");
+        assert!(super::PLANNING_PROCESS_MD.contains("plan-only"), "plan-only framing missing");
     }
 
     #[test]
@@ -5711,7 +6237,7 @@ mod tests {
     fn non_bash_init_is_visibly_degraded_and_shell_shaped() {
         use super::{non_bash_init, ShellKind};
         // PowerShell: cd's, clears, prints the degraded notice in yellow, launches claude.
-        let ps = non_bash_init(ShellKind::PowerShell, "C:/repo", false, "C:/repo", true);
+        let ps = non_bash_init(ShellKind::PowerShell, "C:/repo", false, "C:/repo", true, None);
         assert!(ps.contains("Set-Location -LiteralPath 'C:/repo'"));
         assert!(ps.contains("Clear-Host"));
         assert!(ps.contains("-ForegroundColor Yellow"));
@@ -5724,7 +6250,7 @@ mod tests {
         assert!(!ps.contains("PROMPT_COMMAND"));
 
         // cmd: uses `&` separators, cls, echo notice; no claude when not launching.
-        let cmd = non_bash_init(ShellKind::Cmd, "C:\\repo", false, "C:\\repo", false);
+        let cmd = non_bash_init(ShellKind::Cmd, "C:\\repo", false, "C:\\repo", false, None);
         assert!(cmd.contains("cd /d \"C:\\repo\""));
         assert!(cmd.contains("cls"));
         assert!(cmd.contains("bash-only and unavailable"));
@@ -5735,11 +6261,36 @@ mod tests {
     #[test]
     fn non_bash_init_warns_loudly_when_cwd_is_missing() {
         use super::{non_bash_init, ShellKind};
-        let ps = non_bash_init(ShellKind::PowerShell, "C:/gone", true, "C:/", false);
+        let ps = non_bash_init(ShellKind::PowerShell, "C:/gone", true, "C:/", false, None);
         // Lands in the existing ancestor, not the missing dir, and shouts about it.
         assert!(ps.contains("Set-Location -LiteralPath 'C:/'"));
         assert!(ps.contains("does not exist"));
         assert!(ps.contains("-ForegroundColor Red"));
+    }
+
+    #[test]
+    fn claude_model_flag_maps_known_ids_only() {
+        use super::claude_model_flag;
+        assert_eq!(claude_model_flag("haiku-4.5"), Some("haiku"));
+        assert_eq!(claude_model_flag("sonnet-4.5"), Some("sonnet"));
+        assert_eq!(claude_model_flag("opus-4.5"), Some("opus"));
+        // Anything unrecognized falls back to Claude Code's own default (no flag).
+        assert_eq!(claude_model_flag("gpt-4"), None);
+        assert_eq!(claude_model_flag(""), None);
+    }
+
+    #[test]
+    fn non_bash_init_injects_the_model_flag_into_the_claude_launch() {
+        use super::{non_bash_init, ShellKind};
+        // With a model, the auto-launched claude carries --model <alias>.
+        let ps = non_bash_init(ShellKind::PowerShell, "C:/repo", false, "C:/repo", true, Some("opus"));
+        assert!(ps.contains("claude --model opus"));
+        let cmd = non_bash_init(ShellKind::Cmd, "C:\\repo", false, "C:\\repo", true, Some("haiku"));
+        assert!(cmd.contains("claude --model haiku"));
+        // Without a model, no flag is added.
+        let ps_none = non_bash_init(ShellKind::PowerShell, "C:/repo", false, "C:/repo", true, None);
+        assert!(ps_none.contains("claude"));
+        assert!(!ps_none.contains("--model"));
     }
 
     #[test]
@@ -6297,6 +6848,130 @@ mod tests {
         assert!(tauri::async_runtime::block_on(write_document(
             "/etc/passwd".to_string(), "x".to_string(),
         )).is_err(), "absolute path rejected");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn clear_project_plan_files_removes_md_and_json_only() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("cpf");
+        let key = "test-plan-clear".to_string();
+        let proj = super::bsc_base_dir().join("projects").join(&key);
+        let sub = proj.join("my-repo");
+        std::fs::create_dir_all(&sub).unwrap();
+        write_file(&proj.join("goal.md"), "goal");
+        write_file(&proj.join("phases.json"), "[]");
+        write_file(&sub.join("README.md"), "# repo"); // inside subdir -- preserved
+
+        let removed = super::clear_project_plan_files(key.clone()).unwrap();
+        assert_eq!(removed, 2, "goal.md + phases.json removed");
+        assert!(!proj.join("goal.md").exists());
+        assert!(!proj.join("phases.json").exists());
+        assert!(sub.join("README.md").exists(), "subdir entry preserved");
+
+        // Missing project -> Ok(0), no panic.
+        let n = super::clear_project_plan_files("no-such-bsc-cpf-key".to_string()).unwrap();
+        assert_eq!(n, 0);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn project_file_write_then_read_roundtrips_and_blocks_escape() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("ppf");
+        let key = "test-pipeline-files".to_string();
+
+        // Write nested under a pipeline subdir, then read the subdir back.
+        super::write_project_file(key.clone(), "pipelines/vue/button.vue".to_string(), "<template/>".to_string()).unwrap();
+        super::write_project_file(key.clone(), "pipelines/vue/card.vue".to_string(), "<card/>".to_string()).unwrap();
+        let proj = super::bsc_base_dir().join("projects").join(&key);
+        assert!(proj.join("pipelines").join("vue").join("button.vue").exists());
+
+        let mut files = super::read_project_files(key.clone(), "pipelines/vue".to_string());
+        files.sort();
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].0, "button.vue");
+        assert_eq!(files[0].1, "<template/>");
+
+        // Escapes are rejected on write and yield empty on read.
+        assert!(super::write_project_file(key.clone(), "../escape.txt".to_string(), "x".to_string()).is_err());
+        assert!(super::write_project_file(key.clone(), "/abs.txt".to_string(), "x".to_string()).is_err());
+        assert!(super::write_project_file(key.clone(), "  ".to_string(), "x".to_string()).is_err());
+        assert!(super::read_project_files(key.clone(), "../..".to_string()).is_empty());
+
+        // Missing subdir -> empty, no panic.
+        assert!(super::read_project_files(key.clone(), "pipelines/none".to_string()).is_empty());
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn inject_skills_inlines_hub_skills_idempotently() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("injectskills");
+        let hub = home.join("hub");
+        std::fs::create_dir_all(&hub).unwrap();
+        let wt_local = home.join("CLAUDE.local.md");
+        std::fs::write(&wt_local, "# repo plan\n").unwrap();
+
+        // No skills.md ⇒ no-op.
+        super::inject_skills(&hub, &wt_local);
+        assert_eq!(std::fs::read_to_string(&wt_local).unwrap(), "# repo plan\n");
+
+        // With skills.md ⇒ inlined under its heading.
+        std::fs::write(hub.join("skills.md"), "# Attached skills & knowledge\n\n### Auth\nUse OAuth.\n").unwrap();
+        super::inject_skills(&hub, &wt_local);
+        let after = std::fs::read_to_string(&wt_local).unwrap();
+        assert!(after.contains("# repo plan"), "keeps the plan");
+        assert!(after.contains("Use OAuth."), "inlines the skills");
+
+        // Second call ⇒ idempotent (not appended twice).
+        super::inject_skills(&hub, &wt_local);
+        assert_eq!(after, std::fs::read_to_string(&wt_local).unwrap());
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn dead_code_cmd_allowlists_known_scanners_only() {
+        assert!(super::dead_code_cmd("depcheck").is_some());
+        assert!(super::dead_code_cmd("ts-prune").is_some());
+        assert!(super::dead_code_cmd("cargo-machete").is_some());
+        // arbitrary commands are never runnable
+        assert!(super::dead_code_cmd("rm").is_none());
+        assert!(super::dead_code_cmd("cargo machete; rm -rf /").is_none());
+        assert!(super::dead_code_cmd("").is_none());
+    }
+
+    #[test]
+    fn scan_dead_code_handles_bad_dir_and_unknown_tool() {
+        let bad = super::scan_dead_code("/no/such/dir/xyzzy".to_string(), "depcheck".to_string());
+        assert!(!bad.ran && bad.error.is_some());
+        let unknown = super::scan_dead_code(".".to_string(), "totally-unknown".to_string());
+        assert!(!unknown.ran && unknown.error.as_deref().unwrap_or("").contains("unknown scanner"));
+    }
+
+    #[test]
+    fn write_project_file_bytes_decodes_base64_and_blocks_escape() {
+        use base64::Engine;
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("ppfb");
+        let key = "test-intake".to_string();
+
+        // Stage a "binary" file (raw bytes, incl. a NUL) from base64.
+        let bytes: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xFF, 0x10];
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        super::write_project_file_bytes(key.clone(), ".intake/logo.png".to_string(), b64).unwrap();
+        let path = super::bsc_base_dir().join("projects").join(&key).join(".intake").join("logo.png");
+        assert!(path.exists());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "bytes round-trip exactly");
+
+        // Bad base64 + path escapes are rejected.
+        assert!(super::write_project_file_bytes(key.clone(), ".intake/x.png".to_string(), "not base64!!".to_string()).is_err());
+        assert!(super::write_project_file_bytes(key.clone(), "../escape.png".to_string(), "AAAA".to_string()).is_err());
+        assert!(super::write_project_file_bytes(key.clone(), "/abs.png".to_string(), "AAAA".to_string()).is_err());
 
         std::fs::remove_dir_all(&home).ok();
     }

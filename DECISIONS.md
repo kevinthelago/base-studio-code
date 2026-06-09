@@ -27,3 +27,5 @@
 
 - #174 design: reuse the EXISTING extensions store (ExtensionDef.projects scope) for MCP assignment rather than a new planMcpAssignments slice. <mcp_assign name=...> in Planning.tsx adds/enables a project-scoped ExtensionDef via the existing addExtension/updateExtension actions. This means NO new store slice from fleet-runtime is needed: fleetStartProject + triage launch already call resolveExtensions(extensions, projectId) -> paneExtensions -> ensure_session_settings -> .mcp.json (pre-trusted). Assignments surface in the project-scoped Extensions screen (parity with how automations surface in the Automations screen). .mcp.json writer + trust already exist + tested on develop.
 
+
+- release-eng signing wiring (#108/#119, director-directed): scripts/sign-windows.ps1 empty-safe wrapper + bundle.windows.signCommand committed; release.yml trusted-signing-cli install step guarded by AZURE_CLIENT_ID presence; Azure env vars wired as empty slots. Auto-activates on AZURE_* and APPLE_* secrets with no further code change. Remaining gate: maintainer procurement of Azure Trusted Signing identity (#108) + Apple Developer ID (#119/#361). See docs/RELEASE_HANDOFF.md.

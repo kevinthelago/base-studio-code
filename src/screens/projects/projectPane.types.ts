@@ -8,6 +8,9 @@
 
 import type { DirectorDrive } from "./directorDrive";
 import type { IntegrationStrategy } from "./integrationStrategy";
+import type { PlanGrade } from "../../lib/planGrade";
+
+export type { PlanGrade };
 
 export type Posture = "allow" | "ask" | "deny";
 export type Perm = Record<string, Posture>;
@@ -53,19 +56,46 @@ export interface Issue {
   branch: string;
   deps: (number | string)[];
   sub: SubItem[];
+  /** Owning repo (`owner/name`). Carried so the phase-first view can group a
+   *  phase's issues by repo. Optional for back-compat with the repo-first shape. */
+  repo?: string;
 }
 export interface Epic { id: string; title: string; pct: number; issues: Issue[] }
 export interface Milestone { id: string; title: string; repo: string; pct: number; state: string; epics: Epic[] }
+
+/** A phase as a PROJECT-SCOPED milestone (#497): one phase spanning every repo,
+ *  with its issues (each tagged with its repo) and a single progress rollup. */
+export interface PhaseGroup {
+  /** Stable-ish id (slug of the name); the persisted stable id lands in slice 2. */
+  id: string;
+  name: string;
+  /** The phase's "done when" (its description), if any. */
+  doneWhen?: string;
+  /** 0-based order in the roadmap; the trailing Unscheduled group sorts last. */
+  order: number;
+  /** Issues in this phase across ALL repos, each carrying `repo`. */
+  issues: Issue[];
+  closed: number;
+  total: number;
+  pct: number;
+}
 
 export interface ContextFile { name: string; kind: string; tok: string; pinned: boolean; scope: string; content: string }
 
 export interface ProjectPaneData {
   agents: Agent[];
   repos: Repo[];
+  /** Repo-first structure (repo → milestone → epic → issue); the secondary lens. */
   structure: Milestone[];
+  /** Phase-first structure (#497): project-scoped phases, the primary lens. */
+  phaseStructure: PhaseGroup[];
   context: ContextFile[];
   /** The async-integrator director config (#366), surfaced for the planning UI. */
   director: { enabled: boolean; role?: string; drive: DirectorDrive };
   /** Project-default integration strategy (#378); undefined ⇒ DEFAULT_STRATEGY. */
   fleetStrategy?: IntegrationStrategy;
+  // The agent-readiness grade (#445) is no longer carried on the pane data: it is now
+  // produced by the grade-plan pipeline and read from the store (sectionGrades, as the
+  // structure "agent-readiness" grader's detail) by the pane directly. PlanGrade is
+  // still re-exported here for the report component's types.
 }
