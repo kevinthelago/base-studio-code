@@ -91,3 +91,33 @@ export const TRIGGER_LABELS: { value: PipelineTrigger; label: string }[] = [
   { value: "on completion",      label: "complete" },
   { value: "manual",             label: "manual" },
 ];
+
+// ── community catalog: shared gist-blueprints to Browse / Fork (#609 slice 5) ──
+// A static starter list for now; discovery becomes federated "sources" later (#598).
+export interface CatalogEntry {
+  id: string;
+  name: string;
+  icon: string;
+  h: number;
+  author: string;
+  stars: number;
+  desc: string;
+  stageCount: number;
+  gistId: string;
+  updated: string;
+  tags: string[];
+}
+
+export const CATALOG: CatalogEntry[] = [
+  { id: "cat_rust",   name: "Rust CLI tool",        icon: "R", h: 25,  author: "ferris-dev",     stars: 342, stageCount: 7,  gistId: "f0c1a9", updated: "3d ago", tags: ["cli", "rust"], desc: "Cargo-first stages with clippy + cross-compile gates. Great for terminal tooling." },
+  { id: "cat_ml",     name: "ML training pipeline", icon: "M", h: 295, author: "tensor-kate",    stars: 511, stageCount: 9,  gistId: "9b3e22", updated: "1w ago", tags: ["ml", "data"], desc: "Data lifecycle → experiment tracking → eval gate → model card. Built for reproducibility." },
+  { id: "cat_chrome", name: "Chrome extension",     icon: "C", h: 70,  author: "mv3-mike",       stars: 188, stageCount: 6,  gistId: "c7d0f1", updated: "2d ago", tags: ["extension", "web"], desc: "Manifest V3 scaffold with permissions audit + store-listing stage." },
+  { id: "cat_saas",   name: "B2B SaaS starter",     icon: "S", h: 230, author: "acme-platform",  stars: 904, stageCount: 12, gistId: "1a2b3c", updated: "5h ago", tags: ["saas", "web", "auth"], desc: "Multi-tenant arch, billing, RBAC, and an onboarding-flow render-preview gate." },
+  { id: "cat_game",   name: "Indie game jam",       icon: "G", h: 350, author: "pixel-pat",      stars: 263, stageCount: 5,  gistId: "e5f6a7", updated: "6d ago", tags: ["game", "lean"], desc: "48-hour scope discipline — vibe, mechanics, one vertical slice. No process bloat." },
+  { id: "cat_data",   name: "Data warehouse",       icon: "D", h: 145, author: "dbt-dana",       stars: 421, stageCount: 8,  gistId: "b8c9d0", updated: "4d ago", tags: ["data", "backend"], desc: "Source contracts → staging → marts with lineage docs and a schema-check gate." },
+];
+
+/** Synthesize a plausible stage-key flow for a catalog entry of N stages (for preview/fork). */
+export const CATALOG_FLOW_KINDS = [
+  "context", "users", "stack", "architecture", "schema", "api", "ui", "structure", "permissions", "testing", "observability", "cicd",
+];
