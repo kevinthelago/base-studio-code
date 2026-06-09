@@ -8,6 +8,7 @@ import { useState } from "react";
 import { PipelineScreenFrame } from "./PipelineScreenFrame";
 import { useAppStore } from "../../store";
 import { runSectionGrade } from "./gradeDispatch";
+import { runSectionGradeLLM } from "./gradeLLM";
 import type { GradeResult, Severity } from "./grading";
 import type { PipelineScreenProps } from "./pipelineScreens";
 
@@ -64,20 +65,39 @@ function GradeCard({ g }: { g: GradeResult }) {
 
 export function GradeReportPane({ projectKey, sectionKey, sectionContent, onClose }: PipelineScreenProps) {
   const grades = useAppStore((s) => (sectionKey ? s.sectionGrades[projectKey]?.[sectionKey] : undefined)) ?? EMPTY;
+  const apiKey = useAppStore((s) => s.claudeApiKey);
   const [tab, setTab] = useState(0);
+  const [busy, setBusy] = useState<null | "rubric" | "llm">(null);
+  const [err, setErr] = useState<string | null>(null);
   const active = grades[Math.min(tab, Math.max(0, grades.length - 1))];
 
   const grade = () => { if (sectionKey) runSectionGrade({ projectKey, sectionKey, content: sectionContent }); };
+  const claudeReview = async () => {
+    if (!sectionKey) return;
+    setBusy("llm"); setErr(null);
+    try { await runSectionGradeLLM({ projectKey, sectionKey, content: sectionContent, apiKey }); }
+    catch (e) { setErr(String(e)); }
+    finally { setBusy(null); }
+  };
 
   return (
     <PipelineScreenFrame
       label="grade"
       statusLabel={active ? `${active.letter} · ${active.score}` : "not graded"}
       statusColor={active ? letterColor(active.letter) : "var(--fg-dim)"}
-      actions={<button className="btn ghost sm" onClick={grade} disabled={!sectionKey} title="Run the section's rubric grader">Grade</button>}
+      actions={
+        <>
+          <button className="btn ghost sm" onClick={grade} disabled={!sectionKey} title="Run the section's rubric grader">Grade</button>
+          <button className="btn ghost sm" onClick={() => void claudeReview()} disabled={!sectionKey || busy === "llm" || !apiKey}
+            title={apiKey ? "Ask Claude to review this section" : "Add a Claude API key in Settings → Integrations"}>
+            {busy === "llm" ? "Reviewing…" : "✦ Claude"}
+          </button>
+        </>
+      }
       onClose={onClose}
     >
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, padding: 14, gap: 12, overflow: "auto" }}>
+        {err && <div style={{ color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 10.5 }}>{err}</div>}
         {grades.length === 0 ? (
           <div style={{ margin: "auto", textAlign: "center", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 11, display: "flex", flexDirection: "column", gap: 10 }}>
             <div>No grade yet for this section.</div>
