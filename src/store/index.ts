@@ -2111,6 +2111,11 @@ export const useAppStore = create<AppStore>()(
           planFleet:             omitKey(s.planFleet),
           issueLinks:            omitKey(s.issueLinks),
           sectionGrades:         omitKey(s.sectionGrades),
+          // rendered artifacts + planning context — the UI preview is "the ui" that must
+          // also clear, plus pipeline run states and pinned context (#651).
+          stagePreview:          omitKey(s.stagePreview),
+          stagePipelineRuns:     omitKey(s.stagePipelineRuns),
+          pinnedContext:         omitKey(s.pinnedContext),
           };
         }),
 
