@@ -36,6 +36,24 @@ describe("ProjectPane (v2)", () => {
     expect(screen.getByText("Context Files")).toBeTruthy();
   });
 
+  it("renders a generic card for every blueprint section (#609): dedicated + non-dedicated, in order", () => {
+    render(<ProjectPane data={data()} projectName="P" projectId="p" sections={[
+      { key: "context", name: "Context Files" },
+      { key: "stack", name: "Tech stack", blurb: "Languages & frameworks." },
+      { key: "structure", name: "Milestones · Structure" },
+      { key: "api", name: "API & contracts", blurb: "Endpoints & contracts." },
+    ]} />);
+    // dedicated sections still render their rich panels
+    expect(screen.getByText("Context Files")).toBeTruthy();
+    expect(screen.getByText("Milestones · Structure")).toBeTruthy();
+    // non-dedicated sections now appear as generic cards (previously invisible)
+    expect(screen.getByText("Tech stack")).toBeTruthy();
+    expect(screen.getByText("API & contracts")).toBeTruthy();
+    // expanding a generic card reveals its blurb
+    fireEvent.click(screen.getByText("Tech stack"));
+    expect(screen.getByText("Languages & frameworks.")).toBeTruthy();
+  });
+
   it("renders the repo-first structure (repo cards; first repo open shows its milestones)", () => {
     render(<ProjectPane />);
     fireEvent.click(screen.getByText("repo")); // repo-first is the secondary lens (#497)

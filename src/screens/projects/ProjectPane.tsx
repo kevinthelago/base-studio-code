@@ -1056,13 +1056,17 @@ function DirectorBar({ director, fleetStrategy, onDirectorDrive }: {
  * no write-back in this slice.
  */
 export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onStrategy, onTogglePin,
-  onDirectorDrive, onSyncLabels, syncState, sectionKeys, highlight }: {
+  onDirectorDrive, onSyncLabels, syncState, sectionKeys, sections, highlight }: {
   data?: ProjectPaneData;
   projectName?: string;
   projectId?: string;
   /** Enabled stage ids in blueprint order — gates + orders the pane's sections.
    *  Undefined ⇒ show every section in the default order (sample/standalone use). */
   sectionKeys?: string[];
+  /** Enabled blueprint sections (key + display name + blurb), in order. Preferred over
+   *  sectionKeys: sections without a dedicated rich panel render a generic card so EVERY
+   *  blueprint section is visible in the pane — not just context/structure/permissions. */
+  sections?: { key: string; name: string; blurb?: string }[];
   /** Stage keys to flag as incomplete (locked-Triage feedback): danger outline + pulse. */
   highlight?: Set<string>;
   onPerm?: (streamId: string, perm: Perm) => void;
@@ -1181,10 +1185,29 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
               </Sec>
             ) },
           ];
-          const shown = sectionKeys
-            ? sectionKeys.flatMap(k => sectionNodes.filter(s => s.stage === k))
-            : sectionNodes;
-          return shown.map(s => s.node);
+          // A generic card for any blueprint section without a dedicated rich panel —
+          // so every enabled section is visible in the pane (#609 follow-up), not just
+          // the three special ones.
+          const genericNode = (sec: { key: string; name: string; blurb?: string }): ReactNode => (
+            <Sec key={`sec-${sec.key}`} title={sec.name} count="plan section" open={false} attention={highlight?.has(sec.key)}>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.6, padding: "2px 2px 6px" }}>
+                {sec.blurb || "Documented by the planner during this stage."}
+              </div>
+            </Sec>
+          );
+          let shown: ReactNode[];
+          if (sections) {
+            // blueprint order: dedicated node(s) when the key has them, else a generic card
+            shown = sections.flatMap(sec => {
+              const ded = sectionNodes.filter(s => s.stage === sec.key).map(s => s.node);
+              return ded.length ? ded : [genericNode(sec)];
+            });
+          } else if (sectionKeys) {
+            shown = sectionKeys.flatMap(k => sectionNodes.filter(s => s.stage === k).map(s => s.node));
+          } else {
+            shown = sectionNodes.map(s => s.node);
+          }
+          return shown;
         })()}
       </div>
 
