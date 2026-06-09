@@ -198,6 +198,49 @@ feature flags, deprecated APIs, and duplicated code. Run the scan, verify each
 candidate (static tools have false positives — dynamic refs, public API, test-only
 use), then list confirmed removals as refactor units with a test safety net.`,
   },
+  // ── transform / harden stages (#645 slice 2): informational (no signal gate) ──
+  boundaries: {
+    name: "Service boundaries", glyph: "⧉", gate: "boundaries mapped", deps: ["repos"],
+    blurb: "Bounded contexts and the seams to split the monolith along.",
+    prompt:
+`Map the codebase into bounded contexts: cohesive modules, the data each owns, and the
+call/coupling seams between them. Identify the cut lines for extraction and the shared
+code that must be split or duplicated. Flag chatty couplings that would become costly
+network calls once separated.`,
+  },
+  extraction: {
+    name: "Extraction plan", glyph: "⤳", gate: "extraction sequenced", deps: ["boundaries"],
+    blurb: "Incremental, shippable steps to carve each service out.",
+    prompt:
+`Sequence the split. For each service: its API/contract, the data it owns + how to
+migrate it, and the strangler steps to extract it without a big-bang cutover. Order by
+dependency and risk; keep the system shippable and reversible at every step.`,
+  },
+  consolidation: {
+    name: "Consolidation plan", glyph: "⧈", gate: "merge mapped", deps: ["repos"],
+    blurb: "Merge services back together, unifying data & contracts.",
+    prompt:
+`Map the services to merge: overlapping responsibilities, the data stores to unify, and
+the inter-service calls that become in-process. Plan the merge order, the shared schema,
+and how to retire the redundant deployments/contracts without downtime.`,
+  },
+  migration: {
+    name: "Migration plan", glyph: "⇄", gate: "from→to mapped", deps: ["repos"],
+    blurb: "The from→to mapping and an incremental, reversible cutover.",
+    prompt:
+`Define the migration: the from→to (framework / language / protocol / datastore), an
+equivalence mapping, and an incremental cutover — run old + new in parallel, migrate
+slice by slice, verify, then retire the old. Call out breaking changes and the
+compatibility shims that bridge them.`,
+  },
+  hardening: {
+    name: "Security hardening", glyph: "⛨", gate: "threats triaged", deps: ["repos"],
+    blurb: "Threat model, an authz/secrets/deps audit, and concrete fixes.",
+    prompt:
+`Threat-model the system (assets, entry points, trust boundaries), then audit: authn/authz
+gaps, secret handling, input validation, dependency CVEs, and transport/storage crypto.
+Rank findings by severity and produce concrete, testable fixes — not just observations.`,
+  },
 };
 
 export interface BlueprintSection extends SectionDef {
@@ -352,6 +395,55 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("cleanup",     { pipelines: [["scan-dead-code", "manual", false], ["grade-rubric", "on completion", false]] }),
         mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
+        mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+      ],
+    },
+    // ── transform blueprints (#645 slice 2): operate on existing repos ──
+    {
+      id: "split-services", name: "Split into microservices", desc: "Carve a monolith into services along its seams",
+      origin: "built-in", icon: "⧉", h: 230, category: "transform", mode: "operate",
+      sections: [
+        mkSection("context"),
+        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
+        mkSection("boundaries",  { pipelines: [["grade-rubric", "on completion", false]] }),
+        mkSection("extraction",  { pipelines: [["contract-test", "on completion", true]] }),
+        mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
+        mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+      ],
+    },
+    {
+      id: "combine-services", name: "Combine microservices", desc: "Merge services back into fewer (or a monolith)",
+      origin: "built-in", icon: "⧈", h: 260, category: "transform", mode: "operate",
+      sections: [
+        mkSection("context"),
+        mkSection("repos",         { pipelines: [["index-repos", "on section enter", true]] }),
+        mkSection("consolidation", { pipelines: [["grade-rubric", "on completion", false]] }),
+        mkSection("testing",       { pipelines: [["lint-plan", "on completion", true]] }),
+        mkSection("structure",     { pipelines: [["generate-issues", "on completion", true]] }),
+        mkSection("permissions",   { pipelines: [["scope-streams", "on completion", true]] }),
+      ],
+    },
+    {
+      id: "migrate", name: "Migrate stack", desc: "Move framework / language / protocol with an incremental cutover",
+      origin: "built-in", icon: "⇄", h: 195, category: "transform", mode: "operate",
+      sections: [
+        mkSection("context"),
+        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
+        mkSection("migration",   { pipelines: [["grade-rubric", "on completion", false]] }),
+        mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
+        mkSection("structure",   { pipelines: [["generate-issues", "on completion", true]] }),
+        mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+      ],
+    },
+    {
+      id: "harden", name: "Harden security", desc: "Threat-model, audit, and fix security gaps in place",
+      origin: "built-in", icon: "⛨", h: 25, category: "harden", mode: "operate",
+      sections: [
+        mkSection("context"),
+        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
+        mkSection("hardening",   { pipelines: [["grade-rubric", "on completion", false]] }),
+        mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
+        mkSection("structure",   { pipelines: [["generate-issues", "on completion", true]] }),
         mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
       ],
     },

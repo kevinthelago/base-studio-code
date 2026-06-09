@@ -30,6 +30,37 @@ describe("blueprint categories (#645)", () => {
   });
 });
 
+describe("transform blueprints (#645 slice 2)", () => {
+  const all = makeBlueprints();
+  const byId = (id: string) => all.find((b) => b.id === id)!;
+
+  it("packages the lifecycle transforms with the right category/mode", () => {
+    for (const id of ["split-services", "combine-services", "migrate"]) {
+      expect(byId(id), id).toBeTruthy();
+      expect(byId(id).category).toBe("transform");
+      expect(byId(id).mode).toBe("operate");
+    }
+    expect(byId("harden").category).toBe("harden");
+    expect(byId("harden").mode).toBe("operate");
+  });
+
+  it("builds their stages from real transform section defs (not the synth fallback)", () => {
+    const split = byId("split-services");
+    const keys = split.sections.map((s) => s.key);
+    expect(keys).toEqual(expect.arrayContaining(["boundaries", "extraction"]));
+    const extraction = split.sections.find((s) => s.key === "extraction")!;
+    expect(extraction.deps).toContain("boundaries");
+    // a real SECTION_DEF carries its own glyph; the synth fallback would be "✚".
+    expect(split.sections.find((s) => s.key === "boundaries")!.glyph).not.toBe("✚");
+  });
+
+  it("are surfaced by the category filter", () => {
+    const transforms = filterBlueprints(all, { category: "transform" }).map((b) => b.id);
+    expect(transforms).toEqual(expect.arrayContaining(["refactor", "split-services", "combine-services", "migrate"]));
+    expect(filterBlueprints(all, { category: "harden" }).map((b) => b.id)).toContain("harden");
+  });
+});
+
 describe("filterBlueprints (#645)", () => {
   const list = [
     bp("a", "Default", { category: "greenfield", desc: "balanced start" }),
