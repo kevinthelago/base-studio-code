@@ -15,7 +15,9 @@ import {
 import {
   reorderStages, addStage, duplicateStage, deleteStage, toggleDep,
   addPipeline, updatePipeline, removePipeline, setOutput, setStageField, depCandidates,
+  addSkill, removeSkill,
 } from "./blueprintEdit";
+import { resolveBlueprintSkills, type BlueprintSkillItem } from "./blueprintSkills";
 import { PIPELINE_LIB, type BlueprintSection, type PipelineTrigger } from "./blueprints";
 
 export interface EditorRibbon { author?: string; label: string; summary: string }
@@ -26,6 +28,8 @@ export interface BlueprintEditorProps {
   onSelect: (uid: string) => void;
   /** Persist a new sections array (already computed by an edit helper). */
   onChange: (sections: BlueprintSection[]) => void;
+  /** The pickable skills/knowledge library (#636); empty ⇒ the Skills block hides its picker. */
+  skillLibrary?: BlueprintSkillItem[];
   ribbon?: EditorRibbon | null;
   onResolveRibbon?: (action: "dismiss" | "review") => void;
 }
@@ -178,7 +182,10 @@ function PipelineRow({ p, onTrigger, onGate, onRemove }: {
   );
 }
 
-function StageDetail({ sections, section, onSelect, onChange }: { sections: BlueprintSection[]; section: BlueprintSection; onSelect: (uid: string) => void; onChange: (s: BlueprintSection[]) => void }) {
+function StageDetail({ sections, section, onSelect, onChange, skillLibrary = [] }: { sections: BlueprintSection[]; section: BlueprintSection; onSelect: (uid: string) => void; onChange: (s: BlueprintSection[]) => void; skillLibrary?: BlueprintSkillItem[] }) {
+  const attached = section.skills ?? [];
+  const { found: attachedSkills, missing: missingSkills } = resolveBlueprintSkills(attached, skillLibrary);
+  const addableSkills = skillLibrary.filter((i) => !attached.includes(i.id));
   const k = stageKind(section.key);
   const existing = new Set(section.pipelines.map((p) => p.id));
   const suggested = PIPELINE_LIB.filter((p) => p.suits.includes(section.key)).map((p) => p.id);
@@ -255,13 +262,46 @@ function StageDetail({ sections, section, onSelect, onChange }: { sections: Blue
             })}
           </div>
         </div>
+
+        {/* skills / knowledge attached to this stage (#636) */}
+        <div className="d-block">
+          <div className="lbl">Skills &amp; knowledge <span className="ln" /><span className="lhint">paired context Claude gets in this stage</span></div>
+          {attachedSkills.length === 0 && missingSkills.length === 0 && (
+            <div className="hint" style={{ marginBottom: 8 }}>No skills attached. Add reusable knowledge / skills below — they're injected into the agent's context for this stage.</div>
+          )}
+          {(attachedSkills.length > 0 || missingSkills.length > 0) && (
+            <div className="dep-row" style={{ marginBottom: 8 }}>
+              {attachedSkills.map((sk) => (
+                <span className="dep-chip on" key={sk.id} title={sk.desc}>
+                  <span className="dim" style={{ fontSize: 8.5 }}>{sk.kind}</span>{sk.name}
+                  <span style={{ cursor: "pointer", opacity: .8 }} onClick={() => onChange(removeSkill(sections, section.uid, sk.id))}> ✕</span>
+                </span>
+              ))}
+              {missingSkills.map((id) => (
+                <span className="dep-chip" key={id} title="Not in your library — install it or it won't inject" style={{ color: "var(--danger)", borderColor: "color-mix(in oklch, var(--danger), transparent 60%)" }}>
+                  ⚠ {id}
+                  <span style={{ cursor: "pointer", opacity: .8 }} onClick={() => onChange(removeSkill(sections, section.uid, id))}> ✕</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {addableSkills.length > 0 && (
+            <div className="pipe-add">
+              {addableSkills.map((sk) => (
+                <button className="chip-sug" key={sk.id} title={sk.desc} onClick={() => onChange(addSkill(sections, section.uid, sk.id))}>
+                  + {sk.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 /** The editor body: an optional upstream ribbon + the stage rail + the stage detail. */
-export function BlueprintEditorView({ sections, selectedUid, onSelect, onChange, ribbon, onResolveRibbon }: BlueprintEditorProps) {
+export function BlueprintEditorView({ sections, selectedUid, onSelect, onChange, skillLibrary, ribbon, onResolveRibbon }: BlueprintEditorProps) {
   const section = sections.find((s) => s.uid === selectedUid) ?? sections[0];
   return (
     <div className="ed">
@@ -277,7 +317,7 @@ export function BlueprintEditorView({ sections, selectedUid, onSelect, onChange,
       <div className="ed-body">
         <StageRail sections={sections} selectedUid={section ? section.uid : null} onSelect={onSelect} onChange={onChange} />
         {section ? (
-          <StageDetail sections={sections} section={section} onSelect={onSelect} onChange={onChange} />
+          <StageDetail sections={sections} section={section} onSelect={onSelect} onChange={onChange} skillLibrary={skillLibrary} />
         ) : (
           <div className="detail"><div className="d-empty"><div className="ico">▢</div><div>No stages yet. Add one from the flow rail, or ask Claude to design the blueprint.</div></div></div>
         )}
