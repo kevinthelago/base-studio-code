@@ -176,6 +176,9 @@
 .fp .step.locked .step-node { border-style: dashed; color: var(--fg-dim); }
 .fp .step.upcoming .step-node { color: var(--fg-dim); }
 .fp .step.selected .step-node { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fp .step.attn .step-node { border-color: var(--danger); color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger), transparent 75%); animation: pulse 1.1s ease-in-out infinite; }
+.fp .step.attn .step-label { color: var(--danger); }
 .fp .step-label { font-family: var(--mono); font-size: 8.5px; letter-spacing: .02em;
   color: var(--fg-dim); white-space: nowrap; max-width: 58px; overflow: hidden; text-overflow: ellipsis; }
 .fp .step.active .step-label, .fp .step.selected .step-label { color: var(--fg); }
