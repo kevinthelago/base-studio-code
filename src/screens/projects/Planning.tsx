@@ -39,6 +39,7 @@ import {
   blueprintToStageConfig, incompleteSections, planSectionsComplete, currentSection, mkSection,
   type BlueprintSection, type IncompleteSection,
 } from "./blueprints";
+import { writeBlueprintSkillContext } from "./blueprintSkills";
 import { featureSectionsToIssues, featureSlug, parseFeatureSection, incompleteFeatureSections } from "./planFeatures";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { ProjectPane, type SyncState } from "./ProjectPane";
@@ -631,6 +632,16 @@ export function Planning({ visible }: { visible: boolean }) {
     const active = st.blueprints.find((b) => b.id === st.activeBlueprintId);
     if (active) st.setProjectStageConfig(effectiveProjectId, blueprintToStageConfig(active));
   }, [effectiveProjectId]);
+
+  // Write the active blueprint's attached skills/knowledge to the hub's skills.md so the
+  // planner can read the context for the current stage (#636). Re-writes when the
+  // blueprint (or its attachments) changes; no-op when nothing is attached.
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    const st = useAppStore.getState();
+    const active = st.blueprints.find((b) => b.id === st.activeBlueprintId);
+    if (active) void writeBlueprintSkillContext({ projectKey: effectiveProjectId, blueprint: active, skills: st.skills, kb: st.kbBlocks });
+  }, [effectiveProjectId, activeBlueprintId, blueprints]);
 
   const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
   // A project "needs UI" when its blueprint enables the `ui` stage (#544); the UI stage
