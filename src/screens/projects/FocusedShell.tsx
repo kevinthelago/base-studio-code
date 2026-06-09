@@ -5,9 +5,10 @@
 import { Fragment } from "react";
 import type { Phase, GatePill, FooterKind } from "./focusedPlan";
 
-/** The navigable phase stepper. */
-export function Stepper({ phases, selectedIdx, onSelect }: {
-  phases: Phase[]; selectedIdx: number; onSelect: (i: number) => void;
+/** The navigable phase stepper. `highlight` pulses the nodes the user still has to
+ *  finish (the locked-Triage feedback, #652). */
+export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
+  phases: Phase[]; selectedIdx: number; onSelect: (i: number) => void; highlight?: Set<string>;
 }) {
   return (
     <div className="stepper">
@@ -16,7 +17,7 @@ export function Stepper({ phases, selectedIdx, onSelect }: {
           <Fragment key={p.key}>
             <button
               type="button"
-              className={`step ${p.status}${i === selectedIdx ? " selected" : ""}`}
+              className={`step ${p.status}${i === selectedIdx ? " selected" : ""}${highlight?.has(p.key) ? " attn" : ""}`}
               onClick={() => onSelect(i)}
               title={p.name}
             >

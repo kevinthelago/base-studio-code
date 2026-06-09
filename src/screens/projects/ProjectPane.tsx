@@ -1210,7 +1210,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
     const activeName = focus.phases[focus.activeIdx]?.name ?? "";
     return (
       <div className="fp">
-        <Stepper phases={focus.phases} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} />
+        <Stepper phases={focus.phases} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} highlight={highlight} />
         {ph && <PhaseHeader phase={ph} pill={focus.pill} />}
         {locked && <LockBanner activeName={activeName} />}
         {done && <DoneBanner />}

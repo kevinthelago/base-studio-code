@@ -26,6 +26,12 @@ describe("Stepper (#652)", () => {
     const { container } = render(<Stepper phases={phases} selectedIdx={2} onSelect={vi.fn()} />);
     expect(container.querySelector(".step.locked.selected")).toBeTruthy();
   });
+
+  it("pulses highlighted (incomplete) steps via the attn class", () => {
+    const { container } = render(<Stepper phases={phases} selectedIdx={0} onSelect={vi.fn()} highlight={new Set(["c"])} />);
+    expect(container.querySelector(".step.locked.attn")).toBeTruthy();
+    expect(container.querySelector(".step.complete.attn")).toBeNull(); // only highlighted keys
+  });
 });
 
 describe("PhaseHeader (#652)", () => {
