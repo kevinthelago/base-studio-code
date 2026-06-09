@@ -2581,7 +2581,7 @@ struct AutomationData {
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-const PLANNING_TEMPLATE_VERSION: u8 = 2;
+const PLANNING_TEMPLATE_VERSION: u8 = 3;
 
 #[derive(serde::Serialize)]
 struct WorkspacePaths {
@@ -3043,6 +3043,13 @@ needs. Read `extensions.md` (the catalog of available MCP servers) and
   `npm audit`, a lint/test sweep, a dependency-bump check).
 
 Both surface in the project's Automations & extensions UI and persist with the plan.
+
+## Attached skills & knowledge
+
+If `skills.md` exists at the project root, it holds the reusable skills / knowledge the
+user paired with this blueprint — project-wide and per-stage. **Read the section for the
+stage you're on** and let it inform that stage's work; it's authoritative context the
+user chose for this project.
 
 ## File intake — route files the user drops in
 
