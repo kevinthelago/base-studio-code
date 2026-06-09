@@ -48,6 +48,7 @@ export const PIPELINE_LIB: PipelineDef[] = [
   { id: "generate-issues", name: "Generate issues",     desc: "Turn phases into granular GitHub issues",    suits: ["structure"],   kind: "builtin"  },
   { id: "grade-plan",      name: "Grade plan",          desc: "Score agent-readiness and suggest fixes",    suits: ["structure"],   kind: "builtin"  },
   { id: "grade-rubric",    name: "Grade section",       desc: "Score this section against a rubric (report card)", suits: ["*"],     kind: "builtin"  },
+  { id: "grade-llm",       name: "Claude review",       desc: "Ask Claude to grade this section against its rubric", suits: ["*"],   kind: "builtin"  },
   { id: "sync-milestones", name: "Sync milestones",     desc: "Publish phases as GitHub milestones",        suits: ["structure"],   kind: "builtin"  },
   { id: "lint-plan",       name: "Lint plan",           desc: "Validate this stage's output for gaps",      suits: ["*"],           kind: "builtin"  },
   { id: "scope-streams",   name: "Scope streams",       desc: "Derive least-privilege agent profiles",      suits: ["permissions"], kind: "builtin"  },
