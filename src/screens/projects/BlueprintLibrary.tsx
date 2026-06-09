@@ -4,10 +4,14 @@
 // display metadata is derived with fallbacks, so a plain Blueprint (id/name/desc/
 // sections) renders fine even before slice 5 populates gist/origin/uses.
 
+import { useState } from "react";
 import "../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import { stageKind, tint, hue } from "./blueprintCatalog";
-import { type Blueprint, type BlueprintSection, type BlueprintGist, type BlueprintOrigin } from "./blueprints";
+import {
+  blueprintCategory, filterBlueprints, CATEGORY_META, BLUEPRINT_CATEGORIES,
+  type Blueprint, type BlueprintSection, type BlueprintGist, type BlueprintOrigin, type BlueprintCategory,
+} from "./blueprints";
 
 const HUES = [70, 230, 295, 195, 145, 350, 25];
 
@@ -74,6 +78,8 @@ function BlueprintCard({ bp, index, onOpen, onMenu }: {
         <div className="bp-icon" style={{ background: tint(h, 0.16), color: hue(h), borderColor: tint(h, 0.4) }}>{bpIcon(bp)}</div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <h3>{bp.name}
+            {(() => { const c = blueprintCategory(bp); const m = CATEGORY_META[c];
+              return <span className="tag" title={`${m.label} blueprint`} style={{ color: hue(m.h), borderColor: tint(m.h, 0.5) }}>{m.label}</span>; })()}
             {origin === "built-in" && <span className="tag">built-in</span>}
             {origin === "forked" && <span className="tag violet">forked</span>}
             {origin === "imported" && <span className="tag info">imported</span>}
@@ -111,6 +117,11 @@ export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, seede
   const gates = blueprints.reduce((n, b) => n + b.sections.reduce((m, s) => m + s.pipelines.filter((p) => p.gate).length, 0), 0);
   const top = [...blueprints].sort((a, b) => (b.uses ?? 0) - (a.uses ?? 0))[0];
 
+  // Search + category filter (#645).
+  const [query, setQuery] = useState("");
+  const [cat, setCat] = useState<BlueprintCategory | "all">("all");
+  const shown = filterBlueprints(blueprints, { query, category: cat });
+
   return (
     <div className="wrap">
       <div className="phead">
@@ -146,11 +157,47 @@ export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, seede
         <div className="stat"><div className="sk">Projects seeded</div><div className="sv">{seeded}</div><div className="sm">all-time</div></div>
       </div>
 
-      <div className="seclabel">Your library<span className="ln" /><span className="dim">{blueprints.length}</span></div>
+      <div className="seclabel">Your library<span className="ln" /><span className="dim">{shown.length}{shown.length !== blueprints.length ? ` / ${blueprints.length}` : ""}</span></div>
+
+      {/* search + category filter (#645) */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search blueprints…"
+          aria-label="Search blueprints"
+          style={{
+            flex: "1 1 220px", minWidth: 180, padding: "6px 10px", borderRadius: 6,
+            background: "var(--bg-inset)", border: "1px solid var(--border)",
+            color: "var(--fg)", fontFamily: "var(--mono)", fontSize: 12,
+          }}
+        />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button className={"btn ghost sm" + (cat === "all" ? " primary" : "")} onClick={() => setCat("all")}>All</button>
+          {BLUEPRINT_CATEGORIES.map((c) => {
+            const m = CATEGORY_META[c];
+            return (
+              <button
+                key={c}
+                className="btn ghost sm"
+                onClick={() => setCat(c)}
+                title={`${m.label} blueprints`}
+                style={cat === c ? { color: hue(m.h), borderColor: tint(m.h, 0.5) } : undefined}
+              >{m.label}</button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="bp-grid">
-        {blueprints.map((bp, i) => (
+        {shown.map((bp, i) => (
           <BlueprintCard key={bp.id} bp={bp} index={i} onOpen={onOpen} onMenu={onMenu} />
         ))}
+        {shown.length === 0 && (
+          <div className="hint" style={{ gridColumn: "1 / -1", padding: "24px 0", textAlign: "center" }}>
+            No blueprints match{query ? ` "${query}"` : ""}{cat !== "all" ? ` in ${CATEGORY_META[cat].label}` : ""}.
+          </div>
+        )}
         <button className="bp-card" onClick={onNew}
           style={{ display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 10, color: "var(--fg-dim)", border: "1px dashed var(--border)", background: "transparent", minHeight: 150 }}>
           <Ic n="add" size={22} style={{ opacity: .7 }} />
