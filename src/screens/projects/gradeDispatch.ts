@@ -28,6 +28,9 @@ export function planGradeToResult(g: PlanGrade, sectionKey = "structure"): Grade
     letter: g.letter,
     dimensions: g.categories.map((c) => ({ id: c.id, label: c.label, score: Math.round(c.score * 100), note: c.detail })),
     findings: g.suggestions.map((s) => ({ severity: severityOf(s.priority), message: s.title, fix: s.detail })),
+    // carry the full PlanGrade so the structure section can still render its rich report
+    // (per-issue grades, category examples) — the report card uses only the projection.
+    detail: g,
   };
 }
 

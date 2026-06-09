@@ -749,7 +749,7 @@ export function Planning({ visible }: { visible: boolean }) {
 
   // Run the grade-plan pipeline whenever the structure inputs actually change, so the
   // always-visible ProjectPane's readiness report stays current (#445 → pipeline). The
-  // pipeline is the single source of truth — the pane reads stagePlanGrade.
+  // pipeline is the single source of truth — the pane reads it from sectionGrades.
   //
   // Gate on a stable CONTENT signature, not on the input references: publishRepos is a
   // fresh array every render, so depending on it directly would re-fire the effect every
