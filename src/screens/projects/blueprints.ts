@@ -190,11 +190,38 @@ export interface BlueprintSection extends SectionDef {
   pipelines: Pipeline[];
 }
 
+/** Where a blueprint came from (#609) — drives the card's origin tag. */
+export type BlueprintOrigin = "built-in" | "local" | "forked" | "imported";
+
+/** Gist link state for a blueprint (#609) — the publish/sync state-machine. Slice 5
+ *  populates this; the Library card reads it for the sync badge. Absent ⇒ local-only. */
+export interface BlueprintGist {
+  state: "local" | "dirty" | "synced" | "forked";
+  /** Whether an upstream update is available (forked blueprints). */
+  behind?: boolean;
+  rev?: string;
+  author?: string;
+  id?: string;
+  url?: string;
+  public?: boolean;
+}
+
 export interface Blueprint {
   id: string;
   name: string;
   desc: string;
   sections: BlueprintSection[];
+  /** Display + provenance metadata (#609). All optional — the Library derives sensible
+   *  fallbacks (icon from the name, hue from the id, origin "local", local-only gist). */
+  icon?: string;
+  /** Accent hue (oklch) for the card/editor icon. */
+  h?: number;
+  origin?: BlueprintOrigin;
+  tags?: string[];
+  gist?: BlueprintGist;
+  /** How many projects this blueprint has seeded. */
+  uses?: number;
+  updatedAt?: string;
 }
 
 export const DEFAULT_BLUEPRINT_ID = "default";
