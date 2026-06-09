@@ -33,7 +33,7 @@ import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/project
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
 import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import type { GradeResult } from "../screens/projects/grading";
-import { makeBlueprints, cloneSections, mkSection, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
+import { makeBlueprints, cloneSections, mkSection, blueprintToStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
@@ -591,6 +591,15 @@ interface AppStore {
   blueprints:         Blueprint[];
   activeBlueprintId:  string;
   setActiveBlueprint: (id: string) => void;
+  // Which blueprint each project was last seeded/reset from (#647), keyed by project key.
+  // Lets the planner detect when the selected blueprint differs from the project's and
+  // offer to reset. Set on first seed + on an explicit blueprint switch.
+  projectBlueprintId: Record<string, string>;
+  setProjectBlueprintId: (projectId: string, blueprintId: string) => void;
+  /** Re-seed a project's plan from a blueprint and CLEAR its progress (grades, screen
+   *  approvals, preview, pipeline runs) — the destructive "reset plan to blueprint" (#647).
+   *  The planner restarts the session separately. No-op if the blueprint is unknown. */
+  applyBlueprintToProject: (projectId: string, blueprintId: string) => void;
   addBlueprint:       () => string;
   duplicateBlueprint: (id: string) => string;
   updateBlueprintMeta: (id: string, patch: Partial<Omit<Blueprint, "id" | "sections">>) => void;
@@ -1295,6 +1304,7 @@ export const useAppStore = create<AppStore>()(
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
+            projectBlueprintId:     byKey(s.projectBlueprintId),
             uiScreens:              byKey(s.uiScreens),
             uiApproved:             byKey(s.uiApproved),
             planFleet:              byKey(s.planFleet),
@@ -1322,7 +1332,7 @@ export const useAppStore = create<AppStore>()(
       resetProjectData: () =>
         set({
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
-          planAutomations: {}, planStageConfig: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
+          planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
@@ -1874,6 +1884,27 @@ export const useAppStore = create<AppStore>()(
       blueprints: makeBlueprints(),
       activeBlueprintId: DEFAULT_BLUEPRINT_ID,
       setActiveBlueprint: (id) => set({ activeBlueprintId: id }),
+      projectBlueprintId: {},
+      setProjectBlueprintId: (projectId, blueprintId) =>
+        set((s) => ({ projectBlueprintId: { ...s.projectBlueprintId, [projectId]: blueprintId } })),
+      applyBlueprintToProject: (projectId, blueprintId) =>
+        set((s) => {
+          const bp = s.blueprints.find((b) => b.id === blueprintId);
+          if (!bp) return {};
+          const drop = <T,>(m: Record<string, T>): Record<string, T> => {
+            const n = { ...m }; delete n[projectId]; return n;
+          };
+          return {
+            planStageConfig:    { ...s.planStageConfig, [projectId]: blueprintToStageConfig(bp) },
+            projectBlueprintId: { ...s.projectBlueprintId, [projectId]: blueprintId },
+            // wipe progress keyed to the old stage arc
+            sectionGrades:     drop(s.sectionGrades),
+            uiScreens:         drop(s.uiScreens),
+            uiApproved:        drop(s.uiApproved),
+            stagePreview:      drop(s.stagePreview),
+            stagePipelineRuns: drop(s.stagePipelineRuns),
+          };
+        }),
       addBlueprint: () => {
         const id = `bp-${Date.now().toString(36)}`;
         set((s) => ({
@@ -2074,6 +2105,7 @@ export const useAppStore = create<AppStore>()(
           planKbAssignments:     omitKey(s.planKbAssignments),
           planAutomations:       omitKey(s.planAutomations),
           planStageConfig:       omitKey(s.planStageConfig),
+          projectBlueprintId:    omitKey(s.projectBlueprintId),
           uiScreens:             omitKey(s.uiScreens),
           uiApproved:            omitKey(s.uiApproved),
           planFleet:             omitKey(s.planFleet),
@@ -2281,6 +2313,7 @@ export const useAppStore = create<AppStore>()(
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,
+        projectBlueprintId:    s.projectBlueprintId,
         uiScreens:             s.uiScreens,
         uiApproved:            s.uiApproved,
         blueprints:            s.blueprints,
