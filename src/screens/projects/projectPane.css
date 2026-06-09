@@ -161,6 +161,16 @@
 .fp { display: flex; flex-direction: column; height: 100%; background: var(--bg-panel);
   min-height: 0; overflow: hidden; }
 
+/* pane identity header */
+.fp .fp-top { flex: 0 0 auto; padding: 9px 14px; background: var(--bg-elev);
+  border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; gap: 9px; }
+.fp .fp-top .glyph { width: 9px; height: 9px; border-radius: 2px;
+  background: linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50)); }
+.fp .fp-top .name { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+.fp .fp-top .id { font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); }
+.fp .fp-top .pulse { display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 9px; color: var(--fg-muted); }
+
 /* stepper */
 .fp .stepper { flex: 0 0 auto; padding: 13px 14px 9px; border-bottom: 1px solid var(--border-soft); background: var(--bg-panel); }
 .fp .stepper-track { display: flex; align-items: center; gap: 0; }
