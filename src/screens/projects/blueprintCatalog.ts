@@ -69,6 +69,7 @@ export const PIPELINE_META: Record<string, PipelineMeta> = {
   "lint-plan":       { glyph: "rule",          h: 25,  gateable: true,  defaultTrigger: "on artifact change" },
   "generate-issues": { glyph: "checklist",     h: 70,  gateable: false, defaultTrigger: "on completion" },
   "grade-plan":      { glyph: "fact_check",    h: 70,  gateable: false, defaultTrigger: "on completion" },
+  "grade-rubric":    { glyph: "rule",          h: 145, gateable: true,  defaultTrigger: "on completion" },
   "sync-milestones": { glyph: "sync",          h: 70,  gateable: false, defaultTrigger: "on completion" },
   "scope-streams":   { glyph: "lan",           h: 230, gateable: false, defaultTrigger: "on completion" },
   "sync-skills":     { glyph: "extension",     h: 70,  gateable: false, defaultTrigger: "manual" },
