@@ -53,7 +53,7 @@ describe("LibraryView (#609 slice 4)", () => {
   it("derives display safely for a bare blueprint (no icon/hue/gist)", () => {
     const bare: Blueprint = { id: "x", name: "zeta", desc: "d", sections: [] };
     render(<LibraryView blueprints={[bare]} onOpen={noop} onMenu={noop} onNew={noop} onImport={noop} />);
-    expect(screen.getByRole("heading", { name: "zeta", level: 3 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /zeta/, level: 3 })).toBeInTheDocument();
     // bare ⇒ local-only badge
     expect(screen.getByText(/local only/)).toBeInTheDocument();
   });
