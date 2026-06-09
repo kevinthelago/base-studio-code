@@ -593,7 +593,7 @@ interface AppStore {
   setActiveBlueprint: (id: string) => void;
   addBlueprint:       () => string;
   duplicateBlueprint: (id: string) => string;
-  updateBlueprintMeta: (id: string, patch: { name?: string; desc?: string }) => void;
+  updateBlueprintMeta: (id: string, patch: Partial<Omit<Blueprint, "id" | "sections">>) => void;
   setBlueprintSections: (id: string, sections: BlueprintSection[]) => void;
   /** Delete a blueprint; if it was active, the active id falls back to the first
    *  remaining (or the default). */
