@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -27,12 +28,12 @@ import {
 import { parseSkillsFile } from "../../lib/skills";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, validateIssues } from "./planIssues";
-import { PlanStageBar } from "./PlanStageBar";
 import { derivePlanStageState, planStateToSignals } from "./planStageDerive";
 import { isGateBlocked } from "./pipelineRuntime";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { pipelineScreen, type PipelineScreenComponent } from "./pipelineScreens";
 import { RENDER_PREVIEW_ID } from "./renderPreview";
+import { FILE_INTAKE_ID } from "./fileIntake";
 import { dispatchPipelineCommand } from "./pipelineCommands";
 import { parsePipelineTags, stripPipelineTags } from "./pipelineTag";
 import {
@@ -40,6 +41,7 @@ import {
   type BlueprintSection, type IncompleteSection,
 } from "./blueprints";
 import { writeBlueprintSkillContext } from "./blueprintSkills";
+import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
 import { featureSectionsToIssues, featureSlug, parseFeatureSection, incompleteFeatureSections } from "./planFeatures";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { ProjectPane, type SyncState } from "./ProjectPane";
@@ -47,6 +49,10 @@ import { Dialog } from "../../components/Dialog";
 import { parseUiPreviewTags, stripUiPreviewTags } from "./uiPreviewTag";
 import { dispatchGradePlan } from "./gradePlan";
 import { buildProjectPaneData } from "./projectPaneData";
+
+// Pipeline screens that are interactive surfaces — always available on their active stage,
+// unlike result screens (preview, grade) that only open once their pipeline has run (#654).
+const ALWAYS_OPEN_SCREENS = new Set<string>([FILE_INTAKE_ID]);
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
   background:          "#181a1f",
@@ -454,6 +460,7 @@ export function Planning({ visible }: { visible: boolean }) {
     agentProfiles,
     commands, schedules,
     pendingPlannerPrompt, clearPlannerPrompt,
+    projectBlueprintId, applyBlueprintToProject, setActiveBlueprint,
   } = useAppStore();
 
   // The session key (set once at session entry) is the single source of truth
@@ -469,6 +476,23 @@ export function Planning({ visible }: { visible: boolean }) {
   // a write (addProjectRepo) and a later read (the linked-repo list) never diverge.
   const sessionKeyRef = useRef(resolveProjectKey(rawSessionKey, projectKeyAlias));
   const effectiveProjectId = sessionKeyRef.current;
+
+  // Blueprint mismatch (#647): a project seeded with one blueprint, but a different one
+  // is selected. Prompt before opening — reset to the selected blueprint, or keep the
+  // project's. `mismatchAck` resets per project so re-opening re-checks.
+  const [mismatchAck, setMismatchAck] = useState(false);
+  useEffect(() => { setMismatchAck(false); }, [effectiveProjectId]);
+  const projectBpId = projectBlueprintId[effectiveProjectId];
+  const blueprintMismatch = !!projectBpId && projectBpId !== activeBlueprintId && !mismatchAck;
+  const projectBpName = blueprints.find((b) => b.id === projectBpId)?.name ?? projectBpId ?? "";
+  const activeBpName = blueprints.find((b) => b.id === activeBlueprintId)?.name ?? activeBlueprintId;
+  // Reveal the project hub so the user can back up authored plan files before a reset (#647).
+  const exportProjectFiles = async () => {
+    try {
+      const path = await invoke<string>("project_dir_path", { projectKey: effectiveProjectId });
+      await revealItemInDir(path);
+    } catch (e) { console.error("export project files failed:", e); }
+  };
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
@@ -630,7 +654,10 @@ export function Planning({ visible }: { visible: boolean }) {
     const st = useAppStore.getState();
     if (st.planStageConfig[effectiveProjectId]) return; // already has its own copy
     const active = st.blueprints.find((b) => b.id === st.activeBlueprintId);
-    if (active) st.setProjectStageConfig(effectiveProjectId, blueprintToStageConfig(active));
+    if (active) {
+      st.setProjectStageConfig(effectiveProjectId, blueprintToStageConfig(active));
+      st.setProjectBlueprintId(effectiveProjectId, active.id); // remember which blueprint seeded it (#647)
+    }
   }, [effectiveProjectId]);
 
   // Write the active blueprint's attached skills/knowledge to the hub's skills.md so the
@@ -708,14 +735,21 @@ export function Planning({ visible }: { visible: boolean }) {
   // a screen. Sections own the page; pipelines render their own second surface here.
   const stageScreens = useMemo(() => {
     const section = planSecs.find(s => s.key === currentStageId && s.enabled);
+    const runs = stagePipelineRuns[effectiveProjectId] ?? {};
     const out: { uid: string; id: string; name: string; Screen: PipelineScreenComponent }[] = [];
     for (const p of section?.pipelines ?? []) {
       if (!p.enabled) continue;
+      // Only open a pipeline's screen when it's actually active (#654): result screens
+      // (preview, grade) show once the pipeline has a non-idle run; interactive screens
+      // (file-intake's drop zone) are always available on their stage.
+      const status = runs[p.uid]?.status;
+      const active = ALWAYS_OPEN_SCREENS.has(p.id) || (!!status && status !== "idle");
+      if (!active) continue;
       const Screen = pipelineScreen(p.id);
       if (Screen) out.push({ uid: p.uid, id: p.id, name: p.name, Screen });
     }
     return out;
-  }, [planSecs, currentStageId]);
+  }, [planSecs, currentStageId, stagePipelineRuns, effectiveProjectId]);
 
   const sectionsForGh = useMemo<Section[]>(() => {
     if (featureIssues.length === 0) return sections;
@@ -777,14 +811,10 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [gradeInputSig]);
 
   const [restarting, setRestarting] = useState(false);
-  // Restart is destructive (ends the live session), so it's gated behind a confirm (#548).
-  const [confirmRestart, setConfirmRestart] = useState(false);
   // Signature of the inputs that were active when setup_workspaces last ran (#175).
   // Compared against currentSig to show the "context updated" badge.
   const [lastSetupSig, setLastSetupSig] = useState<string | null>(null);
-  const [clearPlanArmed, setClearPlanArmed] = useState(false);
-  // Third pane: the live UI preview (#530). Toggled here; #531 opens it at the UI stage.
-  const [showPreview, setShowPreview] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
 
@@ -812,6 +842,20 @@ export function Planning({ visible }: { visible: boolean }) {
   useEffect(() => () => { if (highlightTimer.current) clearTimeout(highlightTimer.current); }, []);
   // Once the plan is ready the feedback is stale — clear it.
   useEffect(() => { if (planReady) { setTriageBlock(null); setHighlightSections(new Set()); } }, [planReady]);
+
+  // Focused pane (#652): one phase at a time. `phases` derive from the enabled sections +
+  // signals; `focusActiveIdx` auto-follows the session. `focusSel` is user navigation:
+  // null ⇒ follow the active phase; a number ⇒ pinned to that phase. Reset on project /
+  // blueprint change so a switched plan opens on its current phase.
+  const phases = useMemo(() => phasesFrom(planSecs, signals), [planSecs, signals]);
+  const focusActiveIdx = useMemo(() => activeIndex(phases), [phases]);
+  const [focusSel, setFocusSel] = useState<number | null>(null);
+  useEffect(() => { setFocusSel(null); }, [effectiveProjectId, activeBlueprintId]);
+  const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, phases.length);
+  const focusGateReady = useMemo(() => currentGateReady(planSecs, signals), [planSecs, signals]);
+  const focusFooter = footerAction(focusSelectedIdx, focusActiveIdx, planReady, focusGateReady);
+  const focusSelPhase = phases[focusSelectedIdx];
+  const focusPill = focusSelPhase ? gatePill(focusSelPhase, blockedStages.has(focusSelPhase.key)) : "wait";
   type PublishPhase = "idle" | "running" | "done" | "error";
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
   const [publishEarlyError, setPublishEarlyError] = useState<string | null>(null);
@@ -962,7 +1006,6 @@ export function Planning({ visible }: { visible: boolean }) {
           // Register every declared screen so the UI stage's denominator is complete
           // even when only the last tag is rendered (#546).
           for (const p of previews) useAppStore.getState().addUiScreen(projIdSnap, p.screen);
-          setShowPreview(true);
           // <ui_preview> is an alias for render-preview's `run`: route it through the
           // command bus so it shares the single command path (the pipeline owns reading
           // the skeleton + dispatching the render).
@@ -1399,7 +1442,6 @@ export function Planning({ visible }: { visible: boolean }) {
   async function handleRestart() {
     const term = termRef.current;
     if (!term || restarting) return;
-    setConfirmRestart(false);
     setRestarting(true);
     bufRef.current = "";
     term.clear();
@@ -1929,21 +1971,10 @@ _Auto-generated by base-studio-code planner._`,
         </div>
         <button
           className="btn ghost"
-          title="Clear all plan sections and files for this project (irreversible)"
-          onClick={() => {
-            if (clearPlanArmed) {
-              setClearPlanArmed(false);
-              clearPlan(effectiveProjectId);
-              void invoke("clear_project_plan_files", { projectKey: effectiveProjectId });
-              void handleRestart();
-            } else {
-              setClearPlanArmed(true);
-            }
-          }}
-          onBlur={() => setClearPlanArmed(false)}
-          style={clearPlanArmed ? { color: "var(--danger)", borderColor: "var(--danger)" } : undefined}
+          title="Clear all plan state and files for this project (irreversible)"
+          onClick={() => setConfirmClear(true)}
         >
-          {clearPlanArmed ? "confirm clear" : "clear plan"}
+          clear plan
         </button>
         <button className="btn ghost" onClick={() => setProjectsView("list")}>
           save & exit
@@ -2027,11 +2058,8 @@ _Auto-generated by base-studio-code planner._`,
         </div>
       )}
 
-      {/* Planning progress — one segment per enabled blueprint section, tucked against
-          the header's bottom edge (#508): the 12px pills sit in a 6px top-aligned clip,
-          so only each segment's top rounded half shows, hugging the divider below.
-          Incomplete sections pulse when the user clicks a locked Triage button. */}
-      <PlanStageBar sections={planSecs} signals={signals} blocked={blockedStages} highlight={highlightSections} />
+      {/* Planning progress now lives in the focused pane's stepper (#652) — the old
+          full-width N-bar (PlanStageBar) was removed to avoid a duplicate progress strip. */}
 
       {/* Split panel */}
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", borderTop: "1px solid var(--border-soft)" }}>
@@ -2045,16 +2073,8 @@ _Auto-generated by base-studio-code planner._`,
           }}>
             <span style={{ color: "var(--accent)" }}>▸ planning session</span>
             <div style={{ flex: 1 }} />
-            <button
-              onClick={() => setShowPreview(p => !p)}
-              title="Toggle the UI preview pane"
-              style={{
-                padding: "2px 8px", borderRadius: 3, cursor: "pointer",
-                background: showPreview ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent",
-                border: "1px solid " + (showPreview ? "var(--accent-dim)" : "var(--border-soft)"),
-                color: showPreview ? "var(--accent)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
-              }}
-            >▣ preview</button>
+            {/* Context-refresh stays (repos/blocks/stages changed → relaunch); the manual
+                preview + restart buttons were removed (#654). */}
             {contextStale && (
               <button
                 onClick={() => { void handleRestart(); }}
@@ -2068,18 +2088,8 @@ _Auto-generated by base-studio-code planner._`,
                   color: "var(--accent)", fontFamily: "var(--mono)", fontSize: 10,
                   opacity: restarting ? 0.5 : 1,
                 }}
-              >context updated · refresh</button>
+              >{restarting ? "restarting…" : "context updated · refresh"}</button>
             )}
-            <button
-              onClick={() => setConfirmRestart(true)}
-              disabled={restarting}
-              style={{
-                padding: "2px 8px", borderRadius: 3, cursor: restarting ? "not-allowed" : "pointer",
-                background: "transparent", border: "1px solid var(--border-soft)",
-                color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
-                opacity: restarting ? 0.5 : 1,
-              }}
-            >{restarting ? "restarting…" : "↺ restart"}</button>
           </div>
 
 
@@ -2101,16 +2111,11 @@ _Auto-generated by base-studio-code planner._`,
           </div>
         </section>
 
-        {/* Pipeline second screens — read from the active blueprint and rendered when
-            their stage is reached (sections own the page; pipelines own their surface).
-            The manual preview toggle still force-shows render-preview off-stage. */}
+        {/* Pipeline second screens — only the active stage's pipelines that have actually
+            run (a non-idle run state), so an empty project shows no ghost screen (#654). */}
         {(() => {
           const entries: { uid: string; id: string; Screen: PipelineScreenComponent; onClose?: () => void }[] =
             stageScreens.map(e => ({ uid: e.uid, id: e.id, Screen: e.Screen }));
-          if (showPreview && !entries.some(e => e.id === RENDER_PREVIEW_ID)) {
-            const Screen = pipelineScreen(RENDER_PREVIEW_ID);
-            if (Screen) entries.push({ uid: "preview-manual", id: RENDER_PREVIEW_ID, Screen, onClose: () => setShowPreview(false) });
-          }
           // Section-bound screens (e.g. grading) get the current section's key + content.
           const secContent = sections.find(s => s.k === currentStageId)?.content ?? "";
           return entries.map(({ uid, Screen, onClose }) => (
@@ -2160,8 +2165,20 @@ _Auto-generated by base-studio-code planner._`,
               onDirectorDrive={(drive) => setPlanDirectorDrive(effectiveProjectId, drive)}
               onSyncLabels={githubToken && publishRepos.length > 0 ? handleSyncLabels : undefined}
               syncState={{ labels: labelsSync }}
-              sections={planSecs.filter(s => s.enabled).map(s => ({ key: s.key, name: s.name, blurb: s.blurb }))}
               highlight={highlightSections}
+              focus={{
+                phases,
+                selectedIdx: focusSelectedIdx,
+                activeIdx: focusActiveIdx,
+                onSelect: (i) => setFocusSel(i),
+                pill: focusPill,
+                footer: focusFooter,
+                onBack: () => setFocusSel(clampIndex(focusSelectedIdx - 1, phases.length)),
+                onPrimary: () => {
+                  if (focusFooter.kind === "publish") void handlePublish();
+                  else setFocusSel(null); // re-follow the live phase
+                },
+              }}
             />
           ) : (
             <>
@@ -2207,24 +2224,59 @@ _Auto-generated by base-studio-code planner._`,
         </aside>
       </div>
 
-      {/* Restart confirmation (#548): ending the session is destructive, so confirm first. */}
-      {confirmRestart && (
+      {/* Clear-plan confirmation (#651): wiping the plan is irreversible, so confirm via a
+          modal — never a double-click — so a stray double-press can't nuke the plan. */}
+      {confirmClear && (
         <Dialog
-          title="Restart planning session?"
+          title="Clear this plan?"
           danger
-          onDismiss={() => setConfirmRestart(false)}
+          onDismiss={() => setConfirmClear(false)}
           actions={
             <>
-              <button className="btn ghost" onClick={() => setConfirmRestart(false)}>cancel</button>
+              <button className="btn ghost" onClick={() => setConfirmClear(false)}>cancel</button>
               <button
                 className="btn danger"
-                onClick={() => { setConfirmRestart(false); void handleRestart(); }}
-              >restart</button>
+                onClick={() => {
+                  setConfirmClear(false);
+                  clearPlan(effectiveProjectId);
+                  void invoke("clear_project_plan_files", { projectKey: effectiveProjectId });
+                  void handleRestart();
+                }}
+              >clear plan</button>
             </>
           }
         >
-          The current planning session ends and a fresh one launches. Confirmed plan
-          sections are kept, but the in-progress conversation is lost.
+          This wipes the entire plan for this project — sections, stage config, the UI
+          preview, grades, the fleet, and the plan files on disk — then restarts the
+          planner with a blank slate. This can't be undone.
+        </Dialog>
+      )}
+
+      {/* Blueprint mismatch (#647): the selected blueprint differs from the one this
+          project was planned with — choose before opening. */}
+      {blueprintMismatch && (
+        <Dialog
+          title="Different blueprint selected"
+          onDismiss={() => { setActiveBlueprint(projectBpId!); setMismatchAck(true); }}
+          actions={
+            <>
+              <button className="btn ghost" onClick={() => void exportProjectFiles()}>export files…</button>
+              <button
+                className="btn"
+                onClick={() => { setActiveBlueprint(projectBpId!); setMismatchAck(true); }}
+              >keep {projectBpName}</button>
+              <button
+                className="btn danger"
+                onClick={() => { applyBlueprintToProject(effectiveProjectId, activeBlueprintId); setMismatchAck(true); void handleRestart(); }}
+              >use {activeBpName}</button>
+            </>
+          }
+        >
+          This project was planned with <b>{projectBpName}</b>, but <b>{activeBpName}</b> is
+          selected. Using the selected blueprint resets the plan to its stages and clears
+          stage progress (grades, screen approvals) — the planner restarts. Your authored
+          plan files on disk are kept; export them first if you want a backup. Or keep this
+          project on <b>{projectBpName}</b>.
         </Dialog>
       )}
     </>
