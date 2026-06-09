@@ -17,6 +17,7 @@ import { FileIntakePane } from "./FileIntakePane";
 import { FILE_INTAKE_ID } from "./fileIntake";
 import { GradeReportPane } from "./GradeReportPane";
 import { GRADE_RUBRIC_ID } from "./gradeDispatch";
+import { GRADE_LLM_ID } from "./gradeLLM";
 
 /** Props every pipeline second screen receives. `onClose`, when provided, renders a
  *  dismiss affordance (stage-driven screens omit it — they're bound to the stage). */
@@ -39,6 +40,7 @@ const PIPELINE_SCREENS: Record<string, PipelineScreenComponent> = {
   [FILE_INTAKE_ID]: FileIntakePane,
   // Grade report card (#615): renders the section's grader results (multiple → tabs).
   [GRADE_RUBRIC_ID]: GradeReportPane,
+  [GRADE_LLM_ID]: GradeReportPane,
 };
 
 /** The second screen for a pipeline id, or undefined when it has none. */
