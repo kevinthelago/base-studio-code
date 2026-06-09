@@ -183,6 +183,17 @@ CI gates that must pass before merge to develop. Write testing.md.
 
 Gate: a coverage strategy and CI gates are defined.`,
   },
+  // Refactor & Cleanup blueprint (#626): find unused / dead / legacy code to remove.
+  // Informational (no gateRule) — the scan-dead-code pipeline + cleanup grade drive it.
+  cleanup: {
+    name: "Dead & legacy code", glyph: "♻", gate: "findings triaged", deps: ["repos"],
+    blurb: "Unused code, dead dependencies & legacy debt to remove.",
+    prompt:
+`Find what to remove or modernize: unused exports/files, unused dependencies, dead
+feature flags, deprecated APIs, and duplicated code. Run the scan, verify each
+candidate (static tools have false positives — dynamic refs, public API, test-only
+use), then list confirmed removals as refactor units with a test safety net.`,
+  },
 };
 
 export interface BlueprintSection extends SectionDef {
@@ -283,6 +294,18 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", true]] }),
         mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
         mkSection("automations"),
+      ],
+    },
+    {
+      id: "refactor", name: "Refactor & Cleanup", desc: "Clean up an existing codebase — find dead/legacy code & refactor",
+      origin: "built-in", icon: "♻", h: 25,
+      sections: [
+        mkSection("context"),
+        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
+        mkSection("cleanup",     { pipelines: [["scan-dead-code", "manual", false], ["grade-rubric", "on completion", false]] }),
+        mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
+        mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
+        mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
       ],
     },
   ];
