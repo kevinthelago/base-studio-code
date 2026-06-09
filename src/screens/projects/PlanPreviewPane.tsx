@@ -10,6 +10,7 @@ import { useAppStore } from "../../store";
 import { PreviewFrame, type PreviewStatus } from "./PreviewFrame";
 import { PipelineScreenFrame } from "./PipelineScreenFrame";
 import { dispatchRenderPreview, RENDER_PREVIEW_ID } from "./renderPreview";
+import { buildClaudeDesignBrief } from "./claudeDesignBrief";
 
 // Stable empty default so the selector doesn't churn a new array on every store change.
 const EMPTY: string[] = [];
@@ -38,6 +39,7 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
   const setUiScreenApproved = useAppStore((s) => s.setUiScreenApproved);
   const status = run?.status ?? "idle";
   const [frameError, setFrameError] = useState<string>("");
+  const [briefCopied, setBriefCopied] = useState(false);
 
   // Per-screen approval (#546): the approve button targets whichever screen is rendered.
   const currentScreen = preview?.screen;
@@ -84,6 +86,15 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
         <div style={{ borderTop: "1px solid var(--border-soft)", padding: "8px 12px", maxHeight: 180, overflow: "auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
             <span>screens</span>
+            <button
+              className="btn ghost sm"
+              title="Copy a Claude Design prompt for these screens — paste it into Claude Design, then drop the exports into the Drop-files stage"
+              onClick={() => {
+                void navigator.clipboard?.writeText(buildClaudeDesignBrief(declared));
+                setBriefCopied(true);
+                setTimeout(() => setBriefCopied(false), 1600);
+              }}
+            >{briefCopied ? "✓ copied" : "✦ Claude Design brief"}</button>
             <span style={{ flex: 1 }} />
             <span style={{ color: approvedCount === declared.length ? "var(--success)" : "var(--fg-dim)" }}>
               {approvedCount}/{declared.length} approved
