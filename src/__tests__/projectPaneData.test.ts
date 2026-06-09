@@ -32,6 +32,14 @@ describe("buildProjectPaneData", () => {
     expect(d.context).toEqual([]);
   });
 
+  it("hides empty section files so ghost 0.0k context files don't show (#654)", () => {
+    const d = buildProjectPaneData(base({ sections: [
+      { k: "goal", title: "Goal", content: "   ", state: "confirmed" } as unknown as Section,
+      { k: "scope", title: "Scope", content: "We will build X.", state: "draft" } as unknown as Section,
+    ] }));
+    expect(d.context.map(c => c.name)).toEqual(["Scope.md"]);
+  });
+
   it("a fleet stream -> one agent with mapped flow push casing + derived perm", () => {
     const fleet = fleetWith([
       {
@@ -196,7 +204,7 @@ describe("buildProjectPaneData", () => {
     const sections: Section[] = [
       { k: "claude", title: "CLAUDE", state: "confirmed", content: "x".repeat(1200) },
       { k: "settlement_spec", title: "Settlement spec", state: "drafted", content: "y".repeat(4100) },
-      { k: "goal", title: "Goal", state: "pending", content: "" },
+      { k: "goal", title: "Goal", state: "pending", content: "g".repeat(300) },
     ];
     const d = buildProjectPaneData(base({ sections }));
     expect(d.context).toHaveLength(3);
