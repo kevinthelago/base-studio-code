@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { useAppStore } from "../store";
-import { runSectionGrade, GRADE_RUBRIC_ID } from "../screens/projects/gradeDispatch";
+import { runSectionGrade, GRADE_RUBRIC_ID, planGradeToResult } from "../screens/projects/gradeDispatch";
+import type { PlanGrade } from "../lib/planGrade";
 import { GradeReportPane } from "../screens/projects/GradeReportPane";
 import type { GradeResult } from "../screens/projects/grading";
 
@@ -20,6 +21,21 @@ describe("sectionGrades store + dispatch (#615)", () => {
     const grades = useAppStore.getState().sectionGrades["p"]["context"];
     expect(grades).toHaveLength(2);
     expect(grades.find((g) => g.graderId === "a")!.letter).toBe("B");
+  });
+
+  it("planGradeToResult adapts agent-readiness into a GradeResult (slice c)", () => {
+    const g: PlanGrade = {
+      score: 0.7, letter: "C", reasons: [], repoGrades: [],
+      categories: [{ id: "ac", label: "Acceptance criteria", score: 0.5, letter: "F", weight: 2, detail: "9/18 issues", examples: [] }],
+      suggestions: [{ priority: "high", category: "ac", title: "Add acceptance criteria", detail: "to 9 issues" }],
+    };
+    const r = planGradeToResult(g);
+    expect(r.graderId).toBe("grade-plan");
+    expect(r.graderLabel).toBe("Agent readiness");
+    expect(r.sectionKey).toBe("structure");
+    expect(r.score).toBe(70);
+    expect(r.dimensions[0]).toMatchObject({ label: "Acceptance criteria", score: 50 });
+    expect(r.findings[0]).toMatchObject({ severity: "error", message: "Add acceptance criteria" });
   });
 
   it("runSectionGrade grades the content + persists", () => {

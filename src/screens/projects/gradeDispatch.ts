@@ -5,10 +5,31 @@
 
 import { useAppStore } from "../../store";
 import { type PlanSignals } from "./stageGate";
-import { gradeWithRubric, rubricForSection, type GradeResult } from "./grading";
+import { gradeWithRubric, rubricForSection, type GradeResult, type Severity } from "./grading";
+import { type PlanGrade, type Priority } from "../../lib/planGrade";
 
 /** The built-in rubric grader's pipeline id (attachable in the blueprint editor). */
 export const GRADE_RUBRIC_ID = "grade-rubric";
+
+/** The agent-readiness grader id (the grade-plan pipeline). */
+export const AGENT_READINESS_ID = "grade-plan";
+
+const severityOf = (p: Priority): Severity => (p === "high" ? "error" : p === "medium" ? "warn" : "info");
+
+/** Adapt the existing rich PlanGrade (agent-readiness) into a GradeResult so it shows in
+ *  the report card as one grader among many (#615 slice c). Its categories become
+ *  dimensions; its prioritized suggestions become findings. */
+export function planGradeToResult(g: PlanGrade, sectionKey = "structure"): GradeResult {
+  return {
+    graderId: AGENT_READINESS_ID,
+    graderLabel: "Agent readiness",
+    sectionKey,
+    score: Math.round(g.score * 100),
+    letter: g.letter,
+    dimensions: g.categories.map((c) => ({ id: c.id, label: c.label, score: Math.round(c.score * 100), note: c.detail })),
+    findings: g.suggestions.map((s) => ({ severity: severityOf(s.priority), message: s.title, fix: s.detail })),
+  };
+}
 
 export interface RunSectionGradeArgs {
   projectKey: string;

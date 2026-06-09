@@ -15,6 +15,7 @@ import {
   type PipelineHandler, type StageContext, type PipelineRunResult,
 } from "./pipelineRuntime";
 import type { Pipeline } from "./blueprints";
+import { planGradeToResult } from "./gradeDispatch";
 
 export const GRADE_PLAN_ID = "grade-plan";
 
@@ -66,7 +67,11 @@ export async function dispatchGradePlan(args: {
   };
   const result = await runPipeline(GRADE_PLAN_PIPELINE, ctx);
   if (result.status === "ok" && result.output) {
-    store.setStagePlanGrade(args.projectKey, result.output as PlanGrade);
+    const grade = result.output as PlanGrade;
+    store.setStagePlanGrade(args.projectKey, grade);
+    // Also surface it in the per-section report card as the "Agent readiness" grader,
+    // so it sits alongside any rubric grader on the structure section (#615 slice c).
+    store.setSectionGrade(args.projectKey, "structure", planGradeToResult(grade));
   }
   store.setStagePipelineRun(args.projectKey, GRADE_PLAN_ID, { status: result.status, lastRun: Date.now(), message: result.message });
   return result;
