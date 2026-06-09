@@ -14,10 +14,12 @@ import { CatalogView } from "./BlueprintCatalogView";
 import { BlueprintEditorView } from "./BlueprintEditor";
 import { BlueprintAssistant } from "./BlueprintAssistant";
 import {
-  PublishModal, ImportModal, PreviewModal, NewBlueprintModal, type PreviewBlueprint, type PublishResult,
+  PublishModal, ImportModal, PreviewModal, NewBlueprintModal, HistoryModal, SyncModal,
+  type PreviewBlueprint, type PublishResult, type Revision,
 } from "./BlueprintModals";
 import { blueprintToManifest, manifestToBlueprint } from "./blueprintShare";
-import { publishGist, installFromGist } from "../../lib/extensions/gist";
+import { publishGist, installFromGist, gistRevisions, installFromGistRevision } from "../../lib/extensions/gist";
+import { diffBlueprints, type DiffLine } from "./blueprintDiff";
 
 const freshSections = (sections: BlueprintSection[]): BlueprintSection[] =>
   sections.map((s) => ({ ...s, uid: uid("sec"), pipelines: s.pipelines.map((p) => ({ ...p, uid: uid("pl") })) }));
@@ -25,7 +27,10 @@ const freshSections = (sections: BlueprintSection[]): BlueprintSection[] =>
 type View = "library" | "catalog" | "editor";
 type Modal =
   | { type: "new" } | { type: "import" } | { type: "publish" }
-  | { type: "preview"; cat: CatalogEntry } | null;
+  | { type: "preview"; cat: CatalogEntry }
+  | { type: "history"; bp: Blueprint; revs: Revision[] }
+  | { type: "sync"; bp: Blueprint; diff: DiffLine[]; upstream: Blueprint }
+  | null;
 interface MenuState { x: number; y: number; bp: Blueprint; header?: boolean }
 interface Toast { id: string; text: string; accent?: boolean }
 
@@ -183,6 +188,48 @@ export function BlueprintsPage() {
     openBp(id);
   }
 
+  // ── gist history / sync (real gist data) ──
+  const gistId = (bp: Blueprint): string | undefined => bp.gist?.id;
+
+  async function openHistory(bp: Blueprint) {
+    const id = gistId(bp);
+    if (!id) { toast("No gist to show history for"); return; }
+    const revs = await gistRevisions(id, githubToken);
+    if (revs.length === 0) { toast("Couldn't load gist revisions"); return; }
+    setModal({ type: "history", bp, revs: revs.map((r, i) => ({
+      sha: r.version.slice(0, 7), when: r.committedAt ? r.committedAt.replace("T", " · ").replace("Z", "") : "—",
+      msg: `revision by ${r.login}`, add: r.additions, del: r.deletions, cur: i === 0, version: r.version,
+    })) });
+  }
+  async function restoreRev(bp: Blueprint, r: Revision) {
+    const id = gistId(bp);
+    if (!id || !r.version) return;
+    const res = await installFromGistRevision(id, r.version, githubToken);
+    if (!res.ok) { toast(res.error); return; }
+    const got = manifestToBlueprint(res.manifest);
+    if (!got.ok) { toast(got.error); return; }
+    setBlueprintSections(bp.id, freshSections(got.blueprint.sections));
+    setModal(null);
+    toast(`Restored ${r.sha}`, true);
+  }
+  async function openSync(bp: Blueprint) {
+    const id = gistId(bp);
+    if (!id) { toast("No upstream gist linked"); return; }
+    const res = await installFromGist(id, githubToken);
+    if (!res.ok) { toast(res.error); return; }
+    const got = manifestToBlueprint(res.manifest);
+    if (!got.ok) { toast(got.error); return; }
+    const diff = diffBlueprints(bp, got.blueprint);
+    if (diff.length === 0) { toast("Already up to date with upstream", true); return; }
+    setModal({ type: "sync", bp, diff, upstream: got.blueprint });
+  }
+  function pullUpstream(bp: Blueprint, upstream: Blueprint) {
+    setBlueprintSections(bp.id, freshSections(upstream.sections));
+    updateBlueprintMeta(bp.id, { gist: { ...(bp.gist ?? { state: "synced" }), state: "synced", behind: false } });
+    setModal(null);
+    toast("Synced with upstream", true);
+  }
+
   // ── menus ──
   function onCardMenu(action: CardMenuAction, bp: Blueprint, e: React.MouseEvent) {
     if (action === "duplicate") return duplicateBp(bp.id);
@@ -222,6 +269,8 @@ export function BlueprintsPage() {
       {modal?.type === "import" && <ImportModal onClose={() => setModal(null)} onResolve={resolveImport} onImport={importPreview} />}
       {modal?.type === "publish" && active && <PublishModal bp={active} onClose={() => setModal(null)} onPublish={doPublish} onPublished={onPublished} />}
       {modal?.type === "preview" && <PreviewModal cat={modal.cat} forked={forkedIds.includes(modal.cat.id)} onClose={() => setModal(null)} onFork={forkCatalog} />}
+      {modal?.type === "history" && <HistoryModal bp={modal.bp} revs={modal.revs} onClose={() => setModal(null)} onRestore={(r) => void restoreRev(modal.bp, r)} />}
+      {modal?.type === "sync" && <SyncModal bp={modal.bp} diff={modal.diff} onClose={() => setModal(null)} onPull={() => pullUpstream(modal.bp, modal.upstream)} />}
 
       {/* assistant drawer */}
       {drawer && active && (
@@ -236,6 +285,9 @@ export function BlueprintsPage() {
             {!menu.header && <button onClick={() => { openBp(menu.bp.id); setMenu(null); }}>✎ Open editor</button>}
             <button onClick={() => { duplicateBp(menu.bp.id); setMenu(null); }}>⧉ Duplicate</button>
             <button onClick={() => { if (!menu.header) openBp(menu.bp.id); setModal({ type: "publish" }); setMenu(null); }}>↑ Publish to gist</button>
+            {menu.bp.gist?.id && <button onClick={() => { const bp = menu.bp; setMenu(null); void openHistory(bp); }}>◷ Version history</button>}
+            {menu.bp.gist?.id && (menu.bp.origin === "imported" || menu.bp.origin === "forked") &&
+              <button onClick={() => { const bp = menu.bp; setMenu(null); void openSync(bp); }}>⟳ Sync upstream</button>}
             <div style={{ height: 1, background: "var(--border-soft)", margin: "4px 6px" }} />
             <button className="danger" onClick={() => { deleteBp(menu.bp.id); setMenu(null); }}>🗑 Delete</button>
           </div>
