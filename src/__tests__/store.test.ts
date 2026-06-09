@@ -4,6 +4,8 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { QueuedPane } from "../lib/focusQueue";
 import type { FleetPlan } from "../screens/projects/planSections";
 import type { ExtensionDef } from "../lib/extensions";
+import { defaultStageConfig } from "../screens/projects/planStages";
+import { makeBlueprints } from "../screens/projects/blueprints";
 
 const RESET_STATE = {
   tabs: [
@@ -37,13 +39,12 @@ const RESET_STATE = {
   githubUser: null,
   githubRepos: [],
   activeRepoName: "",
-  projectsView: "list" as "list" | "board" | "planning",
+  projectsView: "list" as "list" | "planning",
   activeProjectId: null as string | null,
   activeProjectName: "",
   activeProjectRepo: "",
   activeProjectRepos: [] as string[],
   activeProjectNumber: 0,
-  projectsBoardTab: "board" as "board" | "roadmap" | "issues" | "insights",
   projectsDrawerIssue: null as number | null,
   planningPitch: "",
   planningRepo: "",
@@ -180,6 +181,22 @@ describe("focus queue", () => {
     expect(useAppStore.getState().autoAdvanceOnReply).toBe(false);
   });
 
+  it("setAutoFocusMode syncs autoAdvanceOnReply back-compat field (#434)", () => {
+    useAppStore.getState().setAutoFocusMode("off");
+    expect(useAppStore.getState().autoFocusMode).toBe("off");
+    expect(useAppStore.getState().autoAdvanceOnReply).toBe(false);
+    useAppStore.getState().setAutoFocusMode("cycle-on-reply");
+    expect(useAppStore.getState().autoFocusMode).toBe("cycle-on-reply");
+    expect(useAppStore.getState().autoAdvanceOnReply).toBe(true);
+  });
+
+  it("setAutoAdvanceOnReply keeps autoFocusMode in sync (#434)", () => {
+    useAppStore.getState().setAutoAdvanceOnReply(false);
+    expect(useAppStore.getState().autoFocusMode).toBe("off");
+    useAppStore.getState().setAutoAdvanceOnReply(true);
+    expect(useAppStore.getState().autoFocusMode).toBe("cycle-on-reply");
+  });
+
   it("reconcileFocusQueue prunes panes across every tab whose waiting set is supplied (#77)", () => {
     useAppStore.setState({ focusQueue: [
       { tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 },
@@ -216,7 +233,7 @@ describe("deleteLocalProject", () => {
       repoAllowedCommands: { "My App::o/a": ["gh"] },
       activeProjectId: "PVT_id1",
       activeProjectName: "My App",
-      projectsView: "board",
+      projectsView: "planning",
     });
     // Pass both the session key (title) and the GitHub id.
     useAppStore.getState().deleteLocalProject(["My App", "PVT_id1"]);
@@ -238,10 +255,10 @@ describe("deleteLocalProject", () => {
   });
 
   it("leaves active meta alone when a different project is deleted", () => {
-    useAppStore.setState({ activeProjectId: "keep", activeProjectName: "Keep", projectsView: "board" });
+    useAppStore.setState({ activeProjectId: "keep", activeProjectName: "Keep", projectsView: "planning" });
     useAppStore.getState().deleteLocalProject(["Gone", "PVT_gone"]);
     expect(useAppStore.getState().activeProjectId).toBe("keep");
-    expect(useAppStore.getState().projectsView).toBe("board");
+    expect(useAppStore.getState().projectsView).toBe("planning");
   });
 
   it("dismissProject records the id once (deduped) so syncs stay filtered", () => {
@@ -679,11 +696,6 @@ describe("projects navigation", () => {
     expect(useAppStore.getState().projectsView).toBe("list");
   });
 
-  it("setProjectsView switches to board", () => {
-    useAppStore.getState().setProjectsView("board");
-    expect(useAppStore.getState().projectsView).toBe("board");
-  });
-
   it("setProjectsView switches to planning", () => {
     useAppStore.getState().setProjectsView("planning");
     expect(useAppStore.getState().projectsView).toBe("planning");
@@ -700,12 +712,6 @@ describe("projects navigation", () => {
     expect(useAppStore.getState().activeProjectId).toBeNull();
   });
 
-  it("setProjectsBoardTab updates the active tab", () => {
-    useAppStore.getState().setProjectsBoardTab("roadmap");
-    expect(useAppStore.getState().projectsBoardTab).toBe("roadmap");
-    useAppStore.getState().setProjectsBoardTab("board");
-    expect(useAppStore.getState().projectsBoardTab).toBe("board");
-  });
 
   it("setProjectsDrawerIssue opens the drawer", () => {
     useAppStore.getState().setProjectsDrawerIssue(418);
@@ -1212,15 +1218,28 @@ describe("agent fleet store", () => {
     expect(st.paneCwds[`t${idx + 1}p0`]).toBe("/base/projects/big/.worktrees/web--s16");
   });
 
-  it("fleetStartProject caps launched workers at the recommended count", () => {
+  // #479 — no silent drop: ALL workers launch regardless of the recommended count.
+  it("fleetStartProject launches ALL workers even when recommended < stream count", () => {
     useAppStore.setState({ bscBaseDir: "/base" });
+    // fleet has 2 streams; launch with recommended=1 — both should still launch.
     useAppStore.getState().fleetStartProject("Cap", { ...fleet, recommended: 1 }, "k");
     const st = useAppStore.getState();
     const idx = st.findFleetTabIdx("k");
-    expect(st.tabs[idx].layout).toBe("2×1"); // 1 worker + director = 2 panes
+    // director + both workers = 3 panes
     expect(st.paneNames[idx][0]).toBe("director");
-    expect(st.paneNames[idx][1]).toBe("Auth UI");
-    expect(st.paneNames[idx][2]).toBeUndefined();
+    expect(st.paneNames[idx][1]).not.toBeUndefined();
+    expect(st.paneNames[idx][2]).not.toBeUndefined();
+  });
+
+  it("fleetStartProject sets focusTarget based on fleet structure (#459)", () => {
+    useAppStore.setState({ bscBaseDir: "/base", focusTarget: "everything" });
+    useAppStore.getState().fleetStartProject("FT", fleet, "ft-key");
+    // fleet.director.enabled is true in the fixture; expect focusTarget = "director"
+    expect(useAppStore.getState().focusTarget).toBe("director");
+    // a fleet without a director should set focusTarget = "fleet"
+    useAppStore.setState({ bscBaseDir: "/base", focusTarget: "everything" });
+    useAppStore.getState().fleetStartProject("FTno", { ...fleet, director: { ...fleet.director, enabled: false } }, "ft-nd-key");
+    expect(useAppStore.getState().focusTarget).toBe("fleet");
   });
 
   // #457 — the "two directors" bug: a project rename froze tab.name, so the
@@ -1433,5 +1452,237 @@ describe("issue links (#393 Layer 1)", () => {
     st().setIssueLinks("proj-b", { "issue:acme/web:W1": { number: 3, url: "https://gh/3" } });
     expect(st().issueLinks["proj-a"]).toEqual({ "issue:acme/api:F1": { number: 7, url: "https://gh/7" } });
     expect(st().issueLinks["proj-b"]).toEqual({ "issue:acme/web:W1": { number: 3, url: "https://gh/3" } });
+  });
+});
+
+describe("model selection", () => {
+  it("setDefaultModel updates the persisted global default", () => {
+    useAppStore.setState({ defaultModel: "sonnet-4.5" });
+    useAppStore.getState().setDefaultModel("opus-4.5");
+    expect(useAppStore.getState().defaultModel).toBe("opus-4.5");
+  });
+
+  it("setPaneModel sets a per-pane override keyed by paneId, independently", () => {
+    useAppStore.setState({ paneModels: {} });
+    useAppStore.getState().setPaneModel("t0p0", "haiku-4.5");
+    useAppStore.getState().setPaneModel("t0p1", "opus-4.5");
+    expect(useAppStore.getState().paneModels["t0p0"]).toBe("haiku-4.5");
+    expect(useAppStore.getState().paneModels["t0p1"]).toBe("opus-4.5");
+    // A later write for the same pane overwrites only that entry.
+    useAppStore.getState().setPaneModel("t0p0", "sonnet-4.5");
+    expect(useAppStore.getState().paneModels["t0p0"]).toBe("sonnet-4.5");
+    expect(useAppStore.getState().paneModels["t0p1"]).toBe("opus-4.5");
+  });
+});
+
+describe("appearance", () => {
+  it("setAccent updates the persisted accent id", () => {
+    useAppStore.setState({ accent: "amber" });
+    useAppStore.getState().setAccent("purple");
+    expect(useAppStore.getState().accent).toBe("purple");
+  });
+
+  it("setTerminalFontSize clamps to the legible range", () => {
+    useAppStore.getState().setTerminalFontSize(999);
+    expect(useAppStore.getState().terminalFontSize).toBe(28);
+    useAppStore.getState().setTerminalFontSize(1);
+    expect(useAppStore.getState().terminalFontSize).toBe(8);
+  });
+});
+
+describe("github board routing (#498)", () => {
+  it("openGithubBoard flips the board open at a sub-tab; closeGithubBoard resets", () => {
+    useAppStore.setState({ githubBoardOpen: false, githubBoardTab: "board" });
+    useAppStore.getState().openGithubBoard("issues");
+    expect(useAppStore.getState().githubBoardOpen).toBe(true);
+    expect(useAppStore.getState().githubBoardTab).toBe("issues");
+
+    useAppStore.getState().setGithubBoardTab("roadmap");
+    expect(useAppStore.getState().githubBoardTab).toBe("roadmap");
+
+    useAppStore.getState().closeGithubBoard();
+    expect(useAppStore.getState().githubBoardOpen).toBe(false);
+  });
+
+  it("openGithubBoard defaults to the board sub-tab", () => {
+    useAppStore.setState({ githubBoardOpen: false, githubBoardTab: "issues" });
+    useAppStore.getState().openGithubBoard();
+    expect(useAppStore.getState().githubBoardTab).toBe("board");
+  });
+});
+
+describe("plan stage config (#512)", () => {
+  beforeEach(() => useAppStore.setState({ planStageConfig: {} }));
+
+  it("setStageEnabled seeds from defaults (all-on) then flips one stage", () => {
+    useAppStore.getState().setStageEnabled("proj", "automations", false);
+    const cfg = useAppStore.getState().planStageConfig["proj"];
+    expect(cfg.enabled.automations).toBe(false);
+    // other stages keep their default-on value
+    expect(cfg.enabled.context).toBe(true);
+    expect(cfg.enabled.structure).toBe(true);
+  });
+
+  it("reorderStages stores the new order without touching enabled flags", () => {
+    useAppStore.getState().setStageEnabled("proj", "ui", false);
+    const order = ["repos", "context", "ui", "structure", "permissions", "automations", "skills"] as const;
+    useAppStore.getState().reorderStages("proj", [...order]);
+    const cfg = useAppStore.getState().planStageConfig["proj"];
+    expect(cfg.order).toEqual([...order]);
+    expect(cfg.enabled.ui).toBe(false);
+  });
+
+  it("config is per-project", () => {
+    useAppStore.getState().setStageEnabled("a", "skills", false);
+    expect(useAppStore.getState().planStageConfig["b"]).toBeUndefined();
+    expect(useAppStore.getState().planStageConfig["a"].enabled.skills).toBe(false);
+  });
+
+  it("setProjectStageConfig wholesale-seeds a project's config", () => {
+    const d = defaultStageConfig();
+    const order = ["repos", "context", "ui", "structure", "permissions", "automations", "skills"] as const;
+    useAppStore.getState().setProjectStageConfig("seed", { enabled: d.enabled, order: [...order] });
+    expect(useAppStore.getState().planStageConfig["seed"].order[0]).toBe("repos");
+  });
+});
+
+describe("per-screen UI approval (#546)", () => {
+  beforeEach(() => useAppStore.setState({ uiScreens: {}, uiApproved: {} }));
+
+  it("addUiScreen appends declared screens in order, deduped", () => {
+    const { addUiScreen } = useAppStore.getState();
+    addUiScreen("proj", "Login");
+    addUiScreen("proj", "Dashboard");
+    addUiScreen("proj", "Login"); // duplicate ignored
+    expect(useAppStore.getState().uiScreens["proj"]).toEqual(["Login", "Dashboard"]);
+  });
+
+  it("setUiScreenApproved adds and removes a screen by name", () => {
+    const { setUiScreenApproved } = useAppStore.getState();
+    setUiScreenApproved("proj", "Login", true);
+    setUiScreenApproved("proj", "Dashboard", true);
+    expect(useAppStore.getState().uiApproved["proj"]).toEqual(["Login", "Dashboard"]);
+    setUiScreenApproved("proj", "Login", false);
+    expect(useAppStore.getState().uiApproved["proj"]).toEqual(["Dashboard"]);
+  });
+
+  it("approving the same screen twice does not duplicate it", () => {
+    const { setUiScreenApproved } = useAppStore.getState();
+    setUiScreenApproved("proj", "Login", true);
+    setUiScreenApproved("proj", "Login", true);
+    expect(useAppStore.getState().uiApproved["proj"]).toEqual(["Login"]);
+  });
+
+  it("approval is per-project", () => {
+    useAppStore.getState().setUiScreenApproved("a", "Login", true);
+    expect(useAppStore.getState().uiApproved["b"]).toBeUndefined();
+    expect(useAppStore.getState().uiApproved["a"]).toEqual(["Login"]);
+  });
+});
+
+describe("blueprints library (#513/#514)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });
+  });
+
+  it("seeds the starter library with a default active", () => {
+    expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(4);
+    expect(useAppStore.getState().activeBlueprintId).toBe("default");
+  });
+
+  it("addBlueprint appends an untitled blueprint with a seed section and returns its id", () => {
+    const before = useAppStore.getState().blueprints.length;
+    const id = useAppStore.getState().addBlueprint();
+    const bp = useAppStore.getState().blueprints.find((b) => b.id === id)!;
+    expect(useAppStore.getState().blueprints.length).toBe(before + 1);
+    expect(bp.sections.length).toBeGreaterThan(0);
+  });
+
+  it("setActiveBlueprint switches the active id", () => {
+    useAppStore.getState().setActiveBlueprint("api");
+    expect(useAppStore.getState().activeBlueprintId).toBe("api");
+  });
+
+  it("duplicateBlueprint inserts an independent copy after the source", () => {
+    const id = useAppStore.getState().duplicateBlueprint("default");
+    const copy = useAppStore.getState().blueprints.find((b) => b.id === id)!;
+    expect(copy.name).toMatch(/copy/);
+    // editing the copy doesn't touch the source
+    const edited = copy.sections.map((s, i) => (i === 0 ? { ...s, enabled: false } : s));
+    useAppStore.getState().setBlueprintSections(id, edited);
+    const src = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
+    expect(src.sections[0].enabled).toBe(true);
+  });
+
+  it("setBlueprintSections persists the new sections for that blueprint only", () => {
+    const def = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
+    const flipped = def.sections.map((s) => (s.key === "context" ? { ...s, enabled: false } : s));
+    useAppStore.getState().setBlueprintSections("default", flipped);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "context")!.enabled).toBe(false);
+    // a sibling blueprint is untouched
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
+  });
+
+  it("updateBlueprintMeta edits name/desc", () => {
+    useAppStore.getState().updateBlueprintMeta("default", { name: "Renamed", desc: "New desc" });
+    const bp = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
+    expect(bp.name).toBe("Renamed");
+    expect(bp.desc).toBe("New desc");
+  });
+});
+
+describe("stage pipeline runs (#528/#529)", () => {
+  beforeEach(() => useAppStore.setState({ stagePipelineRuns: {} }));
+
+  it("records a per-project, per-pipeline run state", () => {
+    useAppStore.getState().setStagePipelineRun("proj", "pl-1", { status: "running", lastRun: null });
+    expect(useAppStore.getState().stagePipelineRuns["proj"]["pl-1"].status).toBe("running");
+    useAppStore.getState().setStagePipelineRun("proj", "pl-1", { status: "ok", lastRun: 123 });
+    expect(useAppStore.getState().stagePipelineRuns["proj"]["pl-1"]).toEqual({ status: "ok", lastRun: 123 });
+  });
+
+  it("is per-project and per-pipeline (no cross-talk)", () => {
+    useAppStore.getState().setStagePipelineRun("a", "pl-1", { status: "ok", lastRun: 1 });
+    useAppStore.getState().setStagePipelineRun("a", "pl-2", { status: "fail", lastRun: 2 });
+    useAppStore.getState().setStagePipelineRun("b", "pl-1", { status: "blocked", lastRun: 3 });
+    expect(useAppStore.getState().stagePipelineRuns["a"]["pl-1"].status).toBe("ok");
+    expect(useAppStore.getState().stagePipelineRuns["a"]["pl-2"].status).toBe("fail");
+    expect(useAppStore.getState().stagePipelineRuns["b"]["pl-1"].status).toBe("blocked");
+  });
+});
+
+describe("clearPlan (#505)", () => {
+  beforeEach(() =>
+    useAppStore.setState({
+      planSections: { myproj: { goal: "# Goal" }, other: { scope: "# Scope" } },
+      planConfirmedSections: { myproj: ["goal"], other: [] },
+      planKbAssignments: { myproj: ["kb-1"] },
+      planAutomations: { myproj: [] },
+      planStageConfig: {},
+      uiScreens: { myproj: ["Home"] },
+      uiApproved: { myproj: ["Home"] },
+      planFleet: {},
+      issueLinks: { myproj: { F1: { number: 1, url: "u" } } },
+    })
+  );
+
+  it("clears all plan buckets for the given key without touching other projects", () => {
+    useAppStore.getState().clearPlan("myproj");
+    const s = useAppStore.getState();
+    expect(s.planSections["myproj"]).toBeUndefined();
+    expect(s.planConfirmedSections["myproj"]).toBeUndefined();
+    expect(s.planKbAssignments["myproj"]).toBeUndefined();
+    expect(s.planAutomations["myproj"]).toBeUndefined();
+    expect(s.uiScreens["myproj"]).toBeUndefined();
+    expect(s.uiApproved["myproj"]).toBeUndefined();
+    expect(s.issueLinks["myproj"]).toBeUndefined();
+    // other project untouched
+    expect(s.planSections["other"]).toEqual({ scope: "# Scope" });
+  });
+
+  it("is a no-op for a key that has no plan data", () => {
+    useAppStore.getState().clearPlan("nonexistent");
+    const s = useAppStore.getState();
+    expect(s.planSections["myproj"]).toEqual({ goal: "# Goal" });
   });
 });

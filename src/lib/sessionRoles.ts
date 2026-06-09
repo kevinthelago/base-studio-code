@@ -35,14 +35,22 @@ export interface RoleCapability {
   writeGlobs: string[];
 }
 
+// Plan-file globs auto-approved for the planner (#509). These are the section files
+// the planning session writes directly: markdown sections, JSON manifests, and the
+// prompts/ kickoff scripts. The planner still has no git/GitHub writes.
+export const PLANNER_WRITE_GLOBS: string[] = [
+  "*.md", "*.json", "prompts/*.md", "prompts/*",
+];
+
 /**
  * Default capability per role. `writeGlobs` are filled per assignment (a worker owns
  * its stream's globs); the defaults are empty so a session with no assigned boundary
- * can't write code. The **planner is plan-only** — read-only git/GitHub, no code; its
- * plan writes go through a dedicated channel, not the filesystem guard.
+ * can't write code. The **planner is plan-only** — read-only git/GitHub; its code writes
+ * are scoped to plan-section files ({@link PLANNER_WRITE_GLOBS}) so it never needs a
+ * permission prompt to write goal.md / phases.json / fleet.json / prompts/*.
  */
 export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = {
-  planner: { role: "planner", github: "read", git: "read", code: "none", writeGlobs: [] },
+  planner: { role: "planner", github: "read", git: "read", code: "write", writeGlobs: PLANNER_WRITE_GLOBS },
   worker: { role: "worker", github: "read", git: "write", code: "write", writeGlobs: [] },
   director: { role: "director", github: "write", git: "write", code: "none", writeGlobs: [] },
   triage: { role: "triage", github: "write", git: "none", code: "none", writeGlobs: [] },

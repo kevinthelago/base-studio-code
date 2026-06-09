@@ -11,32 +11,8 @@ const TOOLS: [string, string, boolean][] = [
   ["browser", "Headless browsing for docs",             false ],
 ];
 
-function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <span
-      onClick={onToggle}
-      style={{
-        display: "inline-flex", alignItems: "center",
-        width: 32, height: 18, borderRadius: 99, cursor: "pointer",
-        background: on ? "var(--accent)" : "var(--bg-elev2)",
-        border: "1px solid " + (on ? "transparent" : "var(--border)"),
-        transition: "background 0.15s",
-        flex: "0 0 auto",
-      }}
-    >
-      <span style={{
-        width: 12, height: 12, borderRadius: "50%",
-        background: on ? "#1a120a" : "var(--fg-dim)",
-        marginLeft: on ? "auto" : 2,
-        marginRight: on ? 2 : "auto",
-        transition: "margin 0.15s",
-      }} />
-    </span>
-  );
-}
-
 export function IntegrationsSettings() {
-  const { claudeApiKey, setClaudeApiKey, autoAdvanceOnReply, setAutoAdvanceOnReply, autoResumeClaude, setAutoResumeClaude } = useAppStore();
+  const { claudeApiKey, setClaudeApiKey } = useAppStore();
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Integrations</h2>
@@ -52,7 +28,7 @@ export function IntegrationsSettings() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14 }}>
-          <div className="field">
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>API key</label>
             <div style={{ display: "flex", gap: 8 }}>
               <input
@@ -65,16 +41,7 @@ export function IntegrationsSettings() {
               <button className="btn">show</button>
               <button className="btn">test</button>
             </div>
-            <div className="hint">Stored in OS keyring · never written to disk in plaintext.</div>
-          </div>
-          <div className="field">
-            <label>Default model</label>
-            <select className="input" defaultValue="sonnet-4.5">
-              <option>opus-4.5</option>
-              <option value="sonnet-4.5">sonnet-4.5</option>
-              <option>haiku-4.5</option>
-            </select>
-            <div className="hint">Per-pane override available from the hamburger menu.</div>
+            <div className="hint">Stored in OS keyring · never written to disk in plaintext. Default model lives in Settings → General.</div>
           </div>
           <div className="field">
             <label>Per-agent context cap</label>
@@ -97,40 +64,6 @@ export function IntegrationsSettings() {
               ))}
             </div>
             <div className="hint">Off for haiku regardless of this setting.</div>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ height: 18 }} />
-
-      <div style={{ height: 18 }} />
-
-      <div className="card">
-        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-          <h3 style={{ margin: 0 }}>Console behavior</h3>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Toggle on={autoAdvanceOnReply} onToggle={() => setAutoAdvanceOnReply(!autoAdvanceOnReply)} />
-            <div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
-                Cycle to next console on reply
-              </div>
-              <div className="hint">
-                When you send a response to a console, jump focus to the next one waiting in the queue (Ctrl+Shift+N cycles manually). Works while maximized.
-              </div>
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Toggle on={autoResumeClaude} onToggle={() => setAutoResumeClaude(!autoResumeClaude)} />
-            <div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
-                Auto-resume Claude on restart
-              </div>
-              <div className="hint">
-                Panes that had Claude running at last shutdown relaunch it with <code>--continue</code> when the app reopens, restoring the prior conversation. Off means panes start at a bare bash prompt; you'd type <code>claude</code> yourself.
-              </div>
-            </div>
           </div>
         </div>
       </div>

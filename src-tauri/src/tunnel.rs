@@ -67,6 +67,16 @@ pub enum ServerMsg {
         data: String,
         coarse: bool,
     },
+    /// The PTY grid size a pane's output is rendered for. Mobile sets its terminal to
+    /// these cols/rows so the byte stream's baked line-wrapping + cursor positioning
+    /// line up (otherwise a phone-width terminal garbles desktop-width output). Sent on
+    /// pairing replay and whenever the desktop PTY resizes.
+    #[serde(rename_all = "camelCase")]
+    PaneSize {
+        pane_id: String,
+        cols: u16,
+        rows: u16,
+    },
     #[serde(rename_all = "camelCase")]
     SessionState {
         pane_id: String,
@@ -185,6 +195,9 @@ struct Inner {
     psk: String,
     panes: Vec<PaneDescriptor>,
     sessions: HashMap<String, SessionMeta>,
+    /// Latest known PTY grid size per pane (cols, rows). Broadcast to mobile so it can
+    /// render at the desktop's width; replayed to freshly-paired clients.
+    sizes: HashMap<String, (u16, u16)>,
     client_count: usize,
     /// View-only gate (#B-wan-viewonly): `false` until the desktop grants input. While
     /// `false`, PTY-mutating mobile frames (keystrokes, resize) are dropped. Reset to
@@ -235,6 +248,7 @@ impl TunnelState {
                 psk: String::new(),
                 panes: Vec::new(),
                 sessions: HashMap::new(),
+                sizes: HashMap::new(),
                 client_count: 0,
                 input_granted: false,
                 input_requested: false,
@@ -274,6 +288,34 @@ impl TunnelState {
             pane_id: pane_id.to_string(),
             data: data.to_string(),
         });
+    }
+
+    /// Record a pane's PTY grid size and broadcast it to the mobile client so it can
+    /// render at the same width. Stored for replay to freshly-paired clients. No-op (no
+    /// event) when the size is unchanged, so repeated identical fits don't spam the bus.
+    pub fn set_pane_size(&self, pane_id: &str, cols: u16, rows: u16) {
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.sizes.insert(pane_id.to_string(), (cols, rows)) == Some((cols, rows)) {
+                return;
+            }
+        }
+        let _ = self.event_tx.send(ServerMsg::PaneSize {
+            pane_id: pane_id.to_string(),
+            cols,
+            rows,
+        });
+    }
+
+    /// Snapshot the known pane sizes to replay to a freshly-paired client.
+    fn pane_sizes(&self) -> Vec<(String, u16, u16)> {
+        self.inner
+            .lock()
+            .unwrap()
+            .sizes
+            .iter()
+            .map(|(k, (c, r))| (k.clone(), *c, *r))
+            .collect()
     }
 
     /// Signal the relay transport (if any) to shut down — called on app exit.
@@ -776,6 +818,12 @@ mod transport {
         for s in &sessions {
             send_msg(&mut sink, &mut noise_tx, &super::session_state_msg(s)).await?;
         }
+        // Replay each pane's current PTY size so mobile renders at the desktop's width
+        // before any output arrives.
+        let sizes = app.try_state::<TunnelState>().map(|s| s.pane_sizes()).unwrap_or_default();
+        for (pane_id, cols, rows) in sizes {
+            send_msg(&mut sink, &mut noise_tx, &ServerMsg::PaneSize { pane_id, cols, rows }).await?;
+        }
 
         // Subscribe AFTER replay so we don't double-send; then pump until either side closes.
         let (mut out_rx, mut evt_rx) = match app.try_state::<TunnelState>() {
@@ -796,7 +844,14 @@ mod transport {
                     let frame = inbound?;
                     match decode_room_msg(&mut noise_tx, &frame) {
                         Ok(msg) => handle_client_msg(app, msg, &mut focused),
-                        Err(e) => return Err(e),
+                        // A malformed/unknown mobile frame can't be parsed — name it before
+                        // the session tears down + reconnects, so a wrong client shape (e.g.
+                        // a `pane_input` missing `data`) is diagnosable rather than a silent
+                        // reconnect loop.
+                        Err(e) => {
+                            log::warn!("tunnel: failed to decode mobile frame ({} bytes): {e}", frame.len());
+                            return Err(e);
+                        }
                     }
                 }
                 out = out_rx.recv() => match out {
@@ -857,9 +912,13 @@ mod transport {
             ClientMsg::PaneResize { pane_id, cols, rows } => {
                 crate::tunnel_resize_pty(app, &pane_id, cols, rows)
             }
-            ClientMsg::PaneFocus { pane_id } => *focused = Some(pane_id),
+            ClientMsg::PaneFocus { pane_id } => {
+                log::debug!("tunnel: focus → pane[{pane_id}]");
+                *focused = Some(pane_id);
+            }
             ClientMsg::PaneSetState { pane_id, state } => {
                 if state == "streaming" {
+                    log::debug!("tunnel: stream → pane[{pane_id}]");
                     *focused = Some(pane_id);
                 }
             }
@@ -933,6 +992,15 @@ mod tests {
             })
             .unwrap(),
             s["pane_output"]
+        );
+        assert_eq!(
+            serde_json::to_value(ServerMsg::PaneSize {
+                pane_id: "t0p0".into(),
+                cols: 80,
+                rows: 24,
+            })
+            .unwrap(),
+            s["pane_size"]
         );
         assert_eq!(
             serde_json::to_value(ServerMsg::SessionState {
@@ -1086,6 +1154,34 @@ mod tests {
         let got = rx.try_recv().unwrap();
         assert_eq!(got.pane_id, "t0p0");
         assert_eq!(got.data, "world");
+    }
+
+    #[test]
+    fn set_pane_size_records_dedupes_and_broadcasts() {
+        let st = TunnelState::new();
+        let mut rx = st.subscribe_events();
+
+        // First set records the size and broadcasts a pane_size event.
+        st.set_pane_size("t0p0", 80, 24);
+        match rx.try_recv().unwrap() {
+            ServerMsg::PaneSize { pane_id, cols, rows } => {
+                assert_eq!((pane_id.as_str(), cols, rows), ("t0p0", 80, 24));
+            }
+            other => panic!("expected pane_size, got {other:?}"),
+        }
+        assert_eq!(st.pane_sizes(), vec![("t0p0".to_string(), 80, 24)]);
+
+        // An identical size is a no-op — no duplicate event.
+        st.set_pane_size("t0p0", 80, 24);
+        assert!(rx.try_recv().is_err());
+
+        // A changed size broadcasts again and updates the replay snapshot.
+        st.set_pane_size("t0p0", 100, 30);
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            ServerMsg::PaneSize { cols: 100, rows: 30, .. }
+        ));
+        assert_eq!(st.pane_sizes(), vec![("t0p0".to_string(), 100, 30)]);
     }
 
     #[test]

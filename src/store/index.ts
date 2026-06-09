@@ -4,10 +4,12 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { Screen } from "../components/chrome/Rail";
 import type { Tab } from "../components/chrome/Tabstrip";
 import type { ViewKey } from "../components/pane/ViewTabs";
+import type { ModelId } from "../components/pane/PaneMenu";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
-import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET, type QueuedPane, type FocusTarget } from "../lib/focusQueue";
+import { DEFAULT_ACCENT } from "../lib/appearance";
+import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET, type QueuedPane, type FocusTarget, DEFAULT_AUTO_FOCUS_MODE, type ConsoleAutoFocusMode } from "../lib/focusQueue";
 import { repoPromptKey } from "./../lib/startupPrompt";
 import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "../lib/tabReorder";
 import { resolveStartupPrompt, resolveReferenceContext, type DocAssignments } from "../lib/assignments";
@@ -28,6 +30,10 @@ import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
+import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
+import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
+import type { GradeResult } from "../screens/projects/grading";
+import { makeBlueprints, cloneSections, mkSection, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
@@ -220,6 +226,10 @@ interface AppStore {
   // Adjusted via Ctrl++ / Ctrl+- / Ctrl+0; clamped to the legible range.
   terminalFontSize: number;
   setTerminalFontSize: (size: number) => void;
+  // Accent color preset id (persisted; configured in Settings → Appearance).
+  // Applied to the --accent / --accent-dim CSS tokens at the document root.
+  accent: string;
+  setAccent: (id: string) => void;
   paneViews: ViewKey[];
   paneNames: Record<number, Record<number, string>>;
   paneCwds: Record<string, string>;  // keyed by "t{tabIdx}p{paneIdx}"
@@ -415,10 +425,12 @@ interface AppStore {
   recordAutomationRun: (id: string, run: AutomationRun) => void;
 
   // Projects (transient)
-  projectsPageMode: "projects" | "fleet";
-  setProjectsPageMode: (v: "projects" | "fleet") => void;
-  projectsView: "list" | "board" | "planning";
-  setProjectsView: (v: "list" | "board" | "planning") => void;
+  projectsPageMode: "projects" | "fleet" | "blueprints";
+  setProjectsPageMode: (v: "projects" | "fleet" | "blueprints") => void;
+  // The Projects page is list ↔ planning (#499): the board moved to the GitHub
+  // page (#498) and the execution tabs were removed.
+  projectsView: "list" | "planning";
+  setProjectsView: (v: "list" | "planning") => void;
   activeProjectId: string | null;
   activeProjectName: string;
   activeProjectRepo: string;
@@ -477,8 +489,19 @@ interface AppStore {
   // navigating from a project's "documents" button. Transient — NOT persisted.
   kbProjectScope: { keys: string[]; label: string } | null;
   setKbProjectScope: (scope: { keys: string[]; label: string } | null) => void;
-  projectsBoardTab: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination" | "pipelines";
-  setProjectsBoardTab: (t: "board" | "roadmap" | "issues" | "insights" | "hooks" | "coordination" | "pipelines") => void;
+  // The GitHub page's active top tab (summary | projects | repos), store-controlled
+  // so other screens can deep-link to it (e.g. the Projects list signpost → projects).
+  githubTab: string;
+  setGithubTab: (t: string) => void;
+  // The GitHub Projects v2 board now lives on the GitHub page (#498). When a project
+  // is opened from the GitHub portfolio, this flips on and its board renders there
+  // with `githubBoardTab` selecting the sub-view. Session-only (not persisted).
+  githubBoardOpen: boolean;
+  githubBoardTab: "board" | "roadmap" | "issues" | "insights";
+  /** Open the GitHub-page board for the active project at a given sub-tab. */
+  openGithubBoard: (tab?: "board" | "roadmap" | "issues" | "insights") => void;
+  setGithubBoardTab: (t: "board" | "roadmap" | "issues" | "insights") => void;
+  closeGithubBoard: () => void;
   projectsDrawerIssue: number | null;
   setProjectsDrawerIssue: (n: number | null) => void;
   planningPitch: string;
@@ -492,6 +515,12 @@ interface AppStore {
   // can move the working directory out from under an active session.
   planningSessionKey: string;
   setPlanningSession: (key: string) => void;
+  /** A prompt queued for the live planner session of a project, keyed by project key.
+   *  Planning.tsx writes it into the planner PTY (a deliberate, user-triggered inject —
+   *  e.g. the file-intake "Route" action) and clears it. (#604) */
+  pendingPlannerPrompt: Record<string, string>;
+  requestPlannerPrompt: (projectKey: string, text: string) => void;
+  clearPlannerPrompt: (projectKey: string) => void;
   // Links a GitHub Project node id to the stable folder/data key (the title
   // slug the plan files were written under). A project opened from the board
   // only sets `activeProjectId` (the node id); this lets the planning resolver
@@ -547,6 +576,54 @@ interface AppStore {
   planAutomations:    Record<string, AutomationSuggestion[]>;
   addPlanAutomation:  (projectId: string, a: AutomationSuggestion) => void;
   clearPlanAutomations: (projectId: string) => void;
+  // Modular planning stages (#512): per-project on/off + ordering of the planning
+  // stages. Defaults (all-on, registry order) are resolved lazily via
+  // defaultStageConfig, so an unset project behaves exactly as today.
+  planStageConfig:    Record<string, StageConfig>;
+  setStageEnabled:    (projectId: string, stageId: StageId, enabled: boolean) => void;
+  reorderStages:      (projectId: string, order: StageId[]) => void;
+  /** Wholesale-set a project's stage config (used to seed it from a blueprint). */
+  setProjectStageConfig: (projectId: string, config: StageConfig) => void;
+  // Blueprints (#513/#514): named, reusable configs — an ordered list of planning
+  // sections, each owning its prompt module + pipelines. The active one seeds new
+  // projects. Seeded with the starter library; persisted. Section/pipeline edits go
+  // through setBlueprintSections (the component computes the new sections array).
+  blueprints:         Blueprint[];
+  activeBlueprintId:  string;
+  setActiveBlueprint: (id: string) => void;
+  addBlueprint:       () => string;
+  duplicateBlueprint: (id: string) => string;
+  updateBlueprintMeta: (id: string, patch: Partial<Omit<Blueprint, "id" | "sections">>) => void;
+  setBlueprintSections: (id: string, sections: BlueprintSection[]) => void;
+  /** Delete a blueprint; if it was active, the active id falls back to the first
+   *  remaining (or the default). */
+  removeBlueprint: (id: string) => void;
+  /** Add an imported blueprint under a fresh id + fresh section uids (never overwrites
+   *  an existing one). Returns the new id. */
+  importBlueprint: (bp: Blueprint) => string;
+  // Stage-pipeline run state (#528/#529): per-project, per-pipeline run status, keyed
+  // projectKey -> pipelineUid -> state. Distinct from the fleet conductor's
+  // `pipelineRuns` (#220). Session-only (not persisted).
+  stagePipelineRuns: Record<string, Record<string, PipelineRunState>>;
+  setStagePipelineRun: (projectKey: string, pipelineUid: string, state: PipelineRunState) => void;
+  // The current UI preview per project (#531): the render-preview pipeline writes the
+  // bundled iframe srcdoc here; PlanPreviewPane renders it. `screen` names which screen
+  // is showing (#546), so its approve button targets the right one. Session-only.
+  stagePreview: Record<string, { srcDoc: string; mode: "2d" | "3d"; screen?: string } | null>;
+  setStagePreview: (projectKey: string, value: { srcDoc: string; mode: "2d" | "3d"; screen?: string } | null) => void;
+  // Per-section grades (#615): project → section key → one GradeResult per grader id.
+  // A section can carry MULTIPLE graders; setSectionGrade upserts by graderId. The
+  // report-card pipeline screen renders these. Session-only.
+  sectionGrades: Record<string, Record<string, GradeResult[]>>;
+  setSectionGrade: (projectKey: string, sectionKey: string, result: GradeResult) => void;
+  // Per-screen UI approval (#544/#546). `uiScreens` is the set of screens the planner
+  // has declared via <ui_preview> tags (the denominator); `uiApproved` is the names the
+  // user has signed off in the preview pane (the numerator). The UI stage completes only
+  // when every declared screen is approved. Both persisted — real approval signals.
+  uiScreens: Record<string, string[]>;
+  addUiScreen: (projectKey: string, screen: string) => void;
+  uiApproved: Record<string, string[]>;
+  setUiScreenApproved: (projectKey: string, screen: string, approved: boolean) => void;
   // Agent fleet — the parallel-execution plan (work streams + optional director +
   // the optimal concurrent session count). Persisted per project.
   planFleet:             Record<string, FleetPlan>;
@@ -577,6 +654,7 @@ interface AppStore {
   setPlanDirector:       (projectId: string, enabled: boolean, role?: string) => void;
   setPlanDirectorDrive:  (projectId: string, drive: DirectorDrive) => void;
   clearPlanFleet:        (projectId: string) => void;
+  clearPlan:             (key: string) => void;
 
   // Extensions — MCP servers + hooks the user configures, each scoped via its
   // `projects` ([] = global). Written into a launched session's .mcp.json /
@@ -640,8 +718,12 @@ interface AppStore {
   setDeniedCommands: (commands: string[]) => void;
 
   // Console behavior
-  // When a response is sent to the active console, cycle focus to the next pane
-  // waiting in the focus queue (persisted; configured in Settings → Integrations).
+  // Selectable auto-focus mode (#434): controls whether and when focus advances
+  // after you reply. Persisted; configured in Settings → Integrations.
+  // Replaces the old boolean; autoAdvanceOnReply is kept for Console.tsx back-compat.
+  autoFocusMode: ConsoleAutoFocusMode;
+  setAutoFocusMode: (mode: ConsoleAutoFocusMode) => void;
+  // Back-compat derived field: true when autoFocusMode is not "off".
   autoAdvanceOnReply: boolean;
   setAutoAdvanceOnReply: (v: boolean) => void;
   // When true, panes that had claude running at last shutdown auto-relaunch
@@ -653,6 +735,14 @@ interface AppStore {
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;
   setAutoResumeClaude: (v: boolean) => void;
+  /** Default Claude model new console panes open with (persisted; configured in
+   *  Settings → General). Per-pane override lives in the pane hamburger menu. */
+  defaultModel: ModelId;
+  setDefaultModel: (m: ModelId) => void;
+  /** Per-pane model override, keyed by paneId. A pane with no entry falls back to
+   *  {@link defaultModel}. Applied to `claude --model` at the pane's next launch. */
+  paneModels: Record<string, ModelId>;
+  setPaneModel: (paneId: string, m: ModelId) => void;
 }
 
 // (Re)mount a pipeline run's pane for its CURRENT stage (#220): a single-pane
@@ -774,6 +864,8 @@ export const useAppStore = create<AppStore>()(
         }),
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       setTerminalFontSize: (size) => set({ terminalFontSize: clampFontSize(size) }),
+      accent: DEFAULT_ACCENT,
+      setAccent: (id) => set({ accent: id }),
       paneViews: [],
       paneNames: {},
       paneCwds: {},
@@ -1202,6 +1294,9 @@ export const useAppStore = create<AppStore>()(
             planConfirmedSections:  byKey(s.planConfirmedSections),
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
+            planStageConfig:        byKey(s.planStageConfig),
+            uiScreens:              byKey(s.uiScreens),
+            uiApproved:             byKey(s.uiApproved),
             planFleet:              byKey(s.planFleet),
             pinnedContext:          byKey(s.pinnedContext),
             projectKeyAlias:        byKey(s.projectKeyAlias),
@@ -1227,7 +1322,7 @@ export const useAppStore = create<AppStore>()(
       resetProjectData: () =>
         set({
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
-          planAutomations: {}, planFleet: {}, pinnedContext: {},
+          planAutomations: {}, planStageConfig: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
@@ -1267,8 +1362,13 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ repoTriagePromptDoc: { ...s.repoTriagePromptDoc, [repoPromptKey(projectId, repo)]: doc } })),
       kbProjectScope: null,
       setKbProjectScope: (scope) => set({ kbProjectScope: scope }),
-      projectsBoardTab: "board",
-      setProjectsBoardTab: (t) => set({ projectsBoardTab: t }),
+      githubTab: "summary",
+      setGithubTab: (t) => set({ githubTab: t }),
+      githubBoardOpen: false,
+      githubBoardTab: "board",
+      openGithubBoard: (tab = "board") => set({ githubBoardOpen: true, githubBoardTab: tab }),
+      setGithubBoardTab: (t) => set({ githubBoardTab: t }),
+      closeGithubBoard: () => set({ githubBoardOpen: false }),
       wakePane: (paneId, prompt) => {
         const m = /^t(\d+)p\d+$/.exec(paneId);
         if (!m) return false;
@@ -1315,6 +1415,16 @@ export const useAppStore = create<AppStore>()(
       setPlanningTitle: (title) => set({ planningTitle: title }),
       planningSessionKey: "",
       setPlanningSession: (key) => set({ planningSessionKey: key }),
+      pendingPlannerPrompt: {},
+      requestPlannerPrompt: (projectKey, text) =>
+        set((s) => ({ pendingPlannerPrompt: { ...s.pendingPlannerPrompt, [projectKey]: text } })),
+      clearPlannerPrompt: (projectKey) =>
+        set((s) => {
+          if (!(projectKey in s.pendingPlannerPrompt)) return {};
+          const next = { ...s.pendingPlannerPrompt };
+          delete next[projectKey];
+          return { pendingPlannerPrompt: next };
+        }),
       projectKeyAlias: {},
       setProjectKeyAlias: (nodeId, key) =>
         set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
@@ -1477,14 +1587,13 @@ export const useAppStore = create<AppStore>()(
           const newPaneDirectorMode      = { ...s.paneDirectorMode };
           const newPaneStream            = { ...s.paneStream };
 
-          // Independents first so the launched wave is what can run now; the
-          // recommended count caps how many workers start (no 16 cap — we go multi-tab).
+          // Independents first so the launched wave is what can run now.
+          // ALL intended workers are launched across however many build tabs are needed
+          // (#479 — no silent drop past the recommended count; recommended is advisory).
           const ordered = [...fleet.streams].sort(
             (a, b) => (a.dependsOn.length ? 1 : 0) - (b.dependsOn.length ? 1 : 0),
           );
-          const rec = fleet.recommended > 0 ? fleet.recommended : ordered.length;
-          const workerCount = Math.min(ordered.length, Math.max(ordered.length ? 1 : 0, rec));
-          const workers = ordered.slice(0, workerCount);
+          const workers = ordered;
 
           // Flat session list, chunked into tabs of ≤16. `null` marks the director slot.
           const sessions: (AgentStream | null)[] = [...(hasDirector ? [null] : []), ...workers];
@@ -1640,9 +1749,14 @@ export const useAppStore = create<AppStore>()(
           }
 
           const addedAutos = activateAutomations(s, s.activeProjectId ?? "", baseTabName);
+          // #459: structure-aware auto-focus — set focusTarget based on fleet shape:
+          // director present → only the director surfaces (workers run dark);
+          // no director → all fleet panes queue (fall back to fleet-wide focus).
+          const structureFocusTarget = hasDirector ? "director" : "fleet";
           return {
             tabs,
             activeTabIdx: firstTabIdx,
+            focusTarget: structureFocusTarget,
             automations: [...s.automations, ...addedAutos],
             focusedPaneIdx: -1,
             fullscreenPaneIdx: -1,
@@ -1735,6 +1849,105 @@ export const useAppStore = create<AppStore>()(
         }),
       clearPlanAutomations: (projectId) =>
         set((s) => ({ planAutomations: { ...s.planAutomations, [projectId]: [] } })),
+
+      planStageConfig: {},
+      setStageEnabled: (projectId, stageId, enabled) =>
+        set((s) => {
+          const cur = s.planStageConfig[projectId] ?? defaultStageConfig();
+          return {
+            planStageConfig: {
+              ...s.planStageConfig,
+              [projectId]: { ...cur, enabled: { ...cur.enabled, [stageId]: enabled } },
+            },
+          };
+        }),
+      reorderStages: (projectId, order) =>
+        set((s) => {
+          const cur = s.planStageConfig[projectId] ?? defaultStageConfig();
+          return {
+            planStageConfig: { ...s.planStageConfig, [projectId]: { ...cur, order } },
+          };
+        }),
+      setProjectStageConfig: (projectId, config) =>
+        set((s) => ({ planStageConfig: { ...s.planStageConfig, [projectId]: config } })),
+
+      blueprints: makeBlueprints(),
+      activeBlueprintId: DEFAULT_BLUEPRINT_ID,
+      setActiveBlueprint: (id) => set({ activeBlueprintId: id }),
+      addBlueprint: () => {
+        const id = `bp-${Date.now().toString(36)}`;
+        set((s) => ({
+          blueprints: [...s.blueprints, {
+            id, name: "Untitled blueprint", desc: "New configuration",
+            sections: [mkSection("context", { expanded: true })],
+          }],
+        }));
+        return id;
+      },
+      duplicateBlueprint: (id) => {
+        const nid = `bp-${Date.now().toString(36)}`;
+        set((s) => {
+          const src = s.blueprints.find((b) => b.id === id);
+          if (!src) return {};
+          const copy: Blueprint = { ...src, id: nid, name: `${src.name} copy`, sections: cloneSections(src.sections) };
+          const i = s.blueprints.findIndex((b) => b.id === id);
+          const blueprints = [...s.blueprints];
+          blueprints.splice(i + 1, 0, copy);
+          return { blueprints };
+        });
+        return nid;
+      },
+      updateBlueprintMeta: (id, patch) =>
+        set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, ...patch } : b)) })),
+      setBlueprintSections: (id, sections) =>
+        set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, sections } : b)) })),
+      removeBlueprint: (id) =>
+        set((s) => {
+          const blueprints = s.blueprints.filter((b) => b.id !== id);
+          const activeBlueprintId = s.activeBlueprintId === id
+            ? (blueprints[0]?.id ?? DEFAULT_BLUEPRINT_ID)
+            : s.activeBlueprintId;
+          return { blueprints, activeBlueprintId };
+        }),
+      importBlueprint: (bp) => {
+        const id = `bp-${Date.now().toString(36)}`;
+        set((s) => ({ blueprints: [...s.blueprints, { ...bp, id, sections: cloneSections(bp.sections) }] }));
+        return id;
+      },
+
+      stagePipelineRuns: {},
+      setStagePipelineRun: (projectKey, pipelineUid, state) =>
+        set((s) => ({
+          stagePipelineRuns: {
+            ...s.stagePipelineRuns,
+            [projectKey]: { ...(s.stagePipelineRuns[projectKey] ?? {}), [pipelineUid]: state },
+          },
+        })),
+      stagePreview: {},
+      setStagePreview: (projectKey, value) =>
+        set((s) => ({ stagePreview: { ...s.stagePreview, [projectKey]: value } })),
+      sectionGrades: {},
+      setSectionGrade: (projectKey, sectionKey, result) =>
+        set((s) => {
+          const proj = s.sectionGrades[projectKey] ?? {};
+          const prior = proj[sectionKey] ?? [];
+          const next = [...prior.filter((g) => g.graderId !== result.graderId), result];
+          return { sectionGrades: { ...s.sectionGrades, [projectKey]: { ...proj, [sectionKey]: next } } };
+        }),
+      uiScreens: {},
+      addUiScreen: (projectKey, screen) =>
+        set((s) => {
+          const cur = s.uiScreens[projectKey] ?? [];
+          if (cur.includes(screen)) return {} as Partial<typeof s>;
+          return { uiScreens: { ...s.uiScreens, [projectKey]: [...cur, screen] } };
+        }),
+      uiApproved: {},
+      setUiScreenApproved: (projectKey, screen, approved) =>
+        set((s) => {
+          const cur = s.uiApproved[projectKey] ?? [];
+          const next = approved ? (cur.includes(screen) ? cur : [...cur, screen]) : cur.filter((x) => x !== screen);
+          return { uiApproved: { ...s.uiApproved, [projectKey]: next } };
+        }),
 
       planFleet: {},
       pinnedContext: {},
@@ -1850,6 +2063,24 @@ export const useAppStore = create<AppStore>()(
         }),
       clearPlanFleet: (projectId) =>
         set((s) => ({ planFleet: { ...s.planFleet, [projectId]: emptyFleet() } })),
+      clearPlan: (key) =>
+        set((s) => {
+          const omitKey = <T,>(m: Record<string, T>): Record<string, T> => {
+            const n = { ...m }; delete n[key]; return n;
+          };
+          return {
+          planSections:          omitKey(s.planSections),
+          planConfirmedSections: omitKey(s.planConfirmedSections),
+          planKbAssignments:     omitKey(s.planKbAssignments),
+          planAutomations:       omitKey(s.planAutomations),
+          planStageConfig:       omitKey(s.planStageConfig),
+          uiScreens:             omitKey(s.uiScreens),
+          uiApproved:            omitKey(s.uiApproved),
+          planFleet:             omitKey(s.planFleet),
+          issueLinks:            omitKey(s.issueLinks),
+          sectionGrades:         omitKey(s.sectionGrades),
+          };
+        }),
 
       extensions: [],
       addExtension: (def) =>
@@ -1963,13 +2194,22 @@ export const useAppStore = create<AppStore>()(
         }),
       paneAllowedCommands: {},
 
+      autoFocusMode: DEFAULT_AUTO_FOCUS_MODE,
+      setAutoFocusMode: (mode) => set({ autoFocusMode: mode, autoAdvanceOnReply: mode !== "off" }),
       autoAdvanceOnReply: true,
-      setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v }),
+      // Back-compat: syncs to autoFocusMode.
+      setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v, autoFocusMode: v ? "cycle-on-reply" : "off" }),
 
       autoResumeClaude: true,
       setAutoResumeClaude: (v) => set({ autoResumeClaude: v }),
       coordAutoWake: false,
       setCoordAutoWake: (v) => set({ coordAutoWake: v }),
+
+      defaultModel: "sonnet-4.5",
+      setDefaultModel: (m) => set({ defaultModel: m }),
+      paneModels: {},
+      setPaneModel: (paneId, m) =>
+        set((s) => ({ paneModels: { ...s.paneModels, [paneId]: m } })),
     }),
     {
       name: "app-state",
@@ -1980,6 +2220,7 @@ export const useAppStore = create<AppStore>()(
         tabs:            s.tabs,
         activeTabIdx:    s.activeTabIdx,
         terminalFontSize: s.terminalFontSize,
+        accent:          s.accent,
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
         paneCwds:        s.paneCwds,
@@ -2012,9 +2253,12 @@ export const useAppStore = create<AppStore>()(
         deniedCommands:       s.deniedCommands,
         projectAllowedCommands: s.projectAllowedCommands,
         repoAllowedCommands:    s.repoAllowedCommands,
+        autoFocusMode:        s.autoFocusMode,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         coordAutoWake:        s.coordAutoWake,
+        defaultModel:         s.defaultModel,
+        paneModels:           s.paneModels,
         focusTarget:          s.focusTarget,
         fleetPaneStreams:     s.fleetPaneStreams,
         pipelineRuns:         s.pipelineRuns,
@@ -2036,6 +2280,11 @@ export const useAppStore = create<AppStore>()(
         planConfirmedSections: s.planConfirmedSections,
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
+        planStageConfig:       s.planStageConfig,
+        uiScreens:             s.uiScreens,
+        uiApproved:            s.uiApproved,
+        blueprints:            s.blueprints,
+        activeBlueprintId:     s.activeBlueprintId,
         planFleet:             s.planFleet,
         pinnedContext:         s.pinnedContext,
         extensions:            s.extensions,

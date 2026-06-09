@@ -109,6 +109,41 @@ export function parseFeatureSection(content: string, slug: string): ParsedFeatur
   return { phase, title, body: bodyLines.join("\n").trim(), acceptance };
 }
 
+// ── Discovery rubric (#490) ────────────────────────────────────────────────────
+
+/**
+ * Result of the per-feature behavior discovery rubric (#490). The hard gate is
+ * `complete` — a feature with `complete = false` is not converted to issues.
+ * `missingEdgeCases` is a softer warning: the body has content but lacks any
+ * signals of edge/error/empty-state handling.
+ */
+export interface DiscoveryResult {
+  /** true when the hard-gate requirements are met (behavior + acceptance). */
+  complete: boolean;
+  /** true when the feature body is absent or too brief to carry behavioral intent. */
+  missingBehavior: boolean;
+  /** true when no acceptance criteria are present. */
+  missingAcceptance: boolean;
+  /** true when the body lacks keywords suggesting edge/error/empty handling. */
+  missingEdgeCases: boolean;
+}
+
+const EDGE_RE =
+  /\b(error|empty|invalid|fail|edge|missing|not found|no results|loading|cancel|timeout|conflict|reject|403|404|500)\b/i;
+
+/**
+ * Score a parsed feature against the behavior-discovery rubric (#490).
+ * Hard gate (blocks issue generation): `missingBehavior || missingAcceptance`.
+ * Soft warning: `missingEdgeCases` (encouraged but not blocking).
+ */
+export function featureDiscoveryComplete(feature: ParsedFeature): DiscoveryResult {
+  const missingBehavior    = feature.body.trim().length === 0;
+  const missingAcceptance  = feature.acceptance.length === 0;
+  const missingEdgeCases   = !missingBehavior && !EDGE_RE.test(feature.body);
+  const complete           = !missingBehavior && !missingAcceptance;
+  return { complete, missingBehavior, missingAcceptance, missingEdgeCases };
+}
+
 /** A section as the converter needs it — just its key and raw content. */
 export interface FeatureSectionInput {
   k: string;
@@ -126,10 +161,10 @@ function resolveRepo(short: string, repos: string[]): string | undefined {
 }
 
 /**
- * Convert every per-repo feature section into a synthetic {@link PlanIssue}. Each gets a
- * stable, namespaced ref (`feat:{short}:{slug}`) that can't collide with a hand-authored
- * issues.json ref, the resolved full repo, its parsed phase/title/body/acceptance, and
- * the {@link FEATURE_LABEL}. Non-feature sections are ignored.
+ * Convert every per-repo feature section into a synthetic {@link PlanIssue}. The hard
+ * discovery gate (#490) is applied: features missing behavior or acceptance are skipped
+ * and do NOT become issues. Use {@link incompleteFeatureSections} to surface the blocked
+ * features in the UI. Non-feature sections are ignored.
  */
 export function featureSectionsToIssues(sections: FeatureSectionInput[], repos: string[]): PlanIssue[] {
   const out: PlanIssue[] = [];
@@ -138,6 +173,8 @@ export function featureSectionsToIssues(sections: FeatureSectionInput[], repos: 
     if (!slug) continue;
     const short = parseSectionKey(s.k).repo as string; // isFeatureKey guarantees non-null
     const parsed = parseFeatureSection(s.content, slug);
+    // Hard gate: no issues for features that haven't completed behavior discovery.
+    if (!featureDiscoveryComplete(parsed).complete) continue;
     out.push({
       ref: `feat:${short}:${slug}`,
       title: parsed.title,
@@ -149,6 +186,33 @@ export function featureSectionsToIssues(sections: FeatureSectionInput[], repos: 
       repo: resolveRepo(short, repos),
       body: parsed.body || undefined,
     });
+  }
+  return out;
+}
+
+/** One feature that failed the discovery gate — surfaced as a UI warning. */
+export interface IncompleteFeature {
+  key: string;
+  title: string;
+  reasons: string[];
+}
+
+/**
+ * Return feature sections that failed the discovery gate (#490), with human-readable
+ * reasons. Use this to surface "N features are blocking issue generation" in the UI.
+ */
+export function incompleteFeatureSections(sections: FeatureSectionInput[]): IncompleteFeature[] {
+  const out: IncompleteFeature[] = [];
+  for (const s of sections) {
+    const slug = featureSlug(s.k);
+    if (!slug) continue;
+    const parsed = parseFeatureSection(s.content, slug);
+    const result = featureDiscoveryComplete(parsed);
+    if (result.complete) continue;
+    const reasons: string[] = [];
+    if (result.missingBehavior)    reasons.push("no approach / behavior described");
+    if (result.missingAcceptance)  reasons.push("no acceptance criteria");
+    out.push({ key: s.k, title: parsed.title, reasons });
   }
   return out;
 }

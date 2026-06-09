@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   enqueue, removeFromQueue, nextInCycle, reconcileQueue,
   shouldFocus, FOCUS_TARGETS, DEFAULT_FOCUS_TARGET, focusTargetLabel,
+  AUTO_FOCUS_MODES, DEFAULT_AUTO_FOCUS_MODE, autoFocusModeLabel,
   type QueuedPane,
 } from "../lib/focusQueue";
 
@@ -144,5 +145,20 @@ describe("shouldFocus (role-aware focus targeting #392)", () => {
   it("exposes labelled presets in display order", () => {
     expect(FOCUS_TARGETS).toEqual(["director", "workers", "fleet", "everything", "none"]);
     expect(focusTargetLabel("fleet")).toBe("Director + workers");
+  });
+});
+
+describe("ConsoleAutoFocusMode (#434)", () => {
+  it("default mode is cycle-on-reply", () => {
+    expect(DEFAULT_AUTO_FOCUS_MODE).toBe("cycle-on-reply");
+  });
+
+  it("exposes both modes in display order", () => {
+    expect(AUTO_FOCUS_MODES).toEqual(["cycle-on-reply", "off"]);
+  });
+
+  it("has human labels for every mode", () => {
+    expect(autoFocusModeLabel("cycle-on-reply")).toBe("Cycle on reply");
+    expect(autoFocusModeLabel("off")).toBe("Off (manual)");
   });
 });

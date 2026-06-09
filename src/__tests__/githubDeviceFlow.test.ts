@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { mapDevicePoll, SLOW_DOWN_BUMP_SEC } from "../lib/githubDeviceFlow";
+import { describe, it, expect, vi } from "vitest";
+import {
+  mapDevicePoll, SLOW_DOWN_BUMP_SEC, runDeviceFlow,
+  type DeviceStartInfo, type DevicePollResult, type DeviceFlowDeps,
+} from "../lib/githubDeviceFlow";
 
 describe("mapDevicePoll", () => {
   it("an access_token -> success carrying the token", () => {
@@ -50,5 +53,82 @@ describe("mapDevicePoll", () => {
     const a = mapDevicePoll({ error: "incorrect_device_code" }, 5);
     expect(a.kind).toBe("error");
     expect((a as { message: string }).message).toContain("incorrect_device_code");
+  });
+});
+
+describe("runDeviceFlow (#594)", () => {
+  const START: DeviceStartInfo = {
+    device_code: "dc", user_code: "UC-123", verification_uri: "https://github.com/login/device",
+    interval: 1, expires_in: 900,
+  };
+  // Build deps with a scripted poll sequence and no-real-time sleep/now.
+  function deps(polls: DevicePollResult[], over: Partial<DeviceFlowDeps> = {}) {
+    let i = 0;
+    const onSuccess = vi.fn();
+    const onDevice = vi.fn();
+    const onError = vi.fn();
+    const base: DeviceFlowDeps = {
+      start: vi.fn(async () => START),
+      poll: vi.fn(async () => polls[Math.min(i++, polls.length - 1)]),
+      sleep: async () => {},          // no real waiting
+      now: () => 0,                   // never hits the expiry deadline
+      isCancelled: () => false,
+      onDevice, onSuccess, onError,
+      ...over,
+    };
+    return { base, onSuccess, onDevice, onError };
+  }
+
+  it("polls past pending until success, then calls onSuccess with the token", async () => {
+    const { base, onSuccess, onError } = deps([
+      { error: "authorization_pending" },
+      { error: "slow_down" },
+      { access_token: "gho_tok" },
+    ]);
+    const outcome = await runDeviceFlow(base);
+    expect(outcome).toEqual({ kind: "connected" });
+    expect(onSuccess).toHaveBeenCalledWith("gho_tok");
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("REGRESSION: onSuccess (the store write) fires even with no UI callbacks — i.e. survives unmount", async () => {
+    // Simulate the component being gone: onDevice/onError omitted. The connection
+    // must still complete — this is the navigate-away-mid-flow bug.
+    const onSuccess = vi.fn();
+    const outcome = await runDeviceFlow({
+      start: async () => START,
+      poll: async () => ({ access_token: "gho_after_nav" }),
+      sleep: async () => {},
+      now: () => 0,
+      isCancelled: () => false,
+      onSuccess,
+    });
+    expect(outcome).toEqual({ kind: "connected" });
+    expect(onSuccess).toHaveBeenCalledWith("gho_after_nav");
+  });
+
+  it("stops without onSuccess when cancelled (a restart), not on unmount", async () => {
+    const { base, onSuccess } = deps([{ access_token: "gho_tok" }], { isCancelled: () => true });
+    const outcome = await runDeviceFlow(base);
+    expect(outcome).toEqual({ kind: "cancelled" });
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a poll error and stops", async () => {
+    const { base, onSuccess, onError } = deps([{ error: "access_denied" }]);
+    const outcome = await runDeviceFlow(base);
+    expect(outcome.kind).toBe("error");
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.stringMatching(/cancel/i));
+  });
+
+  it("expires when the deadline passes before authorization", async () => {
+    let t = 0;
+    const { base, onError } = deps([{ error: "authorization_pending" }], {
+      now: () => (t += 1_000_000),   // jump past expires_in on the first check
+    });
+    const outcome = await runDeviceFlow(base);
+    expect(outcome.kind).toBe("expired");
+    expect(onError).toHaveBeenCalledWith(expect.stringMatching(/expired/i));
   });
 });

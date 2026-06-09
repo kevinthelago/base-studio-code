@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ROLE_DEFAULTS,
+  PLANNER_WRITE_GLOBS,
   roleCapability,
   classifyCommand,
   checkCommand,
@@ -80,8 +81,11 @@ describe("matchGlob / canWritePath", () => {
     expect(canWritePath(worker, "src/web/page.ts")).toBe(false);
   });
 
-  it("the planner can write no code; a worker with no boundary writes nothing", () => {
-    expect(canWritePath(roleCapability("planner"), "anything.ts")).toBe(false);
+  it("the planner can write plan files but not arbitrary code; a boundary-less worker writes nothing", () => {
+    expect(canWritePath(roleCapability("planner"), "goal.md")).toBe(true);
+    expect(canWritePath(roleCapability("planner"), "phases.json")).toBe(true);
+    expect(canWritePath(roleCapability("planner"), "prompts/dev-kickoff.md")).toBe(true);
+    expect(canWritePath(roleCapability("planner"), "src/App.tsx")).toBe(false);
     expect(canWritePath(roleCapability("worker"), "src/x.ts")).toBe(false);
   });
 });
@@ -116,11 +120,21 @@ describe("roleDeniedCommands (launch wiring)", () => {
 describe("roleWriteRules (write-tool guard)", () => {
   const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
 
-  it("denies every write tool for no-code roles (planner/director/triage)", () => {
-    for (const role of ["planner", "director", "triage"] as const) {
+  it("denies every write tool for no-code roles (director/triage)", () => {
+    for (const role of ["director", "triage"] as const) {
       const rules = roleWriteRules(ROLE_DEFAULTS[role]);
       expect(rules.deny).toEqual(WRITE_TOOLS);
       expect(rules.allow).toEqual([]);
+    }
+  });
+
+  it("planner: auto-approves plan-file globs, no deny list (#509)", () => {
+    const rules = roleWriteRules(ROLE_DEFAULTS.planner);
+    expect(rules.deny).toEqual([]);
+    // Every PLANNER_WRITE_GLOB must be represented in the allow list.
+    for (const glob of PLANNER_WRITE_GLOBS) {
+      expect(rules.allow).toContain(`Edit(${glob})`);
+      expect(rules.allow).toContain(`Write(${glob})`);
     }
   });
 
@@ -138,11 +152,13 @@ describe("roleWriteRules (write-tool guard)", () => {
     expect(rules).toEqual({ allow: [], deny: [] });
   });
 
-  it("agrees with canWritePath: deny-all ⟺ never writable; allowed globs ⟺ writable", () => {
-    // no-code role: canWritePath always false, and the rules deny all writes.
+  it("agrees with canWritePath: planner writes plan files; worker writes its globs", () => {
+    // planner: code:write scoped to plan files — plan files writable, arbitrary .ts not.
     const planner = ROLE_DEFAULTS.planner;
+    expect(canWritePath(planner, "goal.md")).toBe(true);
     expect(canWritePath(planner, "src/x.ts")).toBe(false);
-    expect(roleWriteRules(planner).deny).toEqual(WRITE_TOOLS);
+    expect(roleWriteRules(planner).deny).toEqual([]);
+    expect(roleWriteRules(planner).allow).toContain("Edit(*.md)");
 
     // worker with a boundary: every allow-rule glob is exactly a canWritePath-true path.
     const worker = roleCapability("worker", { writeGlobs: ["src/api/**"] });

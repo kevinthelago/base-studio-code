@@ -69,6 +69,9 @@ const PaneAt = memo(function PaneAt({
   onToggleFullscreen, onToggleDisable, menuOpen, focused, fullscreen, disabled, hidden,
 }: PaneAtProps) {
   const pid = paneId(tabIdx, i);
+  const defaultModel = useAppStore((s) => s.defaultModel);
+  const paneModel = useAppStore((s) => s.paneModels[pid]);
+  const setPaneModel = useAppStore((s) => s.setPaneModel);
   return (
     <PaneShell
       agent={name}
@@ -79,7 +82,8 @@ const PaneAt = memo(function PaneAt({
       onFocus={() => onFocus(tabIdx, i)}
       onPickDirectory={() => onPickDirectory(tabIdx, i)}
       status={disabled ? "idle" : status}
-      model="sonnet-4.5"
+      model={paneModel ?? defaultModel}
+      onModel={(m) => setPaneModel(pid, m)}
       available={["console", "files", "branches", "changes", "log"]}
       active={view}
       menuOpen={menuOpen}
