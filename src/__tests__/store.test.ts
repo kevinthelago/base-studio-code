@@ -1663,6 +1663,11 @@ describe("clearPlan (#505)", () => {
       uiApproved: { myproj: ["Home"] },
       planFleet: {},
       issueLinks: { myproj: { F1: { number: 1, url: "u" } } },
+      sectionGrades: { myproj: { ui: [] } },
+      projectBlueprintId: { myproj: "default" },
+      stagePreview: { myproj: { srcDoc: "<html>", mode: "2d" } },
+      stagePipelineRuns: { myproj: { p1: { status: "ok" } as never } },
+      pinnedContext: { myproj: ["x"] },
     })
   );
 
@@ -1676,6 +1681,12 @@ describe("clearPlan (#505)", () => {
     expect(s.uiScreens["myproj"]).toBeUndefined();
     expect(s.uiApproved["myproj"]).toBeUndefined();
     expect(s.issueLinks["myproj"]).toBeUndefined();
+    expect(s.sectionGrades["myproj"]).toBeUndefined();
+    expect(s.projectBlueprintId["myproj"]).toBeUndefined();
+    // the rendered UI preview + pipeline runs + pinned context also clear (#651)
+    expect(s.stagePreview["myproj"]).toBeUndefined();
+    expect(s.stagePipelineRuns["myproj"]).toBeUndefined();
+    expect(s.pinnedContext["myproj"]).toBeUndefined();
     // other project untouched
     expect(s.planSections["other"]).toEqual({ scope: "# Scope" });
   });
