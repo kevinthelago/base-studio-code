@@ -263,7 +263,7 @@ export function makeBlueprints(): Blueprint[] {
       sections: [
         mkSection("context",     { pipelines: [["lint-plan", "on completion", true]] }),
         mkSection("repos",       { enabled: false, pipelines: [["index-repos", "on section enter", true]] }),
-        mkSection("ui",          { pipelines: [["render-preview", "on artifact change", true], ["push-figma", "on completion", true]] }),
+        mkSection("ui",          { pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", false]] }),
         mkSection("permissions", { pipelines: [] }),
         mkSection("automations", { pipelines: [["arm-schedule", "on completion", true]] }),
