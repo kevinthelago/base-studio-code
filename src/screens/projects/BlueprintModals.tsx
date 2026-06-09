@@ -7,6 +7,7 @@ import "../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import { stageKind, tint, hue, type CatalogEntry, CATALOG_FLOW_KINDS } from "./blueprintCatalog";
 import { mkStageSection } from "./blueprintEdit";
+import { type DiffLine } from "./blueprintDiff";
 import { type Blueprint, type BlueprintSection } from "./blueprints";
 
 /** A resolved import/preview blueprint (subset enough to preview + import). */
@@ -196,7 +197,7 @@ export function PreviewModal({ cat, forked, onClose, onFork }: {
 }
 
 /* ── Version history (gist revisions) ── */
-export interface Revision { sha: string; when: string; msg: string; add?: number; del?: number; cur?: boolean }
+export interface Revision { sha: string; when: string; msg: string; add?: number; del?: number; cur?: boolean; version?: string }
 export function HistoryModal({ bp, revs, onClose, onRestore }: {
   bp: Blueprint; revs: Revision[]; onClose: () => void; onRestore: (r: Revision) => void;
 }) {
@@ -218,8 +219,8 @@ export function HistoryModal({ bp, revs, onClose, onRestore }: {
               <div style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 3 }}>{r.msg}</div>
               {(!!r.add || !!r.del) && (
                 <div style={{ display: "flex", gap: 8, marginTop: 6, fontFamily: "var(--mono)", fontSize: 10 }}>
-                  {!!r.add && <span style={{ color: "var(--success)" }}>+{r.add} stage{r.add > 1 ? "s" : ""}</span>}
-                  {!!r.del && <span style={{ color: "var(--danger)" }}>−{r.del} stage{r.del > 1 ? "s" : ""}</span>}
+                  {!!r.add && <span style={{ color: "var(--success)" }}>+{r.add}</span>}
+                  {!!r.del && <span style={{ color: "var(--danger)" }}>−{r.del}</span>}
                 </div>
               )}
             </div>
@@ -231,7 +232,6 @@ export function HistoryModal({ bp, revs, onClose, onRestore }: {
 }
 
 /* ── Sync / pull upstream ── */
-export interface DiffLine { type: "add" | "mod" | "del"; title: string; note: string }
 export function SyncModal({ bp, diff, toRev, onClose, onPull }: {
   bp: Blueprint; diff: DiffLine[]; toRev?: string; onClose: () => void; onPull: (diff: DiffLine[]) => void;
 }) {
