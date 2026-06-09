@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { useAppStore } from "../store";
 import { runSectionGrade, GRADE_RUBRIC_ID } from "../screens/projects/gradeDispatch";
