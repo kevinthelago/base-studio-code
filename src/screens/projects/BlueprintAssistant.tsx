@@ -10,8 +10,10 @@ import { tint, hue } from "./blueprintCatalog";
 import { type BlueprintSection } from "./blueprints";
 import {
   planActions, applyAssistantActions, actionLine, proseFor, explainActions, ASSISTANT_SUGGESTIONS,
+  isCreateSkillRequest, isAttachSkillRequest, inferSkillKind, authorSkill,
   type AssistantAction,
 } from "./blueprintAssistantCore";
+import { type BlueprintSkillItem } from "./blueprintSkills";
 import { useAppStore } from "../../store";
 import { oneShotComplete } from "../../lib/claudeComplete";
 
@@ -26,11 +28,15 @@ export interface BlueprintAssistantProps {
   draftName?: string;
   /** Persist the assistant's applied changes. */
   onApply: (sections: BlueprintSection[]) => void;
+  /** The skills/knowledge library (for attach intents). (#636) */
+  library?: BlueprintSkillItem[];
+  /** Create a library skill from authored content, returning its new id. (#636) */
+  onCreateSkill?: (name: string, content: string) => string;
   onClose: () => void;
   onToast?: (text: string) => void;
 }
 
-export function BlueprintAssistant({ sections, name, draftName, onApply, onClose, onToast }: BlueprintAssistantProps) {
+export function BlueprintAssistant({ sections, name, draftName, onApply, library = [], onCreateSkill, onClose, onToast }: BlueprintAssistantProps) {
   const [msgs, setMsgs] = useState<Msg[]>(() => [
     draftName
       ? { who: "ai", text: `Let's design "${draftName}". Tell me what you're building — the stack, the surface area, how much process you want — and I'll draft the stage flow. Or pick a starting point below.` }
@@ -49,6 +55,28 @@ export function BlueprintAssistant({ sections, name, draftName, onApply, onClose
     setInput("");
     setMsgs((m) => [...m, { who: "me", text: q }]);
     setBusy(true);
+
+    // Skill intents (#636 slice c): author a new skill (Claude-drafted) or attach an
+    // existing library skill, targeting the section named in the request (else the first).
+    const kind = inferSkillKind(q, sections);
+    if (kind && onCreateSkill && isCreateSkillRequest(q)) {
+      const { name: skName, content } = await authorSkill(q, (p) => oneShotComplete(apiKey, p.system, p.user));
+      const act: AssistantAction = { op: "create-skill", kind, name: skName, content };
+      setMsgs((m) => [...m, { who: "ai", text: `Drafted a skill, "${skName}", for the ${kind} stage. Review and apply to add it to your library + attach it.`, actions: [act] }]);
+      setBusy(false);
+      return;
+    }
+    if (kind && isAttachSkillRequest(q)) {
+      const lc = q.toLowerCase();
+      const item = library.find((i) => lc.includes(i.name.toLowerCase()));
+      if (item) {
+        const act: AssistantAction = { op: "attach-skill", kind, skillId: item.id, skillName: item.name };
+        setMsgs((m) => [...m, { who: "ai", text: `Attach "${item.name}" to the ${kind} stage?`, actions: [act] }]);
+        setBusy(false);
+        return;
+      }
+    }
+
     const actions = planActions(q, sections);
     // Actions stay deterministic; with an API key, Claude writes the explanation prose
     // (falling back to the heuristic summary on any error / no key).
@@ -64,7 +92,13 @@ export function BlueprintAssistant({ sections, name, draftName, onApply, onClose
   }
 
   function apply(actions: AssistantAction[], idx: number) {
-    onApply(applyAssistantActions(sections, actions));
+    // Materialize create-skill: write the authored skill to the library, then attach it.
+    const materialized = actions.map((a): AssistantAction =>
+      a.op === "create-skill" && onCreateSkill
+        ? { op: "attach-skill", kind: a.kind, skillId: onCreateSkill(a.name, a.content), skillName: a.name }
+        : a,
+    );
+    onApply(applyAssistantActions(sections, materialized));
     setMsgs((m) => m.map((mm, i) => (i === idx ? { ...mm, applied: true } : mm)));
     onToast?.(`Applied ${actions.length} change${actions.length > 1 ? "s" : ""}`);
   }

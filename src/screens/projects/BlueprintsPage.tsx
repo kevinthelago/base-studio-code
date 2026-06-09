@@ -13,6 +13,7 @@ import { LibraryView, type CardMenuAction } from "./BlueprintLibrary";
 import { CatalogView } from "./BlueprintCatalogView";
 import { BlueprintEditorView } from "./BlueprintEditor";
 import { buildSkillLibrary } from "./blueprintSkills";
+import { blankSkill } from "../../lib/skills";
 import { BlueprintAssistant } from "./BlueprintAssistant";
 import {
   PublishModal, ImportModal, PreviewModal, NewBlueprintModal, HistoryModal, SyncModal,
@@ -78,6 +79,7 @@ export function BlueprintsPage() {
   const importBlueprintStore = useAppStore((s) => s.importBlueprint);
   const skillDefs = useAppStore((s) => s.skills);
   const kbBlocks = useAppStore((s) => s.kbBlocks);
+  const addSkill = useAppStore((s) => s.addSkill);
   const skillLibrary = useMemo(() => buildSkillLibrary(skillDefs, kbBlocks), [skillDefs, kbBlocks]);
 
   const [view, setView] = useState<View>("library");
@@ -279,7 +281,9 @@ export function BlueprintsPage() {
       {/* assistant drawer */}
       {drawer && active && (
         <BlueprintAssistant sections={active.sections} name={active.name} draftName={drawer.draftName}
-          onApply={onSectionsChange} onClose={() => setDrawer(null)} onToast={(t) => toast(t, true)} />
+          onApply={onSectionsChange} library={skillLibrary}
+          onCreateSkill={(skName, content) => addSkill({ ...blankSkill(), name: skName, desc: content.split("\n")[0].slice(0, 80), prompt: content })}
+          onClose={() => setDrawer(null)} onToast={(t) => toast(t, true)} />
       )}
 
       {/* context menu */}
