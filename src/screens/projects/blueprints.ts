@@ -54,6 +54,8 @@ export const PIPELINE_LIB: PipelineDef[] = [
   { id: "sync-skills",     name: "Sync skill library",  desc: "Upsert reusable skills into the library",    suits: ["skills"],      kind: "builtin"  },
   { id: "index-repos",     name: "Clone & index repos", desc: "Clone linked repos and build a code index",  suits: ["repos"],       kind: "builtin"  },
   { id: "export-notion",   name: "Export to Notion",    desc: "Mirror this stage's doc into a Notion page", suits: ["*"],           kind: "external" },
+  { id: "schema-check",    name: "Schema check",        desc: "Validate the data model for orphan relations & missing migrations", suits: ["schema"], kind: "builtin" },
+  { id: "contract-test",   name: "Contract test",       desc: "Run contract tests against the declared API surface",               suits: ["api"],    kind: "builtin" },
 ];
 
 // ── Sections (the canonical planning stages) ─────────────────────────────────
@@ -73,6 +75,10 @@ export interface SectionDef {
   /** Optional applicability rule (e.g. UI only when the project needs a UI). Absent ⇒
    *  the section always applies. */
   appliesWhen?: Requirement;
+  /** Output disposition (#609) — what happens to this stage's artifact (a key into
+   *  DISPOSITIONS: plan-file / issues / milestones / skill-index / knowledge / scratch).
+   *  Editor metadata; the runtime doesn't read it. Absent ⇒ defaultDisposition(key). */
+  output?: string;
 }
 
 export const SECTION_DEFS: Record<string, SectionDef> = {
