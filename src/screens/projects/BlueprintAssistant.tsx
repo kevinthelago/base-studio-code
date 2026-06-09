@@ -9,9 +9,11 @@ import { Ic } from "./blueprintIcons";
 import { tint, hue } from "./blueprintCatalog";
 import { type BlueprintSection } from "./blueprints";
 import {
-  planActions, applyAssistantActions, actionLine, proseFor, ASSISTANT_SUGGESTIONS,
+  planActions, applyAssistantActions, actionLine, proseFor, explainActions, ASSISTANT_SUGGESTIONS,
   type AssistantAction,
 } from "./blueprintAssistantCore";
+import { useAppStore } from "../../store";
+import { oneShotComplete } from "../../lib/claudeComplete";
 
 interface Msg { who: "me" | "ai"; text: string; actions?: AssistantAction[] | null; applied?: boolean }
 
@@ -36,6 +38,7 @@ export function BlueprintAssistant({ sections, name, draftName, onApply, onClose
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const apiKey = useAppStore((s) => s.claudeApiKey);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight; }, [msgs, busy]);
@@ -47,8 +50,15 @@ export function BlueprintAssistant({ sections, name, draftName, onApply, onClose
     setMsgs((m) => [...m, { who: "me", text: q }]);
     setBusy(true);
     const actions = planActions(q, sections);
-    const prose = proseFor(actions);
-    await new Promise((r) => setTimeout(r, 300));
+    // Actions stay deterministic; with an API key, Claude writes the explanation prose
+    // (falling back to the heuristic summary on any error / no key).
+    let prose = proseFor(actions);
+    if (apiKey && actions.length) {
+      try { prose = await explainActions(actions, name, (p) => oneShotComplete(apiKey, p.system, p.user)); }
+      catch { /* keep heuristic prose */ }
+    } else {
+      await new Promise((r) => setTimeout(r, 300)); // typing feel for the instant heuristic path
+    }
     setMsgs((m) => [...m, { who: "ai", text: prose, actions: actions.length ? actions : null }]);
     setBusy(false);
   }

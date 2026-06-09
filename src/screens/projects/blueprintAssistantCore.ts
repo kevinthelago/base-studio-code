@@ -103,6 +103,33 @@ export function proseFor(actions: AssistantAction[]): string {
   return `Here's a focused change: I'd ${bits.join(", ")}. Dependencies are ordered so each stage stays locked until its prerequisites land. Review and apply, or refine the ask.`;
 }
 
+/** A one-shot completion (prompt → text), injected so prose generation is testable. */
+export type Complete = (p: { system: string; user: string }) => Promise<string>;
+
+function summarizeAction(a: AssistantAction): string {
+  if (a.op === "add") return `add ${a.kind}${a.pipes?.length ? ` (${a.pipes.map((p) => p[0]).join(", ")})` : ""}`;
+  if (a.op === "remove") return `remove ${a.kind}`;
+  return `gate ${a.pipeKey} on ${a.kind}`;
+}
+
+/**
+ * Generate the assistant's explanation prose. With actions + a live completion, ask
+ * Claude for one concrete sentence; with no actions (or any error, handled by the
+ * caller) fall back to {@link proseFor}. The proposed ACTIONS stay deterministic — only
+ * the wording comes from the model.
+ */
+export async function explainActions(actions: AssistantAction[], blueprintName: string, complete: Complete): Promise<string> {
+  if (actions.length === 0) return proseFor(actions);
+  const raw = await complete({
+    system:
+      "You are a planning-blueprint designer for a multi-agent dev tool. In ONE short sentence " +
+      "(max 28 words), explain the proposed change to the blueprint. Be concrete and confident. " +
+      "No preamble, no lists.",
+    user: `Blueprint: ${blueprintName}. Proposed actions: ${actions.map(summarizeAction).join("; ")}.`,
+  });
+  return raw.trim() || proseFor(actions);
+}
+
 export const ASSISTANT_SUGGESTIONS = [
   "Make it contract-first with API gates",
   "Add a security review stage",
