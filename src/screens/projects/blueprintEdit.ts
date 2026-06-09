@@ -1,0 +1,118 @@
+// Pure stage-edit helpers for the new Blueprints editor (#609). Operate on a
+// BlueprintSection[] and return a new array — the editor calls these then persists via
+// setBlueprintSections. Superset model (#609 option A): the runtime fields (gateRule /
+// appliesWhen / enabled) are preserved untouched; these add the editor's stage ops
+// (add by kind, reorder, dep toggle, pipeline trigger/gate, output disposition).
+
+import {
+  type BlueprintSection, type Pipeline, type PipelineTrigger,
+  PIPELINE_LIB, SECTION_DEFS, mkSection, uid,
+} from "./blueprints";
+import { stageKind, defaultDisposition, pipelineMeta } from "./blueprintCatalog";
+
+/** Build a section for ANY stage kind. Known kinds (in SECTION_DEFS) keep their runtime
+ *  gate; unknown ones (users/stack/…) are synthesized as informational stages. */
+export function mkStageSection(kind: string): BlueprintSection {
+  if (SECTION_DEFS[kind]) {
+    const s = mkSection(kind);
+    return { ...s, output: s.output ?? defaultDisposition(kind) };
+  }
+  const k = stageKind(kind);
+  return {
+    uid: uid("sec"), key: kind, name: k.title, glyph: "✚",
+    gate: "stage complete", deps: [], blurb: k.blurb,
+    prompt: `Document the project's ${k.title.toLowerCase()}. ${k.blurb}`,
+    enabled: true, expanded: false, pipelines: [], output: defaultDisposition(kind),
+  };
+}
+
+/** Build a pipeline instance for the editor from a catalog id. */
+export function mkEditorPipeline(id: string): Pipeline {
+  const def = PIPELINE_LIB.find((p) => p.id === id);
+  const meta = pipelineMeta(id);
+  return {
+    uid: uid("pl"), id,
+    name: def?.name ?? id, desc: def?.desc ?? "", suits: def?.suits ?? ["*"], kind: def?.kind ?? "custom",
+    trigger: meta.defaultTrigger, enabled: true, gate: false,
+  };
+}
+
+const mapSec = (sections: BlueprintSection[], u: string, fn: (s: BlueprintSection) => BlueprintSection) =>
+  sections.map((s) => (s.uid === u ? fn(s) : s));
+
+/** Move a stage from index `from` to index `to`. */
+export function reorderStages(sections: BlueprintSection[], from: number, to: number): BlueprintSection[] {
+  if (from === to || from < 0 || from >= sections.length || to < 0 || to >= sections.length) return sections;
+  const a = [...sections];
+  const [m] = a.splice(from, 1);
+  a.splice(to, 0, m);
+  return a;
+}
+
+/** Append a fresh stage of `kind`. */
+export function addStage(sections: BlueprintSection[], kind: string): BlueprintSection[] {
+  return [...sections, mkStageSection(kind)];
+}
+
+/** Duplicate a stage (fresh uids), inserted right after the original. */
+export function duplicateStage(sections: BlueprintSection[], u: string): BlueprintSection[] {
+  const i = sections.findIndex((s) => s.uid === u);
+  if (i < 0) return sections;
+  const src = sections[i];
+  const copy: BlueprintSection = {
+    ...src, uid: uid("sec"), name: src.name + " copy",
+    pipelines: src.pipelines.map((p) => ({ ...p, uid: uid("pl") })),
+  };
+  const a = [...sections];
+  a.splice(i + 1, 0, copy);
+  return a;
+}
+
+/** Delete a stage and scrub it from other stages' deps (deps are section keys). */
+export function deleteStage(sections: BlueprintSection[], u: string): BlueprintSection[] {
+  const victim = sections.find((s) => s.uid === u);
+  const out = sections.filter((s) => s.uid !== u);
+  if (!victim) return out;
+  // Only scrub the victim's key if no other remaining section shares it.
+  if (out.some((s) => s.key === victim.key)) return out;
+  return out.map((s) => ({ ...s, deps: s.deps.filter((d) => d !== victim.key) }));
+}
+
+/** Toggle a dependency (by the depended-on stage's key) on a stage. */
+export function toggleDep(sections: BlueprintSection[], secUid: string, depKey: string): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ({
+    ...s,
+    deps: s.deps.includes(depKey) ? s.deps.filter((d) => d !== depKey) : [...s.deps, depKey],
+  }));
+}
+
+export function addPipeline(sections: BlueprintSection[], secUid: string, pipelineId: string): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ({ ...s, pipelines: [...s.pipelines, mkEditorPipeline(pipelineId)] }));
+}
+export function updatePipeline(
+  sections: BlueprintSection[], secUid: string, pipeUid: string, patch: Partial<Pick<Pipeline, "trigger" | "gate" | "enabled">>,
+): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ({ ...s, pipelines: s.pipelines.map((p) => (p.uid === pipeUid ? { ...p, ...patch } : p)) }));
+}
+export function removePipeline(sections: BlueprintSection[], secUid: string, pipeUid: string): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ({ ...s, pipelines: s.pipelines.filter((p) => p.uid !== pipeUid) }));
+}
+export function setOutput(sections: BlueprintSection[], secUid: string, output: string): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ({ ...s, output }));
+}
+export function setStageField(
+  sections: BlueprintSection[], secUid: string, patch: Partial<Pick<BlueprintSection, "name" | "prompt">>,
+): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ({ ...s, ...patch }));
+}
+
+/** Stages that may precede `secUid` as dependency candidates (only earlier stages,
+ *  preventing cycles) — what the dependency editor offers. */
+export function depCandidates(sections: BlueprintSection[], secUid: string): BlueprintSection[] {
+  const i = sections.findIndex((s) => s.uid === secUid);
+  return i <= 0 ? [] : sections.slice(0, i);
+}
+
+/** A trigger label "enter|change|complete|manual" mapped to/from canonical forms is in
+ *  blueprintCatalog; re-export the type for editor convenience. */
+export type { PipelineTrigger };
