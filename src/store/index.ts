@@ -32,7 +32,6 @@ import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
 import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
-import type { PlanGrade } from "../lib/planGrade";
 import type { GradeResult } from "../screens/projects/grading";
 import { makeBlueprints, cloneSections, mkSection, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
@@ -612,12 +611,6 @@ interface AppStore {
   // is showing (#546), so its approve button targets the right one. Session-only.
   stagePreview: Record<string, { srcDoc: string; mode: "2d" | "3d"; screen?: string } | null>;
   setStagePreview: (projectKey: string, value: { srcDoc: string; mode: "2d" | "3d"; screen?: string } | null) => void;
-  // The current plan grade per project (#445 → pipeline): the grade-plan pipeline writes
-  // the rich PlanGrade here; ProjectPane renders it (header chip + report card). Single
-  // source of truth for the grade — no longer recomputed eagerly in buildProjectPaneData.
-  // Session-only (not persisted).
-  stagePlanGrade: Record<string, PlanGrade | null>;
-  setStagePlanGrade: (projectKey: string, value: PlanGrade | null) => void;
   // Per-section grades (#615): project → section key → one GradeResult per grader id.
   // A section can carry MULTIPLE graders; setSectionGrade upserts by graderId. The
   // report-card pipeline screen renders these. Session-only.
@@ -1329,7 +1322,7 @@ export const useAppStore = create<AppStore>()(
       resetProjectData: () =>
         set({
           planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
-          planAutomations: {}, planStageConfig: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, stagePlanGrade: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
+          planAutomations: {}, planStageConfig: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
@@ -1933,9 +1926,6 @@ export const useAppStore = create<AppStore>()(
       stagePreview: {},
       setStagePreview: (projectKey, value) =>
         set((s) => ({ stagePreview: { ...s.stagePreview, [projectKey]: value } })),
-      stagePlanGrade: {},
-      setStagePlanGrade: (projectKey, value) =>
-        set((s) => ({ stagePlanGrade: { ...s.stagePlanGrade, [projectKey]: value } })),
       sectionGrades: {},
       setSectionGrade: (projectKey, sectionKey, result) =>
         set((s) => {
@@ -2088,7 +2078,6 @@ export const useAppStore = create<AppStore>()(
           uiApproved:            omitKey(s.uiApproved),
           planFleet:             omitKey(s.planFleet),
           issueLinks:            omitKey(s.issueLinks),
-          stagePlanGrade:        omitKey(s.stagePlanGrade),
           sectionGrades:         omitKey(s.sectionGrades),
           };
         }),

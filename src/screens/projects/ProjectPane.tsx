@@ -5,6 +5,7 @@
 // projectPane.css and uses the app's design tokens.
 import { useState, useEffect, type ReactNode } from "react";
 import type { IssueGrade, Letter, PlanGrade } from "../../lib/planGrade";
+import { AGENT_READINESS_ID } from "./gradeDispatch";
 import { useAppStore } from "../../store";
 import "./projectPane.css";
 import { type DirectorDrive, DIRECTOR_DRIVES } from "./directorDrive";
@@ -1087,9 +1088,14 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   const structure: Milestone[]   = hasData ? data!.structure      : STRUCTURE;
   const phaseStructure: PhaseGroup[] = hasData ? data!.phaseStructure : PHASE_STRUCTURE;
   const context:   ContextFile[] = hasData ? data!.context        : CONTEXT;
-  // The grade is now produced by the grade-plan pipeline and read from the store
-  // (single source of truth, #445 → pipeline) rather than recomputed on the pane data.
-  const grade = useAppStore(s => (projectId ? s.stagePlanGrade[projectId] : null)) ?? undefined;
+  // The grade is produced by the grade-plan pipeline and stored as the structure
+  // section's "agent-readiness" grader result (#615 — single source of truth, the
+  // sectionGrades store). Its full PlanGrade rides along as `detail` for this report.
+  const grade = useAppStore(s => {
+    if (!projectId) return undefined;
+    const ar = s.sectionGrades[projectId]?.["structure"]?.find(g => g.graderId === AGENT_READINESS_ID);
+    return (ar?.detail as PlanGrade | undefined) ?? undefined;
+  });
   // Phase-first is the primary lens (#497); the repo-first tree is the secondary one.
   const [structView, setStructView] = useState<"phase" | "repo">("phase");
 

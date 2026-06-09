@@ -22,6 +22,10 @@ export interface GradeResult {
   letter: Letter;
   dimensions: GradeDimension[];
   findings: GradeFinding[];
+  /** Opaque richer payload some graders carry (e.g. agent-readiness keeps its full
+   *  PlanGrade for the structure section's detailed report). The report card ignores it;
+   *  a bespoke renderer can use it. */
+  detail?: unknown;
 }
 
 /** What a grader gets: the section, the live signal bag, and (for prose) its content. */
