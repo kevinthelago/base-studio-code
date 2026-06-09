@@ -1170,20 +1170,34 @@ export function Planning({ visible }: { visible: boolean }) {
       }
     });
 
-    const ro = new ResizeObserver(() => {
-      // No visibility guard: a hidden panel is display:none → zero client size,
-      // already skipped below. Guarding on a `visible` ref instead raced with
-      // React's commit and dropped the first fit after un-hiding, leaving the
-      // terminal smaller than its container.
+    // Coalesce rapid size changes (a pipeline screen mounting/unmounting, dragging the
+    // sections divider) into ONE fit after the layout settles — otherwise the observer
+    // fires per intermediate frame and each fit reflows xterm + sends a pty_resize,
+    // making the terminal re-render repeatedly while the neighbouring pane animates in.
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastCols = term.cols, lastRows = term.rows;
+    const settleFit = () => {
       const { clientWidth, clientHeight } = el;
+      // No visibility guard: a hidden panel is display:none → zero client size, skipped
+      // here. (Guarding on a `visible` ref raced with React's commit and dropped the
+      // first fit after un-hiding, leaving the terminal smaller than its container.)
       if (clientWidth === 0 || clientHeight === 0) return;
       fitAddon.fit();
-      invoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+      // Only round-trip to the PTY when the grid actually changed.
+      if (term.cols !== lastCols || term.rows !== lastRows) {
+        lastCols = term.cols; lastRows = term.rows;
+        invoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+      }
+    };
+    const ro = new ResizeObserver(() => {
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(settleFit, 90);
     });
     ro.observe(el);
 
     return () => {
       if (initSendTimer.current !== null) clearTimeout(initSendTimer.current);
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
       unlistenData.current?.();
       unlistenExit.current?.();
       ro.disconnect();
