@@ -50,12 +50,13 @@ describe("gradePlan — handler", () => {
 });
 
 describe("gradePlan — dispatch persists the grade for the pane", () => {
-  beforeEach(() => useAppStore.setState({ stagePipelineRuns: {}, stagePlanGrade: {} }));
+  beforeEach(() => useAppStore.setState({ stagePipelineRuns: {}, sectionGrades: {} }));
 
-  it("writes stagePlanGrade and an ok run state", async () => {
+  it("writes the agent-readiness section grade (with rich detail) and an ok run state", async () => {
     await dispatchGradePlan({ projectKey: "proj", issues: [issue({}), issue({ ref: "F2" })], phases, repos: ["acme/web"] });
-    const grade = useAppStore.getState().stagePlanGrade["proj"];
+    const grade = useAppStore.getState().sectionGrades["proj"]?.["structure"]?.find(g => g.graderId === "grade-plan");
     expect(grade?.letter).toBe("A");
+    expect((grade?.detail as { letter?: string } | undefined)?.letter).toBe("A"); // rich PlanGrade rides along
     expect(useAppStore.getState().stagePipelineRuns["proj"][GRADE_PLAN_ID].status).toBe("ok");
   });
 });

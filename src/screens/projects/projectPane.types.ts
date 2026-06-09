@@ -95,6 +95,7 @@ export interface ProjectPaneData {
   /** Project-default integration strategy (#378); undefined ⇒ DEFAULT_STRATEGY. */
   fleetStrategy?: IntegrationStrategy;
   // The agent-readiness grade (#445) is no longer carried on the pane data: it is now
-  // produced by the grade-plan pipeline and read from the store (stagePlanGrade) by the
-  // pane directly. PlanGrade is still re-exported here for the report component's types.
+  // produced by the grade-plan pipeline and read from the store (sectionGrades, as the
+  // structure "agent-readiness" grader's detail) by the pane directly. PlanGrade is
+  // still re-exported here for the report component's types.
 }
