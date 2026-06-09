@@ -265,7 +265,9 @@ function buildContext(input: BuildProjectPaneInput): ContextFile[] {
   // When the project has an explicit pinned set (user toggles in the pane),
   // it drives `pinned`; otherwise fall back to the confirmed-section default.
   const explicitPins = input.pinned ? new Set(input.pinned) : undefined;
-  return input.sections.map(s => {
+  // Skip empty section files — a created-but-unwritten section would otherwise show as a
+  // ghost 0.0k context file (#654).
+  return input.sections.filter(s => s.content.trim().length > 0).map(s => {
     const kind = s.k === "claude" ? "claude"
       : s.k.includes("spec") ? "spec"
       : "doc";
