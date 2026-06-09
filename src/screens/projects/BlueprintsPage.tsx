@@ -3,7 +3,7 @@
 // toasts into one page, wired to the store (blueprint CRUD + setBlueprintSections) and
 // the real gist client (publish / install). Replaces the old BlueprintsTab.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "../../styles/blueprints.css";
 import { useAppStore } from "../../store";
 import { tint, hue, CATALOG_FLOW_KINDS, type CatalogEntry } from "./blueprintCatalog";
@@ -12,6 +12,7 @@ import { mkStageSection } from "./blueprintEdit";
 import { LibraryView, type CardMenuAction } from "./BlueprintLibrary";
 import { CatalogView } from "./BlueprintCatalogView";
 import { BlueprintEditorView } from "./BlueprintEditor";
+import { buildSkillLibrary } from "./blueprintSkills";
 import { BlueprintAssistant } from "./BlueprintAssistant";
 import {
   PublishModal, ImportModal, PreviewModal, NewBlueprintModal, HistoryModal, SyncModal,
@@ -75,6 +76,9 @@ export function BlueprintsPage() {
   const setBlueprintSections = useAppStore((s) => s.setBlueprintSections);
   const removeBlueprint = useAppStore((s) => s.removeBlueprint);
   const importBlueprintStore = useAppStore((s) => s.importBlueprint);
+  const skillDefs = useAppStore((s) => s.skills);
+  const kbBlocks = useAppStore((s) => s.kbBlocks);
+  const skillLibrary = useMemo(() => buildSkillLibrary(skillDefs, kbBlocks), [skillDefs, kbBlocks]);
 
   const [view, setView] = useState<View>("library");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -249,7 +253,7 @@ export function BlueprintsPage() {
             onRename={(v) => updateBlueprintMeta(active.id, { name: v })}
             onRedesc={(v) => updateBlueprintMeta(active.id, { desc: v })}
             onPublish={() => setModal({ type: "publish" })} onAssistant={() => setDrawer({})} onMenu={headerMenu} />
-          <BlueprintEditorView sections={active.sections} selectedUid={selStage} onSelect={setSelStage} onChange={onSectionsChange} />
+          <BlueprintEditorView sections={active.sections} selectedUid={selStage} onSelect={setSelStage} onChange={onSectionsChange} skillLibrary={skillLibrary} />
         </>
       ) : view === "catalog" ? (
         <div className="scroll">
