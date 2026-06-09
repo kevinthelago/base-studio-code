@@ -1210,6 +1210,13 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
     const activeName = focus.phases[focus.activeIdx]?.name ?? "";
     return (
       <div className="fp">
+        <div className="fp-top">
+          <span className="glyph" />
+          <span className="name">{hasData ? (projectName || "Project") : "Settlement webhooks v2"}</span>
+          <span style={{ flex: 1 }} />
+          <span className="pulse"><span className="sdot run" /> planning</span>
+          {(hasData ? projectId : "prj_2fa") && <span className="id">{hasData ? projectId : "prj_2fa"}</span>}
+        </div>
         <Stepper phases={focus.phases} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} highlight={highlight} />
         {ph && <PhaseHeader phase={ph} pill={focus.pill} />}
         {locked && <LockBanner activeName={activeName} />}
