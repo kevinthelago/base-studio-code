@@ -47,7 +47,7 @@ function StageNode({
   const locked = depNames.length > 0;
   return (
     <div
-      className={"stage" + (selected ? " sel" : "") + (locked ? " locked" : "") + (dragging ? " dragging" : "") + (over ? " dragover" : "")}
+      className={"stage" + (selected ? " is-sel" : "") + (locked ? " locked" : "") + (dragging ? " dragging" : "") + (over ? " dragover" : "")}
       draggable
       onDragStart={(e) => drag.start(e, idx)}
       onDragOver={(e) => drag.over(e, idx)}
