@@ -100,6 +100,15 @@ export function removePipeline(sections: BlueprintSection[], secUid: string, pip
 export function setOutput(sections: BlueprintSection[], secUid: string, output: string): BlueprintSection[] {
   return mapSec(sections, secUid, (s) => ({ ...s, output }));
 }
+
+/** Attach a skill/knowledge id to a section (no-op if already attached). (#636) */
+export function addSkill(sections: BlueprintSection[], secUid: string, skillId: string): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ((s.skills ?? []).includes(skillId) ? s : { ...s, skills: [...(s.skills ?? []), skillId] }));
+}
+/** Detach a skill/knowledge id from a section. (#636) */
+export function removeSkill(sections: BlueprintSection[], secUid: string, skillId: string): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ({ ...s, skills: (s.skills ?? []).filter((x) => x !== skillId) }));
+}
 export function setStageField(
   sections: BlueprintSection[], secUid: string, patch: Partial<Pick<BlueprintSection, "name" | "prompt">>,
 ): BlueprintSection[] {

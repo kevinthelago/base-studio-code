@@ -82,6 +82,10 @@ export interface SectionDef {
    *  DISPOSITIONS: plan-file / issues / milestones / skill-index / knowledge / scratch).
    *  Editor metadata; the runtime doesn't read it. Absent ⇒ defaultDisposition(key). */
   output?: string;
+  /** Attached skills/knowledge (#636) — library item ids (KB blocks or Skills) injected
+   *  into the agent's context for this stage. Resolved at planning + fleet launch
+   *  (slice b). Reference-by-id; unresolved ids surface a warning. */
+  skills?: string[];
 }
 
 export const SECTION_DEFS: Record<string, SectionDef> = {
@@ -236,6 +240,9 @@ export interface Blueprint {
   /** How many projects this blueprint has seeded. */
   uses?: number;
   updatedAt?: string;
+  /** Blueprint-wide attached skills/knowledge (#636) — applied across every stage,
+   *  in addition to each section's own `skills`. Library item ids. */
+  skills?: string[];
 }
 
 export const DEFAULT_BLUEPRINT_ID = "default";
