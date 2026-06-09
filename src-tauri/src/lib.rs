@@ -4171,7 +4171,27 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
     if !cur.contains("## Fleet coordination protocol") {
         let _ = std::fs::write(&wt_local, format!("{cur}{FLEET_PROTOCOL_MD}"));
     }
+    // Inline the blueprint's attached skills (#636) so each worker carries the same skill
+    // context the planner had. skills.md lives at the hub (not in the worktree), so the
+    // planner's "read skills.md" note doesn't help a worker — inline it instead.
+    inject_skills(&project_dir(&project_key), &wt_local);
     Ok(wt_str)
+}
+
+/// Inline the hub's attached skills (`skills.md`, #636) into a worker's CLAUDE.local.md
+/// so the worker auto-loads the same skill context the planner had. Idempotent; a no-op
+/// when there are no attached skills (skills.md absent/empty).
+fn inject_skills(hub: &std::path::Path, wt_local: &std::path::Path) {
+    let skills = std::fs::read_to_string(hub.join("skills.md")).unwrap_or_default();
+    let trimmed = skills.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let cur = std::fs::read_to_string(wt_local).unwrap_or_default();
+    if cur.contains("# Attached skills & knowledge") {
+        return; // already injected
+    }
+    let _ = std::fs::write(wt_local, format!("{}\n\n{}\n", cur.trim_end(), trimmed));
 }
 
 /// Append `entry` to a clone's `.git/info/exclude` (idempotent) so app-managed
@@ -6883,6 +6903,33 @@ mod tests {
 
         // Missing subdir -> empty, no panic.
         assert!(super::read_project_files(key.clone(), "pipelines/none".to_string()).is_empty());
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn inject_skills_inlines_hub_skills_idempotently() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("injectskills");
+        let hub = home.join("hub");
+        std::fs::create_dir_all(&hub).unwrap();
+        let wt_local = home.join("CLAUDE.local.md");
+        std::fs::write(&wt_local, "# repo plan\n").unwrap();
+
+        // No skills.md ⇒ no-op.
+        super::inject_skills(&hub, &wt_local);
+        assert_eq!(std::fs::read_to_string(&wt_local).unwrap(), "# repo plan\n");
+
+        // With skills.md ⇒ inlined under its heading.
+        std::fs::write(hub.join("skills.md"), "# Attached skills & knowledge\n\n### Auth\nUse OAuth.\n").unwrap();
+        super::inject_skills(&hub, &wt_local);
+        let after = std::fs::read_to_string(&wt_local).unwrap();
+        assert!(after.contains("# repo plan"), "keeps the plan");
+        assert!(after.contains("Use OAuth."), "inlines the skills");
+
+        // Second call ⇒ idempotent (not appended twice).
+        super::inject_skills(&hub, &wt_local);
+        assert_eq!(after, std::fs::read_to_string(&wt_local).unwrap());
 
         std::fs::remove_dir_all(&home).ok();
     }
