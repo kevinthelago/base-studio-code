@@ -28,6 +28,14 @@ describe("blueprint categories (#645)", () => {
     expect(CATEGORY_META.greenfield.label).toBe("Greenfield");
     expect(CATEGORY_META.transform.label).toBe("Transform");
   });
+
+  it("tags every built-in blueprint origin=built-in, incl. the greenfield four (#658)", () => {
+    const all = makeBlueprints();
+    expect(all.every((b) => b.origin === "built-in")).toBe(true);
+    for (const id of ["default", "fullstack", "mobile", "api"]) {
+      expect(all.find((b) => b.id === id)!.origin, id).toBe("built-in");
+    }
+  });
 });
 
 describe("transform blueprints (#645 slice 2)", () => {
