@@ -54,6 +54,8 @@ export const PIPELINE_LIB: PipelineDef[] = [
   { id: "sync-skills",     name: "Sync skill library",  desc: "Upsert reusable skills into the library",    suits: ["skills"],      kind: "builtin"  },
   { id: "index-repos",     name: "Clone & index repos", desc: "Clone linked repos and build a code index",  suits: ["repos"],       kind: "builtin"  },
   { id: "export-notion",   name: "Export to Notion",    desc: "Mirror this stage's doc into a Notion page", suits: ["*"],           kind: "external" },
+  { id: "schema-check",    name: "Schema check",        desc: "Validate the data model for orphan relations & missing migrations", suits: ["schema"], kind: "builtin" },
+  { id: "contract-test",   name: "Contract test",       desc: "Run contract tests against the declared API surface",               suits: ["api"],    kind: "builtin" },
 ];
 
 // ── Sections (the canonical planning stages) ─────────────────────────────────
@@ -73,6 +75,10 @@ export interface SectionDef {
   /** Optional applicability rule (e.g. UI only when the project needs a UI). Absent ⇒
    *  the section always applies. */
   appliesWhen?: Requirement;
+  /** Output disposition (#609) — what happens to this stage's artifact (a key into
+   *  DISPOSITIONS: plan-file / issues / milestones / skill-index / knowledge / scratch).
+   *  Editor metadata; the runtime doesn't read it. Absent ⇒ defaultDisposition(key). */
+  output?: string;
 }
 
 export const SECTION_DEFS: Record<string, SectionDef> = {
@@ -184,11 +190,38 @@ export interface BlueprintSection extends SectionDef {
   pipelines: Pipeline[];
 }
 
+/** Where a blueprint came from (#609) — drives the card's origin tag. */
+export type BlueprintOrigin = "built-in" | "local" | "forked" | "imported";
+
+/** Gist link state for a blueprint (#609) — the publish/sync state-machine. Slice 5
+ *  populates this; the Library card reads it for the sync badge. Absent ⇒ local-only. */
+export interface BlueprintGist {
+  state: "local" | "dirty" | "synced" | "forked";
+  /** Whether an upstream update is available (forked blueprints). */
+  behind?: boolean;
+  rev?: string;
+  author?: string;
+  id?: string;
+  url?: string;
+  public?: boolean;
+}
+
 export interface Blueprint {
   id: string;
   name: string;
   desc: string;
   sections: BlueprintSection[];
+  /** Display + provenance metadata (#609). All optional — the Library derives sensible
+   *  fallbacks (icon from the name, hue from the id, origin "local", local-only gist). */
+  icon?: string;
+  /** Accent hue (oklch) for the card/editor icon. */
+  h?: number;
+  origin?: BlueprintOrigin;
+  tags?: string[];
+  gist?: BlueprintGist;
+  /** How many projects this blueprint has seeded. */
+  uses?: number;
+  updatedAt?: string;
 }
 
 export const DEFAULT_BLUEPRINT_ID = "default";

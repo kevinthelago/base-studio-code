@@ -5,7 +5,7 @@ import { ProjectsList } from "./ProjectsList";
 import { Planning } from "./Planning";
 import { ProjectsPageModeStrip } from "./ProjectsSummary";
 import { Fleet } from "./Fleet";
-import { Blueprints } from "./BlueprintsTab";
+import { BlueprintsPage } from "./BlueprintsPage";
 import { useProjectScan } from "./useProjectScan";
 
 export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
@@ -67,7 +67,7 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
       {/* Blueprints — planning-stage presets; the active one seeds new projects (#513). */}
       {projectsPageMode === "blueprints" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <Blueprints />
+          <BlueprintsPage />
         </div>
       )}
 
