@@ -404,6 +404,12 @@ fn clear_project_plan_files(project_key: String) -> Result<u32, String> {
             removed += 1;
         }
     }
+    // Drop generated UI artifacts too (#650): the .ui-skeleton/ dir feeds the render-preview
+    // pipeline, so leaving it would re-show the old UI after a clear.
+    let skeleton = proj.join(".ui-skeleton");
+    if skeleton.is_dir() && std::fs::remove_dir_all(&skeleton).is_ok() {
+        removed += 1;
+    }
     log::info!("clear_project_plan_files({project_key}): removed {removed} files");
     Ok(removed)
 }
@@ -6871,11 +6877,16 @@ mod tests {
         write_file(&proj.join("goal.md"), "goal");
         write_file(&proj.join("phases.json"), "[]");
         write_file(&sub.join("README.md"), "# repo"); // inside subdir -- preserved
+        // a generated UI skeleton that must be wiped too (#650)
+        let skel = proj.join(".ui-skeleton");
+        std::fs::create_dir_all(&skel).unwrap();
+        write_file(&skel.join("Home.jsx"), "export default () => null");
 
         let removed = super::clear_project_plan_files(key.clone()).unwrap();
-        assert_eq!(removed, 2, "goal.md + phases.json removed");
+        assert_eq!(removed, 3, "goal.md + phases.json + .ui-skeleton removed");
         assert!(!proj.join("goal.md").exists());
         assert!(!proj.join("phases.json").exists());
+        assert!(!skel.exists(), ".ui-skeleton dir wiped");
         assert!(sub.join("README.md").exists(), "subdir entry preserved");
 
         // Missing project -> Ok(0), no panic.
