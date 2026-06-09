@@ -9,6 +9,8 @@ import { AGENT_READINESS_ID } from "./gradeDispatch";
 import { useAppStore } from "../../store";
 import "./projectPane.css";
 import { type DirectorDrive, DIRECTOR_DRIVES } from "./directorDrive";
+import { type Phase, type GatePill, type FooterKind } from "./focusedPlan";
+import { Stepper, PhaseHeader, LockBanner, DoneBanner, PhaseFooter } from "./FocusedShell";
 import {
   type IntegrationStrategy, INTEGRATION_STRATEGIES, STRATEGY_LABEL,
   resolveStrategy, strategySettings,
@@ -1057,7 +1059,7 @@ function DirectorBar({ director, fleetStrategy, onDirectorDrive }: {
  * no write-back in this slice.
  */
 export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onStrategy, onTogglePin,
-  onDirectorDrive, onSyncLabels, syncState, sectionKeys, sections, highlight }: {
+  onDirectorDrive, onSyncLabels, syncState, sectionKeys, sections, highlight, focus }: {
   data?: ProjectPaneData;
   projectName?: string;
   projectId?: string;
@@ -1081,6 +1083,18 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   // removed as redundant. Only label application remains pane-local.
   onSyncLabels?: () => void;
   syncState?: { labels?: SyncState };
+  /** Focused mode (#652): render ONE phase (with stepper + header + advance bar) instead
+   *  of all sections at once. When set, `sections`/`sectionKeys` are ignored. */
+  focus?: {
+    phases: Phase[];
+    selectedIdx: number;
+    activeIdx: number;
+    onSelect: (i: number) => void;
+    pill: GatePill;
+    footer: { kind: FooterKind; enabled: boolean };
+    onBack: () => void;
+    onPrimary: () => void;
+  };
 }) {
   const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.phaseStructure.length > 0 || data.context.length > 0);
   const agents:    Agent[]       = hasData ? data!.agents         : AGENTS;
@@ -1121,6 +1135,98 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [viewing]);
+
+  // One renderable body per phase (#652) — reuses the section panels without the Sec
+  // wrapper, since the focused phase header already supplies the title.
+  const bodyForKey = (ph: Phase): ReactNode => {
+    switch (ph.key) {
+      case "context":
+        return <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />;
+      case "structure":
+        return (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+              {grade && <GradeChip letter={grade.letter} />}
+              <span style={{ flex: 1 }} />
+              <Seg options={["phase", "repo"]} value={structView} onChange={(v) => setStructView(v as "phase" | "repo")} tiny />
+            </div>
+            {grade && <GradeReport grade={grade} />}
+            {structView === "phase"
+              ? <PhaseStructure phases={phaseStructure} agents={agents} gradeMap={issueGradeMap} />
+              : <RepoStructure structure={structure} repos={repos} agents={agents} gradeMap={issueGradeMap} />}
+          </>
+        );
+      case "permissions":
+        return (
+          <>
+            <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />
+            <div style={{ height: 16 }} />
+            <DirectorBar director={director} fleetStrategy={fleetStrategy} onDirectorDrive={onDirectorDrive} />
+          </>
+        );
+      default:
+        return (
+          <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+            The planner documents this stage as the session fills it in. Its output appears here.
+          </div>
+        );
+    }
+  };
+
+  const contextModal = viewing && (
+    <div onClick={() => setViewing(null)} style={{
+      position: "fixed", inset: 0, zIndex: 50,
+      background: "color-mix(in oklch, var(--bg-canvas), transparent 20%)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: "min(720px, 92vw)", maxHeight: "84vh", display: "flex", flexDirection: "column",
+        background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
+        borderRadius: 10, boxShadow: "0 16px 50px rgba(0,0,0,.45)", overflow: "hidden",
+      }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "12px 14px",
+          borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
+        }}>
+          <KindDot kind={viewing.kind} />
+          <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{viewing.tok} · {viewing.scope}</span>
+          <span onClick={() => setViewing(null)} style={{ cursor: "pointer", fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)", padding: "0 2px 0 8px" }}>✕</span>
+        </div>
+        <pre style={{
+          margin: 0, padding: "14px 16px", overflow: "auto", flex: 1,
+          fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.55, color: "var(--fg-muted)",
+          whiteSpace: "pre-wrap", wordBreak: "break-word",
+        }}>{viewing.content || "(empty)"}</pre>
+      </div>
+    </div>
+  );
+
+  // Focused mode (#652): one phase at a time with the stepper + advance bar.
+  if (focus) {
+    const ph = focus.phases[focus.selectedIdx];
+    const locked = focus.selectedIdx > focus.activeIdx;
+    const done = focus.selectedIdx < focus.activeIdx && ph?.status === "complete";
+    const activeName = focus.phases[focus.activeIdx]?.name ?? "";
+    return (
+      <div className="fp">
+        <div className="fp-top">
+          <span className="glyph" />
+          <span className="name">{hasData ? (projectName || "Project") : "Settlement webhooks v2"}</span>
+          <span style={{ flex: 1 }} />
+          <span className="pulse"><span className="sdot run" /> planning</span>
+          {(hasData ? projectId : "prj_2fa") && <span className="id">{hasData ? projectId : "prj_2fa"}</span>}
+        </div>
+        <Stepper phases={focus.phases} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} highlight={highlight} />
+        {ph && <PhaseHeader phase={ph} pill={focus.pill} />}
+        {locked && <LockBanner activeName={activeName} />}
+        {done && <DoneBanner />}
+        <div className="ph-body">{ph ? bodyForKey(ph) : null}</div>
+        {ph && <PhaseFooter phase={ph} action={focus.footer} onBack={focus.onBack} onPrimary={focus.onPrimary} />}
+        {contextModal}
+      </div>
+    );
+  }
 
   return (
     <div className="pp">
@@ -1217,34 +1323,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
         })()}
       </div>
 
-      {viewing && (
-        <div onClick={() => setViewing(null)} style={{
-          position: "fixed", inset: 0, zIndex: 50,
-          background: "color-mix(in oklch, var(--bg-canvas), transparent 20%)",
-          display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
-        }}>
-          <div onClick={(e) => e.stopPropagation()} style={{
-            width: "min(720px, 92vw)", maxHeight: "84vh", display: "flex", flexDirection: "column",
-            background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
-            borderRadius: 10, boxShadow: "0 16px 50px rgba(0,0,0,.45)", overflow: "hidden",
-          }}>
-            <div style={{
-              display: "flex", alignItems: "center", gap: 8, padding: "12px 14px",
-              borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
-            }}>
-              <KindDot kind={viewing.kind} />
-              <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{viewing.tok} · {viewing.scope}</span>
-              <span onClick={() => setViewing(null)} style={{ cursor: "pointer", fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)", padding: "0 2px 0 8px" }}>✕</span>
-            </div>
-            <pre style={{
-              margin: 0, padding: "14px 16px", overflow: "auto", flex: 1,
-              fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.55, color: "var(--fg-muted)",
-              whiteSpace: "pre-wrap", wordBreak: "break-word",
-            }}>{viewing.content || "(empty)"}</pre>
-          </div>
-        </div>
-      )}
+      {contextModal}
     </div>
   );
 }
