@@ -2,6 +2,8 @@
 
 > 🚧 **Preview software — not yet stable.** Every `0.x` build is a development preview; features and internals may change between releases. **`1.0.0` will be the first stable, general-availability release.** See [Versioning & Releases](#versioning--releases).
 
+> 📍 **Where we are:** the core feature set is largely in place. Current development focus is **security testing, quality assurance, and polishing existing features** on the road to `1.0.0`.
+
 # base-studio-code
 
 [![CI](https://github.com/kevinthelago/base-studio-code/actions/workflows/ci.yml/badge.svg)](https://github.com/kevinthelago/base-studio-code/actions/workflows/ci.yml)
@@ -18,9 +20,9 @@ Pairs **optionally** with **mobile-studio-code**, a standalone companion app tha
 
 ## Project Blueprints & Pipelines
 
-*The current focus of active development.* Planning is built from two composable pieces.
+*A core feature of the platform.* Planning is built from two composable pieces.
 
-**Blueprints** are reusable planning templates. A Blueprint is an ordered list of planning **stages** — context, repos, UI design, structure, permissions, automations, skills — each with its own prompt module and attached pipelines. Pick one (built-ins: Default, Full-stack web app, Mobile MVP, API microservice) and it seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
+**Blueprints** are reusable planning templates. A Blueprint is an ordered list of planning **stages** — context, repos, UI design, structure, permissions, automations, skills — each with its own prompt module and attached pipelines. Pick one — built-ins now span the project lifecycle: **greenfield** (Default, Full-stack web app, Mobile MVP, API microservice), **transform** (Refactor & Cleanup, Split / Combine microservices, Migrate), and **harden** (Harden security), searchable and filterable by category — and it seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
 
 **Pipelines** are pluggable actions that run on a stage's output — on entering a stage, when an artifact changes, on completion, or manually. Some are **gates**: the stage can't complete until the pipeline passes. Built-ins include:
 
@@ -30,7 +32,7 @@ Pairs **optionally** with **mobile-studio-code**, a standalone companion app tha
 
 Together they drive the planning arc: **pitch → plan, stage by stage → live preview → gate checks → publish to GitHub → launch the fleet.**
 
-> 🚧 Blueprints & Pipelines are under active development. The stage registry, the Blueprint editor, and the render-preview / lint-plan pipelines work today; the wider pipeline library and the execution-side conductor (staged build → test → review → integrate) are still being wired up.
+> 🚧 Blueprints & Pipelines are largely mature: lifecycle categories, the drag-reorder Blueprint editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, drag-and-drop file intake, and gist sharing all work today. The main remaining piece is the execution-side conductor (staged build → test → review → integrate).
 
 ## Features
 
