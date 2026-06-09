@@ -349,7 +349,7 @@ export function mkSection(
 export function makeBlueprints(): Blueprint[] {
   return [
     {
-      id: "default", name: "Default", desc: "Balanced starting point", category: "greenfield", mode: "create",
+      id: "default", name: "Default", desc: "Balanced starting point", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
         mkSection("context",     { pipelines: [["lint-plan", "on completion", true]] }),
         mkSection("repos",       { enabled: false, pipelines: [["index-repos", "on section enter", true]] }),
@@ -361,7 +361,7 @@ export function makeBlueprints(): Blueprint[] {
       ],
     },
     {
-      id: "fullstack", name: "Full-stack web app", desc: "Web client + API + DB", category: "greenfield", mode: "create",
+      id: "fullstack", name: "Full-stack web app", desc: "Web client + API + DB", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
         mkSection("context"), mkSection("repos"), mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
@@ -370,7 +370,7 @@ export function makeBlueprints(): Blueprint[] {
       ],
     },
     {
-      id: "mobile", name: "Mobile MVP", desc: "Single app, ship fast", category: "greenfield", mode: "create",
+      id: "mobile", name: "Mobile MVP", desc: "Single app, ship fast", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
         mkSection("context"), mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
@@ -378,7 +378,7 @@ export function makeBlueprints(): Blueprint[] {
       ],
     },
     {
-      id: "api", name: "API microservice", desc: "Headless service, no UI", category: "greenfield", mode: "create",
+      id: "api", name: "API microservice", desc: "Headless service, no UI", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
         mkSection("context"), mkSection("repos"),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", true]] }),
