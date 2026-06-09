@@ -2317,6 +2317,13 @@ fn read_ui_skeleton(project_key: String) -> Vec<(String, String)> {
     read_skeleton_dir(&project_dir(&project_key).join(".ui-skeleton"))
 }
 
+/// Absolute path to a project's hub directory (#647) — the frontend reveals it so the
+/// user can export/back up authored plan files before resetting the blueprint.
+#[tauri::command]
+fn project_dir_path(project_key: String) -> String {
+    project_dir(&project_key).to_string_lossy().to_string()
+}
+
 /// Read the coordination log (#199): up to the newest `limit` TSV lines, in
 /// chronological (oldest-first) order so the coordinator can replay them.
 #[tauri::command]
@@ -5282,6 +5289,7 @@ pub fn run() {
             read_token_usage,
             read_coord_log,
             read_ui_skeleton,
+            project_dir_path,
             append_coord_woke,
             read_git_hooks,
         ])
