@@ -20,11 +20,12 @@ export type { PlanGrade, IssueGrade, MilestoneGrade, RepoGrade, Letter } from ".
 // import sites that reach for them via "./projectPaneData" keep working.
 import type {
   Posture, Perm, Agent, Repo, Issue, Milestone, PhaseGroup, ContextFile, ProjectPaneData,
+  PaneAutomation, PaneSkill,
 } from "./projectPane.types";
 
 export type {
   Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone, PhaseGroup,
-  ContextFile, ProjectPaneData,
+  ContextFile, ProjectPaneData, PaneAutomation, PaneSkill,
 } from "./projectPane.types";
 
 export interface BuildProjectPaneInput {
@@ -35,6 +36,10 @@ export interface BuildProjectPaneInput {
   repos: string[];
   /** Full_names cloned into the project hub (clone state) — drives each repo's `cloned`. */
   clonedNames?: string[];
+  /** Cron automations proposed for the project (#674). */
+  automations?: PaneAutomation[];
+  /** Skills/knowledge attached to the project's blueprint, pre-resolved (#674). */
+  skills?: PaneSkill[];
   sections: Section[];
   /** Context-file names the project has explicitly pinned in the pane (from the
    *  store). When present it drives each context file's `pinned` instead of the
@@ -316,5 +321,7 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
       drive: resolveDirectorDrive(input.fleet?.director.drive),
     },
     fleetStrategy: input.fleet?.strategy,
+    automations: (input.automations ?? []).map(a => ({ name: a.name, command: a.command, schedule: a.schedule })),
+    skills: input.skills ?? [],
   };
 }

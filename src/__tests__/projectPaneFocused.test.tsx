@@ -36,7 +36,7 @@ describe("ProjectPane focused mode (#652)", () => {
 
   it("renders a generic body for a section without a dedicated panel", () => {
     render(<ProjectPane focus={baseFocus({
-      phases: [ph("automations", "Automations", "active", 0, 1)],
+      phases: [ph("testing", "Testing", "active", 0, 1)],
       selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText(/planner documents this stage/)).toBeInTheDocument();
@@ -77,6 +77,22 @@ describe("ProjectPane focused mode (#652)", () => {
       phases: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText(/No agents yet/)).toBeInTheDocument();
+  });
+
+  it("renders the automations + skills bodies from real data, with empty states", () => {
+    // empty → empty states
+    const { rerender } = render(<ProjectPane focus={baseFocus({ phases: [ph("automations", "Automations", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
+    expect(screen.getByText(/No automations yet/)).toBeInTheDocument();
+    rerender(<ProjectPane focus={baseFocus({ phases: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
+    expect(screen.getByText(/No skills attached/)).toBeInTheDocument();
+    // populated
+    const data = { agents: [], repos: [], structure: [], phaseStructure: [], context: [], issues: [],
+      automations: [{ name: "nightly-deps", command: "npm audit", schedule: "0 2 * * *" }],
+      skills: [{ name: "Rust review", kind: "skill", desc: "review checklist" }] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    rerender(<ProjectPane data={data} focus={baseFocus({ phases: [ph("automations", "Automations", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
+    expect(screen.getByText("nightly-deps")).toBeInTheDocument();
+    rerender(<ProjectPane data={data} focus={baseFocus({ phases: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
+    expect(screen.getByText("Rust review")).toBeInTheDocument();
   });
 
   it("computes the real pinned token budget (not a hardcoded total)", () => {
