@@ -689,8 +689,17 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [requiresUi, uiScreens, uiApproved, effectiveProjectId]);
   // The enabled stage ids (in order) for a project — passed to setup_workspaces so the
   // planner's CLAUDE.md is scoped to the blueprint's stages (#542). Read fresh.
-  const stageIdsFor = (key: string) =>
-    enabledOrderedStages(useAppStore.getState().planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
+  // The planner's active stages come from the BLUEPRINT's actual enabled sections — incl.
+  // custom keys (cleanup, the transform stages) that PLAN_STAGES/blueprintToStageConfig
+  // drop. Without this, a refactor/transform plan collapses to its greenfield subset and
+  // the planner runs the generic workflow (e.g. writing issues.json) (#666). Falls back to
+  // the PLAN_STAGES config when there's no active blueprint.
+  const stageIdsFor = (key: string) => {
+    const st = useAppStore.getState();
+    const bp = st.blueprints.find(b => b.id === st.activeBlueprintId);
+    if (bp) return bp.sections.filter(s => s.enabled).map(s => s.key);
+    return enabledOrderedStages(st.planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
+  };
   const stageState = useMemo(() => {
     const streams = planFleet[effectiveProjectId]?.streams ?? [];
     const issueCount =

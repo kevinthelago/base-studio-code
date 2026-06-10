@@ -394,7 +394,8 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
         mkSection("cleanup",     { pipelines: [["scan-dead-code", "manual", false], ["grade-rubric", "on completion", false]] }),
         mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
-        mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
+        // No `structure` stage: a refactor pass tracks work as cleanup/refactor units that
+        // drive the fleet directly — it doesn't need a GitHub issues.json (#666).
         mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
       ],
     },
