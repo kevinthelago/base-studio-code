@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import {
-  blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints,
+  blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints, resolveProjectSeed,
   type Blueprint,
 } from "../screens/projects/blueprints";
 import { LibraryView } from "../screens/projects/BlueprintLibrary";
@@ -66,6 +66,18 @@ describe("transform blueprints (#645 slice 2)", () => {
     const transforms = filterBlueprints(all, { category: "transform" }).map((b) => b.id);
     expect(transforms).toEqual(expect.arrayContaining(["refactor", "split-services", "combine-services", "migrate"]));
     expect(filterBlueprints(all, { category: "harden" }).map((b) => b.id)).toContain("harden");
+  });
+});
+
+describe("resolveProjectSeed — blueprint tracking for the reset prompt (#647 fix)", () => {
+  it("a brand-new project (no config) seeds + records the active blueprint", () => {
+    expect(resolveProjectSeed(false, undefined, "fullstack")).toEqual({ seedConfig: true, setBlueprintId: "fullstack" });
+  });
+  it("an existing project with NO recorded blueprint backfills to default (so a switch prompts)", () => {
+    expect(resolveProjectSeed(true, undefined, "fullstack")).toEqual({ seedConfig: false, setBlueprintId: "default" });
+  });
+  it("an existing project that already knows its blueprint changes nothing", () => {
+    expect(resolveProjectSeed(true, "refactor", "fullstack")).toEqual({ seedConfig: false });
   });
 });
 

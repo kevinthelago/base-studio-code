@@ -12,6 +12,11 @@ describe("blueprint-per-project + reset (#647)", () => {
       planStageConfig: {},
       stagePreview: {},
       stagePipelineRuns: {},
+      // section state + fleet/automations also drive completion — must reset too (#664)
+      planSections: { p: { goal: "# Goal" } },
+      planConfirmedSections: { p: ["goal"] },
+      planAutomations: { p: [] },
+      projectLocalRepos: { p: ["o/r"] },
     });
   });
 
@@ -30,6 +35,11 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(s.sectionGrades["p"]).toBeUndefined();
     expect(s.uiScreens["p"]).toBeUndefined();
     expect(s.uiApproved["p"]).toBeUndefined();
+    // section state + confirmations + automations also cleared so nothing reads complete (#664)
+    expect(s.planSections["p"]).toBeUndefined();
+    expect(s.planConfirmedSections["p"]).toBeUndefined();
+    expect(s.planAutomations["p"]).toBeUndefined();
+    expect(s.projectLocalRepos["p"]).toBeUndefined(); // repos unlinked (#664)
   });
 
   it("is a no-op for an unknown blueprint", () => {

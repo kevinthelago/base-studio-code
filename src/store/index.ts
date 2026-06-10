@@ -1894,15 +1894,25 @@ export const useAppStore = create<AppStore>()(
           const drop = <T,>(m: Record<string, T>): Record<string, T> => {
             const n = { ...m }; delete n[projectId]; return n;
           };
+          // Full reset: wipe ALL of the project's planning state (everything clearPlan
+          // drops) so no section reads as completed afterwards, then re-seed the stage
+          // config from the new blueprint + record it (#664).
           return {
+            planSections:          drop(s.planSections),
+            planConfirmedSections: drop(s.planConfirmedSections),
+            planKbAssignments:     drop(s.planKbAssignments),
+            planAutomations:       drop(s.planAutomations),
+            planFleet:             drop(s.planFleet),
+            issueLinks:            drop(s.issueLinks),
+            sectionGrades:         drop(s.sectionGrades),
+            uiScreens:             drop(s.uiScreens),
+            uiApproved:            drop(s.uiApproved),
+            stagePreview:          drop(s.stagePreview),
+            stagePipelineRuns:     drop(s.stagePipelineRuns),
+            pinnedContext:         drop(s.pinnedContext),
+            projectLocalRepos:     drop(s.projectLocalRepos),
             planStageConfig:    { ...s.planStageConfig, [projectId]: blueprintToStageConfig(bp) },
             projectBlueprintId: { ...s.projectBlueprintId, [projectId]: blueprintId },
-            // wipe progress keyed to the old stage arc
-            sectionGrades:     drop(s.sectionGrades),
-            uiScreens:         drop(s.uiScreens),
-            uiApproved:        drop(s.uiApproved),
-            stagePreview:      drop(s.stagePreview),
-            stagePipelineRuns: drop(s.stagePipelineRuns),
           };
         }),
       addBlueprint: () => {
@@ -2116,6 +2126,8 @@ export const useAppStore = create<AppStore>()(
           stagePreview:          omitKey(s.stagePreview),
           stagePipelineRuns:     omitKey(s.stagePipelineRuns),
           pinnedContext:         omitKey(s.pinnedContext),
+          // clear means clear: unlink the project's repos so the repos stage resets (#664).
+          projectLocalRepos:     omitKey(s.projectLocalRepos),
           };
         }),
 

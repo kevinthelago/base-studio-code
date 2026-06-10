@@ -38,6 +38,7 @@ import { dispatchPipelineCommand } from "./pipelineCommands";
 import { parsePipelineTags, stripPipelineTags } from "./pipelineTag";
 import {
   blueprintToStageConfig, incompleteSections, planSectionsComplete, currentSection, mkSection,
+  resolveProjectSeed, confirmedSignal,
   type BlueprintSection, type IncompleteSection,
 } from "./blueprints";
 import { writeBlueprintSkillContext } from "./blueprintSkills";
@@ -435,12 +436,12 @@ function GitHubStructureCard({ structure, status, progress }: {
 export function Planning({ visible }: { visible: boolean }) {
   const {
     setProjectsView,
-    planningPitch, planningRepo, planningTitle, setPlanningTitle,
+    planningPitch, planningRepo, planningTitle, setPlanningTitle, setPlanningContext,
     planningSessionKey,
     activeProjectId, activeProjectName, activeProjectNumber,
     githubToken,
     kbBlocks,
-    activeProjectRepos,
+    activeProjectRepos, setActiveProjectRepos,
     projectLocalRepos,
     planSections, planConfirmedSections,
     planFleet,
@@ -460,7 +461,7 @@ export function Planning({ visible }: { visible: boolean }) {
     agentProfiles,
     commands, schedules,
     pendingPlannerPrompt, clearPlannerPrompt,
-    projectBlueprintId, applyBlueprintToProject, setActiveBlueprint,
+    projectBlueprintId, applyBlueprintToProject,
   } = useAppStore();
 
   // The session key (set once at session entry) is the single source of truth
@@ -622,10 +623,11 @@ export function Planning({ visible }: { visible: boolean }) {
     if (defs.length) useAppStore.getState().upsertSkills(defs);
   }, [savedSections]);
 
-  // Title + derived GitHub object graph that the structure card renders and the
-  // publish flow fills in. Kept in sync with handlePublish's own derivation.
-  const goalForTitle = sections.find(s => s.k === "goal")?.content ?? "";
-  const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
+  // The project's short display title — a STABLE store value, used everywhere the title
+  // shows (the focused pane header, the structure card, the fleet). Previously this fell
+  // back to the goal section's first sentence, which is long and changes as the goal
+  // streams in → the right-pane title flickered / showed a long string (#666).
+  const projectTitle = planningTitle || activeProjectName || "New project";
 
   // Per-repo feature plans (#177): each `repo__{short}__feat__{slug}` section becomes a
   // synthetic granular issue, so it flows through the existing structure + publish
@@ -652,12 +654,15 @@ export function Planning({ visible }: { visible: boolean }) {
   useEffect(() => {
     if (!effectiveProjectId) return;
     const st = useAppStore.getState();
-    if (st.planStageConfig[effectiveProjectId]) return; // already has its own copy
     const active = st.blueprints.find((b) => b.id === st.activeBlueprintId);
-    if (active) {
-      st.setProjectStageConfig(effectiveProjectId, blueprintToStageConfig(active));
-      st.setProjectBlueprintId(effectiveProjectId, active.id); // remember which blueprint seeded it (#647)
-    }
+    if (!active) return;
+    // #647 fix: also backfill the blueprint id for projects planned before tracking, so the
+    // reset-prompt fires instead of silently no-opping.
+    const { seedConfig, setBlueprintId } = resolveProjectSeed(
+      !!st.planStageConfig[effectiveProjectId], st.projectBlueprintId[effectiveProjectId], active.id,
+    );
+    if (seedConfig) st.setProjectStageConfig(effectiveProjectId, blueprintToStageConfig(active));
+    if (setBlueprintId) st.setProjectBlueprintId(effectiveProjectId, setBlueprintId);
   }, [effectiveProjectId]);
 
   // Write the active blueprint's attached skills/knowledge to the hub's skills.md so the
@@ -715,8 +720,13 @@ export function Planning({ visible }: { visible: boolean }) {
     return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
   }, [blueprints, activeBlueprintId, stageConfig]);
 
-  // The flat, serializable signal bag the declarative section gates read.
-  const signals = useMemo(() => planStateToSignals(stageState), [stageState]);
+  // The flat, serializable signal bag the declarative section gates read. Informational
+  // (gateless) sections complete via a `confirmed:<key>` signal, not vacuously (#664).
+  const signals = useMemo(() => {
+    const base = planStateToSignals(stageState);
+    for (const k of confirmedSet) base[confirmedSignal(k)] = true;
+    return base;
+  }, [stageState, confirmedSet]);
 
   // Sections blocked by an unpassed gate pipeline (#532), straight from the blueprint.
   const blockedStages = useMemo(() => {
@@ -1439,7 +1449,10 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [linkedRepos]);
 
 
-  async function handleRestart() {
+  // `fresh` launches a NEW Claude conversation (plain `claude`) instead of resuming the
+  // prior one — used when the plan is cleared/reset so Claude doesn't carry the old plan
+  // into the blank slate (#665). The context-refresh path resumes (fresh defaults false).
+  async function handleRestart(opts?: { fresh?: boolean }) {
     const term = termRef.current;
     if (!term || restarting) return;
     setRestarting(true);
@@ -1478,7 +1491,8 @@ export function Planning({ visible }: { visible: boolean }) {
       cols: term.cols,
       rows: term.rows,
       cwd: paths?.planning_dir ?? "",
-      initCmd: "claude --continue 2>/dev/null || claude",
+      // A fresh restart starts a new conversation; otherwise resume the prior one.
+      initCmd: opts?.fresh ? "claude" : "claude --continue 2>/dev/null || claude",
       env: ghEnv,
     }).catch(console.error);
     setRestarting(false);
@@ -2236,11 +2250,17 @@ _Auto-generated by base-studio-code planner._`,
               <button className="btn ghost" onClick={() => setConfirmClear(false)}>cancel</button>
               <button
                 className="btn danger"
-                onClick={() => {
+                onClick={async () => {
                   setConfirmClear(false);
+                  // Delete the on-disk plan files FIRST and await it, so the 2s file poll
+                  // can't re-read them and re-populate the store after we clear it (#664).
+                  await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
                   clearPlan(effectiveProjectId);
-                  void invoke("clear_project_plan_files", { projectKey: effectiveProjectId });
-                  void handleRestart();
+                  // Unlink repos from EVERY source that feeds the repos stage (#664):
+                  setActiveProjectRepos([]);
+                  setRepoLinkFullNames([]);            // <repo_link> tags (local state)
+                  setPlanningContext(planningPitch, ""); // planningRepo (keep the pitch)
+                  void handleRestart({ fresh: true }); // new Claude session — no memory of the old plan
                 }}
               >clear plan</button>
             </>
@@ -2256,27 +2276,35 @@ _Auto-generated by base-studio-code planner._`,
           project was planned with — choose before opening. */}
       {blueprintMismatch && (
         <Dialog
-          title="Different blueprint selected"
-          onDismiss={() => { setActiveBlueprint(projectBpId!); setMismatchAck(true); }}
+          title="Reset this plan to the selected blueprint?"
+          danger
+          onDismiss={() => setMismatchAck(true)}
           actions={
             <>
+              <button className="btn ghost" onClick={() => setMismatchAck(true)}>cancel</button>
               <button className="btn ghost" onClick={() => void exportProjectFiles()}>export files…</button>
               <button
-                className="btn"
-                onClick={() => { setActiveBlueprint(projectBpId!); setMismatchAck(true); }}
-              >keep {projectBpName}</button>
-              <button
                 className="btn danger"
-                onClick={() => { applyBlueprintToProject(effectiveProjectId, activeBlueprintId); setMismatchAck(true); void handleRestart(); }}
-              >use {activeBpName}</button>
+                onClick={async () => {
+                  // Delete on-disk plan files first (awaited) so the file poll can't
+                  // re-populate the reset plan, then wipe state + restart fresh (#664).
+                  await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
+                  applyBlueprintToProject(effectiveProjectId, activeBlueprintId);
+                  setActiveProjectRepos([]); // unlink repos from every source (#664)
+                  setRepoLinkFullNames([]);
+                  setPlanningContext(planningPitch, "");
+                  setMismatchAck(true);
+                  void handleRestart({ fresh: true });
+                }}
+              >confirm &amp; restart</button>
             </>
           }
         >
-          This project was planned with <b>{projectBpName}</b>, but <b>{activeBpName}</b> is
-          selected. Using the selected blueprint resets the plan to its stages and clears
-          stage progress (grades, screen approvals) — the planner restarts. Your authored
-          plan files on disk are kept; export them first if you want a backup. Or keep this
-          project on <b>{projectBpName}</b>.
+          You selected <b>{activeBpName}</b>, but this project was planned with <b>{projectBpName}</b>.
+          Confirming <b>resets the plan to a fresh {activeBpName} state</b> — the stage config,
+          progress (grades, screen approvals), and the UI preview are cleared and the planner
+          restarts. Your authored plan files on disk are kept; export them first if you want a
+          backup. <b>Cancel</b> keeps the current plan.
         </Dialog>
       )}
     </>
