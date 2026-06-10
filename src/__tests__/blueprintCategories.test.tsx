@@ -62,6 +62,13 @@ describe("transform blueprints (#645 slice 2)", () => {
     expect(split.sections.find((s) => s.key === "boundaries")!.glyph).not.toBe("✚");
   });
 
+  it("the refactor blueprint has no structure stage (no issues.json) but keeps cleanup + testing (#666)", () => {
+    const refactor = makeBlueprints().find((b) => b.id === "refactor")!;
+    const keys = refactor.sections.map((s) => s.key);
+    expect(keys).not.toContain("structure");
+    expect(keys).toEqual(expect.arrayContaining(["cleanup", "testing"]));
+  });
+
   it("are surfaced by the category filter", () => {
     const transforms = filterBlueprints(all, { category: "transform" }).map((b) => b.id);
     expect(transforms).toEqual(expect.arrayContaining(["refactor", "split-services", "combine-services", "migrate"]));
