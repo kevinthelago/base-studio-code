@@ -537,16 +537,53 @@ function RepoChip({ children, color, border }: { children: React.ReactNode; colo
   );
 }
 
+/** Inline "link a repository" control — type owner/repo and add it to the project (#677). */
+function LinkRepoRow({ onLink }: { onLink: (fullName: string) => void }) {
+  const [val, setVal] = useState("");
+  const ok = /^[^/\s]+\/[^/\s]+$/.test(val.trim());
+  const submit = () => { if (ok) { onLink(val.trim()); setVal(""); } };
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      <input
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+        placeholder="＋ link a repository (owner/repo)"
+        aria-label="Link a repository"
+        style={{
+          flex: 1, fontFamily: "var(--mono)", fontSize: 11, padding: "7px 9px", borderRadius: 6,
+          border: "1px solid var(--border-soft)", background: "var(--bg-canvas)", color: "var(--fg)",
+        }}
+      />
+      <button
+        onClick={submit}
+        disabled={!ok}
+        style={{
+          fontFamily: "var(--mono)", fontSize: 11, padding: "0 12px", borderRadius: 6, cursor: ok ? "pointer" : "default",
+          border: "1px solid " + (ok ? "var(--accent-dim)" : "var(--border-soft)"), background: ok ? "color-mix(in oklch,var(--accent),transparent 86%)" : "transparent",
+          color: ok ? "var(--accent)" : "var(--fg-dim)",
+        }}
+      >link</button>
+    </div>
+  );
+}
+
 /**
  * The repos phase body (#674) — mirrors the design's ReposView: a tile header
  * (repositories / cloned / branches) and one card per repo with its clone status,
  * language, description, branch + ahead/behind, working-agent avatars, and the planned
  * branch chips (one per owning stream). Fields the planning stage doesn't have yet
- * (language, description, live ahead/behind) are simply omitted.
+ * (language, description, live ahead/behind) are simply omitted. `onLinkRepo` enables a
+ * manual link control (#677).
  */
-function ReposBody({ repos, agents }: { repos: Repo[]; agents: Agent[] }) {
+function ReposBody({ repos, agents, onLinkRepo }: { repos: Repo[]; agents: Agent[]; onLinkRepo?: (fullName: string) => void }) {
   if (repos.length === 0) {
-    return <PaneEmpty>No repositories linked yet — the planner links them in this stage as you decide what the project spans.</PaneEmpty>;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <PaneEmpty>No repositories linked yet — link one below, or ask the planner to create/link them.</PaneEmpty>
+        {onLinkRepo && <LinkRepoRow onLink={onLinkRepo} />}
+      </div>
+    );
   }
   const clonedCount = repos.filter(r => r.cloned).length;
   const branchCount = repos.reduce((n, r) => n + r.branches.length, 0);
@@ -597,6 +634,7 @@ function ReposBody({ repos, agents }: { repos: Repo[]; agents: Agent[] }) {
           )}
         </div>
       ))}
+      {onLinkRepo && <LinkRepoRow onLink={onLinkRepo} />}
     </div>
   );
 }
@@ -1221,7 +1259,7 @@ function DirectorBar({ director, fleetStrategy, onDirectorDrive }: {
  * no write-back in this slice.
  */
 export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onStrategy, onTogglePin,
-  onDirectorDrive, onSyncLabels, syncState, sectionKeys, sections, highlight, focus }: {
+  onLinkRepo, onDirectorDrive, onSyncLabels, syncState, sectionKeys, sections, highlight, focus }: {
   data?: ProjectPaneData;
   projectName?: string;
   projectId?: string;
@@ -1239,6 +1277,8 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   onFlow?: (streamId: string, flow: Flow) => void;
   onStrategy?: (streamId: string, strategy: IntegrationStrategy | undefined) => void;
   onTogglePin?: (name: string) => void;
+  /** Manually link a repository (owner/repo) to the project from the repos phase (#677). */
+  onLinkRepo?: (fullName: string) => void;
   onDirectorDrive?: (drive: DirectorDrive) => void;
   // Publish is owned by the planning header's button and the app's Publish flow
   // (#506/#503): the per-section "Sync to GitHub →" / "Push docs →" buttons were
@@ -1311,7 +1351,7 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
       case "context":
         return <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />;
       case "repos":
-        return <ReposBody repos={repos} agents={agents} />;
+        return <ReposBody repos={repos} agents={agents} onLinkRepo={onLinkRepo} />;
       case "automations":
         return <AutomationsBody automations={automations} />;
       case "skills":
