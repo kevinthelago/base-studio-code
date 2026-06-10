@@ -355,6 +355,21 @@ export function mkSection(
 }
 
 /** Seed blueprints — the starter library, depicting every section/pipeline state. */
+/**
+ * Replace persisted built-in blueprints with their current code definitions (by id) and
+ * append any new built-ins, leaving user-created / forked / imported blueprints untouched.
+ * Built-ins are code-owned templates, but `blueprints` is persisted — this lets improvements
+ * (the optional UI stage, enabled repos, updated prompts, …) reach an already-seeded store
+ * instead of being pinned to the version a user first ran (#677).
+ */
+export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
+  const fresh = makeBlueprints();
+  const byId = new Map(fresh.map((b) => [b.id, b]));
+  const merged = persisted.map((b) => (b.origin === "built-in" && byId.has(b.id) ? byId.get(b.id)! : b));
+  for (const b of fresh) if (!merged.some((x) => x.id === b.id)) merged.push(b);
+  return merged;
+}
+
 export function makeBlueprints(): Blueprint[] {
   return [
     {

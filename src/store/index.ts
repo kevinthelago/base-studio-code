@@ -33,7 +33,7 @@ import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/project
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
 import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import type { GradeResult } from "../screens/projects/grading";
-import { makeBlueprints, cloneSections, mkSection, blueprintToStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
+import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
@@ -2359,6 +2359,15 @@ export const useAppStore = create<AppStore>()(
             }
             return next;
           });
+        }
+        // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned
+        // templates, but `blueprints` is persisted — so improvements to a built-in (the
+        // `optional` UI stage, enabled repos, updated prompts, …) would never reach a user
+        // who seeded their store before the change. We replace each persisted built-in with
+        // its current definition (by id) and add any new built-ins; user-created / forked /
+        // imported blueprints are left untouched.
+        if (state?.blueprints) {
+          state.blueprints = refreshBuiltIns(state.blueprints);
         }
         // Release the gate once hydration settles — on success or error — so the
         // shell never hangs on a blank canvas (on error the store keeps defaults).
