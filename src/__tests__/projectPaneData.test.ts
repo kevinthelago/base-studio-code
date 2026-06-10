@@ -104,6 +104,18 @@ describe("buildProjectPaneData", () => {
     expect(d.repos[1].agents).toEqual([]);
   });
 
+  it("repos carry clone status + a planned branch per owning stream (#674)", () => {
+    const fleet = fleetWith([
+      { id: "stream-api", name: "@api", repo: "o/api", owns: [], issues: ["42", "43"], dependsOn: [] },
+    ]);
+    const d = buildProjectPaneData(base({ fleet, repos: ["o/api", "o/web"], clonedNames: ["o/api"] }));
+    expect(d.repos[0].cloned).toBe(true);
+    expect(d.repos[1].cloned).toBe(false);
+    // one planned branch (= the owning stream), tagged with its first numeric issue
+    expect(d.repos[0].branches).toEqual([{ n: "stream-api", issue: 42, state: "draft", ahead: 0, behind: 0 }]);
+    expect(d.repos[1].branches).toEqual([]);
+  });
+
   it("phases + issues -> milestones with issues; sub items come from acceptance", () => {
     const phases = [{ name: "Phase 1" }, { name: "Phase 2" }];
     const issues: PlanIssue[] = [

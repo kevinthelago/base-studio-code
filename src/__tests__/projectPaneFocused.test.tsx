@@ -45,12 +45,17 @@ describe("ProjectPane focused mode (#652)", () => {
   // #674 — the focused planner shows REAL data (empty states), never the sample mocks.
   const reposPhase = { phases: [ph("repos", "Repos", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
 
-  it("lists the linked repositories in the repos phase", () => {
-    const data = { agents: [], repos: [{ id: "acme/web", branch: "main", ahead: 0, behind: 0, agents: [], primary: true, branches: [] }],
-      structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+  it("lists the linked repositories with tiles, clone status, and branch chips", () => {
+    const data = { agents: [], repos: [
+      { id: "acme/web", branch: "main", ahead: 0, behind: 0, agents: [], primary: true, cloned: true,
+        branches: [{ n: "stream-ui", issue: 12, state: "draft", ahead: 0, behind: 0 }] },
+    ], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
     render(<ProjectPane data={data} focus={baseFocus(reposPhase)} />);
     expect(screen.getByText("acme/web")).toBeInTheDocument();
     expect(screen.getByText("primary")).toBeInTheDocument();
+    expect(screen.getByText("● cloned")).toBeInTheDocument();        // clone status
+    expect(screen.getByText("repositories")).toBeInTheDocument();     // tile
+    expect(screen.getByText(/stream-ui/)).toBeInTheDocument();        // planned branch chip
   });
 
   it("shows an empty state (no mock repos) when none are linked", () => {
