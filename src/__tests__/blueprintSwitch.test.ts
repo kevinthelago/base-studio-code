@@ -16,6 +16,7 @@ describe("blueprint-per-project + reset (#647)", () => {
       planSections: { p: { goal: "# Goal" } },
       planConfirmedSections: { p: ["goal"] },
       planAutomations: { p: [] },
+      projectLocalRepos: { p: ["o/r"] },
     });
   });
 
@@ -38,6 +39,7 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(s.planSections["p"]).toBeUndefined();
     expect(s.planConfirmedSections["p"]).toBeUndefined();
     expect(s.planAutomations["p"]).toBeUndefined();
+    expect(s.projectLocalRepos["p"]).toBeUndefined(); // repos unlinked (#664)
   });
 
   it("is a no-op for an unknown blueprint", () => {

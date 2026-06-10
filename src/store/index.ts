@@ -1910,6 +1910,7 @@ export const useAppStore = create<AppStore>()(
             stagePreview:          drop(s.stagePreview),
             stagePipelineRuns:     drop(s.stagePipelineRuns),
             pinnedContext:         drop(s.pinnedContext),
+            projectLocalRepos:     drop(s.projectLocalRepos),
             planStageConfig:    { ...s.planStageConfig, [projectId]: blueprintToStageConfig(bp) },
             projectBlueprintId: { ...s.projectBlueprintId, [projectId]: blueprintId },
           };
@@ -2125,6 +2126,8 @@ export const useAppStore = create<AppStore>()(
           stagePreview:          omitKey(s.stagePreview),
           stagePipelineRuns:     omitKey(s.stagePipelineRuns),
           pinnedContext:         omitKey(s.pinnedContext),
+          // clear means clear: unlink the project's repos so the repos stage resets (#664).
+          projectLocalRepos:     omitKey(s.projectLocalRepos),
           };
         }),
 
