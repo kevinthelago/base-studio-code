@@ -27,6 +27,8 @@ export interface Phase {
   status: PhaseStatus;
   /** Gate fill 0..1 for the in-progress fraction. */
   fraction: number;
+  /** An optional stage — shown but never required (#676). */
+  optional?: boolean;
 }
 
 /**
@@ -48,7 +50,7 @@ export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): 
     else status = current && s.key === current.key ? "active" : "upcoming";
     return {
       key: s.key, name: s.name, glyph: s.glyph, blurb: s.blurb, gate: s.gate,
-      index: i, total: visible.length, status, fraction: st.fraction,
+      index: i, total: visible.length, status, fraction: st.fraction, optional: s.optional,
     };
   });
 }

@@ -78,6 +78,10 @@ export interface SectionDef {
   /** Optional applicability rule (e.g. UI only when the project needs a UI). Absent ⇒
    *  the section always applies. */
   appliesWhen?: Requirement;
+  /** An OPTIONAL section is shown but never required: it doesn't block plan completion or
+   *  downstream dependents, and it's off the critical path (currentSection skips it) — the
+   *  user can fill it or skip it (#676). */
+  optional?: boolean;
   /** Output disposition (#609) — what happens to this stage's artifact (a key into
    *  DISPOSITIONS: plan-file / issues / milestones / skill-index / knowledge / scratch).
    *  Editor metadata; the runtime doesn't read it. Absent ⇒ defaultDisposition(key). */
@@ -335,11 +339,14 @@ export const DEFAULT_BLUEPRINT_ID = "default";
 /** Build a section instance from a def key + per-blueprint overrides. */
 export function mkSection(
   key: string,
-  { enabled = true, expanded = false, pipelines = [] as [string, PipelineTrigger?, boolean?][] } = {},
+  { enabled = true, expanded = false, optional, pipelines = [] as [string, PipelineTrigger?, boolean?][] }:
+    { enabled?: boolean; expanded?: boolean; optional?: boolean; pipelines?: [string, PipelineTrigger?, boolean?][] } = {},
 ): BlueprintSection {
   const def = SECTION_DEFS[key];
   return {
     uid: uid("sec"), key, ...def, enabled, expanded,
+    // explicit `optional` overrides the def's; otherwise inherit it
+    optional: optional ?? def.optional,
     pipelines: pipelines.map(([libId, trigger, on]) => {
       const lib = PIPELINE_LIB.find((p) => p.id === libId)!;
       return { uid: uid("pl"), ...lib, trigger: trigger ?? "on completion", enabled: on !== false };
@@ -355,7 +362,7 @@ export function makeBlueprints(): Blueprint[] {
       sections: [
         mkSection("context",     { pipelines: [["lint-plan", "on completion", true]] }),
         mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
-        mkSection("ui",          { pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
+        mkSection("ui",          { optional: true, pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", false]] }),
         mkSection("permissions", { pipelines: [] }),
         mkSection("automations", { pipelines: [["arm-schedule", "on completion", true]] }),
@@ -564,6 +571,7 @@ function depSatisfied(depKey: string, byKey: Record<string, BlueprintSection>, s
   const dep = byKey[depKey];
   if (!dep) return true;        // this blueprint doesn't include the dep
   if (!dep.enabled) return true;
+  if (dep.optional) return true;        // optional deps never block dependents (#676)
   if (!gateApplies(dep.appliesWhen, signals)) return true;
   return sectionDone(dep, signals).done;
 }
@@ -577,7 +585,9 @@ export function sectionStatus(
   sections: BlueprintSection[],
   signals: PlanSignals,
 ): { status: SectionRenderStatus; fraction: number } {
-  if (!gateApplies(section.appliesWhen, signals)) return { status: "na", fraction: 0 };
+  // An optional section is always shown (it bypasses appliesWhen) — it's just never
+  // required; non-optional sections still go N/A when their applicability rule fails (#676).
+  if (!section.optional && !gateApplies(section.appliesWhen, signals)) return { status: "na", fraction: 0 };
   const g = sectionDone(section, signals);
   if (g.done) return { status: "complete", fraction: 1 };
   const byKey: Record<string, BlueprintSection> = Object.fromEntries(sections.map((s) => [s.key, s]));
@@ -593,6 +603,7 @@ export function enabledSections(sections: BlueprintSection[]): BlueprintSection[
 /** Whether every enabled, applicable section is complete — the triage readiness gate. */
 export function planSectionsComplete(sections: BlueprintSection[], signals: PlanSignals): boolean {
   return enabledSections(sections).every((s) => {
+    if (s.optional) return true;        // optional sections never block completion (#676)
     const { status } = sectionStatus(s, sections, signals);
     return status === "complete" || status === "na";
   });
@@ -604,7 +615,9 @@ export function planSectionsComplete(sections: BlueprintSection[], signals: Plan
  * one. Drives which pipelines' second screens render.
  */
 export function currentSection(sections: BlueprintSection[], signals: PlanSignals): BlueprintSection | undefined {
-  const applicable = enabledSections(sections).filter((s) => gateApplies(s.appliesWhen, signals));
+  // Optional sections are off the critical path — they never become the "current" stage,
+  // so an unfinished optional section (e.g. UI) doesn't stall the flow (#676).
+  const applicable = enabledSections(sections).filter((s) => !s.optional && gateApplies(s.appliesWhen, signals));
   const active = applicable.find((s) => sectionStatus(s, sections, signals).status === "in-progress");
   return active ?? applicable[applicable.length - 1];
 }
