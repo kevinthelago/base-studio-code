@@ -542,6 +542,19 @@ export function blueprintToStageConfig(bp: Blueprint): StageConfig {
 /** Render status of a blueprint section. `na` = not applicable to this project. */
 export type SectionRenderStatus = "locked" | "in-progress" | "complete" | "na";
 
+/** The signal that marks an informational (gateless) section confirmed/complete (#664). */
+export const confirmedSignal = (key: string) => `confirmed:${key}`;
+
+/** Whether a section is done. A section WITH a declarative gate uses {@link evalGate}. A
+ *  gateless ("informational") section is NOT vacuously complete — it's done only when the
+ *  planner confirms it (a `confirmed:<key>` signal), so a fresh/cleared plan shows it as
+ *  in-progress rather than ✓ (#664). */
+export function sectionDone(section: BlueprintSection, signals: PlanSignals): { done: boolean; fraction: number } {
+  if (section.gateRule) return evalGate(section.gateRule, signals);
+  const ok = signals[confirmedSignal(section.key)] === true;
+  return { done: ok, fraction: ok ? 1 : 0 };
+}
+
 /** A dependency is satisfied when the blueprint omits it, it's disabled, it's N/A, or
  *  its own gate is complete. Mirrors the registry's dep rule, but over blueprint data. */
 function depSatisfied(depKey: string, byKey: Record<string, BlueprintSection>, signals: PlanSignals): boolean {
@@ -549,7 +562,7 @@ function depSatisfied(depKey: string, byKey: Record<string, BlueprintSection>, s
   if (!dep) return true;        // this blueprint doesn't include the dep
   if (!dep.enabled) return true;
   if (!gateApplies(dep.appliesWhen, signals)) return true;
-  return evalGate(dep.gateRule, signals).done;
+  return sectionDone(dep, signals).done;
 }
 
 /**
@@ -562,7 +575,7 @@ export function sectionStatus(
   signals: PlanSignals,
 ): { status: SectionRenderStatus; fraction: number } {
   if (!gateApplies(section.appliesWhen, signals)) return { status: "na", fraction: 0 };
-  const g = evalGate(section.gateRule, signals);
+  const g = sectionDone(section, signals);
   if (g.done) return { status: "complete", fraction: 1 };
   const byKey: Record<string, BlueprintSection> = Object.fromEntries(sections.map((s) => [s.key, s]));
   const locked = (section.deps || []).some((d) => !depSatisfied(d, byKey, signals));
