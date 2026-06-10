@@ -171,34 +171,46 @@
 .fp .fp-top .pulse { display: inline-flex; align-items: center; gap: 5px;
   font-family: var(--mono); font-size: 9px; color: var(--fg-muted); }
 
-/* stepper */
-.fp .stepper { flex: 0 0 auto; padding: 13px 14px 9px; border-bottom: 1px solid var(--border-soft); background: var(--bg-panel); }
-.fp .stepper-track { display: flex; align-items: center; gap: 0; }
-.fp .step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
-  flex: 0 0 auto; cursor: pointer; background: none; border: none; padding: 0; }
-.fp .step-node { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center;
-  justify-content: center; font-family: var(--mono); font-size: 10px; font-weight: 600;
-  border: 1.5px solid var(--border); background: var(--bg-elev); color: var(--fg-dim);
-  transition: all .16s; z-index: 1; position: relative; }
-.fp .step.complete .step-node { background: color-mix(in oklch, var(--success), transparent 80%); border-color: var(--success); color: var(--success); }
-.fp .step.active .step-node { background: var(--accent); border-color: var(--accent); color: #1a120a;
-  box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); }
-.fp .step.locked .step-node { border-style: dashed; color: var(--fg-dim); }
-.fp .step.upcoming .step-node { color: var(--fg-dim); }
-.fp .step.selected .step-node { outline: 2px solid var(--accent); outline-offset: 2px; }
-.fp .step.attn .step-node { border-color: var(--danger); color: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger), transparent 75%); animation: pulse 1.1s ease-in-out infinite; }
-.fp .step.attn .step-label { color: var(--danger); }
-.fp .step-label { font-family: var(--mono); font-size: 8.5px; letter-spacing: .02em;
-  color: var(--fg-dim); white-space: nowrap; max-width: 58px; overflow: hidden; text-overflow: ellipsis; }
-.fp .step.active .step-label, .fp .step.selected .step-label { color: var(--fg); }
-.fp .step.complete .step-label { color: var(--fg-muted); }
-.fp .step-conn { flex: 1 1 0; height: 2px; background: var(--border); position: relative; top: -10px;
-  margin: 0 -2px; border-radius: 2px; min-width: 8px; }
-.fp .step-conn.fill { background: var(--success); }
-.fp .step .live-ring { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 24px; height: 24px;
-  border-radius: 50%; border: 1.5px solid var(--accent); animation: fp-ring 1.6s ease-out infinite; opacity: 0; pointer-events: none; }
-@keyframes fp-ring { 0% { transform: translateX(-50%) scale(1); opacity: .7; } 100% { transform: translateX(-50%) scale(1.7); opacity: 0; } }
+/* sequenced rail (#668) — ported from the V4 design (bsc-project-planner-progress-bar) */
+.fp .rail-wrap { flex: 0 0 auto; padding: 18px 16px 9px; border-bottom: 1px solid var(--border-soft); background: var(--bg-panel); }
+.fp .rail { display: flex; align-items: center; }
+.fp .rail-seg { flex: 1; display: flex; flex-direction: column; align-items: center; position: relative;
+  cursor: pointer; background: none; border: none; padding: 0; min-width: 0; }
+.fp .rail-node { width: 18px; height: 18px; border-radius: 999px; display: grid; place-items: center;
+  font-family: var(--mono); font-size: 9px; font-weight: 700; position: relative; z-index: 2;
+  background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border); color: var(--fg-dim); transition: all .16s; }
+.fp .rail-seg.complete .rail-node { background: var(--success); box-shadow: none; color: oklch(0.20 0.04 145); }
+.fp .rail-seg.active .rail-node { background: var(--accent); color: oklch(0.20 0.04 70);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); animation: rail-ring 2s ease-in-out infinite; }
+.fp .rail-seg.locked .rail-node, .fp .rail-seg.upcoming .rail-node { background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border); color: var(--fg-dim); }
+.fp .rail-seg.ahead .rail-node { background: color-mix(in oklch, var(--success), transparent 12%);
+  box-shadow: inset 0 0 0 1.5px var(--success); color: oklch(0.20 0.04 145); }
+.fp .rail-seg.sel .rail-node { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fp .rail-seg.attn .rail-node { box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger), transparent 70%); animation: pulse 1.1s ease-in-out infinite; }
+/* "now" + "banked" pills above the node */
+.fp .rail-now { position: absolute; top: -15px; font-family: var(--mono); font-size: 8px; font-weight: 700;
+  letter-spacing: .08em; color: var(--accent); white-space: nowrap; }
+.fp .rail-banked { position: absolute; top: -15px; font-family: var(--mono); font-size: 8px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--success);
+  background: color-mix(in oklch, var(--success), transparent 88%);
+  border: 1px solid color-mix(in oklch, var(--success), transparent 65%); border-radius: 999px; padding: 1px 5px; white-space: nowrap; }
+/* label */
+.fp .rail-label { font-family: var(--mono); font-size: 9px; margin-top: 7px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-align: center; color: var(--fg-dim); }
+.fp .rail-seg.complete .rail-label { color: var(--fg-muted); }
+.fp .rail-seg.active .rail-label, .fp .rail-seg.sel .rail-label { color: var(--accent); font-weight: 600; }
+.fp .rail-seg.ahead .rail-label { color: var(--success); }
+.fp .rail-seg.attn .rail-label { color: var(--danger); }
+/* connectors (aligned to node centers) */
+.fp .rail-conn { flex: 1 1 0; height: 2px; min-width: 8px; position: relative; top: -9px; margin: 0 -2px; border-radius: 2px; }
+.fp .rail-conn.solid { background: var(--success); }
+.fp .rail-conn.partial { background: linear-gradient(90deg, var(--accent) 0%, var(--border) 100%); }
+.fp .rail-conn.dim { background: var(--border-soft); }
+.fp .rail-conn.dashed { background-color: transparent; background-image: repeating-linear-gradient(90deg, var(--fg-dim) 0 4px, transparent 4px 9px); }
+@keyframes rail-ring {
+  0%,100% { box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); }
+  50%     { box-shadow: 0 0 0 6px color-mix(in oklch, var(--accent), transparent 88%); }
+}
 
 /* phase header */
 .fp .ph-head { flex: 0 0 auto; padding: 14px 16px 13px; border-bottom: 1px solid var(--border-soft);

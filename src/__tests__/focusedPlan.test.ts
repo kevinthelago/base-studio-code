@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady,
+  phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, connectorKind,
+  type Phase, type PhaseStatus,
 } from "../screens/projects/focusedPlan";
 import { confirmedSignal, type BlueprintSection } from "../screens/projects/blueprints";
 import type { PlanSignals } from "../screens/projects/stageGate";
@@ -41,6 +42,27 @@ describe("phasesFrom (#652)", () => {
     // confirm c → complete.
     const p2 = phasesFrom(SECTIONS, { a: true, b: true, showC: true, [confirmedSignal("c")]: true });
     expect(p2.find((x) => x.key === "c")!.status).toBe("complete");
+  });
+});
+
+describe("ahead (banked) + connectorKind (#668)", () => {
+  // a (done) → b (deps a, NOT done) → c (gateless, confirmed = done out of sequence)
+  it("marks a complete section past the current one as 'ahead'", () => {
+    const p = phasesFrom(SECTIONS, { a: true, showC: true, [confirmedSignal("c")]: true });
+    // a complete (behind), b active (current), c complete-but-past-current → ahead
+    expect(p.find((x) => x.key === "a")!.status).toBe("complete");
+    expect(p.find((x) => x.key === "b")!.status).toBe("active");
+    expect(p.find((x) => x.key === "c")!.status).toBe("ahead");
+  });
+
+  it("connectorKind: solid behind · partial at current · dashed to/from ahead · dim else", () => {
+    const ph = (status: PhaseStatus) => ({ status } as unknown as Phase);
+    const list = [ph("complete"), ph("active"), ph("ahead"), ph("upcoming")];
+    expect(connectorKind(list, 0)).toBe("solid");   // complete → …
+    expect(connectorKind(list, 1)).toBe("partial");  // active → …
+    expect(connectorKind(list, 2)).toBe("dashed");   // ahead → …
+    expect(connectorKind([ph("upcoming"), ph("ahead")], 0)).toBe("dashed"); // next is ahead
+    expect(connectorKind([ph("locked"), ph("upcoming")], 0)).toBe("dim");
   });
 });
 
