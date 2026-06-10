@@ -1668,6 +1668,7 @@ describe("clearPlan (#505)", () => {
       stagePreview: { myproj: { srcDoc: "<html>", mode: "2d" } },
       stagePipelineRuns: { myproj: { p1: { status: "ok" } as never } },
       pinnedContext: { myproj: ["x"] },
+      projectLocalRepos: { myproj: ["o/r"], other: ["o/keep"] },
     })
   );
 
@@ -1687,8 +1688,10 @@ describe("clearPlan (#505)", () => {
     expect(s.stagePreview["myproj"]).toBeUndefined();
     expect(s.stagePipelineRuns["myproj"]).toBeUndefined();
     expect(s.pinnedContext["myproj"]).toBeUndefined();
+    expect(s.projectLocalRepos["myproj"]).toBeUndefined(); // repos unlinked (#664)
     // other project untouched
     expect(s.planSections["other"]).toEqual({ scope: "# Scope" });
+    expect(s.projectLocalRepos["other"]).toEqual(["o/keep"]);
   });
 
   it("is a no-op for a key that has no plan data", () => {
