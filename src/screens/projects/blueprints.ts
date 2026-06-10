@@ -354,7 +354,7 @@ export function makeBlueprints(): Blueprint[] {
       id: "default", name: "Default", desc: "Balanced starting point", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
         mkSection("context",     { pipelines: [["lint-plan", "on completion", true]] }),
-        mkSection("repos",       { enabled: false, pipelines: [["index-repos", "on section enter", true]] }),
+        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
         mkSection("ui",          { pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", false]] }),
         mkSection("permissions", { pipelines: [] }),

@@ -60,6 +60,16 @@ describe("LibraryView (#609 slice 4)", () => {
     expect(onMenu).toHaveBeenCalledWith("duplicate", expect.objectContaining({ id: list[0].id }), expect.anything());
   });
 
+  it("a card counts only enabled stages — disabled sections aren't shown (#672)", () => {
+    const bp: Blueprint = { id: "x", name: "zed", desc: "d", sections: [
+      { uid: "s1", key: "context", name: "Context", glyph: "◆", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, pipelines: [] },
+      { uid: "s2", key: "repos", name: "Repos", glyph: "⑂", gate: "", deps: [], blurb: "", prompt: "", enabled: false, expanded: false, pipelines: [] },
+    ] };
+    render(<LibraryView blueprints={[bp]} onOpen={noop} onMenu={noop} onNew={noop} onImport={noop} />);
+    const card = screen.getByRole("heading", { name: /zed/, level: 3 }).closest(".bp-card")!;
+    expect(within(card as HTMLElement).getByText("1 stages")).toBeInTheDocument(); // disabled repos excluded
+  });
+
   it("New card + header New button call onNew", () => {
     const onNew = vi.fn();
     render(<LibraryView blueprints={bps()} onOpen={noop} onMenu={noop} onNew={onNew} onImport={noop} />);
