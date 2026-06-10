@@ -618,14 +618,27 @@ function ContextA({ context = CONTEXT, onTogglePin, onView }: {
   if (items.length === 0) {
     return <PaneEmpty>No context files yet — the planner writes one per discovery topic (goal, scope, stack, …) as you work this stage.</PaneEmpty>;
   }
+  // Real pinned-context budget — the sum of the pinned files' token estimates (#674),
+  // not a hardcoded figure. Segments tint the bar by kind.
+  const totalTok = pinned.reduce((s, f) => s + (parseFloat(f.tok) || 0), 0);
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 2px 7px" }}>
         <span className="ulabel">pinned to context</span>
         <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)" }}>✦ {pinned.length}</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>~6.7k tok</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{totalTok.toFixed(1)}k / 200k tok</span>
       </div>
+      {pinned.length > 0 && (
+        <div style={{ display: "flex", height: 4, borderRadius: 999, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 10 }}>
+          {pinned.map((f) => (
+            <span key={f.name} style={{
+              width: `${((parseFloat(f.tok) || 0) / 200) * 100}%`,
+              background: CTX_KIND[f.kind] || "var(--fg-dim)",
+            }} />
+          ))}
+        </div>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
         {pinned.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} onView={onView ? () => onView(f) : undefined} />)}
       </div>
