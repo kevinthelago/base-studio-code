@@ -17,7 +17,7 @@ import {
 } from "./integrationStrategy";
 import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, PhaseGroup, SubItem, ContextFile,
-  ProjectPaneData,
+  ProjectPaneData, PaneAutomation, PaneSkill,
 } from "./projectPane.types";
 
 /* =================================================================
@@ -504,6 +504,190 @@ function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void
 }
 
 // VARIANT A — Pinned vs Library, two sections
+/** Empty-state hint for a focused phase whose data the planner hasn't produced yet. */
+function PaneEmpty({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.6,
+      border: "1px dashed var(--border-soft)", borderRadius: 8, padding: "16px 18px", textAlign: "center",
+    }}>{children}</div>
+  );
+}
+
+/** A small count tile for the repos header. */
+function RepoTile({ v, k }: { v: number; k: string }) {
+  return (
+    <div style={{ flex: 1, border: "1px solid var(--border-soft)", borderRadius: 8, padding: "8px 10px", background: "var(--bg-elev)" }}>
+      <div style={{ fontFamily: "var(--mono)", fontSize: 17, fontWeight: 600, color: "var(--fg)" }}>{v}</div>
+      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", letterSpacing: ".04em" }}>{k}</div>
+    </div>
+  );
+}
+
+const BRANCH_COLOR: Record<string, string> = { review: "var(--success)", draft: "var(--fg-dim)" };
+const branchTint = (state: string) => BRANCH_COLOR[state] ?? "var(--info)";
+
+/** A monochrome chip (lang, branch). */
+function RepoChip({ children, color, border }: { children: React.ReactNode; color?: string; border?: string }) {
+  return (
+    <span style={{
+      fontFamily: "var(--mono)", fontSize: 9.5, color: color ?? "var(--fg-muted)",
+      border: `1px solid ${border ?? "var(--border-soft)"}`, borderRadius: 999, padding: "1px 7px", whiteSpace: "nowrap",
+    }}>{children}</span>
+  );
+}
+
+/** Inline "link a repository" control — type owner/repo and add it to the project (#677). */
+function LinkRepoRow({ onLink }: { onLink: (fullName: string) => void }) {
+  const [val, setVal] = useState("");
+  const ok = /^[^/\s]+\/[^/\s]+$/.test(val.trim());
+  const submit = () => { if (ok) { onLink(val.trim()); setVal(""); } };
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      <input
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+        placeholder="＋ link a repository (owner/repo)"
+        aria-label="Link a repository"
+        style={{
+          flex: 1, fontFamily: "var(--mono)", fontSize: 11, padding: "7px 9px", borderRadius: 6,
+          border: "1px solid var(--border-soft)", background: "var(--bg-canvas)", color: "var(--fg)",
+        }}
+      />
+      <button
+        onClick={submit}
+        disabled={!ok}
+        style={{
+          fontFamily: "var(--mono)", fontSize: 11, padding: "0 12px", borderRadius: 6, cursor: ok ? "pointer" : "default",
+          border: "1px solid " + (ok ? "var(--accent-dim)" : "var(--border-soft)"), background: ok ? "color-mix(in oklch,var(--accent),transparent 86%)" : "transparent",
+          color: ok ? "var(--accent)" : "var(--fg-dim)",
+        }}
+      >link</button>
+    </div>
+  );
+}
+
+/**
+ * The repos phase body (#674) — mirrors the design's ReposView: a tile header
+ * (repositories / cloned / branches) and one card per repo with its clone status,
+ * language, description, branch + ahead/behind, working-agent avatars, and the planned
+ * branch chips (one per owning stream). Fields the planning stage doesn't have yet
+ * (language, description, live ahead/behind) are simply omitted. `onLinkRepo` enables a
+ * manual link control (#677).
+ */
+function ReposBody({ repos, agents, onLinkRepo }: { repos: Repo[]; agents: Agent[]; onLinkRepo?: (fullName: string) => void }) {
+  if (repos.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <PaneEmpty>No repositories linked yet — link one below, or ask the planner to create/link them.</PaneEmpty>
+        {onLinkRepo && <LinkRepoRow onLink={onLinkRepo} />}
+      </div>
+    );
+  }
+  const clonedCount = repos.filter(r => r.cloned).length;
+  const branchCount = repos.reduce((n, r) => n + r.branches.length, 0);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <RepoTile v={repos.length} k="repositories" />
+        <RepoTile v={clonedCount} k="cloned" />
+        <RepoTile v={branchCount} k="branches" />
+      </div>
+      {repos.map((r) => (
+        <div key={r.id} style={{
+          border: `1px solid ${r.primary ? "var(--accent-dim)" : "var(--border-soft)"}`, borderRadius: 8, padding: "11px 13px",
+          background: r.primary ? "color-mix(in oklch, var(--accent), transparent 93%)" : "var(--bg-elev)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className={"sdot " + (r.cloned ? "on" : "idle")} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{r.id}</span>
+            {r.primary && <RepoChip color="var(--accent)" border="var(--accent-dim)">primary</RepoChip>}
+            <span style={{ flex: 1 }} />
+            {r.lang && <RepoChip>{r.lang}</RepoChip>}
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: r.cloned ? "var(--success)" : "var(--fg-dim)" }}>
+              {r.cloned ? "● cloned" : "○ link only"}
+            </span>
+          </div>
+          {r.desc && <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", margin: "7px 0 0" }}>{r.desc}</div>}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+            <RepoChip>⎇ {r.branch}</RepoChip>
+            {r.ahead > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--success)" }}>↑{r.ahead}</span>}
+            {r.behind > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--info)" }}>↓{r.behind}</span>}
+            <span style={{ flex: 1 }} />
+            {r.agents.length > 0 && (
+              <span style={{ display: "inline-flex" }}>
+                {r.agents.map((id, i) => (
+                  <span key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={15} agents={agents} /></span>
+                ))}
+              </span>
+            )}
+          </div>
+          {r.branches.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
+              {r.branches.map((b) => (
+                <RepoChip key={b.n} color={branchTint(b.state)}>
+                  ⎇ {b.n}{b.issue > 0 && <span style={{ color: "var(--fg-dim)" }}> #{b.issue}</span>}
+                </RepoChip>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      {onLinkRepo && <LinkRepoRow onLink={onLinkRepo} />}
+    </div>
+  );
+}
+
+/** The automations phase body (#674) — the cron automations the planner proposed. */
+function AutomationsBody({ automations }: { automations: PaneAutomation[] }) {
+  if (automations.length === 0) {
+    return <PaneEmpty>No automations yet — the planner can propose scheduled commands or knowledge injections at this stage.</PaneEmpty>;
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <RepoTile v={automations.length} k="automations" />
+        <RepoTile v={automations.filter(a => a.schedule).length} k="scheduled" />
+      </div>
+      {automations.map((a, i) => (
+        <div key={a.name + i} style={{ border: "1px solid var(--border-soft)", borderRadius: 8, padding: "10px 12px", background: "var(--bg-elev)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <RepoChip color="var(--accent)" border="var(--accent-dim)">⌘ command</RepoChip>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{a.name}</span>
+            <span style={{ flex: 1 }} />
+            {a.schedule && <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)" }}>{a.schedule}</span>}
+          </div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", marginTop: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.command}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The skills phase body (#674) — reusable skills/knowledge attached to the blueprint. */
+function SkillsBody({ skills }: { skills: PaneSkill[] }) {
+  if (skills.length === 0) {
+    return <PaneEmpty>No skills attached — the planner can attach reusable skills or knowledge blocks for the fleet at this stage.</PaneEmpty>;
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="ulabel" style={{ padding: "2px 2px 4px" }}>{skills.length} attached to this project</div>
+      {skills.map((s, i) => (
+        <div key={s.name + i} style={{ border: "1px solid var(--border-soft)", borderRadius: 8, padding: "10px 12px", background: "var(--bg-elev)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <RepoChip color={s.kind === "kb" ? "var(--info)" : "var(--accent)"} border={s.kind === "kb" ? "color-mix(in oklch,var(--info),transparent 70%)" : "var(--accent-dim)"}>
+              {s.kind === "kb" ? "✦ knowledge" : "⚡ skill"}
+            </RepoChip>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{s.name}</span>
+          </div>
+          {s.desc && <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", marginTop: 6, lineHeight: 1.45 }}>{s.desc}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ContextA({ context = CONTEXT, onTogglePin, onView }: {
   context?: ContextFile[]; onTogglePin?: (name: string) => void; onView?: (f: ContextFile) => void;
 }) {
@@ -518,14 +702,30 @@ function ContextA({ context = CONTEXT, onTogglePin, onView }: {
   };
   const pinned = items.filter((f) => f.pinned);
   const lib = items.filter((f) => !f.pinned);
+  if (items.length === 0) {
+    return <PaneEmpty>No context files yet — the planner writes one per discovery topic (goal, scope, stack, …) as you work this stage.</PaneEmpty>;
+  }
+  // Real pinned-context budget — the sum of the pinned files' token estimates (#674),
+  // not a hardcoded figure. Segments tint the bar by kind.
+  const totalTok = pinned.reduce((s, f) => s + (parseFloat(f.tok) || 0), 0);
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 2px 7px" }}>
         <span className="ulabel">pinned to context</span>
         <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)" }}>✦ {pinned.length}</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>~6.7k tok</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{totalTok.toFixed(1)}k / 200k tok</span>
       </div>
+      {pinned.length > 0 && (
+        <div style={{ display: "flex", height: 4, borderRadius: 999, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 10 }}>
+          {pinned.map((f) => (
+            <span key={f.name} style={{
+              width: `${((parseFloat(f.tok) || 0) / 200) * 100}%`,
+              background: CTX_KIND[f.kind] || "var(--fg-dim)",
+            }} />
+          ))}
+        </div>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
         {pinned.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} onView={onView ? () => onView(f) : undefined} />)}
       </div>
@@ -1059,7 +1259,7 @@ function DirectorBar({ director, fleetStrategy, onDirectorDrive }: {
  * no write-back in this slice.
  */
 export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onStrategy, onTogglePin,
-  onDirectorDrive, onSyncLabels, syncState, sectionKeys, sections, highlight, focus }: {
+  onLinkRepo, onDirectorDrive, onSyncLabels, syncState, sectionKeys, sections, highlight, focus }: {
   data?: ProjectPaneData;
   projectName?: string;
   projectId?: string;
@@ -1077,6 +1277,8 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   onFlow?: (streamId: string, flow: Flow) => void;
   onStrategy?: (streamId: string, strategy: IntegrationStrategy | undefined) => void;
   onTogglePin?: (name: string) => void;
+  /** Manually link a repository (owner/repo) to the project from the repos phase (#677). */
+  onLinkRepo?: (fullName: string) => void;
   onDirectorDrive?: (drive: DirectorDrive) => void;
   // Publish is owned by the planning header's button and the app's Publish flow
   // (#506/#503): the per-section "Sync to GitHub →" / "Push docs →" buttons were
@@ -1097,11 +1299,17 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   };
 }) {
   const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.phaseStructure.length > 0 || data.context.length > 0);
-  const agents:    Agent[]       = hasData ? data!.agents         : AGENTS;
-  const repos:     Repo[]        = hasData ? data!.repos          : REPOS;
-  const structure: Milestone[]   = hasData ? data!.structure      : STRUCTURE;
-  const phaseStructure: PhaseGroup[] = hasData ? data!.phaseStructure : PHASE_STRUCTURE;
-  const context:   ContextFile[] = hasData ? data!.context        : CONTEXT;
+  // In the focused planner (#652) we render a REAL project — use its data verbatim (empty
+  // arrays ⇒ empty states), never the sample/mock fallback (#674). The mocks are only for
+  // the standalone showcase pane (no focus + no data).
+  const useReal = !!focus || hasData;
+  const agents:    Agent[]       = useReal ? (data?.agents ?? [])         : AGENTS;
+  const repos:     Repo[]        = useReal ? (data?.repos ?? [])          : REPOS;
+  const structure: Milestone[]   = useReal ? (data?.structure ?? [])      : STRUCTURE;
+  const phaseStructure: PhaseGroup[] = useReal ? (data?.phaseStructure ?? []) : PHASE_STRUCTURE;
+  const context:   ContextFile[] = useReal ? (data?.context ?? [])        : CONTEXT;
+  const automations = useReal ? (data?.automations ?? []) : [];
+  const projectSkills = useReal ? (data?.skills ?? []) : [];
   // The grade is produced by the grade-plan pipeline and stored as the structure
   // section's "agent-readiness" grader result (#615 — single source of truth, the
   // sectionGrades store). Its full PlanGrade rides along as `detail` for this report.
@@ -1125,8 +1333,8 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
 
   const running = agents.filter((a) => a.status === "run").length;
   const pinnedCount = context.filter((c) => c.pinned).length;
-  const director = hasData ? data!.director : { enabled: true, drive: "event" as DirectorDrive };
-  const fleetStrategy = hasData ? data!.fleetStrategy : undefined;
+  const director = useReal ? (data?.director ?? { enabled: true, drive: "event" as DirectorDrive }) : { enabled: true, drive: "event" as DirectorDrive };
+  const fleetStrategy = useReal ? data?.fleetStrategy : undefined;
 
   const [viewing, setViewing] = useState<ContextFile | null>(null);
   useEffect(() => {
@@ -1142,7 +1350,16 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
     switch (ph.key) {
       case "context":
         return <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />;
+      case "repos":
+        return <ReposBody repos={repos} agents={agents} onLinkRepo={onLinkRepo} />;
+      case "automations":
+        return <AutomationsBody automations={automations} />;
+      case "skills":
+        return <SkillsBody skills={projectSkills} />;
       case "structure":
+        if (phaseStructure.length === 0 && structure.length === 0) {
+          return <PaneEmpty>No structure yet — the planner breaks the features into phases and agent-ready issues at this stage.</PaneEmpty>;
+        }
         return (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
@@ -1157,6 +1374,9 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
           </>
         );
       case "permissions":
+        if (agents.length === 0) {
+          return <PaneEmpty>No agents yet — the planner plans the fleet (non-overlapping streams + least-privilege profiles) at this stage.</PaneEmpty>;
+        }
         return (
           <>
             <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />
