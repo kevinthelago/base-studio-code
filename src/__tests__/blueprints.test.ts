@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkSection, computeStatus, reorder, cloneSections, blueprintToStageConfig,
-  sectionStatus, incompleteSections, planSectionsComplete, currentSection,
+  sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal,
   PIPELINE_LIB, SECTION_DEFS, type BlueprintSection,
 } from "../screens/projects/blueprints";
 import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
@@ -101,10 +101,13 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     expect(sectionStatus(structure, secs, sig({ requiresUi: false })).status).toBe("locked");
   });
 
-  it("a section with no registry analog (testing) is informational → complete", () => {
+  it("a gateless (informational) section completes only when confirmed, not vacuously (#664)", () => {
     const secs = [mkSection("context"), mkSection("testing")];
     const testing = secs.find((s) => s.key === "testing")!;
-    expect(sectionStatus(testing, secs, sig()).status).toBe("complete");
+    // not vacuously complete on a fresh/cleared plan
+    expect(sectionStatus(testing, secs, sig()).status).toBe("in-progress");
+    // complete once the section is confirmed
+    expect(sectionStatus(testing, secs, { ...sig(), [confirmedSignal("testing")]: true }).status).toBe("complete");
   });
 
   it("incompleteSections lists each unfinished section with its gate reason", () => {
