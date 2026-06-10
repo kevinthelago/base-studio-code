@@ -67,4 +67,14 @@ describe("ProjectPane focused mode (#652)", () => {
     render(<ProjectPane focus={baseFocus()} />); // context phase active, no data
     expect(screen.getByText(/No context files yet/)).toBeInTheDocument();
   });
+
+  it("computes the real pinned token budget (not a hardcoded total)", () => {
+    const data = { agents: [], repos: [], structure: [], phaseStructure: [], issues: [], context: [
+      { name: "goal.md", kind: "doc", tok: "2.0k", pinned: true, scope: "project", content: "x" },
+      { name: "scope.md", kind: "doc", tok: "1.5k", pinned: true, scope: "project", content: "y" },
+    ] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    render(<ProjectPane data={data} focus={baseFocus()} />); // context phase active
+    expect(screen.getByText("3.5k / 200k tok")).toBeInTheDocument();
+    expect(screen.queryByText(/6\.7k/)).toBeNull(); // old hardcoded value gone
+  });
 });
