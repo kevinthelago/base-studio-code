@@ -22,15 +22,28 @@ describe("Stepper (#652)", () => {
     expect(onSelect).toHaveBeenCalledWith(2);
   });
 
-  it("marks the selected step", () => {
+  it("marks the selected rail node", () => {
     const { container } = render(<Stepper phases={phases} selectedIdx={2} onSelect={vi.fn()} />);
-    expect(container.querySelector(".step.locked.selected")).toBeTruthy();
+    expect(container.querySelector(".seqrail-seg.locked.sel")).toBeTruthy();
   });
 
-  it("pulses highlighted (incomplete) steps via the attn class", () => {
+  it("pulses highlighted (incomplete) nodes via the attn class", () => {
     const { container } = render(<Stepper phases={phases} selectedIdx={0} onSelect={vi.fn()} highlight={new Set(["c"])} />);
-    expect(container.querySelector(".step.locked.attn")).toBeTruthy();
-    expect(container.querySelector(".step.complete.attn")).toBeNull(); // only highlighted keys
+    expect(container.querySelector(".seqrail-seg.locked.attn")).toBeTruthy();
+    expect(container.querySelector(".seqrail-seg.complete.attn")).toBeNull(); // only highlighted keys
+  });
+
+  it("renders an ahead (banked) node with a dashed connector + banked pill", () => {
+    const aheadPhases = [
+      phase({ key: "a", name: "A", status: "active", index: 0 }),
+      phase({ key: "b", name: "B", status: "upcoming", index: 1 }),
+      phase({ key: "c", name: "C", status: "ahead", index: 2 }),
+    ];
+    const { container } = render(<Stepper phases={aheadPhases} selectedIdx={0} onSelect={vi.fn()} />);
+    expect(container.querySelector(".seqrail-seg.ahead")).toBeTruthy();
+    expect(screen.getByText("banked")).toBeInTheDocument();
+    expect(container.querySelector(".seqrail-conn.dashed")).toBeTruthy(); // connector into the banked node
+    expect(screen.getByText("◆ now")).toBeInTheDocument();
   });
 });
 
