@@ -26,6 +26,23 @@ describe("LibraryView (#609 slice 4)", () => {
     expect(screen.getByRole("button", { name: /Import from gist/i })).toBeInTheDocument();
   });
 
+  it("selects a blueprint via Use without opening it; the active card is flagged (#658)", () => {
+    const onOpen = vi.fn();
+    const onUse = vi.fn();
+    const list: Blueprint[] = [
+      { id: "a", name: "Alpha", desc: "", sections: [] },
+      { id: "b", name: "Beta", desc: "", sections: [] },
+    ];
+    render(<LibraryView blueprints={list} onOpen={onOpen} onUse={onUse} onMenu={noop} onNew={noop} onImport={noop} activeId="a" />);
+    // the active card shows the selected badge + an "in use" button
+    expect(screen.getByText("✓ selected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "✓ in use" })).toBeInTheDocument();
+    // clicking another card's "use" selects it without opening
+    fireEvent.click(screen.getByRole("button", { name: "use" }));
+    expect(onUse).toHaveBeenCalledWith("b");
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
   it("opens a blueprint when its card is clicked", () => {
     const onOpen = vi.fn();
     const list = bps();
