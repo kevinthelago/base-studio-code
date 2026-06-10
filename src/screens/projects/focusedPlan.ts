@@ -62,11 +62,14 @@ export type ConnectorKind = "solid" | "partial" | "dashed" | "dim";
 export function connectorKind(phases: Phase[], i: number): ConnectorKind {
   const role = phases[i]?.status;
   const next = phases[i + 1]?.status;
-  // The walked path stays green THROUGH the current (unfinished) section — only the bubble
-  // greys out to show it's not done. So both complete and active segments are solid (#668).
-  if (role === "complete" || role === "active") return "solid";
+  // A banked-ahead node (done out of sequence) is reached by a dashed connector.
   if (role === "ahead" || next === "ahead") return "dashed";
-  return "dim";
+  // The walked path is green UP TO the current node: every connector positioned BEFORE the
+  // active node is solid — including the one leaving a skipped/optional section — so the
+  // green leads INTO the current node, never out of it. Beyond the current node: dim (#668).
+  const activeIdx = phases.findIndex((p) => p.status === "active");
+  const frontier = activeIdx >= 0 ? activeIdx : phases.length;
+  return i < frontier ? "solid" : "dim";
 }
 
 /** Index of the active phase (else the last) — what the selection auto-follows. */

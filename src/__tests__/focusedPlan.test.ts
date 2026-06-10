@@ -55,14 +55,22 @@ describe("ahead (banked) + connectorKind (#668)", () => {
     expect(p.find((x) => x.key === "c")!.status).toBe("ahead");
   });
 
-  it("connectorKind: solid behind + at current · dashed to/from ahead · dim else", () => {
+  it("connectorKind: green up to + INTO the current node, not out of it (#668)", () => {
     const ph = (status: PhaseStatus) => ({ status } as unknown as Phase);
-    const list = [ph("complete"), ph("active"), ph("ahead"), ph("upcoming")];
-    expect(connectorKind(list, 0)).toBe("solid");   // complete → …
-    expect(connectorKind(list, 1)).toBe("solid");    // active → … (track stays green, #668)
-    expect(connectorKind(list, 2)).toBe("dashed");   // ahead → …
-    expect(connectorKind([ph("upcoming"), ph("ahead")], 0)).toBe("dashed"); // next is ahead
-    expect(connectorKind([ph("locked"), ph("upcoming")], 0)).toBe("dim");
+    // complete · complete · active · upcoming · ahead
+    const list = [ph("complete"), ph("complete"), ph("active"), ph("upcoming"), ph("ahead")];
+    expect(connectorKind(list, 0)).toBe("solid"); // complete → complete
+    expect(connectorKind(list, 1)).toBe("solid"); // complete → ACTIVE  (the IN connector is green)
+    expect(connectorKind(list, 2)).toBe("dim");   // ACTIVE → upcoming   (the OUT connector is NOT green)
+    expect(connectorKind(list, 3)).toBe("dashed"); // upcoming → ahead   (banked)
+  });
+
+  it("the connector leaving a SKIPPED section before the active stays green (#668)", () => {
+    const ph = (status: PhaseStatus) => ({ status } as unknown as Phase);
+    // context done · UI skipped/optional (upcoming) · structure active
+    const list = [ph("complete"), ph("upcoming"), ph("active")];
+    expect(connectorKind(list, 0)).toBe("solid"); // context → skipped UI
+    expect(connectorKind(list, 1)).toBe("solid"); // skipped UI → ACTIVE structure (green leads in)
   });
 });
 
