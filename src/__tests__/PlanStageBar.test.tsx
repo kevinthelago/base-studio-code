@@ -16,7 +16,9 @@ const signalsFrom = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
 
 describe("PlanStageBar", () => {
   it("renders one segment per enabled, applicable section (UI hidden when not required)", () => {
-    const sections = defaultSections();
+    // The default UI is now optional (always shown, #676); clear that here so this test
+    // exercises the appliesWhen-hiding path for a required UI section.
+    const sections = defaultSections().map((s) => (s.key === "ui" ? { ...s, optional: false } : s));
     const { container } = render(<PlanStageBar sections={sections} signals={signalsFrom({ requiresUi: false })} />);
     const titles = titlesIn(container);
     const expected = sections.filter((s) => s.enabled && s.key !== "ui").length;

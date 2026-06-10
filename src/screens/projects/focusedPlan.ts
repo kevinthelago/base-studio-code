@@ -27,6 +27,8 @@ export interface Phase {
   status: PhaseStatus;
   /** Gate fill 0..1 for the in-progress fraction. */
   fraction: number;
+  /** An optional stage — shown but never required (#676). */
+  optional?: boolean;
 }
 
 /**
@@ -48,7 +50,7 @@ export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): 
     else status = current && s.key === current.key ? "active" : "upcoming";
     return {
       key: s.key, name: s.name, glyph: s.glyph, blurb: s.blurb, gate: s.gate,
-      index: i, total: visible.length, status, fraction: st.fraction,
+      index: i, total: visible.length, status, fraction: st.fraction, optional: s.optional,
     };
   });
 }
@@ -60,10 +62,14 @@ export type ConnectorKind = "solid" | "partial" | "dashed" | "dim";
 export function connectorKind(phases: Phase[], i: number): ConnectorKind {
   const role = phases[i]?.status;
   const next = phases[i + 1]?.status;
-  if (role === "complete") return "solid";
-  if (role === "active") return "partial";
+  // A banked-ahead node (done out of sequence) is reached by a dashed connector.
   if (role === "ahead" || next === "ahead") return "dashed";
-  return "dim";
+  // The walked path is green UP TO the current node: every connector positioned BEFORE the
+  // active node is solid — including the one leaving a skipped/optional section — so the
+  // green leads INTO the current node, never out of it. Beyond the current node: dim (#668).
+  const activeIdx = phases.findIndex((p) => p.status === "active");
+  const frontier = activeIdx >= 0 ? activeIdx : phases.length;
+  return i < frontier ? "solid" : "dim";
 }
 
 /** Index of the active phase (else the last) — what the selection auto-follows. */

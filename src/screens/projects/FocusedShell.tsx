@@ -32,8 +32,12 @@ export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
               onClick={() => onSelect(i)}
               title={p.name}
             >
-              {p.status === "ahead" && <span className="seqrail-banked">banked</span>}
-              {p.status === "active" && <span className="seqrail-now">◆ now</span>}
+              {/* Fixed-height marker slot — always present so the node never shifts when a
+                  marker appears/disappears on state change (#668). */}
+              <span className="seqrail-marker">
+                {p.status === "active" && <span className="m-now">◆ now</span>}
+                {p.status === "ahead" && <span className="m-banked">banked</span>}
+              </span>
               <span className="seqrail-node">{nodeGlyph(p, i)}</span>
               <span className="seqrail-label">{p.name}</span>
             </button>
@@ -52,6 +56,10 @@ export function PhaseHeader({ phase, pill }: { phase: Phase; pill: GatePill }) {
       <div className="ph-eyebrow">
         <span className="num">PHASE {String(phase.index + 1).padStart(2, "0")} / {String(phase.total).padStart(2, "0")}</span>
         <span>·</span><span>{phase.key}</span>
+        {phase.optional && <span style={{
+          marginLeft: 6, fontSize: 8.5, color: "var(--fg-dim)", border: "1px solid var(--border-soft)",
+          borderRadius: 999, padding: "0 6px", textTransform: "none", letterSpacing: 0,
+        }}>optional</span>}
       </div>
       <div className="ph-title"><h2>{phase.name}</h2></div>
       <p className="ph-blurb">{phase.blurb}</p>

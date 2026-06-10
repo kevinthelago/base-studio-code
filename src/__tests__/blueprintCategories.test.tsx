@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import {
-  blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints, resolveProjectSeed,
+  blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
   type Blueprint,
 } from "../screens/projects/blueprints";
 import { LibraryView } from "../screens/projects/BlueprintLibrary";
@@ -33,6 +33,27 @@ describe("blueprint categories (#645)", () => {
     const def = makeBlueprints().find((b) => b.id === "default")!;
     const repos = def.sections.find((s) => s.key === "repos")!;
     expect(repos.enabled).toBe(true);
+  });
+
+  it("the default blueprint's UI stage is optional (#676)", () => {
+    const def = makeBlueprints().find((b) => b.id === "default")!;
+    expect(def.sections.find((s) => s.key === "ui")!.optional).toBe(true);
+    // other blueprints' UI stays required
+    expect(makeBlueprints().find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "ui")!.optional).toBeFalsy();
+  });
+
+  it("refreshBuiltIns updates stale persisted built-ins but keeps user blueprints (#677)", () => {
+    // a stale persisted built-in (UI not yet optional) + a user blueprint
+    const stale: Blueprint = { id: "default", name: "Default", desc: "old", origin: "built-in",
+      sections: [{ uid: "x", key: "ui", name: "UI", glyph: "▣", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, pipelines: [] }] };
+    const mine: Blueprint = { id: "mine", name: "Mine", desc: "", origin: "local", sections: [] };
+    const out = refreshBuiltIns([stale, mine]);
+    // the built-in is refreshed from code → UI optional again
+    expect(out.find((b) => b.id === "default")!.sections.find((s) => s.key === "ui")!.optional).toBe(true);
+    // the user blueprint is untouched
+    expect(out.find((b) => b.id === "mine")).toBe(mine);
+    // new built-ins (not in the stale set) are added
+    expect(out.some((b) => b.id === "fullstack")).toBe(true);
   });
 
   it("tags every built-in blueprint origin=built-in, incl. the greenfield four (#658)", () => {
