@@ -44,6 +44,11 @@ export interface Repo {
   agents: string[];
   primary: boolean;
   branches: RepoBranch[];
+  /** Whether the repo has been cloned into the project hub (from the clone state). */
+  cloned?: boolean;
+  /** GitHub repo metadata, when known (absent during planning). */
+  lang?: string;
+  desc?: string;
 }
 
 export interface SubItem { t: string; done: boolean }

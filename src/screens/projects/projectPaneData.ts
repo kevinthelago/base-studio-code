@@ -33,6 +33,8 @@ export interface BuildProjectPaneInput {
   issues: PlanIssue[];
   phases: { name: string; description?: string }[];
   repos: string[];
+  /** Full_names cloned into the project hub (clone state) — drives each repo's `cloned`. */
+  clonedNames?: string[];
   sections: Section[];
   /** Context-file names the project has explicitly pinned in the pane (from the
    *  store). When present it drives each context file's `pinned` instead of the
@@ -115,6 +117,11 @@ function buildAgents(input: BuildProjectPaneInput): Agent[] {
 
 function buildRepos(input: BuildProjectPaneInput): Repo[] {
   const streams = input.fleet?.streams ?? [];
+  const cloned = new Set(input.clonedNames ?? []);
+  const firstIssueNum = (refs: string[]): number => {
+    for (const r of refs) { const n = parseInt(String(r).replace(/^#/, ""), 10); if (Number.isFinite(n)) return n; }
+    return 0;
+  };
   return input.repos.map((fullName, i) => ({
     id: fullName,
     branch: "main",
@@ -122,7 +129,13 @@ function buildRepos(input: BuildProjectPaneInput): Repo[] {
     behind: 0,
     agents: streams.filter(s => s.repo === fullName).map(s => s.id),
     primary: i === 0,
-    branches: [],
+    cloned: cloned.has(fullName),
+    // The planned work for this repo: one branch per stream that owns it (branch = stream
+    // id; the issues it owns ride along). Pre-launch these are PLANNED branches; once the
+    // fleet runs the live git state replaces them.
+    branches: streams.filter(s => s.repo === fullName).map(s => ({
+      n: s.id, issue: firstIssueNum(s.issues ?? []), state: "draft", ahead: 0, behind: 0,
+    })),
   }));
 }
 

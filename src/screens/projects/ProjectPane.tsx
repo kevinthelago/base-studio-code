@@ -514,36 +514,87 @@ function PaneEmpty({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The repos phase body: the repositories this project spans, from the plan (#674). */
+/** A small count tile for the repos header. */
+function RepoTile({ v, k }: { v: number; k: string }) {
+  return (
+    <div style={{ flex: 1, border: "1px solid var(--border-soft)", borderRadius: 8, padding: "8px 10px", background: "var(--bg-elev)" }}>
+      <div style={{ fontFamily: "var(--mono)", fontSize: 17, fontWeight: 600, color: "var(--fg)" }}>{v}</div>
+      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", letterSpacing: ".04em" }}>{k}</div>
+    </div>
+  );
+}
+
+const BRANCH_COLOR: Record<string, string> = { review: "var(--success)", draft: "var(--fg-dim)" };
+const branchTint = (state: string) => BRANCH_COLOR[state] ?? "var(--info)";
+
+/** A monochrome chip (lang, branch). */
+function RepoChip({ children, color, border }: { children: React.ReactNode; color?: string; border?: string }) {
+  return (
+    <span style={{
+      fontFamily: "var(--mono)", fontSize: 9.5, color: color ?? "var(--fg-muted)",
+      border: `1px solid ${border ?? "var(--border-soft)"}`, borderRadius: 999, padding: "1px 7px", whiteSpace: "nowrap",
+    }}>{children}</span>
+  );
+}
+
+/**
+ * The repos phase body (#674) — mirrors the design's ReposView: a tile header
+ * (repositories / cloned / branches) and one card per repo with its clone status,
+ * language, description, branch + ahead/behind, working-agent avatars, and the planned
+ * branch chips (one per owning stream). Fields the planning stage doesn't have yet
+ * (language, description, live ahead/behind) are simply omitted.
+ */
 function ReposBody({ repos, agents }: { repos: Repo[]; agents: Agent[] }) {
   if (repos.length === 0) {
     return <PaneEmpty>No repositories linked yet — the planner links them in this stage as you decide what the project spans.</PaneEmpty>;
   }
+  const clonedCount = repos.filter(r => r.cloned).length;
+  const branchCount = repos.reduce((n, r) => n + r.branches.length, 0);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div className="ulabel" style={{ padding: "2px 2px 4px" }}>{repos.length} {repos.length === 1 ? "repository" : "repositories"}</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <RepoTile v={repos.length} k="repositories" />
+        <RepoTile v={clonedCount} k="cloned" />
+        <RepoTile v={branchCount} k="branches" />
+      </div>
       {repos.map((r) => (
         <div key={r.id} style={{
-          border: "1px solid var(--border-soft)", borderRadius: 8, padding: "10px 12px",
-          background: r.primary ? "color-mix(in oklch, var(--accent), transparent 92%)" : "var(--bg-elev)",
+          border: `1px solid ${r.primary ? "var(--accent-dim)" : "var(--border-soft)"}`, borderRadius: 8, padding: "11px 13px",
+          background: r.primary ? "color-mix(in oklch, var(--accent), transparent 93%)" : "var(--bg-elev)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="sdot on" />
+            <span className={"sdot " + (r.cloned ? "on" : "idle")} />
             <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{r.id}</span>
-            {r.primary && <span style={{
-              fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)",
-              border: "1px solid var(--accent-dim)", borderRadius: 999, padding: "1px 7px",
-            }}>primary</span>}
+            {r.primary && <RepoChip color="var(--accent)" border="var(--accent-dim)">primary</RepoChip>}
             <span style={{ flex: 1 }} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>⎇ {r.branch}</span>
+            {r.lang && <RepoChip>{r.lang}</RepoChip>}
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: r.cloned ? "var(--success)" : "var(--fg-dim)" }}>
+              {r.cloned ? "● cloned" : "○ link only"}
+            </span>
+          </div>
+          {r.desc && <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", margin: "7px 0 0" }}>{r.desc}</div>}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+            <RepoChip>⎇ {r.branch}</RepoChip>
+            {r.ahead > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--success)" }}>↑{r.ahead}</span>}
+            {r.behind > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--info)" }}>↓{r.behind}</span>}
+            <span style={{ flex: 1 }} />
             {r.agents.length > 0 && (
-              <span style={{ display: "inline-flex", marginLeft: 4 }}>
+              <span style={{ display: "inline-flex" }}>
                 {r.agents.map((id, i) => (
                   <span key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={15} agents={agents} /></span>
                 ))}
               </span>
             )}
           </div>
+          {r.branches.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
+              {r.branches.map((b) => (
+                <RepoChip key={b.n} color={branchTint(b.state)}>
+                  ⎇ {b.n}{b.issue > 0 && <span style={{ color: "var(--fg-dim)" }}> #{b.issue}</span>}
+                </RepoChip>
+              ))}
+            </div>
+          )}
         </div>
       ))}
     </div>

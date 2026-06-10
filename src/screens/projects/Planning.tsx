@@ -802,6 +802,7 @@ export function Planning({ visible }: { visible: boolean }) {
       issues:   [...parseIssuesFile(sections.find(sec => sec.k === "issues")?.content ?? ""), ...featureIssues],
       phases:   parsePhases(sections.find(sec => sec.k === "phases")?.content ?? ""),
       repos:    publishRepos,
+      clonedNames: projectLocalRepos[effectiveProjectId],
       sections,
       pinned:   pinnedContext[effectiveProjectId],
       // Live GitHub progression (#393 Layer 2) so the always-visible ProjectPane
@@ -809,7 +810,7 @@ export function Planning({ visible }: { visible: boolean }) {
       // (#429). Same overlay the publish-time GitHubStructureCard renders.
       progress: ghProgress,
     }),
-    [planFleet, effectiveProjectId, agentProfiles, sections, featureIssues, publishRepos, pinnedContext, ghProgress],
+    [planFleet, effectiveProjectId, agentProfiles, sections, featureIssues, publishRepos, projectLocalRepos, pinnedContext, ghProgress],
   );
 
   // Run the grade-plan pipeline whenever the structure inputs actually change, so the
