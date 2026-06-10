@@ -2594,7 +2594,7 @@ struct AutomationData {
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-const PLANNING_TEMPLATE_VERSION: u8 = 3;
+const PLANNING_TEMPLATE_VERSION: u8 = 4;
 
 #[derive(serde::Serialize)]
 struct WorkspacePaths {
@@ -2916,6 +2916,13 @@ once the user agrees. Always scan before you propose; never race ahead.
 "#;
 
 const PLANNING_PROCESS_MD: &str = r##"
+> **Scope is set by the Active planning stages section at the bottom of this file — it is
+> authoritative.** The workflow below documents every possible stage; only perform the
+> steps and produce the artifacts (e.g. `issues.json`, `phases.json`, `fleet.json`) for
+> stages listed there. If a stage isn't listed, skip its steps and DO NOT create its
+> files. (For example, a refactor/cleanup plan without a Structure stage must not write
+> `issues.json`.)
+
 ## Tools available
 
 | Tool             | What you can do                                                         |
@@ -3634,6 +3641,14 @@ fn stage_directive(id: &str) -> String {
         "permissions" => "**Permissions** — plan the agent fleet (`fleet.json`): non-overlapping streams + least-privilege profiles.",
         "automations" => "**Automations** — propose cron automations (emit `<automation_assign>`).",
         "skills"      => "**Skills** — select reusable skills from the library (`skills.json`).",
+        // transform / operate stages (#666) — these do NOT produce issues.json.
+        "cleanup"      => "**Dead & legacy code** — scan for unused/dead code & dependencies, verify each finding, and triage them into refactor units. Do NOT write `issues.json` — the refactor units drive the fleet directly.",
+        "testing"      => "**Testing** — define the coverage strategy and the test safety net for the changes.",
+        "boundaries"   => "**Service boundaries** — map the bounded contexts and the seams to split the monolith along.",
+        "extraction"   => "**Extraction plan** — sequence the incremental, shippable steps to carve out each service.",
+        "consolidation" => "**Consolidation** — plan merging the services, unifying data stores and contracts.",
+        "migration"    => "**Migration plan** — the from→to mapping and an incremental, reversible cutover.",
+        "hardening"    => "**Security hardening** — threat-model, audit (authz / secrets / deps), and plan concrete fixes.",
         other         => return format!("**{other}** — configured stage."),
     };
     line.to_string()
@@ -6924,6 +6939,24 @@ mod tests {
         assert!(super::read_project_files(key.clone(), "pipelines/none".to_string()).is_empty());
 
         std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn custom_stage_directives_and_scope_guard() {
+        // Custom transform/operate stages get real directives, not the generic fallback.
+        let cleanup = super::stage_directive("cleanup");
+        assert!(cleanup.contains("refactor units"), "cleanup has a real directive");
+        assert!(cleanup.to_lowercase().contains("do not write"), "cleanup forbids issues.json");
+        assert!(super::stage_directive("boundaries").contains("bounded contexts"));
+        // The active-stages section for a refactor-like set (no `structure`) doesn't list
+        // Structure — so its issues.json step is out of scope.
+        let md = super::build_active_stages_md(&[
+            "context".to_string(), "repos".to_string(), "cleanup".to_string(),
+            "testing".to_string(), "permissions".to_string(),
+        ]);
+        assert!(md.contains("OUT OF SCOPE"), "scope guard present");
+        assert!(!md.contains("Structure"), "no Structure stage → no issues.json step");
+        assert!(super::PLANNING_PROCESS_MD.contains("authoritative"), "process defers to the active-stages list");
     }
 
     #[test]
