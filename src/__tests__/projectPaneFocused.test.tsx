@@ -68,6 +68,17 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText(/No context files yet/)).toBeInTheDocument();
   });
 
+  it("shows empty states (no mock structure/agents) for a fresh structure + permissions stage", () => {
+    const { rerender } = render(<ProjectPane focus={baseFocus({
+      phases: [ph("structure", "Structure", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+    })} />);
+    expect(screen.getByText(/No structure yet/)).toBeInTheDocument();
+    rerender(<ProjectPane focus={baseFocus({
+      phases: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+    })} />);
+    expect(screen.getByText(/No agents yet/)).toBeInTheDocument();
+  });
+
   it("computes the real pinned token budget (not a hardcoded total)", () => {
     const data = { agents: [], repos: [], structure: [], phaseStructure: [], issues: [], context: [
       { name: "goal.md", kind: "doc", tok: "2.0k", pinned: true, scope: "project", content: "x" },
