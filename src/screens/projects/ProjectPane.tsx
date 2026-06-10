@@ -17,7 +17,7 @@ import {
 } from "./integrationStrategy";
 import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, PhaseGroup, SubItem, ContextFile,
-  ProjectPaneData,
+  ProjectPaneData, PaneAutomation, PaneSkill,
 } from "./projectPane.types";
 
 /* =================================================================
@@ -595,6 +595,55 @@ function ReposBody({ repos, agents }: { repos: Repo[]; agents: Agent[] }) {
               ))}
             </div>
           )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The automations phase body (#674) — the cron automations the planner proposed. */
+function AutomationsBody({ automations }: { automations: PaneAutomation[] }) {
+  if (automations.length === 0) {
+    return <PaneEmpty>No automations yet — the planner can propose scheduled commands or knowledge injections at this stage.</PaneEmpty>;
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <RepoTile v={automations.length} k="automations" />
+        <RepoTile v={automations.filter(a => a.schedule).length} k="scheduled" />
+      </div>
+      {automations.map((a, i) => (
+        <div key={a.name + i} style={{ border: "1px solid var(--border-soft)", borderRadius: 8, padding: "10px 12px", background: "var(--bg-elev)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <RepoChip color="var(--accent)" border="var(--accent-dim)">⌘ command</RepoChip>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{a.name}</span>
+            <span style={{ flex: 1 }} />
+            {a.schedule && <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)" }}>{a.schedule}</span>}
+          </div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", marginTop: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.command}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The skills phase body (#674) — reusable skills/knowledge attached to the blueprint. */
+function SkillsBody({ skills }: { skills: PaneSkill[] }) {
+  if (skills.length === 0) {
+    return <PaneEmpty>No skills attached — the planner can attach reusable skills or knowledge blocks for the fleet at this stage.</PaneEmpty>;
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="ulabel" style={{ padding: "2px 2px 4px" }}>{skills.length} attached to this project</div>
+      {skills.map((s, i) => (
+        <div key={s.name + i} style={{ border: "1px solid var(--border-soft)", borderRadius: 8, padding: "10px 12px", background: "var(--bg-elev)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <RepoChip color={s.kind === "kb" ? "var(--info)" : "var(--accent)"} border={s.kind === "kb" ? "color-mix(in oklch,var(--info),transparent 70%)" : "var(--accent-dim)"}>
+              {s.kind === "kb" ? "✦ knowledge" : "⚡ skill"}
+            </RepoChip>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{s.name}</span>
+          </div>
+          {s.desc && <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", marginTop: 6, lineHeight: 1.45 }}>{s.desc}</div>}
         </div>
       ))}
     </div>
@@ -1219,6 +1268,8 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   const structure: Milestone[]   = useReal ? (data?.structure ?? [])      : STRUCTURE;
   const phaseStructure: PhaseGroup[] = useReal ? (data?.phaseStructure ?? []) : PHASE_STRUCTURE;
   const context:   ContextFile[] = useReal ? (data?.context ?? [])        : CONTEXT;
+  const automations = useReal ? (data?.automations ?? []) : [];
+  const projectSkills = useReal ? (data?.skills ?? []) : [];
   // The grade is produced by the grade-plan pipeline and stored as the structure
   // section's "agent-readiness" grader result (#615 — single source of truth, the
   // sectionGrades store). Its full PlanGrade rides along as `detail` for this report.
@@ -1261,6 +1312,10 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
         return <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />;
       case "repos":
         return <ReposBody repos={repos} agents={agents} />;
+      case "automations":
+        return <AutomationsBody automations={automations} />;
+      case "skills":
+        return <SkillsBody skills={projectSkills} />;
       case "structure":
         if (phaseStructure.length === 0 && structure.length === 0) {
           return <PaneEmpty>No structure yet — the planner breaks the features into phases and agent-ready issues at this stage.</PaneEmpty>;

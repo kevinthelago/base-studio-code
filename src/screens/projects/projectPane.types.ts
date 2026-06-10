@@ -87,6 +87,9 @@ export interface PhaseGroup {
 
 export interface ContextFile { name: string; kind: string; tok: string; pinned: boolean; scope: string; content: string }
 
+export interface PaneAutomation { name: string; command: string; schedule?: string }
+export interface PaneSkill { name: string; kind: "skill" | "kb"; desc?: string }
+
 export interface ProjectPaneData {
   agents: Agent[];
   repos: Repo[];
@@ -99,6 +102,10 @@ export interface ProjectPaneData {
   director: { enabled: boolean; role?: string; drive: DirectorDrive };
   /** Project-default integration strategy (#378); undefined ⇒ DEFAULT_STRATEGY. */
   fleetStrategy?: IntegrationStrategy;
+  /** Cron automations the planner has proposed for this project (#674). */
+  automations?: PaneAutomation[];
+  /** Reusable skills/knowledge attached to the project's blueprint (#674). */
+  skills?: PaneSkill[];
   // The agent-readiness grade (#445) is no longer carried on the pane data: it is now
   // produced by the grade-plan pipeline and read from the store (sectionGrades, as the
   // structure "agent-readiness" grader's detail) by the pane directly. PlanGrade is

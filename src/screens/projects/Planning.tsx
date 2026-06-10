@@ -42,7 +42,7 @@ import {
   resolveProjectSeed, confirmedSignal,
   type BlueprintSection, type IncompleteSection,
 } from "./blueprints";
-import { writeBlueprintSkillContext } from "./blueprintSkills";
+import { writeBlueprintSkillContext, buildSkillLibrary, resolveBlueprintSkills } from "./blueprintSkills";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
 import { featureSectionsToIssues, featureSlug, parseFeatureSection, incompleteFeatureSections } from "./planFeatures";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
@@ -790,6 +790,17 @@ export function Planning({ visible }: { visible: boolean }) {
   // Declared before paneData so the memo below can fold it into the pane data.
   const [ghProgress, setGhProgress] = useState<Record<string, NodeProgress>>({});
 
+  // The skills/knowledge attached to the active blueprint (whole-blueprint + per-section),
+  // resolved to display items for the pane's Skills phase (#674).
+  const skillDefs = useAppStore(s => s.skills);
+  const projectSkills = useMemo(() => {
+    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    if (!bp) return [];
+    const ids = [...new Set([...(bp.skills ?? []), ...bp.sections.flatMap(s => s.skills ?? [])])];
+    const lib = buildSkillLibrary(skillDefs, kbBlocks);
+    return resolveBlueprintSkills(ids, lib).found.map(s => ({ name: s.name, kind: s.kind, desc: s.desc }));
+  }, [blueprints, activeBlueprintId, skillDefs, kbBlocks]);
+
   // Real plan data for the ProjectPane (#: wire-in). Maps the fleet, agent
   // profiles, decomposed issues, phases, repos, and sections into the pane's
   // render shapes; the pane falls back to its sample data when this is empty.
@@ -803,6 +814,8 @@ export function Planning({ visible }: { visible: boolean }) {
       phases:   parsePhases(sections.find(sec => sec.k === "phases")?.content ?? ""),
       repos:    publishRepos,
       clonedNames: projectLocalRepos[effectiveProjectId],
+      automations: planAutomations[effectiveProjectId],
+      skills:   projectSkills,
       sections,
       pinned:   pinnedContext[effectiveProjectId],
       // Live GitHub progression (#393 Layer 2) so the always-visible ProjectPane
@@ -810,7 +823,7 @@ export function Planning({ visible }: { visible: boolean }) {
       // (#429). Same overlay the publish-time GitHubStructureCard renders.
       progress: ghProgress,
     }),
-    [planFleet, effectiveProjectId, agentProfiles, sections, featureIssues, publishRepos, projectLocalRepos, pinnedContext, ghProgress],
+    [planFleet, effectiveProjectId, agentProfiles, sections, featureIssues, publishRepos, projectLocalRepos, planAutomations, projectSkills, pinnedContext, ghProgress],
   );
 
   // Run the grade-plan pipeline whenever the structure inputs actually change, so the
