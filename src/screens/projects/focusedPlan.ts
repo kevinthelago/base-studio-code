@@ -10,7 +10,10 @@ import {
 } from "./blueprints";
 import { evalGate, type PlanSignals } from "./stageGate";
 
-export type PhaseStatus = "complete" | "active" | "locked" | "upcoming";
+// "complete" = done IN sequence (at/behind the current position); "ahead" = done OUT of
+// sequence (gate met past the current position — "banked"). The rail renders them
+// differently so a future stage finishing early doesn't read as in-order progress (#668).
+export type PhaseStatus = "complete" | "ahead" | "active" | "locked" | "upcoming";
 
 export interface Phase {
   key: string;
@@ -36,9 +39,11 @@ export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): 
   const visible = enabledSections(sections)
     .map((s) => ({ s, st: sectionStatus(s, sections, signals) }))
     .filter(({ st }) => st.status !== "na");
+  // The current position among visible phases; everything complete PAST it is "ahead".
+  const activeIdx = current ? visible.findIndex(({ s }) => s.key === current.key) : visible.length;
   return visible.map(({ s, st }, i) => {
     let status: PhaseStatus;
-    if (st.status === "complete") status = "complete";
+    if (st.status === "complete") status = i > activeIdx ? "ahead" : "complete";
     else if (st.status === "locked") status = "locked";
     else status = current && s.key === current.key ? "active" : "upcoming";
     return {
@@ -46,6 +51,19 @@ export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): 
       index: i, total: visible.length, status, fraction: st.fraction,
     };
   });
+}
+
+export type ConnectorKind = "solid" | "partial" | "dashed" | "dim";
+
+/** The rail connector AFTER node `i` (#668): solid traces the walked in-sequence path,
+ *  partial leaves the current node, dashed reaches a banked-ahead node, dim otherwise. */
+export function connectorKind(phases: Phase[], i: number): ConnectorKind {
+  const role = phases[i]?.status;
+  const next = phases[i + 1]?.status;
+  if (role === "complete") return "solid";
+  if (role === "active") return "partial";
+  if (role === "ahead" || next === "ahead") return "dashed";
+  return "dim";
 }
 
 /** Index of the active phase (else the last) — what the selection auto-follows. */
@@ -67,7 +85,7 @@ export type GatePill = "pass" | "blocked" | "wait";
  *  or wait (still in progress). */
 export function gatePill(phase: Phase, blocked: boolean): GatePill {
   if (blocked) return "blocked";
-  return phase.status === "complete" ? "pass" : "wait";
+  return phase.status === "complete" || phase.status === "ahead" ? "pass" : "wait";
 }
 
 export type FooterKind = "back-to-current" | "jump-to-current" | "approve-continue" | "publish";

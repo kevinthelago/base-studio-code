@@ -3,31 +3,41 @@
 // advance bar. Pure presentational (props in, callbacks out); the phase model + footer
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
 import { Fragment } from "react";
-import type { Phase, GatePill, FooterKind } from "./focusedPlan";
+import { connectorKind, type Phase, type GatePill, type FooterKind } from "./focusedPlan";
 
-/** The navigable phase stepper. `highlight` pulses the nodes the user still has to
- *  finish (the locked-Triage feedback, #652). */
+/** The node glyph: ✓ for done (in-sequence or banked-ahead), a number while pending. */
+function nodeGlyph(p: Phase, i: number): string {
+  if (p.status === "complete" || p.status === "ahead") return "✓";
+  if (p.status === "active") return "◆";
+  return String(i + 1);
+}
+
+/**
+ * The sequenced rail (#668): one node per phase joined by connectors. Solid connectors
+ * trace the in-sequence path walked so far; the current node pulses with a "now" marker;
+ * a banked-ahead node (gate met out of sequence) is green-ringed, reached by a dashed
+ * connector + a "banked" pill. `highlight` pulses phases the user still has to finish.
+ */
 export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
   phases: Phase[]; selectedIdx: number; onSelect: (i: number) => void; highlight?: Set<string>;
 }) {
   return (
-    <div className="stepper">
-      <div className="stepper-track">
+    <div className="seqrail-wrap">
+      <div className="seqrail">
         {phases.map((p, i) => (
           <Fragment key={p.key}>
             <button
               type="button"
-              className={`step ${p.status}${i === selectedIdx ? " selected" : ""}${highlight?.has(p.key) ? " attn" : ""}`}
+              className={`seqrail-seg ${p.status}${i === selectedIdx ? " sel" : ""}${highlight?.has(p.key) ? " attn" : ""}`}
               onClick={() => onSelect(i)}
               title={p.name}
             >
-              <span className="step-node">
-                {p.status === "complete" ? "✓" : p.status === "locked" ? <span style={{ fontSize: 9 }}>🔒</span> : i + 1}
-                {p.status === "active" && <span className="live-ring" />}
-              </span>
-              <span className="step-label">{p.name}</span>
+              {p.status === "ahead" && <span className="seqrail-banked">banked</span>}
+              {p.status === "active" && <span className="seqrail-now">◆ now</span>}
+              <span className="seqrail-node">{nodeGlyph(p, i)}</span>
+              <span className="seqrail-label">{p.name}</span>
             </button>
-            {i < phases.length - 1 && <span className={"step-conn" + (p.status === "complete" ? " fill" : "")} />}
+            {i < phases.length - 1 && <span className={"seqrail-conn " + connectorKind(phases, i)} />}
           </Fragment>
         ))}
       </div>
