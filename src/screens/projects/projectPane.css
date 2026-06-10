@@ -173,28 +173,32 @@
 
 /* sequenced rail (#668) — ported from the V4 design (bsc-project-planner-progress-bar) */
 .fp .seqrail-wrap { flex: 0 0 auto; padding: 18px 16px 9px; border-bottom: 1px solid var(--border-soft); background: var(--bg-panel); }
-.fp .seqrail { display: flex; flex-direction: row; align-items: center; }
+/* align-items:flex-start + a fixed marker slot keep every node at the SAME y, so the icon
+   never moves when its state (and marker) changes (#668). */
+.fp .seqrail { display: flex; flex-direction: row; align-items: flex-start; }
 .fp .seqrail-seg { flex: 1; display: flex; flex-direction: column; align-items: center; position: relative;
   cursor: pointer; background: none; border: none; padding: 0; min-width: 0; }
+/* reserved, always-present row above the node for the now/banked marker */
+.fp .seqrail-marker { height: 14px; display: flex; align-items: center; justify-content: center; }
+.fp .seqrail-marker .m-now { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .08em; color: var(--accent); white-space: nowrap; }
+.fp .seqrail-marker .m-banked { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--success); background: color-mix(in oklch, var(--success), transparent 88%);
+  border: 1px solid color-mix(in oklch, var(--success), transparent 65%); border-radius: 999px; padding: 0 5px; white-space: nowrap; }
 .fp .seqrail-node { width: 18px; height: 18px; flex: 0 0 auto; aspect-ratio: 1; border-radius: 999px;
   display: grid; place-items: center; font-family: var(--mono); font-size: 9px; font-weight: 700;
   position: relative; z-index: 2;
-  background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border); color: var(--fg-dim); transition: all .16s; }
+  background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border); color: var(--fg-dim); transition: background .16s, color .16s; }
 .fp .seqrail-seg.complete .seqrail-node { background: var(--success); box-shadow: none; color: oklch(0.20 0.04 145); }
-.fp .seqrail-seg.active .seqrail-node { background: var(--accent); color: oklch(0.20 0.04 70);
-  box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); animation: rail-ring 2s ease-in-out infinite; }
+/* current/unfinished: the BUBBLE stays grey (not done) while the track around it goes green;
+   a pulsing accent ring + the "◆ now" marker still mark "you are here" (#668). */
+.fp .seqrail-seg.active .seqrail-node { background: var(--bg-elev2); color: var(--fg-dim);
+  box-shadow: inset 0 0 0 1.5px var(--border), 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%);
+  animation: rail-ring 2s ease-in-out infinite; }
 .fp .seqrail-seg.locked .seqrail-node, .fp .seqrail-seg.upcoming .seqrail-node { background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border); color: var(--fg-dim); }
 .fp .seqrail-seg.ahead .seqrail-node { background: color-mix(in oklch, var(--success), transparent 12%);
   box-shadow: inset 0 0 0 1.5px var(--success); color: oklch(0.20 0.04 145); }
 .fp .seqrail-seg.sel .seqrail-node { outline: 2px solid var(--accent); outline-offset: 2px; }
 .fp .seqrail-seg.attn .seqrail-node { box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger), transparent 70%); animation: pulse 1.1s ease-in-out infinite; }
-/* "now" + "banked" pills above the node */
-.fp .seqrail-now { position: absolute; top: -15px; font-family: var(--mono); font-size: 8px; font-weight: 700;
-  letter-spacing: .08em; color: var(--accent); white-space: nowrap; }
-.fp .seqrail-banked { position: absolute; top: -15px; font-family: var(--mono); font-size: 8px; font-weight: 700;
-  letter-spacing: .05em; text-transform: uppercase; color: var(--success);
-  background: color-mix(in oklch, var(--success), transparent 88%);
-  border: 1px solid color-mix(in oklch, var(--success), transparent 65%); border-radius: 999px; padding: 1px 5px; white-space: nowrap; }
 /* label */
 .fp .seqrail-label { font-family: var(--mono); font-size: 9px; margin-top: 7px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-align: center; color: var(--fg-dim); }
@@ -202,15 +206,17 @@
 .fp .seqrail-seg.active .seqrail-label, .fp .seqrail-seg.sel .seqrail-label { color: var(--accent); font-weight: 600; }
 .fp .seqrail-seg.ahead .seqrail-label { color: var(--success); }
 .fp .seqrail-seg.attn .seqrail-label { color: var(--danger); }
-/* connectors (aligned to node centers) */
-.fp .seqrail-conn { flex: 1 1 0; height: 2px; min-width: 8px; position: relative; top: -9px; margin: 0 -2px; border-radius: 2px; }
+/* connectors — offset to the node's vertical center: marker slot (14) + node radius (9)
+   − half the connector (1) = 22px below the rail's flex-start top. */
+.fp .seqrail-conn { flex: 1 1 0; height: 2px; min-width: 8px; position: relative; top: 22px; margin: 0 -2px; border-radius: 2px; }
 .fp .seqrail-conn.solid { background: var(--success); }
 .fp .seqrail-conn.partial { background: linear-gradient(90deg, var(--accent) 0%, var(--border) 100%); }
 .fp .seqrail-conn.dim { background: var(--border-soft); }
 .fp .seqrail-conn.dashed { background-color: transparent; background-image: repeating-linear-gradient(90deg, var(--fg-dim) 0 4px, transparent 4px 9px); }
+/* keep the grey border ring through the pulse so the greyed-out active bubble keeps its edge */
 @keyframes rail-ring {
-  0%,100% { box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); }
-  50%     { box-shadow: 0 0 0 6px color-mix(in oklch, var(--accent), transparent 88%); }
+  0%,100% { box-shadow: inset 0 0 0 1.5px var(--border), 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); }
+  50%     { box-shadow: inset 0 0 0 1.5px var(--border), 0 0 0 6px color-mix(in oklch, var(--accent), transparent 88%); }
 }
 
 /* phase header */

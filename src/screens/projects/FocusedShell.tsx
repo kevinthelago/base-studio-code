@@ -32,8 +32,12 @@ export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
               onClick={() => onSelect(i)}
               title={p.name}
             >
-              {p.status === "ahead" && <span className="seqrail-banked">banked</span>}
-              {p.status === "active" && <span className="seqrail-now">◆ now</span>}
+              {/* Fixed-height marker slot — always present so the node never shifts when a
+                  marker appears/disappears on state change (#668). */}
+              <span className="seqrail-marker">
+                {p.status === "active" && <span className="m-now">◆ now</span>}
+                {p.status === "ahead" && <span className="m-banked">banked</span>}
+              </span>
               <span className="seqrail-node">{nodeGlyph(p, i)}</span>
               <span className="seqrail-label">{p.name}</span>
             </button>

@@ -55,11 +55,11 @@ describe("ahead (banked) + connectorKind (#668)", () => {
     expect(p.find((x) => x.key === "c")!.status).toBe("ahead");
   });
 
-  it("connectorKind: solid behind · partial at current · dashed to/from ahead · dim else", () => {
+  it("connectorKind: solid behind + at current · dashed to/from ahead · dim else", () => {
     const ph = (status: PhaseStatus) => ({ status } as unknown as Phase);
     const list = [ph("complete"), ph("active"), ph("ahead"), ph("upcoming")];
     expect(connectorKind(list, 0)).toBe("solid");   // complete → …
-    expect(connectorKind(list, 1)).toBe("partial");  // active → …
+    expect(connectorKind(list, 1)).toBe("solid");    // active → … (track stays green, #668)
     expect(connectorKind(list, 2)).toBe("dashed");   // ahead → …
     expect(connectorKind([ph("upcoming"), ph("ahead")], 0)).toBe("dashed"); // next is ahead
     expect(connectorKind([ph("locked"), ph("upcoming")], 0)).toBe("dim");
