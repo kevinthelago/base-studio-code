@@ -35,11 +35,14 @@ export function gistBadge(g: BlueprintGist): { dot: string; label: string } {
 
 const isGate = (s: BlueprintSection) => s.pipelines.some((p) => p.gate);
 
-/** The card's stage ribbon: a monochrome glyph sequence; gated stages carry the accent. */
+/** The card's stage ribbon: a monochrome glyph sequence; gated stages carry the accent.
+ *  Only ENABLED sections show — the card mirrors what the plan actually runs, so a
+ *  disabled section never appears as a stage (#672). */
 function StageSeq({ sections }: { sections: BlueprintSection[] }) {
+  const enabled = sections.filter((s) => s.enabled);
   const cap = 9;
-  const shown = sections.slice(0, cap);
-  const title = sections.map((s) => s.name).join(" → ");
+  const shown = enabled.slice(0, cap);
+  const title = enabled.map((s) => s.name).join(" → ");
   return (
     <div className="seq" title={title}>
       {shown.map((s, i) => {
@@ -51,7 +54,7 @@ function StageSeq({ sections }: { sections: BlueprintSection[] }) {
           </span>
         );
       })}
-      {sections.length > cap && <span className="more">+{sections.length - cap}</span>}
+      {enabled.length > cap && <span className="more">+{enabled.length - cap}</span>}
     </div>
   );
 }
@@ -64,8 +67,10 @@ function BlueprintCard({ bp, index, active, onOpen, onUse, onMenu }: {
   onUse?: (id: string) => void;
   onMenu: (action: CardMenuAction, bp: Blueprint, e: React.MouseEvent) => void;
 }) {
-  const pipes = bp.sections.reduce((n, s) => n + s.pipelines.length, 0);
-  const gates = bp.sections.reduce((n, s) => n + s.pipelines.filter((p) => p.gate).length, 0);
+  // Counts reflect only enabled sections — the card mirrors what the plan runs (#672).
+  const enabledSecs = bp.sections.filter((s) => s.enabled);
+  const pipes = enabledSecs.reduce((n, s) => n + s.pipelines.length, 0);
+  const gates = enabledSecs.reduce((n, s) => n + s.pipelines.filter((p) => p.gate).length, 0);
   const gb = gistBadge(bpGist(bp));
   const h = bpHue(bp);
   const origin = bpOrigin(bp);
@@ -93,7 +98,7 @@ function BlueprintCard({ bp, index, active, onOpen, onUse, onMenu }: {
       <StageSeq sections={bp.sections} />
 
       <div className="bp-foot">
-        <span>{bp.sections.length} stages</span>
+        <span>{enabledSecs.length} stages</span>
         {pipes > 0 && <span>· {pipes} pipelines</span>}
         {gates > 0 && <span style={{ color: "var(--accent)" }}>· {gates} gates</span>}
         <span className="gsync"><i style={{ background: gb.dot }} />{gb.label}</span>
