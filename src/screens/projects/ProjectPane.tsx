@@ -1242,8 +1242,8 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
 
   const running = agents.filter((a) => a.status === "run").length;
   const pinnedCount = context.filter((c) => c.pinned).length;
-  const director = hasData ? data!.director : { enabled: true, drive: "event" as DirectorDrive };
-  const fleetStrategy = hasData ? data!.fleetStrategy : undefined;
+  const director = useReal ? (data?.director ?? { enabled: true, drive: "event" as DirectorDrive }) : { enabled: true, drive: "event" as DirectorDrive };
+  const fleetStrategy = useReal ? data?.fleetStrategy : undefined;
 
   const [viewing, setViewing] = useState<ContextFile | null>(null);
   useEffect(() => {
@@ -1262,6 +1262,9 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
       case "repos":
         return <ReposBody repos={repos} agents={agents} />;
       case "structure":
+        if (phaseStructure.length === 0 && structure.length === 0) {
+          return <PaneEmpty>No structure yet — the planner breaks the features into phases and agent-ready issues at this stage.</PaneEmpty>;
+        }
         return (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
@@ -1276,6 +1279,9 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
           </>
         );
       case "permissions":
+        if (agents.length === 0) {
+          return <PaneEmpty>No agents yet — the planner plans the fleet (non-overlapping streams + least-privilege profiles) at this stage.</PaneEmpty>;
+        }
         return (
           <>
             <AgentsA agents={agents} fleetStrategy={fleetStrategy} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onStrategy={onStrategy} />
