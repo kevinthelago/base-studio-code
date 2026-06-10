@@ -623,10 +623,11 @@ export function Planning({ visible }: { visible: boolean }) {
     if (defs.length) useAppStore.getState().upsertSkills(defs);
   }, [savedSections]);
 
-  // Title + derived GitHub object graph that the structure card renders and the
-  // publish flow fills in. Kept in sync with handlePublish's own derivation.
-  const goalForTitle = sections.find(s => s.k === "goal")?.content ?? "";
-  const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
+  // The project's short display title — a STABLE store value, used everywhere the title
+  // shows (the focused pane header, the structure card, the fleet). Previously this fell
+  // back to the goal section's first sentence, which is long and changes as the goal
+  // streams in → the right-pane title flickered / showed a long string (#666).
+  const projectTitle = planningTitle || activeProjectName || "New project";
 
   // Per-repo feature plans (#177): each `repo__{short}__feat__{slug}` section becomes a
   // synthetic granular issue, so it flows through the existing structure + publish
