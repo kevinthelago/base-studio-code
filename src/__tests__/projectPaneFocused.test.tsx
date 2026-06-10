@@ -41,4 +41,25 @@ describe("ProjectPane focused mode (#652)", () => {
     })} />);
     expect(screen.getByText(/planner documents this stage/)).toBeInTheDocument();
   });
+
+  // #674 — the focused planner shows REAL data (empty states), never the sample mocks.
+  const reposPhase = { phases: [ph("repos", "Repos", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+
+  it("lists the linked repositories in the repos phase", () => {
+    const data = { agents: [], repos: [{ id: "acme/web", branch: "main", ahead: 0, behind: 0, agents: [], primary: true, branches: [] }],
+      structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    render(<ProjectPane data={data} focus={baseFocus(reposPhase)} />);
+    expect(screen.getByText("acme/web")).toBeInTheDocument();
+    expect(screen.getByText("primary")).toBeInTheDocument();
+  });
+
+  it("shows an empty state (no mock repos) when none are linked", () => {
+    render(<ProjectPane focus={baseFocus(reposPhase)} />);
+    expect(screen.getByText(/No repositories linked yet/)).toBeInTheDocument();
+  });
+
+  it("shows an empty context state (no mock files) on a fresh plan", () => {
+    render(<ProjectPane focus={baseFocus()} />); // context phase active, no data
+    expect(screen.getByText(/No context files yet/)).toBeInTheDocument();
+  });
 });

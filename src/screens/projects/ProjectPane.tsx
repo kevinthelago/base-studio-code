@@ -504,6 +504,52 @@ function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void
 }
 
 // VARIANT A — Pinned vs Library, two sections
+/** Empty-state hint for a focused phase whose data the planner hasn't produced yet. */
+function PaneEmpty({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.6,
+      border: "1px dashed var(--border-soft)", borderRadius: 8, padding: "16px 18px", textAlign: "center",
+    }}>{children}</div>
+  );
+}
+
+/** The repos phase body: the repositories this project spans, from the plan (#674). */
+function ReposBody({ repos, agents }: { repos: Repo[]; agents: Agent[] }) {
+  if (repos.length === 0) {
+    return <PaneEmpty>No repositories linked yet — the planner links them in this stage as you decide what the project spans.</PaneEmpty>;
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="ulabel" style={{ padding: "2px 2px 4px" }}>{repos.length} {repos.length === 1 ? "repository" : "repositories"}</div>
+      {repos.map((r) => (
+        <div key={r.id} style={{
+          border: "1px solid var(--border-soft)", borderRadius: 8, padding: "10px 12px",
+          background: r.primary ? "color-mix(in oklch, var(--accent), transparent 92%)" : "var(--bg-elev)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="sdot on" />
+            <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{r.id}</span>
+            {r.primary && <span style={{
+              fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)",
+              border: "1px solid var(--accent-dim)", borderRadius: 999, padding: "1px 7px",
+            }}>primary</span>}
+            <span style={{ flex: 1 }} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>⎇ {r.branch}</span>
+            {r.agents.length > 0 && (
+              <span style={{ display: "inline-flex", marginLeft: 4 }}>
+                {r.agents.map((id, i) => (
+                  <span key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={15} agents={agents} /></span>
+                ))}
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ContextA({ context = CONTEXT, onTogglePin, onView }: {
   context?: ContextFile[]; onTogglePin?: (name: string) => void; onView?: (f: ContextFile) => void;
 }) {
@@ -518,6 +564,9 @@ function ContextA({ context = CONTEXT, onTogglePin, onView }: {
   };
   const pinned = items.filter((f) => f.pinned);
   const lib = items.filter((f) => !f.pinned);
+  if (items.length === 0) {
+    return <PaneEmpty>No context files yet — the planner writes one per discovery topic (goal, scope, stack, …) as you work this stage.</PaneEmpty>;
+  }
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 2px 7px" }}>
@@ -1097,11 +1146,15 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   };
 }) {
   const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.phaseStructure.length > 0 || data.context.length > 0);
-  const agents:    Agent[]       = hasData ? data!.agents         : AGENTS;
-  const repos:     Repo[]        = hasData ? data!.repos          : REPOS;
-  const structure: Milestone[]   = hasData ? data!.structure      : STRUCTURE;
-  const phaseStructure: PhaseGroup[] = hasData ? data!.phaseStructure : PHASE_STRUCTURE;
-  const context:   ContextFile[] = hasData ? data!.context        : CONTEXT;
+  // In the focused planner (#652) we render a REAL project — use its data verbatim (empty
+  // arrays ⇒ empty states), never the sample/mock fallback (#674). The mocks are only for
+  // the standalone showcase pane (no focus + no data).
+  const useReal = !!focus || hasData;
+  const agents:    Agent[]       = useReal ? (data?.agents ?? [])         : AGENTS;
+  const repos:     Repo[]        = useReal ? (data?.repos ?? [])          : REPOS;
+  const structure: Milestone[]   = useReal ? (data?.structure ?? [])      : STRUCTURE;
+  const phaseStructure: PhaseGroup[] = useReal ? (data?.phaseStructure ?? []) : PHASE_STRUCTURE;
+  const context:   ContextFile[] = useReal ? (data?.context ?? [])        : CONTEXT;
   // The grade is produced by the grade-plan pipeline and stored as the structure
   // section's "agent-readiness" grader result (#615 — single source of truth, the
   // sectionGrades store). Its full PlanGrade rides along as `detail` for this report.
@@ -1142,6 +1195,8 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
     switch (ph.key) {
       case "context":
         return <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />;
+      case "repos":
+        return <ReposBody repos={repos} agents={agents} />;
       case "structure":
         return (
           <>
