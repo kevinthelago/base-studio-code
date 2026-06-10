@@ -503,6 +503,21 @@ export function cloneSections(sections: BlueprintSection[]): BlueprintSection[] 
  * non-registry sections (e.g. testing) are omitted — they configure planning but
  * don't have a registry gate yet.
  */
+/**
+ * What to record when a project's planning opens (#647). A brand-new project (no stage
+ * config) seeds from + records the active blueprint. An existing project with NO recorded
+ * blueprint (planned before blueprint tracking) backfills to the default — so selecting a
+ * different blueprint still triggers the reset prompt instead of silently doing nothing.
+ * Otherwise the project already knows its blueprint, so nothing changes here.
+ */
+export function resolveProjectSeed(
+  hasConfig: boolean, recordedBlueprintId: string | undefined, activeBlueprintId: string,
+): { seedConfig: boolean; setBlueprintId?: string } {
+  if (!hasConfig) return { seedConfig: true, setBlueprintId: activeBlueprintId };
+  if (!recordedBlueprintId) return { seedConfig: false, setBlueprintId: DEFAULT_BLUEPRINT_ID };
+  return { seedConfig: false };
+}
+
 export function blueprintToStageConfig(bp: Blueprint): StageConfig {
   const known = new Set<string>(PLAN_STAGES.map((s) => s.id));
   const enabled = Object.fromEntries(PLAN_STAGES.map((s) => [s.id, false])) as Record<StageId, boolean>;
