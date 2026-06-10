@@ -35,6 +35,13 @@ describe("blueprint categories (#645)", () => {
     expect(repos.enabled).toBe(true);
   });
 
+  it("the default blueprint's UI stage is optional (#676)", () => {
+    const def = makeBlueprints().find((b) => b.id === "default")!;
+    expect(def.sections.find((s) => s.key === "ui")!.optional).toBe(true);
+    // other blueprints' UI stays required
+    expect(makeBlueprints().find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "ui")!.optional).toBeFalsy();
+  });
+
   it("tags every built-in blueprint origin=built-in, incl. the greenfield four (#658)", () => {
     const all = makeBlueprints();
     expect(all.every((b) => b.origin === "built-in")).toBe(true);
