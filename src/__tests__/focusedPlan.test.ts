@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady,
 } from "../screens/projects/focusedPlan";
-import type { BlueprintSection } from "../screens/projects/blueprints";
+import { confirmedSignal, type BlueprintSection } from "../screens/projects/blueprints";
 import type { PlanSignals } from "../screens/projects/stageGate";
 
 const sec = (key: string, over: Partial<BlueprintSection> = {}): BlueprintSection => ({
@@ -33,10 +33,14 @@ describe("phasesFrom (#652)", () => {
     expect(p.find((x) => x.key === "b")!.status).toBe("active");
   });
 
-  it("shows an N/A section once its applicability turns on", () => {
+  it("shows an N/A section once its applicability turns on; a gateless section needs confirmation", () => {
     const p = phasesFrom(SECTIONS, { a: true, b: true, showC: true });
     expect(p.map((x) => x.key)).toEqual(["a", "b", "c"]);
-    expect(p.every((x) => x.status === "complete")).toBe(true); // c has no gate ⇒ complete
+    // c is gateless → NOT vacuously complete (#664); it's the active phase until confirmed.
+    expect(p.find((x) => x.key === "c")!.status).toBe("active");
+    // confirm c → complete.
+    const p2 = phasesFrom(SECTIONS, { a: true, b: true, showC: true, [confirmedSignal("c")]: true });
+    expect(p2.find((x) => x.key === "c")!.status).toBe("complete");
   });
 });
 

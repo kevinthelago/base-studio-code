@@ -38,7 +38,7 @@ import { dispatchPipelineCommand } from "./pipelineCommands";
 import { parsePipelineTags, stripPipelineTags } from "./pipelineTag";
 import {
   blueprintToStageConfig, incompleteSections, planSectionsComplete, currentSection, mkSection,
-  resolveProjectSeed,
+  resolveProjectSeed, confirmedSignal,
   type BlueprintSection, type IncompleteSection,
 } from "./blueprints";
 import { writeBlueprintSkillContext } from "./blueprintSkills";
@@ -719,8 +719,13 @@ export function Planning({ visible }: { visible: boolean }) {
     return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
   }, [blueprints, activeBlueprintId, stageConfig]);
 
-  // The flat, serializable signal bag the declarative section gates read.
-  const signals = useMemo(() => planStateToSignals(stageState), [stageState]);
+  // The flat, serializable signal bag the declarative section gates read. Informational
+  // (gateless) sections complete via a `confirmed:<key>` signal, not vacuously (#664).
+  const signals = useMemo(() => {
+    const base = planStateToSignals(stageState);
+    for (const k of confirmedSet) base[confirmedSignal(k)] = true;
+    return base;
+  }, [stageState, confirmedSet]);
 
   // Sections blocked by an unpassed gate pipeline (#532), straight from the blueprint.
   const blockedStages = useMemo(() => {
