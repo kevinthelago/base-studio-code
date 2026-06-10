@@ -63,6 +63,19 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText(/No repositories linked yet/)).toBeInTheDocument();
   });
 
+  it("lets the user manually link a repository from the empty repos state (#677)", () => {
+    const onLinkRepo = vi.fn();
+    render(<ProjectPane focus={baseFocus(reposPhase)} onLinkRepo={onLinkRepo} />);
+    const input = screen.getByLabelText("Link a repository");
+    const btn = screen.getByText("link");
+    fireEvent.change(input, { target: { value: "not-a-repo" } });
+    fireEvent.click(btn);
+    expect(onLinkRepo).not.toHaveBeenCalled(); // invalid (no owner/repo)
+    fireEvent.change(input, { target: { value: "acme/web" } });
+    fireEvent.click(btn);
+    expect(onLinkRepo).toHaveBeenCalledWith("acme/web");
+  });
+
   it("shows an empty context state (no mock files) on a fresh plan", () => {
     render(<ProjectPane focus={baseFocus()} />); // context phase active, no data
     expect(screen.getByText(/No context files yet/)).toBeInTheDocument();
