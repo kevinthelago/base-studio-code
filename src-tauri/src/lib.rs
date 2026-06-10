@@ -2594,7 +2594,7 @@ struct AutomationData {
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-const PLANNING_TEMPLATE_VERSION: u8 = 5;
+const PLANNING_TEMPLATE_VERSION: u8 = 6;
 
 #[derive(serde::Serialize)]
 struct WorkspacePaths {
@@ -2972,6 +2972,11 @@ genuinely applies; don't spin up tangential files (they just block the gate). Us
 `schema` (not "data-model"), `ux`, `api`, `auth`, `security`, `testing`, etc. The
 **Context** gate specifically requires `goal`, `scope`, `stack`, and `architecture` to be
 written and confirmed.
+
+**Work one stage at a time.** Finish drafting the current stage's sections, then **stop and
+let the user review and approve** before moving on — you'll receive a `[The user confirmed
+…]` message when a section is approved. Do **not** jump ahead and produce a later stage's
+artifacts (issues, fleet, …) before the current stage is approved.
 
 Maintain `_skipped.md`: one line per checklist dimension you deliberately did
 **not** document, each with a short reason. Keep it current as you decide to skip
