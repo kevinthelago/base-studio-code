@@ -22,22 +22,22 @@ export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
   phases: Phase[]; selectedIdx: number; onSelect: (i: number) => void; highlight?: Set<string>;
 }) {
   return (
-    <div className="rail-wrap">
-      <div className="rail">
+    <div className="seqrail-wrap">
+      <div className="seqrail">
         {phases.map((p, i) => (
           <Fragment key={p.key}>
             <button
               type="button"
-              className={`rail-seg ${p.status}${i === selectedIdx ? " sel" : ""}${highlight?.has(p.key) ? " attn" : ""}`}
+              className={`seqrail-seg ${p.status}${i === selectedIdx ? " sel" : ""}${highlight?.has(p.key) ? " attn" : ""}`}
               onClick={() => onSelect(i)}
               title={p.name}
             >
-              {p.status === "ahead" && <span className="rail-banked">banked</span>}
-              {p.status === "active" && <span className="rail-now">◆ now</span>}
-              <span className="rail-node">{nodeGlyph(p, i)}</span>
-              <span className="rail-label">{p.name}</span>
+              {p.status === "ahead" && <span className="seqrail-banked">banked</span>}
+              {p.status === "active" && <span className="seqrail-now">◆ now</span>}
+              <span className="seqrail-node">{nodeGlyph(p, i)}</span>
+              <span className="seqrail-label">{p.name}</span>
             </button>
-            {i < phases.length - 1 && <span className={"rail-conn " + connectorKind(phases, i)} />}
+            {i < phases.length - 1 && <span className={"seqrail-conn " + connectorKind(phases, i)} />}
           </Fragment>
         ))}
       </div>
