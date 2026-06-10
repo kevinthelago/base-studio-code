@@ -33,6 +33,12 @@ describe("Stepper (#652)", () => {
     expect(container.querySelector(".seqrail-seg.complete.attn")).toBeNull(); // only highlighted keys
   });
 
+  it("reserves a fixed marker slot on every node so the icon never shifts (#668)", () => {
+    const { container } = render(<Stepper phases={phases} selectedIdx={1} onSelect={vi.fn()} />);
+    // one always-present marker row per phase (reserves space whether or not a marker shows)
+    expect(container.querySelectorAll(".seqrail-marker").length).toBe(phases.length);
+  });
+
   it("renders an ahead (banked) node with a dashed connector + banked pill", () => {
     const aheadPhases = [
       phase({ key: "a", name: "A", status: "active", index: 0 }),

@@ -62,8 +62,9 @@ export type ConnectorKind = "solid" | "partial" | "dashed" | "dim";
 export function connectorKind(phases: Phase[], i: number): ConnectorKind {
   const role = phases[i]?.status;
   const next = phases[i + 1]?.status;
-  if (role === "complete") return "solid";
-  if (role === "active") return "partial";
+  // The walked path stays green THROUGH the current (unfinished) section — only the bubble
+  // greys out to show it's not done. So both complete and active segments are solid (#668).
+  if (role === "complete" || role === "active") return "solid";
   if (role === "ahead" || next === "ahead") return "dashed";
   return "dim";
 }
