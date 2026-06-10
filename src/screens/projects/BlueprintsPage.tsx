@@ -71,6 +71,7 @@ export function BlueprintsPage() {
   const blueprints = useAppStore((s) => s.blueprints);
   const githubToken = useAppStore((s) => s.githubToken);
   const setActiveBlueprint = useAppStore((s) => s.setActiveBlueprint);
+  const activeBlueprintId = useAppStore((s) => s.activeBlueprintId);
   const addBlueprint = useAppStore((s) => s.addBlueprint);
   const duplicateBlueprint = useAppStore((s) => s.duplicateBlueprint);
   const updateBlueprintMeta = useAppStore((s) => s.updateBlueprintMeta);
@@ -266,6 +267,8 @@ export function BlueprintsPage() {
       ) : (
         <div className="scroll">
           <LibraryView blueprints={blueprints} onOpen={openBp} onMenu={onCardMenu}
+            activeId={activeBlueprintId}
+            onUse={(id) => { setActiveBlueprint(id); toast(`"${blueprints.find((b) => b.id === id)?.name ?? id}" selected — it'll seed new projects`, true); }}
             onNew={() => setModal({ type: "new" })} onImport={() => setView("catalog")} />
         </div>
       )}
