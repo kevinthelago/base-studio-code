@@ -96,14 +96,16 @@ export const SECTION_DEFS: Record<string, SectionDef> = {
       { signal: "coreConfirmed", target: true, weight: 0 },
       { signal: "topicsResolved", of: "topicsTotal", label: "resolve the discovery topics" },
     ] },
-    blurb: "Discovery — goal, users, scope, UX, stack, architecture.",
+    blurb: "Discovery — goal, scope, stack, architecture (+ applicable dimensions).",
     prompt:
-`Walk the discovery checklist one topic at a time — goal, users, scope, UX,
-stack, architecture, data model, API, security, testing. Propose first, then
-interrogate; confirm each topic before moving on. Write one section file per
-resolved topic and emit a <plan_update> so the panel reveals it live.
+`Walk the discovery checklist one topic at a time, using the canonical key as each
+file's stem. The gate REQUIRES these four written and confirmed: goal, scope, stack,
+architecture. Cover other dimensions ONLY where they genuinely apply (canonical keys:
+users, ux, schema, api, auth, security, testing, …) and record the rest in _skipped.md.
+Each file you create is a gate item the user confirms — don't create tangential files.
 
-Gate: every applicable topic is resolved or explicitly skipped (with a reason).`,
+Gate: goal/scope/stack/architecture confirmed, and every documented topic confirmed
+(skipped dimensions don't count).`,
   },
   repos: {
     name: "Repos", glyph: "⑂", gate: "≥1 repo linked", deps: [],
@@ -352,7 +354,7 @@ export function makeBlueprints(): Blueprint[] {
       id: "default", name: "Default", desc: "Balanced starting point", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
         mkSection("context",     { pipelines: [["lint-plan", "on completion", true]] }),
-        mkSection("repos",       { enabled: false, pipelines: [["index-repos", "on section enter", true]] }),
+        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
         mkSection("ui",          { pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", false]] }),
         mkSection("permissions", { pipelines: [] }),

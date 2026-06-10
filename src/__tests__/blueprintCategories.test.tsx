@@ -29,6 +29,12 @@ describe("blueprint categories (#645)", () => {
     expect(CATEGORY_META.transform.label).toBe("Transform");
   });
 
+  it("the default blueprint's repos stage is enabled so it shows in the plan (#672)", () => {
+    const def = makeBlueprints().find((b) => b.id === "default")!;
+    const repos = def.sections.find((s) => s.key === "repos")!;
+    expect(repos.enabled).toBe(true);
+  });
+
   it("tags every built-in blueprint origin=built-in, incl. the greenfield four (#658)", () => {
     const all = makeBlueprints();
     expect(all.every((b) => b.origin === "built-in")).toBe(true);

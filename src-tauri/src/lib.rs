@@ -2594,7 +2594,7 @@ struct AutomationData {
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-const PLANNING_TEMPLATE_VERSION: u8 = 4;
+const PLANNING_TEMPLATE_VERSION: u8 = 6;
 
 #[derive(serde::Serialize)]
 struct WorkspacePaths {
@@ -2964,6 +2964,19 @@ Mark the topic you are actively discussing so the UI highlights it:
 ```
 
 ## Coverage — record what you skip
+
+**Each section file you create is a gate item** — the stage completes only once the
+user confirms every documented section. So create a file **only** for a dimension that
+genuinely applies; don't spin up tangential files (they just block the gate). Use the
+**canonical key** as the file stem so the section maps to the right gate signal —
+`schema` (not "data-model"), `ux`, `api`, `auth`, `security`, `testing`, etc. The
+**Context** gate specifically requires `goal`, `scope`, `stack`, and `architecture` to be
+written and confirmed.
+
+**Work one stage at a time.** Finish drafting the current stage's sections, then **stop and
+let the user review and approve** before moving on — you'll receive a `[The user confirmed
+…]` message when a section is approved. Do **not** jump ahead and produce a later stage's
+artifacts (issues, fleet, …) before the current stage is approved.
 
 Maintain `_skipped.md`: one line per checklist dimension you deliberately did
 **not** document, each with a short reason. Keep it current as you decide to skip
@@ -3634,7 +3647,7 @@ fn sanitize_project_key(key: &str) -> String {
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
     let line = match id {
-        "context"     => "**Context** — run the discovery checklist (goal, users, scope, UX, stack, architecture, …), one topic at a time.",
+        "context"     => "**Context** — discovery, one topic at a time. The gate REQUIRES these four files, written and confirmed: `goal.md`, `scope.md`, `stack.md`, `architecture.md` — always create them. Cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`users`, `ux`, `schema`, `api`, `security`, `testing`, …); record every dimension you don't document in `_skipped.md`. Each file you create is a gate item the user must confirm — do NOT create files for tangential topics, or the gate can't complete.",
         "repos"       => "**Repos** — decide and link the repositories (emit `<repo_link>`, write `repos.json`).",
         "ui"          => "**UI** — design the screens: write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live.",
         "structure"   => "**Structure** — run the feature workshop, then `phases.json` + agent-ready `issues.json`.",
@@ -6957,6 +6970,14 @@ mod tests {
         assert!(md.contains("OUT OF SCOPE"), "scope guard present");
         assert!(!md.contains("Structure"), "no Structure stage → no issues.json step");
         assert!(super::PLANNING_PROCESS_MD.contains("authoritative"), "process defers to the active-stages list");
+        // The context directive names the four gate-required files so the planner creates
+        // exactly what the gate keys on (#671 follow-up).
+        let ctx = super::stage_directive("context");
+        for f in ["goal.md", "scope.md", "stack.md", "architecture.md"] {
+            assert!(ctx.contains(f), "context directive names {f}");
+        }
+        assert!(ctx.contains("_skipped.md"), "context directive points non-applicable dimensions at _skipped");
+        assert!(super::PLANNING_PROCESS_MD.contains("gate item"), "coverage section frames created files as gate items");
     }
 
     #[test]

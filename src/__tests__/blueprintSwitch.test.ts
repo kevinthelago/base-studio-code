@@ -42,6 +42,17 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(s.projectLocalRepos["p"]).toBeUndefined(); // repos unlinked (#664)
   });
 
+  it("confirmPlanSection / unconfirmPlanSection round-trip (drives the gate, #673)", () => {
+    useAppStore.setState({ planConfirmedSections: {} });
+    const s = useAppStore.getState();
+    s.confirmPlanSection("p", "goal");
+    s.confirmPlanSection("p", "goal"); // idempotent
+    s.confirmPlanSection("p", "scope");
+    expect(useAppStore.getState().planConfirmedSections["p"]).toEqual(["goal", "scope"]);
+    s.unconfirmPlanSection("p", "goal");
+    expect(useAppStore.getState().planConfirmedSections["p"]).toEqual(["scope"]);
+  });
+
   it("is a no-op for an unknown blueprint", () => {
     useAppStore.getState().applyBlueprintToProject("p", "nope");
     const s = useAppStore.getState();
