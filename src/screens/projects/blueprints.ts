@@ -380,7 +380,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("ui",          { optional: true, pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", false]] }),
         mkSection("permissions", { pipelines: [] }),
-        mkSection("automations", { pipelines: [["arm-schedule", "on completion", true]] }),
+        mkSection("automations", { optional: true, pipelines: [["arm-schedule", "on completion", true]] }),
         mkSection("skills",      { pipelines: [["sync-skills", "manual", true]] }),
       ],
     },
