@@ -29,6 +29,7 @@ import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategy
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
+import { type Blueprint, manifestToBlueprint, type ExtensionManifest } from "../lib/extensions/manifest";
 
 // Sent as the first message to each console when a project tab is opened, so the
 // session starts by reading and executing the laid-out plan. Plain text only — no
@@ -483,6 +484,17 @@ interface AppStore {
   // Resolved per-pane extensions (transient): set at session creation, read by
   // TerminalView before launch (mirrors paneAllowedCommands).
   paneExtensions: Record<string, ExtensionDef[]>;
+
+  // Blueprints — reusable project planning templates. Each can be exported as a
+  // distributable ExtensionManifest (file or share-code) and imported back.
+  blueprints: Blueprint[];
+  addBlueprint:       (bp: Omit<Blueprint, "id" | "createdAt" | "updatedAt">) => void;
+  updateBlueprint:    (id: string, patch: Partial<Omit<Blueprint, "id" | "createdAt">>) => void;
+  renameBlueprint:    (id: string, name: string) => void;
+  duplicateBlueprint: (id: string) => void;
+  removeBlueprint:    (id: string) => void;
+  /** Import a blueprint from a parsed ExtensionManifest (kind must be "blueprint"). */
+  importBlueprint:    (manifest: ExtensionManifest) => boolean;
 
   // Agent settings — the GLOBAL allowed-command tier (auto-approved in every
   // session). Per-project / per-repo tiers below combine additively with it.
@@ -1576,6 +1588,56 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ extensions: s.extensions.map((e) => (e.id === id ? { ...e, projects } : e)) })),
       paneExtensions: {},
 
+      blueprints: [],
+      addBlueprint: (bp) =>
+        set((s) => {
+          const now = Date.now();
+          const id = `bp_${Math.random().toString(36).slice(2, 8)}`;
+          return { blueprints: [...s.blueprints, { ...bp, id, createdAt: now, updatedAt: now }] };
+        }),
+      updateBlueprint: (id, patch) =>
+        set((s) => ({
+          blueprints: s.blueprints.map((b) =>
+            b.id === id ? { ...b, ...patch, updatedAt: Date.now() } : b,
+          ),
+        })),
+      renameBlueprint: (id, name) =>
+        set((s) => ({
+          blueprints: s.blueprints.map((b) =>
+            b.id === id ? { ...b, name, updatedAt: Date.now() } : b,
+          ),
+        })),
+      duplicateBlueprint: (id) =>
+        set((s) => {
+          const src = s.blueprints.find((b) => b.id === id);
+          if (!src) return {};
+          const now = Date.now();
+          const newId = `bp_${Math.random().toString(36).slice(2, 8)}`;
+          const copy: Blueprint = { ...src, id: newId, name: `${src.name} (copy)`, createdAt: now, updatedAt: now };
+          return { blueprints: [...s.blueprints, copy] };
+        }),
+      removeBlueprint: (id) =>
+        set((s) => ({ blueprints: s.blueprints.filter((b) => b.id !== id) })),
+      importBlueprint: (manifest) => {
+        const bp = manifestToBlueprint(manifest);
+        if (!bp) return false;
+        // Dedup: if a blueprint with the same origin id already exists, update it.
+        let inserted = false;
+        set((s) => {
+          const now = Date.now();
+          const existing = s.blueprints.findIndex((b) => b.id === bp.id);
+          if (existing >= 0) {
+            const updated = s.blueprints.map((b, i) =>
+              i === existing ? { ...bp, createdAt: b.createdAt, updatedAt: now } : b,
+            );
+            return { blueprints: updated };
+          }
+          inserted = true;
+          return { blueprints: [...s.blueprints, { ...bp, createdAt: now, updatedAt: now }] };
+        });
+        return inserted || true;  // true whether inserted or updated
+      },
+
       allowedCommands: [],
       addAllowedCommand: (cmd) =>
         set((s) => ({
@@ -1706,6 +1768,7 @@ export const useAppStore = create<AppStore>()(
         planFleet:             s.planFleet,
         pinnedContext:         s.pinnedContext,
         extensions:            s.extensions,
+        blueprints:            s.blueprints,
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint
