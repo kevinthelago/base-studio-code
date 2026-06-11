@@ -5,6 +5,7 @@ import {
   consoleCount,
   findProfile,
   GUARANTEED,
+  APP_ROLES,
 } from "../screens/agents/agentProfiles";
 
 describe("resolveAllowlist", () => {
@@ -45,5 +46,27 @@ describe("counts + lookup", () => {
     expect(findProfile("sys_planner")?.category).toBe("application");
     expect(findProfile("pf_build")?.name).toBe("Build & test");
     expect(findProfile("nope")).toBeUndefined();
+  });
+
+  it("every basic app session has its own distinct application role (#680)", () => {
+    // all three basic app sessions are registered as application roles, each unique
+    const ids = APP_ROLES.map((r) => r.id);
+    expect(ids).toEqual(expect.arrayContaining(["sys_planner", "sys_librarian", "sys_blueprint_assistant"]));
+    expect(APP_ROLES.every((r) => r.category === "application")).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length); // no duplicate ids
+    expect(new Set(APP_ROLES.map((r) => r.name)).size).toBe(APP_ROLES.length); // distinct names
+  });
+
+  it("the Blueprint Assistant role is minimal — no shell, no fs writes, no tools (#680)", () => {
+    const bp = findProfile("sys_blueprint_assistant")!;
+    expect(bp.name).toBe("Blueprint Assistant");
+    expect(bp.mode).toBe("deny");
+    expect(bp.commands).toEqual([]);            // no shell
+    expect(bp.tools.bash).toBe("deny");
+    expect(bp.tools.write).toBe("deny");        // no fs writes
+    expect(bp.tools.edit).toBe("deny");
+    expect(bp.tools.read).toBe("allow");        // may read the blueprint/KB context
+    expect(bp.paths.allow).toEqual([]);
+    expect(bp.net.allow).toEqual([]);
   });
 });

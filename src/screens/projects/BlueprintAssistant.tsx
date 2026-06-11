@@ -108,7 +108,7 @@ export function BlueprintAssistant({ sections, name, draftName, onApply, library
       <div className="drawer" style={{ pointerEvents: "auto" }}>
         <div className="drawer-head">
           <span className="da">✦</span>
-          <div><h2>Design with Claude</h2><div className="dsub mono">blueprint architect · session</div></div>
+          <div><h2>Design with Claude</h2><div className="dsub mono">Blueprint Assistant · app session</div></div>
           <span style={{ flex: 1 }} />
           <button className="iconbtn" onClick={onClose}>✕</button>
         </div>

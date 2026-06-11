@@ -74,6 +74,26 @@ export const APP_ROLES: AgentProfile[] = [
     paths: { allow: [".studio/knowledge/**"], deny: ["**/*"] },
     net: { allow: [] },
   },
+  {
+    // The Blueprint Assistant ("Design with Claude") is a STATELESS one-shot completion
+    // (kb_chat) — it drafts/edits blueprint stages, prompts, and skills from a description.
+    // It runs no shell, writes no files, and uses no tools, so its minimal role only really
+    // governs what context it may read + net. Distinct from the Project Planner (#680).
+    id: "sys_blueprint_assistant",
+    name: "Blueprint Assistant",
+    color: "oklch(0.7 0.13 330)",
+    category: "application",
+    desc: "Always-present design assistant for blueprints — a one-shot Claude that drafts and edits blueprint stages, prompts, and skills from your description. Read-only: it sees the active blueprint and the skills / knowledge library and returns suggestions; it runs no shell, writes no files, and has no tools.",
+    surface: "Blueprints",
+    surfaceGlyph: "B",
+    session: "sys/blueprint-assistant",
+    owns: "the blueprint design assistant",
+    mode: "deny",
+    commands: [],
+    tools: { read: "allow", grep: "deny", glob: "deny", edit: "deny", write: "deny", bash: "deny", web: "deny", task: "deny" },
+    paths: { allow: [], deny: ["**/*"] },
+    net: { allow: [] },
+  },
 ];
 
 export const PROFILES: AgentProfile[] = [
