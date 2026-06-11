@@ -39,6 +39,18 @@ describe("Stepper (#652)", () => {
     expect(container.querySelectorAll(".seqrail-marker").length).toBe(phases.length);
   });
 
+  it("renders a skipped optional node with the ↷ glyph + skipped marker (#678)", () => {
+    const skipped = [
+      phase({ key: "a", name: "A", status: "complete", index: 0 }),
+      phase({ key: "ui", name: "UI", status: "skipped", index: 1 }),
+      phase({ key: "b", name: "B", status: "active", index: 2 }),
+    ];
+    const { container } = render(<Stepper phases={skipped} selectedIdx={2} onSelect={vi.fn()} />);
+    expect(container.querySelector(".seqrail-seg.skipped")).toBeTruthy();
+    expect(screen.getByText("skipped")).toBeInTheDocument();
+    expect(screen.getByText("↷")).toBeInTheDocument();
+  });
+
   it("renders an ahead (banked) node with a dashed connector + banked pill", () => {
     const aheadPhases = [
       phase({ key: "a", name: "A", status: "active", index: 0 }),
