@@ -18,7 +18,9 @@ import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
 import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/projects/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
-import { interpretGithubReadiness, type GithubProbe } from "../../../lib/githubReadiness";
+import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus, type SessionVerdict } from "../../../lib/diagnostics";
+import { SessionReadinessBanner } from "../../SessionReadinessBanner";
+import { SessionFailure } from "../../SessionFailure";
 import { tokenForRepo } from "../../../lib/repoCredentials";
 import { getProvider } from "../../../lib/consoleProviders";
 
@@ -59,8 +61,10 @@ interface TerminalViewProps {
 
 export function TerminalView({ paneId, visible = true, focused, initialCwd, initCmd, onCwdChange, onStatusChange, onFocus }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // GitHub-readiness warning for this pane (#297); null = ready or not probed.
-  const [ghWarn, setGhWarn] = useState<string | null>(null);
+  // Session readiness verdict (#564). Set after the preflight probe runs in the
+  // mount effect (after the GH token is resolved so gh-auth uses the right env).
+  const [readinessVerdict, setReadinessVerdict] = useState<SessionVerdict | null>(null);
+  const [warnDismissed, setWarnDismissed] = useState(false);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
@@ -445,16 +449,16 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           skills,
         }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         if (destroyed) return;
-        // GitHub-readiness probe (#297): fleet/triage agents are told to push and
-        // open PRs; warn in-pane up front if the spawned shell can't (gh/git off
-        // PATH or gh unauthenticated) rather than the agent hitting it mid-task.
+        // Preflight probe (#564): check all host prerequisites (Git Bash, claude,
+        // git, gh, gh-auth) using the same env (GH_TOKEN) the session will have.
+        // Runs AFTER agentEnv is resolved so gh-auth uses the real token.
         try {
-          const probe = await invoke<GithubProbe>("github_readiness", { cwd: initialCwd, env: agentEnv });
-          const readiness = interpretGithubReadiness(probe);
-          if (!destroyed) setGhWarn(readiness.ok ? null : readiness.message);
-          if (!readiness.ok) log.warn(`console[${paneId}] github not ready (${readiness.status}): ${readiness.message}`);
+          const prereqs = await invoke<PrereqStatus[]>("preflight", {
+            cwd: initialCwd, env: agentEnv ?? null,
+          });
+          if (!destroyed) setReadinessVerdict(sessionVerdictFromReport(interpretDiagnostics(prereqs)));
         } catch (e) {
-          log.error(`console[${paneId}] github_readiness probe failed: ${e}`);
+          log.error(`console[${paneId}] preflight probe failed: ${e}`);
         }
         if (destroyed) return;
       }
@@ -618,6 +622,24 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     });
   }, [terminalFontSize, paneId]);
 
+  // Derive critical + warning lists from the verdict for rendering.
+  const criticalChecks = readinessVerdict?.failed.filter((c) => c.severity === "critical") ?? [];
+  const warningChecks  = readinessVerdict?.failed.filter((c) => c.severity === "warning")  ?? [];
+
+  function retryReadiness() {
+    const cwd = initialCwd ?? "";
+    if (!cwd) return;
+    const ghToken = tokenForRepo(
+      useAppStore.getState().paneRepos[paneId],
+      useAppStore.getState().repoGithubTokens,
+      useAppStore.getState().githubToken,
+    );
+    const env = ghToken ? { GH_TOKEN: ghToken } : null;
+    invoke<PrereqStatus[]>("preflight", { cwd, env })
+      .then((prereqs) => setReadinessVerdict(sessionVerdictFromReport(interpretDiagnostics(prereqs))))
+      .catch((e) => log.error(`console[${paneId}] preflight retry failed: ${e}`));
+  }
+
   return (
     <div
       style={{
@@ -627,27 +649,26 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         flexDirection: "column",
       }}
     >
-      {ghWarn && (
-        <div
-          role="alert"
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "6px 10px", fontSize: 12, lineHeight: 1.4,
-            color: "#e5c07b", background: "#3a2f1a", borderBottom: "1px solid #5a4a28",
-          }}
-        >
-          <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>⚠ GitHub</span>
-          <span style={{ flex: 1 }}>{ghWarn}</span>
-          <button
-            onClick={() => setGhWarn(null)}
-            style={{ background: "transparent", border: "none", color: "#e5c07b", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}
-            aria-label="Dismiss GitHub warning"
-          >×</button>
-        </div>
+      {criticalChecks.length > 0 && (
+        <SessionFailure critical={criticalChecks} onRetry={retryReadiness} />
+      )}
+      {criticalChecks.length === 0 && !warnDismissed && warningChecks.length > 0 && (
+        <SessionReadinessBanner
+          warnings={warningChecks}
+          onDismiss={() => setWarnDismissed(true)}
+          onSignInGitHub={
+            warningChecks.some((c) => c.id === "gh-auth")
+              ? () => { useAppStore.getState().setScreen("settings"); }
+              : undefined
+          }
+        />
       )}
       <div
         ref={containerRef}
-        style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px" }}
+        style={{
+          flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px",
+          display: criticalChecks.length > 0 ? "none" : undefined,
+        }}
       />
     </div>
   );
