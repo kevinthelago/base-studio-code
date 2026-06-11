@@ -81,6 +81,16 @@ describe("hydration", () => {
 
 // ── Terminal font zoom ──────────────────────────────────────────────────────────
 
+describe("autoPlanWithClaude setting (#682)", () => {
+  it("is off by default and toggles via the setter", () => {
+    expect(useAppStore.getState().autoPlanWithClaude).toBe(false);
+    useAppStore.getState().setAutoPlanWithClaude(true);
+    expect(useAppStore.getState().autoPlanWithClaude).toBe(true);
+    useAppStore.getState().setAutoPlanWithClaude(false);
+    expect(useAppStore.getState().autoPlanWithClaude).toBe(false);
+  });
+});
+
 describe("terminal font zoom", () => {
   it("defaults to the baseline font size", () => {
     expect(useAppStore.getState().terminalFontSize).toBe(12);

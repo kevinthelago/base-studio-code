@@ -7,16 +7,20 @@ import type { Phase } from "../screens/projects/focusedPlan";
 
 const ctx = (over: Partial<AutopilotContext> = {}): AutopilotContext => ({
   planReady: false, published: false, confirmKeys: [], plannerAwaiting: false,
-  iteration: 0, maxIterations: 100, idleStreak: 0, maxIdle: 5, ...over,
+  iteration: 0, maxIterations: 100, idleStreak: 0, maxIdle: 5, autoPublish: true, ...over,
 });
 
 const phase = (status: Phase["status"]): Phase =>
   ({ key: "k", name: "K", glyph: "•", blurb: "", gate: "", index: 0, total: 1, status, fraction: 0 });
 
 describe("decideAutopilotAction (#682)", () => {
-  it("publishes when the plan is ready + unpublished, then is done", () => {
+  it("publishes when the plan is ready + unpublished (harness), then is done", () => {
     expect(decideAutopilotAction(ctx({ planReady: true }))).toEqual({ kind: "publish" });
     expect(decideAutopilotAction(ctx({ planReady: true, published: true }))).toEqual({ kind: "done" });
+  });
+
+  it("the feature (autoPublish=false) stops at a publishable plan — done, never publish (#682)", () => {
+    expect(decideAutopilotAction(ctx({ planReady: true, autoPublish: false }))).toEqual({ kind: "done" });
   });
 
   it("while the planner waits: confirms a ready stage, else replies", () => {

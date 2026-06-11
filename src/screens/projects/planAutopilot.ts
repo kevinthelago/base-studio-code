@@ -38,6 +38,9 @@ export interface AutopilotContext {
   /** Consecutive ticks with no forward progress while idle — the stall guard. */
   idleStreak: number;
   maxIdle: number;
+  /** Whether to (mock-)publish on completion. The Settings FEATURE stops at a publishable
+   *  plan for review (false); the dev harness mock-publishes (true). (#682) */
+  autoPublish: boolean;
 }
 
 /**
@@ -49,7 +52,10 @@ export function decideAutopilotAction(ctx: AutopilotContext): AutopilotAction {
   if (ctx.iteration >= ctx.maxIterations) {
     return { kind: "stall", reason: `hit the ${ctx.maxIterations}-iteration cap` };
   }
-  if (ctx.planReady) return ctx.published ? { kind: "done" } : { kind: "publish" };
+  if (ctx.planReady) {
+    if (!ctx.autoPublish) return { kind: "done" }; // feature: stop at a publishable plan for review
+    return ctx.published ? { kind: "done" } : { kind: "publish" };
+  }
   // Stall on no forward progress — checked BEFORE the await branch so a non-responding user
   // (the `none` strategy) stalls instead of replying-with-nothing forever (#682, Phase 2).
   if (ctx.idleStreak >= ctx.maxIdle) {
