@@ -11,7 +11,11 @@
 // handler is pure but its surface, PlanPreviewPane, is a component.
 
 import type { ComponentType } from "react";
-import { PlanPreviewPane } from "./PlanPreviewPane";
+// Preview module: import renderers (side-effects) + the new shell component (#581).
+import "./preview/renderers/htmlRenderer";
+import "./preview/renderers/gltfRenderer";
+import "./preview/renderers/canvasRenderer";
+import { PreviewPaneShell } from "./preview/PreviewPaneShell";
 import { RENDER_PREVIEW_ID } from "./renderPreview";
 import { FileIntakePane } from "./FileIntakePane";
 import { FILE_INTAKE_ID } from "./fileIntake";
@@ -34,8 +38,9 @@ export interface PipelineScreenProps {
 export type PipelineScreenComponent = ComponentType<PipelineScreenProps>;
 
 const PIPELINE_SCREENS: Record<string, PipelineScreenComponent> = {
-  // The flagship second screen: the live UI preview, shown when the `ui` stage is reached.
-  [RENDER_PREVIEW_ID]: PlanPreviewPane,
+  // Modular streaming feed consumer (#581): PreviewPaneShell routes chunks through the
+  // renderer registry; renderer side-effects above register html/gltf/canvas renderers.
+  [RENDER_PREVIEW_ID]: PreviewPaneShell,
   // Drag-and-drop file intake (#604): stage design/any files for the planner to route.
   [FILE_INTAKE_ID]: FileIntakePane,
   // Grade report card (#615): renders the section's grader results (multiple → tabs).
