@@ -2613,7 +2613,7 @@ struct AutomationData {
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-const PLANNING_TEMPLATE_VERSION: u8 = 6;
+const PLANNING_TEMPLATE_VERSION: u8 = 7;
 
 #[derive(serde::Serialize)]
 struct WorkspacePaths {
@@ -2775,6 +2775,13 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
 
 ## Workflow
 
+> **Scope is set by the Active planning stages section at the bottom of this file
+> — it is authoritative.** The workflow below documents every possible stage; only
+> perform the steps and do not produce their artifacts (e.g. `issues.json`,
+> `phases.json`, `fleet.json`) for stages not listed there. If a stage isn't
+> listed, skip its steps and DO NOT create its files. (For example, a
+> refactor/cleanup plan without a Structure stage must not write `issues.json`.)
+
 1. **Read the knowledge base.** Before asking anything, read every `.md` in
    `../kb/` (team standards, stack conventions, templates). Assign relevant
    blocks with `<kb_assign id="block-id" />`.
@@ -2899,6 +2906,24 @@ If a topic does not apply, propose skipping it and record it in `_skipped.md`
 once the user agrees. Always scan before you propose; never race ahead.
 
 ## Workflow
+
+> **Scope is set by the Active planning stages section at the bottom of this file
+> — it is authoritative.** The workflow below documents every possible stage; only
+> perform the steps and do not produce their artifacts (e.g. `issues.json`,
+> `phases.json`, `fleet.json`) for stages not listed there. If a stage isn't
+> listed, skip its steps and DO NOT create its files. (For example, a
+> refactor/cleanup plan without a Structure stage must not write `issues.json`.)
+
+**Lifecycle check (before the numbered steps).** After linking repos, check the
+plan grades panel (letter grades per milestone) and the open vs. closed issue
+count (`gh issue list --state all --json state`). Use the result to choose the
+right mode:
+- **Active** (< 75% of issues closed): proceed with the standard discovery →
+  workshop → fleet flow below.
+- **near-complete** (≥ 75% issues closed, or ≥ 50% closed with a B+ plan grade):
+  propose an advisory **refactor/optimization pass** to the user. If they confirm,
+  stop here and use the Refactor blueprint — it produces targeted cleanup issues
+  only; do NOT write a new `phases.json` or `issues.json` roadmap.
 
 1. **Link repositories.** Check whether `## Linked repositories` appears at the
    bottom of this file.
@@ -3662,20 +3687,22 @@ fn sanitize_project_key(key: &str) -> String {
     s.chars().take(80).collect()
 }
 
-/// One-line directive per planning stage (#542) for the assembled active-stages
+/// One-line directive per planning stage (#542/#666) for the assembled active-stages
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
     let line = match id {
         "context"     => "**Context** — discovery, one topic at a time. The gate REQUIRES these four files, written and confirmed: `goal.md`, `scope.md`, `stack.md`, `architecture.md` — always create them. Cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`users`, `ux`, `schema`, `api`, `security`, `testing`, …); record every dimension you don't document in `_skipped.md`. Each file you create is a gate item the user must confirm — do NOT create files for tangential topics, or the gate can't complete.",
         "repos"       => "**Repos** — decide and link the repositories (emit `<repo_link>`, write `repos.json`).",
         "ui"          => "**UI** — design the screens: write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live.",
-        "structure"   => "**Structure** — run the feature workshop, then `phases.json` + agent-ready `issues.json`.",
+        "structure"   => "**Structure** — run the feature workshop (new project → feature-by-feature; existing → section-by-section migration — inventory every screen/module first), then write `phases.json` + agent-ready `issues.json`. Go ONE unit at a time; never move on until the current unit is fully decomposed and written.",
         "permissions" => "**Permissions** — plan the agent fleet (`fleet.json`): non-overlapping streams + least-privilege profiles.",
         "automations" => "**Automations** — propose cron automations (emit `<automation_assign>`).",
         "skills"      => "**Skills** — select reusable skills from the library (`skills.json`).",
         // transform / operate stages (#666) — these do NOT produce issues.json.
+        "refactor"     => "**Refactor** — identify improvement opportunities (dead code, simplification, performance); write one targeted cleanup issue per area. Do NOT produce `phases.json` or `issues.json`.",
         "cleanup"      => "**Dead & legacy code** — scan for unused/dead code & dependencies, verify each finding, and triage them into refactor units. Do NOT write `issues.json` — the refactor units drive the fleet directly.",
-        "testing"      => "**Testing** — define the coverage strategy and the test safety net for the changes.",
+        "testing" | "testing-informational" => "**Testing** — define the coverage strategy and the test safety net for the changes.",
+        "transform"    => "**Transform** — plan the migration to a new pattern, version, or framework; write migration issues in strict dependency order.",
         "boundaries"   => "**Service boundaries** — map the bounded contexts and the seams to split the monolith along.",
         "extraction"   => "**Extraction plan** — sequence the incremental, shippable steps to carve out each service.",
         "consolidation" => "**Consolidation** — plan merging the services, unifying data stores and contracts.",
@@ -5502,6 +5529,76 @@ mod tests {
 
         // unknown id → generic line, never panics
         assert!(super::build_active_stages_md(&["custom-x".into()]).contains("**custom-x**"));
+    }
+
+    /// Context directive must name the four gate-required files so the planner
+    /// doesn't create tangential sections that block the gate (#672).
+    #[test]
+    fn stage_directive_context_names_four_gate_files() {
+        let d = super::stage_directive("context");
+        assert!(d.contains("goal.md"),         "missing goal.md");
+        assert!(d.contains("scope.md"),        "missing scope.md");
+        assert!(d.contains("stack.md"),        "missing stack.md");
+        assert!(d.contains("architecture.md"), "missing architecture.md");
+        assert!(d.contains("_skipped.md"),     "must mention _skipped.md fallback");
+    }
+
+    /// Structure directive must mention both workshop modes (#355).
+    #[test]
+    fn stage_directive_structure_mentions_workshop_modes() {
+        let d = super::stage_directive("structure");
+        assert!(d.contains("feature-by-feature"), "missing new-project mode");
+        assert!(d.contains("section-by-section"), "missing existing-project mode");
+        assert!(d.contains("ONE unit"), "missing pace mandate");
+    }
+
+    /// Custom/refactor-blueprint stages get real directives, not the generic fallback (#666).
+    #[test]
+    fn stage_directive_custom_stages_have_real_directives() {
+        for id in &["refactor", "cleanup", "testing", "testing-informational", "transform"] {
+            let d = super::stage_directive(id);
+            assert!(
+                !d.ends_with("configured stage."),
+                "stage '{id}' fell back to generic — needs a real directive"
+            );
+        }
+        // Refactor explicitly says NOT to produce phases.json/issues.json (#666).
+        assert!(super::stage_directive("refactor").contains("NOT"), "refactor must exclude phases/issues");
+    }
+
+    /// PLANNING_PROCESS_MD Coverage section must carry the gate-item and Context gate text (#672).
+    #[test]
+    fn planning_process_md_coverage_names_context_gate_requirements() {
+        let md = super::PLANNING_PROCESS_MD;
+        assert!(md.contains("gate item"), "must explain the gate-item concept");
+        assert!(md.contains("Context** gate"), "must name the Context gate");
+        assert!(md.contains("goal`, `scope`"), "must list the required core files");
+        assert!(md.contains("Work one stage at a time"), "must include the one-stage-at-a-time rule");
+    }
+
+    /// Both intros must carry the scope guard that makes the active-stages list
+    /// authoritative over the fixed workflow steps (#666).
+    #[test]
+    fn planner_intros_carry_active_stages_scope_guard() {
+        for t in [super::PLANNING_NEW_INTRO, super::PLANNING_EXISTING_INTRO] {
+            assert!(
+                t.contains("Active planning stages section at the bottom of this file"),
+                "scope guard missing from intro"
+            );
+            assert!(
+                t.contains("do not produce their artifacts"),
+                "must declare that unlisted stages are out of scope"
+            );
+        }
+    }
+
+    /// PLANNING_EXISTING_INTRO must include the lifecycle check paragraph (#458).
+    #[test]
+    fn planning_existing_intro_has_lifecycle_check() {
+        let intro = super::PLANNING_EXISTING_INTRO;
+        assert!(intro.contains("Lifecycle check"), "lifecycle check section missing");
+        assert!(intro.contains("near-complete"), "must mention near-complete threshold");
+        assert!(intro.contains("refactor"), "must mention refactor pass for near-complete projects");
     }
 
     /// Loadbearing claim of the orphan-kill fix: dropping the job handle kills
