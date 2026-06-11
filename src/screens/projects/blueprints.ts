@@ -381,7 +381,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", false]] }),
         mkSection("permissions", { pipelines: [] }),
         mkSection("automations", { optional: true, pipelines: [["arm-schedule", "on completion", true]] }),
-        mkSection("skills",      { pipelines: [["sync-skills", "manual", true]] }),
+        mkSection("skills",      { optional: true, pipelines: [["sync-skills", "manual", true]] }),
       ],
     },
     {
