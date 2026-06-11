@@ -744,6 +744,10 @@ interface AppStore {
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;
   setAutoResumeClaude: (v: boolean) => void;
+  /** #682: let Claude auto-drive the planning phase from a pitch (opt-in; off by default).
+   *  Enables the "Auto-plan" control on the planner page. */
+  autoPlanWithClaude: boolean;
+  setAutoPlanWithClaude: (v: boolean) => void;
   /** Default Claude model new console panes open with (persisted; configured in
    *  Settings → General). Per-pane override lives in the pane hamburger menu. */
   defaultModel: ModelId;
@@ -2251,6 +2255,9 @@ export const useAppStore = create<AppStore>()(
 
       autoResumeClaude: true,
       setAutoResumeClaude: (v) => set({ autoResumeClaude: v }),
+
+      autoPlanWithClaude: false,
+      setAutoPlanWithClaude: (v) => set({ autoPlanWithClaude: v }),
       coordAutoWake: false,
       setCoordAutoWake: (v) => set({ coordAutoWake: v }),
 
@@ -2305,6 +2312,7 @@ export const useAppStore = create<AppStore>()(
         autoFocusMode:        s.autoFocusMode,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
+        autoPlanWithClaude:   s.autoPlanWithClaude,
         coordAutoWake:        s.coordAutoWake,
         defaultModel:         s.defaultModel,
         paneModels:           s.paneModels,

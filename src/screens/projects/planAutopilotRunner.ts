@@ -20,6 +20,8 @@ export interface AutopilotSnapshot {
   plannerAwaiting: boolean;
   /** The planner produced new output since the last tick — forward progress, resets idle. */
   working: boolean;
+  /** (Mock-)publish on completion vs stop at a publishable plan for review (#682). */
+  autoPublish: boolean;
   progress: { done: number; total: number; fraction: number };
 }
 
@@ -80,6 +82,7 @@ export async function autopilotTick(state: AutopilotRunState, deps: AutopilotDep
     maxIterations: MAX_ITERATIONS,
     idleStreak: idle,
     maxIdle: MAX_IDLE,
+    autoPublish: snap.autoPublish,
   });
   const next: AutopilotRunState = { ...state, iteration: state.iteration + 1, idleStreak: idle };
 
