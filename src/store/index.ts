@@ -239,6 +239,9 @@ interface AppStore {
   paneRepos: Record<string, string>;
   /** Per-agent flow (#297) for each pane, seeded at fleet launch from the stream. */
   paneFlows: Record<string, AgentFlow>;
+  /** Console provider id per pane (persisted). Absent ⇒ "claude" (default). */
+  paneProviders: Record<string, string>;
+  setPaneProvider: (paneId: string, providerId: string) => void;
   setPaneProfile: (paneId: string, profileId: string | null) => void;
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
@@ -693,6 +696,9 @@ export const useAppStore = create<AppStore>()(
       paneRoleGlobs: {},
       paneRepos: {},
       paneFlows: {},
+      paneProviders: {},
+      setPaneProvider: (paneId, providerId) =>
+        set((s) => ({ paneProviders: { ...s.paneProviders, [paneId]: providerId } })),
       setPaneProfile: (paneId, profileId) =>
         set((s) => {
           const next = { ...s.paneProfiles };

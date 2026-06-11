@@ -1,6 +1,7 @@
 import { RefreshCw, Pin, FolderInput, Unlink2, X, GitBranch } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
+import { listProviders } from "../../lib/consoleProviders";
 
 export type ModelId = "haiku-4.5" | "sonnet-4.5" | "opus-4.5";
 
@@ -17,12 +18,17 @@ interface HamburgerMenuProps {
   model: ModelId;
   active: ViewKey;
   available: ViewKey[];
+  /** Currently selected provider id for this pane. Absent ⇒ "claude". */
+  providerId?: string;
+  /** Called when the user picks a different provider. */
+  onProviderChange?: (id: string) => void;
   onClose?: () => void;
 }
 
 export function HamburgerMenu({
-  agent, repo, branch, model, active, available,
+  agent, repo, branch, model, active, available, providerId = "claude", onProviderChange,
 }: HamburgerMenuProps) {
+  const providers = listProviders();
   return (
     <div style={{
       position: "absolute", top: 38, right: 6, zIndex: 20,
@@ -76,6 +82,22 @@ export function HamburgerMenu({
         })}
       </MenuSection>
 
+      {/* Provider */}
+      <MenuSection label="provider">
+        {providers.map((p) => {
+          const on = p.id === providerId;
+          return (
+            <MenuRow key={p.id} on={on} onClick={() => onProviderChange?.(p.id)}>
+              <span style={{
+                width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                background: on ? "var(--accent)" : "var(--border)",
+              }} />
+              <span style={{ color: on ? "var(--accent)" : "var(--fg)", flex: 1 }}>{p.displayName}</span>
+            </MenuRow>
+          );
+        })}
+      </MenuSection>
+
       {/* Views */}
       <MenuSection label="view">
         {available.map((k) => {
@@ -116,14 +138,17 @@ function MenuSection({ label, children, last }: { label: string; children: React
   );
 }
 
-function MenuRow({ on, children }: { on?: boolean; children: React.ReactNode }) {
+function MenuRow({ on, onClick, children }: { on?: boolean; onClick?: () => void; children: React.ReactNode }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 6, padding: "6px 8px",
-      borderRadius: 5,
-      background: on ? "color-mix(in oklch, var(--accent), transparent 90%)" : "transparent",
-      cursor: "pointer",
-    }}>{children}</div>
+    <div
+      onClick={onClick}
+      style={{
+        display: "flex", alignItems: "center", gap: 6, padding: "6px 8px",
+        borderRadius: 5,
+        background: on ? "color-mix(in oklch, var(--accent), transparent 90%)" : "transparent",
+        cursor: "pointer",
+      }}
+    >{children}</div>
   );
 }
 
