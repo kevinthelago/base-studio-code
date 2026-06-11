@@ -6,10 +6,17 @@ import { useState, useEffect } from "react";
 import "./projectPane.css";
 import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
-  ProjectPaneData,
+  ProjectPaneData, PaneAutomation, PaneSkill,
 } from "./projectPaneData";
 import type { Section } from "./ghStructure";
 import type { FleetPlan } from "./planSections";
+import type { Phase, GatePill, FooterKind } from "./focusedPlan";
+import {
+  Stepper as FocusedStepper,
+  PhaseHeader as FocusedPhaseHeader,
+  LockBanner as FocusedLockBanner,
+  PhaseFooter as FocusedPhaseFooter,
+} from "./FocusedShell";
 
 /* =================================================================
    types
@@ -941,6 +948,202 @@ function PlaceholderStageBody({ stage }: { stage: PlanStage }) {
 }
 
 /* =================================================================
+   focused mode phase bodies (#652 / #674 / #676 / #677)
+   ================================================================= */
+
+function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: (r: string) => void }) {
+  const [input, setInput] = useState("");
+
+  if (!repos || repos.length === 0) {
+    return (
+      <div>
+        <div className="empty-state">
+          <span className="empty-icon">⎇</span>
+          <span>No repositories linked yet</span>
+        </div>
+        {onLinkRepo && (
+          <div style={{ display: "flex", gap: 6, padding: "8px 0 0", alignItems: "center" }}>
+            <label htmlFor="link-repo-input" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>
+              Link a repository
+            </label>
+            <input
+              id="link-repo-input"
+              aria-label="Link a repository"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="owner/repo"
+              style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 10 }}
+            />
+            <button
+              onClick={() => {
+                if (input.includes("/")) { onLinkRepo(input); setInput(""); }
+              }}
+              style={{ fontFamily: "var(--mono)", fontSize: 10 }}
+            >
+              link
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", padding: "0 2px 8px" }}>
+        repositories
+      </div>
+      {repos.map((r) => (
+        <div key={r.id} style={{
+          padding: "9px 11px", borderRadius: 7, marginBottom: 6,
+          background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{r.id}</span>
+            {r.primary && (
+              <span style={{
+                fontFamily: "var(--mono)", fontSize: 8.5, padding: "0 5px", borderRadius: 3,
+                background: "color-mix(in oklch, var(--accent), transparent 84%)", color: "var(--accent)",
+              }}>primary</span>
+            )}
+            <span style={{ flex: 1 }} />
+            {r.cloned !== undefined && (
+              <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: r.cloned ? "var(--success)" : "var(--fg-dim)" }}>
+                {r.cloned ? "● cloned" : "○ not cloned"}
+              </span>
+            )}
+          </div>
+          {r.branches && r.branches.length > 0 && (
+            <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
+              {r.branches.map((b) => (
+                <BranchChip key={b.n} n={b.n} />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FocusedContextBody({ context }: { context?: ContextFile[] }) {
+  const files = context ?? [];
+  if (files.length === 0) {
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">✦</span>
+        <span>No context files yet</span>
+      </div>
+    );
+  }
+  const totalTok = files.reduce((s, f) => s + parseFloat(f.tok), 0);
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", padding: "0 2px 8px", gap: 8 }}>
+        <span className="ulabel">context files</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)" }}>
+          {totalTok.toFixed(1)}k / 200k tok
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {files.map((f) => <CtxRow key={f.name} f={f} />)}
+      </div>
+    </div>
+  );
+}
+
+function FocusedAutomationsBody({ automations }: { automations?: PaneAutomation[] }) {
+  const list = automations ?? [];
+  if (list.length === 0) {
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">⏱</span>
+        <span>No automations yet</span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      {list.map((a) => (
+        <div key={a.name} style={{
+          padding: "8px 10px", borderRadius: 6,
+          background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+        }}>
+          <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{a.name}</div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 3 }}>
+            {a.command}{a.schedule ? ` · ${a.schedule}` : ""}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FocusedSkillsBody({ skills }: { skills?: PaneSkill[] }) {
+  const list = skills ?? [];
+  if (list.length === 0) {
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">◈</span>
+        <span>No skills attached</span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      {list.map((s) => (
+        <div key={s.name} style={{
+          padding: "8px 10px", borderRadius: 6,
+          background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+        }}>
+          <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{s.name}</div>
+          {s.desc && <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 3 }}>{s.desc}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FocusedPhaseBody({ phase, data, onLinkRepo }: {
+  phase: Phase;
+  data?: ProjectPaneData;
+  onLinkRepo?: (r: string) => void;
+}) {
+  switch (phase.key) {
+    case "repos":
+      return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} />;
+    case "context":
+      return <FocusedContextBody context={data?.context} />;
+    case "structure":
+      return (
+        <div className="empty-state">
+          <span className="empty-icon">◫</span>
+          <span>No structure yet</span>
+        </div>
+      );
+    case "permissions":
+      return (
+        <div className="empty-state">
+          <span className="empty-icon">◎</span>
+          <span>No agents yet</span>
+        </div>
+      );
+    case "automations":
+      return <FocusedAutomationsBody automations={data?.automations} />;
+    case "skills":
+      return <FocusedSkillsBody skills={data?.skills} />;
+    default:
+      return (
+        <div className="empty-state">
+          <span className="empty-icon">⋯</span>
+          <span>The planner documents this stage.</span>
+        </div>
+      );
+  }
+}
+
+/* =================================================================
    stage navigation components (#652)
    ================================================================= */
 
@@ -1187,6 +1390,9 @@ export function ProjectPane({
   sections,
   linkedRepos: linkedReposProp,
   fleet,
+  // focused mode: one-phase sequenced rail (#652)
+  focus,
+  onLinkRepo,
 }: {
   data?: ProjectPaneData;
   projectName?: string;
@@ -1202,6 +1408,19 @@ export function ProjectPane({
   sections?: Section[];
   linkedRepos?: string[];
   fleet?: FleetPlan;
+  /** When provided, renders the sequenced-rail focused mode using FocusedShell (#652). */
+  focus?: {
+    phases: Phase[];
+    selectedIdx: number;
+    activeIdx: number;
+    onSelect: (i: number) => void;
+    pill: GatePill;
+    footer: { kind: FooterKind; enabled: boolean };
+    onBack: () => void;
+    onPrimary: () => void;
+  };
+  /** Callback to link a repository from the focused repos body (#677). */
+  onLinkRepo?: (repo: string) => void;
 }) {
   // Determine whether to show the staged view or the legacy flat view.
   // Staged view: when sections prop is provided (real planning session).
@@ -1247,6 +1466,24 @@ export function ProjectPane({
 
   // Shared body data bundle
   const bodyData = { agents, repos, structure, context };
+
+  // Focused mode: sequenced-rail one-phase view (#652)
+  if (focus) {
+    const selected = focus.phases[focus.selectedIdx];
+    const active   = focus.phases[focus.activeIdx];
+    const isLocked = focus.selectedIdx > focus.activeIdx;
+    return (
+      <div className="pp fp">
+        <FocusedStepper phases={focus.phases} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} />
+        <FocusedPhaseHeader phase={selected} pill={focus.pill} />
+        {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
+        <div className="pp-scroll">
+          <FocusedPhaseBody phase={selected} data={data} onLinkRepo={onLinkRepo} />
+        </div>
+        <FocusedPhaseFooter phase={selected} action={focus.footer} onBack={focus.onBack} onPrimary={focus.onPrimary} />
+      </div>
+    );
+  }
 
   return (
     <div className="pp">
