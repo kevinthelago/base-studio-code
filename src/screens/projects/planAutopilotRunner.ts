@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  decideAutopilotAction, buildUserSimPrompt, type AutopilotResult,
+  decideAutopilotAction, buildUserSimPrompt, staticReply, type AutopilotResult, type AutopilotStrategy,
 } from "./planAutopilot";
 
 /** The live planning state the runner reads each tick (computed by the host component). */
@@ -18,12 +18,16 @@ export interface AutopilotSnapshot {
   confirmKeys: string[];
   /** Planner finished its turn and is awaiting input (idle-detected by the host). */
   plannerAwaiting: boolean;
+  /** The planner produced new output since the last tick — forward progress, resets idle. */
+  working: boolean;
   progress: { done: number; total: number; fraction: number };
 }
 
 /** Injected effects — the host wires these to the real session/store (or fakes, in tests). */
 export interface AutopilotDeps {
   pitch: string;
+  /** How the simulated user answers: `llm` (Claude), or `scripted`/`random`/`none` (Phase 2). */
+  strategy: AutopilotStrategy;
   snapshot: () => AutopilotSnapshot;
   /** The planner's output since the last reply (for the user-sim). */
   pendingOutput: () => string;
@@ -65,6 +69,8 @@ const finish = (state: AutopilotRunState, snap: AutopilotSnapshot, completed: bo
 export async function autopilotTick(state: AutopilotRunState, deps: AutopilotDeps): Promise<AutopilotRunState> {
   if (state.finished) return state;
   const snap = deps.snapshot();
+  // Active planner output is forward progress — never count it as idle.
+  const idle = snap.working ? 0 : state.idleStreak;
   const action = decideAutopilotAction({
     planReady: snap.planReady,
     published: state.published,
@@ -72,18 +78,30 @@ export async function autopilotTick(state: AutopilotRunState, deps: AutopilotDep
     plannerAwaiting: snap.plannerAwaiting,
     iteration: state.iteration,
     maxIterations: MAX_ITERATIONS,
-    idleStreak: state.idleStreak,
+    idleStreak: idle,
     maxIdle: MAX_IDLE,
   });
-  const next: AutopilotRunState = { ...state, iteration: state.iteration + 1 };
+  const next: AutopilotRunState = { ...state, iteration: state.iteration + 1, idleStreak: idle };
 
   switch (action.kind) {
     case "reply": {
-      const { system, user } = buildUserSimPrompt(deps.pitch, deps.pendingOutput());
-      const reply = await deps.userSim(system, user);
-      deps.sendReply(reply);
-      deps.log({ tick: state.iteration, action: "reply", detail: reply.slice(0, 80) });
-      next.idleStreak = 0;
+      // `llm` asks Claude; the other strategies use a canned reply (`none` sends nothing,
+      // which lets idle climb to a stall — the "no response" test). (#682, Phase 2)
+      let reply: string | null;
+      if (deps.strategy === "llm") {
+        const { system, user } = buildUserSimPrompt(deps.pitch, deps.pendingOutput());
+        reply = await deps.userSim(system, user);
+      } else {
+        reply = staticReply(deps.strategy, state.iteration);
+      }
+      if (reply !== null) {
+        deps.sendReply(reply);
+        deps.log({ tick: state.iteration, action: "reply", detail: reply.slice(0, 80) });
+        next.idleStreak = 0;
+      } else {
+        deps.log({ tick: state.iteration, action: "reply", detail: "(none — sent nothing)" });
+        next.idleStreak = idle + 1;
+      }
       break;
     }
     case "confirm":
@@ -107,7 +125,7 @@ export async function autopilotTick(state: AutopilotRunState, deps: AutopilotDep
       deps.log({ tick: state.iteration, action: "stall", detail: action.reason });
       break;
     case "wait":
-      next.idleStreak = state.idleStreak + 1;
+      next.idleStreak = idle + 1;
       break;
   }
   return next;
