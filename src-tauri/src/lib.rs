@@ -3251,19 +3251,26 @@ context to stand on. Document the core dimensions briefly and move on fast; do
 NOT turn this into a dozen set-piece conversations. `goal`, `phases`, `issues`,
 and `risks` apply to almost every project.
 
-**Core orientation — document these, briefly (each line is the template):**
-- `goal` — what it does, who it's for, and the measurable signal of success
-  (2–4 sentences). Drives the GitHub project title and description.
+**Core orientation — document these, briefly (each line is the template).**
+
+> **REQUIRED for the Context gate — always create and confirm four files: `goal.md`,
+> `scope.md`, `stack.md`, and `architecture.md`.** Do this for EVERY project, even a trivial
+> one (keep them short if so, but never skip them — the "skip what doesn't apply" guidance
+> below does NOT cover these four). The Context stage cannot complete until all four exist and
+> the user has confirmed each. `users` is helpful orientation but is NOT gate-required.
+
+- `goal` **(gate-required)** — what it does, who it's for, and the measurable signal of
+  success (2–4 sentences). Drives the GitHub project title and description.
 - `users` — primary personas, their jobs-to-be-done, and the one workflow each
   cares most about. One tight paragraph.
-- `scope` — two lists: **In scope** (concrete deliverables) and **Out of scope**
-  (explicit exclusions that prevent scope creep).
-- `stack` — one line per layer (runtime, framework, datastore, auth, hosting)
-  with versions and a justification for non-obvious picks. As soon as the
+- `scope` **(gate-required)** — two lists: **In scope** (concrete deliverables) and **Out of
+  scope** (explicit exclusions that prevent scope creep).
+- `stack` **(gate-required)** — one line per layer (runtime, framework, datastore, auth,
+  hosting) with versions and a justification for non-obvious picks. As soon as the
   toolchain is decided, record its build/test/run/package binaries in
   `commands.json` and emit `<allow_command>` (see "App integration tags").
-- `architecture` — named components + a one-sentence responsibility each, how
-  they communicate, and the 2–3 key cross-component flows. For a multi-repo
+- `architecture` **(gate-required)** — named components + a one-sentence responsibility each,
+  how they communicate, and the 2–3 key cross-component flows. For a multi-repo
   project, say which repo owns what.
 
 **Capture only where it materially shapes the build — otherwise fold it into the
@@ -7110,6 +7117,14 @@ mod tests {
         }
         assert!(ctx.contains("_skipped.md"), "context directive points non-applicable dimensions at _skipped");
         assert!(super::PLANNING_PROCESS_MD.contains("gate item"), "coverage section frames created files as gate items");
+        // The discovery checklist itself flags the four files as gate-required and tells the
+        // planner the gate can't pass without them — so they aren't lost to "skip" guidance (#736).
+        let proc = super::PLANNING_PROCESS_MD;
+        assert!(proc.contains("REQUIRED for the Context gate"), "checklist has the required-files callout");
+        assert!(proc.contains("gate-required"), "checklist marks the four required dimensions");
+        for f in ["goal.md", "scope.md", "stack.md", "architecture.md"] {
+            assert!(proc.contains(f), "checklist callout names {f}");
+        }
     }
 
     #[test]
