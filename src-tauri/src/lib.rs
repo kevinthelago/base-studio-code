@@ -3745,6 +3745,8 @@ pub fn run() {
             tunnel::tunnel_unpair,
             tunnel::tunnel_set_panes,
             tunnel::tunnel_set_sessions,
+            tunnel::tunnel_set_plan_state,
+            tunnel::tunnel_ack_plan_push,
             read_audit_log,
             read_coord_log,
             append_coord_woke,
