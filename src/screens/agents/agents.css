@@ -131,6 +131,16 @@
 .agents-page .prof-select .sw { width: 9px; height: 9px; border-radius: 3px; }
 .agents-page .prof-select .nm { color: var(--fg); }
 .agents-page .prof-select .cv { color: var(--fg-dim); margin-left: 2px; }
+/* prof-select dropdown menu (#681) */
+.agents-page .prof-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 100%;
+  display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 8px;
+  background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.agents-page .prof-opt { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border: none; border-radius: 5px;
+  background: none; cursor: pointer; font-family: var(--mono); font-size: 11px; color: var(--fg-muted); text-align: left; white-space: nowrap; }
+.agents-page .prof-opt:hover { background: var(--bg-elev2); color: var(--fg); }
+.agents-page .prof-opt.on { color: var(--fg); }
+.agents-page .prof-opt.on::after { content: "✓"; margin-left: auto; color: var(--accent); }
+.agents-page .prof-opt .sw { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 9px; }
 .agents-page .resolved { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--mono); font-size: 10px; color: var(--fg-dim); }
 .agents-page .resolved .lbl { text-transform: uppercase; letter-spacing: .06em; }
 .agents-page .rchip { padding: 1px 7px; border-radius: 99px; background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted); font-size: 10px; }

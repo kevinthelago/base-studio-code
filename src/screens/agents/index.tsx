@@ -170,11 +170,6 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
   function toggleAssign(_consoleId: string, paneId: string) {
     setPaneProfile(paneId, paneProfiles[paneId] === selectedId ? null : selectedId);
   }
-  function cycleProfile(_consoleId: string, paneId: string) {
-    const cur = paneProfiles[paneId] ?? "pf_sandbox";
-    const idx = profiles.findIndex((p) => p.id === cur);
-    setPaneProfile(paneId, profiles[(idx + 1) % profiles.length].id);
-  }
   function openProfile(id: string) { select("profiles"); setSelectedId(id); }
 
   // Create a new user profile (#259): sensible defaults, persisted, then selected.
@@ -260,7 +255,8 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
         {tab === "assignments" && (
           <AssignmentsTab
             roles={roles} consoles={consoles} paneTotal={paneTotal}
-            onCycle={cycleProfile} onOpen={openProfile} find={find}
+            profiles={profiles} onAssign={(_c, paneId, profileId) => setPaneProfile(paneId, profileId)}
+            onOpen={openProfile} find={find}
           />
         )}
         {tab === "activity" && (
@@ -542,12 +538,54 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
 
 interface AssignmentsTabProps {
   roles: AgentProfile[]; consoles: ConsoleSession[]; paneTotal: number;
-  onCycle: (consoleId: string, paneId: string) => void;
+  /** Assignable profiles (the user/custom profiles a pane can run under). */
+  profiles: AgentProfile[];
+  /** Assign a specific profile to a pane (#681 — replaces the old cycle-to-next). */
+  onAssign: (consoleId: string, paneId: string, profileId: string) => void;
   onOpen: (id: string) => void;
   find: (id: string) => AgentProfile | undefined;
 }
 
-function AssignmentsTab({ roles, consoles, paneTotal, onCycle, onOpen, find }: AssignmentsTabProps) {
+/** A click-to-open dropdown for picking a pane's profile (#681). */
+export function ProfileSelect({ current, profiles, onPick }: {
+  current?: AgentProfile; profiles: AgentProfile[]; onPick: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+  return (
+    <div className="prof-select" style={{ position: "relative" }} onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>
+      <span className="sw" style={{ background: current?.color }} />
+      <span className="nm">{current?.name ?? "—"}</span>
+      {current && <span className={`mode-badge ${current.mode}`} style={{ marginLeft: 2 }}>{current.mode}</span>}
+      <span className="cv">▾</span>
+      {open && (
+        <div className="prof-menu" role="listbox" onClick={(e) => e.stopPropagation()}>
+          {profiles.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="option"
+              aria-selected={p.id === current?.id}
+              className={"prof-opt" + (p.id === current?.id ? " on" : "")}
+              onClick={() => { onPick(p.id); setOpen(false); }}
+            >
+              <span className="sw" style={{ background: p.color }} />
+              <span className="nm">{p.name}</span>
+              <span className={`mode-badge ${p.mode}`}>{p.mode}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign, onOpen, find }: AssignmentsTabProps) {
   return (
     <>
       <div className="sec-head">
@@ -598,12 +636,7 @@ function AssignmentsTab({ roles, consoles, paneTotal, onCycle, onOpen, find }: A
                       <span className="pa">{pane.agent}</span>
                       <span className="pstat">{pane.id}</span>
                     </div>
-                    <div className="prof-select" onClick={() => onCycle(c.id, pane.id)}>
-                      <span className="sw" style={{ background: p?.color }} />
-                      <span className="nm">{p?.name}</span>
-                      {p && <span className={`mode-badge ${p.mode}`} style={{ marginLeft: 2 }}>{p.mode}</span>}
-                      <span className="cv">▾</span>
-                    </div>
+                    <ProfileSelect current={p} profiles={profiles} onPick={(id) => onAssign(c.id, pane.id, id)} />
                     <div className="resolved">
                       <span className="lbl">runs:</span>
                       {resolved.map((r) => (
