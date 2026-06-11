@@ -18,6 +18,24 @@ export function letterFromScore(score: number): Letter {
   return "F";
 }
 
+/** The ONE grade color map — keyed by letter so chips and bars always agree (#686).
+ *  Every grade color in the app should derive from this (via {@link gradeColor}). */
+export function letterColor(letter: Letter): string {
+  switch (letter) {
+    case "A": return "var(--success)";
+    case "B": return "var(--accent)";
+    case "C": return "oklch(0.74 0.14 90)";
+    case "D": return "oklch(0.72 0.15 55)";
+    default:  return "var(--danger)";
+  }
+}
+
+/** Color for a 0..1 score, routed through the letter tiers so a bar's color always
+ *  matches its letter grade (#686). Pass `n / 100` for a 0..100 score. */
+export function gradeColor(score: number): string {
+  return letterColor(letterFromScore(score));
+}
+
 // ── Issue grade ───────────────────────────────────────────────────────────────
 
 export interface IssueGrade {

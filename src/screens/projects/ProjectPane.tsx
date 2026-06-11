@@ -4,6 +4,7 @@
 // Context Files, Repository · Structure, Agents · Permissions). Styling lives in
 // projectPane.css and uses the app's design tokens.
 import { useState, useEffect, type ReactNode } from "react";
+import { letterColor, gradeColor } from "../../lib/planGrade";
 import type { IssueGrade, Letter, PlanGrade } from "../../lib/planGrade";
 import { AGENT_READINESS_ID } from "./gradeDispatch";
 import { useAppStore } from "../../store";
@@ -292,13 +293,9 @@ function SyncBtn({ label, state = "idle", onClick }: { label: string; state?: Sy
   );
 }
 
-// grade letter chip — color-coded A/B/C/D/F badge
+// grade letter chip — color-coded A/B/C/D/F badge (color via the shared map, #686)
 function GradeChip({ letter }: { letter: Letter }) {
-  const color = letter === "A" ? "var(--success)"
-    : letter === "B" ? "var(--accent)"
-    : letter === "C" ? "oklch(0.74 0.14 90)"
-    : letter === "D" ? "oklch(0.72 0.15 55)"
-    : "var(--danger)";
+  const color = letterColor(letter);
   return (
     <span title={`Plan grade: ${letter}`} style={{
       display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -310,13 +307,9 @@ function GradeChip({ letter }: { letter: Letter }) {
   );
 }
 
-// score → bar/letter color (shared by the category bars).
-function scoreColor(score: number): string {
-  return score >= 0.75 ? "var(--success)"
-    : score >= 0.60 ? "var(--accent)"
-    : score >= 0.45 ? "oklch(0.74 0.14 90)"
-    : "var(--danger)";
-}
+// score (0..1) → bar color, routed through the shared letter tiers so bars match the
+// letter chips (#686).
+const scoreColor = gradeColor;
 
 const PRIORITY_COLOR: Record<string, string> = {
   high:   "var(--danger)",

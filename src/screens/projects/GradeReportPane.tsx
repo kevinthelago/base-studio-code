@@ -11,14 +11,13 @@ import { runSectionGrade } from "./gradeDispatch";
 import { runSectionGradeLLM } from "./gradeLLM";
 import type { GradeResult, Severity } from "./grading";
 import type { PipelineScreenProps } from "./pipelineScreens";
+import { letterColor, gradeColor } from "../../lib/planGrade";
 
 const EMPTY: GradeResult[] = [];
 
-const letterColor = (letter: string): string =>
-  letter === "A" ? "var(--success)" : letter === "B" ? "var(--teal, var(--info))"
-    : letter === "C" ? "var(--accent)" : letter === "D" ? "oklch(0.7 0.16 50)" : "var(--danger)";
-const scoreColor = (n: number): string =>
-  n >= 80 ? "var(--success)" : n >= 60 ? "var(--accent)" : n >= 40 ? "oklch(0.7 0.16 50)" : "var(--danger)";
+// Grade colors come from the one shared map (#686) so chips + bars agree across every
+// surface. GradeResult scores are 0..100 → divide for the 0..1 gradeColor.
+const scoreColor = (n: number): string => gradeColor(n / 100);
 const sevColor = (s: Severity): string => (s === "error" ? "var(--danger)" : s === "warn" ? "var(--accent)" : "var(--fg-muted)");
 
 function GradeCard({ g }: { g: GradeResult }) {

@@ -1,12 +1,29 @@
 import { describe, it, expect } from "vitest";
 import {
   letterFromScore,
+  letterColor,
+  gradeColor,
   gradeIssue,
   gradeMilestone,
   gradeRepo,
   gradePlan,
 } from "../lib/planGrade";
 import type { PlanIssue } from "../screens/projects/planIssues";
+
+describe("grade color is one source of truth (#686)", () => {
+  it("gradeColor routes a score through the letter tiers — so a bar matches its chip", () => {
+    for (const s of [0.97, 0.8, 0.65, 0.5, 0.2]) {
+      expect(gradeColor(s)).toBe(letterColor(letterFromScore(s)));
+    }
+  });
+  it("the disputed tiers no longer disagree across the score range", () => {
+    expect(gradeColor(0.95)).toBe("var(--success)");          // A
+    expect(gradeColor(0.50)).toBe(letterColor("D"));          // 50% → D (was orange vs red across panes)
+    expect(gradeColor(0.30)).toBe("var(--danger)");           // F
+    // each tier is a distinct color
+    expect(new Set(["A", "B", "C", "D", "F"].map((l) => letterColor(l as never))).size).toBe(5);
+  });
+});
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
