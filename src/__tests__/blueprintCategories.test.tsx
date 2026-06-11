@@ -35,10 +35,11 @@ describe("blueprint categories (#645)", () => {
     expect(repos.enabled).toBe(true);
   });
 
-  it("the default blueprint's UI + automations stages are optional (#676/#698)", () => {
+  it("the default blueprint's UI + automations + skills stages are optional (#676/#698/#700)", () => {
     const def = makeBlueprints().find((b) => b.id === "default")!;
     expect(def.sections.find((s) => s.key === "ui")!.optional).toBe(true);
     expect(def.sections.find((s) => s.key === "automations")!.optional).toBe(true);
+    expect(def.sections.find((s) => s.key === "skills")!.optional).toBe(true);
     // other blueprints' UI stays required
     expect(makeBlueprints().find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "ui")!.optional).toBeFalsy();
   });
