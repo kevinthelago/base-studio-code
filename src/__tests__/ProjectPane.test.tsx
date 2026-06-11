@@ -155,3 +155,52 @@ describe("ProjectPane (v5) — staged layout", () => {
     expect(screen.getByText("acme/payments")).toBeTruthy();
   });
 });
+
+// ----------------------------------------------------------------
+// Optional stage support (#676)
+// ----------------------------------------------------------------
+describe("ProjectPane (v5) — optional stages (#676)", () => {
+  it("shows 'optional' tag in stage header when active stage is optional", () => {
+    render(<ProjectPane sections={CONTEXT_SECTIONS} linkedRepos={["acme/payments"]} />);
+    // Advance to UI stage (index 2) which is optional
+    const fwdBtn = screen.getByText(/Repos →/);
+    fireEvent.click(fwdBtn); // advance to Repos (gate met via linked repo)
+    // Now advance to UI (repos gate is met because we passed a linked repo)
+    // But we need gate met for repos first — skip by forcing stepper click
+    const nodes = document.querySelectorAll(".stepper-node");
+    fireEvent.click(nodes[2]); // UI stage (index 2)
+    // "optional" tag appears in the stage header (and locked banners for future optional stages)
+    expect(screen.getAllByText("optional").length).toBeGreaterThan(0);
+  });
+
+  it("advance button is enabled on an optional stage even when gate is not met", () => {
+    render(<ProjectPane sections={CONTEXT_SECTIONS} linkedRepos={["acme/payments"]} />);
+    // Jump directly to UI stage (optional, gate unmet unless ux section exists)
+    const nodes = document.querySelectorAll(".stepper-node");
+    fireEvent.click(nodes[2]); // UI stage (index 2)
+    // ux section not in CONTEXT_SECTIONS → gate not met, but optional → advance should be enabled
+    const fwdBtn = document.querySelector(".advance-btn.fwd") as HTMLButtonElement;
+    expect(fwdBtn).not.toBeNull();
+    expect(fwdBtn.disabled).toBe(false);
+  });
+
+  it("shows 'optional' tag in locked banner for future optional stages", () => {
+    render(<ProjectPane sections={NO_SECTIONS} linkedRepos={[]} />);
+    // UI, Automations, Skills are optional and appear as locked banners
+    const optionalTags = Array.from(document.querySelectorAll(".stage-banner.locked"))
+      .filter(el => el.textContent?.includes("optional"));
+    expect(optionalTags.length).toBeGreaterThan(0);
+  });
+
+  it("forward navigation skips empty optional stages", () => {
+    // Start at repos stage (index 1) and advance — UI (optional, no ux section) should be skipped
+    render(<ProjectPane sections={CONTEXT_SECTIONS} linkedRepos={["acme/payments"]} />);
+    // Move from Context to Repos
+    const fwdBtn1 = screen.getByText(/Repos →/);
+    fireEvent.click(fwdBtn1);
+    // Now at Repos stage. Advancing should skip UI (optional, no ux) to Structure
+    // The fwd button label reflects the skip target
+    const fwdBtn2 = screen.getByText(/Str →|Structure →/);
+    expect(fwdBtn2).toBeTruthy();
+  });
+});
