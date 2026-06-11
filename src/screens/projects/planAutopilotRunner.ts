@@ -135,39 +135,43 @@ export async function autopilotTick(state: AutopilotRunState, deps: AutopilotDep
 }
 
 /**
- * The thin React wiring: runs {@link autopilotTick} on a guarded interval (no overlapping
- * ticks) while `running`, stopping when the run finishes. Manual-test-only — the testable
- * logic lives in `autopilotTick`.
+ * The thin React wiring: while `enabled`, runs {@link autopilotTick} on a guarded interval
+ * (no overlapping ticks) until the run finishes/stalls. Driven entirely by the Settings
+ * toggle — enabling it kicks off the planner from wherever it currently is; disabling stops
+ * it; re-enabling starts a fresh run. Manual-test-only — the testable logic lives in
+ * `autopilotTick`.
  */
-export function usePlanAutopilot(deps: AutopilotDeps, tickMs = 3500) {
-  const [running, setRunning] = useState(false);
+export function usePlanAutopilot(deps: AutopilotDeps, opts: { enabled: boolean; tickMs?: number }) {
+  const { enabled, tickMs = 3500 } = opts;
   const [state, setState] = useState<AutopilotRunState>(initRunState());
   const stateRef = useRef(state);
   const depsRef = useRef(deps);
   const ticking = useRef(false);
+  const wasEnabled = useRef(false);
   stateRef.current = state;
   depsRef.current = deps;
 
+  // A fresh enable starts a fresh run (resets the autopilot's counters; the planner stays
+  // wherever it is, so the run picks up from any point in the planning process).
   useEffect(() => {
-    if (!running) return;
+    if (enabled && !wasEnabled.current) setState(initRunState());
+    wasEnabled.current = enabled;
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) return;
     const id = setInterval(() => {
       if (ticking.current || stateRef.current.finished) return;
       ticking.current = true;
       void autopilotTick(stateRef.current, depsRef.current)
-        .then((nextState) => {
-          setState(nextState);
-          if (nextState.finished) setRunning(false);
-        })
+        .then(setState)
         .catch((e) => {
           depsRef.current.log({ tick: stateRef.current.iteration, action: "error", detail: String(e) });
-          setRunning(false);
         })
         .finally(() => { ticking.current = false; });
     }, tickMs);
     return () => clearInterval(id);
-  }, [running, tickMs]);
+  }, [enabled, tickMs]);
 
-  const start = () => { setState(initRunState()); setRunning(true); };
-  const stop = () => setRunning(false);
-  return { running, state, start, stop };
+  return { running: enabled && !state.finished, state };
 }
