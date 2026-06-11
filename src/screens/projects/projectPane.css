@@ -153,3 +153,207 @@
 }
 
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ----------------------------------------------------------------
+   Stage stepper (#652)
+   ---------------------------------------------------------------- */
+.stepper {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 10px 14px 6px;
+  gap: 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-panel);
+}
+
+.stepper-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  flex: 1;
+}
+
+/* horizontal connector sits between items */
+.stepper-item:not(:last-child) {
+  flex-direction: row;
+  align-items: center;
+}
+
+.stepper-conn {
+  flex: 1;
+  height: 1px;
+  margin: 0 3px;
+  align-self: flex-start;
+  margin-top: 8px;
+}
+.stepper-conn.solid  { background: var(--success); }
+.stepper-conn.dashed { border-top: 1px dashed var(--border); }
+
+.stepper-node {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--bg-elev);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 8px;
+  color: var(--fg-dim);
+  flex: 0 0 16px;
+  transition: border-color .15s, background .15s;
+}
+.stepper-node:hover { border-color: var(--fg-muted); }
+.stepper-node.done {
+  border-color: var(--success);
+  background: color-mix(in oklch, var(--success), transparent 72%);
+  color: var(--success);
+}
+.stepper-node.active {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent), transparent 76%);
+  color: var(--accent);
+  animation: pulse-ring 2s ease-in-out infinite;
+}
+.stepper-node.banked {
+  border-color: var(--success);
+  border-style: dashed;
+  background: color-mix(in oklch, var(--success), transparent 86%);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--success), transparent 70%);
+}
+.stepper-node.locked {
+  border-color: var(--border-soft);
+  background: var(--bg-panel);
+  opacity: 0.45;
+}
+
+.stepper-check { color: var(--success); font-size: 9px; }
+
+/* label row sits below the item row */
+.stepper-item { flex-direction: column; align-items: flex-start; gap: 0; }
+.stepper-item:not(:last-child) { flex-direction: row; align-items: center; }
+
+.stepper-label {
+  font-family: var(--mono); font-size: 7.5px;
+  color: var(--fg-dim); white-space: nowrap;
+  margin-top: 3px;
+  /* when item is row-oriented label floats below the node */
+  position: absolute;
+  top: 16px;
+  left: 0;
+}
+.stepper-label.active { color: var(--accent); }
+
+@keyframes pulse-ring {
+  0%,100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent), transparent 60%); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent), transparent 90%); }
+}
+
+/* ----------------------------------------------------------------
+   Stage header (#652)
+   ---------------------------------------------------------------- */
+.stage-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-canvas);
+}
+
+.gate-pill {
+  font-family: var(--mono); font-size: 9px;
+  padding: 2px 8px; border-radius: 99px;
+  white-space: nowrap;
+}
+.gate-pill.met {
+  background: color-mix(in oklch, var(--success), transparent 84%);
+  border: 1px solid color-mix(in oklch, var(--success), transparent 60%);
+  color: var(--success);
+}
+.gate-pill.unmet {
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-dim);
+}
+
+/* ----------------------------------------------------------------
+   Stage banners (#652)
+   ---------------------------------------------------------------- */
+.stage-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  font-family: var(--mono); font-size: 10px;
+  user-select: none;
+}
+.stage-banner.done {
+  background: color-mix(in oklch, var(--success), transparent 93%);
+  color: var(--fg-muted);
+}
+.stage-banner.locked {
+  background: var(--bg-panel);
+  color: var(--fg-dim);
+  opacity: 0.7;
+}
+.stage-banner.banked {
+  background: color-mix(in oklch, var(--success), transparent 90%);
+  border-left: 2px solid color-mix(in oklch, var(--success), transparent 40%);
+  color: var(--fg-muted);
+}
+.banner-icon {
+  width: 14px; text-align: center; font-size: 10px; flex: 0 0 14px;
+}
+.stage-banner.done   .banner-icon { color: var(--success); }
+.stage-banner.locked .banner-icon { color: var(--border); }
+.stage-banner.banked .banner-icon { color: var(--success); }
+
+.banked-pill {
+  font-family: var(--mono); font-size: 8.5px; padding: 1px 6px; border-radius: 4px;
+  background: color-mix(in oklch, var(--success), transparent 80%);
+  border: 1px solid color-mix(in oklch, var(--success), transparent 55%);
+  color: var(--success);
+}
+
+/* ----------------------------------------------------------------
+   Footer advance bar (#652)
+   ---------------------------------------------------------------- */
+.advance-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-panel);
+}
+
+.advance-btn {
+  padding: 4px 12px; border-radius: 5px;
+  font-family: var(--mono); font-size: 10px;
+  cursor: pointer; border: 1px solid var(--border-soft);
+  background: var(--bg-elev); color: var(--fg-dim);
+  white-space: nowrap;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.advance-btn:disabled { cursor: default; }
+.advance-btn.back:not(:disabled):hover { background: var(--bg-elev2); color: var(--fg-muted); }
+.advance-btn.fwd.enabled {
+  background: color-mix(in oklch, var(--accent), transparent 82%);
+  border-color: var(--accent-dim); color: var(--accent);
+}
+.advance-btn.fwd.enabled:hover {
+  background: color-mix(in oklch, var(--accent), transparent 72%);
+}
+
+/* ----------------------------------------------------------------
+   Empty state helper
+   ---------------------------------------------------------------- */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 24px 12px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+  text-align: center;
+}
+.empty-icon { font-size: 22px; opacity: 0.35; margin-bottom: 4px; }

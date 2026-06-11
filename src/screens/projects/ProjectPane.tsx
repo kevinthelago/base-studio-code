@@ -1,27 +1,25 @@
-// ProjectPane — the planning page right visualizer pane.
-// Ported faithfully from design/project-pane-v4/recommended/* (the AssembledPane
-// composition: pane header + fleet-pulse strip + three collapsible sections —
-// Context Files, Repository · Structure, Agents · Permissions). Styling lives in
-// projectPane.css and uses the app's design tokens.
+// ProjectPane — planning-page right visualizer pane.
+// v5: stage-focused one-at-a-time view (#652) with real data (#674).
+// Ported from design/project-pane-v4/recommended; now wraps in a 7-stage stepper
+// so the planning workflow is one focused phase at a time.
 import { useState, useEffect } from "react";
 import "./projectPane.css";
 import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
   ProjectPaneData,
 } from "./projectPaneData";
+import type { Section } from "./ghStructure";
+import type { FleetPlan } from "./planSections";
 
 /* =================================================================
-   types -- the render shapes live in projectPaneData.ts (single source of
-   truth). ProjectPane imports them so real plan data and the sample fallback
-   share one contract. Local Role/Cap describe this file's palette tables only.
+   types
    ================================================================= */
 interface Role { c: string; label: string }
 interface Cap { k: string; g: string; label: string }
 
 /* =================================================================
-   data
+   role palette + caps
    ================================================================= */
-// ── role palette ───────────────────────────────────────────────
 const ROLES: Record<string, Role> = {
   planner:  { c: "oklch(0.72 0.10 230)", label: "planner" },
   worker:   { c: "oklch(0.80 0.14 70)",  label: "worker" },
@@ -31,7 +29,6 @@ const ROLES: Record<string, Role> = {
   director: { c: "oklch(0.70 0.14 350)", label: "director" },
 };
 
-// ── the 7 permission capabilities (order matters; used as columns) ──
 const CAPS: Cap[] = [
   { k: "read",   g: "R", label: "read files" },
   { k: "edit",   g: "E", label: "edit files" },
@@ -42,7 +39,6 @@ const CAPS: Cap[] = [
   { k: "pkg",    g: "P", label: "install packages" },
 ];
 
-// presets → per-cap posture
 const PRESETS: Record<string, Perm> = {
   Plan:   { read: "allow", edit: "deny",  create: "deny",  run: "ask",   net: "ask",   push: "deny",  pkg: "deny" },
   Build:  { read: "allow", edit: "allow", create: "allow", run: "allow", net: "ask",   push: "ask",   pkg: "ask" },
@@ -51,7 +47,9 @@ const PRESETS: Record<string, Perm> = {
   Full:   { read: "allow", edit: "allow", create: "allow", run: "allow", net: "allow", push: "allow", pkg: "allow" },
 };
 
-// ── the fleet ──────────────────────────────────────────────────
+/* =================================================================
+   sample data (used when no real plan data is available)
+   ================================================================= */
 const AGENTS: Agent[] = [
   { id: "planner", name: "@planner", role: "planner", status: "wait", repo: "acme/payments",
     color: "oklch(0.72 0.10 230)", initial: "P",
@@ -90,7 +88,6 @@ const AGENTS: Agent[] = [
     flow: { autonomy: "checkpoint", push: "commit-only", gate: "hard" }, ctx: 2 },
 ];
 
-// ── repos ──────────────────────────────────────────────────────
 const REPOS: Repo[] = [
   { id: "acme/payments", branch: "main", ahead: 2, behind: 0,
     agents: ["planner", "framer", "auth", "tester"], primary: true,
@@ -108,7 +105,6 @@ const REPOS: Repo[] = [
     ] },
 ];
 
-// ── github structure: milestone → epic → issue → sub-issue ─────
 const STRUCTURE: Milestone[] = [
   { id: "M1", title: "Publisher MVP", repo: "acme/payments", pct: 0.72, state: "doing",
     epics: [
@@ -150,21 +146,20 @@ const STRUCTURE: Milestone[] = [
     ] },
 ];
 
-// helper: the milestones planned for a given repo
 function structFor(repoId: string, structure: Milestone[] = STRUCTURE): Milestone[] {
   return structure.filter((m) => m.repo === repoId);
 }
 
-// ── context files ──────────────────────────────────────────────
 const CONTEXT: ContextFile[] = [
-  { name: "settlement-webhooks.spec.md", kind: "spec",   tok: "4.1k", pinned: true,  scope: "project", content: "# Settlement webhooks v2\n\nDelivery contract for settlement events: emit on settle, retry with backoff, sign each payload with an HMAC header.\n\n## Frame\n{ id, type, ts, payload }" },
-  { name: "CLAUDE.md",                   kind: "claude", tok: "1.2k", pinned: true,  scope: "global",  content: "# CLAUDE.md\n\nProject-wide guidance for agents. Build with the existing primitives; keep changes minimal and tested." },
-  { name: "blk_71fe · framing v2",       kind: "kb",     tok: "0.8k", pinned: true,  scope: "project", content: "Framing v2 — length-prefixed binary frames, schema regenerated on build, round-trip tested." },
-  { name: "blk_2199 · sqlite>lmdb",      kind: "kb",     tok: "0.6k", pinned: true,  scope: "project", content: "Decision: SQLite over LMDB for the local store — simpler ops, sufficient throughput, easy backups." },
-  { name: "acme/payments · CLAUDE.md",   kind: "claude", tok: "0.9k", pinned: false, scope: "repo",    content: "# acme/payments\n\nRepo guidance: the HMAC middleware owns request verification; never log raw signatures." },
-  { name: "docs/architecture.md",        kind: "doc",    tok: "3.4k", pinned: false, scope: "repo",    content: "# Architecture\n\nWS server -> framer -> webhook emitter. The auth surface verifies HMAC + tokens; the dashboard subscribes for live updates." },
-  { name: "blk_44a1 · retry policy",     kind: "kb",     tok: "0.5k", pinned: false, scope: "project", content: "Retry policy — exponential backoff, max 6 attempts, jitter, dead-letter after exhaustion." },
+  { name: "settlement-webhooks.spec.md", kind: "spec",   tok: "4.1k", pinned: true,  scope: "project", content: "# Settlement webhooks v2\n\nDelivery contract for settlement events." },
+  { name: "CLAUDE.md",                   kind: "claude", tok: "1.2k", pinned: true,  scope: "global",  content: "# CLAUDE.md\n\nProject-wide guidance for agents." },
+  { name: "blk_71fe · framing v2",       kind: "kb",     tok: "0.8k", pinned: true,  scope: "project", content: "Framing v2 — length-prefixed binary frames." },
+  { name: "blk_2199 · sqlite>lmdb",      kind: "kb",     tok: "0.6k", pinned: true,  scope: "project", content: "Decision: SQLite over LMDB." },
+  { name: "acme/payments · CLAUDE.md",   kind: "claude", tok: "0.9k", pinned: false, scope: "repo",    content: "# acme/payments\n\nRepo guidance." },
+  { name: "docs/architecture.md",        kind: "doc",    tok: "3.4k", pinned: false, scope: "repo",    content: "# Architecture\n\nWS server -> framer -> webhook emitter." },
+  { name: "blk_44a1 · retry policy",     kind: "kb",     tok: "0.5k", pinned: false, scope: "project", content: "Retry policy — exponential backoff." },
 ];
+
 const CTX_KIND: Record<string, string> = {
   spec:   "oklch(0.72 0.10 230)",
   claude: "oklch(0.80 0.14 70)",
@@ -172,7 +167,6 @@ const CTX_KIND: Record<string, string> = {
   doc:    "oklch(0.66 0.06 200)",
 };
 
-// state dot color for issues
 const ISSUE_STATE: Record<string, string> = {
   doing:   "var(--accent)",
   review:  "var(--success)",
@@ -181,7 +175,153 @@ const ISSUE_STATE: Record<string, string> = {
 };
 
 /* =================================================================
-   primitives (pp-data.jsx)
+   plan stages (#652)
+   ================================================================= */
+interface PlanStage {
+  id: string;
+  title: string;
+  short: string;
+  desc: string;
+  /** Section keys that must all be confirmed for this stage's gate to be met. */
+  requiredConfirmed: string[];
+  /** Additional gate: check function beyond key confirmation. */
+  extraGate?: (sections: Section[], repos: string[], fleet: FleetPlan | undefined) => boolean;
+}
+
+const PLAN_STAGES: PlanStage[] = [
+  {
+    id: "context",
+    title: "Context",
+    short: "Ctx",
+    desc: "Goal · scope · stack · architecture",
+    requiredConfirmed: ["goal", "scope", "stack", "architecture"],
+  },
+  {
+    id: "repos",
+    title: "Repos",
+    short: "Repos",
+    desc: "Link the repositories",
+    requiredConfirmed: [],
+    extraGate: (_s, repos) => repos.length > 0,
+  },
+  {
+    id: "ui",
+    title: "UI",
+    short: "UI",
+    desc: "Design the screens",
+    requiredConfirmed: [],
+    extraGate: (sections) => sections.some(s => s.k === "ux" && s.state !== "pending"),
+  },
+  {
+    id: "structure",
+    title: "Structure",
+    short: "Str",
+    desc: "Feature workshop · phases · issues",
+    requiredConfirmed: [],
+    extraGate: (sections) => sections.some(s => s.k === "phases" && s.state !== "pending"),
+  },
+  {
+    id: "permissions",
+    title: "Permissions",
+    short: "Perm",
+    desc: "Agent fleet · profiles",
+    requiredConfirmed: [],
+    extraGate: (_s, _r, fleet) => (fleet?.streams?.length ?? 0) > 0,
+  },
+  {
+    id: "automations",
+    title: "Automations",
+    short: "Auto",
+    desc: "Cron schedules · on-demand",
+    requiredConfirmed: [],
+  },
+  {
+    id: "skills",
+    title: "Skills",
+    short: "Skills",
+    desc: "Reusable skills library",
+    requiredConfirmed: [],
+    extraGate: (sections) => sections.some(s => s.k === "skills" && s.state !== "pending"),
+  },
+];
+
+type StageState = "done" | "active" | "banked" | "locked";
+
+function isStageGateMet(
+  stage: PlanStage,
+  sections: Section[],
+  repos: string[],
+  fleet: FleetPlan | undefined,
+): boolean {
+  const requiredMet = stage.requiredConfirmed.every(k =>
+    sections.find(s => s.k === k)?.state === "confirmed",
+  );
+  if (!requiredMet) return false;
+  return stage.extraGate ? stage.extraGate(sections, repos, fleet) : true;
+}
+
+function stageGateLabel(
+  stage: PlanStage,
+  sections: Section[],
+  repos: string[],
+): string {
+  if (stage.id === "context") {
+    const confirmed = stage.requiredConfirmed.filter(k =>
+      sections.find(s => s.k === k)?.state === "confirmed",
+    ).length;
+    return `${confirmed}/${stage.requiredConfirmed.length} confirmed`;
+  }
+  if (stage.id === "repos") {
+    return repos.length === 0
+      ? "no repos linked"
+      : `${repos.length} repo${repos.length !== 1 ? "s" : ""} linked`;
+  }
+  if (stage.id === "ui") {
+    return sections.some(s => s.k === "ux" && s.state !== "pending") ? "ux drafted" : "ux pending";
+  }
+  if (stage.id === "structure") {
+    const hasPhases = sections.some(s => s.k === "phases" && s.state !== "pending");
+    const hasIssues = sections.some(s => s.k === "issues" && s.state !== "pending");
+    const n = (hasPhases ? 1 : 0) + (hasIssues ? 1 : 0);
+    return `${n}/2 files`;
+  }
+  if (stage.id === "permissions") {
+    return "";  // shown by agent count in body
+  }
+  return "";
+}
+
+/** A stage has content banked when future-stage sections already have content. */
+function hasStageContent(stage: PlanStage, sections: Section[]): boolean {
+  const relevant: Record<string, string[]> = {
+    context:     ["goal", "scope", "stack", "architecture"],
+    repos:       ["repos"],
+    ui:          ["ux"],
+    structure:   ["phases", "issues"],
+    permissions: ["fleet"],
+    automations: [],
+    skills:      ["skills"],
+  };
+  const keys = relevant[stage.id] ?? [];
+  return keys.some(k => sections.find(s => s.k === k)?.state !== "pending");
+}
+
+function computeStageStates(
+  activeIdx: number,
+  sections: Section[],
+  repos: string[],
+  fleet: FleetPlan | undefined,
+): StageState[] {
+  return PLAN_STAGES.map((stage, i) => {
+    if (i === activeIdx) return "active";
+    if (i < activeIdx) return isStageGateMet(stage, sections, repos, fleet) ? "done" : "done";
+    // Future stage
+    return hasStageContent(stage, sections) ? "banked" : "locked";
+  });
+}
+
+/* =================================================================
+   primitives
    ================================================================= */
 function Dot({ s }: { s: string }) {
   return <span className={"sdot " + s} />;
@@ -206,7 +346,6 @@ function Avatar({ id, sz = 17, agents = AGENTS }: { id: string; sz?: number; age
   return <span className="av" style={{ width: sz, height: sz, background: color, fontSize: sz * 0.53 }}>{initial}</span>;
 }
 
-// posture mini-bar: 7 cells
 function PostureBar({ perm }: { perm: Perm }) {
   return (
     <span className="posture" title="read · edit · create · run · net · push · pkg">
@@ -217,7 +356,6 @@ function PostureBar({ perm }: { perm: Perm }) {
   );
 }
 
-// tri-state Allow/Ask/Deny
 function Tri({ value, onChange }: { value: Posture; onChange?: (v: Posture) => void }) {
   return (
     <span className="tri">
@@ -231,8 +369,7 @@ function Tri({ value, onChange }: { value: Posture; onChange?: (v: Posture) => v
   );
 }
 
-// flow badges trio
-function FlowBadges({ flow }: { flow: Flow; compact?: boolean }) {
+function FlowBadges({ flow }: { flow: Flow }) {
   return (
     <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
       <span className="fbadge" title="autonomy">{flow.autonomy}</span>
@@ -250,7 +387,6 @@ function Track({ pct, green }: { pct: number; green?: boolean }) {
   </span>;
 }
 
-// per-section sync button (lives in a Sec's `right` slot)
 export type SyncState = "idle" | "running" | "done" | "error";
 function SyncBtn({ label, state = "idle", onClick }: { label: string; state?: SyncState; onClick?: () => void }) {
   if (!onClick) return null;
@@ -281,7 +417,6 @@ function SyncBtn({ label, state = "idle", onClick }: { label: string; state?: Sy
   );
 }
 
-// collapsible section shell
 function Sec({ title, count, open = true, right, children }: {
   title: string; count?: React.ReactNode; open?: boolean; right?: React.ReactNode; children: React.ReactNode;
 }) {
@@ -301,7 +436,7 @@ function Sec({ title, count, open = true, right, children }: {
 }
 
 /* =================================================================
-   pp-repo.jsx — SubList + BranchChip
+   pp-repo.jsx
    ================================================================= */
 function BranchChip({ n, mute }: { n: string; mute?: boolean }) {
   return <span style={{
@@ -331,18 +466,12 @@ function SubList({ sub, pad = 22 }: { sub: SubItem[]; pad?: number }) {
           <span style={{ textDecoration: s.done ? "line-through" : "none" }}>{s.t}</span>
         </div>
       ))}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)",
-        fontSize: 9, color: "var(--fg-dim)", cursor: "pointer",
-      }}>
-        <span style={{ width: 11, textAlign: "center" }}>+</span> sub-issue
-      </div>
     </div>
   );
 }
 
 /* =================================================================
-   pp-context.jsx — KindDot, CtxRow, ContextA
+   pp-context.jsx
    ================================================================= */
 function KindDot({ kind }: { kind: string }) {
   return <span style={{
@@ -375,13 +504,9 @@ function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void
   );
 }
 
-// VARIANT A — Pinned vs Library, two sections
 function ContextA({ context = CONTEXT, onTogglePin, onView }: {
   context?: ContextFile[]; onTogglePin?: (name: string) => void; onView?: (f: ContextFile) => void;
 }) {
-  // Local items give a snappy toggle; onTogglePin (when supplied) persists to the
-  // store. Re-seed from the prop when the persisted context changes so the local
-  // copy reflects store-driven pins on the next build.
   const [items, setItems] = useState(context);
   useEffect(() => { setItems(context); }, [context]);
   const toggle = (name: string) => {
@@ -396,26 +521,37 @@ function ContextA({ context = CONTEXT, onTogglePin, onView }: {
         <span className="ulabel">pinned to context</span>
         <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)" }}>✦ {pinned.length}</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>~6.7k tok</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+          ~{(items.reduce((a, f) => a + parseFloat(f.tok), 0)).toFixed(1)}k tok
+        </span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
-        {pinned.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} onView={onView ? () => onView(f) : undefined} />)}
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 2px 7px" }}>
-        <span className="ulabel">library</span>
-        <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{lib.length} available</span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        {lib.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} onView={onView ? () => onView(f) : undefined} />)}
-      </div>
+      {pinned.length === 0 ? (
+        <div style={{ padding: "12px 4px", textAlign: "center", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+          ✦ pin sections to include them in every agent's context
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+          {pinned.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} onView={onView ? () => onView(f) : undefined} />)}
+        </div>
+      )}
+      {lib.length > 0 && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 2px 7px" }}>
+            <span className="ulabel">library</span>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{lib.length} available</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            {lib.map((f) => <CtxRow key={f.name} f={f} onToggle={() => toggle(f.name)} onView={onView ? () => onView(f) : undefined} />)}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
 /* =================================================================
-   pp-merged.jsx — MStateDot, repoRollup, RepoStructure
+   pp-merged.jsx
    ================================================================= */
 function MStateDot({ state }: { state: string }) {
   return <span style={{
@@ -431,14 +567,21 @@ function repoRollup(repoId: string, structure: Milestone[] = STRUCTURE): { ms: M
   return { ms, iss, pct };
 }
 
-// REPO-FIRST — a collapsible repository card holding its own work tree:
-// milestones (the phases decomposed for THAT repo) → issues → acceptance sub-list.
-// Mirrors the design's RepoA variant; reuses structFor/MStateDot/SubList/etc.
 function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }: {
   structure?: Milestone[]; repos?: Repo[]; agents?: Agent[];
 }) {
   const [openRepo, setOpenRepo] = useState<string | null>(repos[0]?.id ?? null);
   const [openIss, setOpenIss] = useState<number | string | null>(null);
+
+  if (repos.length === 0) {
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">◫</span>
+        <span>No repositories linked yet — ask Claude to create or link repositories.</span>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={{ padding: "0 2px 10px", fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
@@ -455,7 +598,6 @@ function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }
               border: "1px solid " + (r.primary ? "var(--accent-dim)" : "var(--border-soft)"),
               background: "var(--bg-canvas)",
             }}>
-              {/* repo header — collapsible */}
               <div onClick={() => setOpenRepo(on ? null : r.id)} style={{ padding: "9px 11px", cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                   <span style={{ width: 8, fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{on ? "▾" : "▸"}</span>
@@ -488,14 +630,12 @@ function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }
                     </div>
                   ) : ms.map((m) => (
                     <div key={m.id} style={{ marginTop: 6 }}>
-                      {/* milestone header */}
                       <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "4px 4px" }}>
                         <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>{m.id.split("#")[1]}</span>
                         <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg)" }}>{m.title}</span>
                         <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: "var(--fg-dim)" }}>{Math.round(m.pct * 100)}%</span>
                         <span style={{ width: 40 }}><Track pct={m.pct} /></span>
                       </div>
-                      {/* issues for this milestone (epics flattened) */}
                       <div style={{ borderLeft: "1px solid var(--border-soft)", marginLeft: 6, paddingLeft: 8, display: "flex", flexDirection: "column", gap: 5 }}>
                         {m.epics.flatMap((e) => e.issues).map((is) => {
                           const io = openIss === is.n;
@@ -537,9 +677,8 @@ function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }
 }
 
 /* =================================================================
-   pp-agents.jsx — Seg, AgentEditor, AgentsA
+   pp-agents.jsx
    ================================================================= */
-// small segmented control
 function Seg({ options, value, onChange, tiny }: {
   options: string[]; value: string; onChange?: (v: string) => void; tiny?: boolean;
 }) {
@@ -564,18 +703,12 @@ function Seg({ options, value, onChange, tiny }: {
   );
 }
 
-// ── the per-agent detail body (presets · capabilities · flow) ──
-// Header-less by design: the AgentsA roster row is the single header and the
-// repo/owns/issues meta now lives there too, so the row + this body read as one
-// cohesive card instead of a row plus a second headered card.
 function AgentEditor({ a, onPerm, onPreset, onFlow }: {
   a: Agent;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
 }) {
-  // Local state for snappy UI; the callbacks (when supplied) persist every change
-  // to the store so it survives a remount. Re-seed when the agent id changes.
   const [perm, setPerm] = useState<Perm>(a.perm);
   const [preset, setPreset] = useState(a.preset);
   const [flow, setFlow] = useState<Flow>(a.flow);
@@ -592,7 +725,6 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
   };
   return (
     <>
-      {/* presets */}
       <div style={{ padding: "9px 12px", borderTop: "1px solid var(--border-soft)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
           <span className="ulabel">preset</span>
@@ -607,16 +739,12 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
         </div>
       </div>
 
-      {/* capabilities */}
       <div style={{ padding: "6px 12px 10px", borderTop: "1px solid var(--border-soft)" }}>
         <div className="ulabel" style={{ padding: "5px 0 7px" }}>capabilities</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {CAPS.map((c) => (
             <div key={c.k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{
-                width: 16, textAlign: "center", fontFamily: "var(--mono)",
-                fontSize: 11, color: "var(--fg-dim)",
-              }}>{c.g}</span>
+              <span style={{ width: 16, textAlign: "center", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>{c.g}</span>
               <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>{c.label}</span>
               <Tri value={perm[c.k]} onChange={(v) => set(c.k, v)} />
             </div>
@@ -624,7 +752,6 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
         </div>
       </div>
 
-      {/* flow */}
       <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
         <div className="ulabel" style={{ marginBottom: 8 }}>flow</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -652,9 +779,6 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
   );
 }
 
-// VARIANT A — Roster rows; the row IS the single header and the detail body
-// (meta + presets + capabilities + flow) expands inside the SAME card, so an
-// open agent reads as one cohesive element rather than a row + a second card.
 function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
   agents?: Agent[];
   onPerm?: (streamId: string, perm: Perm) => void;
@@ -682,7 +806,6 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
               background: "var(--bg-canvas)",
               border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
             }}>
-              {/* header row — the single header for the whole card */}
               <div onClick={() => setOpen(on ? null : a.id)} style={{
                 display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8,
                 alignItems: "center", padding: "7px 8px", cursor: "pointer",
@@ -714,7 +837,6 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
 
               {on && (
                 <>
-                  {/* detail meta — moved out of the old editor header so the card has ONE header */}
                   <div style={{
                     display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
                     padding: "7px 10px", borderTop: "1px solid var(--border-soft)",
@@ -737,24 +859,302 @@ function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
   );
 }
 
-// FlowBadges and repoRollup are ported for completeness but unused by the
-// assembled composition (it picks RepoStructure + AgentsA); reference them so
-// strict noUnusedLocals stays satisfied.
-void FlowBadges;
+// Silence unused-variable warnings for repoRollup and FlowBadges.
 void repoRollup;
+void FlowBadges;
 
 /* =================================================================
-   pp-assembled.jsx — AssembledPane → ProjectPane
+   stage-specific body components (#652 / #674)
    ================================================================= */
-/**
- * The planning-page right visualizer. Prop-driven: when `data` carries any real
- * plan content (agents, structure, or context) it renders that; otherwise it
- * falls back to the illustrative sample consts so an unplanned project still
- * shows the full pane. The drill-in editors keep local state -- display only,
- * no write-back in this slice.
- */
-export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, onFlow, onTogglePin,
-  onSyncStructure, onSyncDocs, onSyncLabels, syncState }: {
+
+/** Repos stage body — lists linked repos with clone status. (#674) */
+function ReposStageBody({ repos }: { repos: string[] }) {
+  if (repos.length === 0) {
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">⎇</span>
+        <span>No repositories linked yet.</span>
+        <span style={{ fontSize: 9.5 }}>Ask Claude to create or link repos with <code style={{ fontFamily: "var(--mono)", background: "var(--bg-elev)", padding: "0 3px", borderRadius: 2 }}>&lt;repo_link&gt;</code></span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", paddingBottom: 6 }}>
+        {repos.length} repo{repos.length !== 1 ? "s" : ""} linked
+      </div>
+      {repos.map((fullName) => {
+        const [owner, name] = fullName.split("/");
+        return (
+          <div key={fullName} style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "8px 10px", borderRadius: 6,
+            background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+          }}>
+            <span style={{ width: 7, height: 7, borderRadius: 2, background: "var(--success)", flex: "0 0 7px" }} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{owner}/</span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>{name}</span>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }}>⎇ main</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Placeholder body for stages without a dedicated component yet. */
+function PlaceholderStageBody({ stage }: { stage: PlanStage }) {
+  return (
+    <div className="empty-state">
+      <span className="empty-icon">⋯</span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
+        {stage.desc}
+      </span>
+      <span style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>
+        Ask Claude to complete this stage.
+      </span>
+    </div>
+  );
+}
+
+/* =================================================================
+   stage navigation components (#652)
+   ================================================================= */
+
+/** The horizontal stepper rail showing all 7 planning stages. */
+function Stepper({ stageStates, activeIdx, onSelect }: {
+  stageStates: StageState[];
+  activeIdx: number;
+  onSelect: (idx: number) => void;
+}) {
+  return (
+    <div className="stepper">
+      {PLAN_STAGES.map((stage, i) => {
+        const s = stageStates[i];
+        const isLast = i === PLAN_STAGES.length - 1;
+        return (
+          <div key={stage.id} className="stepper-item">
+            <button
+              className={`stepper-node ${s}`}
+              onClick={() => onSelect(i)}
+              title={stage.title + " — " + stage.desc}
+            >
+              {s === "done" && <span className="stepper-check">✓</span>}
+            </button>
+            <span className={`stepper-label ${i === activeIdx ? "active" : ""}`}>
+              {stage.short}
+            </span>
+            {!isLast && (
+              <span className={`stepper-conn ${s === "done" ? "solid" : "dashed"}`} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Phase header showing stage title + descriptive subtitle + gate pill. */
+function StageHeader({ stage, gateMet, gateLabel, optional }: {
+  stage: PlanStage;
+  gateMet: boolean;
+  gateLabel: string;
+  optional?: boolean;
+}) {
+  return (
+    <div className="stage-header">
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700, color: "var(--fg)" }}>
+          {stage.title}
+        </span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>
+          {stage.desc}
+        </span>
+        {optional && (
+          <span style={{
+            fontFamily: "var(--mono)", fontSize: 8.5, padding: "1px 5px", borderRadius: 3,
+            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+            color: "var(--fg-dim)",
+          }}>optional</span>
+        )}
+      </div>
+      {gateLabel && (
+        <span className={`gate-pill ${gateMet ? "met" : "unmet"}`}>
+          {gateMet ? "✓ " : ""}{gateLabel}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Compact banner for a completed (done) stage. */
+function DoneBanner({ stage, gateLabel, onClick }: {
+  stage: PlanStage;
+  gateLabel: string;
+  onClick?: () => void;
+}) {
+  return (
+    <div className="stage-banner done" onClick={onClick} style={{ cursor: onClick ? "pointer" : "default" }}>
+      <span className="banner-icon">✓</span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", fontWeight: 600 }}>
+        {stage.title}
+      </span>
+      {gateLabel && (
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>
+          — {gateLabel}
+        </span>
+      )}
+      <span style={{ flex: 1 }} />
+      <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }}>view ▸</span>
+    </div>
+  );
+}
+
+/** Compact banner for a locked (future) stage. */
+function LockedBanner({ stage, onClick }: { stage: PlanStage; onClick?: () => void }) {
+  return (
+    <div className="stage-banner locked" onClick={onClick} style={{ cursor: onClick ? "pointer" : "default" }}>
+      <span className="banner-icon">⋯</span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)" }}>
+        {stage.title}
+      </span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", opacity: 0.7 }}>
+        — {stage.desc}
+      </span>
+    </div>
+  );
+}
+
+/** Compact banner for a banked (content ahead of the active stage) stage. */
+function BankedBanner({ stage, onClick }: { stage: PlanStage; onClick?: () => void }) {
+  return (
+    <div className="stage-banner banked" onClick={onClick} style={{ cursor: onClick ? "pointer" : "default" }}>
+      <span className="banner-icon">●</span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
+        {stage.title}
+      </span>
+      <span className="banked-pill">banked</span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+        — content drafted ahead
+      </span>
+      <span style={{ flex: 1 }} />
+      <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--success)" }}>view ▸</span>
+    </div>
+  );
+}
+
+/** Footer advance bar — Back / stage name + gate status / Advance. */
+function AdvanceBar({ activeIdx, gateMet, onBack, onAdvance }: {
+  activeIdx: number;
+  gateMet: boolean;
+  onBack: () => void;
+  onAdvance: () => void;
+}) {
+  const isFirst = activeIdx === 0;
+  const isLast = activeIdx === PLAN_STAGES.length - 1;
+  const stage = PLAN_STAGES[activeIdx];
+  return (
+    <div className="advance-bar">
+      <button
+        className="advance-btn back"
+        onClick={onBack}
+        disabled={isFirst}
+        style={{ opacity: isFirst ? 0.35 : 1 }}
+      >
+        ← {isFirst ? "" : PLAN_STAGES[activeIdx - 1].short}
+      </button>
+      <span style={{
+        fontFamily: "var(--mono)", fontSize: 9, color: gateMet ? "var(--success)" : "var(--fg-dim)",
+        flex: 1, textAlign: "center",
+      }}>
+        {stage.title}{gateMet ? " · gate met" : ""}
+      </span>
+      <button
+        className={"advance-btn fwd" + (gateMet ? " enabled" : "")}
+        onClick={onAdvance}
+        disabled={isLast || !gateMet}
+        title={!gateMet ? "Complete this stage's gate first" : undefined}
+        style={{ opacity: isLast ? 0.35 : 1 }}
+      >
+        {isLast ? "" : PLAN_STAGES[activeIdx + 1].short} →
+      </button>
+    </div>
+  );
+}
+
+/* =================================================================
+   section body router (#652) — picks the right component per stage
+   ================================================================= */
+function StageBody({ stage, data, linkedRepos, context, onTogglePin, onView, onPerm, onPreset, onFlow, syncState, onSyncStructure, onSyncDocs, onSyncLabels }: {
+  stage: PlanStage;
+  data: { agents: Agent[]; repos: Repo[]; structure: Milestone[]; context: ContextFile[] };
+  linkedRepos: string[];
+  context: ContextFile[];
+  onTogglePin?: (name: string) => void;
+  onView?: (f: ContextFile) => void;
+  onPerm?: (id: string, perm: Perm) => void;
+  onPreset?: (id: string, preset: string, perm: Perm) => void;
+  onFlow?: (id: string, flow: Flow) => void;
+  syncState?: { structure?: SyncState; docs?: SyncState; labels?: SyncState };
+  onSyncStructure?: () => void;
+  onSyncDocs?: () => void;
+  onSyncLabels?: () => void;
+}) {
+  switch (stage.id) {
+    case "context":
+      return (
+        <Sec title="Context Files" count={`✦ ${context.filter(f => f.pinned).length} pinned`} open right={<SyncBtn label="Push docs →" state={syncState?.docs} onClick={onSyncDocs} />}>
+          <ContextA context={context} onTogglePin={onTogglePin} onView={onView} />
+        </Sec>
+      );
+    case "repos":
+      return (
+        <Sec title="Repositories" count={linkedRepos.length > 0 ? linkedRepos.length : undefined} open>
+          <ReposStageBody repos={linkedRepos} />
+        </Sec>
+      );
+    case "structure":
+      return (
+        <Sec title="Repository · Structure" count={`${data.repos.length} repos · ${data.structure.length} milestones`} open right={<SyncBtn label="Sync to GitHub →" state={syncState?.structure} onClick={onSyncStructure} />}>
+          <RepoStructure structure={data.structure} repos={data.repos} agents={data.agents} />
+        </Sec>
+      );
+    case "permissions":
+      return (
+        <Sec title="Agents · Permissions" count={`${data.agents.length} · ${data.agents.filter(a => a.status === "run").length} running`} open right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
+          <AgentsA agents={data.agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+        </Sec>
+      );
+    default:
+      return (
+        <Sec title={stage.title} open>
+          <PlaceholderStageBody stage={stage} />
+        </Sec>
+      );
+  }
+}
+
+/* =================================================================
+   ProjectPane — main export
+   ================================================================= */
+export function ProjectPane({
+  data,
+  projectName,
+  projectId,
+  onPerm,
+  onPreset,
+  onFlow,
+  onTogglePin,
+  onSyncStructure,
+  onSyncDocs,
+  onSyncLabels,
+  syncState,
+  // new: staged mode (#652)
+  sections,
+  linkedRepos: linkedReposProp,
+  fleet,
+}: {
   data?: ProjectPaneData;
   projectName?: string;
   projectId?: string;
@@ -766,18 +1166,39 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
   onSyncDocs?: () => void;
   onSyncLabels?: () => void;
   syncState?: { structure?: SyncState; docs?: SyncState; labels?: SyncState };
+  sections?: Section[];
+  linkedRepos?: string[];
+  fleet?: FleetPlan;
 }) {
+  // Determine whether to show the staged view or the legacy flat view.
+  // Staged view: when sections prop is provided (real planning session).
+  // Legacy flat view: fallback for render without sections (e.g. tests, standalone use).
+  const stagedMode = sections !== undefined;
+
+  // Resolve data: use real plan data when provided, fall back to sample data.
+  // For #674: when sections are provided, use real (possibly empty) data — no sample fallback.
   const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.context.length > 0);
-  const agents:    Agent[]       = hasData ? data!.agents    : AGENTS;
-  const repos:     Repo[]        = hasData ? data!.repos      : REPOS;
-  const structure: Milestone[]   = hasData ? data!.structure  : STRUCTURE;
-  const context:   ContextFile[] = hasData ? data!.context    : CONTEXT;
+  const agents:    Agent[]       = (stagedMode || hasData) ? (data?.agents    ?? []) : AGENTS;
+  const repos:     Repo[]        = (stagedMode || hasData) ? (data?.repos      ?? []) : REPOS;
+  const structure: Milestone[]   = (stagedMode || hasData) ? (data?.structure  ?? []) : STRUCTURE;
+  const context:   ContextFile[] = (stagedMode || hasData) ? (data?.context    ?? []) : CONTEXT;
+  const linkedRepos: string[]    = linkedReposProp ?? [];
 
-  const running = agents.filter((a) => a.status === "run").length;
-  const onCount = agents.filter((a) => a.status === "on").length;
-  const idleCount = agents.filter((a) => a.status === "idle").length;
-  const pinnedCount = context.filter((c) => c.pinned).length;
+  // Stage navigation state (#652)
+  const [activeStageIdx, setActiveStageIdx] = useState(0);
+  const stageStates = stagedMode
+    ? computeStageStates(activeStageIdx, sections!, linkedRepos, fleet)
+    : PLAN_STAGES.map((_, i) => (i === 0 ? "active" : "locked") as StageState);
 
+  const activeStage = PLAN_STAGES[activeStageIdx];
+  const gateMet = stagedMode
+    ? isStageGateMet(activeStage, sections!, linkedRepos, fleet)
+    : false;
+  const gateLabel = stagedMode
+    ? stageGateLabel(activeStage, sections!, linkedRepos)
+    : "";
+
+  // Context file viewer modal
   const [viewing, setViewing] = useState<ContextFile | null>(null);
   useEffect(() => {
     if (!viewing) return;
@@ -786,9 +1207,17 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
     return () => window.removeEventListener("keydown", onKey);
   }, [viewing]);
 
+  const running = agents.filter((a) => a.status === "run").length;
+  const onCount  = agents.filter((a) => a.status === "on").length;
+  const idleCount = agents.filter((a) => a.status === "idle").length;
+  const pinnedCount = context.filter((c) => c.pinned).length;
+
+  // Shared body data bundle
+  const bodyData = { agents, repos, structure, context };
+
   return (
     <div className="pp">
-      {/* pane header */}
+      {/* Pane header */}
       <div style={{
         flex: "0 0 auto", padding: "10px 12px",
         borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
@@ -798,12 +1227,16 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
           width: 8, height: 8, borderRadius: 2,
           background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
         }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)" }}>{hasData ? (projectName || "Project") : "Settlement webhooks v2"}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)" }}>
+          {projectName || (hasData ? "Project" : "Settlement webhooks v2")}
+        </span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{hasData ? (projectId || "") : "prj_2fa"}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+          {projectId || (hasData ? "" : "prj_2fa")}
+        </span>
       </div>
 
-      {/* fleet pulse strip — always-visible glance line */}
+      {/* Fleet pulse strip */}
       <div style={{
         flex: "0 0 auto", padding: "7px 12px", borderBottom: "1px solid var(--border-soft)",
         display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 9,
@@ -811,29 +1244,100 @@ export function ProjectPane({ data, projectName, projectId, onPerm, onPreset, on
       }}>
         <span style={{ display: "flex", gap: -4 }}>
           {agents.map((a, i) => (
-            <span key={a.id} style={{ marginLeft: i ? -4 : 0, position: "relative" }}>
+            <span key={a.id} style={{ marginLeft: i ? -4 : 0 }}>
               <span className="av" style={{ width: 16, height: 16, background: a.color, fontSize: 9 }}>{a.initial}</span>
             </span>
           ))}
         </span>
-        <span style={{ color: "var(--accent)" }}>{running} running</span>
-        <span style={{ color: "var(--fg-dim)" }}>· {onCount} on · {idleCount} idle</span>
+        {agents.length > 0 ? (
+          <>
+            <span style={{ color: "var(--accent)" }}>{running} running</span>
+            <span style={{ color: "var(--fg-dim)" }}>· {onCount} on · {idleCount} idle</span>
+          </>
+        ) : (
+          <span style={{ color: "var(--fg-dim)", opacity: 0.6 }}>no fleet planned yet</span>
+        )}
         <span style={{ flex: 1 }} />
-        <span style={{ color: "var(--success)" }}>● github 4m</span>
+        <span style={{ color: "var(--success)" }}>● github</span>
       </div>
 
-      <div className="pp-scroll">
-        <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false} right={<SyncBtn label="Push docs →" state={syncState?.docs} onClick={onSyncDocs} />}>
-          <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />
-        </Sec>
-        <Sec title="Repository · Structure" count={`${repos.length} repos · ${structure.length} milestones`} open={true} right={<SyncBtn label="Sync to GitHub →" state={syncState?.structure} onClick={onSyncStructure} />}>
-          <RepoStructure structure={structure} repos={repos} agents={agents} />
-        </Sec>
-        <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open={true} right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
-          <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
-        </Sec>
-      </div>
+      {/* Staged view (new) — shown when sections are provided */}
+      {stagedMode ? (
+        <>
+          {/* Stepper */}
+          <Stepper stageStates={stageStates} activeIdx={activeStageIdx} onSelect={setActiveStageIdx} />
 
+          {/* Stage header + gate pill */}
+          <StageHeader
+            stage={activeStage}
+            gateMet={gateMet}
+            gateLabel={gateLabel}
+          />
+
+          {/* Scrollable stage content */}
+          <div className="pp-scroll">
+            {/* Done stages above active — compact banners */}
+            {PLAN_STAGES.slice(0, activeStageIdx).map((stage, i) => (
+              <DoneBanner
+                key={stage.id}
+                stage={stage}
+                gateLabel={stageGateLabel(stage, sections!, linkedRepos)}
+                onClick={() => setActiveStageIdx(i)}
+              />
+            ))}
+
+            {/* Active stage body */}
+            <StageBody
+              stage={activeStage}
+              data={bodyData}
+              linkedRepos={linkedRepos}
+              context={context}
+              onTogglePin={onTogglePin}
+              onView={setViewing}
+              onPerm={onPerm}
+              onPreset={onPreset}
+              onFlow={onFlow}
+              syncState={syncState}
+              onSyncStructure={onSyncStructure}
+              onSyncDocs={onSyncDocs}
+              onSyncLabels={onSyncLabels}
+            />
+
+            {/* Future stages — banked or locked banners */}
+            {PLAN_STAGES.slice(activeStageIdx + 1).map((stage, offset) => {
+              const i = activeStageIdx + 1 + offset;
+              const s = stageStates[i];
+              if (s === "banked") {
+                return <BankedBanner key={stage.id} stage={stage} onClick={() => setActiveStageIdx(i)} />;
+              }
+              return <LockedBanner key={stage.id} stage={stage} onClick={() => setActiveStageIdx(i)} />;
+            })}
+          </div>
+
+          {/* Footer advance bar */}
+          <AdvanceBar
+            activeIdx={activeStageIdx}
+            gateMet={gateMet}
+            onBack={() => setActiveStageIdx(Math.max(0, activeStageIdx - 1))}
+            onAdvance={() => setActiveStageIdx(Math.min(PLAN_STAGES.length - 1, activeStageIdx + 1))}
+          />
+        </>
+      ) : (
+        /* Legacy flat view — used when sections are not provided */
+        <div className="pp-scroll">
+          <Sec title="Context Files" count={`✦ ${pinnedCount} pinned`} open={false} right={<SyncBtn label="Push docs →" state={syncState?.docs} onClick={onSyncDocs} />}>
+            <ContextA context={context} onTogglePin={onTogglePin} onView={setViewing} />
+          </Sec>
+          <Sec title="Repository · Structure" count={`${repos.length} repos · ${structure.length} milestones`} open right={<SyncBtn label="Sync to GitHub →" state={syncState?.structure} onClick={onSyncStructure} />}>
+            <RepoStructure structure={structure} repos={repos} agents={agents} />
+          </Sec>
+          <Sec title="Agents · Permissions" count={`${agents.length} · ${running} running`} open right={<SyncBtn label="Apply labels →" state={syncState?.labels} onClick={onSyncLabels} />}>
+            <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+          </Sec>
+        </div>
+      )}
+
+      {/* Context file viewer modal */}
       {viewing && (
         <div onClick={() => setViewing(null)} style={{
           position: "fixed", inset: 0, zIndex: 50,
