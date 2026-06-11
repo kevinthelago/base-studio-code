@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore, TRIAGE_PROMPT } from "../store";
+import { fleetProfilesComplete } from "../lib/profileGen";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { QueuedPane } from "../lib/focusQueue";
 import type { FleetPlan } from "../screens/projects/planSections";
@@ -1176,6 +1177,8 @@ describe("agent fleet store", () => {
     // dangling reference -> materialized, keeping the planner-assigned id stable
     expect(streams[1].profile).toBe("b-dev");
     expect(st.agentProfiles.find((p) => p.id === "b-dev")!.paths.allow).toEqual(["src/b/**"]);
+    // and the permissions gate now passes: every stream has an assigned, existing profile (#696)
+    expect(fleetProfilesComplete(streams, st.agentProfiles)).toBe(true);
   });
 
   it("isolates co-located agents in separate worktrees with distinct checkpoint docs", () => {
