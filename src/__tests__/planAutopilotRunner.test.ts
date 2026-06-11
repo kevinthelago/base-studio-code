@@ -5,7 +5,7 @@ import {
 } from "../screens/projects/planAutopilotRunner";
 
 const snap = (over: Partial<AutopilotSnapshot> = {}): AutopilotSnapshot => ({
-  planReady: false, confirmKeys: [], plannerAwaiting: false, working: false,
+  planReady: false, confirmKeys: [], plannerAwaiting: false, working: false, autoPublish: true,
   progress: { done: 0, total: 5, fraction: 0 }, ...over,
 });
 
@@ -52,6 +52,15 @@ describe("autopilotTick (#682, Phase 1b)", () => {
     const done = await autopilotTick(afterPublish, deps);
     expect(done.finished).toBe(true);
     expect(done.result?.completed).toBe(true);
+  });
+
+  it("the feature (autoPublish=false) finishes done at a publishable plan — never publishes (#682)", async () => {
+    const { deps } = mkDeps(snap({ planReady: true, autoPublish: false }));
+    const next = await autopilotTick(initRunState(), deps);
+    expect(deps.mockPublish).not.toHaveBeenCalled();
+    expect(next.finished).toBe(true);
+    expect(next.result?.completed).toBe(true);
+    expect(next.result?.published).toBe(false);
   });
 
   it("counts idle ticks while the planner works, and stalls past the idle cap", async () => {

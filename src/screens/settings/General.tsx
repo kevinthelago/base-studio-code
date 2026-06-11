@@ -35,7 +35,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   );
 }
 
-function ToggleRow({ on, onToggle, title, children }: {
+export function ToggleRow({ on, onToggle, title, children }: {
   on: boolean; onToggle: () => void; title: string; children: React.ReactNode;
 }) {
   return (
