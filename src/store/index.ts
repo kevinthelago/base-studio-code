@@ -546,7 +546,9 @@ interface AppStore {
   // Launch the agent fleet: a "· build" tab with the director (if enabled) at the
   // project root and one worker pane per launched stream in its repo clone. Path
   // keys off projectKey (the planning session key — where repos/prompts live).
-  fleetStartProject: (projectName: string, fleet: FleetPlan, projectKey: string) => void;
+  /** Launches the fleet; returns the fleet roster rows (paneId/stream/repo/branch/role TSV,
+   *  one per live session) for the caller to persist via publishFleetRoster (#734). */
+  fleetStartProject: (projectName: string, fleet: FleetPlan, projectKey: string) => string[];
   // Index of this project's primary "· build" tab, matched on its STABLE projectKey
   // (#457) — pass the same projectKey used to launch the fleet. -1 when none.
   findFleetTabIdx: (projectKey: string) => number;
@@ -1588,7 +1590,11 @@ export const useAppStore = create<AppStore>()(
 
       findFleetTabIdx: (projectKey) =>
         findProjectTabIdx(get().tabs, sanitizeProjectKey(projectKey), "build", 0),
-      fleetStartProject: (projectName, fleet, projectKey) =>
+      fleetStartProject: (projectName, fleet, projectKey) => {
+        // Roster rows (paneId/stream/repo/branch/role) collected during the build below and
+        // written to the project hub as fleet.roster.tsv so the director's `bsc-fleet` helper
+        // can enumerate the fleet + each worker's state (#734).
+        const rosterRows: string[] = [];
         set((s) => {
           // The fleet launches into "· build" tabs (plus "· build 2", "· build 3"…
           // when it overflows a tab). A tab holds up to 16 panes (the 4×4 layout
@@ -1740,6 +1746,10 @@ export const useAppStore = create<AppStore>()(
                 newPaneExtensions[key] = fleetExts;
                 newPaneSkills[key] = fleetSkills;
                 newPaneRoles[key] = sess === null ? "director" : "worker";
+                // One roster row per live session (#734). Director has no repo/branch.
+                rosterRows.push(sess === null
+                  ? [key, "director", "-", "-", "director"].join("\t")
+                  : [key, sess.id, sess.repo, worktreeSlug(sess.id), "worker"].join("\t"));
                 // Bind the worker pane to its repo so its session GH_TOKEN is scoped to
                 // it (#158). The director spans every repo, so it keeps the global token.
                 if (sess && sess.repo) newPaneRepos[key] = sess.repo;
@@ -1799,7 +1809,11 @@ export const useAppStore = create<AppStore>()(
             paneNames: newPaneNames,
             activeScreen: "console" as Screen,
           };
-        }),
+        });
+        // The caller persists these to the hub (publishFleetRoster) — the store stays
+        // Tauri-free. Rows: paneId/stream/repo/branch/role, one per live session (#734).
+        return rosterRows;
+      },
 
       configProfiles: [],
       addConfigProfile: (profile) =>

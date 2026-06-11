@@ -45,6 +45,7 @@ import {
 import { writeBlueprintSkillContext, buildSkillLibrary, resolveBlueprintSkills } from "./blueprintSkills";
 import { oneShotComplete } from "../../lib/claudeComplete";
 import { fleetProfilesComplete } from "../../lib/profileGen";
+import { publishFleetRoster } from "../../lib/fleetRoster";
 import { autopilotProgress } from "./planAutopilot";
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
@@ -1695,7 +1696,8 @@ export function Planning({ visible }: { visible: boolean }) {
         await invoke("ensure_director_protocol", { projectKey: effectiveProjectId })
           .catch(e => console.error("director protocol failed:", e));
       }
-      fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
+      const roster = fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
+      publishFleetRoster(effectiveProjectId, roster); // #734: hub fleet.roster.tsv for bsc-fleet
     } catch (e) {
       console.error("fleet launch failed:", e);
     } finally {

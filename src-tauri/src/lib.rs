@@ -1049,7 +1049,7 @@ async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -2082,6 +2082,17 @@ bsc-assign() { tgt="$1"; [ $# -gt 0 ] && shift; id=""; t=""; while [ $# -gt 0 ];
 /// a real question to the director via `bsc-ask` -- never to sit waiting on the user.
 const BSC_DEFER_RC: &str = concat!(
     r#"bsc-defer() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":"Do not stop. Drive every owned issue to DONE and onto develop yourself: implement it, run the full local gate, then under the default self-merge policy fetch and rebase onto develop, re-run the gate, push develop, and pipe the issue into bsc-landed -- then immediately pick up your next owned issue. Keep going until EVERY owned issue is integrated into develop with the gate green and nothing remains; do not wait on the user, on CI, or on the director to merge for you. For a decision you genuinely cannot make yourself, pipe a one-line question into bsc-ask so the director answers and resumes you."}'; }"#,
+    "\n",
+);
+
+/// `bsc-fleet` (#734): the director's roster view. Reads `fleet.roster.tsv` (written at fleet
+/// launch into the project hub -- the director's cwd) and joins it with `coord.log` to print
+/// every session's console id (PANE), stream, repo, branch, role, and current STATE (blocked /
+/// waiting / ask / active / idle, with what it's blocked on / asking). The PANE id is the
+/// `<session>` argument the director feeds to bsc-answer / bsc-assign -- so this is how it
+/// knows which worker to reach. State comes from each session's latest OWN-state coord event.
+const BSC_FLEET_RC: &str = concat!(
+    r#"bsc-fleet() { r="${BSC_FLEET_ROSTER:-$PWD/fleet.roster.tsv}"; l="${BSC_COORD_LOG:-}"; if [ ! -f "$r" ]; then echo "bsc-fleet: no roster at $r (run from the project hub while a fleet is live)"; return 1; fi; printf 'PANE   STREAM             REPO                       BRANCH           ROLE     STATE\n'; awk -F'\t' -v LOG="$l" 'BEGIN { if (LOG != "") { while ((getline ln < LOG) > 0) { split(ln, a, "\t"); k=a[3]; if (k=="blocked"||k=="waiting"||k=="ask"||k=="woke") { st[a[2]]=k; on[a[2]]=(k=="blocked"||k=="ask")?a[4]:"" } } close(LOG) } } { s=st[$1]; if (s=="") s="idle"; if (s=="woke") s="active"; ex=(on[$1]!="")?" -> " on[$1]:""; printf "%-6s %-18s %-26s %-16s %-8s %s%s\n", $1, $2, $3, $4, $5, s, ex }' "$r"; }"#,
     "\n",
 );
 
@@ -4108,6 +4119,11 @@ const DIRECTOR_PROTOCOL_MD: &str = r#"
 You are the async-integrator DIRECTOR for this fleet; you write no feature code. These are
 standing rules you MUST act on, not merely acknowledge:
 
+- KNOW YOUR FLEET. Run `bsc-fleet` from the project hub (your cwd) to list every session:
+  its console id (PANE), stream, repo, branch, role, and current STATE -- blocked / waiting /
+  ask / active / idle, with what it's blocked on or asking. The PANE id (e.g. t0p2) is the
+  `<session>` argument for bsc-answer / bsc-assign, so this is how you know which worker to
+  reach and who needs attention. Run it whenever you need the roster or a health snapshot.
 - ANSWER WORKER QUESTIONS. When a worker asks you something (it arrives as a "[coordinator]
   <session> asks: ..." message), you MUST reply by running bsc-answer <session> with your
   one-line answer piped on stdin -- e.g. echo "release-eng owns #158; stay out of it" |
@@ -5816,6 +5832,57 @@ mod tests {
     }
 
     #[test]
+    fn bsc_fleet_joins_roster_with_coord_state() {
+        // bsc-fleet (#734): the director's roster view. Joins fleet.roster.tsv with each
+        // session's latest own-state event in coord.log → PANE/stream/repo/branch/role/STATE.
+        use std::process::{Command, Stdio};
+        let shell = super::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc-fleet test: no usable bash ({shell})");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("bsc-fleet-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_FLEET_RC).unwrap();
+        let roster = dir.join("fleet.roster.tsv");
+        std::fs::write(&roster,
+            "t0p0\tdirector\t-\t-\tdirector\n\
+             t0p1\tplanner-ux\to/r\tplanner-ux\tworker\n\
+             t0p2\tpty-readiness\to/r\tpty-readiness\tworker\n\
+             t0p3\textensions\to/r\textensions\tworker\n").unwrap();
+        let log = dir.join("coord.log");
+        std::fs::write(&log,
+            "2026-01-01T00:00:00Z\tt0p1\tblocked\tcontract:Auth\tcp\n\
+             2026-01-01T00:01:00Z\tt0p2\task\tshould I merge?\tcp\n\
+             2026-01-01T00:02:00Z\tt0p3\twoke\n").unwrap();
+
+        let rc_bash = super::to_bash_path(&rc.to_string_lossy());
+        let roster_bash = super::to_bash_path(&roster.to_string_lossy());
+        let log_bash = super::to_bash_path(&log.to_string_lossy());
+
+        let out = Command::new(&shell).arg("-c").arg("bsc-fleet")
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_FLEET_ROSTER", &roster_bash)
+            .env("BSC_COORD_LOG", &log_bash)
+            .stdin(Stdio::null()).output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "bsc-fleet should run: {text}");
+        // a blocked worker shows blocked + what it's blocked on
+        let l1 = text.lines().find(|l| l.starts_with("t0p1")).unwrap_or("");
+        assert!(l1.contains("blocked") && l1.contains("contract:Auth"), "blocked: {l1:?}");
+        // an asking worker shows ask + the question
+        let l2 = text.lines().find(|l| l.starts_with("t0p2")).unwrap_or("");
+        assert!(l2.contains("ask") && l2.contains("should I merge?"), "ask: {l2:?}");
+        // a freshly-woken worker reads as active; a session with no events is idle
+        assert!(text.lines().find(|l| l.starts_with("t0p3")).unwrap_or("").contains("active"), "woke→active: {text}");
+        assert!(text.lines().find(|l| l.starts_with("t0p0")).unwrap_or("").contains("idle"), "director idle: {text}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn full_bsc_rc_is_syntactically_valid_bash() {
         // Regression for the rc-glue bug: every rc constant must end with a newline so the
         // bsc-env.sh that pty_create writes keeps each helper on its own line. A missing
@@ -5830,7 +5897,7 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
@@ -5839,6 +5906,7 @@ mod tests {
             super::BSC_CONFINE_RC,
             super::BSC_COORD_EMIT_RC,
             super::BSC_DEFER_RC,
+            super::BSC_FLEET_RC,
         );
         let dir = std::env::temp_dir().join(format!("bsc-rc-syntax-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
