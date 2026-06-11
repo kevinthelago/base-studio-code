@@ -50,13 +50,15 @@ export function decideAutopilotAction(ctx: AutopilotContext): AutopilotAction {
     return { kind: "stall", reason: `hit the ${ctx.maxIterations}-iteration cap` };
   }
   if (ctx.planReady) return ctx.published ? { kind: "done" } : { kind: "publish" };
+  // Stall on no forward progress — checked BEFORE the await branch so a non-responding user
+  // (the `none` strategy) stalls instead of replying-with-nothing forever (#682, Phase 2).
+  if (ctx.idleStreak >= ctx.maxIdle) {
+    return { kind: "stall", reason: `no progress for ${ctx.idleStreak} ticks` };
+  }
   if (ctx.plannerAwaiting) {
     // Stage has its required content → confirm it (which advances the gate). Otherwise the
     // planner's turn is done but the stage isn't ready, so answer its questions to continue.
     return ctx.confirmKeys.length > 0 ? { kind: "confirm", keys: ctx.confirmKeys } : { kind: "reply" };
-  }
-  if (ctx.idleStreak >= ctx.maxIdle) {
-    return { kind: "stall", reason: `planner idle for ${ctx.idleStreak} ticks with no progress` };
   }
   return { kind: "wait" };
 }
