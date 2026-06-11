@@ -20,6 +20,7 @@ import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/p
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 import { interpretGithubReadiness, type GithubProbe } from "../../../lib/githubReadiness";
 import { tokenForRepo } from "../../../lib/repoCredentials";
+import { getProvider } from "../../../lib/consoleProviders";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -331,12 +332,21 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       }
       if (destroyed) return;
 
+      // Resolve which provider this pane is running (default: Claude).
+      const providerId = useAppStore.getState().paneProviders[paneId] ?? "claude";
+      const provider = getProvider(providerId) ?? getProvider("claude")!;
+      const isClaudeProvider = provider.isClaude === true;
+
+      // Non-Claude providers launch as plain shell commands; don't bake a startup
+      // prompt into them (pty_create's prompt-baking path calls `claude --initial-message`).
+      if (!isClaudeProvider) startupPrompt = undefined;
+
       // Serialize `claude` cold-starts so simultaneously-mounted panes don't
       // stampede the shared OAuth credential store and log every session out. A
-      // pane launches claude if its initCmd says so or it has a startup prompt
-      // (which the backend turns into a claude launch). Non-claude shells and
-      // tab-switch reconnects pass through instantly.
-      const launchesClaude = (initCmd ?? "").includes("claude") || startupPrompt !== undefined;
+      // pane launches claude if its initCmd says so, or it has a startup prompt
+      // (which the backend turns into a claude launch), or the provider is Claude.
+      // Non-claude shells and tab-switch reconnects pass through instantly.
+      const launchesClaude = isClaudeProvider && ((initCmd ?? "").includes("claude") || startupPrompt !== undefined);
       if (launchesClaude) {
         await gateClaudeLaunch(paneId);
         if (destroyed) return;
@@ -449,19 +459,21 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         if (destroyed) return;
       }
 
-      // Resolve the effective init_cmd: an explicit `initCmd` prop wins,
-      // then a triage/fleet `startupPrompt` (handled by pty_create's
-      // prompt-baking path — must NOT also inject a parallel init_cmd),
-      // then the ad-hoc resume (#36): if this pane had claude running at
-      // last shutdown and auto-resume is on, mount straight into
-      // `claude --continue`.
+      // Resolve the effective init_cmd.
+      // For Claude panes: explicit initCmd wins, then the startup-prompt baking
+      // path (pty_create handles it — don't also inject an init_cmd), then ad-hoc
+      // auto-resume (`claude --continue` when the pane previously ran Claude).
+      // For non-Claude providers: explicit initCmd wins; otherwise fall back to the
+      // provider's own launch command so the CLI auto-starts on mount.
       const st = useAppStore.getState();
-      const effectiveInitCmd = resolveInitCmd({
-        explicit: initCmd,
-        startupPrompt,
-        paneWasClaude: !!st.paneWasClaude[paneId],
-        autoResumeClaude: st.autoResumeClaude,
-      });
+      const effectiveInitCmd = isClaudeProvider
+        ? resolveInitCmd({
+            explicit: initCmd,
+            startupPrompt,
+            paneWasClaude: !!st.paneWasClaude[paneId],
+            autoResumeClaude: st.autoResumeClaude,
+          })
+        : (initCmd && initCmd.length > 0 ? initCmd : provider.buildLaunchCmd());
       // The model new claude launches use (per-pane override, else the global
       // default). The backend maps it to `claude --model <alias>`; an unknown id
       // is a no-op (Claude Code's own default). Only meaningful when this pane
@@ -473,13 +485,16 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         rows: term.rows,
         cwd:     initialCwd ?? "",
         initCmd: effectiveInitCmd,
-        startupPrompt,
+        // Only pass startupPrompt for Claude panes — the backend bakes it as
+        // `claude --initial-message`, which would be wrong for other providers.
+        startupPrompt: isClaudeProvider ? startupPrompt : undefined,
         model:   paneModel,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
         // Per-repo triage checkpoint doc, so the bsc-checkpoint helper can write it.
         checkpointDoc,
         env: agentEnv,
+        providerId,
       }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
 
       if (!isNew) {
