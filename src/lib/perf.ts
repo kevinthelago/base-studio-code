@@ -10,6 +10,7 @@
 // Together these tell us whether the lag is rendering load (jank high, terms high)
 // vs. data volume (pty high) vs. handler cost (pty ms high).
 
+import { invoke } from "@tauri-apps/api/core";
 import { log } from "./log";
 
 /** Long tasks at or above this many ms count toward the jank tally. */
@@ -123,6 +124,17 @@ let observer: PerformanceObserver | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 let lastFlush = 0;
 
+/** Fire-and-forget: push the current window's metrics into the backend time-series. */
+function emitFrontendSample(s: PerfStats, heap: HeapInfo | null): void {
+  invoke("perf_record_frontend_sample", {
+    heapUsedMb: heap?.usedMB ?? null,
+    jankCount: s.jankCount,
+    jankTotalMs: s.jankTotalMs,
+    ptyEvents: s.ptyEvents,
+    ptyBytes: s.ptyBytes,
+  }).catch(() => { /* backend may not be ready yet */ });
+}
+
 /** Start the long-task observer + the periodic metrics flush. Idempotent. */
 export function startPerfMonitor(): void {
   if (timer) return;
@@ -147,6 +159,8 @@ export function startPerfMonitor(): void {
     const now = performance.now();
     const heap = readHeap();
     const line = formatPerfSummary(stats, now - lastFlush, heap);
+    // Emit a snapshot to the backend time-series before resetting the window.
+    emitFrontendSample(stats, heap);
     lastFlush = now;
     resetWindow();
     if (line) log.warn(line);
