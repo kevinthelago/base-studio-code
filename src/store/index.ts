@@ -29,6 +29,7 @@ import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategy
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
+import { invoke } from "@tauri-apps/api/core";
 
 // Sent as the first message to each console when a project tab is opened, so the
 // session starts by reading and executing the laid-out plan. Plain text only — no
@@ -88,6 +89,27 @@ export interface GithubUser {
   name: string | null;
   avatar_url: string;
 }
+
+export interface PerfConfig {
+  enabled: boolean;
+  /** Sampling cadence in seconds (0 = off). */
+  intervalSecs: number;
+  /** Retain samples for N hours (0 = unlimited). */
+  retentionHours: number;
+  /** Max SQLite DB size in MB (0 = no limit). */
+  maxDbMb: number;
+  trackProcess: boolean;
+  trackFrontend: boolean;
+}
+
+const DEFAULT_PERF_CONFIG: PerfConfig = {
+  enabled: true,
+  intervalSecs: 2,
+  retentionHours: 24,
+  maxDbMb: 50,
+  trackProcess: true,
+  trackFrontend: true,
+};
 
 export interface ToolPermissions {
   allow: string[];
@@ -285,6 +307,10 @@ interface AppStore {
   // Settings
   settingsSection: string;
   setSettingsSection: (section: string) => void;
+
+  // Performance monitoring (#569)
+  perfConfig: PerfConfig;
+  setPerfConfig: (config: PerfConfig) => void;
 
   // Mobile tunnel (#243). The relay Worker URL is persisted (the user's BYO relay);
   // `tunnelRunning` mirrors the Rust client's connected state (transient — NOT
@@ -816,6 +842,20 @@ export const useAppStore = create<AppStore>()(
 
       settingsSection: "github",
       setSettingsSection: (section) => set({ settingsSection: section }),
+
+      perfConfig: DEFAULT_PERF_CONFIG,
+      setPerfConfig: (config) => {
+        set({ perfConfig: config });
+        // Push the new config to the Rust backend so the sampler respects it.
+        invoke("perf_set_config", {
+          enabled: config.enabled,
+          intervalSecs: config.intervalSecs,
+          retentionHours: config.retentionHours,
+          maxDbMb: config.maxDbMb,
+          trackProcess: config.trackProcess,
+          trackFrontend: config.trackFrontend,
+        }).catch(() => { /* backend may not be ready */ });
+      },
 
       tunnelRelayUrl: "",
       setTunnelRelayUrl: (url) => set({ tunnelRelayUrl: url }),
@@ -1668,6 +1708,7 @@ export const useAppStore = create<AppStore>()(
         githubActiveTab: s.githubActiveTab,
         automationsTab:  s.automationsTab,
         settingsSection: s.settingsSection,
+        perfConfig:      s.perfConfig,
         tunnelRelayUrl:  s.tunnelRelayUrl,
         agentProfiles:   s.agentProfiles,
         paneProfiles:    s.paneProfiles,

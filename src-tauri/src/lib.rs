@@ -7,6 +7,7 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 mod tunnel;
+mod perf;
 
 // ── PTY state ────────────────────────────────────────────────────────────────
 
@@ -648,6 +649,13 @@ async fn pty_create(
         Err(e) => { log::warn!("pty[{pane_id}] create job object failed: {e}"); None }
     };
 
+    // Register the shell PID with the perf sampler so it can track this agent's
+    // resource usage. Best-effort: if the PID is unavailable the sampler just
+    // won't have a row for this pane (it already logged the warning above).
+    if let Some(pid) = child.process_id() {
+        app.state::<perf::PerfState>().register(&pane_id, pid);
+    }
+
     let mut writer = pair.master.take_writer()
         .map_err(|e| { log::error!("pty[{pane_id}] take_writer failed: {e}"); e.to_string() })?;
     let mut reader = pair.master.try_clone_reader()
@@ -868,7 +876,13 @@ async fn pty_resize(
 }
 
 #[tauri::command]
-async fn pty_kill(pane_id: String, state: State<'_, PtyState>) -> Result<(), String> {
+async fn pty_kill(
+    pane_id: String,
+    state: State<'_, PtyState>,
+    perf_state: State<'_, perf::PerfState>,
+) -> Result<(), String> {
+    // Remove from perf tracker before killing the process.
+    perf_state.unregister(&pane_id);
     let session = state.0.lock().unwrap().remove(&pane_id);
     match session {
         Some(mut s) => {
@@ -3708,6 +3722,15 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(PtyState(Mutex::new(HashMap::new())))
         .manage(tunnel::TunnelState::new())
+        .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
+        .setup(|app| {
+            // Cap unbounded log files once at startup to reclaim disk space.
+            perf::cap_logs(&bsc_base_dir());
+            // Spawn the background performance sampler.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(perf::run_sampler(handle));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             kb_chat,
             github_request,
@@ -3749,6 +3772,11 @@ pub fn run() {
             read_coord_log,
             append_coord_woke,
             read_git_hooks,
+            perf::perf_get_config,
+            perf::perf_set_config,
+            perf::perf_record_frontend_sample,
+            perf::perf_clear_history,
+            perf::perf_get_recent_samples,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

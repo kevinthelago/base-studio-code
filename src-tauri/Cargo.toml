@@ -42,6 +42,12 @@ futures-util = { version = "0.3", default-features = false, features = ["std", "
 # thread. Pin `ring` and install it as the process default at startup (lib.rs `run`).
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
+# Performance monitoring (#569): sysinfo samples per-agent process RSS/CPU cheaply
+# (only tracked PIDs, no full system walk); rusqlite persists the time-series.
+# `bundled` compiles SQLite from source for cross-platform reliability.
+sysinfo = { version = "0.31", default-features = false, features = ["system"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 # Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any
 # grandchildren) dies with the session on pty_kill / app exit. portable-pty calls
 # `setsid()` in the spawned shell, so the shell leads a process group whose pgid ==

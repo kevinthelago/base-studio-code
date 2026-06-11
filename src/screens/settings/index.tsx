@@ -6,6 +6,7 @@ import { ClaudeConfigSettings } from "./ClaudeConfig";
 import { TunnelSettings } from "./Tunnel";
 import { DeveloperSettings } from "./Developer";
 import { AchievementsSettings } from "./Achievements";
+import { PerformanceSettings } from "./Performance";
 
 const NAV_ITEMS = [
   { k: "general",       label: "General"        },
@@ -14,6 +15,7 @@ const NAV_ITEMS = [
   { k: "agents",        label: "Agents"          },
   { k: "claude-config", label: "Claude Config"   },
   { k: "tunnel",        label: "Mobile Tunnel"   },
+  { k: "performance",   label: "Performance"     },
   { k: "appearance",    label: "Appearance"      },
   { k: "keyboard",      label: "Keyboard"        },
   { k: "advanced",      label: "Advanced"        },
@@ -56,9 +58,10 @@ export function SettingsScreen() {
           {settingsSection === "agents"        && <AgentsSettings />}
           {settingsSection === "claude-config" && <ClaudeConfigSettings />}
           {settingsSection === "tunnel"        && <TunnelSettings />}
+          {settingsSection === "performance"   && <PerformanceSettings />}
           {settingsSection === "developer"    && <DeveloperSettings />}
           {settingsSection === "achievements" && <AchievementsSettings />}
-          {settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && settingsSection !== "tunnel" && settingsSection !== "developer" && settingsSection !== "achievements" && (
+          {settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && settingsSection !== "tunnel" && settingsSection !== "performance" && settingsSection !== "developer" && settingsSection !== "achievements" && (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               height: "100%", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)",
