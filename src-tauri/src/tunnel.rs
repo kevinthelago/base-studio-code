@@ -50,6 +50,15 @@ pub struct SessionMeta {
     pub prompt: Option<String>,
 }
 
+/// One plan file in the canonical planner-sync representation.
+/// Mirrors TS `CanonicalFile` in src/lib/plannerCore/types.ts.
+/// Pinned wire shape in src/lib/plannerCore.fixtures.json (wireFrames.plan_sync_files).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlanFile {
+    pub relpath: String,
+    pub content: String,
+}
+
 /// Messages the desktop sends to the mobile client. Tagged by snake_case `type`.
 /// `AuthOk` / `PaneOutput` are emitted by the relay transport (#242b); the rest are
 /// emitted now by the metadata-push commands.
@@ -90,6 +99,27 @@ pub enum ServerMsg {
         pane_id: String,
         prompt: String,
     },
+    // ── Planner sync (#588) ──────────────────────────────────────────────────
+    /// Desktop pushes its plan manifest (relpath → hex hash) to mobile.
+    /// Also sent proactively on connect so mobile can start reconciling immediately.
+    #[serde(rename_all = "camelCase")]
+    PlanSyncManifest {
+        project_id: String,
+        /// relpath → lowercase 8-char hex FNV-1a 32-bit content hash.
+        files: HashMap<String, String>,
+    },
+    /// Desktop sends requested plan files to mobile (response to PlanSyncPull).
+    #[serde(rename_all = "camelCase")]
+    PlanSyncFiles {
+        project_id: String,
+        files: Vec<PlanFile>,
+    },
+    /// Desktop acknowledges a plan push from mobile.
+    #[serde(rename_all = "camelCase")]
+    PlanSyncAck {
+        project_id: String,
+        applied: bool,
+    },
 }
 
 /// Messages the mobile client sends to the desktop. Tagged by snake_case `type`.
@@ -112,6 +142,24 @@ pub enum ClientMsg {
     PaneInput { pane_id: String, data: String },
     #[serde(rename_all = "camelCase")]
     PaneResize { pane_id: String, cols: u16, rows: u16 },
+    // ── Planner sync (#588) ──────────────────────────────────────────────────
+    /// Mobile requests the desktop's current plan manifest for a project.
+    #[serde(rename_all = "camelCase")]
+    PlanSyncManifestRequest { project_id: String },
+    /// Mobile requests specific files from the desktop's plan.
+    #[serde(rename_all = "camelCase")]
+    PlanSyncPull {
+        project_id: String,
+        /// Relpaths of the files to retrieve.
+        paths: Vec<String>,
+    },
+    /// Mobile pushes its merged plan state to the desktop (desktop is not the merge
+    /// authority in v1 — it applies the push and acks; no conflict frames returned).
+    #[serde(rename_all = "camelCase")]
+    PlanSyncPush {
+        project_id: String,
+        files: Vec<PlanFile>,
+    },
 }
 
 /// One PTY output chunk fanned out to the relay transport (which filters per pane).
@@ -209,6 +257,13 @@ struct Inner {
     input_requested: bool,
     /// Send `true` to signal the relay transport task(s) to stop (#242b).
     shutdown_tx: Option<watch::Sender<bool>>,
+    // ── Planner sync (#588) ──────────────────────────────────────────────────
+    /// Plan manifests per projectId — pushed by the frontend so mobile can request
+    /// them via PlanSyncManifestRequest. relpath → hex hash.
+    plan_manifests: HashMap<String, HashMap<String, String>>,
+    /// Full plan file caches per projectId — pushed by the frontend so mobile can
+    /// pull individual files via PlanSyncPull.
+    plan_files: HashMap<String, Vec<PlanFile>>,
 }
 
 /// Single source of truth for the tunnel, managed by Tauri. Holds the desktop's static
@@ -253,6 +308,8 @@ impl TunnelState {
                 input_granted: false,
                 input_requested: false,
                 shutdown_tx: None,
+                plan_manifests: HashMap::new(),
+                plan_files: HashMap::new(),
             }),
             output_tx,
             event_tx,
@@ -365,6 +422,11 @@ impl TunnelState {
         (inner.panes.clone(), inner.sessions.values().cloned().collect())
     }
 
+    /// Snapshot all stored plan manifests to replay to a freshly-paired mobile client.
+    fn plan_manifests_snapshot(&self) -> HashMap<String, HashMap<String, String>> {
+        self.inner.lock().unwrap().plan_manifests.clone()
+    }
+
     /// Record how many mobile clients are connected (for the settings card).
     fn set_client_count(&self, n: usize) {
         self.inner.lock().unwrap().client_count = n;
@@ -454,6 +516,47 @@ pub fn tunnel_set_sessions(sessions: Vec<SessionMeta>, state: State<'_, TunnelSt
     for (pane_id, prompt) in newly_awaiting {
         let _ = state.event_tx.send(ServerMsg::UserRequest { pane_id, prompt });
     }
+}
+
+// ── Planner sync (#588) — Tauri commands ────────────────────────────────────
+
+/// Push the current plan manifest + files for a project from the frontend.
+/// Computes the content manifest (relpath → FNV-1a hex hash), stores both for
+/// mobile to request, and broadcasts `plan_sync_manifest` so any connected mobile
+/// client receives the update immediately.
+#[tauri::command]
+pub fn tunnel_set_plan_state(
+    project_id: String,
+    files: Vec<PlanFile>,
+    state: State<'_, TunnelState>,
+) {
+    let manifest: HashMap<String, String> = files
+        .iter()
+        .map(|f| (f.relpath.clone(), fnv1a32_hex(&f.content)))
+        .collect();
+    let broadcast_manifest = manifest.clone();
+    {
+        let mut inner = state.inner.lock().unwrap();
+        inner.plan_manifests.insert(project_id.clone(), manifest);
+        inner.plan_files.insert(project_id.clone(), files);
+    }
+    log::debug!("tunnel: plan state pushed for project {project_id}");
+    let _ = state.event_tx.send(ServerMsg::PlanSyncManifest {
+        project_id,
+        files: broadcast_manifest,
+    });
+}
+
+/// Acknowledge a plan push (called by the frontend after applying the received files
+/// to the hub directory). Broadcasts `plan_sync_ack` back to the mobile client.
+#[tauri::command]
+pub fn tunnel_ack_plan_push(
+    project_id: String,
+    applied: bool,
+    state: State<'_, TunnelState>,
+) {
+    log::debug!("tunnel: plan push ack for {project_id} (applied={applied})");
+    let _ = state.event_tx.send(ServerMsg::PlanSyncAck { project_id, applied });
 }
 
 /// Start the relay transport: mint a room id + pairing secret, mark running, and spawn
@@ -825,6 +928,15 @@ mod transport {
             send_msg(&mut sink, &mut noise_tx, &ServerMsg::PaneSize { pane_id, cols, rows }).await?;
         }
 
+        // Replay plan manifests so mobile can start reconciling immediately (#588).
+        let plan_manifests = app
+            .try_state::<TunnelState>()
+            .map(|s| s.plan_manifests_snapshot())
+            .unwrap_or_default();
+        for (project_id, files) in plan_manifests {
+            send_msg(&mut sink, &mut noise_tx, &ServerMsg::PlanSyncManifest { project_id, files }).await?;
+        }
+
         // Subscribe AFTER replay so we don't double-send; then pump until either side closes.
         let (mut out_rx, mut evt_rx) = match app.try_state::<TunnelState>() {
             Some(s) => {
@@ -923,8 +1035,58 @@ mod transport {
                 }
             }
             ClientMsg::Auth { .. } => {} // already authenticated for this session
+            // ── Planner sync (#588) ──────────────────────────────────────────
+            ClientMsg::PlanSyncManifestRequest { project_id } => {
+                if let Some(ts) = app.try_state::<TunnelState>() {
+                    let files = ts
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .plan_manifests
+                        .get(&project_id)
+                        .cloned()
+                        .unwrap_or_default();
+                    log::debug!("tunnel: plan manifest requested for {project_id} ({} files)", files.len());
+                    let _ = ts.event_tx.send(ServerMsg::PlanSyncManifest { project_id, files });
+                }
+            }
+            ClientMsg::PlanSyncPull { project_id, paths } => {
+                if let Some(ts) = app.try_state::<TunnelState>() {
+                    let all = ts
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .plan_files
+                        .get(&project_id)
+                        .cloned()
+                        .unwrap_or_default();
+                    let path_set: std::collections::HashSet<_> = paths.into_iter().collect();
+                    let files: Vec<_> = all.into_iter().filter(|f| path_set.contains(&f.relpath)).collect();
+                    log::debug!("tunnel: plan pull for {project_id} — serving {} file(s)", files.len());
+                    let _ = ts.event_tx.send(ServerMsg::PlanSyncFiles { project_id, files });
+                }
+            }
+            ClientMsg::PlanSyncPush { project_id, files } => {
+                // Emit a Tauri event so the frontend applies the pushed files to the hub dir,
+                // then calls tunnel_ack_plan_push with the result.
+                log::info!("tunnel: plan push received for {project_id} ({} file(s))", files.len());
+                let payload = serde_json::json!({ "projectId": project_id, "files": files });
+                let _ = app.emit("tunnel://plan-sync-push", payload);
+            }
         }
     }
+}
+
+/// FNV-1a 32-bit hash of a UTF-8 string, returned as a lowercase 8-char hex string.
+/// Mirrors the TS `fnv1a32hex` in src/lib/plannerCore/hash.ts; both hash UTF-8 bytes.
+/// Test vectors pinned in src/lib/plannerCore.fixtures.json (fnv1a32 section).
+fn fnv1a32_hex(s: &str) -> String {
+    let mut h: u32 = 0x811c9dc5;
+    for b in s.bytes() {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(0x01000193);
+    }
+    format!("{h:08x}")
 }
 
 /// Decrypt + deserialize one Noise transport frame into a client message. Kept at module
@@ -941,6 +1103,86 @@ fn decode_room_msg(tx: &mut snow::TransportState, frame: &[u8]) -> Result<Client
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Validate the plannerCore fixture: FNV-1a hash vectors + plan-sync wire frame serde.
+    /// Shared with mobile-studio-code and the TS tests; any drift is a breaking protocol
+    /// change (#588).
+    #[test]
+    fn planner_core_fixture_matches_hash_and_serde() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../src/lib/plannerCore.fixtures.json");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read plannerCore fixture {}: {e}", path.display()));
+        let fx: serde_json::Value = serde_json::from_str(&raw).unwrap();
+
+        // FNV-1a 32-bit hash vectors.
+        let v = &fx["fnv1a32"];
+        assert_eq!(fnv1a32_hex(""),      v["empty"].as_str().unwrap(), "empty");
+        assert_eq!(fnv1a32_hex("a"),     v["a"].as_str().unwrap(),     "\"a\"");
+        assert_eq!(fnv1a32_hex("foobar"),v["foobar"].as_str().unwrap(),"\"foobar\"");
+
+        // projectId derivation.
+        let pi = &fx["projectId"];
+        let expected_pid = format!("proj-{}", fnv1a32_hex(pi["input"].as_str().unwrap()));
+        assert_eq!(expected_pid, pi["id"].as_str().unwrap());
+
+        // phaseId derivation.
+        let ph = &fx["phaseId"];
+        let expected_ph = format!("pid-{}", fnv1a32_hex(ph["input"].as_str().unwrap()));
+        assert_eq!(expected_ph, ph["id"].as_str().unwrap());
+
+        // Wire frame serde — ClientMsg round-trips.
+        let frames = &fx["wireFrames"];
+        let req = serde_json::from_value::<ClientMsg>(frames["plan_sync_manifest_request"].clone())
+            .expect("plan_sync_manifest_request deserializes");
+        assert!(
+            matches!(&req, ClientMsg::PlanSyncManifestRequest { project_id, .. } if project_id == "proj-bf9cf968"),
+            "expected PlanSyncManifestRequest with proj-bf9cf968, got {req:?}"
+        );
+        let pull = serde_json::from_value::<ClientMsg>(frames["plan_sync_pull"].clone())
+            .expect("plan_sync_pull deserializes");
+        assert!(matches!(&pull, ClientMsg::PlanSyncPull { paths, .. } if paths == &["goal.md"]),
+            "expected PlanSyncPull with [\"goal.md\"], got {pull:?}");
+        let push = serde_json::from_value::<ClientMsg>(frames["plan_sync_push"].clone())
+            .expect("plan_sync_push deserializes");
+        assert!(matches!(&push, ClientMsg::PlanSyncPush { files, .. } if files.len() == 1),
+            "expected PlanSyncPush with 1 file, got {push:?}");
+
+        // ServerMsg serialization matches fixture wire shapes.
+        let manifest_frame = serde_json::to_value(ServerMsg::PlanSyncManifest {
+            project_id: "proj-bf9cf968".into(),
+            files: [("goal.md".to_string(), "bf9cf968".to_string())].into_iter().collect(),
+        })
+        .unwrap();
+        assert_eq!(manifest_frame, frames["plan_sync_manifest"], "plan_sync_manifest shape");
+
+        let files_frame = serde_json::to_value(ServerMsg::PlanSyncFiles {
+            project_id: "proj-bf9cf968".into(),
+            files: vec![PlanFile { relpath: "goal.md".into(), content: "foobar".into() }],
+        })
+        .unwrap();
+        assert_eq!(files_frame, frames["plan_sync_files"], "plan_sync_files shape");
+
+        let ack_frame = serde_json::to_value(ServerMsg::PlanSyncAck {
+            project_id: "proj-bf9cf968".into(),
+            applied: true,
+        })
+        .unwrap();
+        assert_eq!(ack_frame, frames["plan_sync_ack"], "plan_sync_ack shape");
+
+        // Manifest content hash: fnv1a32("foobar") == fixture manifest files["goal.md"].
+        let manifest = &fx["manifest"];
+        let expected_hash = fnv1a32_hex("foobar");
+        assert_eq!(expected_hash, manifest["files"]["goal.md"].as_str().unwrap());
+    }
+
+    /// FNV-1a 32-bit is a 32-bit operation even for long strings.
+    #[test]
+    fn fnv1a32_stays_in_u32_range() {
+        let h = fnv1a32_hex("the quick brown fox jumps over the lazy dog");
+        assert_eq!(h.len(), 8);
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+    }
 
     /// Validate serde against the shared cross-repo fixture
     /// (`src/lib/tunnelProtocol.fixtures.json`, also consumed by the TS tests and
