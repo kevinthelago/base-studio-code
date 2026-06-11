@@ -1,0 +1,90 @@
+{
+  "$comment": "Canonical planner-sync fixtures — the cross-repo arbiter for base-studio-code and mobile-studio-code. Both TS tests (src/__tests__/plannerCore.test.ts) and Rust tests (src-tauri/src/tunnel.rs) validate their implementations against these values. See src/lib/plannerCore/ for the TS implementation. Any change here is a BREAKING PROTOCOL CHANGE and must be coordinated across both repos.",
+  "version": 1,
+  "parity": {
+    "fnv1a_precision": "Math.imul(h, 0x01000193) >>> 0; Rust: h.wrapping_mul(0x01000193); both hash UTF-8 bytes",
+    "issue_id_field": "id",
+    "issue_id_note": "Desktop PlanIssue.ref maps to the canonical 'id' field at the bridge serialization boundary. The values are identical — the bridge renames, not transforms.",
+    "section_state_vocab": {
+      "desktop_to_canonical": {
+        "pending": "surfaced",
+        "drafted": "drafted",
+        "confirmed": "confirmed"
+      },
+      "skipped_section_state": "skipped",
+      "note": "Desktop sections absent from planSections map to nothing (not in canonical). Sections in planSections but not confirmedSections are 'drafted'. Sections in _skipped.md become state 'skipped'."
+    },
+    "phase_id_prefix": "pid-",
+    "project_id_prefix": "proj-"
+  },
+  "fnv1a32": {
+    "$comment": "Standard FNV-1a 32-bit test vectors (hashing UTF-8 bytes). Both implementations must produce these exact hex strings.",
+    "empty": "811c9dc5",
+    "a": "e40c292c",
+    "foobar": "bf9cf968"
+  },
+  "projectId": {
+    "$comment": "projectId('foobar') = 'proj-' + fnv1a32hex('foobar') = 'proj-bf9cf968'",
+    "input": "foobar",
+    "id": "proj-bf9cf968"
+  },
+  "phaseId": {
+    "$comment": "phaseId('a') = 'pid-' + fnv1a32hex('a') = 'pid-e40c292c'",
+    "input": "a",
+    "id": "pid-e40c292c"
+  },
+  "manifest": {
+    "$comment": "Example manifest: goal.md contains 'foobar' (hash bf9cf968), phases.json contains 'a' (hash e40c292c)",
+    "projectId": "proj-bf9cf968",
+    "files": {
+      "goal.md": "bf9cf968",
+      "phases.json": "e40c292c"
+    }
+  },
+  "sectionStates": {
+    "desktopToCanonical": {
+      "pending": "surfaced",
+      "drafted": "drafted",
+      "confirmed": "confirmed"
+    },
+    "skippedSectionState": "skipped"
+  },
+  "wireFrames": {
+    "$comment": "Canonical wire frame shapes for the plan_sync_* protocol frames. camelCase field names on the wire (Rust: #[serde(rename_all = 'camelCase')]). Tagged by snake_case 'type' field.",
+    "plan_sync_manifest_request": {
+      "type": "plan_sync_manifest_request",
+      "projectId": "proj-bf9cf968"
+    },
+    "plan_sync_manifest": {
+      "type": "plan_sync_manifest",
+      "projectId": "proj-bf9cf968",
+      "files": {
+        "goal.md": "bf9cf968"
+      }
+    },
+    "plan_sync_pull": {
+      "type": "plan_sync_pull",
+      "projectId": "proj-bf9cf968",
+      "paths": ["goal.md"]
+    },
+    "plan_sync_files": {
+      "type": "plan_sync_files",
+      "projectId": "proj-bf9cf968",
+      "files": [
+        { "relpath": "goal.md", "content": "foobar" }
+      ]
+    },
+    "plan_sync_push": {
+      "type": "plan_sync_push",
+      "projectId": "proj-bf9cf968",
+      "files": [
+        { "relpath": "goal.md", "content": "foobar" }
+      ]
+    },
+    "plan_sync_ack": {
+      "type": "plan_sync_ack",
+      "projectId": "proj-bf9cf968",
+      "applied": true
+    }
+  }
+}
