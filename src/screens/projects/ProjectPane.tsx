@@ -186,6 +186,8 @@ interface PlanStage {
   requiredConfirmed: string[];
   /** Additional gate: check function beyond key confirmation. */
   extraGate?: (sections: Section[], repos: string[], fleet: FleetPlan | undefined) => boolean;
+  /** Optional stages are always visible and never block the advance button. (#676) */
+  optional?: boolean;
 }
 
 const PLAN_STAGES: PlanStage[] = [
@@ -211,6 +213,7 @@ const PLAN_STAGES: PlanStage[] = [
     desc: "Design the screens",
     requiredConfirmed: [],
     extraGate: (sections) => sections.some(s => s.k === "ux" && s.state !== "pending"),
+    optional: true,
   },
   {
     id: "structure",
@@ -234,6 +237,7 @@ const PLAN_STAGES: PlanStage[] = [
     short: "Auto",
     desc: "Cron schedules · on-demand",
     requiredConfirmed: [],
+    optional: true,
   },
   {
     id: "skills",
@@ -242,6 +246,7 @@ const PLAN_STAGES: PlanStage[] = [
     desc: "Reusable skills library",
     requiredConfirmed: [],
     extraGate: (sections) => sections.some(s => s.k === "skills" && s.state !== "pending"),
+    optional: true,
   },
 ];
 
@@ -303,7 +308,24 @@ function hasStageContent(stage: PlanStage, sections: Section[]): boolean {
     skills:      ["skills"],
   };
   const keys = relevant[stage.id] ?? [];
-  return keys.some(k => sections.find(s => s.k === k)?.state !== "pending");
+  // Use "pending" as default when a section is absent — absence is not content.
+  return keys.some(k => (sections.find(s => s.k === k)?.state ?? "pending") !== "pending");
+}
+
+/**
+ * Forward navigation: skip optional stages with no content. (#676)
+ * Stops at the first non-optional stage or an optional stage that has content.
+ */
+function nextStageIdx(fromIdx: number, sections: Section[]): number {
+  const last = PLAN_STAGES.length - 1;
+  let idx = fromIdx + 1;
+  while (idx < last) {
+    const stage = PLAN_STAGES[idx];
+    if (!stage.optional) break;
+    if (hasStageContent(stage, sections)) break;
+    idx++;
+  }
+  return Math.min(idx, last);
 }
 
 function computeStageStates(
@@ -1019,6 +1041,13 @@ function LockedBanner({ stage, onClick }: { stage: PlanStage; onClick?: () => vo
       <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)" }}>
         {stage.title}
       </span>
+      {stage.optional && (
+        <span style={{
+          fontFamily: "var(--mono)", fontSize: 8.5, padding: "1px 5px", borderRadius: 3,
+          background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+          color: "var(--fg-dim)",
+        }}>optional</span>
+      )}
       <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", opacity: 0.7 }}>
         — {stage.desc}
       </span>
@@ -1045,11 +1074,14 @@ function BankedBanner({ stage, onClick }: { stage: PlanStage; onClick?: () => vo
 }
 
 /** Footer advance bar — Back / stage name + gate status / Advance. */
-function AdvanceBar({ activeIdx, gateMet, onBack, onAdvance }: {
+function AdvanceBar({ activeIdx, gateMet, optional, onBack, onAdvance, nextShort }: {
   activeIdx: number;
   gateMet: boolean;
+  /** When true, the current stage is optional — advance is always enabled. (#676) */
+  optional?: boolean;
   onBack: () => void;
   onAdvance: () => void;
+  nextShort?: string;
 }) {
   const isFirst = activeIdx === 0;
   const isLast = activeIdx === PLAN_STAGES.length - 1;
@@ -1065,19 +1097,20 @@ function AdvanceBar({ activeIdx, gateMet, onBack, onAdvance }: {
         ← {isFirst ? "" : PLAN_STAGES[activeIdx - 1].short}
       </button>
       <span style={{
-        fontFamily: "var(--mono)", fontSize: 9, color: gateMet ? "var(--success)" : "var(--fg-dim)",
+        fontFamily: "var(--mono)", fontSize: 9,
+        color: gateMet ? "var(--success)" : optional ? "var(--fg-dim)" : "var(--fg-dim)",
         flex: 1, textAlign: "center",
       }}>
-        {stage.title}{gateMet ? " · gate met" : ""}
+        {stage.title}{gateMet ? " · gate met" : optional ? " · optional" : ""}
       </span>
       <button
-        className={"advance-btn fwd" + (gateMet ? " enabled" : "")}
+        className={"advance-btn fwd" + (gateMet || optional ? " enabled" : "")}
         onClick={onAdvance}
-        disabled={isLast || !gateMet}
-        title={!gateMet ? "Complete this stage's gate first" : undefined}
+        disabled={isLast || (!gateMet && !optional)}
+        title={!gateMet && !optional ? "Complete this stage's gate first" : undefined}
         style={{ opacity: isLast ? 0.35 : 1 }}
       >
-        {isLast ? "" : PLAN_STAGES[activeIdx + 1].short} →
+        {isLast ? "" : (nextShort ?? PLAN_STAGES[activeIdx + 1].short)} →
       </button>
     </div>
   );
@@ -1272,6 +1305,7 @@ export function ProjectPane({
             stage={activeStage}
             gateMet={gateMet}
             gateLabel={gateLabel}
+            optional={activeStage.optional}
           />
 
           {/* Scrollable stage content */}
@@ -1314,13 +1348,21 @@ export function ProjectPane({
             })}
           </div>
 
-          {/* Footer advance bar */}
-          <AdvanceBar
-            activeIdx={activeStageIdx}
-            gateMet={gateMet}
-            onBack={() => setActiveStageIdx(Math.max(0, activeStageIdx - 1))}
-            onAdvance={() => setActiveStageIdx(Math.min(PLAN_STAGES.length - 1, activeStageIdx + 1))}
-          />
+          {/* Footer advance bar — forward nav skips empty optional stages (#676) */}
+          {(() => {
+            const fwdIdx = nextStageIdx(activeStageIdx, sections!);
+            const fwdStage = PLAN_STAGES[fwdIdx];
+            return (
+              <AdvanceBar
+                activeIdx={activeStageIdx}
+                gateMet={gateMet}
+                optional={activeStage.optional}
+                nextShort={fwdIdx !== activeStageIdx + 1 ? fwdStage?.short : undefined}
+                onBack={() => setActiveStageIdx(Math.max(0, activeStageIdx - 1))}
+                onAdvance={() => setActiveStageIdx(fwdIdx)}
+              />
+            );
+          })()}
         </>
       ) : (
         /* Legacy flat view — used when sections are not provided */
