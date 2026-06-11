@@ -8,6 +8,8 @@ import { IDLE_TIMEOUT_MS, roleFor, tooLarge, type Role } from "./protocol";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<RelayRoom>;
+  /** Optional KV namespace for per-IP rate-limiting. Absent in the default BYO deploy. */
+  RATE_LIMIT_KV?: KVNamespace;
 }
 
 /** Per-socket metadata stored via the hibernatable attachment (survives eviction). */
