@@ -5,7 +5,7 @@ import {
 } from "../screens/projects/planAutopilotRunner";
 
 const snap = (over: Partial<AutopilotSnapshot> = {}): AutopilotSnapshot => ({
-  planReady: false, confirmKeys: [], plannerAwaiting: false,
+  planReady: false, confirmKeys: [], plannerAwaiting: false, working: false,
   progress: { done: 0, total: 5, fraction: 0 }, ...over,
 });
 
@@ -13,6 +13,7 @@ function mkDeps(snapshot: AutopilotSnapshot, over: Partial<AutopilotDeps> = {}) 
   const log: AutopilotLogEntry[] = [];
   const deps: AutopilotDeps = {
     pitch: "Build a thing",
+    strategy: "llm",
     snapshot: () => snapshot,
     pendingOutput: () => "what's the goal?",
     userSim: vi.fn(async () => "the goal is X"),
@@ -61,7 +62,7 @@ describe("autopilotTick (#682, Phase 1b)", () => {
     const stalled = await autopilotTick(s, deps);
     expect(stalled.finished).toBe(true);
     expect(stalled.result?.completed).toBe(false);
-    expect(stalled.result?.stalledReason).toMatch(/idle/);
+    expect(stalled.result?.stalledReason).toMatch(/no progress/);
   });
 
   it("stalls at the iteration cap", async () => {
@@ -70,6 +71,28 @@ describe("autopilotTick (#682, Phase 1b)", () => {
     const stalled = await autopilotTick(s, deps);
     expect(stalled.finished).toBe(true);
     expect(stalled.result?.stalledReason).toMatch(/cap/);
+  });
+
+  it("a scripted strategy sends a canned reply without calling Claude (#682, Phase 2)", async () => {
+    const { deps } = mkDeps(snap({ plannerAwaiting: true }), { strategy: "scripted" });
+    await autopilotTick(initRunState(), deps);
+    expect(deps.userSim).not.toHaveBeenCalled();
+    expect(deps.sendReply).toHaveBeenCalledOnce();
+  });
+
+  it("the `none` strategy sends nothing and climbs toward a stall", async () => {
+    const { deps } = mkDeps(snap({ plannerAwaiting: true }), { strategy: "none" });
+    const next = await autopilotTick(initRunState(), deps);
+    expect(deps.sendReply).not.toHaveBeenCalled();
+    expect(next.idleStreak).toBe(1);
+  });
+
+  it("active planner output keeps the idle streak from climbing (working = progress)", async () => {
+    const { deps } = mkDeps(snap({ working: true }));
+    let s = { ...initRunState(), idleStreak: 4 };
+    for (let i = 0; i < 5; i++) s = await autopilotTick(s, deps);
+    expect(s.idleStreak).toBe(1); // reset each working tick → never climbs to a stall
+    expect(s.finished).toBe(false);
   });
 
   it("is a no-op once finished", async () => {

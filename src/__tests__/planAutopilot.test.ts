@@ -35,6 +35,10 @@ describe("decideAutopilotAction (#682)", () => {
     expect(decideAutopilotAction(ctx({ plannerAwaiting: false, idleStreak: 5, maxIdle: 5 })).kind).toBe("stall");
   });
 
+  it("idle-stall fires even while the planner is awaiting (the `none` no-response case, #682)", () => {
+    expect(decideAutopilotAction(ctx({ plannerAwaiting: true, idleStreak: 6, maxIdle: 6 })).kind).toBe("stall");
+  });
+
   it("the cap takes precedence even when the plan is ready", () => {
     expect(decideAutopilotAction(ctx({ planReady: true, iteration: 100, maxIterations: 100 })).kind).toBe("stall");
   });
