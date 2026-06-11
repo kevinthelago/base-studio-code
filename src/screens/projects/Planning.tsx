@@ -44,6 +44,7 @@ import {
 } from "./blueprints";
 import { writeBlueprintSkillContext, buildSkillLibrary, resolveBlueprintSkills } from "./blueprintSkills";
 import { oneShotComplete } from "../../lib/claudeComplete";
+import { fleetProfilesComplete } from "../../lib/profileGen";
 import { autopilotProgress } from "./planAutopilot";
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
@@ -713,13 +714,27 @@ export function Planning({ visible }: { visible: boolean }) {
       repoCount: publishRepos.length,
       issueCount,
       fleetStreams: streams.length,
-      fleetProfilesComplete: streams.length > 0 && streams.every(st => agentProfiles.some(p => p.id === st.id)),
+      // A stream is "scoped" when it has an ASSIGNED profile that exists (st.profile, e.g.
+      // gen_<stream>) — not a profile named after the stream id (#696).
+      fleetProfilesComplete: fleetProfilesComplete(streams, agentProfiles),
       automationsAck: (planAutomations[effectiveProjectId]?.length ?? 0) > 0,
       skillsAck: false,
       requiresUi,
       ui: uiCounts,
     });
   }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts]);
+
+  // Materialize least-privilege profiles for fleet streams during planning (#696). Profiles
+  // used to be generated only at launch, so the permissions gate could never pass in-planning.
+  // generateFleetProfiles is idempotent — it only fills streams missing a valid profile, so
+  // this converges (and leaves any hand-assigned/customized profile untouched).
+  const generateFleetProfiles = useAppStore(s => s.generateFleetProfiles);
+  useEffect(() => {
+    const streams = planFleet[effectiveProjectId]?.streams ?? [];
+    if (streams.length === 0) return;
+    const allScoped = streams.every(st => st.profile && agentProfiles.some(p => p.id === st.profile));
+    if (!allScoped) generateFleetProfiles(effectiveProjectId);
+  }, [planFleet, effectiveProjectId, agentProfiles, generateFleetProfiles]);
 
   // The authoritative plan sections come from the BLUEPRINT object — not the hardcoded
   // PLAN_STAGES enum (#…). Each section carries its own declarative gate, applicability,
