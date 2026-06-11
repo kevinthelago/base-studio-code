@@ -1,9 +1,9 @@
 # Release handoff — maintainer checklist
 
-CI is fully wired for signed/notarized releases. The only remaining step is
-**procurement**: the maintainer must obtain the signing credentials and add them
-as GitHub secrets. When the secrets are present, signing activates automatically
-— no code change required.
+Most of the release CI is already committed and wired. The remaining steps are:
+1. **Step 0** — apply the `release.yml` workflow change (requires `workflow` scope on your token)
+2. **Steps 1–2** — procurement: obtain signing credentials and add them as GitHub secrets
+3. **Step 3** — push the `v1.0.0` tag to trigger the release build
 
 > **Detailed procurement steps:** `docs/release-signing.md`
 
@@ -11,23 +11,38 @@ as GitHub secrets. When the secrets are present, signing activates automatically
 
 ## Step 0 — Apply the workflow change (one-time, requires `workflow` scope)
 
-The signing install step and secret env vars could not be committed to
-`.github/workflows/release.yml` in the automated PR (GitHub requires `workflow`
-scope on the token). Apply this diff manually before adding the signing secrets:
+The workflow diff below could not be pushed by the automated token (GitHub requires
+`workflow` scope to write `.github/workflows/`). Apply it manually with your personal
+token or via the GitHub web editor, then commit directly to `develop`:
 
 ```diff
 --- a/.github/workflows/release.yml
 +++ b/.github/workflows/release.yml
 @@ after the "Install frontend dependencies" step, before "Build and release" @@
-+      # Install the Azure Trusted Signing CLI when Windows secrets are present.
-+      # The CLI is called by scripts/sign-windows.ps1 via bundle.windows.signCommand;
-+      # the script exits 0 when AZURE_CLIENT_ID is absent so unsigned builds pass.
-+      # No action needed when secrets arrive — signing auto-activates. (#108)
+-      # WINDOWS-SIGNING (enable post-procurement, #108): once the Azure Trusted
+-      # Signing secrets exist and tauri.conf.json has `bundle.windows.signCommand`,
+-      # uncomment to sign the .exe/.msi during bundling. Kept disabled so unsigned
+-      # CI builds don't fail for a missing cert. See docs/release-signing.md.
+-      # - name: Azure Trusted Signing (Windows)
+-      #   if: matrix.platform == 'windows-latest'
+-      #   uses: azure/trusted-signing-action@v0
+-      #   with:
+-      #     azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+-      #     azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+-      #     azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+-      #     endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+-      #     trusted-signing-account-name: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+-      #     certificate-profile-name: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
++      # Windows signing (#108): scripts/sign-windows.ps1 is called by
++      # bundle.windows.signCommand (tauri.conf.json). The script exits 0 when
++      # AZURE_CLIENT_ID is absent, so unsigned builds pass. The CLI is only
++      # installed when the secret is present — signing auto-activates on
++      # procurement, no code change required. See docs/release-signing.md.
 +      - name: Install Trusted Signing CLI (Windows)
 +        if: matrix.platform == 'windows-latest' && secrets.AZURE_CLIENT_ID != ''
 +        run: dotnet tool install --global trusted-signing-cli
-+
-@@ in the "Build and release" step's env: block @@
+
+@@ in the "Build and release" step's env: block, after APPLE_SIGNING_IDENTITY @@
 +          # Windows signing (#108) — passed to sign-windows.ps1 via signCommand.
 +          # Empty when secrets are absent; the script exits 0 in that case.
 +          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -36,11 +51,24 @@ scope on the token). Apply this diff manually before adding the signing secrets:
 +          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
 +          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
 +          TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
+
+@@ in the releaseBody, replace the existing macOS note @@
+-            > **macOS:** the app is currently unsigned/un-notarized. After dragging it
+-            > to Applications, clear the download quarantine once:
++            > **macOS:** this build is unsigned/un-notarized. After dragging to
++            > Applications, clear the quarantine once:
+             > `xattr -cr /Applications/base-studio-code.app`
++            >
++            > **Windows:** this build is unsigned. SmartScreen may warn on first
++            > run — click **More info → Run anyway**.
++            >
++            > Signed releases follow when signing certs are provisioned (#108/#119).
 ```
 
 > **Note:** `scripts/sign-windows.ps1` and `tauri.conf.json`'s `signCommand` are
-> already committed. Only the workflow file remains. The full target state of
-> `release.yml` is on the `release-eng-signing` branch if it exists.
+> already on `develop`. The macOS ad-hoc signing (`APPLE_SIGNING_IDENTITY: '-'`)
+> is preserved — do NOT add `APPLE_CERTIFICATE` without all six APPLE_* secrets
+> present, or the build hard-fails (see the comment block in `release.yml`).
 
 ---
 
@@ -62,8 +90,9 @@ Populate these six GitHub secrets (**Settings → Secrets and variables → Acti
 - [ ] Developer ID Application certificate created and exported as `.p12`
 - [ ] App-specific password created for `notarytool`
 
-Once all six secrets are added, the `macos-latest` CI leg signs and notarizes
-the universal `.dmg` automatically on every tagged release.
+When all six secrets are present, replace `APPLE_SIGNING_IDENTITY: '-'` in
+`release.yml` with the six `APPLE_*` env vars, and the `macos-latest` CI leg
+signs and notarizes the universal `.dmg` on every tagged release.
 
 ---
 
@@ -85,21 +114,22 @@ Populate these six GitHub secrets:
 - [ ] Identity validation complete (org ≥ 3 years, or individual path)
 - [ ] Service principal created with Trusted Signing Certificate Profile Signer role
 
-Once all six secrets are added, the `windows-latest` CI leg:
+Once Step 0 is applied and all six secrets are added, the `windows-latest` CI leg:
 1. Installs `trusted-signing-cli` automatically
 2. Signs each `.exe` and `.msi` via `scripts/sign-windows.ps1` during bundling
 
 ---
 
-## Step 3 — Tag a release
+## Step 3 — Tag the release
 
 ```bash
+git pull origin develop
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The `release.yml` workflow triggers on `v*` tags and builds signed installers for
-all three platforms, generating release notes from merged PRs automatically.
+The `release.yml` workflow triggers on `v*` tags and builds installers for all
+three platforms, attaching them to a draft release with auto-generated PR notes.
 
 ---
 
