@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   interpretDiagnostics,
+  sessionVerdictFromReport,
   coerceShellKind,
   loadShellKind,
   saveShellKind,
@@ -92,6 +93,66 @@ describe("interpretDiagnostics", () => {
     ]);
     expect(r.prereqs[0].version).toBe("git version 2.43.0");
     expect(r.prereqs[0].path).toBe("/usr/bin/git");
+  });
+});
+
+describe("sessionVerdictFromReport (#564)", () => {
+  it("returns ok verdict when all prereqs are found", () => {
+    const report = interpretDiagnostics([
+      prereq({ name: "Git Bash" }),
+      prereq({ name: "claude" }),
+      prereq({ name: "git" }),
+      prereq({ name: "gh" }),
+      prereq({ name: "gh auth" }),
+    ]);
+    const v = sessionVerdictFromReport(report);
+    expect(v.worstSeverity).toBe("ok");
+    expect(v.blocking).toBe(false);
+    expect(v.failed).toHaveLength(0);
+  });
+
+  it("is blocking when a critical prereq (git) is missing", () => {
+    const report = interpretDiagnostics([prereq({ name: "git", found: false, hint: "https://git-scm.com/downloads" })]);
+    const v = sessionVerdictFromReport(report);
+    expect(v.blocking).toBe(true);
+    expect(v.worstSeverity).toBe("critical");
+    const c = v.failed.find((f) => f.id === "git");
+    expect(c?.severity).toBe("critical");
+    expect(c?.installUrl).toMatch(/git-scm\.com/);
+  });
+
+  it("is not blocking when only gh auth is missing (warning)", () => {
+    const report = interpretDiagnostics([prereq({ name: "gh auth", found: false })]);
+    const v = sessionVerdictFromReport(report);
+    expect(v.blocking).toBe(false);
+    expect(v.worstSeverity).toBe("warning");
+  });
+
+  it("critical wins over warning in worst severity", () => {
+    const report = interpretDiagnostics([
+      prereq({ name: "git", found: false }),
+      prereq({ name: "gh auth", found: false }),
+    ]);
+    const v = sessionVerdictFromReport(report);
+    expect(v.worstSeverity).toBe("critical");
+    expect(v.blocking).toBe(true);
+  });
+
+  it("extracts an install URL from the backend hint", () => {
+    const report = interpretDiagnostics([
+      prereq({ name: "claude", found: false, hint: "Install the Claude CLI — see https://claude.ai/code" }),
+    ]);
+    const v = sessionVerdictFromReport(report);
+    const c = v.failed[0];
+    expect(c.installUrl).toMatch(/claude\.ai/);
+  });
+
+  it("every failed check carries a non-empty message", () => {
+    for (const name of ["Git Bash", "claude", "git", "gh", "gh auth"]) {
+      const report = interpretDiagnostics([prereq({ name, found: false })]);
+      const v = sessionVerdictFromReport(report);
+      expect(v.failed[0].message.length).toBeGreaterThan(0);
+    }
   });
 });
 
