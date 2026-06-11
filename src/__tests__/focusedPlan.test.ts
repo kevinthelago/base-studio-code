@@ -65,6 +65,21 @@ describe("ahead (banked) + connectorKind (#668)", () => {
     expect(connectorKind(list, 3)).toBe("dashed"); // upcoming → ahead   (banked)
   });
 
+  it("marks an optional section the cursor has passed as 'skipped' (#678)", () => {
+    const secs: BlueprintSection[] = [
+      sec("a", { gateRule: { require: [{ signal: "a", target: true }] } }),
+      sec("opt", { optional: true, gateRule: { require: [{ signal: "opt", target: true }] } }),
+      sec("b", { deps: ["a"], gateRule: { require: [{ signal: "b", target: true }] } }),
+    ];
+    const p = phasesFrom(secs, { a: true } as unknown as PlanSignals);
+    expect(p.find((x) => x.key === "a")!.status).toBe("complete");
+    expect(p.find((x) => x.key === "opt")!.status).toBe("skipped"); // optional, passed, unfinished
+    expect(p.find((x) => x.key === "b")!.status).toBe("active");
+    // an optional section the cursor HASN'T reached yet stays "upcoming", not "skipped"
+    const p2 = phasesFrom([sec("a"), sec("opt", { optional: true })], {} as PlanSignals);
+    expect(p2.find((x) => x.key === "opt")!.status).toBe("upcoming");
+  });
+
   it("the connector leaving a SKIPPED section before the active stays green (#668)", () => {
     const ph = (status: PhaseStatus) => ({ status } as unknown as Phase);
     // context done · UI skipped/optional (upcoming) · structure active

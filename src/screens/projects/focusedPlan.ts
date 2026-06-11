@@ -11,9 +11,11 @@ import {
 import { evalGate, type PlanSignals } from "./stageGate";
 
 // "complete" = done IN sequence (at/behind the current position); "ahead" = done OUT of
-// sequence (gate met past the current position — "banked"). The rail renders them
-// differently so a future stage finishing early doesn't read as in-order progress (#668).
-export type PhaseStatus = "complete" | "ahead" | "active" | "locked" | "upcoming";
+// sequence (gate met past the current position — "banked"); "skipped" = an OPTIONAL section
+// the user has moved past without completing (#678). The rail renders each distinctly so a
+// future stage finishing early / a passed-over optional stage don't read as in-order
+// progress or as a not-yet-reached stage (#668).
+export type PhaseStatus = "complete" | "ahead" | "active" | "skipped" | "locked" | "upcoming";
 
 export interface Phase {
   key: string;
@@ -47,6 +49,8 @@ export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): 
     let status: PhaseStatus;
     if (st.status === "complete") status = i > activeIdx ? "ahead" : "complete";
     else if (st.status === "locked") status = "locked";
+    // an optional section the current position has already moved past, left unfinished
+    else if (s.optional && i < activeIdx) status = "skipped";
     else status = current && s.key === current.key ? "active" : "upcoming";
     return {
       key: s.key, name: s.name, glyph: s.glyph, blurb: s.blurb, gate: s.gate,

@@ -185,6 +185,8 @@
 .fp .seqrail-marker .m-banked { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase; color: var(--success); background: color-mix(in oklch, var(--success), transparent 88%);
   border: 1px solid color-mix(in oklch, var(--success), transparent 65%); border-radius: 999px; padding: 0 5px; white-space: nowrap; }
+.fp .seqrail-marker .m-skipped { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--info); white-space: nowrap; }
 .fp .seqrail-node { width: 18px; height: 18px; flex: 0 0 auto; aspect-ratio: 1; border-radius: 999px;
   display: grid; place-items: center; font-family: var(--mono); font-size: 9px; font-weight: 700;
   position: relative; z-index: 2;
@@ -196,6 +198,10 @@
   box-shadow: inset 0 0 0 1.5px var(--border), 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%);
   animation: rail-ring 2s ease-in-out infinite; }
 .fp .seqrail-seg.locked .seqrail-node, .fp .seqrail-seg.upcoming .seqrail-node { background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border); color: var(--fg-dim); }
+/* skipped: an optional stage passed over — a vibrant neutral (info) so it reads as
+   "intentionally skipped", clearly apart from the dim grey of an unreached stage (#678). */
+.fp .seqrail-seg.skipped .seqrail-node { background: color-mix(in oklch, var(--info), transparent 86%);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--info), transparent 35%); color: var(--info); }
 .fp .seqrail-seg.ahead .seqrail-node { background: color-mix(in oklch, var(--success), transparent 12%);
   box-shadow: inset 0 0 0 1.5px var(--success); color: oklch(0.20 0.04 145); }
 .fp .seqrail-seg.sel .seqrail-node { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -206,6 +212,7 @@
 .fp .seqrail-seg.complete .seqrail-label { color: var(--fg-muted); }
 .fp .seqrail-seg.active .seqrail-label, .fp .seqrail-seg.sel .seqrail-label { color: var(--accent); font-weight: 600; }
 .fp .seqrail-seg.ahead .seqrail-label { color: var(--success); }
+.fp .seqrail-seg.skipped .seqrail-label { color: var(--info); }
 .fp .seqrail-seg.attn .seqrail-label { color: var(--danger); }
 /* connectors auto-align to the node center: the rail centers items and every seg is the
    same fixed height, so a centered 2px connector lines up with the centered node (no offset). */

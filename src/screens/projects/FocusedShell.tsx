@@ -5,10 +5,12 @@
 import { Fragment } from "react";
 import { connectorKind, type Phase, type GatePill, type FooterKind } from "./focusedPlan";
 
-/** The node glyph: ✓ for done (in-sequence or banked-ahead), a number while pending. */
+/** The node glyph: ✓ for done (in-sequence or banked-ahead), ↷ for a skipped optional
+ *  stage, ◆ for the current one, a number while pending. */
 function nodeGlyph(p: Phase, i: number): string {
   if (p.status === "complete" || p.status === "ahead") return "✓";
   if (p.status === "active") return "◆";
+  if (p.status === "skipped") return "↷";
   return String(i + 1);
 }
 
@@ -37,6 +39,7 @@ export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
               <span className="seqrail-marker">
                 {p.status === "active" && <span className="m-now">◆ now</span>}
                 {p.status === "ahead" && <span className="m-banked">banked</span>}
+                {p.status === "skipped" && <span className="m-skipped">skipped</span>}
               </span>
               <span className="seqrail-node">{nodeGlyph(p, i)}</span>
               <span className="seqrail-label">{p.name}</span>
