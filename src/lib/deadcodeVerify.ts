@@ -60,8 +60,15 @@ const KIND_LABEL: Record<DeadCodeKind, string> = {
 export function findingsToGrade(verified: VerifiedFinding[], sectionKey: string): GradeResult {
   const kinds = [...new Set(verified.map((v) => v.kind))];
   const dimensions: GradeDimension[] = kinds.map((k) => {
-    const confirmed = verified.filter((v) => v.kind === k && v.verdict === "confirmed").length;
-    return { id: k, label: KIND_LABEL[k], score: confirmed === 0 ? 100 : Math.max(0, 100 - confirmed * 15), note: `${confirmed} confirmed` };
+    const inKind = verified.filter((v) => v.kind === k);
+    const confirmed = inKind.filter((v) => v.verdict === "confirmed").length;
+    // Uncertain candidates couldn't be verified (e.g. no API key) — they're review debt, so
+    // they ding the score lightly rather than reading as a clean A (#688). Confirmed dead
+    // code is heavier. Empty (scan ran, nothing found) stays 100.
+    const uncertain = inKind.filter((v) => v.verdict === "uncertain").length;
+    const score = Math.max(0, 100 - confirmed * 15 - uncertain * 5);
+    const note = uncertain ? `${confirmed} confirmed · ${uncertain} to review` : `${confirmed} confirmed`;
+    return { id: k, label: KIND_LABEL[k], score, note };
   });
   const score = dimensions.length ? Math.round(dimensions.reduce((s, d) => s + d.score, 0) / dimensions.length) : 100;
   const findings: GradeFinding[] = verified
