@@ -51,10 +51,21 @@ describe("counts + lookup", () => {
   it("every basic app session has its own distinct application role (#680)", () => {
     // all three basic app sessions are registered as application roles, each unique
     const ids = APP_ROLES.map((r) => r.id);
-    expect(ids).toEqual(expect.arrayContaining(["sys_planner", "sys_librarian", "sys_blueprint_assistant"]));
+    expect(ids).toEqual(expect.arrayContaining(["sys_planner", "sys_librarian", "sys_blueprint_assistant", "sys_planning_autopilot"]));
     expect(APP_ROLES.every((r) => r.category === "application")).toBe(true);
     expect(new Set(ids).size).toBe(ids.length); // no duplicate ids
     expect(new Set(APP_ROLES.map((r) => r.name)).size).toBe(APP_ROLES.length); // distinct names
+  });
+
+  it("the Planning Autopilot (simulated user) has its own minimal role (#682)", () => {
+    const ap = findProfile("sys_planning_autopilot")!;
+    expect(ap.name).toBe("Planning Autopilot");
+    expect(ap.category).toBe("application");
+    expect(ap.mode).toBe("deny");
+    expect(ap.commands).toEqual([]);
+    expect(ap.tools.bash).toBe("deny");
+    expect(ap.tools.write).toBe("deny");
+    expect(ap.tools.read).toBe("allow"); // reads the pitch + planner output
   });
 
   it("the Blueprint Assistant role is minimal — no shell, no fs writes, no tools (#680)", () => {

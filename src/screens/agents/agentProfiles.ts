@@ -94,7 +94,31 @@ export const APP_ROLES: AgentProfile[] = [
     paths: { allow: [], deny: ["**/*"] },
     net: { allow: [] },
   },
+  {
+    // The Planning Autopilot (#682) is the SIMULATED USER: a one-shot Claude that answers
+    // the planner's discovery questions from the pitch so a plan can be produced hands-free.
+    // Like the Blueprint Assistant it's a stateless completion — it reads the pitch + the
+    // planner's output and returns a reply; no shell, no fs, no tools. Distinct from the
+    // Project Planner (which it drives).
+    id: "sys_planning_autopilot",
+    name: "Planning Autopilot",
+    color: "oklch(0.72 0.13 30)",
+    category: "application",
+    desc: "Answers the project planner's questions on your behalf, from the pitch, to drive a plan to completion hands-free. Read-only: it sees the pitch + the planner's output and replies; it runs no shell, writes no files, and has no tools.",
+    surface: "Project planning",
+    surfaceGlyph: "◇",
+    session: "sys/planning-autopilot",
+    owns: "the planning autopilot (simulated user)",
+    mode: "deny",
+    commands: [],
+    tools: { read: "allow", grep: "deny", glob: "deny", edit: "deny", write: "deny", bash: "deny", web: "deny", task: "deny" },
+    paths: { allow: [], deny: ["**/*"] },
+    net: { allow: [] },
+  },
 ];
+
+/** The app role the planning autopilot's simulated user runs under (#682). */
+export const PLANNING_AUTOPILOT_ROLE_ID = "sys_planning_autopilot";
 
 export const PROFILES: AgentProfile[] = [
   {
