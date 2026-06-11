@@ -54,7 +54,9 @@ export interface Stage {
   /** One-line description of what this stage produces (shown in Blueprint editor). */
   description: string;
   /** Whether the stage can be toggled off in a Blueprint.
-   *  Required stages (context, structure) are always included. */
+   *  Only `context` is required (optional: false). All other stages — including
+   *  `structure` — can be omitted by blueprints that don't need them (e.g. a
+   *  refactor/cleanup blueprint skips the feature workshop). */
   optional: boolean;
   /** Whether this stage produces a visible output file the app polls for
    *  (e.g. phases.json, fleet.json). Informational only — drives tooltip copy. */
@@ -121,7 +123,9 @@ export const PLAN_STAGES: Stage[] = [
     id: "structure",
     label: "Structure",
     description: "Feature workshop: phases.json + agent-ready issues.json",
-    optional: false,
+    // optional: true so refactor/cleanup blueprints can legitimately omit the
+    // feature workshop (they produce targeted issues only, not a roadmap) (#666).
+    optional: true,
     hasOutputFile: true,  // phases.json + issues.json
     dependsOn: ["context", "repos", "ui"],
     defaultEnabled: true,
@@ -328,6 +332,15 @@ export const BUILT_IN_BLUEPRINTS: Blueprint[] = [
     enabledStages: ["context", "repos", "ui", "structure", "permissions"],
     custom: false,
   },
+  {
+    // No "structure" stage — a refactor pass produces targeted cleanup issues only,
+    // not a new phases/issues.json roadmap (#666/#458).
+    id: "refactor",
+    name: "Refactor / cleanup",
+    description: "Identify improvement opportunities and write targeted cleanup issues — no new feature roadmap",
+    enabledStages: ["context", "repos", "permissions"],
+    custom: false,
+  },
 ];
 
 /** Parse a raw JSON string into a Blueprint array. Tolerant of malformed input. */
@@ -347,7 +360,8 @@ export function parseBlueprintsFile(raw: string): Blueprint[] {
 }
 
 /** Merge a Blueprint's enabledStages with the required stages so required stages
- *  can never be dropped. Returns a deduped, ordered list. */
+ *  can never be dropped. Only `context` is required; `structure` is optional so
+ *  refactor/cleanup blueprints can legitimately omit it (#666). */
 export function resolveEnabledStages(blueprint: Blueprint): StageId[] {
   const required = PLAN_STAGES.filter(s => !s.optional).map(s => s.id);
   const merged = new Set([...required, ...blueprint.enabledStages]);

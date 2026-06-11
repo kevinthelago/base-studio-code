@@ -29,3 +29,7 @@
 
 
 - release-eng signing wiring (#108/#119, director-directed): scripts/sign-windows.ps1 empty-safe wrapper + bundle.windows.signCommand committed; release.yml trusted-signing-cli install step guarded by AZURE_CLIENT_ID presence; Azure env vars wired as empty slots. Auto-activates on AZURE_* and APPLE_* secrets with no further code change. Remaining gate: maintainer procurement of Azure Trusted Signing identity (#108) + Apple Developer ID (#119/#361). See docs/RELEASE_HANDOFF.md.
+- Both #551 and #552 are already fully implemented in the codebase. #552: owns-path text was never in the collapsed state (PostureBar only). #551: planReady gate + fail-closed worktree check already in launchTriage + tests in projectSync.test.ts.
+
+- Implemented #294 (seam/contract DAG graph view): buildSeamGraph + topological layout in planSeamGraph.ts (22 tests), SeamGraphView.tsx SVG renderer, graph lens in ProjectPane structure section; pushed to planner-platform branch under PR #563
+
