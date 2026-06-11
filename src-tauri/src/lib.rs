@@ -976,6 +976,9 @@ async fn pty_create(
     continue_session: Option<bool>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
+    // Console provider id (e.g. "claude", "gemini") — informational; logged so traces
+    // identify which CLI is running. The frontend has already baked init_cmd from it.
+    provider_id: Option<String>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -1276,8 +1279,10 @@ async fn pty_create(
     });
 
     log::info!(
-        "pty[{}] created · {}x{} · shell={} · cwd={} · init={}",
-        pane_id, cols, rows, shell,
+        "pty[{}] created · {}x{} · provider={} · shell={} · cwd={} · init={}",
+        pane_id, cols, rows,
+        provider_id.as_deref().unwrap_or("claude"),
+        shell,
         if cwd.is_empty() { "<none>" } else { cwd.as_str() },
         init_cmd.as_deref().filter(|s| !s.is_empty()).unwrap_or("<none>"),
     );
