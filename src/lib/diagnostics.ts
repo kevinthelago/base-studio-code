@@ -222,3 +222,55 @@ export function loadReport(): StoredReport | null {
     return null;
   }
 }
+
+// ── PTY-session readiness bridge (#564) ─────────────────────────────────────
+// Adapts the DiagnosticsReport produced by interpretDiagnostics() into the
+// simpler blocking/warning interface the pane's SessionFailure/SessionReadinessBanner
+// components need. The backend `preflight` command returns Vec<PrereqStatus>; call
+// interpretDiagnostics() first, then sessionVerdictFromReport().
+
+export type CheckSeverity = "critical" | "warning" | "ok";
+
+export interface ReadinessCheck {
+  /** Stable id for the check — used as a React key and for filtering. */
+  id: string;
+  severity: CheckSeverity;
+  /** User-facing one-liner. Empty string when severity is "ok". */
+  message: string;
+  /** Official download/install URL extracted from the backend hint, when present. */
+  installUrl?: string;
+}
+
+export interface SessionVerdict {
+  /** All checks, including passing ones. */
+  checks: ReadinessCheck[];
+  /** Worst severity across all checks. */
+  worstSeverity: CheckSeverity;
+  /** True when any critical check failed — the session cannot run until resolved. */
+  blocking: boolean;
+  /** Checks that did not pass (severity !== "ok"). */
+  failed: ReadinessCheck[];
+}
+
+function toReadinessCheck(v: PrereqVerdict): ReadinessCheck {
+  if (v.ok) return { id: v.name, severity: "ok", message: "" };
+  const urlMatch = v.hint.match(/https?:\/\/\S+/);
+  return {
+    id: v.name,
+    severity: v.severity,
+    message: v.consequence,
+    installUrl: urlMatch?.[0],
+  };
+}
+
+/**
+ * Convert a `DiagnosticsReport` into the pane-level `SessionVerdict` used by
+ * `SessionFailure` and `SessionReadinessBanner`. Call after `interpretDiagnostics`.
+ */
+export function sessionVerdictFromReport(report: DiagnosticsReport): SessionVerdict {
+  const checks = report.prereqs.map(toReadinessCheck);
+  const failed = checks.filter((c) => c.severity !== "ok");
+  const blocking = report.worst === "critical";
+  const worstSeverity: CheckSeverity = report.worst ?? "ok";
+  return { checks, worstSeverity, blocking, failed };
+}
