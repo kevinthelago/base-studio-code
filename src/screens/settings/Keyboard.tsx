@@ -3,7 +3,6 @@ import { SHORTCUT_GROUPS } from "../../lib/shortcuts";
 import { useAppStore } from "../../store";
 import {
   REBINDABLE_IDS,
-  effectiveChord,
   chordToCaps,
   eventToChord,
   isModifierCode,
@@ -133,7 +132,9 @@ export function KeyboardSettings() {
               const id = s.id as RebindableId | undefined;
               const isCapturing = rebindable && capturingId === id;
               const overridden = rebindable && id != null && keybindings[id] != null;
-              const caps = rebindable && id != null ? chordToCaps(effectiveChord(keybindings, id)) : s.keys;
+              // Show the documented caps for defaults (nice for F-keys / Ctrl +),
+              // and the captured chord once the user has customized it.
+              const caps = overridden && id != null ? chordToCaps(keybindings[id]!) : s.keys;
               return (
                 <div
                   key={s.desc}

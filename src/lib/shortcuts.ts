@@ -58,7 +58,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Navigation",
     items: [
       ...SCREEN_HOTKEYS.map((h): Shortcut => ({
-        keys: [h.key], desc: `Go to ${h.label}`, scope: "Global",
+        id: `screen-${h.screen}`, keys: [h.key], desc: `Go to ${h.label}`, scope: "Global",
       })),
       { keys: ["Ctrl", "1–9"], desc: "Switch to workspace tab by number", scope: "Global" },
     ],
@@ -84,9 +84,9 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Terminal",
     items: [
-      { keys: ["Ctrl", "+"], desc: "Increase terminal font size", scope: "Console" },
-      { keys: ["Ctrl", "−"], desc: "Decrease terminal font size", scope: "Console" },
-      { keys: ["Ctrl", "0"], desc: "Reset terminal font size", scope: "Console" },
+      { id: "zoom-in", keys: ["Ctrl", "+"], desc: "Increase terminal font size", scope: "Console" },
+      { id: "zoom-out", keys: ["Ctrl", "−"], desc: "Decrease terminal font size", scope: "Console" },
+      { id: "zoom-reset", keys: ["Ctrl", "0"], desc: "Reset terminal font size", scope: "Console" },
     ],
   },
 ];
