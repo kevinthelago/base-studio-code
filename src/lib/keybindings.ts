@@ -175,3 +175,83 @@ export const REBINDABLE: RebindableMeta[] = REBINDABLE_IDS.map((id) => ({
   id,
   label: SHORTCUT_BY_ID[id] ?? id,
 }));
+
+// ── Leader bindings (#773, Tier 2) ──────────────────────────────────────────
+//
+// The digit-RANGE shortcuts (Ctrl+1–9 tab switch, Ctrl+Shift+1–9 pane select,
+// Alt+1–5 view, Alt+Shift+1–5 view-all) aren't single chords — they're a
+// modifier "leader" + ANY digit. You rebind the leader (e.g. tab-switch Ctrl →
+// Alt), not one key. A leader is the same modifier-order serialization as a
+// chord, but with no main key (e.g. "Ctrl", "Ctrl+Shift").
+
+export const LEADER_IDS = [
+  "tab-switch",
+  "pane-select",
+  "view-switch",
+  "view-switch-all",
+] as const;
+
+export type LeaderId = (typeof LEADER_IDS)[number];
+
+export const DEFAULT_LEADERS: Record<LeaderId, string> = {
+  "tab-switch":      "Ctrl",
+  "pane-select":     "Ctrl+Shift",
+  "view-switch":     "Alt",
+  "view-switch-all": "Alt+Shift",
+};
+
+/** The modifier combos offered in the leader dropdown. */
+export const LEADER_OPTIONS = [
+  "Ctrl",
+  "Alt",
+  "Shift",
+  "Ctrl+Shift",
+  "Ctrl+Alt",
+  "Alt+Shift",
+  "Ctrl+Alt+Shift",
+] as const;
+
+/** The active modifiers of an event, in canonical order, with no main key —
+ *  e.g. Ctrl+Shift+Digit1 → "Ctrl+Shift". "" when no modifier is held. */
+export function eventToLeader(e: ChordEvent): string {
+  const parts: string[] = [];
+  if (e.ctrlKey)  parts.push("Ctrl");
+  if (e.altKey)   parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.metaKey)  parts.push("Meta");
+  return parts.join("+");
+}
+
+/** The active leader for an id: the user's override, else the built-in default. */
+export function effectiveLeader(bindings: Record<string, string>, id: LeaderId): string {
+  return bindings[id] ?? DEFAULT_LEADERS[id];
+}
+
+/** Whether an event's modifiers exactly equal the active leader for an id. */
+export function matchesLeader(e: ChordEvent, bindings: Record<string, string>, id: LeaderId): boolean {
+  return eventToLeader(e) === effectiveLeader(bindings, id);
+}
+
+/** Another leader id (other than `self`) whose active leader equals `leader`. */
+export function findLeaderConflict(
+  bindings: Record<string, string>,
+  self: LeaderId,
+  leader: string,
+): LeaderId | null {
+  for (const id of LEADER_IDS) {
+    if (id === self) continue;
+    if (effectiveLeader(bindings, id) === leader) return id;
+  }
+  return null;
+}
+
+/** Leader string → modifier caps (e.g. "Ctrl+Shift" → ["Ctrl", "Shift"]). */
+export function leaderToCaps(leader: string): string[] {
+  return leader === "" ? [] : leader.split("+");
+}
+
+const LEADER_LABEL_BY_ID: Record<string, string> = SHORTCUT_BY_ID;
+export const LEADER_META: { id: LeaderId; label: string }[] = LEADER_IDS.map((id) => ({
+  id,
+  label: LEADER_LABEL_BY_ID[id] ?? id,
+}));

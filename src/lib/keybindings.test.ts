@@ -10,6 +10,13 @@ import {
   chordToCaps,
   findConflict,
   isModifierCode,
+  DEFAULT_LEADERS,
+  LEADER_META,
+  eventToLeader,
+  effectiveLeader,
+  matchesLeader,
+  findLeaderConflict,
+  leaderToCaps,
   type ChordEvent,
 } from "./keybindings";
 
@@ -123,5 +130,47 @@ describe("registry wiring", () => {
   it("chordToCaps labels the zoom symbol codes", () => {
     expect(chordToCaps("Ctrl+Equal")).toEqual(["Ctrl", "="]);
     expect(chordToCaps("Ctrl+Minus")).toEqual(["Ctrl", "−"]);
+  });
+});
+
+describe("leader bindings (#773 Tier 2)", () => {
+  it("eventToLeader serializes just the modifiers, in canonical order", () => {
+    expect(eventToLeader(ev({ ctrlKey: true, shiftKey: true, code: "Digit1" }))).toBe("Ctrl+Shift");
+    expect(eventToLeader(ev({ altKey: true, code: "Digit3" }))).toBe("Alt");
+    expect(eventToLeader(ev({ code: "Digit1" }))).toBe(""); // no modifier held
+  });
+
+  it("matchesLeader compares an event's modifiers to the active leader", () => {
+    // Ctrl+1 matches tab-switch (default Ctrl) but not pane-select (Ctrl+Shift).
+    const ctrl1 = ev({ ctrlKey: true, code: "Digit1" });
+    expect(matchesLeader(ctrl1, {}, "tab-switch")).toBe(true);
+    expect(matchesLeader(ctrl1, {}, "pane-select")).toBe(false);
+    // Honors an override.
+    expect(matchesLeader(ev({ altKey: true, code: "Digit1" }), { "tab-switch": "Alt" }, "tab-switch")).toBe(true);
+  });
+
+  it("effectiveLeader is the override else the default", () => {
+    expect(effectiveLeader({}, "view-switch")).toBe(DEFAULT_LEADERS["view-switch"]);
+    expect(effectiveLeader({ "view-switch": "Ctrl+Alt" }, "view-switch")).toBe("Ctrl+Alt");
+  });
+
+  it("findLeaderConflict flags an overlapping leader", () => {
+    // pane-select's default leader is Ctrl+Shift; rebinding tab-switch to it conflicts.
+    expect(findLeaderConflict({}, "tab-switch", "Ctrl+Shift")).toBe("pane-select");
+    expect(findLeaderConflict({}, "tab-switch", "Ctrl+Alt+Shift")).toBeNull();
+    expect(findLeaderConflict({}, "tab-switch", "Ctrl")).toBeNull(); // its own default
+  });
+
+  it("leaderToCaps splits a leader into modifier caps", () => {
+    expect(leaderToCaps("Ctrl+Shift")).toEqual(["Ctrl", "Shift"]);
+    expect(leaderToCaps("Alt")).toEqual(["Alt"]);
+    expect(leaderToCaps("")).toEqual([]);
+  });
+
+  it("LEADER_META carries a human label per range id", () => {
+    for (const m of LEADER_META) {
+      expect(m.label.length).toBeGreaterThan(0);
+      expect(m.label).not.toBe(m.id);
+    }
   });
 });

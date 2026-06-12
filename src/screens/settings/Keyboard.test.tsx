@@ -75,6 +75,31 @@ describe("KeyboardSettings", () => {
     expect(useAppStore.getState().keybindings["zoom-in"]).toBe("Ctrl+Alt+Equal");
   });
 
+  it("rebinds a digit-range leader via the dropdown (#773 Tier 2)", () => {
+    render(<KeyboardSettings />);
+    const select = screen.getByRole("combobox", { name: /Leader for Switch to workspace tab by number/ });
+    // Ctrl+Alt isn't a default for any range, so no conflict.
+    fireEvent.change(select, { target: { value: "Ctrl+Alt" } });
+    expect(useAppStore.getState().keybindings["tab-switch"]).toBe("Ctrl+Alt");
+  });
+
+  it("flags a leader conflict and leaves it unchanged", () => {
+    render(<KeyboardSettings />);
+    const select = screen.getByRole("combobox", { name: /Leader for Switch to workspace tab by number/ });
+    // Ctrl+Shift is pane-select's leader → conflict.
+    fireEvent.change(select, { target: { value: "Ctrl+Shift" } });
+    expect(screen.getByText(/already used by/i)).toBeInTheDocument();
+    expect(useAppStore.getState().keybindings["tab-switch"]).toBeUndefined();
+  });
+
+  it("selecting the default leader clears the override", () => {
+    useAppStore.setState({ keybindings: { "tab-switch": "Alt" } });
+    render(<KeyboardSettings />);
+    const select = screen.getByRole("combobox", { name: /Leader for Switch to workspace tab by number/ });
+    fireEvent.change(select, { target: { value: "Ctrl" } }); // tab-switch's default
+    expect(useAppStore.getState().keybindings["tab-switch"]).toBeUndefined();
+  });
+
   it("reset-all clears every override", () => {
     useAppStore.setState({
       keybindings: { "broadcast-toggle": "Ctrl+Alt+KeyB", "clear-input": "Ctrl+Alt+KeyX" },
