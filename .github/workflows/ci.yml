@@ -27,6 +27,7 @@ jobs:
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       rust: ${{ steps.filter.outputs.rust }}
+      plan_contract: ${{ steps.filter.outputs.plan_contract }}
       os: ${{ steps.os.outputs.list }}
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +48,15 @@ jobs:
               - 'src-tauri/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
+              - '.github/workflows/ci.yml'
+            plan_contract:
+              - 'src/lib/planContract/**'
+              - 'src/lib/planEval/**'
+              - 'src/__tests__/planContract.test.ts'
+              - 'src/__tests__/planEval.test.ts'
+              - 'src/screens/projects/planIssues.ts'
+              - 'src/screens/projects/planSections.ts'
+              - 'src/screens/projects/ghStructure.ts'
               - '.github/workflows/ci.yml'
       - name: Pick Rust OS matrix
         id: os
@@ -93,6 +103,30 @@ jobs:
         with:
           files: ./coverage/lcov.info
           fail_ci_if_error: false
+
+  plan-contract:
+    name: Plan contract (Tier-0)
+    needs: changes
+    if: >-
+      needs.changes.outputs.plan_contract == 'true'
+      || needs.changes.outputs.frontend == 'true'
+      || contains(github.event.pull_request.title, '[ci-all]')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Plan contract (blueprint-driven structural validator)
+        run: npm run test -- --reporter=verbose src/__tests__/planContract.test.ts src/__tests__/planEval.test.ts
 
   rust:
     name: Rust (check + clippy + test)
@@ -148,14 +182,14 @@ jobs:
   # needed job succeeded OR was skipped, and fails only on a real failure/cancel (#425).
   gate:
     name: CI gate
-    needs: [frontend, rust]
+    needs: [frontend, plan-contract, rust]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs passed (or were skipped)
         run: |
-          echo "frontend=${{ needs.frontend.result }} rust=${{ needs.rust.result }}"
-          for r in "${{ needs.frontend.result }}" "${{ needs.rust.result }}"; do
+          echo "frontend=${{ needs.frontend.result }} plan-contract=${{ needs.plan-contract.result }} rust=${{ needs.rust.result }}"
+          for r in "${{ needs.frontend.result }}" "${{ needs['plan-contract'].result }}" "${{ needs.rust.result }}"; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
               echo "::error::a required CI job did not pass ($r)"; exit 1
             fi
