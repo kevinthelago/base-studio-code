@@ -25,6 +25,7 @@ import {
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
+import { publishFleetRoster } from "../../lib/fleetRoster";
 import { buildProjectPaneData } from "./projectPaneData";
 import { SectionProgressRail } from "./SectionProgressRail";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
@@ -1110,7 +1111,14 @@ export function Planning({ visible }: { visible: boolean }) {
         invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
           .catch(e => console.error(`worktree ${st.id} failed:`, e)),
       ));
-      fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
+      // Give the director its standing protocol at the hub (#375) so it gets the bsc-fleet
+      // roster instruction + answers worker questions (the refactor dropped this call; #734).
+      if (launchPlan.director.enabled) {
+        await invoke("ensure_director_protocol", { projectKey: effectiveProjectId })
+          .catch(e => console.error("director protocol failed:", e));
+      }
+      const roster = fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
+      publishFleetRoster(effectiveProjectId, roster); // #734: hub fleet.roster.tsv for bsc-fleet
     } catch (e) {
       console.error("fleet launch failed:", e);
     } finally {
