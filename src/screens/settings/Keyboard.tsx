@@ -8,11 +8,23 @@ import {
   isModifierCode,
   findConflict,
   REBINDABLE,
+  LEADER_IDS,
+  LEADER_OPTIONS,
+  LEADER_META,
+  DEFAULT_LEADERS,
+  effectiveLeader,
+  leaderToCaps,
+  findLeaderConflict,
   type RebindableId,
+  type LeaderId,
 } from "../../lib/keybindings";
 
 const REBINDABLE_SET = new Set<string>(REBINDABLE_IDS);
-const labelOf = (id: string) => REBINDABLE.find((r) => r.id === id)?.label ?? id;
+const LEADER_SET = new Set<string>(LEADER_IDS);
+const labelOf = (id: string) =>
+  REBINDABLE.find((r) => r.id === id)?.label ??
+  LEADER_META.find((r) => r.id === id)?.label ??
+  id;
 
 function KeyCap({ children, active }: { children: React.ReactNode; active?: boolean }) {
   return (
@@ -50,7 +62,9 @@ export function KeyboardSettings() {
   const [capturingId, setCapturingId] = useState<RebindableId | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const overrideCount = REBINDABLE_IDS.filter((id) => keybindings[id]).length;
+  const overrideCount =
+    REBINDABLE_IDS.filter((id) => keybindings[id]).length +
+    LEADER_IDS.filter((id) => keybindings[id]).length;
 
   // While capturing, intercept the next chord on the document (capture phase, so
   // it beats anything else) and assign it — unless it collides with another
@@ -83,12 +97,24 @@ export function KeyboardSettings() {
     setCapturingId((cur) => (cur === id ? null : id));
   }
 
+  function changeLeader(id: LeaderId, leader: string) {
+    setError(null);
+    const conflict = findLeaderConflict(keybindings, id, leader);
+    if (conflict) {
+      setError(`Those modifiers are already used by "${labelOf(conflict)}".`);
+      return;
+    }
+    if (leader === DEFAULT_LEADERS[id]) resetKeybinding(id);
+    else setKeybinding(id, leader);
+  }
+
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Keyboard</h2>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 18px", fontSize: 12 }}>
-        Every keyboard shortcut, grouped by what it affects. The console action shortcuts can be
-        rebound — click one and press a new combination. Number-range and navigation keys are fixed.
+        Every keyboard shortcut, grouped by what it affects. Click a shortcut and press a new
+        combination to rebind it; for number-range shortcuts, pick the modifier leader from the
+        dropdown.
       </p>
 
       {(overrideCount > 0 || capturingId) && (
@@ -128,13 +154,19 @@ export function KeyboardSettings() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
             {group.items.map((s, i) => {
-              const rebindable = s.id != null && REBINDABLE_SET.has(s.id);
-              const id = s.id as RebindableId | undefined;
-              const isCapturing = rebindable && capturingId === id;
-              const overridden = rebindable && id != null && keybindings[id] != null;
-              // Show the documented caps for defaults (nice for F-keys / Ctrl +),
-              // and the captured chord once the user has customized it.
-              const caps = overridden && id != null ? chordToCaps(keybindings[id]!) : s.keys;
+              const isChord = s.id != null && REBINDABLE_SET.has(s.id);
+              const isLeader = s.id != null && LEADER_SET.has(s.id);
+              const id = s.id;
+              const isCapturing = isChord && capturingId === id;
+              const overridden = (isChord || isLeader) && id != null && keybindings[id] != null;
+              // Range cap (e.g. "1–9") is the last documented key; the leader caps
+              // precede it and reflect the live selection.
+              const rangeCap = s.keys[s.keys.length - 1];
+              // Show documented caps for a default (nice for F-keys / Ctrl +), the
+              // captured chord once a chord is customized, the live leader for ranges.
+              const caps = isLeader && id != null
+                ? [...leaderToCaps(effectiveLeader(keybindings, id as LeaderId)), rangeCap]
+                : overridden && id != null ? chordToCaps(keybindings[id]!) : s.keys;
               return (
                 <div
                   key={s.desc}
@@ -162,9 +194,9 @@ export function KeyboardSettings() {
                       </button>
                     )}
                   </div>
-                  {rebindable ? (
+                  {isChord ? (
                     <button
-                      onClick={() => startCapture(id!)}
+                      onClick={() => startCapture(id as RebindableId)}
                       aria-label={`Rebind ${s.desc}`}
                       title="Click to rebind, then press a key combination"
                       style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
@@ -173,6 +205,27 @@ export function KeyboardSettings() {
                         ? <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--accent)" }}>Press keys…</span>
                         : <Chord caps={caps} active={overridden} />}
                     </button>
+                  ) : isLeader && id != null ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                      <select
+                        aria-label={`Leader for ${s.desc}`}
+                        value={effectiveLeader(keybindings, id as LeaderId)}
+                        onChange={(e) => changeLeader(id as LeaderId, e.target.value)}
+                        style={{
+                          fontFamily: "var(--mono)", fontSize: 11,
+                          color: overridden ? "var(--accent)" : "var(--fg)",
+                          background: "var(--bg-elev2)",
+                          border: `1px solid ${overridden ? "var(--accent)" : "var(--border)"}`,
+                          borderRadius: 5, padding: "2px 4px", cursor: "pointer",
+                        }}
+                      >
+                        {LEADER_OPTIONS.map((o) => (
+                          <option key={o} value={o}>{o.replace(/\+/g, " + ")}</option>
+                        ))}
+                      </select>
+                      <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>+</span>
+                      <KeyCap>{rangeCap}</KeyCap>
+                    </div>
                   ) : (
                     <Chord caps={caps} />
                   )}

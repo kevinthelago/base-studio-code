@@ -60,7 +60,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       ...SCREEN_HOTKEYS.map((h): Shortcut => ({
         id: `screen-${h.screen}`, keys: [h.key], desc: `Go to ${h.label}`, scope: "Global",
       })),
-      { keys: ["Ctrl", "1–9"], desc: "Switch to workspace tab by number", scope: "Global" },
+      { id: "tab-switch", keys: ["Ctrl", "1–9"], desc: "Switch to workspace tab by number", scope: "Global" },
     ],
   },
   {
@@ -68,9 +68,9 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     items: [
       { id: "fullscreen-toggle", keys: ["Ctrl", "Shift", "F"], desc: "Maximize / restore the focused pane", scope: "Console" },
       { id: "focus-next-waiting", keys: ["Ctrl", "Shift", "N"], desc: "Focus the next pane waiting for input", scope: "Console" },
-      { keys: ["Ctrl", "Shift", "1–9"], desc: "Select a pane by number (focus → maximize → restore)", scope: "Console" },
-      { keys: ["Alt", "1–5"], desc: "Switch the focused pane's view (console / files / branches / changes / log)", scope: "Console" },
-      { keys: ["Alt", "Shift", "1–5"], desc: "Switch every pane's view", scope: "Console" },
+      { id: "pane-select", keys: ["Ctrl", "Shift", "1–9"], desc: "Select a pane by number (focus → maximize → restore)", scope: "Console" },
+      { id: "view-switch", keys: ["Alt", "1–5"], desc: "Switch the focused pane's view (console / files / branches / changes / log)", scope: "Console" },
+      { id: "view-switch-all", keys: ["Alt", "Shift", "1–5"], desc: "Switch every pane's view", scope: "Console" },
     ],
   },
   {
