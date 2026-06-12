@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppStore, type GithubUser, type GithubRepo } from "../../store";
 import { clearGithubCache } from "../../lib/github";
 import { runDeviceFlow, type DeviceStartInfo, type DevicePollResult } from "../../lib/githubDeviceFlow";
+import { ToggleRow } from "./General";
 
 /** Mirror of the backend `DeviceStart` struct (`github_device_start`). */
 type DeviceStart = DeviceStartInfo;
@@ -280,7 +281,7 @@ function RepoCredentialsCard() {
 export function GitHubSettings() {
   const {
     githubConnected, githubUser, githubRepos, githubToken,
-    disconnectGithub,
+    disconnectGithub, restrictToBscIssues, setRestrictToBscIssues,
   } = useAppStore();
 
   const [filter, setFilter] = useState("");
@@ -307,6 +308,24 @@ export function GitHubSettings() {
       <p style={{ color: "var(--fg-muted)", margin: "0 0 22px", fontSize: 12 }}>
         Connect your GitHub account to browse repos, branches, and pull requests.
       </p>
+
+      {/* #738 — issues are an untrusted input channel; restrict agents to app-authored ones. */}
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
+          <h3 style={{ margin: 0 }}>Issue security</h3>
+        </div>
+        <ToggleRow
+          on={restrictToBscIssues}
+          onToggle={() => setRestrictToBscIssues(!restrictToBscIssues)}
+          title="Only act on base-studio-code-authored issues"
+        >
+          GitHub issues are an untrusted input channel. When on (recommended), triage and any
+          agent that pulls live issues work <b>only</b> issues base-studio-code created (the{" "}
+          <code>bsc-generated</code> label) — a hand-created or injected issue is ignored, so a
+          malicious issue can't drive a worker. Turn off to triage every open issue.
+        </ToggleRow>
+      </div>
+      <div style={{ height: 18 }} />
 
       {!githubConnected || !githubUser ? (
         <ConnectCard />
