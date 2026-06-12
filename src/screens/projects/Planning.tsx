@@ -30,7 +30,14 @@ import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { buildProjectPaneData } from "./projectPaneData";
-import { SectionProgressRail } from "./SectionProgressRail";
+// Blueprint-driven focused-pane model (#652) — restored after #668 lossily deleted it
+// (#776). The progress bar reads the project's BLUEPRINT sections + their declarative
+// gates, not a hardcoded stage list.
+import { derivePlanStageState, planStateToSignals } from "./planStageDerive";
+import { isGateBlocked } from "./pipelineRuntime";
+import { mkSection, planSectionsComplete, type BlueprintSection } from "./blueprints";
+import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
+import { featureSectionsToIssues } from "./planFeatures";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -370,6 +377,8 @@ export function Planning({ visible }: { visible: boolean }) {
     planFleet,
     projectKeyAlias,
     pinnedContext,
+    blueprints, activeBlueprintId, planStageConfig,
+    uiScreens, uiApproved, planAutomations, stagePipelineRuns,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
     togglePinnedContext,
     addProjectRepo, fleetStartProject,
@@ -453,10 +462,9 @@ export function Planning({ visible }: { visible: boolean }) {
     });
   }, [savedSections, confirmedSet]);
 
-  // Tier grouping for rendering, plus a key→section lookup.
+  // Key→section lookup (the section progress rail that also used the tier grouping was
+  // removed in #776 — the focused pane's blueprint rail replaces it).
   const sectionByKey = useMemo(() => new Map(sections.map(s => [s.k, s])), [sections]);
-  const { project: projectKeys, repos: repoGroups } =
-    useMemo(() => groupSections(sections.map(s => s.k)), [sections]);
   // Sync the planner's commands.json (the reliable channel — surfaced by the file
   // poll like plan sections, so it can't be lost in the PTY stream) into the
   // per-project/repo command store. Additive: file commands merge in; manual
@@ -506,6 +514,71 @@ export function Planning({ visible }: { visible: boolean }) {
     }),
     [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext],
   );
+
+  // ── Blueprint-driven plan model (#652) — restored (#776) ────────────────────
+  // The authoritative plan sections come from the active BLUEPRINT; each carries its own
+  // declarative gate over a flat signal bag — NOT a hardcoded stage list. The focused
+  // progress rail, current-phase, and advance/publish footer all read these. #668 deleted
+  // this whole substrate; the store data (blueprints, ui, automations, pipelines) survived.
+  const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
+  const requiresUi = stageConfig.enabled.ui;
+  const uiCounts = useMemo(() => {
+    if (!requiresUi) return { approved: 0, total: 0 };
+    const declared = uiScreens[effectiveProjectId] ?? [];
+    const approvedSet = new Set(uiApproved[effectiveProjectId] ?? []);
+    return { approved: declared.filter((s) => approvedSet.has(s)).length, total: declared.length };
+  }, [requiresUi, uiScreens, uiApproved, effectiveProjectId]);
+  // Per-repo feature plans (#177) fold into the issue count the gates read.
+  const featureIssues = useMemo(
+    () => featureSectionsToIssues(sections, publishRepos),
+    [sections, publishRepos],
+  );
+  // The live snapshot the declarative section gates read.
+  const stageState = useMemo(() => {
+    const streams = planFleet[effectiveProjectId]?.streams ?? [];
+    const issueCount =
+      parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "").length + featureIssues.length;
+    return derivePlanStageState({
+      sections: sections.map(s => ({ k: s.k, state: s.state })),
+      repoCount: publishRepos.length,
+      issueCount,
+      fleetStreams: streams.length,
+      fleetProfilesComplete: streams.length > 0 && streams.every(st => agentProfiles.some(p => p.id === st.id)),
+      automationsAck: (planAutomations[effectiveProjectId]?.length ?? 0) > 0,
+      skillsAck: false,
+      requiresUi,
+      ui: uiCounts,
+    });
+  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts]);
+  // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
+  const planSecs = useMemo<BlueprintSection[]>(() => {
+    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    if (bp) return bp.sections;
+    return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
+  }, [blueprints, activeBlueprintId, stageConfig]);
+  const signals = useMemo(() => planStateToSignals(stageState), [stageState]);
+  // Sections blocked by an unpassed gate pipeline (#532), straight from the blueprint.
+  const blockedStages = useMemo(() => {
+    const runs = stagePipelineRuns[effectiveProjectId] ?? {};
+    const set = new Set<string>();
+    for (const sec of planSecs) if (isGateBlocked(sec.pipelines, runs)) set.add(sec.key);
+    return set;
+  }, [planSecs, stagePipelineRuns, effectiveProjectId]);
+
+  // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
+  // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user
+  // pick; reset on project/blueprint switch.
+  const phases = useMemo(() => phasesFrom(planSecs, signals), [planSecs, signals]);
+  const focusActiveIdx = useMemo(() => activeIndex(phases), [phases]);
+  const [focusSel, setFocusSel] = useState<number | null>(null);
+  useEffect(() => { setFocusSel(null); }, [effectiveProjectId, activeBlueprintId]);
+  const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, phases.length);
+  const focusGateReady = useMemo(() => currentGateReady(planSecs, signals), [planSecs, signals]);
+  const planComplete = useMemo(() => planSectionsComplete(planSecs, signals), [planSecs, signals]);
+  const focusFooter = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady);
+  const focusSelPhase = phases[focusSelectedIdx];
+  const focusPill = focusSelPhase ? gatePill(focusSelPhase, blockedStages.has(focusSelPhase.key)) : "wait";
+
   const [restarting, setRestarting] = useState(false);
 
   const [docsSync, setDocsSync] = useState<SyncState>("idle");
@@ -1626,12 +1699,9 @@ _Auto-generated by base-studio-code planner._`,
         );
       })()}
 
-      {/* Section progress rail v4 (#668) — node-based with confirmed/now/banked/pending states. */}
-      <SectionProgressRail
-        projectKeys={projectKeys}
-        repoGroups={repoGroups}
-        sectionByKey={sectionByKey}
-      />
+      {/* The progress bar is the focused pane's sequenced rail (#652), inside the right
+          pane below — driven by the blueprint phases. The old top-strip rail (#668) and
+          the hardcoded 7-stage stepper were removed here (#776). */}
 
       {/* Split panel */}
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", borderTop: "1px solid var(--border-soft)" }}>
@@ -1701,6 +1771,20 @@ _Auto-generated by base-studio-code planner._`,
               onSyncDocs={githubToken && publishRepos.length > 0 ? handleSyncDocs : undefined}
               onSyncLabels={githubToken && publishRepos.length > 0 ? handleSyncLabels : undefined}
               syncState={{ structure: "idle", docs: docsSync, labels: labelsSync }}
+              onLinkRepo={(repo) => addProjectRepo(effectiveProjectId, repo)}
+              focus={{
+                phases,
+                selectedIdx: focusSelectedIdx,
+                activeIdx: focusActiveIdx,
+                onSelect: (i) => setFocusSel(i),
+                pill: focusPill,
+                footer: focusFooter,
+                onBack: () => setFocusSel(clampIndex(focusSelectedIdx - 1, phases.length)),
+                onPrimary: () => {
+                  if (focusFooter.kind === "publish") void handlePublish();
+                  else setFocusSel(null); // re-follow the live phase
+                },
+              }}
             />
           ) : (
             <>
