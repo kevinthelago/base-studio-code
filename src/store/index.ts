@@ -270,6 +270,14 @@ interface AppStore {
   // Applied to the --accent / --accent-dim CSS tokens at the document root.
   accent: string;
   setAccent: (id: string) => void;
+  // Custom keyboard shortcut overrides (#771): rebindable-shortcut id → chord
+  // string (e.g. "Ctrl+Shift+KeyC"). Only overrides are stored; useHotkeys falls
+  // back to DEFAULT_BINDINGS for any id absent here. Persisted; edited in
+  // Settings → Keyboard.
+  keybindings: Record<string, string>;
+  setKeybinding: (id: string, chord: string) => void;
+  resetKeybinding: (id: string) => void;
+  resetAllKeybindings: () => void;
   paneViews: ViewKey[];
   paneNames: Record<number, Record<number, string>>;
   paneCwds: Record<string, string>;  // keyed by "t{tabIdx}p{paneIdx}"
@@ -933,6 +941,16 @@ export const useAppStore = create<AppStore>()(
       setTerminalFontSize: (size) => set({ terminalFontSize: clampFontSize(size) }),
       accent: DEFAULT_ACCENT,
       setAccent: (id) => set({ accent: id }),
+      keybindings: {},
+      setKeybinding: (id, chord) =>
+        set((s) => ({ keybindings: { ...s.keybindings, [id]: chord } })),
+      resetKeybinding: (id) =>
+        set((s) => {
+          const next = { ...s.keybindings };
+          delete next[id];
+          return { keybindings: next };
+        }),
+      resetAllKeybindings: () => set({ keybindings: {} }),
       paneViews: [],
       paneNames: {},
       paneCwds: {},
@@ -2364,6 +2382,7 @@ export const useAppStore = create<AppStore>()(
         activeTabIdx:    s.activeTabIdx,
         terminalFontSize: s.terminalFontSize,
         accent:          s.accent,
+        keybindings:     s.keybindings,
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
         paneCwds:        s.paneCwds,
