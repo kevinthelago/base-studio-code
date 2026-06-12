@@ -1020,9 +1020,9 @@ mod transport {
             return;
         }
         match msg {
-            ClientMsg::PaneInput { pane_id, data } => crate::tunnel_write_pty(app, &pane_id, &data),
+            ClientMsg::PaneInput { pane_id, data } => crate::pty::tunnel_write_pty(app, &pane_id, &data),
             ClientMsg::PaneResize { pane_id, cols, rows } => {
-                crate::tunnel_resize_pty(app, &pane_id, cols, rows)
+                crate::pty::tunnel_resize_pty(app, &pane_id, cols, rows)
             }
             ClientMsg::PaneFocus { pane_id } => {
                 log::debug!("tunnel: focus → pane[{pane_id}]");
