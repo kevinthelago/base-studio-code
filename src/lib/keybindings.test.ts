@@ -107,4 +107,21 @@ describe("registry wiring", () => {
       expect(r.label).not.toBe(r.id); // resolved from SHORTCUT_GROUPS desc, not the raw id
     }
   });
+
+  it("screen-nav and zoom are rebindable single chords (#773)", () => {
+    expect(DEFAULT_BINDINGS["screen-console"]).toBe("F1");
+    expect(DEFAULT_BINDINGS["screen-settings"]).toBe("F6");
+    expect(DEFAULT_BINDINGS["zoom-in"]).toBe("Ctrl+Equal");
+    expect(DEFAULT_BINDINGS["zoom-reset"]).toBe("Ctrl+Digit0");
+    // A bare F-key serializes to just the code, with no modifiers.
+    expect(eventToChord(ev({ code: "F1" }))).toBe("F1");
+    expect(matchesBinding(ev({ code: "F1" }), {}, "screen-console")).toBe(true);
+    // Conflict detection spans the whole rebindable set, screen + console actions included.
+    expect(findConflict({}, "screen-knowledge", "F1")).toBe("screen-console");
+  });
+
+  it("chordToCaps labels the zoom symbol codes", () => {
+    expect(chordToCaps("Ctrl+Equal")).toEqual(["Ctrl", "="]);
+    expect(chordToCaps("Ctrl+Minus")).toEqual(["Ctrl", "−"]);
+  });
 });

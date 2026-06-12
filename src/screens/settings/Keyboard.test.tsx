@@ -60,6 +60,21 @@ describe("KeyboardSettings", () => {
     expect(useAppStore.getState().keybindings["broadcast-toggle"]).toBeUndefined();
   });
 
+  it("screen-nav and zoom rows are now rebindable (#773)", () => {
+    render(<KeyboardSettings />);
+    // Screen nav: "Go to Console" can be rebound.
+    const navBtn = screen.getByRole("button", { name: /Rebind Go to Console/ });
+    fireEvent.click(navBtn);
+    fireEvent.keyDown(document, { code: "F9" });
+    expect(useAppStore.getState().keybindings["screen-console"]).toBe("F9");
+
+    // Zoom: "Increase terminal font size" can be rebound.
+    const zoomBtn = screen.getByRole("button", { name: /Rebind Increase terminal font size/ });
+    fireEvent.click(zoomBtn);
+    fireEvent.keyDown(document, { code: "Equal", ctrlKey: true, altKey: true });
+    expect(useAppStore.getState().keybindings["zoom-in"]).toBe("Ctrl+Alt+Equal");
+  });
+
   it("reset-all clears every override", () => {
     useAppStore.setState({
       keybindings: { "broadcast-toggle": "Ctrl+Alt+KeyB", "clear-input": "Ctrl+Alt+KeyX" },
