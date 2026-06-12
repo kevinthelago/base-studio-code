@@ -13,25 +13,50 @@
 
 import { SHORTCUT_GROUPS } from "./shortcuts";
 
-/** The shortcut ids that can be rebound (single modifier+key chords). */
+/** The shortcut ids that can be rebound (single modifier+key chords). Screen
+ *  navigation (single F-keys) and terminal zoom (single Ctrl chords) are single
+ *  chords too, so they use this same mechanism. The digit-RANGE bindings
+ *  (Ctrl+1–9 etc.) are a separate "leader" model — see LEADER_IDS below. */
 export const REBINDABLE_IDS = [
   "broadcast-toggle",
   "fullscreen-toggle",
   "focus-next-waiting",
   "clear-input",
   "send-all-enter",
+  "screen-console",
+  "screen-knowledge",
+  "screen-automation",
+  "screen-github",
+  "screen-projects",
+  "screen-settings",
+  "zoom-in",
+  "zoom-out",
+  "zoom-reset",
 ] as const;
 
 export type RebindableId = (typeof REBINDABLE_IDS)[number];
 
 /** Built-in chord for each rebindable action — the value useHotkeys matched
- *  before rebinding existed. The user's overrides fall back to these. */
+ *  before rebinding existed. The user's overrides fall back to these.
+ *
+ *  Zoom defaults are the canonical `code` chords (used for conflict detection +
+ *  the captured-override display); useHotkeys still matches the *unbound* zoom
+ *  keys by `e.key` so `Ctrl++` and `Ctrl+=` both zoom in as before. */
 export const DEFAULT_BINDINGS: Record<RebindableId, string> = {
   "broadcast-toggle":   "Ctrl+Shift+KeyC",
   "fullscreen-toggle":  "Ctrl+Shift+KeyF",
   "focus-next-waiting": "Ctrl+Shift+KeyN",
   "clear-input":        "Ctrl+Shift+Backspace",
   "send-all-enter":     "Alt+Shift+Enter",
+  "screen-console":     "F1",
+  "screen-knowledge":   "F2",
+  "screen-automation":  "F3",
+  "screen-github":      "F4",
+  "screen-projects":    "F5",
+  "screen-settings":    "F6",
+  "zoom-in":            "Ctrl+Equal",
+  "zoom-out":           "Ctrl+Minus",
+  "zoom-reset":         "Ctrl+Digit0",
 };
 
 /** The structural subset of KeyboardEvent the chord helpers read — lets the
@@ -98,6 +123,8 @@ const CODE_LABELS: Record<string, string> = {
   Escape: "Esc",
   Tab: "Tab",
   Delete: "Del",
+  Equal: "=",
+  Minus: "−",
 };
 
 /** A single `code` token → its key cap label (e.g. "KeyC" → "C", "Digit1" → "1",
