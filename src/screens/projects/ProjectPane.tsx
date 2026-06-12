@@ -184,7 +184,7 @@ const ISSUE_STATE: Record<string, string> = {
 /* =================================================================
    plan stages (#652)
    ================================================================= */
-interface PlanStage {
+export interface PlanStage {
   id: string;
   title: string;
   short: string;
@@ -197,7 +197,7 @@ interface PlanStage {
   optional?: boolean;
 }
 
-const PLAN_STAGES: PlanStage[] = [
+export const PLAN_STAGES: PlanStage[] = [
   {
     id: "context",
     title: "Context",
@@ -259,7 +259,7 @@ const PLAN_STAGES: PlanStage[] = [
 
 type StageState = "done" | "active" | "banked" | "locked";
 
-function isStageGateMet(
+export function isStageGateMet(
   stage: PlanStage,
   sections: Section[],
   repos: string[],
