@@ -5,6 +5,8 @@
 use crate::{
     bsc_base_dir, to_bash_path, nearest_existing_ancestor, claude_launch, claude_model_flag,
     has_claude_history, split_utf8_at_boundary,
+};
+use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_TOKENS_RC,
     BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC,
 };
