@@ -58,7 +58,7 @@ describe("startCleanupFleet (#626)", () => {
 
   it("writes a kickoff per unit and launches the fleet", async () => {
     const launched: unknown[] = [];
-    const spy = vi.spyOn(useAppStore.getState(), "fleetStartProject").mockImplementation((...a) => { launched.push(a); });
+    const spy = vi.spyOn(useAppStore.getState(), "fleetStartProject").mockImplementation((...a) => { launched.push(a); return []; });
     const verified: VerifiedFinding[] = [
       { kind: "unused-dep", path: "package.json", symbol: "lodash", detail: "", tool: "depcheck", confidence: "medium", verdict: "confirmed", reason: "" },
       { kind: "unused-export", path: "src/a.ts", symbol: "Foo", detail: "", tool: "ts-prune", confidence: "medium", verdict: "confirmed", reason: "" },

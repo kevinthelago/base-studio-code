@@ -8,6 +8,7 @@
 
 import { useAppStore } from "../../store";
 import { writeProjectFile } from "../../lib/projectFiles";
+import { publishFleetRoster } from "../../lib/fleetRoster";
 import { type AgentFlow } from "./agentFlow";
 import { type FleetPlan, type AgentStream } from "./planSections";
 import { type RefactorUnit, type RefactorTier, generateRefactorUnits } from "../../lib/refactorUnits";
@@ -93,6 +94,7 @@ export async function startCleanupFleet(args: StartCleanupFleetArgs): Promise<Re
   await Promise.all(
     units.map((u, i) => writeProjectFile(args.projectKey, fleet.streams[i].prompt!, buildRemovalKickoff(u, args.repo))),
   );
-  useAppStore.getState().fleetStartProject(args.projectName, fleet, args.projectKey);
+  const roster = useAppStore.getState().fleetStartProject(args.projectName, fleet, args.projectKey);
+  publishFleetRoster(args.projectKey, roster);
   return units;
 }
