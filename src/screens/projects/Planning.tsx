@@ -14,6 +14,7 @@ import {
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
   parseAllowCommands, stripAllowCommands,
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
+  buildSectionConfirmMessage,
 } from "./planningSession";
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
@@ -23,9 +24,13 @@ import {
 } from "./planSections";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
-import { ProjectPane, type SyncState } from "./ProjectPane";
+import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
 import { buildProjectPaneData } from "./projectPaneData";
 import { SectionProgressRail } from "./SectionProgressRail";
+// Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
+// the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
+import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
+import { oneShotComplete } from "../../lib/claudeComplete";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
   background:          "#181a1f",
@@ -365,7 +370,10 @@ export function Planning({ visible }: { visible: boolean }) {
     addProjectRepo, fleetStartProject,
     agentProfiles,
     commands, schedules,
+    confirmPlanSection,
   } = useAppStore();
+  const autoPlanWithClaude = useAppStore(s => s.autoPlanWithClaude);
+  const claudeApiKey = useAppStore(s => s.claudeApiKey);
 
   // The session key (set once at session entry) is the single source of truth
   // for the planning directory, PTY slot, and plan buckets — identical to the
@@ -516,11 +524,70 @@ export function Planning({ visible }: { visible: boolean }) {
   const unlistenExit   = useRef<UnlistenFn | null>(null);
   // Accumulated stripped output used to scan for complete <plan_update> tags
   const bufRef         = useRef("");
+  // Autopilot (#746): an un-consumed copy of the planner's raw output (bufRef is drained by
+  // the tag parsers), for idle-detection + the user-sim.
+  const autopilotTxRef = useRef("");
+  const apLastSnapLen  = useRef(0);
+  const apLastAnswered = useRef(0);
   // Tracks whether the auto-send of the initial pitch has fired this session
   const initSentRef    = useRef(false);
   const initSendTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const confirmedCount     = sections.filter(s => s.state === "confirmed").length;
+
+  // ── Planning autopilot (#746) ───────────────────────────────────────────────
+  // Driven by the Settings "Automate planning with Claude" toggle. Answers the planner's own
+  // discovery questions from the pitch + confirms each stage, driving to a publishable plan for
+  // review (never auto-publishes). The snapshot reads the SAME PLAN_STAGES gate model ProjectPane
+  // renders, so the autopilot and the UI agree on what's left.
+  const autopilotProgressPct = useMemo(() => {
+    const required = PLAN_STAGES.filter(st => !st.optional);
+    const fleet = planFleet[effectiveProjectId];
+    const done = required.filter(st => isStageGateMet(st, sections, linkedRepos, fleet)).length;
+    return required.length ? Math.round((done / required.length) * 100) : 0;
+  }, [sections, linkedRepos, planFleet, effectiveProjectId]);
+  const autopilotDeps: AutopilotDeps = {
+    pitch: planningPitch,
+    strategy: "llm",
+    snapshot: () => {
+      const len = autopilotTxRef.current.length;
+      const grew = len > apLastSnapLen.current;
+      apLastSnapLen.current = len;
+      const plannerAwaiting = !grew && len > apLastAnswered.current;
+      const fleet = planFleet[effectiveProjectId];
+      // Frontier = first NON-optional stage whose gate isn't met (optional stages never block).
+      const required = PLAN_STAGES.filter(st => !st.optional);
+      const frontier = required.find(st => !isStageGateMet(st, sections, linkedRepos, fleet));
+      // Confirmable = the frontier stage's required sections that are drafted but unconfirmed.
+      const confirmKeys = frontier
+        ? frontier.requiredConfirmed.filter(k => sectionByKey.get(k)?.state === "drafted")
+        : [];
+      const done = required.filter(st => isStageGateMet(st, sections, linkedRepos, fleet)).length;
+      return {
+        planReady: !frontier,
+        confirmKeys,
+        plannerAwaiting,
+        working: grew,
+        autoPublish: false, // the feature stops at a publishable plan for review
+        progress: { done, total: required.length, fraction: required.length ? done / required.length : 0 },
+      };
+    },
+    pendingOutput: () => autopilotTxRef.current.slice(apLastAnswered.current),
+    userSim: (system, user) => oneShotComplete(claudeApiKey, system, user),
+    sendReply: (text) => {
+      invoke("pty_write", { paneId, data: `${text}\r` }).catch(console.error);
+      apLastAnswered.current = autopilotTxRef.current.length;
+    },
+    confirm: (keys) => {
+      for (const k of keys) confirmPlanSection(effectiveProjectId, k);
+      const name = keys.map(k => titleForKey(k)).join(", ") || "section";
+      invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
+      apLastAnswered.current = autopilotTxRef.current.length;
+    },
+    mockPublish: () => { /* feature stops at publishable (autoPublish=false) — unused */ },
+    log: (e) => console.debug("[auto-plan]", e.action, e.detail ?? ""),
+  };
+  const autopilot = usePlanAutopilot(autopilotDeps, { enabled: autoPlanWithClaude && !!claudeApiKey });
 
   // Mount xterm.js and spawn the planning PTY (once per Planning screen lifecycle).
   // pty_kill is called on unmount so navigating away ends the session cleanly.
@@ -574,6 +641,7 @@ export function Planning({ visible }: { visible: boolean }) {
 
         // Parse structured tags out of the stripped output stream.
         bufRef.current += stripAnsi(ev.payload);
+        autopilotTxRef.current += stripAnsi(ev.payload); // un-consumed copy for the autopilot (#746)
 
         // Quote-flexible helper: matches " U+0022, " U+201C, " U+201D so LLM
         // smart-quote output doesn't silently break tag detection.
@@ -1389,6 +1457,11 @@ _Auto-generated by base-studio-code planner._`,
           </div>
           <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
             claude cli · interactive pty · {confirmedCount}/{sections.length} sections confirmed
+            {autopilot.running && (
+              <span style={{ color: "var(--accent)", marginLeft: 8 }}>
+                ⚙ auto-planning · {autopilotProgressPct}%
+              </span>
+            )}
           </div>
         </div>
         <button className="btn ghost" onClick={() => setProjectsView("list")}>
