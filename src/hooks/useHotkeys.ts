@@ -7,6 +7,7 @@ import { nextFullscreen } from "../lib/consoleFocus";
 import { CLEAR_INPUT_BYTES } from "../lib/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/paneSelect";
 import { SCREEN_KEY_MAP } from "../lib/shortcuts";
+import { matchesBinding } from "../lib/keybindings";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 export interface ShortcutDef {
@@ -141,9 +142,14 @@ export function useHotkeys() {
       const tag = (e.target as HTMLElement).tagName;
       const inInput = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable;
 
+      // Active custom keybindings (#771) — read fresh so a rebind takes effect
+      // without re-subscribing the listener. Each rebindable action matches its
+      // chord by id (custom override ?? built-in default).
+      const bindings = useAppStore.getState().keybindings;
+
       // ── Ctrl+Shift+C: toggle broadcast mode ───────────────────────────────
       // Must come before the broadcast intercept and the inInput guard.
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "KeyC") {
+      if (matchesBinding(e, bindings, "broadcast-toggle")) {
         if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
@@ -154,7 +160,7 @@ export function useHotkeys() {
       // ── Ctrl+Shift+F: maximize / minimize the focused console pane ──────────
       // Before the broadcast intercept so it works in broadcast mode too, and
       // before the inInput guard so it fires while typing in a pane's terminal.
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "KeyF") {
+      if (matchesBinding(e, bindings, "fullscreen-toggle")) {
         if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
@@ -166,7 +172,7 @@ export function useHotkeys() {
       // ── Ctrl+Shift+N: focus the next waiting pane (maximize-aware) ──────────
       // Steps through agents that finished a turn. If a pane is maximized it
       // swaps the maximized pane to the next one, so you stay full-screen.
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "KeyN") {
+      if (matchesBinding(e, bindings, "focus-next-waiting")) {
         if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
@@ -181,7 +187,7 @@ export function useHotkeys() {
       // the active tab — including the focused one, since we send the bytes
       // directly rather than via xterm.onData, so there's no double-write to
       // worry about (#192).
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "Backspace") {
+      if (matchesBinding(e, bindings, "clear-input")) {
         if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
@@ -288,7 +294,7 @@ export function useHotkeys() {
       // ── ALT = MODIFY ──────────────────────────────────────────────────────
 
       // Alt+Shift+Enter: broadcast Enter to every pane (one-shot, regardless of broadcast mode)
-      if (e.altKey && !e.ctrlKey && !e.metaKey && e.shiftKey && e.key === "Enter") {
+      if (matchesBinding(e, bindings, "send-all-enter")) {
         if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();

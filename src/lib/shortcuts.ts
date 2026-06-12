@@ -40,6 +40,11 @@ export interface Shortcut {
   desc: string;
   /** Where it applies — "Global" or a screen name like "Console". */
   scope: string;
+  /** When set, this row is a rebindable single-chord action (#771) — its id ties
+   *  it to the handler in useHotkeys and the override stored in the app state, so
+   *  the Keyboard page can render its LIVE binding and edit it inline. Items
+   *  without an id are fixed (digit families, ranges) and shown read-only. */
+  id?: string;
 }
 
 export interface ShortcutGroup {
@@ -61,8 +66,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Console · panes",
     items: [
-      { keys: ["Ctrl", "Shift", "F"], desc: "Maximize / restore the focused pane", scope: "Console" },
-      { keys: ["Ctrl", "Shift", "N"], desc: "Focus the next pane waiting for input", scope: "Console" },
+      { id: "fullscreen-toggle", keys: ["Ctrl", "Shift", "F"], desc: "Maximize / restore the focused pane", scope: "Console" },
+      { id: "focus-next-waiting", keys: ["Ctrl", "Shift", "N"], desc: "Focus the next pane waiting for input", scope: "Console" },
       { keys: ["Ctrl", "Shift", "1–9"], desc: "Select a pane by number (focus → maximize → restore)", scope: "Console" },
       { keys: ["Alt", "1–5"], desc: "Switch the focused pane's view (console / files / branches / changes / log)", scope: "Console" },
       { keys: ["Alt", "Shift", "1–5"], desc: "Switch every pane's view", scope: "Console" },
@@ -71,9 +76,9 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Console · input & broadcast",
     items: [
-      { keys: ["Ctrl", "Shift", "C"], desc: "Toggle broadcast — mirror typing to every pane in the tab", scope: "Console" },
-      { keys: ["Ctrl", "Shift", "Backspace"], desc: "Clear the focused pane's pending input", scope: "Console" },
-      { keys: ["Alt", "Shift", "Enter"], desc: "Send Enter to every pane in the tab", scope: "Console" },
+      { id: "broadcast-toggle", keys: ["Ctrl", "Shift", "C"], desc: "Toggle broadcast — mirror typing to every pane in the tab", scope: "Console" },
+      { id: "clear-input", keys: ["Ctrl", "Shift", "Backspace"], desc: "Clear the focused pane's pending input", scope: "Console" },
+      { id: "send-all-enter", keys: ["Alt", "Shift", "Enter"], desc: "Send Enter to every pane in the tab", scope: "Console" },
     ],
   },
   {
