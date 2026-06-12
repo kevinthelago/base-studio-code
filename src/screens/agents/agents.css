@@ -118,9 +118,13 @@
 .agents-page .console-card .ch .cn { font-family: var(--mono); font-size: 13px; color: var(--fg); font-weight: 600; }
 .agents-page .console-card .ch .repo { font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim); }
 .agents-page .console-card .ch .spacer { flex: 1; }
-.agents-page .pane-row { display: grid; grid-template-columns: 170px 200px 1fr auto; gap: 14px; align-items: center; padding: 11px 16px; border-top: 1px solid var(--border-soft); }
+.agents-page .pane-row { display: grid; grid-template-columns: 188px 200px 1fr auto; gap: 14px; align-items: center; padding: 11px 16px; border-top: 1px solid var(--border-soft); }
 .agents-page .pane-row:first-of-type { border-top: 0; }
-.agents-page .pane-row .pident { display: flex; align-items: center; gap: 8px; }
+.agents-page .pane-row .pident { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* Title (type) stacked over subtitle (session) so neither clips the other (#740). */
+.agents-page .pane-row .psess { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.agents-page .pane-row .psess .pa,
+.agents-page .pane-row .psess .pstat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .agents-page .pane-row .pdot { width: 7px; height: 7px; border-radius: 50%; }
 .agents-page .pane-row .pdot.running { background: var(--success); }
 .agents-page .pane-row .pdot.awaiting { background: var(--accent); }
