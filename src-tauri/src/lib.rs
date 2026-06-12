@@ -644,30 +644,7 @@ fn append_coord_woke(session: String) -> Result<(), String> {
     f.write_all(line.as_bytes()).map_err(|e| e.to_string())
 }
 
-pub(crate) const KB_CLAUDE_MD: &str = r#"# base-studio-code · Knowledge Base
-
-You manage a library of markdown articles. Each article is a reusable piece of
-context that gets injected into AI coding sessions based on the project's tech stack.
-
-## Your role
-
-Help the user create, edit, and organise articles. When asked to:
-- **Create** an article — write a new `.md` file with a descriptive kebab-case filename.
-- **Edit** an article — read the file first, then write the updated version.
-- **List** what exists — use the Glob or Read tools to inspect the directory.
-
-## Conventions
-
-- One file per topic: `react-testing.md`, `rust-error-handling.md`, `postgres-migrations.md`
-- No subdirectories — everything lives at the top level of this directory.
-- Start each file with a `# Title` heading; the rest is freeform markdown.
-- Write for a developer reading in a hurry: short, concrete, actionable.
-- Keep articles focused — split broad topics into smaller targeted files.
-
-## Constraints
-
-Only `.md` files in this directory. No shell commands, no external URLs.
-"#;
+pub(crate) const KB_CLAUDE_MD: &str = include_str!("../templates/kb-claude.md");
 
 // ── Knowledge base workspace ──────────────────────────────────────────────────
 
@@ -775,60 +752,12 @@ fn worktree_slug(s: &str) -> String {
 /// Coordination protocol appended to every fleet worker's CLAUDE.local.md (#369) so the
 /// defer-to-director / never-ask-the-user rules are authoritative context, not just a
 /// first-message hint. A multi-line raw string (real newlines; literal backticks/quotes).
-const FLEET_PROTOCOL_MD: &str = r#"
-## Fleet coordination protocol (auto-added — do not edit)
-
-You are one of several parallel sessions building this project. Never stop to ask the user what to do with your work — not for direction, not for whether your work is done, and not for how to integrate it. Under the default self-merge policy you integrate your own work to develop (full gate -> rebase onto develop -> re-gate -> push) and keep going through every owned issue; you do not open PRs and the director does not merge for you. Follow your push instruction.
-
-When you genuinely need a decision you cannot make yourself, defer to the director, not the user:
-
-- `echo "your one-line question" | bsc-ask` — parks you and routes the question to the director, which answers and resumes you automatically.
-- `bsc-blocked --on <ref>` — park until another stream's dependency lands.
-- `echo "what you decided" | bsc-note` — for small reversible choices, just pick the smallest sensible option and record it; do not ask.
-
-If your push policy is self-merge, you integrate your own work to develop (full gate -> rebase onto develop -> re-gate -> push) and do NOT open PRs; if it is auto-pr, open a PR and the director merges it. Follow the push instruction in your kickoff. When you open a PR, stop -- CI runs and is watched for you; you will be told to continue (if it passed) or to fix the build and push (if it failed). Do not poll CI, reopen, or duplicate the PR.
-
-Only the director escalates to the user.
-"#;
+const FLEET_PROTOCOL_MD: &str = include_str!("../templates/fleet-protocol.md");
 
 /// Director protocol (#375) appended to the project hub's CLAUDE.local.md so the
 /// async-integrator director always has its standing duties as authoritative context
 /// (it runs at the hub, so it never gets the worker worktree protocol).
-const DIRECTOR_PROTOCOL_MD: &str = r#"
-## Director protocol (auto-added -- do not edit)
-
-You are the async-integrator DIRECTOR for this fleet; you write no feature code. These are
-standing rules you MUST act on, not merely acknowledge:
-
-- KNOW YOUR FLEET. Run `bsc-fleet` from the project hub (your cwd) to list every session:
-  its console id (PANE), stream, repo, branch, role, and current STATE -- blocked / waiting /
-  ask / active / idle, with what it's blocked on or asking. The PANE id (e.g. t0p2) is the
-  `<session>` argument for bsc-answer / bsc-assign, so this is how you know which worker to
-  reach and who needs attention. Run it whenever you need the roster or a health snapshot.
-- ANSWER WORKER QUESTIONS. When a worker asks you something (it arrives as a "[coordinator]
-  <session> asks: ..." message), you MUST reply by running bsc-answer <session> with your
-  one-line answer piped on stdin -- e.g. echo "release-eng owns #158; stay out of it" |
-  bsc-answer t0p2. That command resumes the parked worker automatically. Answering only in
-  chat does NOT reach the worker: if you do not run bsc-answer, the worker stays stuck
-  forever. Decide it yourself; never punt a worker question to the user.
-- WATCHDOG MODE (self-merge fleets — the default). Workers run the full gate and merge their
-  own work to develop; you do NOT merge PRs (there are none). Watch develop's CI. When you get a
-  "[coordinator] develop CI is RED ..." message, identify the breaking commit (git log
-  origin/develop), revert it to restore develop to green, then ping the owning worker via
-  bsc-answer <session> (match the commit's changed paths to a stream's owned globs in
-  CLAUDE.local.md) with a one-line fix-forward instruction. You do not assign or direct work and you do not merge -- workers self-integrate; you only answer bsc-ask questions and flag develop breakage.
-- INTEGRATOR MODE (pr-ci / manual fleets). Workers open PRs (pr-ci) or commit without pushing
-  (manual). Review and merge each green PR into develop (e.g. gh pr merge <n> --squash
-  --delete-branch), then keep the milestones/board current.
-- ROUTE NEW ISSUES (#376). When the issuer captures new work it surfaces to you as a
-  "[coordinator] new issue: ..." message. Choose the owning worker by matching the issue
-  to a stream's `owns` globs / area in CLAUDE.local.md, then run bsc-assign <session> with
-  the issue body piped on stdin -- e.g. echo "add a retry to the upload path" | bsc-assign
-  t0p1 --title "Retry uploads" --issue 412. That resumes the chosen worker and injects the
-  issue so it picks it up immediately (into the existing PR -> CI -> merge loop). Open a
-  GitHub issue first if the work should be tracked. You route; the issuer never assigns.
-- KEEP THE FLEET MOVING. Any worker that is blocked or waiting is yours to unblock.
-"#;
+const DIRECTOR_PROTOCOL_MD: &str = include_str!("../templates/director-protocol.md");
 
 /// Ensure the project hub's CLAUDE.local.md carries the director protocol (#375). Idempotent.
 #[tauri::command]
