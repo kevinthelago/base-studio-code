@@ -7,7 +7,10 @@ import { nextFullscreen } from "../lib/consoleFocus";
 import { CLEAR_INPUT_BYTES } from "../lib/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/paneSelect";
 import { SCREEN_HOTKEYS } from "../lib/shortcuts";
-import { matchesBinding, matchesChord, type RebindableId } from "../lib/keybindings";
+import {
+  matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
+  type RebindableId,
+} from "../lib/keybindings";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 export interface ShortcutDef {
@@ -241,9 +244,14 @@ export function useHotkeys() {
         // Navigation hotkeys (switch tab / pane / view by number) must NOT be
         // broadcast as text — skip them here so they fall through to their handlers
         // below and keep working in broadcast mode (e.g. while driving a fleet).
+        const lead = eventToLeader(e);
         const isNavHotkey =
-          (e.ctrlKey && !e.altKey && !e.metaKey && /^Digit[0-9]$/.test(e.code)) ||
-          (e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-5]$/.test(e.code));
+          (/^Digit[0-9]$/.test(e.code) &&
+            (lead === effectiveLeader(bindings, "tab-switch") ||
+             lead === effectiveLeader(bindings, "pane-select"))) ||
+          (/^Digit[1-5]$/.test(e.code) &&
+            (lead === effectiveLeader(bindings, "view-switch") ||
+             lead === effectiveLeader(bindings, "view-switch-all")));
         const bytes = isNavHotkey ? null : keyToTermBytes(e);
         if (bytes !== null) {
           const activeTab = tabs[activeTabIdx];
@@ -277,11 +285,11 @@ export function useHotkeys() {
 
       // ── CTRL = SELECT ─────────────────────────────────────────────────────
 
-      // Ctrl+1–9: switch to workspace tab by index
-      const ctrlTab = e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code.match(/^Digit([1-9])$/);
-      if (ctrlTab) {
+      // Tab switch by index — Ctrl+1–9 by default; the leader is rebindable (#773).
+      const tabDigit = e.code.match(/^Digit([1-9])$/);
+      if (tabDigit && matchesLeader(e, bindings, "tab-switch")) {
         e.preventDefault();
-        const targetIdx = parseInt(ctrlTab[1], 10) - 1;
+        const targetIdx = parseInt(tabDigit[1], 10) - 1;
         if (targetIdx < tabs.length) setActiveTab(targetIdx);
         return;
       }
@@ -292,12 +300,12 @@ export function useHotkeys() {
       //   short pause or when Ctrl/Shift is released (see onKeyUp), so a single
       //   digit still feels instant. On the resolved pane the selection cycles
       //   focus → fullscreen → restore, exactly as a direct press did before.
-      const ctrlShiftDigit = e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code.match(/^Digit(\d)$/);
-      if (ctrlShiftDigit) {
+      const paneDigit = e.code.match(/^Digit(\d)$/);
+      if (paneDigit && matchesLeader(e, bindings, "pane-select")) {
         if (activeScreen !== "console") return;
         e.stopPropagation();
         e.preventDefault();
-        digitBufferRef.current += ctrlShiftDigit[1];
+        digitBufferRef.current += paneDigit[1];
         if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
         commitTimerRef.current = setTimeout(commitDigitBuffer, PANE_SELECT_COMMIT_MS);
         return;
@@ -319,26 +327,32 @@ export function useHotkeys() {
         return;
       }
 
-      // Alt+1–5: switch focused pane's view
-      // Alt+Shift+1–5: switch ALL panes' view
-      const altDigit = e.altKey && !e.ctrlKey && !e.metaKey && e.code.match(/^Digit([1-5])$/);
-      if (altDigit) {
-        if (activeScreen !== "console") return;
-        e.preventDefault();
-        const view = VIEWS_ORDER[parseInt(altDigit[1], 10) - 1];
-        if (e.shiftKey) {
-          setAllPanesView(view);
-        } else if (focusedPaneIdx >= 0) {
-          setPaneView(focusedPaneIdx, view);
+      // Switch pane view by index — Alt+1–5 (focused) / Alt+Shift+1–5 (all) by
+      // default; both leaders are rebindable (#773). The all-panes leader is
+      // checked first so it wins when it's the more specific combo.
+      const viewDigit = e.code.match(/^Digit([1-5])$/);
+      if (viewDigit) {
+        const allMatch = matchesLeader(e, bindings, "view-switch-all");
+        const oneMatch = matchesLeader(e, bindings, "view-switch");
+        if (allMatch || oneMatch) {
+          if (activeScreen !== "console") return;
+          e.preventDefault();
+          const view = VIEWS_ORDER[parseInt(viewDigit[1], 10) - 1];
+          if (allMatch) {
+            setAllPanesView(view);
+          } else if (focusedPaneIdx >= 0) {
+            setPaneView(focusedPaneIdx, view);
+          }
+          return;
         }
-        return;
       }
     }
 
-    // Releasing Ctrl/Shift commits a pending pane-number buffer immediately, so
-    // single-digit selections don't wait out the timeout.
+    // Releasing any modifier commits a pending pane-number buffer immediately, so
+    // single-digit selections don't wait out the timeout — regardless of which
+    // modifier leader pane-select is bound to (#773).
     function onKeyUp(e: KeyboardEvent) {
-      if ((e.key === "Control" || e.key === "Shift") && digitBufferRef.current) {
+      if (["Control", "Shift", "Alt", "Meta"].includes(e.key) && digitBufferRef.current) {
         commitDigitBuffer();
       }
     }
