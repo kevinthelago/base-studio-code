@@ -28,6 +28,7 @@ import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./Proj
 import { publishFleetRoster } from "../../lib/fleetRoster";
 import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
+import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { buildProjectPaneData } from "./projectPaneData";
 import { SectionProgressRail } from "./SectionProgressRail";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
@@ -815,6 +816,16 @@ export function Planning({ visible }: { visible: boolean }) {
           const store = useAppStore.getState();
           for (const st of agentStreams) store.addPlanAgentStream(projIdSnap, st);
           bufRef.current = stripAgentAssigns(bufRef.current);
+        }
+
+        // ── <mcp_assign name="…" /> — scope an MCP server/extension to this project (#174).
+        // The template instructs the planner to emit these; the refactor had unwired the parser
+        // so the assignments were silently dropped (never loaded into the fleet). Restored (#754).
+        const mcpNames = parseMcpAssigns(bufRef.current);
+        if (mcpNames.length > 0) {
+          const store = useAppStore.getState();
+          for (const name of mcpNames) applyMcpAssign(store, name, projIdSnap);
+          bufRef.current = stripMcpAssigns(bufRef.current);
         }
 
         // Cap buffer to prevent unbounded growth while preserving any partial
