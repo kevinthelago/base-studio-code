@@ -42,7 +42,9 @@ function RailNode({
     flex: "0 0 7px", display: "inline-block", position: "relative",
   };
 
-  let style: React.CSSProperties = { ...base };
+  // No initializer: every switch branch below (incl. default) assigns `style`, so the
+  // `{ ...base }` seed was dead (eslint no-useless-assignment). (#741)
+  let style: React.CSSProperties;
   let className = "rail-node";
 
   switch (nodeState) {
