@@ -87,6 +87,9 @@ struct PerfInner {
 
 // ── Public state ──────────────────────────────────────────────────────────────
 
+// PerfInner is intentionally crate-private (opaque Tauri-managed state); the field is pub so
+// command handlers can lock it. (#744 — silence private_interfaces, don't leak the type.)
+#[allow(private_interfaces)]
 pub struct PerfState(pub Mutex<PerfInner>);
 
 impl PerfState {
@@ -233,7 +236,7 @@ fn ingest(g: &mut PerfInner, samples: Vec<PerfSample>) {
     }
 
     g.ingest_count += 1;
-    if g.ingest_count % RETENTION_EVERY == 0 {
+    if g.ingest_count.is_multiple_of(RETENTION_EVERY) {
         apply_retention(g);
     }
 }
@@ -466,7 +469,7 @@ mod tests {
         state.unregister("p1");
         {
             let g = state.0.lock().unwrap();
-            assert!(g.tracked.get("p1").is_none());
+            assert!(!g.tracked.contains_key("p1"));
             assert_eq!(g.tracked.get("p2"), Some(&2222));
         }
     }
