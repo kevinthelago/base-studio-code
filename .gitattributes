@@ -1,0 +1,5 @@
+# App-authored document templates are embedded verbatim via include_str! and
+# written out as session CLAUDE.md / protocol files. Pin them to LF on every
+# platform so the embedded content (and the generated files) are byte-identical
+# regardless of where the build runs (#769).
+src-tauri/templates/*.md text eol=lf
