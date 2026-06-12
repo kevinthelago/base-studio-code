@@ -1,0 +1,45 @@
+name: Planner eval (Tier-1 nightly)
+# Tier-1 planner eval: statistical quality check against golden scenarios.
+# Runs nightly and on manual trigger. NOT a per-PR blocking gate — results
+# land as a dashboard artifact for review (#568).
+
+on:
+  schedule:
+    # 03:00 UTC every night
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      k:
+        description: "Number of eval runs per scenario (default: 3)"
+        required: false
+        default: "3"
+
+jobs:
+  planner-eval:
+    name: Planner eval
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run plan-contract + eval tests (deterministic layer)
+        run: npm run test -- --reporter=verbose --reporter=json --outputFile=planner-eval-report.json src/__tests__/planContract.test.ts src/__tests__/planEval.test.ts
+        env:
+          CI: true
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: planner-eval-report
+          path: planner-eval-report.json
+          retention-days: 30
