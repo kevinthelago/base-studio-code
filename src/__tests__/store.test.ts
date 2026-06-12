@@ -1255,6 +1255,21 @@ describe("agent fleet store", () => {
     expect(useAppStore.getState().focusTarget).toBe("fleet");
   });
 
+  it("fleetStartProject returns a roster row per session — director + workers (#734)", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const roster = useAppStore.getState().fleetStartProject("Roster", fleet, "roster-key");
+    const rows = roster.map((r) => r.split("\t"));
+    // every row: paneId, stream, repo, branch, role
+    expect(rows.every((c) => c.length === 5)).toBe(true);
+    const dir = rows.find((c) => c[4] === "director");
+    expect(dir).toBeTruthy();
+    expect(dir![1]).toBe("director");
+    const workers = rows.filter((c) => c[4] === "worker");
+    expect(workers.length).toBe(fleet.streams.length);
+    expect(workers[0][2]).toContain("/"); // repo "owner/name"
+    expect(workers[0][0]).toMatch(/^t\d+p\d+$/); // a console/pane id
+  });
+
   // #457 — the "two directors" bug: a project rename froze tab.name, so the
   // reuse lookup (by name) missed the existing tab and forked a duplicate
   // "· build" tab with its own director. Matching on the stable projectKey fixes it.
