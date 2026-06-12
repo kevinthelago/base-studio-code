@@ -362,7 +362,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
             <div className="ds">{p.desc}</div>
           </div>
           {isApp
-            ? <><button className="btn ghost" style={{ height: 26, fontSize: 10.5 }}>open {p.surfaceGlyph === "P" ? "planner" : "library"} →</button><button className="btn" style={{ height: 26, fontSize: 10.5 }}>save</button></>
+            ? <><button className="btn ghost" style={{ height: 26, fontSize: 10.5 }}>open {appSessionOpenLabel(p)} →</button><button className="btn" style={{ height: 26, fontSize: 10.5 }}>save</button></>
             : <><button className="btn ghost" style={{ height: 26, fontSize: 10.5 }}>duplicate</button><button className="btn" style={{ height: 26, fontSize: 10.5 }}>save</button></>}
         </div>
         {isApp && (
@@ -501,7 +501,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
           </div>
           <div className="inherit-note" style={{ marginTop: 8 }}>
             <span style={{ color: "var(--info)" }}>ℹ</span>
-            <span>Other agents reach {p.name.split(" ")[0]} through {p.surfaceGlyph === "P" ? "the Plan surface and commands.json" : "pinned Knowledge blocks"} — not by being assigned this role.</span>
+            <span>{appReachNote(p)}</span>
           </div>
         </div>
       ) : (
@@ -658,6 +658,42 @@ function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign, onOpen
   );
 }
 
+// Short type chip for an app-session row, distinct per role. Was a planner-or-else-librarian
+// binary (#236, two roles only) that collapsed every non-planner app role to "librarian" once
+// Blueprint Assistant (#680) + Planning Autopilot (#693) were added (#740). Data-driven now:
+// known roles get a tailored icon+label; any future role derives one from its own fields.
+export function appSessionTag(p: AgentProfile): string {
+  switch (p.id) {
+    case "sys_planner":             return "⌨ planner";
+    case "sys_librarian":           return "⌬ librarian";
+    case "sys_blueprint_assistant": return "✦ blueprint";
+    case "sys_planning_autopilot":  return "◇ autopilot";
+    default:                        return `${p.surfaceGlyph ?? "◆"} ${(p.name.split(" ")[0] ?? "role").toLowerCase()}`;
+  }
+}
+
+/** The surface the app-role's "open … →" button points at — distinct per role (#740). */
+export function appSessionOpenLabel(p: AgentProfile): string {
+  switch (p.id) {
+    case "sys_planner":             return "planner";
+    case "sys_librarian":           return "library";
+    case "sys_blueprint_assistant": return "blueprints";
+    case "sys_planning_autopilot":  return "settings";
+    default:                        return (p.surface ?? "surface").toLowerCase();
+  }
+}
+
+/** How other sessions interact with an app role — role-correct (the one-shot helpers aren't
+ *  reached by other agents at all, so they don't get the planner/librarian reach note) (#740). */
+export function appReachNote(p: AgentProfile): string {
+  const first = p.name.split(" ")[0];
+  switch (p.id) {
+    case "sys_planner":   return `Other agents reach ${first} through the Plan surface and commands.json — not by being assigned this role.`;
+    case "sys_librarian": return `Other agents reach ${first} through pinned Knowledge blocks — not by being assigned this role.`;
+    default:              return `${first} runs on demand as a one-shot helper — it isn't reached by other agents, and can't be assigned to a pane.`;
+  }
+}
+
 function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) => void }) {
   const all = [
     ...GUARANTEED.map((c) => ({ cmd: c, origin: "guaranteed" as const })),
@@ -667,8 +703,11 @@ function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) =>
     <div className="pane-row">
       <div className="pident">
         <span className="pdot running" />
-        <span className="pa">{p.surfaceGlyph === "P" ? "⌨ planner" : "⌬ librarian"}</span>
-        <span className="pstat">{p.session}</span>
+        {/* Title (type) over subtitle (session) so longer names don't clip (#740). */}
+        <div className="psess">
+          <span className="pa">{appSessionTag(p)}</span>
+          <span className="pstat">{p.session}</span>
+        </div>
       </div>
       <div className="prof-select" onClick={() => onOpen(p.id)}>
         <span className="sw" style={{ background: p.color }} />
