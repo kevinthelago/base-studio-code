@@ -3972,19 +3972,8 @@ async fn setup_workspaces(
     // Write a deterministic context signature so Planning.tsx can surface a
     // "context updated · refresh" badge when inputs diverge from this baseline (#175).
     {
-        let mut repos = repo_full_names.clone();
-        repos.sort();
-        let mut kb_ids: Vec<&str> = kb_blocks.iter().map(|b| b.id.as_str()).collect();
-        kb_ids.sort();
-        let mut stages_sorted = enabled_stages.clone();
-        stages_sorted.sort();
-        let sig = format!(
-            "v{}|{}|{}|{}",
-            PLANNING_TEMPLATE_VERSION,
-            repos.join(","),
-            kb_ids.join(","),
-            stages_sorted.join(","),
-        );
+        let kb_ids: Vec<String> = kb_blocks.iter().map(|b| b.id.clone()).collect();
+        let sig = context_signature(&repo_full_names, &kb_ids, &enabled_stages);
         std::fs::write(planning_dir.join("context_signature.txt"), sig)
             .map_err(|e| e.to_string())?;
     }
@@ -3993,6 +3982,25 @@ async fn setup_workspaces(
         kb_dir:       kb_dir.to_string_lossy().into_owned(),
         planning_dir: planning_dir.to_string_lossy().into_owned(),
     })
+}
+
+/// The single source of truth for the planning context signature (#175/#756): the template
+/// version + the sorted inputs (repos, KB block ids, enabled stages). Used by BOTH
+/// `setup_workspaces` (to record the baseline) and `compute_context_signature` (the live
+/// value Planning.tsx compares against) so the two can never disagree on format/version.
+fn context_signature(repos: &[String], kb_ids: &[String], stages: &[String]) -> String {
+    let mut r = repos.to_vec(); r.sort();
+    let mut k = kb_ids.to_vec(); k.sort();
+    let mut s = stages.to_vec(); s.sort();
+    format!("v{}|{}|{}|{}", PLANNING_TEMPLATE_VERSION, r.join(","), k.join(","), s.join(","))
+}
+
+/// Compute the CURRENT context signature for the given live inputs, the same way
+/// `setup_workspaces` recorded the baseline — Planning.tsx compares the two to show the
+/// "context updated · refresh" badge. (#756 — fixes the old v1-vs-v{version} mismatch.)
+#[tauri::command]
+fn compute_context_signature(repo_full_names: Vec<String>, kb_ids: Vec<String>, enabled_stages: Vec<String>) -> String {
+    context_signature(&repo_full_names, &kb_ids, &enabled_stages)
 }
 
 /// Read back the context signature that `setup_workspaces` last wrote (#175).
@@ -5386,6 +5394,7 @@ pub fn run() {
             scan_dead_code,
             read_project_files,
             get_context_signature,
+            compute_context_signature,
             list_documents,
             read_document,
             write_document,
@@ -5968,6 +5977,20 @@ mod tests {
         assert_eq!(&assign[2..], &["assign", "t0p1", "do the retry work", "412", "Retry uploads"]);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn context_signature_is_versioned_sorted_and_order_independent() {
+        // One source of truth (#756): setup_workspaces (baseline) + compute_context_signature
+        // (live) call this, so they can never disagree on format/version.
+        let a = super::context_signature(
+            &["b".into(), "a".into()], &["k2".into(), "k1".into()], &["s2".into(), "s1".into()]);
+        let b = super::context_signature(
+            &["a".into(), "b".into()], &["k1".into(), "k2".into()], &["s1".into(), "s2".into()]);
+        assert_eq!(a, b, "order-independent (inputs are sorted)");
+        assert_eq!(a, format!("v{}|a,b|k1,k2|s1,s2", super::PLANNING_TEMPLATE_VERSION));
+        // carries the real template version, not a hardcoded constant — fixes the v1/v{N} mismatch.
+        assert!(a.starts_with(&format!("v{}|", super::PLANNING_TEMPLATE_VERSION)));
     }
 
     #[test]
