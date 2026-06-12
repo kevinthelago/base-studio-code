@@ -6,8 +6,8 @@ import { adjustFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { nextFullscreen } from "../lib/consoleFocus";
 import { CLEAR_INPUT_BYTES } from "../lib/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/paneSelect";
-import { SCREEN_KEY_MAP } from "../lib/shortcuts";
-import { matchesBinding } from "../lib/keybindings";
+import { SCREEN_HOTKEYS } from "../lib/shortcuts";
+import { matchesBinding, matchesChord, type RebindableId } from "../lib/keybindings";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 export interface ShortcutDef {
@@ -203,21 +203,31 @@ export function useHotkeys() {
         return;
       }
 
-      // ── Ctrl +/- /0: zoom the console terminal font (global, all panes) ─────
+      // ── Zoom the console terminal font (global, all panes) ─────────────────
       // Before the broadcast intercept so it isn't mirrored as a literal key, and
-      // before the inInput guard so it works while typing in a terminal. "+"/"="
-      // zoom in, "-"/"_" out, "0" resets; Shift state and numpad keys are folded
-      // in via e.key. Off the console screen we let the browser have the event.
-      if (e.ctrlKey && !e.metaKey && !e.altKey &&
-          ["+", "=", "-", "_", "0"].includes(e.key)) {
-        if (activeScreen !== "console") return;
-        e.preventDefault();
-        e.stopPropagation();
-        const cur = useAppStore.getState().terminalFontSize;
-        if (e.key === "0")                      setTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE);
-        else if (e.key === "-" || e.key === "_") setTerminalFontSize(adjustFontSize(cur, -1));
-        else                                     setTerminalFontSize(adjustFontSize(cur, +1));
-        return;
+      // before the inInput guard so it works while typing in a terminal. Rebindable
+      // (#773): once a zoom action is overridden it matches its captured chord;
+      // otherwise it keeps the default key-based match so BOTH Ctrl++ and Ctrl+=
+      // zoom in (the "+" key is Shift+= on most layouts), and numpad +/-/0 fold in
+      // via e.key. Off the console screen we let the browser have the event.
+      {
+        const ctrlOnly = e.ctrlKey && !e.metaKey && !e.altKey;
+        // Default zoom matches by e.key; an override matches its captured chord.
+        const zoom = (id: RebindableId, dflt: boolean): boolean =>
+          bindings[id] ? matchesChord(e, bindings[id]) : dflt;
+        const zoomReset = zoom("zoom-reset", ctrlOnly && e.key === "0");
+        const zoomOut   = zoom("zoom-out",   ctrlOnly && (e.key === "-" || e.key === "_"));
+        const zoomIn    = zoom("zoom-in",    ctrlOnly && (e.key === "+" || e.key === "="));
+        if (zoomReset || zoomOut || zoomIn) {
+          if (activeScreen !== "console") return;
+          e.preventDefault();
+          e.stopPropagation();
+          const cur = useAppStore.getState().terminalFontSize;
+          if (zoomReset)     setTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE);
+          else if (zoomOut)  setTerminalFontSize(adjustFontSize(cur, -1));
+          else               setTerminalFontSize(adjustFontSize(cur, +1));
+          return;
+        }
       }
 
       // ── Broadcast intercept ────────────────────────────────────────────────
@@ -256,11 +266,13 @@ export function useHotkeys() {
       // Plain typing in inputs is fine; modifier combos still fire
       if (inInput && !e.ctrlKey && !e.metaKey && !e.altKey) return;
 
-      // F1–F6: navigate screens
-      if (SCREEN_KEY_MAP[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-        e.preventDefault();
-        setScreen(SCREEN_KEY_MAP[e.key]);
-        return;
+      // Screen navigation (F1–F6 by default, rebindable per screen #773).
+      for (const h of SCREEN_HOTKEYS) {
+        if (matchesBinding(e, bindings, `screen-${h.screen}` as RebindableId)) {
+          e.preventDefault();
+          setScreen(h.screen);
+          return;
+        }
       }
 
       // ── CTRL = SELECT ─────────────────────────────────────────────────────
