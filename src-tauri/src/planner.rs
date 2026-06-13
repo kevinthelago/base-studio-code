@@ -23,7 +23,7 @@ pub(crate) struct AutomationData {
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-const PLANNING_TEMPLATE_VERSION: u8 = 7;
+const PLANNING_TEMPLATE_VERSION: u8 = 8;
 
 #[derive(serde::Serialize)]
 pub(crate) struct WorkspacePaths {
