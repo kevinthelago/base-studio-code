@@ -1,3 +1,14 @@
 [workspace]
 members = ["src-tauri", "crates/data"]
 resolver = "2"
+
+# Strip debug info from DEPENDENCIES in dev/test builds (our own crates keep theirs).
+# Bundled DuckDB's `-g` C++ objects + arrow bloat the test-binary link so much that the
+# CI linker OOM'd with SIGBUS (#795). `debug = false` also forwards `DEBUG=false` to
+# libduckdb-sys's cc build, dropping `-g` from its C++ objects. `test` is listed
+# explicitly because its package overrides don't inherit from `dev`.
+[profile.dev.package."*"]
+debug = false
+
+[profile.test.package."*"]
+debug = false
