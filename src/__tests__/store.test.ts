@@ -1728,3 +1728,19 @@ describe("clearPlan (#505)", () => {
     expect(s.planSections["myproj"]).toEqual({ goal: "# Goal" });
   });
 });
+
+describe("deleteLocalProject — resilient to a missing projects scope (#791)", () => {
+  type Skill = ReturnType<typeof useAppStore.getState>["skills"][number];
+
+  it("does not throw when an extension/skill has no `projects` field, and normalizes it to []", () => {
+    // Mimic a def added without `projects`, or persisted data predating the field.
+    useAppStore.setState({
+      extensions: [{ id: "ext_x", name: "X", enabled: true } as unknown as ExtensionDef],
+      skills: [{ id: "sk_x", name: "Y" } as unknown as Skill],
+    });
+
+    expect(() => useAppStore.getState().deleteLocalProject(["some-project"])).not.toThrow();
+    expect(useAppStore.getState().extensions[0].projects).toEqual([]);
+    expect(useAppStore.getState().skills[0].projects).toEqual([]);
+  });
+});
