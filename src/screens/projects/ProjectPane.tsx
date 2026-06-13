@@ -10,6 +10,8 @@ import type {
 } from "./projectPaneData";
 import type { Section } from "./ghStructure";
 import type { FleetPlan } from "./planSections";
+import { featureDefined, type PlanFeature } from "./featureList";
+import { SeamGraphView } from "./SeamGraphView";
 import type { Phase, GatePill, FooterKind } from "./focusedPlan";
 import {
   Stepper as FocusedStepper,
@@ -1105,23 +1107,122 @@ function FocusedSkillsBody({ skills }: { skills?: PaneSkill[] }) {
   );
 }
 
-function FocusedPhaseBody({ phase, data, onLinkRepo }: {
+// The Features board (#…): one card per user-facing capability the planner has written to
+// features.json, with a defined/drafting badge + its owning stream. The "easy way" the user
+// curates and watches each feature take shape.
+function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
+  const list = features ?? [];
+  if (list.length === 0) {
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">◇</span>
+        <span>No features yet — Claude proposes a starter set you curate</span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      {list.map((f) => {
+        const done = featureDefined(f);
+        const acc = f.acceptance?.length ?? 0;
+        return (
+          <div key={f.slug} style={{
+            padding: "8px 10px", borderRadius: 6,
+            background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{f.name}</span>
+              <span style={{ flex: 1 }} />
+              <span style={{
+                fontFamily: "var(--mono)", fontSize: 8.5, padding: "1px 6px", borderRadius: 999,
+                background: done ? "color-mix(in oklch, var(--success), transparent 86%)" : "var(--bg-elev)",
+                border: `1px solid ${done ? "color-mix(in oklch, var(--success), transparent 55%)" : "var(--border-soft)"}`,
+                color: done ? "var(--success)" : "var(--fg-dim)",
+              }}>{done ? "✓ defined" : "drafting"}</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }} title="fleet stream">⑂ {f.stream ?? f.slug}</span>
+            </div>
+            {f.behavior && (
+              <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 3 }}>{f.behavior}</div>
+            )}
+            {acc > 0 && (
+              <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", marginTop: 2, opacity: 0.8 }}>
+                {acc} acceptance {acc === 1 ? "criterion" : "criteria"}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// The Plan review (#…): the Plan stage's autonomous output — the feature seam/dependency graph
+// and the phases — shown for the user to APPROVE (the catch-point for a wrong inferred seam).
+function FocusedPlanBody({ data, onApprovePlan }: {
+  data?: ProjectPaneData;
+  onApprovePlan?: () => void;
+}) {
+  const phases = data?.phaseStructure ?? [];
+  const graph = data?.seamGraph;
+  const hasGraph = (graph?.nodes.length ?? 0) > 0;
+  if (phases.length === 0 && !hasGraph) {
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">◫</span>
+        <span>No plan yet — define the features, then Claude drafts the phases + seams</span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {hasGraph && (
+        <div>
+          <div className="ulabel" style={{ paddingBottom: 6 }}>feature seams</div>
+          <SeamGraphView graph={graph!} />
+        </div>
+      )}
+      {phases.length > 0 && (
+        <div>
+          <div className="ulabel" style={{ paddingBottom: 6 }}>phases</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {phases.map((p) => (
+              <div key={p.id} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "6px 10px", borderRadius: 6,
+                background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+              }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{p.name}</span>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{p.total} issue{p.total === 1 ? "" : "s"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {onApprovePlan && (
+        <button className="nav-btn primary" onClick={onApprovePlan} style={{ alignSelf: "flex-start" }}>
+          ✓ Approve milestones &amp; seams
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FocusedPhaseBody({ phase, data, onLinkRepo, onApprovePlan }: {
   phase: Phase;
   data?: ProjectPaneData;
   onLinkRepo?: (r: string) => void;
+  onApprovePlan?: () => void;
 }) {
   switch (phase.key) {
     case "repos":
       return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} />;
     case "context":
       return <FocusedContextBody context={data?.context} />;
+    case "features":
+      return <FocusedFeaturesBody features={data?.features} />;
     case "structure":
-      return (
-        <div className="empty-state">
-          <span className="empty-icon">◫</span>
-          <span>No structure yet</span>
-        </div>
-      );
+      return <FocusedPlanBody data={data} onApprovePlan={onApprovePlan} />;
     case "permissions":
       return (
         <div className="empty-state">
@@ -1393,6 +1494,7 @@ export function ProjectPane({
   // focused mode: one-phase sequenced rail (#652)
   focus,
   onLinkRepo,
+  onApprovePlan,
 }: {
   data?: ProjectPaneData;
   projectName?: string;
@@ -1421,6 +1523,8 @@ export function ProjectPane({
   };
   /** Callback to link a repository from the focused repos body (#677). */
   onLinkRepo?: (repo: string) => void;
+  /** Approve the Plan stage's drafted phases + seams (#…) — confirms the roadmap. */
+  onApprovePlan?: () => void;
 }) {
   // Determine whether to show the staged view or the legacy flat view.
   // Staged view: when sections prop is provided (real planning session).
@@ -1478,7 +1582,7 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} onLinkRepo={onLinkRepo} />
+          <FocusedPhaseBody phase={selected} data={data} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} />
         </div>
         <FocusedPhaseFooter phase={selected} action={focus.footer} onBack={focus.onBack} onPrimary={focus.onPrimary} />
       </div>

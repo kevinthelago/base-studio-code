@@ -5,7 +5,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../../store";
-import { projectRepoCwd, sanitizeProjectKey } from "../../lib/projectPaths";
+import { Dialog } from "../../components/Dialog";
+import { sanitizeProjectKey } from "../../lib/projectPaths";
 import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
@@ -19,18 +20,27 @@ import {
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, titleForKey, groupSections,
-  parseFleetFile,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
+  parseFleetFile, canonicalSectionKey,
 } from "./planSections";
+import { parseFeaturesFile, featuresSummary, featureDefined } from "./featureList";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
-import { parseIssuesFile, renderIssueBody, resolvePhaseIndex } from "./planIssues";
+import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
 import { publishFleetRoster } from "../../lib/fleetRoster";
 import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { buildProjectPaneData } from "./projectPaneData";
-import { SectionProgressRail } from "./SectionProgressRail";
+// Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
+// (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
+// not a hardcoded stage list.
+import { derivePlanStageState, planStateToSignals } from "./planStageDerive";
+import { isGateBlocked } from "./pipelineRuntime";
+import { mkSection, planSectionsComplete, type BlueprintSection } from "./blueprints";
+import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
+import { featureSectionsToIssues } from "./planFeatures";
+import { nextInjection, isStepDelivered, flattenPrompt } from "./plannerConductor";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -71,145 +81,24 @@ function stripAnsi(s: string): string {
   );
 }
 
-
-interface PlanningRepoStripProps {
-  projectId: string;
-  repos: string[];
+// Read the visible terminal rows (where Claude's input bar lives) and report whether they already
+// contain `snippet` — so a re-send doesn't duplicate a prompt that was pasted but never submitted.
+// Heuristic: a normalized substring match over the viewport. Best-effort; never throws.
+function terminalShows(term: Terminal | null, snippet: string): boolean {
+  if (!term || !snippet.trim()) return false;
+  try {
+    const buf = term.buffer.active;
+    let text = "";
+    for (let i = 0; i < term.rows; i++) {
+      text += " " + (buf.getLine(buf.baseY + i)?.translateToString(true) ?? "");
+    }
+    const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+    return norm(text).includes(norm(snippet));
+  } catch {
+    return false;
+  }
 }
 
-function PlanningRepoStrip({ projectId, repos }: PlanningRepoStripProps) {
-  const { projectLocalRepos, bscBaseDir } = useAppStore();
-  const clonedNames = projectLocalRepos[projectId] ?? [];
-  const [cloning, setCloning]     = useState<Set<string>>(new Set());
-  const [cloneErrors, setCloneErrors] = useState<Record<string, string>>({});
-  const [expanded, setExpanded]   = useState(false);
-  // Ref guards against starting the same clone twice when `repos` grows.
-  const cloningRef = useRef<Set<string>>(new Set());
-  const multi = repos.length > 1;
-
-  // Auto-clone every repo into the app-managed directory as soon as it appears.
-  useEffect(() => {
-    if (!projectId) return;
-    const currentCloned = new Set(useAppStore.getState().projectLocalRepos[projectId] ?? []);
-    const unresolved = repos.filter(r => !currentCloned.has(r) && !cloningRef.current.has(r));
-    for (const fullName of unresolved) {
-      cloningRef.current.add(fullName);
-      setCloning(s => new Set([...s, fullName]));
-      invoke<string>("clone_repo", { project: projectId, fullName })
-        .then(() => {
-          useAppStore.getState().addProjectRepo(projectId, fullName);
-        })
-        .catch(e => setCloneErrors(prev => ({ ...prev, [fullName]: String(e) })))
-        .finally(() => {
-          cloningRef.current.delete(fullName);
-          setCloning(s => { const n = new Set(s); n.delete(fullName); return n; });
-        });
-    }
-  // repos in deps so new repo_link entries trigger a clone pass.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, repos]);
-
-  async function handleClone(fullName: string) {
-    setCloning(s => new Set([...s, fullName]));
-    setCloneErrors(e => { const n = { ...e }; delete n[fullName]; return n; });
-    try {
-      await invoke<string>("clone_repo", { project: projectId, fullName });
-      useAppStore.getState().addProjectRepo(projectId, fullName);
-    } catch (e) {
-      setCloneErrors(prev => ({ ...prev, [fullName]: String(e) }));
-    } finally {
-      setCloning(s => { const n = new Set(s); n.delete(fullName); return n; });
-    }
-  }
-
-  if (repos.length === 0) return null;
-
-  const resolvedCount = repos.filter(r => clonedNames.includes(r)).length;
-  const failedRepos   = repos.filter(r => !!cloneErrors[r] && !cloning.has(r));
-
-  function RepoRow({ fullName }: { fullName: string }) {
-    const isCloned  = clonedNames.includes(fullName);
-    const isCloning = cloning.has(fullName);
-    const err       = cloneErrors[fullName];
-    const localPath = projectRepoCwd(bscBaseDir, projectId, fullName);
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <span style={{ color: "var(--fg-muted)" }}>{fullName}</span>
-        {isCloned ? (
-          <span title={localPath} style={{ color: "var(--success)", fontSize: 10 }}>
-            ● {fullName.split("/")[1]}
-          </span>
-        ) : isCloning ? (
-          <span style={{ color: "var(--accent)" }}>cloning…</span>
-        ) : (
-          <span
-            onClick={() => handleClone(fullName)}
-            style={{
-              padding: "1px 6px", borderRadius: 3,
-              background: "var(--bg-elev)", border: "1px solid var(--border)",
-              color: err ? "var(--danger)" : "var(--fg-muted)",
-              cursor: "pointer", fontSize: 10,
-            }}
-          >{err ? "retry clone" : "clone →"}</span>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ padding: "6px 24px 0", fontFamily: "var(--mono)", fontSize: 10.5 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ color: "var(--fg-dim)" }}>repos</span>
-
-        {multi ? (
-          <button
-            onClick={() => setExpanded(e => !e)}
-            style={{
-              background: "none", border: "none", padding: 0, cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 6,
-              fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
-            }}
-          >
-            <span style={{
-              display: "inline-block", fontSize: 8, color: "var(--fg-dim)",
-              transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
-              transition: "transform 0.15s",
-            }}>▼</span>
-            <span>
-              {repos.length} repositories
-              {resolvedCount > 0 && <span style={{ color: "var(--success)" }}> · {resolvedCount} cloned</span>}
-              {cloning.size > 0 && <span style={{ color: "var(--accent)" }}> · cloning…</span>}
-            </span>
-          </button>
-        ) : (
-          <RepoRow fullName={repos[0]} />
-        )}
-
-        {failedRepos.length > 0 && (
-          <span
-            onClick={() => failedRepos.forEach(r => handleClone(r))}
-            style={{
-              padding: "1px 8px", borderRadius: 3,
-              background: "var(--bg-elev)", border: "1px solid var(--border)",
-              color: "var(--danger)", cursor: "pointer", fontSize: 10,
-              fontFamily: "var(--mono)",
-            }}
-          >retry failed →</span>
-        )}
-      </div>
-
-      {multi && expanded && (
-        <div style={{
-          marginTop: 6, paddingLeft: 16,
-          display: "flex", flexDirection: "column", gap: 5,
-          borderLeft: "2px solid var(--border-soft)",
-        }}>
-          {repos.map(fullName => <RepoRow key={fullName} fullName={fullName} />)}
-        </div>
-      )}
-    </div>
-  );
-}
 // ── GitHub structure card ─────────────────────────────────────────────────────
 //
 // A live map of the GitHub objects this plan produces. Each node mirrors a real
@@ -370,6 +259,8 @@ export function Planning({ visible }: { visible: boolean }) {
     planFleet,
     projectKeyAlias,
     pinnedContext,
+    blueprints, activeBlueprintId, planStageConfig,
+    uiScreens, uiApproved, planAutomations, stagePipelineRuns,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
     togglePinnedContext,
     addProjectRepo, fleetStartProject,
@@ -398,11 +289,13 @@ export function Planning({ visible }: { visible: boolean }) {
 
   // Prefer activeProjectRepos (populated from board items) but fall back to
   // any previously-cloned repos for this project if the board hasn't loaded yet.
-  const effectiveRepos: string[] = activeProjectId
+  // Memoized so the headless auto-clone effect below doesn't see a fresh array ref
+  // (and re-run) on every render.
+  const effectiveRepos: string[] = useMemo(() => activeProjectId
     ? (activeProjectRepos.length > 0
         ? activeProjectRepos
         : (projectLocalRepos[activeProjectId] ?? []))
-    : [];
+    : [], [activeProjectId, activeProjectRepos, projectLocalRepos]);
 
   // Full_names that are both linked to this project and known to be cloned.
   const linkedRepos: string[] =
@@ -414,6 +307,26 @@ export function Planning({ visible }: { visible: boolean }) {
   const [repoLinkFullNames, setRepoLinkFullNames] = useState<string[]>([]);
 
   const isExisting = !!activeProjectId;
+
+  // Eager auto-clone (#508): the visible repo strip was removed from the header, but its
+  // clone engine lives on headlessly here. Each linked / <repo_link>-surfaced repo is cloned
+  // into the project dir as soon as it appears, populating projectLocalRepos → linkedRepos →
+  // setup_workspaces, so the planner can read repo contents during planning (triage launch
+  // re-clones fail-soft, but that's too late for in-session context). Idempotent on the Rust side.
+  const autoCloneRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    const repos = [...new Set([...effectiveRepos, ...repoLinkFullNames])];
+    const cloned = new Set(useAppStore.getState().projectLocalRepos[effectiveProjectId] ?? []);
+    for (const fullName of repos) {
+      if (cloned.has(fullName) || autoCloneRef.current.has(fullName)) continue;
+      autoCloneRef.current.add(fullName);
+      invoke<string>("clone_repo", { project: effectiveProjectId, fullName })
+        .then(() => useAppStore.getState().addProjectRepo(effectiveProjectId, fullName))
+        .catch(e => console.error(`clone ${fullName} failed:`, e))
+        .finally(() => autoCloneRef.current.delete(fullName));
+    }
+  }, [effectiveProjectId, effectiveRepos, repoLinkFullNames]);
 
   // Canonical set of repos for publish/sync — union of project-linked repos,
   // Claude-surfaced repo_link tags, and the store's planningRepo fallback.
@@ -442,7 +355,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const sections = useMemo<Section[]>(() => {
     const keys = new Set<string>(ANCHOR_KEYS);
     for (const k of Object.keys(savedSections)) {
-      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY) keys.add(k);
+      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY) keys.add(k);
     }
     const { project, repos } = groupSections([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
@@ -453,10 +366,9 @@ export function Planning({ visible }: { visible: boolean }) {
     });
   }, [savedSections, confirmedSet]);
 
-  // Tier grouping for rendering, plus a key→section lookup.
+  // Key→section lookup (the section progress rail that also needed the tier grouping was
+  // removed in #776/#778 — the focused pane's blueprint-driven rail replaces it).
   const sectionByKey = useMemo(() => new Map(sections.map(s => [s.k, s])), [sections]);
-  const { project: projectKeys, repos: repoGroups } =
-    useMemo(() => groupSections(sections.map(s => s.k)), [sections]);
   // Sync the planner's commands.json (the reliable channel — surfaced by the file
   // poll like plan sections, so it can't be lost in the PTY stream) into the
   // per-project/repo command store. Additive: file commands merge in; manual
@@ -494,6 +406,12 @@ export function Planning({ visible }: { visible: boolean }) {
   // Real plan data for the ProjectPane (#: wire-in). Maps the fleet, agent
   // profiles, decomposed issues, phases, repos, and sections into the pane's
   // render shapes; the pane falls back to its sample data when this is empty.
+  // Features defined in the Features stage (#…) — the planner writes features.json (one entry per
+  // user-facing capability / stream); the board renders them and the gate needs all fully defined.
+  const planFeatures = useMemo(
+    () => parseFeaturesFile(savedSections[FEATURES_KEY] ?? ""),
+    [savedSections],
+  );
   const paneData = useMemo(
     () => buildProjectPaneData({
       fleet:    planFleet[effectiveProjectId],
@@ -502,11 +420,80 @@ export function Planning({ visible }: { visible: boolean }) {
       phases:   parsePhases(sections.find(sec => sec.k === "phases")?.content ?? ""),
       repos:    publishRepos,
       sections,
+      features: planFeatures,
       pinned:   pinnedContext[effectiveProjectId],
     }),
-    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext],
+    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures],
   );
+
+  // ── Blueprint-driven plan model (#652) — restored (#776) ────────────────────
+  // The authoritative plan sections come from the active BLUEPRINT; each carries its own
+  // declarative gate over a flat signal bag — NOT a hardcoded stage list. The focused
+  // progress rail, current-phase, and advance/publish footer all read these. #668 deleted
+  // this whole substrate; the store data (blueprints, ui, automations, pipelines) survived.
+  const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
+  const requiresUi = stageConfig.enabled.ui;
+  const uiCounts = useMemo(() => {
+    if (!requiresUi) return { approved: 0, total: 0 };
+    const declared = uiScreens[effectiveProjectId] ?? [];
+    const approvedSet = new Set(uiApproved[effectiveProjectId] ?? []);
+    return { approved: declared.filter((s) => approvedSet.has(s)).length, total: declared.length };
+  }, [requiresUi, uiScreens, uiApproved, effectiveProjectId]);
+  // Per-repo feature plans (#177) fold into the issue count the gates read.
+  const featureIssues = useMemo(
+    () => featureSectionsToIssues(sections, publishRepos),
+    [sections, publishRepos],
+  );
+  const featureState = useMemo(() => featuresSummary(planFeatures), [planFeatures]);
+  // The live snapshot the declarative section gates read.
+  const stageState = useMemo(() => {
+    const streams = planFleet[effectiveProjectId]?.streams ?? [];
+    const issueCount =
+      parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "").length + featureIssues.length;
+    return derivePlanStageState({
+      sections: sections.map(s => ({ k: s.k, state: s.state })),
+      repoCount: publishRepos.length,
+      issueCount,
+      fleetStreams: streams.length,
+      fleetProfilesComplete: streams.length > 0 && streams.every(st => agentProfiles.some(p => p.id === st.id)),
+      automationsAck: (planAutomations[effectiveProjectId]?.length ?? 0) > 0,
+      skillsAck: false,
+      requiresUi,
+      ui: uiCounts,
+      features: featureState,
+    });
+  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState]);
+  // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
+  const planSecs = useMemo<BlueprintSection[]>(() => {
+    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    if (bp) return bp.sections;
+    return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
+  }, [blueprints, activeBlueprintId, stageConfig]);
+  const signals = useMemo(() => planStateToSignals(stageState), [stageState]);
+  // Sections blocked by an unpassed gate pipeline (#532), straight from the blueprint.
+  const blockedStages = useMemo(() => {
+    const runs = stagePipelineRuns[effectiveProjectId] ?? {};
+    const set = new Set<string>();
+    for (const sec of planSecs) if (isGateBlocked(sec.pipelines, runs)) set.add(sec.key);
+    return set;
+  }, [planSecs, stagePipelineRuns, effectiveProjectId]);
+
+  // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
+  // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user
+  // pick; reset on project/blueprint switch.
+  const phases = useMemo(() => phasesFrom(planSecs, signals), [planSecs, signals]);
+  const focusActiveIdx = useMemo(() => activeIndex(phases), [phases]);
+  const [focusSel, setFocusSel] = useState<number | null>(null);
+  useEffect(() => { setFocusSel(null); }, [effectiveProjectId, activeBlueprintId]);
+  const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, phases.length);
+  const focusGateReady = useMemo(() => currentGateReady(planSecs, signals), [planSecs, signals]);
+  const planComplete = useMemo(() => planSectionsComplete(planSecs, signals), [planSecs, signals]);
+  const focusFooter = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady);
+  const focusSelPhase = phases[focusSelectedIdx];
+  const focusPill = focusSelPhase ? gatePill(focusSelPhase, blockedStages.has(focusSelPhase.key)) : "wait";
+
   const [restarting, setRestarting] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false); // clear-plan confirmation modal (#…)
 
   const [docsSync, setDocsSync] = useState<SyncState>("idle");
   const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
@@ -539,7 +526,6 @@ export function Planning({ visible }: { visible: boolean }) {
   const initSentRef    = useRef(false);
   const initSendTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const confirmedCount     = sections.filter(s => s.state === "confirmed").length;
 
   // ── Planning autopilot (#746) ───────────────────────────────────────────────
   // Driven by the Settings "Automate planning with Claude" toggle. Answers the planner's own
@@ -637,6 +623,110 @@ export function Planning({ visible }: { visible: boolean }) {
   };
   const autopilot = usePlanAutopilot(autopilotDeps, { enabled: autoPlanWithClaude && !!claudeApiKey });
 
+  // ── Planning conductor (#…): drive the planner step by step ─────────────────────────────
+  // Instead of front-loading the whole spec, inject ONE prompt at a time — the active stage's
+  // prompt (orientation), then each substep in turn — as the plan progresses. `nextInjection`
+  // (pure) decides what's next from the blueprint sections + confirmed artifacts; this effect
+  // owns the timing: send only when the planner's output has settled (so the text lands at the
+  // prompt, not mid-stream), and once-per-step via `injectedRef`. Resets on project/blueprint
+  // switch and on restart. NOTE: until the CLAUDE.md is slimmed to a bootstrap (a later slice),
+  // these injections supplement the front-loaded spec rather than replace it.
+  // What the conductor treats as "done" per substep: a confirmed discovery section, the
+  // features "propose" step once the list exists, and the per-feature loop items (each done when
+  // the feature is fully defined). Drives loop-by-loop advancement through the Features stage.
+  const conductorState = useMemo(() => {
+    const doneSubsteps = new Set<string>(confirmedSet);
+    if (planFeatures.length > 0) doneSubsteps.add("propose");
+    return {
+      doneSubsteps,
+      loops: { features: planFeatures.map(f => ({ id: f.slug, label: f.name, done: featureDefined(f) })) },
+    };
+  }, [confirmedSet, planFeatures]);
+  // ── Resilient delivery (#…) ─────────────────────────────────────────────────
+  // A step isn't "done" the moment we send it — sends get lost (the user types over it, the
+  // planner wanders). So we track DELIVERY: a step stays pending until the planner acts on it
+  // (its artifact appears, or — for steps with no measurable artifact — output simply grew in
+  // response). If a step isn't delivered within the idle window we re-inject ONCE silently; if it
+  // still doesn't land we stop and surface a "re-send" nudge. A pause toggle + manual re-send
+  // cover anything auto-recovery can't.
+  const deliveredRef = useRef<Set<string>>(new Set());
+  const pendingRef = useRef<{ id: string; prompt: string; atLen: number; quiet: number; retried: boolean } | null>(null);
+  const [nudgeStep, setNudgeStep] = useState<string | null>(null);
+  const [conductorPaused, setConductorPaused] = useState(false);
+  const resetConductor = useCallback(() => {
+    deliveredRef.current = new Set();
+    pendingRef.current = null;
+    setNudgeStep(null);
+  }, []);
+  useEffect(() => { resetConductor(); }, [effectiveProjectId, activeBlueprintId, resetConductor]);
+  // Re-send the current step (the nudge action + manual override): drop it from delivered + clear
+  // pending/nudge so the next tick re-injects it.
+  const resendCurrentStep = useCallback(() => {
+    const id = pendingRef.current?.id ?? nudgeStep;
+    if (id) deliveredRef.current.delete(id);
+    pendingRef.current = null;
+    setNudgeStep(null);
+  }, [nudgeStep]);
+
+  // Send a step's prompt to the planner: flatten to ONE line so the trailing Enter actually
+  // submits it (a multi-line paste just sits in the input). If it's already in the input bar
+  // (pasted but unsent), submit it instead of pasting a duplicate.
+  const sendPrompt = useCallback((prompt: string) => {
+    const line = flattenPrompt(prompt);
+    if (terminalShows(termRef.current, line.slice(0, 40))) {
+      invoke("pty_write", { paneId, data: "\r" }).catch(console.error); // already there → just submit
+    } else {
+      invoke("pty_write", { paneId, data: line + "\r" }).catch(console.error);
+    }
+  }, [paneId]);
+
+  const conductorTickRef = useRef({ len: 0, stable: 0 });
+  useEffect(() => {
+    if (!visible || conductorPaused) return;
+    const tick = () => {
+      const len = autopilotTxRef.current.length;
+      // Hold until the session is live (Claude has produced output) and — for fresh sessions —
+      // the pitch has been sent, so the first inject can't race the kickoff.
+      if (len === 0 || (!isExisting && !initSentRef.current)) return;
+
+      // A step is in flight — has it landed, or is it lost?
+      if (pendingRef.current) {
+        const p = pendingRef.current;
+        const delivered = isStepDelivered(p.id, {
+          outputGrew: len > p.atLen,
+          sectionKeys: new Set(Object.entries(savedSections).filter(([, v]) => !!v?.trim()).map(([k]) => k)),
+          startedFeatures: new Set(planFeatures.filter(f => f.behavior || (f.acceptance?.length ?? 0) > 0).map(f => f.slug)),
+          featuresExist: planFeatures.length > 0,
+        });
+        if (delivered) { deliveredRef.current.add(p.id); pendingRef.current = null; return; }
+        p.quiet += 1;
+        if (p.quiet < 2) return;             // give it a moment before deciding it's lost
+        if (!p.retried) {                    // one silent retry (re-submits if it's still sitting unsent)
+          p.retried = true; p.quiet = 0; p.atLen = len;
+          sendPrompt(p.prompt);
+        } else {                             // still lost → hand off to the user
+          setNudgeStep(p.id); pendingRef.current = null;
+        }
+        return;
+      }
+
+      // Nothing in flight — what's next?
+      const next = nextInjection(planSecs[focusActiveIdx], deliveredRef.current, conductorState);
+      if (!next) { conductorTickRef.current.stable = 0; conductorTickRef.current.len = len; return; }
+      if (nudgeStep === next.id) return;     // blocked on a failed step, awaiting the user's re-send
+      // Idle gate: inject only after ~2 quiet ticks so we land at the prompt, not mid-stream.
+      const grew = len > conductorTickRef.current.len;
+      conductorTickRef.current.len = len;
+      conductorTickRef.current.stable = grew ? 0 : conductorTickRef.current.stable + 1;
+      if (conductorTickRef.current.stable < 2) return;
+      conductorTickRef.current.stable = 0;
+      pendingRef.current = { id: next.id, prompt: next.prompt, atLen: len, quiet: 0, retried: false };
+      sendPrompt(next.prompt);
+    };
+    const id = setInterval(tick, 1500);
+    return () => clearInterval(id);
+  }, [visible, conductorPaused, planSecs, focusActiveIdx, conductorState, paneId, isExisting, nudgeStep, savedSections, planFeatures, sendPrompt]);
+
   // Mount xterm.js and spawn the planning PTY (once per Planning screen lifecycle).
   // pty_kill is called on unmount so navigating away ends the session cleanly.
   useEffect(() => {
@@ -705,7 +795,7 @@ export function Planning({ visible }: { visible: boolean }) {
         );
         let foundPlan = false;
         while ((m = planRe.exec(bufRef.current)) !== null) {
-          const key     = m[1];
+          const key     = canonicalSectionKey(m[1]);
           const content = m[2].trim();
           // Any \w+ key is a valid section (dynamic planner). Persist to the
           // store unless the user already confirmed it — confirmed sections are
@@ -745,7 +835,7 @@ export function Planning({ visible }: { visible: boolean }) {
           setRepoLinkFullNames(prev =>
             prev.includes(fullName) ? prev : [...prev, fullName]
           );
-          // PlanningRepoStrip auto-clones when repoLinkFullNames grows — no action needed here.
+          // The headless auto-clone effect clones repos as repoLinkFullNames grows — no action needed here.
           foundLink = true;
         }
         if (foundLink) {
@@ -1009,7 +1099,10 @@ export function Planning({ visible }: { visible: boolean }) {
         const saved = store.planSections[effectiveProjectId] ?? {};
         const confirmed = new Set(store.planConfirmedSections[effectiveProjectId] ?? []);
 
-        for (const [key, content] of entries) {
+        for (const [rawKey, content] of entries) {
+          // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
+          // still satisfies the gate (#…).
+          const key = canonicalSectionKey(rawKey);
           if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
             store.setPlanSection(effectiveProjectId, key, content);
           }
@@ -1061,6 +1154,8 @@ export function Planning({ visible }: { visible: boolean }) {
     if (!term || restarting) return;
     setRestarting(true);
     bufRef.current = "";
+    resetConductor();                        // re-drive the conductor from the top on a fresh session
+    conductorTickRef.current = { len: 0, stable: 0 };
     term.clear();
     await invoke("pty_kill", { paneId: paneId }).catch(console.error);
     const store = useAppStore.getState();
@@ -1101,11 +1196,9 @@ export function Planning({ visible }: { visible: boolean }) {
   // Clear/reset the plan (#664/#B) — delete the on-disk plan files FIRST (awaited, so the 2s
   // file poll can't re-read + re-populate the store), wipe the store, unlink the repos, then
   // restart the planner with a blank slate. (Restored: the refactor dropped this flow.)
-  async function clearPlanFlow() {
-    if (!window.confirm(
-      "This wipes the entire plan for this project — sections, stage config, the fleet, and the " +
-      "on-disk plan files — then restarts the planner with a blank slate. This can't be undone. Continue?",
-    )) return;
+  // Confirmation is the Dialog below (#…), not a native window.confirm.
+  async function doClearPlan() {
+    setShowClearConfirm(false);
     const store = useAppStore.getState();
     await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
     store.clearPlan(effectiveProjectId);
@@ -1315,6 +1408,10 @@ export function Planning({ visible }: { visible: boolean }) {
             projectId = pv.id;
             // Reflect in the store so the projects list + future syncs treat it as existing.
             useAppStore.getState().setActiveProjectMeta(pv.id, projectTitle, repos[0] ?? "", pv.number, repos);
+            // Stable-key bridge (#…): map the new board's node id → this project's folder key, so
+            // opening it from the board later resolves to the SAME on-disk hub instead of keying
+            // fresh state under the node id (the split that scattered repos/plan across two keys).
+            useAppStore.getState().setProjectKeyAlias(pv.id, effectiveProjectId);
             upd(id, { status: "created", detail: `#${pv.number}`, url: pv.url });
           }
           // Link every repo to the board (idempotent server-side).
@@ -1425,6 +1522,8 @@ export function Planning({ visible }: { visible: boolean }) {
           for (const name of [...new Set(mine.flatMap(iss => iss.labels))]) {
             await post(`repos/${fullName}/labels`, { name, color: "0e8a16" }).catch(() => {});
           }
+          // ref → created GitHub node id, so feature parents + their sub-issues can be linked.
+          const nodeByRef: Record<string, string> = {};
           for (const iss of mine) {
             const id = `issue:${fullName}:${iss.ref}`;
             if (existingTitles.includes(iss.title)) { upd(id, { status: "exists", detail: "already exists" }); continue; }
@@ -1436,6 +1535,7 @@ export function Planning({ visible }: { visible: boolean }) {
               if (msNum !== undefined) body.milestone = msNum;
               body.labels = withProvenanceLabel(iss.labels); // provenance stamp (#738)
               const issue = await post<{ number: number; node_id: string; html_url: string }>(`repos/${fullName}/issues`, body);
+              if (issue.node_id) nodeByRef[iss.ref] = issue.node_id;
               if (projectId && issue.node_id) {
                 await gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
               }
@@ -1443,6 +1543,15 @@ export function Planning({ visible }: { visible: boolean }) {
             } catch (e) {
               upd(id, { status: "error", detail: String(e) });
             }
+          }
+          // Nest each feature's sub-issues under their parent (#…) via GraphQL addSubIssue.
+          // Best-effort + idempotent: only links pairs created in THIS run; an already-linked
+          // pair (or an API that doesn't support sub-issues) errors harmlessly.
+          for (const { parent, child } of subIssueLinks(mine, nodeByRef)) {
+            await gql(
+              `mutation($p:ID!,$c:ID!){ addSubIssue(input:{issueId:$p,subIssueId:$c}){ issue { id } } }`,
+              { p: parent, c: child },
+            ).catch(() => {});
           }
           continue;
         }
@@ -1520,7 +1629,7 @@ _Auto-generated by base-studio-code planner._`,
   return (
     <>
       {/* Header */}
-      <div style={{ padding: "14px 24px 0", display: "flex", alignItems: "flex-start", gap: 14 }}>
+      <div style={{ padding: "14px 24px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <button
@@ -1561,14 +1670,11 @@ _Auto-generated by base-studio-code planner._`,
               <span className="tag" title={publishRepos.join("\n")}>{publishRepos.length} repos</span>
             )}
           </div>
-          <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
-            claude cli · interactive pty · {confirmedCount}/{sections.length} sections confirmed
-            {autopilot.running && (
-              <span style={{ color: "var(--accent)", marginLeft: 8 }}>
-                ⚙ auto-planning · {autopilotProgressPct}%
-              </span>
-            )}
-          </div>
+          {autopilot.running && (
+            <div style={{ color: "var(--accent)", fontSize: 12, marginTop: 4 }}>
+              ⚙ auto-planning · {autopilotProgressPct}%
+            </div>
+          )}
         </div>
         {contextStale && (
           <button
@@ -1582,7 +1688,7 @@ _Auto-generated by base-studio-code planner._`,
         <button className="btn ghost" onClick={() => setProjectsView("list")}>
           save & exit
         </button>
-        <button className="btn ghost danger" onClick={clearPlanFlow} title="Wipe this project's plan and restart the planner (#664)">
+        <button className="btn ghost danger" onClick={() => setShowClearConfirm(true)} title="Wipe this project's plan and restart the planner (#664)">
           clear plan
         </button>
         {(() => {
@@ -1612,27 +1718,6 @@ _Auto-generated by base-studio-code planner._`,
         </div>
       )}
 
-      {/* Repo strip — always visible so state is clear at a glance */}
-      {(() => {
-        const stripRepos = [...new Set([...effectiveRepos, ...repoLinkFullNames])];
-        if (stripRepos.length > 0) {
-          return <PlanningRepoStrip projectId={effectiveProjectId} repos={stripRepos} />;
-        }
-        return (
-          <div style={{ padding: "6px 24px 0", display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10.5 }}>
-            <span style={{ color: "var(--fg-dim)" }}>repos</span>
-            <span style={{ color: "var(--fg-dim)", opacity: 0.55 }}>none linked — ask Claude to create or link repositories</span>
-          </div>
-        );
-      })()}
-
-      {/* Section progress rail v4 (#668) — node-based with confirmed/now/banked/pending states. */}
-      <SectionProgressRail
-        projectKeys={projectKeys}
-        repoGroups={repoGroups}
-        sectionByKey={sectionByKey}
-      />
-
       {/* Split panel */}
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", borderTop: "1px solid var(--border-soft)" }}>
         {/* Claude CLI terminal */}
@@ -1652,6 +1737,25 @@ _Auto-generated by base-studio-code planner._`,
               </code>
               {" "}to populate sections →
             </span>
+            <button
+              onClick={resendCurrentStep}
+              title={nudgeStep ? "A step didn't land — re-send it to the planner" : "Re-send the current step's prompt to the planner"}
+              style={{
+                padding: "2px 8px", borderRadius: 3, cursor: "pointer",
+                background: nudgeStep ? "color-mix(in oklch, var(--accent), transparent 86%)" : "transparent",
+                border: `1px solid ${nudgeStep ? "var(--accent)" : "var(--border-soft)"}`,
+                color: nudgeStep ? "var(--accent)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
+              }}
+            >{nudgeStep ? "↻ re-send (lost)" : "↻ re-send step"}</button>
+            <button
+              onClick={() => setConductorPaused(p => !p)}
+              title={conductorPaused ? "Resume step-by-step guidance" : "Pause step-by-step guidance to free-form"}
+              style={{
+                padding: "2px 8px", borderRadius: 3, cursor: "pointer",
+                background: "transparent", border: "1px solid var(--border-soft)",
+                color: conductorPaused ? "var(--accent)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
+              }}
+            >{conductorPaused ? "▶ resume" : "⏸ conductor"}</button>
             <button
               onClick={handleRestart}
               disabled={restarting}
@@ -1701,6 +1805,21 @@ _Auto-generated by base-studio-code planner._`,
               onSyncDocs={githubToken && publishRepos.length > 0 ? handleSyncDocs : undefined}
               onSyncLabels={githubToken && publishRepos.length > 0 ? handleSyncLabels : undefined}
               syncState={{ structure: "idle", docs: docsSync, labels: labelsSync }}
+              onLinkRepo={(repo) => addProjectRepo(effectiveProjectId, repo)}
+              onApprovePlan={() => confirmPlanSection(effectiveProjectId, "phases")}
+              focus={{
+                phases,
+                selectedIdx: focusSelectedIdx,
+                activeIdx: focusActiveIdx,
+                onSelect: (i) => setFocusSel(i),
+                pill: focusPill,
+                footer: focusFooter,
+                onBack: () => setFocusSel(clampIndex(focusSelectedIdx - 1, phases.length)),
+                onPrimary: () => {
+                  if (focusFooter.kind === "publish") void handlePublish();
+                  else setFocusSel(null); // re-follow the live phase
+                },
+              }}
             />
           ) : (
             <>
@@ -1740,6 +1859,27 @@ _Auto-generated by base-studio-code planner._`,
           )}
         </aside>
       </div>
+
+      {showClearConfirm && (
+        <Dialog
+          title="Clear this plan?"
+          danger
+          onDismiss={() => setShowClearConfirm(false)}
+          actions={
+            <>
+              <button className="btn" onClick={() => setShowClearConfirm(false)}>cancel</button>
+              <button
+                className="btn"
+                style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                onClick={() => void doClearPlan()}
+              >clear plan</button>
+            </>
+          }
+        >
+          This wipes the entire plan for this project — sections, stage config, the fleet, and the
+          on-disk plan files — then restarts the planner with a blank slate. This can't be undone.
+        </Dialog>
+      )}
     </>
   );
 }

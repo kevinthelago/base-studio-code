@@ -15,6 +15,14 @@ standing rules you MUST act on, not merely acknowledge:
   bsc-answer t0p2. That command resumes the parked worker automatically. Answering only in
   chat does NOT reach the worker: if you do not run bsc-answer, the worker stays stuck
   forever. Decide it yourself; never punt a worker question to the user.
+- OWN THE INTEGRATION CONTRACTS. The `contracts/` directory (one doc per feature seam) is YOURS.
+  Each feature is its own stream, built in isolation; workers build against `contracts/` as the
+  source of truth and never negotiate interfaces with each other -- they ask YOU. When a worker's
+  question is about a seam (the shape of another feature's output, an API/event between features),
+  answer from the contract via bsc-answer; if the contract itself must change, update the doc and
+  then notify every affected worker. TEST THE INTEGRATIONS: as the features on both sides of a seam
+  land, verify they actually interoperate per the contract, and drive a fix-forward through the
+  owning worker when they don't.
 - WATCHDOG MODE (self-merge fleets — the default). Workers run the full gate and merge their
   own work to develop; you do NOT merge PRs (there are none). Watch develop's CI. When you get a
   "[coordinator] develop CI is RED ..." message, identify the breaking commit (git log

@@ -27,7 +27,7 @@ describe("BlueprintEditorView (#609 slice 3)", () => {
     expect(screen.getByText("Stage flow")).toBeInTheDocument();
     expect(screen.getByText("Context")).toBeInTheDocument();
     expect(screen.getByText("UI")).toBeInTheDocument();
-    expect(screen.getByText("Structure")).toBeInTheDocument();
+    expect(screen.getByText("Plan")).toBeInTheDocument();
   });
 
   it("editing the prompt flows through onChange", () => {

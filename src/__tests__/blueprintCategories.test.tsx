@@ -105,6 +105,50 @@ describe("transform blueprints (#645 slice 2)", () => {
   });
 });
 
+describe("data blueprints (#779/#782/#783)", () => {
+  const all = makeBlueprints();
+  const byId = (id: string) => all.find((b) => b.id === id)!;
+
+  it("the data category has display metadata and a chip", () => {
+    expect(CATEGORY_META.data.label).toBe("Data");
+    expect(filterBlueprints(all, { category: "data" }).map((b) => b.id))
+      .toEqual(expect.arrayContaining(["data-migration", "data-collection"]));
+  });
+
+  it("packages the two data blueprints with the right category/mode", () => {
+    expect(byId("data-migration").category).toBe("data");
+    expect(byId("data-migration").mode).toBe("operate"); // against an existing system
+    expect(byId("data-collection").category).toBe("data");
+    expect(byId("data-collection").mode).toBe("create"); // net-new acquisition
+  });
+
+  it("both pipelines converge on the shared Data Model + clean + load stages", () => {
+    for (const id of ["data-migration", "data-collection"]) {
+      const keys = byId(id).sections.map((s) => s.key);
+      expect(keys, id).toEqual(expect.arrayContaining(["dataModel", "dataClean", "dataLoad"]));
+    }
+  });
+
+  it("migration maps a source; collection acquires net-new under a licensing gate", () => {
+    const mig = byId("data-migration").sections.map((s) => s.key);
+    expect(mig).toEqual(expect.arrayContaining(["dataSource", "dataMap"]));
+    const col = byId("data-collection").sections.map((s) => s.key);
+    expect(col).toEqual(expect.arrayContaining(["collectTargets", "sourceLicensing", "dataAcquire", "dataExtract"]));
+  });
+
+  it("migration is strictly read-only — no write-back stage (#782)", () => {
+    const keys = byId("data-migration").sections.map((s) => s.key);
+    expect(keys).not.toContain("dataWriteback");
+  });
+
+  it("the shared cleaning stage gates on whichever front half a blueprint includes (omitted dep treated as met)", () => {
+    // dataClean's def depends on BOTH dataMap (migration) and dataExtract (collection);
+    // each blueprint omits the other, which the lock resolver treats as met.
+    const clean = byId("data-migration").sections.find((s) => s.key === "dataClean")!;
+    expect(clean.deps).toEqual(expect.arrayContaining(["dataMap", "dataExtract"]));
+  });
+});
+
 describe("resolveProjectSeed — blueprint tracking for the reset prompt (#647 fix)", () => {
   it("a brand-new project (no config) seeds + records the active blueprint", () => {
     expect(resolveProjectSeed(false, undefined, "fullstack")).toEqual({ seedConfig: true, setBlueprintId: "fullstack" });

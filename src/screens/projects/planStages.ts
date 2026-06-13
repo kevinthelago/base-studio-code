@@ -12,6 +12,7 @@ export type StageId =
   | "context"
   | "repos"
   | "ui"
+  | "features"
   | "structure"
   | "permissions"
   | "automations"
@@ -33,7 +34,10 @@ export interface PlanStageState {
   requiresUi: boolean;
   /** Required screens approved vs total (only meaningful when requiresUi). */
   ui: { approved: number; total: number };
-  /** Structure: the roadmap is confirmed and granular issues exist. */
+  /** Features: how many user-facing capabilities are defined, and whether all are
+   *  confirmed. Each feature becomes a fleet stream; the Plan stage reads them. */
+  features: { count: number; allConfirmed: boolean };
+  /** Structure/Plan: the roadmap is confirmed and granular issues exist. */
   phasesConfirmed: boolean;
   issueCount: number;
   /** Fleet: streams defined, and each has a profile/flow set. */
@@ -120,14 +124,27 @@ export const PLAN_STAGES: Stage[] = [
     }),
   },
   {
+    id: "features",
+    label: "Features",
+    description: "Define the user-facing capabilities, one at a time — each becomes a stream",
+    optional: true,
+    hasOutputFile: true,  // features.json
+    dependsOn: ["context"],
+    defaultEnabled: true,
+    gate: (s) => ({
+      done: s.features.count > 0 && s.features.allConfirmed,
+      fraction: s.features.count > 0 ? (s.features.allConfirmed ? 1 : 0.5) : 0,
+    }),
+  },
+  {
     id: "structure",
-    label: "Structure",
-    description: "Feature workshop: phases.json + agent-ready issues.json",
+    label: "Plan",
+    description: "Autonomous: contracts/ + phases.json + the agent-ready sub-issue tree",
     // optional: true so refactor/cleanup blueprints can legitimately omit the
-    // feature workshop (they produce targeted issues only, not a roadmap) (#666).
+    // plan synthesis (they produce targeted issues only, not a roadmap) (#666).
     optional: true,
     hasOutputFile: true,  // phases.json + issues.json
-    dependsOn: ["context", "repos", "ui"],
+    dependsOn: ["context", "repos", "features"],
     defaultEnabled: true,
     gate: (s) => ({
       done: s.phasesConfirmed && s.issueCount > 0,
@@ -188,6 +205,7 @@ export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageS
     repoCount: p.repoCount ?? 0,
     requiresUi: p.requiresUi ?? false,
     ui: p.ui ?? { approved: 0, total: 0 },
+    features: p.features ?? { count: 0, allConfirmed: false },
     phasesConfirmed: p.phasesConfirmed ?? false,
     issueCount: p.issueCount ?? 0,
     fleet: p.fleet ?? { streams: 0, profilesComplete: false },

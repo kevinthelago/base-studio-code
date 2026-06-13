@@ -81,15 +81,29 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText(/No context files yet/)).toBeInTheDocument();
   });
 
-  it("shows empty states (no mock structure/agents) for a fresh structure + permissions stage", () => {
+  it("shows empty states (no mock structure/agents) for a fresh Plan + permissions stage", () => {
     const { rerender } = render(<ProjectPane focus={baseFocus({
-      phases: [ph("structure", "Structure", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+      phases: [ph("structure", "Plan", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
-    expect(screen.getByText(/No structure yet/)).toBeInTheDocument();
+    expect(screen.getByText(/No plan yet/)).toBeInTheDocument();
     rerender(<ProjectPane focus={baseFocus({
       phases: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText(/No agents yet/)).toBeInTheDocument();
+  });
+
+  it("renders the Plan review (phases + seam graph) and fires approval (#…)", () => {
+    const onApprovePlan = vi.fn();
+    const data = { agents: [], repos: [], structure: [], context: [], issues: [],
+      phaseStructure: [{ id: "p1", name: "Phase 1 — MVP", total: 3, issues: [], closed: 0, pct: 0, order: 0, doneWhen: "" }],
+      seamGraph: { nodes: [], edges: [], layerCount: 0, danglingCount: 0 },
+    } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    render(<ProjectPane data={data} onApprovePlan={onApprovePlan} focus={baseFocus({
+      phases: [ph("structure", "Plan", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+    })} />);
+    expect(screen.getByText("Phase 1 — MVP")).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Approve milestones/));
+    expect(onApprovePlan).toHaveBeenCalled();
   });
 
   it("renders the automations + skills bodies from real data, with empty states", () => {
@@ -106,6 +120,21 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText("nightly-deps")).toBeInTheDocument();
     rerender(<ProjectPane data={data} focus={baseFocus({ phases: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
     expect(screen.getByText("Rust review")).toBeInTheDocument();
+  });
+
+  it("renders the Features board — empty state, then cards with defined/drafting badges (#…)", () => {
+    const featuresPhase = { phases: [ph("features", "Features", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const { rerender } = render(<ProjectPane focus={baseFocus(featuresPhase)} />);
+    expect(screen.getByText(/Claude proposes a starter set/)).toBeInTheDocument();
+    const data = { agents: [], repos: [], structure: [], phaseStructure: [], context: [], issues: [],
+      features: [
+        { slug: "invite", name: "Invite teammates", behavior: "send an invite", acceptance: ["email sent"], stream: "invite" },
+        { slug: "export", name: "Export to CSV", stream: "export" }, // not fully defined
+      ] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    rerender(<ProjectPane data={data} focus={baseFocus(featuresPhase)} />);
+    expect(screen.getByText("Invite teammates")).toBeInTheDocument();
+    expect(screen.getByText("✓ defined")).toBeInTheDocument();   // fully specified
+    expect(screen.getByText("drafting")).toBeInTheDocument();      // missing behavior/acceptance
   });
 
   it("computes the real pinned token budget (not a hardcoded total)", () => {
