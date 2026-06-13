@@ -25,6 +25,12 @@ export function useProjectScan(): void {
     if (activeScreen !== "projects" || !activeProjectId) return;
     let cancelled = false;
 
+    // Clear the previously-open project's repos BEFORE scanning this one. `activeProjectRepos` is a
+    // single global value that was never reset on switch — so one project's repos leaked into the
+    // next project's auto-clone, cloning foreign repos into the wrong project dir (#…). The scan
+    // below repopulates THIS project's repos; an empty result now correctly leaves it empty.
+    useAppStore.getState().setActiveProjectRepos([]);
+
     void (async () => {
       // Read the rest from getState so a token/title change doesn't re-trigger
       // the scan — only a tab open or project switch should.

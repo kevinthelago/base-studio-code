@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Planning Progress Bar — out-of-sequence completion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ===== base-studio-code tokens (from src/styles/tokens.css) ===== */
+  :root {
+    --bg-canvas:  oklch(0.13 0.005 250);
+    --bg-panel:   oklch(0.17 0.005 250);
+    --bg-elev:    oklch(0.21 0.006 250);
+    --bg-elev2:   oklch(0.26 0.006 250);
+    --border:     oklch(0.30 0.006 250);
+    --border-soft:oklch(0.24 0.006 250);
+    --fg:         oklch(0.94 0.004 250);
+    --fg-muted:   oklch(0.66 0.008 250);
+    --fg-dim:     oklch(0.46 0.008 250);
+    --accent:     oklch(0.80 0.14 70);
+    --accent-dim: oklch(0.55 0.10 70);
+    --success:    oklch(0.74 0.13 145);
+    --info:       oklch(0.72 0.10 230);
+    --danger:     oklch(0.68 0.18 25);
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+    --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg-canvas);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding: 48px 32px 96px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+
+  /* ---- page head ---- */
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-dim);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-size: 27px; font-weight: 600; letter-spacing: -0.02em;
+    margin: 0 0 14px; color: var(--fg);
+  }
+  .lede { font-size: 14px; color: var(--fg-muted); max-width: 660px; margin: 0 0 8px; }
+  .lede b { color: var(--fg); font-weight: 600; }
+
+  /* ---- intro / reasoning card ---- */
+  .note {
+    background: var(--bg-panel); border: 1px solid var(--border-soft);
+    border-radius: var(--r-lg); padding: 22px 24px; margin: 30px 0 12px;
+  }
+  .note h2 {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-muted);
+    margin: 0 0 12px;
+  }
+  .note p { font-size: 13px; color: var(--fg-muted); margin: 0 0 10px; }
+  .note p:last-child { margin-bottom: 0; }
+  .note .prob { color: var(--fg); }
+  code.k {
+    font-family: var(--mono); font-size: 11.5px; background: var(--bg-elev);
+    color: var(--accent); padding: 1px 6px; border-radius: 3px;
+  }
+
+  /* ---- scenario switcher (sticky) ---- */
+  .switcher {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: color-mix(in oklch, var(--bg-canvas), transparent 8%);
+    backdrop-filter: blur(8px);
+    padding: 14px 0; margin: 24px 0 8px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .switcher .lbl {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--fg-dim);
+  }
+  .seg { display: flex; gap: 3px; padding: 3px; background: var(--bg-inset, var(--bg-canvas));
+    border: 1px solid var(--border-soft); border-radius: var(--r-md); }
+  .seg button {
+    border: none; background: transparent; cursor: pointer;
+    font-family: var(--sans); font-size: 12px; font-weight: 500; color: var(--fg-muted);
+    padding: 6px 12px; border-radius: var(--r-sm); transition: .14s; white-space: nowrap;
+  }
+  .seg button:hover { color: var(--fg); }
+  .seg button.on { background: var(--bg-elev2); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+
+  /* ---- variation card (mock planning pane) ---- */
+  .variant { margin-top: 30px; }
+  .variant > header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  .variant .vno {
+    font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--accent);
+    border: 1px solid var(--accent-dim); border-radius: 999px; padding: 1px 9px;
+  }
+  .variant h3 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .variant .desc { font-size: 12.5px; color: var(--fg-muted); margin: 6px 0 14px; max-width: 700px; }
+  .variant .desc b { color: var(--fg); font-weight: 600; }
+  .badge-rec {
+    font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--success);
+    background: color-mix(in oklch, var(--success), transparent 88%);
+    border: 1px solid color-mix(in oklch, var(--success), transparent 70%);
+    padding: 2px 7px; border-radius: 999px;
+  }
+
+  /* the pane frame */
+  .pane {
+    background: var(--bg-panel); border: 1px solid var(--border-soft);
+    border-radius: var(--r-lg); overflow: hidden;
+  }
+  .pane-head {
+    display: flex; align-items: center; gap: 10px; padding: 13px 24px 11px;
+  }
+  .ph-eyebrow {
+    font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.13em;
+    text-transform: uppercase; color: var(--fg-dim);
+  }
+  .ph-title { font-size: 13px; font-weight: 600; color: var(--fg); }
+  .ph-title .dim { color: var(--fg-dim); font-weight: 400; }
+  .ph-spacer { flex: 1; }
+  .triage {
+    font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+    border: 1px solid var(--border-soft); border-radius: var(--r-sm);
+    padding: 4px 9px; display: inline-flex; align-items: center; gap: 6px; opacity: .8;
+  }
+  .triage .lock { font-size: 10px; }
+  .pane-divider { height: 1px; background: var(--border-soft); }
+
+  /* content sliver beneath the bar to ground it */
+  .pane-body { padding: 18px 24px 20px; }
+  .stub-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+  .stub-glyph {
+    width: 22px; height: 22px; border-radius: var(--r-sm); flex: 0 0 auto;
+    display: grid; place-items: center; font-family: var(--mono); font-size: 11px;
+    background: var(--bg-elev2); color: var(--fg-dim);
+  }
+  .stub-name { font-size: 12.5px; color: var(--fg-muted); }
+  .stub-meta { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--fg-dim); }
+
+  /* ===== shared stage-label row ===== */
+  .labels { display: flex; gap: 6px; padding: 8px 24px 4px; }
+  .lab { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; }
+  .lab .nm {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.01em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .lab .tick { font-size: 9px; flex: 0 0 auto; }
+  .lab.s-behind  .nm { color: var(--fg-muted); }
+  .lab.s-behind  .tick { color: var(--success); }
+  .lab.s-current .nm { color: var(--accent); font-weight: 600; }
+  .lab.s-locked  .nm { color: var(--fg-dim); }
+  .lab.s-upcoming .nm { color: var(--fg-dim); }
+  .lab.s-ahead   .nm { color: var(--success); }
+  .lab.s-ahead   .tick { color: var(--success); }
+
+  /* ===== V1 — baseline (current behaviour) ===== */
+  .v1-bar { height: 6px; overflow: hidden; display: flex; gap: 6px; padding: 0 24px; align-items: flex-start; }
+  .v1-seg { flex: 1; height: 12px; border-radius: 6px; overflow: hidden; position: relative; background: var(--bg-elev2); }
+  .v1-fill { position: absolute; inset: 0; border-radius: 6px; }
+  .v1-fill.complete { background: var(--success); }
+  .v1-fill.current  { background: color-mix(in oklch, var(--accent), transparent 45%); }
+  .v1-fill.locked   { background: var(--border); }
+
+  /* ===== V2 — provisional hatch ===== */
+  .v2-bar { display: flex; gap: 7px; padding: 4px 24px 0; align-items: center; }
+  .v2-seg { flex: 1; height: 9px; border-radius: 999px; overflow: hidden; position: relative; background: var(--bg-elev2); }
+  .v2-fill { position: absolute; inset: 0; border-radius: 999px; }
+  .v2-fill.behind  { background: var(--success); }
+  .v2-fill.current { background: var(--accent); }
+  .v2-fill.locked  { background: var(--border); }
+  /* ahead-complete: green, but hatched + outlined so it reads "done, provisional" */
+  .v2-seg.ahead {
+    background: color-mix(in oklch, var(--success), transparent 86%);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--success), transparent 45%);
+  }
+  .v2-seg.ahead .v2-fill {
+    background-color: color-mix(in oklch, var(--success), transparent 55%);
+    background-image: repeating-linear-gradient(-45deg,
+      var(--success) 0 2px, transparent 2px 6px);
+  }
+  .v2-seg.current .v2-fill { animation: breathe 2.2s ease-in-out infinite; }
+  .v2-track-rest.current { /* tint remaining current track amber */ }
+  .v2-seg.current { background: color-mix(in oklch, var(--accent), transparent 84%); }
+
+  /* ===== V3 — checkpoint pills + playhead ===== */
+  .v3-wrap { padding: 4px 24px 0; }
+  .v3-playrow { position: relative; height: 16px; }
+  .v3-bar { display: flex; gap: 6px; }
+  .v3-seg {
+    flex: 1; height: 20px; border-radius: var(--r-sm); position: relative; overflow: hidden;
+    background: var(--bg-elev2); display: grid; place-items: center;
+  }
+  .v3-fill { position: absolute; inset: 0; border-radius: var(--r-sm); }
+  .v3-glyph { position: relative; font-family: var(--mono); font-size: 11px; font-weight: 600; z-index: 2; }
+  .v3-seg.behind .v3-fill { background: var(--success); }
+  .v3-seg.behind .v3-glyph { color: oklch(0.20 0.04 145); }
+  .v3-seg.current { box-shadow: inset 0 0 0 1px var(--accent-dim); }
+  .v3-seg.current .v3-fill { background: color-mix(in oklch, var(--accent), transparent 22%); animation: breathe 2.2s ease-in-out infinite; }
+  .v3-seg.current .v3-glyph { color: var(--fg); }
+  .v3-seg.locked .v3-glyph,
+  .v3-seg.upcoming .v3-glyph { color: var(--fg-dim); }
+  .v3-seg.locked { box-shadow: inset 0 0 0 1px var(--border-soft); }
+  /* ahead-complete: hollow green ring, translucent fill, forward badge */
+  .v3-seg.ahead {
+    background: color-mix(in oklch, var(--success), transparent 90%);
+    box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--success), transparent 30%);
+  }
+  .v3-seg.ahead .v3-glyph { color: var(--success); }
+  .v3-seg.ahead .fwd {
+    position: absolute; top: -3px; right: -3px; z-index: 3;
+    font-family: var(--mono); font-size: 8px; font-weight: 700; line-height: 1;
+    color: oklch(0.18 0.03 145); background: var(--success);
+    border-radius: 999px; padding: 2px 3px;
+  }
+  /* playhead marker above current */
+  .v3-playhead {
+    position: absolute; top: 0; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+    transition: left .25s cubic-bezier(.3,.8,.3,1);
+  }
+  .v3-playhead .tag {
+    font-family: var(--mono); font-size: 8.5px; font-weight: 700; letter-spacing: .08em;
+    color: var(--accent); line-height: 1; margin-bottom: 2px;
+  }
+  .v3-playhead .tri {
+    width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent;
+    border-top: 6px solid var(--accent);
+  }
+
+  /* ===== V4 — sequenced rail / stepper ===== */
+  .v4-wrap { padding: 16px 24px 2px; }
+  .v4-rail { display: flex; align-items: center; }
+  .v4-node-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; position: relative; }
+  .v4-conn { flex: 1; height: 2px; min-width: 8px; position: relative; top: -9px; }
+  .v4-conn.solid { background: var(--success); }
+  .v4-conn.partial { background: linear-gradient(90deg, var(--accent) 0%, var(--border) 100%); }
+  .v4-conn.dim { background: var(--border-soft); }
+  .v4-conn.dashed {
+    background-image: repeating-linear-gradient(90deg, var(--fg-dim) 0 4px, transparent 4px 9px);
+    background-color: transparent; height: 2px;
+  }
+  .v4-node {
+    width: 18px; height: 18px; border-radius: 999px; display: grid; place-items: center;
+    font-family: var(--mono); font-size: 9px; font-weight: 700; position: relative; z-index: 2;
+    background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border);
+    color: var(--fg-dim);
+  }
+  .v4-node.behind { background: var(--success); box-shadow: none; color: oklch(0.20 0.04 145); }
+  .v4-node.current {
+    background: var(--accent); box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%);
+    color: oklch(0.20 0.04 70); animation: ring 2s ease-in-out infinite;
+  }
+  .v4-node.locked { background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border); color: var(--fg-dim); }
+  .v4-node.ahead {
+    background: color-mix(in oklch, var(--success), transparent 12%);
+    box-shadow: inset 0 0 0 1.5px var(--success);
+    color: oklch(0.20 0.04 145);
+  }
+  .v4-banked {
+    position: absolute; top: -16px;
+    font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--success);
+    background: color-mix(in oklch, var(--success), transparent 88%);
+    border: 1px solid color-mix(in oklch, var(--success), transparent 65%);
+    border-radius: 999px; padding: 1px 5px; white-space: nowrap;
+  }
+  .v4-now {
+    position: absolute; top: -16px;
+    font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .08em;
+    color: var(--accent); white-space: nowrap;
+  }
+  .v4-label { font-family: var(--mono); font-size: 9.5px; margin-top: 7px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-align: center; }
+  .v4-node-wrap.behind .v4-label  { color: var(--fg-muted); }
+  .v4-node-wrap.current .v4-label { color: var(--accent); font-weight: 600; }
+  .v4-node-wrap.locked .v4-label,
+  .v4-node-wrap.upcoming .v4-label { color: var(--fg-dim); }
+  .v4-node-wrap.ahead .v4-label   { color: var(--success); }
+
+  /* ---- legend ---- */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 16px 22px; margin-top: 16px;
+    padding: 14px 18px; background: var(--bg-panel); border: 1px solid var(--border-soft);
+    border-radius: var(--r-md);
+  }
+  .leg { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--fg-muted); }
+  .leg .sw { width: 26px; height: 9px; border-radius: 999px; flex: 0 0 auto; }
+  .leg .sw.behind { background: var(--success); }
+  .leg .sw.current { background: var(--accent); }
+  .leg .sw.locked { background: var(--border); }
+  .leg .sw.ahead {
+    background-color: color-mix(in oklch, var(--success), transparent 55%);
+    background-image: repeating-linear-gradient(-45deg, var(--success) 0 2px, transparent 2px 6px);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--success), transparent 40%);
+  }
+  .leg b { color: var(--fg); font-weight: 600; }
+
+  @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: .72; } }
+  @keyframes ring {
+    0%,100% { box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); }
+    50%     { box-shadow: 0 0 0 6px color-mix(in oklch, var(--accent), transparent 88%); }
+  }
+
+  .footnote { margin-top: 40px; font-size: 12px; color: var(--fg-dim); max-width: 660px; }
+  .footnote b { color: var(--fg-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">base-studio-code · project planner</div>
+  <h1>Progress bar — when a future stage is already done</h1>
+  <p class="lede">The planning bar fills one segment per blueprint section, left&#8209;to&#8209;right, and turns <b>green</b> on completion. Today a finished segment looks the same wherever it sits — so a downstream stage whose gate is satisfied early floats green ahead of where you actually are, with grey gaps before it.</p>
+
+  <div class="note">
+    <h2>What I'm solving</h2>
+    <p class="prob">In <code class="k">PlanStageBar.tsx</code> each segment is coloured purely by <code class="k">sectionStatus()</code> — <code class="k">complete</code> always renders solid green. There's no concept of a <b>current position</b>, so a stage completed <i>out of sequence</i> (Skills auto&#8209;assigned, a repo linked early, a gate met before its turn) is indistinguishable from in&#8209;order progress and looks like a glitch.</p>
+    <p>The redesigns below all add one idea: a <b>"you are here" position</b>, and a distinct treatment for <b>complete&#8209;but&#8209;ahead</b> segments — "banked early, awaiting its turn" — so it stays green (credit given) without pretending you've progressed that far. Use the switcher to see each design across states.</p>
+    <p style="color:var(--fg-dim);font-size:12px;margin-top:4px;">Assumption: "current" = the first enabled, applicable, in&#8209;progress section (matches <code class="k">currentSection()</code>). Anything <code class="k">complete</code> with an index past it is "ahead."</p>
+  </div>
+
+  <div class="switcher">
+    <span class="lbl">Scenario</span>
+    <div class="seg" id="seg">
+      <button data-s="0" class="on">Skills done early</button>
+      <button data-s="1">Two stages early</button>
+      <button data-s="2">Straight progress</button>
+    </div>
+    <span class="lbl" id="scenario-note" style="color:var(--fg-muted);"></span>
+  </div>
+
+  <div id="variants"></div>
+
+  <div class="legend">
+    <div class="leg"><span class="sw behind"></span><span><b>Complete</b> · in sequence</span></div>
+    <div class="leg"><span class="sw current"></span><span><b>Current</b> · in progress</span></div>
+    <div class="leg"><span class="sw ahead"></span><span><b>Banked ahead</b> · done out of order</span></div>
+    <div class="leg"><span class="sw locked"></span><span><b>Locked / upcoming</b></span></div>
+  </div>
+
+  <p class="footnote"><b>Recommendation:</b> V3 (checkpoint pills + playhead) is the smallest change that reads unambiguously at the planner's tiny scale — the ring-vs-fill distinction survives a 20px segment, and the playhead answers "where am I" at a glance. V4 is the richest if the planner can spare the vertical room.</p>
+</div>
+
+<script>
+  // ---- stage scenarios. st(base) is position-independent; "ahead" is derived. ----
+  // statuses: 'complete' | 'current'(in-progress) | 'locked' | 'upcoming'
+  const SECTIONS = ["Context","Repos","UI","Structure","Permissions","Automations","Skills"];
+  const SCENARIOS = [
+    { // 0 — one stage done far ahead (the classic confusing case)
+      note: "Skills' gate satisfied while you're still on UI",
+      st: ["complete","complete","current","locked","locked","upcoming","complete"],
+      frac:[1, 1, 0.4, 0.15, 0, 0, 1],
+    },
+    { // 1 — current at the very start, two stages banked ahead
+      note: "Repos + Skills banked before Context is confirmed",
+      st: ["current","complete","upcoming","locked","locked","upcoming","complete"],
+      frac:[0.55, 1, 0, 0, 0, 0, 1],
+    },
+    { // 2 — everything in order, nothing ahead (sanity / no special treatment)
+      note: "Normal left-to-right progress — no out-of-sequence stages",
+      st: ["complete","complete","current","locked","locked","upcoming","upcoming"],
+      frac:[1, 1, 0.45, 0, 0, 0, 0],
+    },
+  ];
+
+  // derive per-stage render role given the current position
+  function roles(scn){
+    const cur = scn.st.indexOf("current");
+    const curIdx = cur === -1 ? scn.st.length : cur;
+    return scn.st.map((s,i) => {
+      if (s === "current") return "current";
+      if (s === "complete") return i > curIdx ? "ahead" : "behind";
+      if (s === "locked")   return "locked";
+      return "upcoming";
+    });
+  }
+
+  const TICK = { behind:"✓", ahead:"✓", current:"", locked:"", upcoming:"" };
+
+  // ---------- label row (shared) ----------
+  function labelRow(scn, r){
+    const row = el("div","labels");
+    SECTIONS.forEach((nm,i) => {
+      const lab = el("div","lab s-"+r[i]);
+      if (TICK[r[i]]) lab.appendChild(elT("span","tick", TICK[r[i]]));
+      lab.appendChild(elT("span","nm", nm));
+      row.appendChild(lab);
+    });
+    return row;
+  }
+
+  // ---------- V1 baseline ----------
+  function v1(scn, r){
+    const bar = el("div","v1-bar");
+    scn.st.forEach((s,i) => {
+      const seg = el("div","v1-seg");
+      const f = el("div","v1-fill");
+      const role = r[i];
+      // baseline only knows complete/current/locked — ahead renders identical to complete
+      if (role === "behind" || role === "ahead") { f.className = "v1-fill complete"; f.style.width = "100%"; }
+      else if (role === "current") { f.className = "v1-fill current"; f.style.width = Math.round(scn.frac[i]*100)+"%"; }
+      else if (role === "locked")  { f.className = "v1-fill locked"; f.style.width = Math.round(scn.frac[i]*100)+"%"; }
+      else { f.style.width = "0%"; }
+      seg.appendChild(f); bar.appendChild(seg);
+    });
+    return [bar, labelRow(scn, r)];
+  }
+
+  // ---------- V2 provisional hatch ----------
+  function v2(scn, r){
+    const bar = el("div","v2-bar");
+    scn.st.forEach((s,i) => {
+      const role = r[i];
+      const seg = el("div","v2-seg "+role);
+      const f = el("div","v2-fill "+role);
+      const pct = role === "behind" || role === "ahead" ? 100 : Math.round(scn.frac[i]*100);
+      f.style.width = pct + "%";
+      seg.appendChild(f); bar.appendChild(seg);
+    });
+    return [bar, labelRow(scn, r)];
+  }
+
+  // ---------- V3 checkpoint pills + playhead ----------
+  function v3(scn, r){
+    const wrap = el("div","v3-wrap");
+    const playrow = el("div","v3-playrow");
+    const bar = el("div","v3-bar");
+    const n = scn.st.length;
+    scn.st.forEach((s,i) => {
+      const role = r[i];
+      const seg = el("div","v3-seg "+role);
+      if (role === "current") {
+        const f = el("div","v3-fill"); f.style.width = Math.round(scn.frac[i]*100)+"%"; seg.appendChild(f);
+      } else if (role === "behind") {
+        const f = el("div","v3-fill"); seg.appendChild(f);
+      }
+      let g = "";
+      if (role === "behind") g = "✓";
+      else if (role === "ahead") g = "✓";
+      else if (role === "current") g = "•";
+      else if (role === "locked") g = "";
+      seg.appendChild(elT("span","v3-glyph", g));
+      if (role === "ahead") seg.appendChild(elT("span","fwd","»"));
+      bar.appendChild(seg);
+    });
+    // playhead positioned over the current segment
+    const cur = scn.st.indexOf("current");
+    if (cur !== -1){
+      const ph = el("div","v3-playhead");
+      ph.appendChild(elT("span","tag","NOW"));
+      ph.appendChild(el("span","tri"));
+      // center of segment cur of n equal segments with 6px gaps ≈ (cur+0.5)/n
+      ph.style.left = ((cur + 0.5) / n * 100) + "%";
+      playrow.appendChild(ph);
+    }
+    wrap.appendChild(playrow);
+    wrap.appendChild(bar);
+    return [wrap, labelRow(scn, r)];
+  }
+
+  // ---------- V4 sequenced rail / stepper ----------
+  function v4(scn, r){
+    const wrap = el("div","v4-wrap");
+    const rail = el("div","v4-rail");
+    const n = scn.st.length;
+    const cur = scn.st.indexOf("current");
+    const curIdx = cur === -1 ? n : cur;
+    scn.st.forEach((s,i) => {
+      const role = r[i];
+      // node
+      const nw = el("div","v4-node-wrap "+role);
+      if (role === "ahead") nw.appendChild(elT("span","v4-banked","banked"));
+      if (role === "current") nw.appendChild(elT("span","v4-now","◆ now"));
+      const node = el("div","v4-node "+role);
+      node.textContent = (role === "behind" || role === "ahead") ? "✓" : (role === "current" ? "" : String(i+1));
+      nw.appendChild(node);
+      nw.appendChild(elT("span","v4-label", SECTIONS[i]));
+      rail.appendChild(nw);
+      // connector after node (except last)
+      if (i < n-1){
+        const conn = el("div","v4-conn");
+        // solid green only while both ends are within the completed-in-sequence run
+        if (role === "behind" && i < curIdx) conn.classList.add("solid");
+        else if (role === "current") conn.classList.add("partial");
+        else if (r[i+1] === "ahead" || role === "ahead") conn.classList.add("dashed");
+        else conn.classList.add("dim");
+        rail.appendChild(conn);
+      }
+    });
+    wrap.appendChild(rail);
+    return [wrap];
+  }
+
+  // ---------- variant definitions ----------
+  const VARIANTS = [
+    { no:"V1", title:"Current behaviour", rec:false, render:v1,
+      desc:"Reference. <b>Ahead-complete looks identical to in-sequence complete</b> — Skills sits solid green at the far right with grey gaps before it, reading like a skipped step or a glitch. No sense of where you actually are." },
+    { no:"V2", title:"Provisional hatch", rec:false, render:v2,
+      desc:"Smallest move, keeps the slim pill. In-sequence complete is solid green; <b>banked-ahead is a green hatch with a thin outline</b> — clearly done, but visually \"not yet locked into the path.\" Current breathes in amber." },
+    { no:"V3", title:"Checkpoint pills + playhead", rec:true, render:v3,
+      desc:"Taller pills carry a state glyph: <b>✓ solid green</b> behind, breathing amber for current, and a <b>hollow green ring with a ›&nbsp;forward badge</b> for banked-ahead. A <b>NOW playhead</b> sits over the current stage so position is unmistakable." },
+    { no:"V4", title:"Sequenced rail", rec:false, render:v4,
+      desc:"Reframes the bar as a journey. Solid green connectors trace the path you've walked; the <b>now</b> node pulses; a banked-ahead stage is a filled-green node reached by a <b>dashed connector</b> with a \"banked\" pill — out of sequence, but credited." },
+  ];
+
+  // ---------- DOM helpers ----------
+  function el(tag, cls){ const e = document.createElement(tag); if(cls) e.className = cls; return e; }
+  function elT(tag, cls, txt){ const e = el(tag, cls); e.innerHTML = txt; return e; }
+
+  function buildVariant(v, scn, r){
+    const sec = el("section","variant");
+    const head = el("header");
+    head.appendChild(elT("span","vno", v.no));
+    head.appendChild(elT("h3", null, v.title));
+    if (v.rec) head.appendChild(elT("span","badge-rec","recommended"));
+    sec.appendChild(head);
+    sec.appendChild(elT("p","desc", v.desc));
+
+    const pane = el("div","pane");
+    const ph = el("div","pane-head");
+    ph.appendChild(elT("span","ph-eyebrow","Project Plan"));
+    const t = el("span","ph-title"); t.innerHTML = 'Acme Mobile <span class="dim">· Full-stack web app</span>';
+    ph.appendChild(t);
+    ph.appendChild(el("span","ph-spacer"));
+    const tri = el("span","triage"); tri.innerHTML = '<span class="lock">🔒</span> Triage';
+    ph.appendChild(tri);
+    pane.appendChild(ph);
+    pane.appendChild(el("div","pane-divider"));
+
+    v.render(scn, r).forEach(node => pane.appendChild(node));
+
+    // grounding content sliver
+    const body = el("div","pane-body");
+    const cur = scn.st.indexOf("current");
+    const curName = cur === -1 ? "Skills" : SECTIONS[cur];
+    [[ "◆", curName + " — discovery", "in progress" ],
+     [ "⊞", "Structure — phases + issues", "locked" ]].forEach(([g,nm,meta]) => {
+      const row = el("div","stub-row");
+      row.appendChild(elT("span","stub-glyph", g));
+      row.appendChild(elT("span","stub-name", nm));
+      row.appendChild(elT("span","stub-meta", meta));
+      body.appendChild(row);
+    });
+    pane.appendChild(body);
+
+    sec.appendChild(pane);
+    return sec;
+  }
+
+  let current = 0;
+  function render(){
+    const scn = SCENARIOS[current];
+    const r = roles(scn);
+    const root = document.getElementById("variants");
+    root.innerHTML = "";
+    VARIANTS.forEach(v => root.appendChild(buildVariant(v, scn, r)));
+    document.getElementById("scenario-note").textContent = "— " + scn.note;
+  }
+
+  document.getElementById("seg").addEventListener("click", e => {
+    const b = e.target.closest("button"); if(!b) return;
+    current = +b.dataset.s;
+    [...document.querySelectorAll("#seg button")].forEach(x => x.classList.toggle("on", x === b));
+    render();
+  });
+
+  render();
+</script>
+</body>
+</html>

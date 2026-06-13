@@ -87,7 +87,7 @@ fn build_active_stages_md(stages: &[String]) -> String {
         return String::new();
     }
     let mut s = String::from(
-        "\n## Active planning stages\n\nWork these stages, in this order. **Stages not listed here are OUT OF SCOPE for this project — do not produce their artifacts.**\n\n",
+        "\n## Active planning stages\n\nThe app drives the plan **one stage at a time** — it sends you each stage's working instructions the moment you reach it. Treat this list as SCOPE: work the current stage, then wait for the app to advance you; don't run ahead or jump stages. **Stages not listed here are OUT OF SCOPE — do not produce their artifacts.**\n\n",
     );
     for (i, id) in stages.iter().enumerate() {
         s.push_str(&format!("{}. {}\n", i + 1, stage_directive(id)));
@@ -128,6 +128,9 @@ pub(crate) async fn setup_workspaces(
         kb_dir.join(".claude"),
         planning_dir.join(".claude"),
         planning_dir.join("prompts"),
+        // Integration contracts (#…): the Plan stage writes one doc per feature seam here;
+        // the director owns + tests them, workers read them as the source of truth.
+        planning_dir.join("contracts"),
     ] {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -306,7 +309,7 @@ pub(crate) async fn setup_workspaces(
         gh_ctx.push('\n');
     }
     gh_ctx.push_str(
-        "## Useful gh commands (read-only — the app's Publish button does all writes)\n\n\
+        "## Useful gh commands (read-only — you inspect GitHub; you never mutate it)\n\n\
          ```\n\
          gh api user                                    # confirm auth\n\
          gh repo list --limit 100 --json nameWithOwner  # all repos\n\
@@ -453,10 +456,11 @@ mod tests {
     #[test]
     fn planner_template_is_plan_only_no_git_mutations() {
         // The planner is plan-only (#503): it must not be instructed to create repos,
-        // milestones, issues, or labels, nor commit/push — the app's Publish flow owns
-        // every git/GitHub mutation. (The prohibition prose uses bare backticked forms
-        // like `gh repo create`; here we guard the args-bearing INSTRUCTION forms that
-        // only ever appeared as commands to run.)
+        // milestones, issues, or labels, nor commit/push. Publishing is ENTIRELY the user's
+        // job (#…) — the planner is never even told how it works. (The prohibition prose uses
+        // bare backticked forms like `gh repo create`; here we guard the args-bearing
+        // INSTRUCTION forms that only ever appeared as commands to run, AND that no template
+        // describes the publish flow.)
         for t in [super::PLANNING_NEW_INTRO, super::PLANNING_EXISTING_INTRO, super::PLANNING_PROCESS_MD] {
             assert!(!t.contains("--method POST --field"), "planner template instructs `gh api … --method POST`");
             assert!(!t.contains("gh label create \""), "planner template instructs `gh label create`");
@@ -464,10 +468,15 @@ mod tests {
             assert!(!t.contains("gh repo create owner"), "planner template instructs `gh repo create`");
             assert!(!t.contains("gh repo create {owner}"), "planner template instructs `gh repo create`");
             assert!(!t.contains("gh repo create {login}"), "planner template instructs `gh repo create`");
+            // De-publish (#…): the planner is never told how publishing works — it's the user's job.
+            assert!(!t.contains("Publish button"), "planner must not be told how the publish flow works");
+            assert!(!t.contains("publish flow"), "planner must not be told how the publish flow works");
+            assert!(!t.contains("Publish to GitHub"), "planner must not carry a publish step");
         }
-        // Positive: the plan-only publish framing is present.
-        assert!(super::PLANNING_PROCESS_MD.contains("Publish button"), "publish-by-app framing missing");
+        // Positive: the plan-only framing is present, and publishing is framed as the user's job.
         assert!(super::PLANNING_PROCESS_MD.contains("plan-only"), "plan-only framing missing");
+        assert!(super::PLANNING_PROCESS_MD.contains("entirely the user's responsibility"),
+            "user-owns-publish framing missing");
     }
 
     #[test]
