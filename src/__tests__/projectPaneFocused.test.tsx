@@ -42,6 +42,20 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText(/planner documents this stage/)).toBeInTheDocument();
   });
 
+  it("opens a context file's markdown in the viewer when its row is clicked", () => {
+    const data = {
+      agents: [], repos: [], structure: [], phaseStructure: [], issues: [],
+      context: [{ name: "goal.md", kind: "doc", tok: "1.2k", pinned: false, scope: "project", content: "# Goal\n\nThe one outcome." }],
+    } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    render(<ProjectPane data={data} focus={baseFocus()} />); // context phase active
+    // the file is listed, but its content isn't shown until opened
+    expect(screen.getByText("goal.md")).toBeInTheDocument();
+    expect(screen.queryByText(/The one outcome\./)).not.toBeInTheDocument();
+    // clicking the row opens the viewer with the markdown content (#…)
+    fireEvent.click(screen.getByText("goal.md"));
+    expect(screen.getByText(/The one outcome\./)).toBeInTheDocument();
+  });
+
   // #674 — the focused planner shows REAL data (empty states), never the sample mocks.
   const reposPhase = { phases: [ph("repos", "Repos", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
 
