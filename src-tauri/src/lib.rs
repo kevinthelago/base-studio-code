@@ -202,7 +202,11 @@ fn clear_all_plan_files() -> Result<u32, String> {
     Ok(removed)
 }
 
+// camelCase so the JSON the frontend receives is `hasPlan`/`updatedAt` — Tauri does NOT
+// rename return-value fields (only command arguments), so without this the frontend's
+// `lp.hasPlan` is undefined and every local project is skipped (#789).
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct LocalProject {
     key: String,
     title: String,
@@ -2265,6 +2269,13 @@ mod tests {
         assert_eq!(by("artist_portfolio").unwrap().title, "artist portfolio");
         assert!(by("artist_portfolio").unwrap().has_plan);
         assert!(!by("empty-scaffold").unwrap().has_plan, "bare scaffold flagged has_plan=false");
+
+        // The wire format MUST be camelCase — Tauri doesn't rename return fields, and the
+        // frontend reads `hasPlan`/`updatedAt`. snake_case here silently hides every project (#789).
+        let json = serde_json::to_string(by("monkeys-paw").unwrap()).unwrap();
+        assert!(json.contains("\"hasPlan\""), "expected camelCase hasPlan in {json}");
+        assert!(json.contains("\"updatedAt\""), "expected camelCase updatedAt in {json}");
+        assert!(!json.contains("has_plan") && !json.contains("updated_at"), "must not emit snake_case: {json}");
 
         std::fs::remove_dir_all(&home).ok();
     }
