@@ -6,6 +6,7 @@ import { Planning } from "./Planning";
 import { ProjectsPageModeStrip } from "./ProjectsSummary";
 import { Fleet } from "./Fleet";
 import { BlueprintsPage } from "./BlueprintsPage";
+import { DataModelsPage } from "./DataModelsPage";
 import { useProjectScan } from "./useProjectScan";
 
 export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
@@ -68,6 +69,13 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
       {projectsPageMode === "blueprints" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           <BlueprintsPage />
+        </div>
+      )}
+
+      {/* Data Models — canonical schemas the data blueprints map into (#780). */}
+      {projectsPageMode === "dataModels" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <DataModelsPage />
         </div>
       )}
 
