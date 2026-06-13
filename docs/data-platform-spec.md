@@ -102,21 +102,22 @@ model — as the per-project data store; a cloud warehouse story comes later. Ne
 
 Both are built-ins in category `data`. Each is an ordered set of `SECTION_DEFS` with
 `substeps` the conductor injects one at a time, `gateRule`s, and `pipelines`. **Plan/data
-only — never publishing or write-back without an explicit gate.**
+only — never publishing.**
 
 ### 4.1 `data-migration-blueprint` (mode: `operate`)
 
 Source = a system the user has access to; it already has a schema, so the work is mapping.
+**Migration is strictly READ-ONLY from the source (decided #782)** — base-studio-code reads,
+maps, and loads into the Data Model; it never writes back into a system of record. There is
+no write-back stage.
 
 | Stage | Substeps (conductor-injected) | Gate |
 |---|---|---|
-| **Source** | connect (creds/endpoint), inventory objects | a reachable source + object list |
-| **Extract schema** | pull the source schema; sample rows | schema captured |
-| **Target** | choose / create the target **Data Model** | a Data Model is bound |
+| **Source** | connect (read-only), inventory objects, sample rows | a reachable source + object list |
+| **Data Model** | choose / create the target **Data Model** | a Data Model is bound |
 | **Map** | per source object → Data Model entity: field-by-field mapping (loop) | every in-scope field mapped or explicitly dropped |
 | **Clean** | type-coerce, standardize, validate | quality gate (§6) passes |
 | **Reconcile + load** | director merges into the Data Model, records lineage | load verified; lineage complete |
-| **Write-back** *(optional)* | push canonical changes back to the source | **explicit gate** — off by default |
 
 ### 4.2 `data-collection-blueprint` (mode: `create`, `sourceMode: scrape | fetch`)
 
@@ -202,10 +203,16 @@ Each row ≈ one GitHub issue/branch. Order top-down; later rows depend on earli
 
 ---
 
-## 9. Open questions
+## 9. Decisions & open questions
 
+**Decided:**
+- **Storage = DuckDB.** Confirmed for `crates/data` (#781) — embeddable, columnar, per-project.
+- **Connector packaging = MCP servers.** Connectors ship as MCP servers, reusing the
+  Extensions/MCP work (#33) — sandboxable and already wired. (#784)
+- **Migration is read-only.** No write-back into systems of record, ever; base-studio-code
+  only reads from a source, maps, and loads into the Data Model. (#782)
+
+**Open:**
 - **Data Model authoring** — hand-built, agent-inferred from samples, or seeded from a
   library of canonical domain models (CRM/ERP/finance)? Probably all three; which first?
-- **Write-back depth** — read-only integration v1, or bidirectional from the start? (Write-back is the hard 20% that creates lock-in *for us*.)
-- **Connector packaging** — MCP servers, or a native connector trait in `crates/data`? (MCP reuses #33 and is sandboxable; native is faster.)
 - **Where the Data Model lives in the nav** — under Projects (planning) or its own top-level surface as the platform grows?

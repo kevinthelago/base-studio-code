@@ -384,15 +384,9 @@ object→entity bindings with the user before mapping individual fields.` },
 recording the transform each needs. Write the mapping spec, then confirm.` },
     ],
   },
-  dataWriteback: {
-    name: "Write-back", glyph: "⇄", gate: "write-back explicitly approved", deps: ["dataLoad"], optional: true,
-    blurb: "Optional, off by default — push canonical changes back to the source.",
-    prompt:
-`OPTIONAL and OFF unless the user explicitly asks for it. If bidirectional sync is wanted, design
-the write-back: which entities/fields flow back to the source, the conflict-resolution rule when
-both sides changed, and how a bad write is detected and rolled back. Write-back is risky — present
-the design and get explicit approval before treating it as part of the plan.`,
-  },
+  // NOTE: migration is strictly READ-ONLY from the source (decided #782) — there is no
+  // write-back stage. base-studio-code never writes back into a system of record; it only
+  // reads, maps, and loads into the canonical Data Model.
 
   // Collection front half — net-new external data, usually schema-less.
   collectTargets: {
@@ -695,7 +689,6 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("dataMap"),
         mkSection("dataClean"),
         mkSection("dataLoad"),
-        mkSection("dataWriteback", { optional: true }),
       ],
     },
     {

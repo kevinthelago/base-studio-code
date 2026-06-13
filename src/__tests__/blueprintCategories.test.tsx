@@ -136,9 +136,9 @@ describe("data blueprints (#779/#782/#783)", () => {
     expect(col).toEqual(expect.arrayContaining(["collectTargets", "sourceLicensing", "dataAcquire", "dataExtract"]));
   });
 
-  it("write-back is present but optional / off the critical path", () => {
-    const wb = byId("data-migration").sections.find((s) => s.key === "dataWriteback")!;
-    expect(wb.optional).toBe(true);
+  it("migration is strictly read-only — no write-back stage (#782)", () => {
+    const keys = byId("data-migration").sections.map((s) => s.key);
+    expect(keys).not.toContain("dataWriteback");
   });
 
   it("the shared cleaning stage gates on whichever front half a blueprint includes (omitted dep treated as met)", () => {
