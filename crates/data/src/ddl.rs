@@ -7,8 +7,12 @@
 use crate::error::{DataError, Result};
 use crate::schema::{Entity, FieldType};
 
-/// Name of the lineage table every store carries.
+/// Name of the per-row lineage table every store carries.
 pub const LINEAGE_TABLE: &str = "_lineage";
+
+/// Name of the per-field lineage table (reconciliation, #785): which source supplied the
+/// winning value for each field of each reconciled record.
+pub const FIELD_LINEAGE_TABLE: &str = "_field_lineage";
 
 /// Validate an entity/field key as a SQL identifier and return it double-quoted.
 ///
@@ -63,6 +67,15 @@ pub fn lineage_ddl() -> String {
     format!(
         "CREATE TABLE IF NOT EXISTS {LINEAGE_TABLE} \
          (entity VARCHAR, row_key VARCHAR, source VARCHAR, loaded_at VARCHAR, license VARCHAR)"
+    )
+}
+
+/// `CREATE TABLE IF NOT EXISTS` for the per-field lineage table — one row per reconciled
+/// (record, field) recording which source won (#785).
+pub fn field_lineage_ddl() -> String {
+    format!(
+        "CREATE TABLE IF NOT EXISTS {FIELD_LINEAGE_TABLE} \
+         (entity VARCHAR, identity VARCHAR, field VARCHAR, source VARCHAR, loaded_at VARCHAR)"
     )
 }
 
