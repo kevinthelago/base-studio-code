@@ -152,10 +152,42 @@ fn delete_project_dir(project_key: String) -> Result<(), String> {
     }
     let dir = project_dir(&project_key);
     if dir.exists() {
+        // Clear read-only first: on Windows `remove_dir_all` can't delete read-only files, and
+        // git pack files in a cloned-repo subdir are read-only — so a project with a linked repo
+        // would otherwise fail to delete (#793). Unix's `remove_dir_all` ignores file perms, so
+        // this is Windows-only.
+        #[cfg(windows)]
+        clear_readonly_recursive(&dir);
         std::fs::remove_dir_all(&dir).map_err(|e| format!("delete_project_dir: {e}"))?;
         log::info!("deleted project hub {:?}", dir);
     }
     Ok(())
+}
+
+/// Recursively clear the read-only attribute on every file under `dir`. Best-effort:
+/// unreadable entries are skipped. Needed so `remove_dir_all` can delete cloned-repo dirs
+/// (git's pack files are read-only) on Windows. Windows-only: on Unix `remove_dir_all`
+/// deletes regardless of file perms, and `set_readonly(false)` would loosen the mode there.
+#[cfg(windows)]
+#[allow(clippy::permissions_set_readonly_false)] // clearing the RO attribute IS the intent on Windows
+fn clear_readonly_recursive(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(ft) if ft.is_dir() => clear_readonly_recursive(&path),
+            Ok(_) => {
+                if let Ok(meta) = entry.metadata() {
+                    let mut perms = meta.permissions();
+                    if perms.readonly() {
+                        perms.set_readonly(false);
+                        let _ = std::fs::set_permissions(&path, perms);
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+    }
 }
 
 /// Clear every project's plan files for a from-scratch dev reset, WITHOUT touching
@@ -2276,6 +2308,25 @@ mod tests {
         assert!(json.contains("\"hasPlan\""), "expected camelCase hasPlan in {json}");
         assert!(json.contains("\"updatedAt\""), "expected camelCase updatedAt in {json}");
         assert!(!json.contains("has_plan") && !json.contains("updated_at"), "must not emit snake_case: {json}");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn delete_project_dir_removes_a_dir_with_a_read_only_file() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("dpd");
+        let key = "doomed-proj".to_string();
+        let proj = super::bsc_base_dir().join("projects").join(&key);
+        // Simulate a cloned repo's read-only git pack file — the Windows delete failure mode.
+        let f = proj.join("repo").join("objects").join("pack.idx");
+        write_file(&f, "packdata");
+        let mut perms = std::fs::metadata(&f).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&f, perms).unwrap();
+
+        super::delete_project_dir(key).unwrap();
+        assert!(!proj.exists(), "project dir (incl. read-only files) should be deleted");
 
         std::fs::remove_dir_all(&home).ok();
     }
