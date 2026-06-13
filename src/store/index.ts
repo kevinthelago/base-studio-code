@@ -1418,10 +1418,12 @@ export const useAppStore = create<AppStore>()(
             pinnedContext:          byKey(s.pinnedContext),
             projectKeyAlias:        byKey(s.projectKeyAlias),
             issueLinks:             byKey(s.issueLinks),
-            // Drop the deleted project id from every extension's scope list.
-            extensions:             s.extensions.map((e) => ({ ...e, projects: e.projects.filter((p) => !keySet.has(p)) })),
+            // Drop the deleted project id from every extension's scope list. `projects` may be
+            // undefined (a def added without it, or persisted data predating the field) — guard,
+            // or `.filter` throws and crashes the app on delete (#791).
+            extensions:             s.extensions.map((e) => ({ ...e, projects: (e.projects ?? []).filter((p) => !keySet.has(p)) })),
             // …and from every skill's scope list.
-            skills:                 s.skills.map((sk) => ({ ...sk, projects: sk.projects.filter((p) => !keySet.has(p)) })),
+            skills:                 s.skills.map((sk) => ({ ...sk, projects: (sk.projects ?? []).filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             projectLocalRepos:      byKey(s.projectLocalRepos),
         localDraftProjects:     byKey(s.localDraftProjects),
