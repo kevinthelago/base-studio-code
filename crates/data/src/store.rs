@@ -13,7 +13,8 @@ use duckdb::{params, params_from_iter, Connection};
 use crate::connector::RowSet;
 use crate::ddl::{self, Coerced};
 use crate::error::{DataError, Result};
-use crate::schema::DataModel;
+use crate::reconcile::Reconciled;
+use crate::schema::{DataModel, Entity};
 
 /// Where a load came from — recorded as lineage for every row it writes.
 #[derive(Debug, Clone)]
@@ -56,6 +57,7 @@ impl DataStore {
             self.conn.execute_batch(&ddl::create_table_sql(e)?)?;
         }
         self.conn.execute_batch(&ddl::lineage_ddl())?;
+        self.conn.execute_batch(&ddl::field_lineage_ddl())?;
         Ok(())
     }
 
@@ -69,48 +71,56 @@ impl DataStore {
             .entity(entity_key)
             .ok_or_else(|| DataError::Schema(format!("unknown entity `{entity_key}`")))?
             .clone();
-
-        // field index -> rowset column index (by name)
-        let col_for: Vec<Option<usize>> = entity
-            .fields
-            .iter()
-            .map(|f| rs.columns.iter().position(|c| c.eq_ignore_ascii_case(&f.key)))
-            .collect();
         // identity field -> rowset column index, for the lineage row_key
         let id_cols: Vec<Option<usize>> = entity
             .identity
             .iter()
             .map(|id| rs.columns.iter().position(|c| c.eq_ignore_ascii_case(id)))
             .collect();
-
-        let insert = ddl::insert_sql(&entity)?;
         let lineage_insert = format!(
             "INSERT INTO {} (entity, row_key, source, loaded_at, license) VALUES (?, ?, ?, ?, ?)",
             ddl::LINEAGE_TABLE
         );
 
         let tx = self.conn.transaction()?;
+        insert_rowset(&tx, &entity, rs)?;
         {
-            let mut stmt = tx.prepare(&insert)?;
             let mut lstmt = tx.prepare(&lineage_insert)?;
             for (i, row) in rs.rows.iter().enumerate() {
-                let values: Vec<Value> = entity
-                    .fields
-                    .iter()
-                    .enumerate()
-                    .map(|(fi, f)| {
-                        let raw = col_for[fi].and_then(|ci| row.get(ci)).map(String::as_str).unwrap_or("");
-                        to_value(ddl::coerce(f.ty, raw))
-                    })
-                    .collect();
-                stmt.execute(params_from_iter(values.iter()))?;
-
                 let row_key = row_key(&id_cols, row, entity_key, i);
                 lstmt.execute(params![entity_key, row_key, src.source, src.loaded_at, src.license])?;
             }
         }
         tx.commit()?;
         Ok(rs.rows.len())
+    }
+
+    /// Load a reconciled (merged) result into `entity_key` (#785): writes the canonical
+    /// rows plus PER-FIELD lineage (which source won each field). Returns the record count.
+    pub fn load_reconciled(&mut self, entity_key: &str, rec: &Reconciled, loaded_at: &str) -> Result<usize> {
+        let entity = self
+            .model
+            .entity(entity_key)
+            .ok_or_else(|| DataError::Schema(format!("unknown entity `{entity_key}`")))?
+            .clone();
+        let rs = rec.to_rowset(&entity);
+        let field_insert = format!(
+            "INSERT INTO {} (entity, identity, field, source, loaded_at) VALUES (?, ?, ?, ?, ?)",
+            ddl::FIELD_LINEAGE_TABLE
+        );
+
+        let tx = self.conn.transaction()?;
+        insert_rowset(&tx, &entity, &rs)?;
+        {
+            let mut fstmt = tx.prepare(&field_insert)?;
+            for r in &rec.records {
+                for (field, source) in &r.lineage {
+                    fstmt.execute(params![entity_key, r.identity, field, source, loaded_at])?;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(rec.records.len())
     }
 
     /// Row count for an entity.
@@ -125,6 +135,14 @@ impl DataStore {
         let n: i64 = self
             .conn
             .query_row(&format!("SELECT COUNT(*) FROM {}", ddl::LINEAGE_TABLE), [], |r| r.get(0))?;
+        Ok(n as usize)
+    }
+
+    /// Total per-field lineage records (reconciliation, #785).
+    pub fn field_lineage_count(&self) -> Result<usize> {
+        let n: i64 = self
+            .conn
+            .query_row(&format!("SELECT COUNT(*) FROM {}", ddl::FIELD_LINEAGE_TABLE), [], |r| r.get(0))?;
         Ok(n as usize)
     }
 
@@ -149,6 +167,31 @@ impl DataStore {
         )?;
         Ok(n as usize)
     }
+}
+
+/// Insert a rowset into an entity's table, coercing each cell per its field type and
+/// mapping columns onto fields by (case-insensitive) name. Shared by the per-row and the
+/// reconciled load paths. Runs within the caller's transaction.
+fn insert_rowset(conn: &Connection, entity: &Entity, rs: &RowSet) -> Result<()> {
+    let col_for: Vec<Option<usize>> = entity
+        .fields
+        .iter()
+        .map(|f| rs.columns.iter().position(|c| c.eq_ignore_ascii_case(&f.key)))
+        .collect();
+    let mut stmt = conn.prepare(&ddl::insert_sql(entity)?)?;
+    for row in &rs.rows {
+        let values: Vec<Value> = entity
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(fi, f)| {
+                let raw = col_for[fi].and_then(|ci| row.get(ci)).map(String::as_str).unwrap_or("");
+                to_value(ddl::coerce(f.ty, raw))
+            })
+            .collect();
+        stmt.execute(params_from_iter(values.iter()))?;
+    }
+    Ok(())
 }
 
 fn to_value(c: Coerced) -> Value {
@@ -238,5 +281,25 @@ mod tests {
         let mut store = DataStore::open_in_memory(model()).unwrap();
         let rs = RowSet::default();
         assert!(store.load_rowset("ghost", &rs, &src()).is_err());
+    }
+
+    #[test]
+    fn load_reconciled_writes_canonical_rows_and_per_field_lineage() {
+        use crate::reconcile::{reconcile, Precedence, SourceLoad};
+        let mut store = DataStore::open_in_memory(model()).unwrap();
+
+        // two sources for the same account id=1, complementary fields
+        let crm = SourceLoad { source: "crm".into(), rows: RowSet {
+            columns: vec!["id".into(), "name".into()], rows: vec![vec!["1".into(), "Acme".into()]] } };
+        let books = SourceLoad { source: "books".into(), rows: RowSet {
+            columns: vec!["id".into(), "balance".into()], rows: vec![vec!["1".into(), "999.00".into()]] } };
+        let rec = reconcile(store.model.entity("account").unwrap(), &[crm, books], &Precedence(vec!["crm".into(), "books".into()]));
+
+        let n = store.load_reconciled("account", &rec, "2026-06-13T00:00:00Z").unwrap();
+        assert_eq!(n, 1); // merged into one canonical record
+        assert_eq!(store.count("account").unwrap(), 1);
+        assert_eq!(store.value_count("account", "name", "Acme").unwrap(), 1);
+        // per-field lineage: id, name, balance each attributed to a source
+        assert_eq!(store.field_lineage_count().unwrap(), 3);
     }
 }

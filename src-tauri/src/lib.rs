@@ -1619,6 +1619,7 @@ pub fn run() {
             data::pick_csv_file,
             data::data_preview_csv,
             data::data_load_csv,
+            data::data_reconcile_csvs,
             planner::setup_workspaces,
             setup_kb_workspace,
             clone_repo,

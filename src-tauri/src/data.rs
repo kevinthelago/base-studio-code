@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use bsc_data::{Connector, CsvConnector, DataModel, DataStore, LoadSource};
+use bsc_data::{reconcile, Connector, CsvConnector, DataModel, DataStore, LoadSource, Precedence, SourceLoad};
 
 /// A preview of a CSV source: its columns and the first `limit` rows.
 #[derive(serde::Serialize)]
@@ -103,6 +103,67 @@ pub fn data_load_csv(
     run_load(&db, model, &entity, &csv_path, src).map_err(|e| e.to_string())
 }
 
+/// One CSV source for a reconcile run.
+#[derive(serde::Deserialize)]
+pub struct CsvSource {
+    source: String,
+    csv_path: String,
+}
+
+/// The result of reconciling several sources into an entity.
+#[derive(serde::Serialize)]
+pub struct ReconcileReport {
+    entity: String,
+    /// Distinct canonical records after merge.
+    records: usize,
+    /// Fields where ≥2 sources disagreed (precedence decided the winner).
+    conflicts: usize,
+    /// Total per-field lineage records in the store.
+    field_lineage: usize,
+    /// Number of sources merged.
+    sources: usize,
+}
+
+fn run_reconcile(
+    db: &Path, model: DataModel, entity: &str, sources: &[CsvSource], precedence: Vec<String>, loaded_at: &str,
+) -> bsc_data::Result<ReconcileReport> {
+    let ent = model
+        .entity(entity)
+        .ok_or_else(|| bsc_data::DataError::Schema(format!("unknown entity `{entity}`")))?
+        .clone();
+    let mut loads = Vec::with_capacity(sources.len());
+    for s in sources {
+        loads.push(SourceLoad { source: s.source.clone(), rows: CsvConnector::new(&s.csv_path).read("")? });
+    }
+    let rec = reconcile(&ent, &loads, &Precedence(precedence));
+
+    let mut store = DataStore::open(db, model)?;
+    store.load_reconciled(entity, &rec, loaded_at)?;
+    Ok(ReconcileReport {
+        entity: entity.to_string(),
+        records: rec.records.len(),
+        conflicts: rec.conflicts,
+        field_lineage: store.field_lineage_count()?,
+        sources: sources.len(),
+    })
+}
+
+/// Reconcile several CSV sources into `entity` of `model`'s store by identity + precedence,
+/// loading the canonical result with per-field lineage. Returns a report.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn data_reconcile_csvs(
+    store_id: String,
+    model: DataModel,
+    entity: String,
+    sources: Vec<CsvSource>,
+    precedence: Vec<String>,
+    loaded_at: String,
+) -> Result<ReconcileReport, String> {
+    let db = store_path(&store_id).map_err(|e| e.to_string())?;
+    run_reconcile(&db, model, &entity, &sources, precedence, &loaded_at).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,6 +200,33 @@ mod tests {
         assert_eq!(rev.nulls, 1);
 
         std::fs::remove_file(&csv).ok();
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn reconciles_two_csv_sources_by_identity() {
+        let tmp = std::env::temp_dir();
+        let pid = std::process::id();
+        let crm = tmp.join(format!("bsc-rec-crm-{pid}.csv"));
+        let books = tmp.join(format!("bsc-rec-books-{pid}.csv"));
+        let db = tmp.join(format!("bsc-rec-{pid}.duckdb"));
+        std::fs::write(&crm, "id,name\n1,Acme\n").unwrap();
+        std::fs::write(&books, "id,annual_revenue\n1,500\n").unwrap();
+        let _ = std::fs::remove_file(&db);
+
+        let sources = vec![
+            CsvSource { source: "crm".into(), csv_path: crm.to_string_lossy().into() },
+            CsvSource { source: "books".into(), csv_path: books.to_string_lossy().into() },
+        ];
+        let report = run_reconcile(&db, model(), "account", &sources, vec!["crm".into(), "books".into()], "2026-06-13T00:00:00Z").unwrap();
+
+        assert_eq!(report.records, 1); // same id=1 merged
+        assert_eq!(report.conflicts, 0); // complementary fields, no disagreement
+        assert_eq!(report.sources, 2);
+        assert_eq!(report.field_lineage, 3); // id, name, annual_revenue each attributed
+
+        std::fs::remove_file(&crm).ok();
+        std::fs::remove_file(&books).ok();
         std::fs::remove_file(&db).ok();
     }
 }
