@@ -227,6 +227,7 @@ export function ProjectsList() {
   const [deleteTarget, setDeleteTarget] = useState<GhProject | null>(null);
   const [deleting, setDeleting]   = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
   // On-disk local projects (#…) — the durable source of truth for unpublished work, since the
   // store's draft map drifts out of sync with the `projects/` dir.
   const [localProjects, setLocalProjects] = useState<{ key: string; title: string; hasPlan: boolean; updatedAt: number }[]>([]);
@@ -374,10 +375,22 @@ export function ProjectsList() {
     setProjectsView("planning");
   }
 
-  function deleteDraft(key: string) {
+  // Delete a local/draft project: remove its on-disk folder FIRST (awaited, so a failure —
+  // e.g. the folder is open in a console session — surfaces instead of silently leaving it to
+  // reappear on the next scan), then clear the store entries AND prune it from `localProjects`
+  // so the card disappears immediately (it isn't in the draft map, so removeDraftProject alone
+  // never removed it).
+  async function deleteDraft(key: string) {
+    setDraftError(null);
+    try {
+      await invoke("delete_project_dir", { projectKey: key });
+    } catch (e) {
+      setDraftError(`Couldn't delete the folder for "${key}": ${e}. It may be open in a console session — close it and retry.`);
+      return;
+    }
     removeDraftProject(key);
     deleteLocalProject([key]);
-    void invoke("delete_project_dir", { projectKey: key }).catch(() => {});
+    setLocalProjects(prev => prev.filter(lp => lp.key !== key));
   }
 
   const repos = new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? []));
@@ -538,6 +551,13 @@ export function ProjectsList() {
           if (drafts.length === 0) return null;
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 10 }}>
+              {draftError && (
+                <div style={{
+                  padding: "8px 12px", borderRadius: "var(--r-md)", fontFamily: "var(--mono)", fontSize: 11,
+                  color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)",
+                  border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
+                }}>{draftError}</div>
+              )}
               {drafts.map(d => (
                 <div key={d.key} style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
