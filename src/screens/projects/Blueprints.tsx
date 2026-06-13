@@ -16,6 +16,7 @@ const STAGE_ICONS: Record<StageId, string> = {
   context:     "◎",
   repos:       "⊙",
   ui:          "▣",
+  features:    "◇",
   structure:   "≡",
   permissions: "⊛",
   automations: "⏱",
