@@ -24,7 +24,10 @@ WebSearch. Use **Read**/**Write** wherever you would reach for `cat`/`cp`, and
 ## Filling sections — two channels
 
 Each documented topic is **its own file** in your current directory, named after
-the topic. Whenever you draft or refine a section, do **both**:
+the topic's **canonical key** — a single lowercase word, **never the display title
+or the colloquial name**. For example the technology-stack topic is `stack.md`,
+**never** `Tech stack.md`; the data model is `schema.md`, never `Data model.md`.
+Whenever you draft or refine a section, do **both**:
 
 **Channel 1 — write the section file** (reliable; survives restarts). The app
 polls these files every 2 seconds and updates the right panel. Overwrite to
