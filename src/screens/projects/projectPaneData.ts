@@ -22,6 +22,8 @@ import type {
   Posture, Perm, Agent, Repo, Issue, Milestone, PhaseGroup, ContextFile, ProjectPaneData,
   PaneAutomation, PaneSkill,
 } from "./projectPane.types";
+import type { PlanFeature } from "./featureList";
+import { buildSeamGraph as buildPlanSeamGraph } from "../../lib/planSeamGraph";
 
 export type {
   Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone, PhaseGroup,
@@ -40,6 +42,8 @@ export interface BuildProjectPaneInput {
   automations?: PaneAutomation[];
   /** Skills/knowledge attached to the project's blueprint, pre-resolved (#674). */
   skills?: PaneSkill[];
+  /** Features defined in the Features stage (parsed from features.json) (#…). */
+  features?: PlanFeature[];
   sections: Section[];
   /** Context-file names the project has explicitly pinned in the pane (from the
    *  store). When present it drives each context file's `pinned` instead of the
@@ -323,5 +327,7 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     fleetStrategy: input.fleet?.strategy,
     automations: (input.automations ?? []).map(a => ({ name: a.name, command: a.command, schedule: a.schedule })),
     skills: input.skills ?? [],
+    features: input.features ?? [],
+    seamGraph: buildPlanSeamGraph(input.issues),
   };
 }

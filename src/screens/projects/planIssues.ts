@@ -31,6 +31,10 @@ export interface PlanIssue {
   repo?: string;
   /** Owning fleet stream id, if assigned (mirrors AgentStream.issues). */
   stream?: string;
+  /** Ref of the parent feature this is a sub-issue of (#…). A feature is a parent issue; its
+   *  decomposed work items carry the feature's ref here. Undefined ⇒ a top-level issue (a
+   *  feature parent, or an unparented issue). Published as a GitHub sub-issue under its parent. */
+  parent?: string;
   /** Extra prose/context beyond the acceptance list. */
   body?: string;
 }
@@ -71,8 +75,54 @@ export function parseIssuesFile(raw: string): PlanIssue[] {
       labels:     toStrArray(o.labels),
       repo:       toStr(o.repo) || undefined,
       stream:     toStr(o.stream) || undefined,
+      parent:     toStr(o.parent) || undefined,
       body:       toStr(o.body) || undefined,
     });
+  }
+  return out;
+}
+
+export interface IssueTreeNode {
+  issue: PlanIssue;
+  children: PlanIssue[];
+}
+
+/**
+ * Group issues into the feature → sub-issue tree (#…). A root is an issue with no `parent`, or
+ * whose `parent` doesn't resolve to another issue (orphans degrade to roots, never lost). Every
+ * other issue nests under its parent's `ref`. Children keep their `issues.json` order.
+ */
+export function issueTree(issues: PlanIssue[]): IssueTreeNode[] {
+  const byRef = new Map(issues.map((i) => [i.ref, i]));
+  const roots: PlanIssue[] = [];
+  const childrenOf = new Map<string, PlanIssue[]>();
+  for (const i of issues) {
+    if (i.parent && i.parent !== i.ref && byRef.has(i.parent)) {
+      const list = childrenOf.get(i.parent) ?? [];
+      list.push(i);
+      childrenOf.set(i.parent, list);
+    } else {
+      roots.push(i);
+    }
+  }
+  return roots.map((issue) => ({ issue, children: childrenOf.get(issue.ref) ?? [] }));
+}
+
+/**
+ * The parent→child GitHub node-id pairs to link as sub-issues (#…), given the node ids known by
+ * issue ref (created or pre-existing). Only pairs where BOTH ends resolve are returned — an
+ * unresolved end (parent/child not created this run) is simply not linked. Self-parents skipped.
+ */
+export function subIssueLinks(
+  issues: PlanIssue[],
+  nodeByRef: Record<string, string>,
+): { parent: string; child: string }[] {
+  const out: { parent: string; child: string }[] = [];
+  for (const i of issues) {
+    if (!i.parent || i.parent === i.ref) continue;
+    const child = nodeByRef[i.ref];
+    const parent = nodeByRef[i.parent];
+    if (child && parent) out.push({ parent, child });
   }
   return out;
 }
