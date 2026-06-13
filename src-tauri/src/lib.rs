@@ -13,6 +13,7 @@ mod shell;
 mod pty;
 mod bsc;
 mod planner;
+mod data;
 
 // ── Logging / performance ────────────────────────────────────────────────────
 
@@ -1615,6 +1616,9 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             pick_directory,
+            data::pick_csv_file,
+            data::data_preview_csv,
+            data::data_load_csv,
             planner::setup_workspaces,
             setup_kb_workspace,
             clone_repo,

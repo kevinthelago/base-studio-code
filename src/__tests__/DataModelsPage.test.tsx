@@ -33,4 +33,21 @@ describe("DataModelsPage (#780)", () => {
     fireEvent.click(screen.getByText(/New model/i));
     expect(useAppStore.getState().dataModels.length).toBe(before + 1);
   });
+
+  it("offers a Load CSV action per entity, enabled for a valid model", () => {
+    render(<DataModelsPage />);
+    const loadButtons = screen.getAllByText("Load CSV") as HTMLButtonElement[];
+    expect(loadButtons).toHaveLength(2); // account + contact
+    expect(loadButtons.every((b) => !b.disabled)).toBe(true);
+  });
+
+  it("disables Load CSV when the model has validation problems", () => {
+    // a model with an unsafe entity key can't be loaded (the store rejects the identifier)
+    useAppStore.setState({
+      dataModels: [{ id: "bad", name: "Bad", version: 1, entities: [{ key: "bad-key", label: "", identity: [], fields: [{ key: "id", type: "string" }] }] }],
+      activeDataModelId: "bad",
+    });
+    render(<DataModelsPage />);
+    expect((screen.getByText("Load CSV") as HTMLButtonElement).disabled).toBe(true);
+  });
 });
