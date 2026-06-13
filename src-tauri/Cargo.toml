@@ -49,6 +49,10 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 sysinfo = { version = "0.31", default-features = false, features = ["system"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 
+# Data platform (#781/#784): the canonical Data Model store (DuckDB) + connector
+# framework. Pulling this in compiles bundled DuckDB into the desktop build.
+bsc-data = { path = "../crates/data" }
+
 # Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any
 # grandchildren) dies with the session on pty_kill / app exit. portable-pty calls
 # `setsid()` in the spawned shell, so the shell leads a process group whose pgid ==

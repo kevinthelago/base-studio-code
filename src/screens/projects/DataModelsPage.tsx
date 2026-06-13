@@ -2,6 +2,8 @@
 // entities, fields, types, identity keys — over the pure transforms in dataModel.ts.
 // The model authored here is the same wire shape the DuckDB store materializes (#781).
 
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import {
   FIELD_TYPES, checkDataModel, addEntity, removeEntity, addField, removeField, toggleIdentity,
@@ -9,6 +11,16 @@ import {
 } from "./dataModel";
 
 const mono = "var(--mono)";
+
+/** Mirrors the Rust `LoadReport` (src-tauri/src/data.rs). */
+interface LoadReport {
+  entity: string;
+  loaded: number;
+  total: number;
+  lineage: number;
+  null_counts: { field: string; nulls: number }[];
+}
+type EntityLoadState = "loading" | LoadReport | { error: string };
 
 export function DataModelsPage() {
   const dataModels = useAppStore((s) => s.dataModels);
@@ -68,6 +80,30 @@ export function DataModelsPage() {
 function Editor({ model, edit, onDelete }: { model: DataModel; edit: (m: DataModel) => void; onDelete: () => void }) {
   const problems = checkDataModel(model);
   const entityKeys = model.entities.map((e) => e.key);
+  const blocked = problems.length > 0;
+
+  // CSV → store load, per entity. The model must be valid first (the store rejects bad
+  // identifiers), so loads are disabled while there are problems.
+  const [loads, setLoads] = useState<Record<string, EntityLoadState>>({});
+  async function loadCsv(entityKey: string) {
+    const path = await invoke<string | null>("pick_csv_file");
+    if (!path) return;
+    setLoads((s) => ({ ...s, [entityKey]: "loading" }));
+    try {
+      const report = await invoke<LoadReport>("data_load_csv", {
+        storeId: model.id,
+        model,
+        entity: entityKey,
+        csvPath: path,
+        source: path.split(/[\\/]/).pop() ?? "csv",
+        license: "internal",
+        loadedAt: new Date().toISOString(),
+      });
+      setLoads((s) => ({ ...s, [entityKey]: report }));
+    } catch (e) {
+      setLoads((s) => ({ ...s, [entityKey]: { error: String(e) } }));
+    }
+  }
 
   // Index-based property edits avoid key-lookup ambiguity mid-rename; structural ops use
   // the pure transforms.
@@ -130,6 +166,8 @@ function Editor({ model, edit, onDelete }: { model: DataModel; edit: (m: DataMod
               onChange={(ev) => setEntityProp(ei, { label: ev.target.value })}
               style={{ flex: 1, fontFamily: mono, fontSize: 11, background: "transparent", border: "none", color: "var(--fg-muted)", outline: "none" }}
             />
+            <button className="btn ghost" disabled={blocked} onClick={() => loadCsv(e.key)} style={{ height: 26, fontSize: 10 }}
+              title={blocked ? "Fix the validation issues first" : "Load a CSV into this entity"}>Load CSV</button>
             <button className="btn ghost" onClick={() => edit(removeEntity(model, e.key))} style={{ height: 26, fontSize: 10 }}>Remove</button>
           </div>
 
@@ -173,12 +211,31 @@ function Editor({ model, edit, onDelete }: { model: DataModel; edit: (m: DataMod
             ))}
             <button className="btn ghost" onClick={() => edit(addField(model, e.key, { key: `field${e.fields.length + 1}`, type: "string" }))}
               style={{ marginTop: 8, height: 28, fontSize: 11 }}>+ Add field</button>
+            {loads[e.key] && <LoadStatus state={loads[e.key]} />}
           </div>
         </div>
       ))}
 
       <button className="btn" onClick={() => edit(addEntity(model, `entity${model.entities.length + 1}`))}
         style={{ height: 34, fontSize: 12 }}>+ Add entity</button>
+    </div>
+  );
+}
+
+function LoadStatus({ state }: { state: EntityLoadState }) {
+  const box: React.CSSProperties = {
+    marginTop: 10, padding: "8px 12px", borderRadius: 6, fontFamily: mono, fontSize: 11,
+    background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+  };
+  if (state === "loading") return <div style={{ ...box, color: "var(--fg-dim)" }}>Loading…</div>;
+  if ("error" in state) return <div style={{ ...box, color: "var(--err, crimson)" }}>Load failed: {state.error}</div>;
+  const nulls = state.null_counts.filter((n) => n.nulls > 0);
+  return (
+    <div style={{ ...box, color: "var(--fg-muted)" }}>
+      Loaded <b style={{ color: "var(--fg)" }}>{state.loaded}</b> · total {state.total} · lineage {state.lineage}
+      {nulls.length > 0 && (
+        <span style={{ color: "var(--fg-dim)" }}> · nulls: {nulls.map((n) => `${n.field}(${n.nulls})`).join(", ")}</span>
+      )}
     </div>
   );
 }
