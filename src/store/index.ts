@@ -35,6 +35,7 @@ import { defaultStageConfig, type StageConfig, type StageId } from "../screens/p
 import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import type { GradeResult } from "../screens/projects/grading";
 import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
+import { seedDataModels, emptyDataModel, type DataModel } from "../screens/projects/dataModel";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
@@ -482,8 +483,8 @@ interface AppStore {
   recordAutomationRun: (id: string, run: AutomationRun) => void;
 
   // Projects (transient)
-  projectsPageMode: "projects" | "fleet" | "blueprints";
-  setProjectsPageMode: (v: "projects" | "fleet" | "blueprints") => void;
+  projectsPageMode: "projects" | "fleet" | "blueprints" | "dataModels";
+  setProjectsPageMode: (v: "projects" | "fleet" | "blueprints" | "dataModels") => void;
   // The Projects page is list ↔ planning (#499): the board moved to the GitHub
   // page (#498) and the execution tabs were removed.
   projectsView: "list" | "planning";
@@ -650,6 +651,17 @@ interface AppStore {
   blueprints:         Blueprint[];
   activeBlueprintId:  string;
   setActiveBlueprint: (id: string) => void;
+  // Canonical Data Models (#780) — the schema library the data blueprints map into and
+  // the build side later generates over. Seeded with a starter CRM model; persisted.
+  dataModels:         DataModel[];
+  activeDataModelId:  string;
+  setActiveDataModel: (id: string) => void;
+  /** Add a new empty Data Model; returns its id. */
+  addDataModel:       () => string;
+  /** Replace a model wholesale (the editor computes the next model from the pure transforms). */
+  setDataModel:       (id: string, model: DataModel) => void;
+  /** Delete a model; if it was active, the active id falls back to the first remaining. */
+  removeDataModel:    (id: string) => void;
   // Which blueprint each project was last seeded/reset from (#647), keyed by project key.
   // Lets the planner detect when the selected blueprint differs from the project's and
   // offer to reset. Set on first seed + on an explicit blueprint switch.
@@ -1992,6 +2004,23 @@ export const useAppStore = create<AppStore>()(
       blueprints: makeBlueprints(),
       activeBlueprintId: DEFAULT_BLUEPRINT_ID,
       setActiveBlueprint: (id) => set({ activeBlueprintId: id }),
+
+      dataModels: seedDataModels(),
+      activeDataModelId: "dm-crm",
+      setActiveDataModel: (id) => set({ activeDataModelId: id }),
+      addDataModel: () => {
+        const id = `dm-${Date.now().toString(36)}`;
+        set((s) => ({ dataModels: [...s.dataModels, emptyDataModel(id)], activeDataModelId: id }));
+        return id;
+      },
+      setDataModel: (id, model) =>
+        set((s) => ({ dataModels: s.dataModels.map((m) => (m.id === id ? { ...model, id } : m)) })),
+      removeDataModel: (id) =>
+        set((s) => {
+          const dataModels = s.dataModels.filter((m) => m.id !== id);
+          const activeDataModelId = s.activeDataModelId === id ? (dataModels[0]?.id ?? "") : s.activeDataModelId;
+          return { dataModels, activeDataModelId };
+        }),
       projectBlueprintId: {},
       setProjectBlueprintId: (projectId, blueprintId) =>
         set((s) => ({ projectBlueprintId: { ...s.projectBlueprintId, [projectId]: blueprintId } })),
@@ -2453,6 +2482,8 @@ export const useAppStore = create<AppStore>()(
         uiApproved:            s.uiApproved,
         blueprints:            s.blueprints,
         activeBlueprintId:     s.activeBlueprintId,
+        dataModels:            s.dataModels,
+        activeDataModelId:     s.activeDataModelId,
         planFleet:             s.planFleet,
         pinnedContext:         s.pinnedContext,
         extensions:            s.extensions,
