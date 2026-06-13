@@ -1028,7 +1028,7 @@ function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: 
   );
 }
 
-function FocusedContextBody({ context }: { context?: ContextFile[] }) {
+function FocusedContextBody({ context, onView }: { context?: ContextFile[]; onView?: (f: ContextFile) => void }) {
   const files = context ?? [];
   if (files.length === 0) {
     return (
@@ -1049,7 +1049,7 @@ function FocusedContextBody({ context }: { context?: ContextFile[] }) {
         </span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {files.map((f) => <CtxRow key={f.name} f={f} />)}
+        {files.map((f) => <CtxRow key={f.name} f={f} onView={onView ? () => onView(f) : undefined} />)}
       </div>
     </div>
   );
@@ -1208,17 +1208,18 @@ function FocusedPlanBody({ data, onApprovePlan }: {
   );
 }
 
-function FocusedPhaseBody({ phase, data, onLinkRepo, onApprovePlan }: {
+function FocusedPhaseBody({ phase, data, onLinkRepo, onApprovePlan, onView }: {
   phase: Phase;
   data?: ProjectPaneData;
   onLinkRepo?: (r: string) => void;
   onApprovePlan?: () => void;
+  onView?: (f: ContextFile) => void;
 }) {
   switch (phase.key) {
     case "repos":
       return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} />;
     case "context":
-      return <FocusedContextBody context={data?.context} />;
+      return <FocusedContextBody context={data?.context} onView={onView} />;
     case "features":
       return <FocusedFeaturesBody features={data?.features} />;
     case "structure":
@@ -1563,6 +1564,37 @@ export function ProjectPane({
     return () => window.removeEventListener("keydown", onKey);
   }, [viewing]);
 
+  // The context-file viewer modal — shared by BOTH the focused and full-pane renders so
+  // clicking an md file opens it in either (the focused pane previously had no viewer, #…).
+  const viewerModal = viewing && (
+    <div onClick={() => setViewing(null)} style={{
+      position: "fixed", inset: 0, zIndex: 50,
+      background: "color-mix(in oklch, var(--bg-canvas), transparent 20%)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: "min(720px, 92vw)", maxHeight: "84vh", display: "flex", flexDirection: "column",
+        background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
+        borderRadius: 10, boxShadow: "0 16px 50px rgba(0,0,0,.45)", overflow: "hidden",
+      }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "12px 14px",
+          borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
+        }}>
+          <KindDot kind={viewing.kind} />
+          <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{viewing.tok} · {viewing.scope}</span>
+          <span onClick={() => setViewing(null)} style={{ cursor: "pointer", fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)", padding: "0 2px 0 8px" }}>✕</span>
+        </div>
+        <pre style={{
+          margin: 0, padding: "14px 16px", overflow: "auto", flex: 1,
+          fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.55, color: "var(--fg-muted)",
+          whiteSpace: "pre-wrap", wordBreak: "break-word",
+        }}>{viewing.content || "(empty)"}</pre>
+      </div>
+    </div>
+  );
+
   const running = agents.filter((a) => a.status === "run").length;
   const onCount  = agents.filter((a) => a.status === "on").length;
   const idleCount = agents.filter((a) => a.status === "idle").length;
@@ -1582,9 +1614,10 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} />
+          <FocusedPhaseBody phase={selected} data={data} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing} />
         </div>
         <FocusedPhaseFooter phase={selected} action={focus.footer} onBack={focus.onBack} onPrimary={focus.onPrimary} />
+        {viewerModal}
       </div>
     );
   }
@@ -1720,35 +1753,8 @@ export function ProjectPane({
         </div>
       )}
 
-      {/* Context file viewer modal */}
-      {viewing && (
-        <div onClick={() => setViewing(null)} style={{
-          position: "fixed", inset: 0, zIndex: 50,
-          background: "color-mix(in oklch, var(--bg-canvas), transparent 20%)",
-          display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
-        }}>
-          <div onClick={(e) => e.stopPropagation()} style={{
-            width: "min(720px, 92vw)", maxHeight: "84vh", display: "flex", flexDirection: "column",
-            background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
-            borderRadius: 10, boxShadow: "0 16px 50px rgba(0,0,0,.45)", overflow: "hidden",
-          }}>
-            <div style={{
-              display: "flex", alignItems: "center", gap: 8, padding: "12px 14px",
-              borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
-            }}>
-              <KindDot kind={viewing.kind} />
-              <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{viewing.tok} · {viewing.scope}</span>
-              <span onClick={() => setViewing(null)} style={{ cursor: "pointer", fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)", padding: "0 2px 0 8px" }}>✕</span>
-            </div>
-            <pre style={{
-              margin: 0, padding: "14px 16px", overflow: "auto", flex: 1,
-              fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.55, color: "var(--fg-muted)",
-              whiteSpace: "pre-wrap", wordBreak: "break-word",
-            }}>{viewing.content || "(empty)"}</pre>
-          </div>
-        </div>
-      )}
+      {/* Context file viewer modal (shared; see viewerModal above) */}
+      {viewerModal}
     </div>
   );
 }
