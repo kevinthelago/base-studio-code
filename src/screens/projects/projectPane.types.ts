@@ -9,6 +9,8 @@
 import type { DirectorDrive } from "./directorDrive";
 import type { IntegrationStrategy } from "./integrationStrategy";
 import type { PlanGrade } from "../../lib/planGrade";
+import type { PlanFeature } from "./featureList";
+import type { SeamGraph } from "../../lib/planSeamGraph";
 
 export type { PlanGrade };
 
@@ -106,6 +108,10 @@ export interface ProjectPaneData {
   automations?: PaneAutomation[];
   /** Reusable skills/knowledge attached to the project's blueprint (#674). */
   skills?: PaneSkill[];
+  /** User-facing capabilities defined in the Features stage (#…); each is a fleet stream. */
+  features?: PlanFeature[];
+  /** The feature seam/dependency DAG (#…) — the Plan stage's approval surface. */
+  seamGraph?: SeamGraph;
   // The agent-readiness grade (#445) is no longer carried on the pane data: it is now
   // produced by the grade-plan pipeline and read from the store (sectionGrades, as the
   // structure "agent-readiness" grader's detail) by the pane directly. PlanGrade is

@@ -147,6 +147,8 @@ function buildStreamPrompt(stream: AgentStream, strategy?: IntegrationStrategy):
     `You are working in your own git worktree on branch ${stream.id}; do not switch branches or touch other worktrees. ` +
     `Your lane: you own ${owns}. Do not modify files outside your owned paths — another session owns them; ` +
     `coordinate through the plan instead. Your issues: ${issues}. ` +
+    `Integration interfaces between features live in the contracts directory — read them as the source of truth, ` +
+    `and if one is unclear or must change, ask the director rather than reaching into another stream. ` +
     `${kick.autonomy} ` +
     `${kick.push} ` +
     `When you pause or finish a work session, pipe a short note of where you left off and the next step into bsc-checkpoint on stdin so your next session resumes there. ` +

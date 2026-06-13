@@ -23,6 +23,8 @@ export interface DerivePlanStageInput {
   skillsAck: boolean;
   requiresUi: boolean;
   ui: { approved: number; total: number };
+  /** User-facing capabilities defined in the Features stage (each becomes a stream). */
+  features: { count: number; allConfirmed: boolean };
 }
 
 export function derivePlanStageState(input: DerivePlanStageInput): PlanStageState {
@@ -49,6 +51,7 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
     repoCount: input.repoCount,
     requiresUi: input.requiresUi,
     ui: input.ui,
+    features: input.features,
     phasesConfirmed,
     issueCount: input.issueCount,
     fleet: { streams: input.fleetStreams, profilesComplete: input.fleetProfilesComplete },
@@ -72,6 +75,8 @@ export function planStateToSignals(s: PlanStageState): PlanSignals {
     requiresUi: s.requiresUi,
     screensApproved: s.ui.approved,
     screensTotal: s.ui.total,
+    featuresDefined: s.features.count,
+    featuresConfirmed: s.features.allConfirmed,
     phasesConfirmed: s.phasesConfirmed,
     issueCount: s.issueCount,
     fleetStreams: s.fleet.streams,

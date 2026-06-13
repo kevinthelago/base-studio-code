@@ -38,7 +38,7 @@ describe("planStages — gates", () => {
   });
 
   it("structure completes only with phases confirmed AND issues", () => {
-    const base = { context: { resolved: 1, total: 1, coreConfirmed: true }, repoCount: 1, requiresUi: false };
+    const base = { context: { resolved: 1, total: 1, coreConfirmed: true }, repoCount: 1, requiresUi: false, features: { count: 1, allConfirmed: true } };
     expect(status("structure", buildPlanStageState({ ...base, phasesConfirmed: true, issueCount: 0 }))).toBe("in-progress");
     expect(status("structure", buildPlanStageState({ ...base, phasesConfirmed: true, issueCount: 5 }))).toBe("complete");
   });
@@ -81,14 +81,14 @@ describe("planStages — dependency gating", () => {
 
   it("a disabled dependency counts as satisfied", () => {
     // Disable context+repos+ui; structure should no longer be locked by them.
-    const c = cfg({ enabled: { ...defaultStageConfig().enabled, context: false, repos: false, ui: false } });
+    const c = cfg({ enabled: { ...defaultStageConfig().enabled, context: false, repos: false, ui: false, features: false } });
     const s = buildPlanStageState({ phasesConfirmed: false, issueCount: 0 });
     expect(stageStatus(STAGE_BY_ID.structure, s, c).status).toBe("in-progress");
   });
 
   it("an N/A dependency (ui off via requiresUi) does not block structure", () => {
-    const s = buildPlanStageState({ context: { resolved: 1, total: 1, coreConfirmed: true }, repoCount: 1, requiresUi: false });
-    // context+repos complete, ui N/A -> structure unlocked (in-progress, not locked)
+    const s = buildPlanStageState({ context: { resolved: 1, total: 1, coreConfirmed: true }, repoCount: 1, requiresUi: false, features: { count: 1, allConfirmed: true } });
+    // context+repos+features complete, ui N/A -> structure unlocked (in-progress, not locked)
     expect(status("structure", s)).toBe("in-progress");
   });
 });
@@ -121,9 +121,9 @@ describe("planStages — currentStage (reached frontier)", () => {
     const state = buildPlanStageState({
       context: { resolved: 6, total: 6, coreConfirmed: true },
       repoCount: 1,        // repos complete
-      requiresUi: false,   // ui n/a → skipped
+      requiresUi: false,   // ui n/a → skipped → next reachable stage is features
     });
-    expect(currentStage(cfg(), state)?.id).toBe("structure");
+    expect(currentStage(cfg(), state)?.id).toBe("features");
   });
 
   it("falls back to the last enabled+applicable stage when all are complete", () => {
@@ -131,6 +131,7 @@ describe("planStages — currentStage (reached frontier)", () => {
       context: { resolved: 1, total: 1, coreConfirmed: true },
       repoCount: 1,
       requiresUi: false,
+      features: { count: 2, allConfirmed: true },
       phasesConfirmed: true, issueCount: 3,
       fleet: { streams: 2, profilesComplete: true },
       automationsAck: true,

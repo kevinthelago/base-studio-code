@@ -21,9 +21,7 @@ clarifying questions.
 
 **This session plans; it does not implement.** You may write only the planning
 files — the plan section files, `phases.json`, `issues.json`, `fleet.json`, and
-the `prompts/` kickoff scripts — and set up the **planning git structure** (the
-repositories, project board, milestones, issues, and labels, created by the
-Publish flow). You must NOT edit project code, create commits, push, open or
+the `prompts/` kickoff scripts. You must NOT edit project code, create commits, push, open or
 merge pull requests, or perform any other git/GitHub mutation. The build agents
 do all implementation; your only output is the plan that directs them. This
 boundary is also enforced — the session can read git/GitHub for context but
@@ -43,6 +41,12 @@ and ask, the plan is not finished.
 - **GitHub Project**: #{PROJECT_NUMBER}
 
 ## How this planner works
+
+**The app drives this plan one stage at a time.** When you reach a stage, the app
+sends you that stage's working instructions; follow them, finish the stage, and
+wait for the app to advance you to the next — don't run ahead or jump stages. The
+sections below are your **reference** for HOW to handle each stage when you reach
+it, not a list to march through on your own.
 
 This is a **guided but dynamic** process. There is no fixed list of sections to
 fill. Instead you walk a curated checklist of every dimension of modern
@@ -135,5 +139,6 @@ right mode:
    interactive part: be Socratic, propose then interrogate, and don't shortcut it.
 5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
    and set the optimal session count (see "Plan the agent fleet").
-6. **Publish to GitHub** once the user has confirmed the plan (see "Publish to
-   GitHub").
+
+When the plan is complete and the user has confirmed it, your work is done — stop
+there. Putting it on GitHub is the user's job, not yours.

@@ -1,0 +1,76 @@
+// The feature list (#…): the authoritative artifact of the Features stage. Each entry is a
+// user-facing capability AND a fleet stream. The planner writes `features.json` (surfaced by the
+// poll as the `features` section); the Features board renders it and the gate signal reads it.
+// Pure + tolerant of partial/malformed input — no React/Tauri.
+
+export interface PlanFeature {
+  /** Stable slug / stream id (kebab-case). */
+  slug: string;
+  /** User-facing capability name ("Invite teammates"). */
+  name: string;
+  /** What it does + when, in the user's terms. */
+  behavior?: string;
+  /** Done-when checklist a building agent verifies against. */
+  acceptance?: string[];
+  /** The build approach — the shape of the solution. */
+  approach?: string;
+  /** Specific libraries / services / frameworks. */
+  tools?: string[];
+  /** What it stores/reads + which other features it relies on. */
+  data?: string;
+  /** The fleet stream that owns it (defaults to the slug — a feature IS a stream). */
+  stream?: string;
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() ? v.trim() : undefined;
+}
+function strArray(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((s) => s.trim());
+  return out.length ? out : undefined;
+}
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+}
+
+/** Parse `features.json` (a JSON array of feature objects) into a clean list. Tolerant: bad JSON
+ *  ⇒ []; entries missing both slug and name are dropped; duplicate slugs are de-duped; a missing
+ *  slug is derived from the name, and stream defaults to the slug. */
+export function parseFeaturesFile(raw: string): PlanFeature[] {
+  if (!raw.trim()) return [];
+  let data: unknown;
+  try { data = JSON.parse(raw); } catch { return []; }
+  if (!Array.isArray(data)) return [];
+  const out: PlanFeature[] = [];
+  const seen = new Set<string>();
+  for (const item of data) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const name = str(o.name) ?? "";
+    const slug = str(o.slug) ?? slugify(name);
+    if (!slug || !name || seen.has(slug)) continue;
+    seen.add(slug);
+    out.push({
+      slug, name,
+      behavior: str(o.behavior),
+      acceptance: strArray(o.acceptance),
+      approach: str(o.approach),
+      tools: strArray(o.tools),
+      data: str(o.data),
+      stream: str(o.stream) ?? slug,
+    });
+  }
+  return out;
+}
+
+/** A feature is fully defined once it has a name, behavior, and ≥1 acceptance criterion — enough
+ *  for the Plan stage to decompose it into agent-ready issues. */
+export function featureDefined(f: PlanFeature): boolean {
+  return !!f.name && !!f.behavior && (f.acceptance?.length ?? 0) > 0;
+}
+
+/** The Features-gate summary: how many capabilities exist, and whether ALL are fully defined. */
+export function featuresSummary(features: PlanFeature[]): { count: number; allConfirmed: boolean } {
+  return { count: features.length, allConfirmed: features.length > 0 && features.every(featureDefined) };
+}

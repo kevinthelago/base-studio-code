@@ -201,6 +201,59 @@ fn clear_all_plan_files() -> Result<u32, String> {
     Ok(removed)
 }
 
+#[derive(serde::Serialize)]
+struct LocalProject {
+    key: String,
+    title: String,
+    has_plan: bool,
+    updated_at: u64,
+}
+
+/// List the on-disk local projects (the `projects/<key>/` dirs) so the Projects page can surface
+/// unpublished local work, not just GitHub boards + the store's draft map (#…). The on-disk hub is
+/// the durable source of truth; the store had drifted out of sync, hiding real projects. `title`
+/// is the first non-empty line of `goal.md` (heading markers stripped, first sentence, capped),
+/// else the humanized key. `has_plan` marks a real project (any of goal/scope/CLAUDE.md present)
+/// vs. a bare scaffold. `updated_at` is the dir mtime in ms since the epoch (for recency sorting).
+#[tauri::command]
+fn list_local_projects() -> Result<Vec<LocalProject>, String> {
+    let projects = bsc_base_dir().join("projects");
+    if !projects.exists() {
+        return Ok(vec![]);
+    }
+    let mut out = vec![];
+    for entry in std::fs::read_dir(&projects).map_err(|e| e.to_string())?.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let key = match dir.file_name().and_then(|n| n.to_str()) {
+            Some(k) if !k.starts_with('.') => k.to_string(),
+            _ => continue,
+        };
+        let goal = dir.join("goal.md");
+        let has_plan = goal.exists() || dir.join("scope.md").exists() || dir.join("CLAUDE.md").exists();
+        let title = std::fs::read_to_string(&goal)
+            .ok()
+            .and_then(|c| {
+                c.lines()
+                    .map(|l| l.trim_start_matches('#').trim())
+                    .find(|l| !l.is_empty())
+                    .map(|l| l.split(['.', '!', '?']).next().unwrap_or(l).trim().chars().take(80).collect::<String>())
+            })
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| key.replace(['_', '-'], " "));
+        let updated_at = std::fs::metadata(&dir)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        out.push(LocalProject { key, title, has_plan, updated_at });
+    }
+    Ok(out)
+}
+
 /// Delete every plan section file (`.md` / `.json`) in a single project's hub
 /// directory, leaving subdirectories (cloned repos, `.worktrees`, `prompts/`,
 /// `.claude/`) intact. The section poll re-reads from disk, so this must run
@@ -1580,6 +1633,7 @@ pub fn run() {
             delete_project_dir,
             clear_all_plan_files,
             clear_project_plan_files,
+            list_local_projects,
             write_project_file,
             write_project_file_bytes,
             scan_dead_code,
@@ -1663,6 +1717,16 @@ pub(crate) mod testutil {
 #[cfg(test)]
 mod tests {
     use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn director_protocol_assigns_contract_ownership() {
+        // The director owns the integration contracts, tests the seams, and is the worker's
+        // help desk for them (#…). Guard that the standing protocol says so.
+        let p = super::DIRECTOR_PROTOCOL_MD;
+        assert!(p.contains("contracts/") || p.contains("contracts directory") || p.contains("INTEGRATION CONTRACTS"),
+            "director protocol must claim ownership of the contracts directory");
+        assert!(p.contains("TEST THE INTEGRATIONS"), "director protocol must mandate integration testing");
+    }
 
     #[test]
     fn pane_id_format_matches_frontend_convention() {
@@ -2173,6 +2237,29 @@ mod tests {
         // Missing project -> Ok(0), no panic.
         let n = super::clear_project_plan_files("no-such-bsc-cpf-key".to_string()).unwrap();
         assert_eq!(n, 0);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn list_local_projects_surfaces_on_disk_unpublished_projects() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("llp");
+        let root = super::bsc_base_dir().join("projects");
+        // A real project: goal.md drives the title (first sentence, heading stripped).
+        write_file(&root.join("monkeys-paw").join("goal.md"), "# A wish-granting app.\n\nmore");
+        // A project with only CLAUDE.md still counts as has_plan, title falls back to humanized key.
+        write_file(&root.join("artist_portfolio").join("CLAUDE.md"), "spec");
+        // A bare scaffold dir (no plan artifacts) is listed but flagged has_plan=false.
+        std::fs::create_dir_all(root.join("empty-scaffold").join("prompts")).unwrap();
+
+        let found = super::list_local_projects().unwrap();
+        let by = |k: &str| found.iter().find(|p| p.key == k);
+        assert_eq!(by("monkeys-paw").unwrap().title, "A wish-granting app");
+        assert!(by("monkeys-paw").unwrap().has_plan);
+        assert_eq!(by("artist_portfolio").unwrap().title, "artist portfolio");
+        assert!(by("artist_portfolio").unwrap().has_plan);
+        assert!(!by("empty-scaffold").unwrap().has_plan, "bare scaffold flagged has_plan=false");
 
         std::fs::remove_dir_all(&home).ok();
     }
