@@ -25,6 +25,29 @@ describe("blueprints — seed library", () => {
     expect(ctx.gate).toBe(SECTION_DEFS.context.gate);
   });
 
+  it("orders Features before UI in every UI-bearing blueprint (#825)", () => {
+    for (const bp of makeBlueprints()) {
+      const keys = bp.sections.map((s) => s.key);
+      const ui = keys.indexOf("ui");
+      if (ui < 0) continue; // headless blueprints have no UI stage
+      const features = keys.indexOf("features");
+      expect(features, `${bp.id}: features must precede ui`).toBeGreaterThanOrEqual(0);
+      expect(features).toBeLessThan(ui);
+    }
+    // and the UI stage declares the features dependency that enforces it
+    expect(SECTION_DEFS.ui.deps).toContain("features");
+  });
+
+  it("includes a headless 'mcp-server' greenfield blueprint with no UI stage (#825)", () => {
+    const mcp = makeBlueprints().find((b) => b.id === "mcp-server");
+    expect(mcp).toBeTruthy();
+    expect(mcp!.category).toBe("greenfield");
+    const keys = mcp!.sections.map((s) => s.key);
+    expect(keys).not.toContain("ui");
+    expect(keys).toContain("features");
+    expect(keys).toContain("structure");
+  });
+
   it("mkSection resolves pipeline ids against the catalog", () => {
     const ui = mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] });
     expect(ui.pipelines).toHaveLength(1);
