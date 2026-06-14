@@ -1744,3 +1744,18 @@ describe("deleteLocalProject — resilient to a missing projects scope (#791)", 
     expect(useAppStore.getState().skills[0].projects).toEqual([]);
   });
 });
+
+describe("updateAgentProfile marks assigned consoles stale (#799)", () => {
+  it("flags panes using the edited profile and clearPanePermsStale removes the flag", () => {
+    useAppStore.setState({
+      paneProfiles: { t0p1: "prof-a", t0p2: "prof-b" },
+      panePermsStale: {},
+    });
+    useAppStore.getState().updateAgentProfile("prof-a", {}); // edit prof-a
+    expect(useAppStore.getState().panePermsStale.t0p1).toBe(true);   // uses prof-a → stale
+    expect(useAppStore.getState().panePermsStale.t0p2).toBeUndefined(); // uses prof-b → untouched
+
+    useAppStore.getState().clearPanePermsStale("t0p1");
+    expect(useAppStore.getState().panePermsStale.t0p1).toBeUndefined();
+  });
+});
