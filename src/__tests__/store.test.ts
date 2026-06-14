@@ -1759,3 +1759,33 @@ describe("updateAgentProfile marks assigned consoles stale (#799)", () => {
     expect(useAppStore.getState().panePermsStale.t0p1).toBeUndefined();
   });
 });
+
+describe("canonicalizePlanSections collapses stale title-named sections (#803)", () => {
+  it("maps 'Tech stack' → 'stack' in sections + confirmed, preserving content", () => {
+    useAppStore.setState({
+      planSections: { proj: { goal: "g", "Tech stack": "the stack", scope: "s" } },
+      planConfirmedSections: { proj: ["goal", "Tech stack"] },
+    });
+    useAppStore.getState().canonicalizePlanSections("proj");
+    const sec = useAppStore.getState().planSections.proj;
+    expect(Object.keys(sec).sort()).toEqual(["goal", "scope", "stack"]);
+    expect(sec.stack).toBe("the stack");
+    expect(useAppStore.getState().planConfirmedSections.proj).toEqual(["goal", "stack"]);
+  });
+
+  it("prefers the canonical key's own content when both exist", () => {
+    useAppStore.setState({
+      planSections: { proj: { "Tech stack": "alias", stack: "canonical" } },
+      planConfirmedSections: {},
+    });
+    useAppStore.getState().canonicalizePlanSections("proj");
+    expect(useAppStore.getState().planSections.proj).toEqual({ stack: "canonical" });
+  });
+
+  it("is a no-op when all keys are already canonical", () => {
+    useAppStore.setState({ planSections: { proj: { goal: "g", stack: "s" } }, planConfirmedSections: { proj: ["goal"] } });
+    const before = useAppStore.getState().planSections.proj;
+    useAppStore.getState().canonicalizePlanSections("proj");
+    expect(useAppStore.getState().planSections.proj).toBe(before); // same ref → no churn
+  });
+});

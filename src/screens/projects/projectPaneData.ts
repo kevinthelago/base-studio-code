@@ -294,7 +294,10 @@ function buildContext(input: BuildProjectPaneInput): ContextFile[] {
       : s.k.includes("spec") ? "spec"
       : "doc";
     const tok = (s.content.length / 1000).toFixed(1) + "k";
-    const name = (s.title || s.k) + ".md";
+    // The displayed filename is the canonical KEY (+ .md) so it matches the on-disk file
+    // (`stack.md`), not the human title ("Tech stack.md") which would mislead (#803). The
+    // global project guidance file is the uppercase `CLAUDE.md` on disk.
+    const name = s.k === "claude" ? "CLAUDE.md" : s.k + ".md";
     return {
       name,
       kind,

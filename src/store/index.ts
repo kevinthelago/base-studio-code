@@ -36,6 +36,7 @@ import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import type { GradeResult } from "../screens/projects/grading";
 import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
 import { seedDataModels, emptyDataModel, type DataModel } from "../screens/projects/dataModel";
+import { canonicalSectionKey } from "../screens/projects/planSections";
 import type { PaneDescriptor } from "../lib/tunnel";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
@@ -639,6 +640,10 @@ interface AppStore {
   planConfirmedSections: Record<string, string[]>;
   confirmPlanSection:   (projectId: string, key: string) => void;
   unconfirmPlanSection: (projectId: string, key: string) => void;
+  /** Collapse non-canonical section keys (e.g. "Tech stack" → "stack") for a project,
+   *  merging content into the canonical key (and deduping confirmed keys) — repairs a gate
+   *  stuck on a stale title-named section (#803). */
+  canonicalizePlanSections: (projectId: string) => void;
   planKbAssignments:    Record<string, string[]>;
   addPlanKbAssignment:  (projectId: string, blockId: string) => void;
   removePlanKbAssignment: (projectId: string, blockId: string) => void;
@@ -1986,6 +1991,35 @@ export const useAppStore = create<AppStore>()(
             [projectId]: (s.planConfirmedSections[projectId] ?? []).filter((k) => k !== key),
           },
         })),
+      canonicalizePlanSections: (projectId) =>
+        set((s) => {
+          const sections = s.planSections[projectId];
+          if (!sections) return {};
+          let changed = false;
+          const nextSections: Record<string, string> = {};
+          for (const [k, v] of Object.entries(sections)) {
+            const ck = canonicalSectionKey(k);
+            if (ck !== k) changed = true;
+            // The canonical key's own content always wins; an alias only fills if absent.
+            if (k === ck || nextSections[ck] === undefined) nextSections[ck] = v;
+          }
+          const confirmed = s.planConfirmedSections[projectId];
+          let nextConfirmed = confirmed;
+          if (confirmed) {
+            const mapped = [...new Set(confirmed.map(canonicalSectionKey))];
+            if (mapped.length !== confirmed.length || mapped.some((k, i) => k !== confirmed[i])) {
+              nextConfirmed = mapped;
+              changed = true;
+            }
+          }
+          if (!changed) return {};
+          return {
+            planSections: { ...s.planSections, [projectId]: nextSections },
+            ...(nextConfirmed !== confirmed
+              ? { planConfirmedSections: { ...s.planConfirmedSections, [projectId]: nextConfirmed } }
+              : {}),
+          };
+        }),
       planKbAssignments: {},
       addPlanKbAssignment: (projectId, blockId) =>
         set((s) => {

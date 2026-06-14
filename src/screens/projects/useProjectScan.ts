@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAppStore } from "../../store";
 import { scanProjectRepos, scanPlanSections } from "./projectScan";
+import { canonicalSectionKey } from "./planSections";
 
 /**
  * Refreshes the active project's linked repositories and plan whenever the
@@ -53,11 +54,17 @@ export function useProjectScan(): void {
           const sections = await scanPlanSections(activeProjectName);
           if (cancelled) return;
           const saved = useAppStore.getState().planSections[activeProjectName] ?? {};
-          for (const [key, content] of Object.entries(sections)) {
+          for (const [rawKey, content] of Object.entries(sections)) {
+            // Canonicalize the file stem (e.g. a leftover "Tech stack.md" → "stack"), mirroring
+            // the planner poll (Planning.tsx) — otherwise a title-named file is ingested as a
+            // non-canonical section that blocks the Context gate (#803).
+            const key = canonicalSectionKey(rawKey);
             if (content && content !== (saved[key] ?? "")) {
               setPlanSection(activeProjectName, key, content);
             }
           }
+          // Collapse any pre-existing stale non-canonical keys already in the store (#803).
+          useAppStore.getState().canonicalizePlanSections(activeProjectName);
         } catch { /* plans dir may not exist yet */ }
       }
     })();
