@@ -1155,6 +1155,16 @@ function FocusedSkillsBody({ skills }: { skills?: PaneSkill[] }) {
 // curates and watches each feature take shape.
 function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
   const list = features ?? [];
+  // Auto-expand the first not-yet-defined feature — the one the workshop is actively driving down.
+  const firstDrafting = list.find((f) => !featureDefined(f))?.slug;
+  const [open, setOpen] = useState<Set<string>>(() => new Set(firstDrafting ? [firstDrafting] : []));
+  const toggle = (slug: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug); else next.add(slug);
+      return next;
+    });
+
   if (list.length === 0) {
     return (
       <div className="empty-state">
@@ -1163,34 +1173,79 @@ function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
       </div>
     );
   }
+
+  const definedCount = list.filter(featureDefined).length;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+    <div className="features-view">
+      <div className="tiles">
+        <Tile v={list.length} k="features" />
+        <Tile v={definedCount} k="defined" />
+        <Tile v={list.length - definedCount} k="drafting" />
+      </div>
       {list.map((f) => {
         const done = featureDefined(f);
-        const acc = f.acceptance?.length ?? 0;
+        const acc = f.acceptance ?? [];
+        // The workshop drills each feature down to: behavior + acceptance, build approach, tools,
+        // data + deps. A card is expandable once it carries any of that detail.
+        const hasDetail = !!(f.approach || f.data || (f.tools && f.tools.length > 0) || acc.length > 0);
+        const isOpen = open.has(f.slug);
         return (
-          <div key={f.slug} style={{
-            padding: "8px 10px", borderRadius: 6,
-            background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{f.name}</span>
+          <div key={f.slug} className={"feature-card" + (done ? " done" : "")}>
+            <div
+              className="feature-head"
+              onClick={hasDetail ? () => toggle(f.slug) : undefined}
+              style={{ cursor: hasDetail ? "pointer" : "default" }}
+            >
+              <span className="feature-caret">{hasDetail ? (isOpen ? "▼" : "▶") : ""}</span>
+              <span className="sdot" style={{ background: done ? "var(--success)" : "var(--fg-dim)" }} />
+              <span className="feature-name">{f.name}</span>
               <span style={{ flex: 1 }} />
-              <span style={{
-                fontFamily: "var(--mono)", fontSize: 8.5, padding: "1px 6px", borderRadius: 999,
-                background: done ? "color-mix(in oklch, var(--success), transparent 86%)" : "var(--bg-elev)",
-                border: `1px solid ${done ? "color-mix(in oklch, var(--success), transparent 55%)" : "var(--border-soft)"}`,
-                color: done ? "var(--success)" : "var(--fg-dim)",
-              }}>{done ? "✓ defined" : "drafting"}</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }} title="fleet stream">⑂ {f.stream ?? f.slug}</span>
+              <span className={"feature-badge" + (done ? " done" : "")}>{done ? "✓ defined" : "○ drafting"}</span>
+              <span className="feature-stream" title="fleet stream">⑂ {f.stream ?? f.slug}</span>
             </div>
-            {f.behavior && (
-              <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 3 }}>{f.behavior}</div>
-            )}
-            {acc > 0 && (
-              <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", marginTop: 2, opacity: 0.8 }}>
-                {acc} acceptance {acc === 1 ? "criterion" : "criteria"}
+            {f.behavior && <div className="feature-behavior">{f.behavior}</div>}
+
+            {isOpen ? (
+              <div className="feature-detail">
+                {f.approach && (
+                  <div className="feature-field">
+                    <span className="feature-flabel">approach</span>
+                    <span className="feature-ftext">{f.approach}</span>
+                  </div>
+                )}
+                {f.tools && f.tools.length > 0 && (
+                  <div className="feature-field">
+                    <span className="feature-flabel">tools</span>
+                    <span className="feature-tools">{f.tools.map((t) => <span key={t} className="chip">{t}</span>)}</span>
+                  </div>
+                )}
+                {f.data && (
+                  <div className="feature-field">
+                    <span className="feature-flabel">data + deps</span>
+                    <span className="feature-ftext">{f.data}</span>
+                  </div>
+                )}
+                {acc.length > 0 && (
+                  <div className="feature-field col">
+                    <span className="feature-flabel">acceptance criteria</span>
+                    <div className="feature-acc">
+                      {acc.map((a, i) => (
+                        <div key={i} className="feature-acc-item">
+                          <span className="feature-acc-box" />
+                          <span>{a}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
+            ) : (
+              acc.length > 0 && (
+                <div className="feature-acc-count">
+                  {acc.length} acceptance {acc.length === 1 ? "criterion" : "criteria"}
+                </div>
+              )
             )}
           </div>
         );
