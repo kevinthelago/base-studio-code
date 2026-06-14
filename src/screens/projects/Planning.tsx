@@ -401,18 +401,22 @@ export function Planning({ visible }: { visible: boolean }) {
     if (raw === fleetSyncedRef.current) return;
     fleetSyncedRef.current = raw;
     const fleet = parseFleetFile(raw);
-    if (fleet) {
-      const store = useAppStore.getState();
-      store.setPlanFleet(effectiveProjectId, fleet);
-      // Materialize least-privilege profiles for every stream as soon as the fleet lands (#819).
-      // The planner writes profile ID references in fleet.json (e.g. `"profile": "engine-spine"`)
-      // but cannot create the AgentProfile objects — those live in app state. Without this, each
-      // agent falls back to default perms and the Permissions `profilesComplete` gate can never
-      // pass during planning (it previously only ran at fleet launch). Idempotent: streams whose
-      // profile already exists are skipped.
-      store.generateFleetProfiles(effectiveProjectId);
-    }
+    if (fleet) useAppStore.getState().setPlanFleet(effectiveProjectId, fleet);
   }, [savedSections, effectiveProjectId]);
+
+  // Materialize least-privilege profiles for every stream (#819/#821). The planner writes profile
+  // ID references in fleet.json (e.g. `"profile": "engine-spine"`) but cannot create the
+  // AgentProfile objects — those live in app state. This reacts to the FLEET DATA itself (not to
+  // fleet.json content changing), so it fires for an already-synced project loaded from
+  // persistence and after HMR — exactly the cases the content-gated sync effect above misses.
+  // Whenever a stream lacks a resolvable profile the gate can't pass, so generate; idempotent, and
+  // once every stream resolves, `fleetProfilesComplete` is true and this is a no-op (no loop).
+  useEffect(() => {
+    const streams = planFleet[effectiveProjectId]?.streams ?? [];
+    if (streams.length > 0 && !fleetProfilesComplete(streams, agentProfiles)) {
+      useAppStore.getState().generateFleetProfiles(effectiveProjectId);
+    }
+  }, [planFleet, agentProfiles, effectiveProjectId]);
 
   // Title + derived GitHub object graph that the structure card renders and the
   // publish flow fills in. Kept in sync with handlePublish's own derivation.
