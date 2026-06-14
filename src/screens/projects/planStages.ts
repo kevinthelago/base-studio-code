@@ -342,14 +342,15 @@ export const BUILT_IN_BLUEPRINTS: Blueprint[] = [
     id: "quick-context",
     name: "Quick context",
     description: "Context and structure only — fastest path to agent-ready issues",
-    enabledStages: ["context", "repos", "structure"],
+    // Structure depends on `features`, so the features stage rides along (#815).
+    enabledStages: ["context", "repos", "features", "structure"],
     custom: false,
   },
   {
     id: "existing-project",
     name: "Existing project",
     description: "Section-by-section migration of an existing codebase into the plan",
-    enabledStages: ["context", "repos", "structure", "permissions"],
+    enabledStages: ["context", "repos", "features", "structure", "permissions"],
     stageOptions: {
       structure: { workshopMode: "section" },
     },
@@ -359,7 +360,7 @@ export const BUILT_IN_BLUEPRINTS: Blueprint[] = [
     id: "ui-first",
     name: "UI first",
     description: "Context → screen skeletons → structure → fleet",
-    enabledStages: ["context", "repos", "ui", "structure", "permissions"],
+    enabledStages: ["context", "repos", "ui", "features", "structure", "permissions"],
     custom: false,
   },
   {
