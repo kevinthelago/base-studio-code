@@ -62,12 +62,18 @@ describe("planStages — applicability", () => {
   });
 
   it("ui is in-progress when required but no screens approved", () => {
-    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, ui: { approved: 0, total: 3 } });
+    // ui now depends on features (#825), so features must be complete for ui to be reachable.
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 0, total: 3 } });
     expect(status("ui", s)).toBe("in-progress");
   });
 
+  it("ui is locked until features are defined (#825)", () => {
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, features: { count: 0, allConfirmed: false }, ui: { approved: 0, total: 3 } });
+    expect(status("ui", s)).toBe("locked");
+  });
+
   it("ui completes when the preview is approved (#544)", () => {
-    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, ui: { approved: 1, total: 1 } });
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 1, total: 1 } });
     expect(status("ui", s)).toBe("complete");
   });
 });
@@ -120,10 +126,11 @@ describe("planStages — currentStage (reached frontier)", () => {
   it("skips N/A stages (ui when the project needs no UI)", () => {
     const state = buildPlanStageState({
       context: { resolved: 6, total: 6, coreConfirmed: true },
-      repoCount: 1,        // repos complete
-      requiresUi: false,   // ui n/a → skipped → next reachable stage is features
+      repoCount: 1,                              // repos complete
+      features: { count: 1, allConfirmed: true }, // features complete
+      requiresUi: false,   // ui (now after features, #825) is n/a → skipped → next is structure
     });
-    expect(currentStage(cfg(), state)?.id).toBe("features");
+    expect(currentStage(cfg(), state)?.id).toBe("structure");
   });
 
   it("falls back to the last enabled+applicable stage when all are complete", () => {
