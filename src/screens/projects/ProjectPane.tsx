@@ -478,6 +478,22 @@ function BranchChip({ n, mute }: { n: string; mute?: boolean }) {
   }}>⎇ {n}</span>;
 }
 
+/** A labeled stat tile ("2 · repositories"). Matches the design's `.tile`. */
+function Tile({ v, k }: { v: number | string; k: string }) {
+  return (
+    <div className="tile">
+      <div className="v">{v}</div>
+      <div className="k">{k}</div>
+    </div>
+  );
+}
+
+/** Branch-chip color by lifecycle state (matches the design): review → success,
+ *  draft → dim, anything else (active) → info. */
+function branchStateColor(state: string): string {
+  return state === "review" ? "var(--success)" : state === "draft" ? "var(--fg-dim)" : "var(--info)";
+}
+
 function SubList({ sub, pad = 22 }: { sub: SubItem[]; pad?: number }) {
   if (!sub || !sub.length) return null;
   return (
@@ -955,75 +971,102 @@ function PlaceholderStageBody({ stage }: { stage: PlanStage }) {
 
 function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: (r: string) => void }) {
   const [input, setInput] = useState("");
+  const [linking, setLinking] = useState(false);
+  const list = repos ?? [];
 
-  if (!repos || repos.length === 0) {
+  const submit = () => {
+    const v = input.trim();
+    if (v.includes("/")) { onLinkRepo?.(v); setInput(""); setLinking(false); }
+  };
+
+  // The "link another repository" affordance — a dashed dropzone that expands into an
+  // owner/repo input on click (matches the design's `.dropzone`).
+  const linkAffordance = onLinkRepo && (
+    linking ? (
+      <div className="repo-linkrow">
+        <input
+          autoFocus
+          aria-label="Link a repository"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+            else if (e.key === "Escape") { setLinking(false); setInput(""); }
+          }}
+          placeholder="owner/repo"
+        />
+        <button className="mini accent" disabled={!input.includes("/")} onClick={submit}>link</button>
+        <button className="mini" onClick={() => { setLinking(false); setInput(""); }}>cancel</button>
+      </div>
+    ) : (
+      <button type="button" className="dropzone" onClick={() => setLinking(true)}>
+        ＋ link another repository
+      </button>
+    )
+  );
+
+  if (list.length === 0) {
     return (
-      <div>
+      <div className="repos-view">
         <div className="empty-state">
           <span className="empty-icon">⎇</span>
           <span>No repositories linked yet</span>
         </div>
-        {onLinkRepo && (
-          <div style={{ display: "flex", gap: 6, padding: "8px 0 0", alignItems: "center" }}>
-            <label htmlFor="link-repo-input" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>
-              Link a repository
-            </label>
-            <input
-              id="link-repo-input"
-              aria-label="Link a repository"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="owner/repo"
-              style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 10 }}
-            />
-            <button
-              onClick={() => {
-                if (input.includes("/")) { onLinkRepo(input); setInput(""); }
-              }}
-              style={{ fontFamily: "var(--mono)", fontSize: 10 }}
-            >
-              link
-            </button>
-          </div>
-        )}
+        {linkAffordance}
       </div>
     );
   }
 
+  const cloned = list.filter((r) => r.cloned).length;
+  const branchCount = list.reduce((s, r) => s + (r.branches?.length ?? 0), 0);
+
   return (
-    <div>
-      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", padding: "0 2px 8px" }}>
-        repositories
+    <div className="repos-view">
+      <div className="tiles">
+        <Tile v={list.length} k="repositories" />
+        <Tile v={cloned} k="cloned" />
+        <Tile v={branchCount} k="branches" />
       </div>
-      {repos.map((r) => (
-        <div key={r.id} style={{
-          padding: "9px 11px", borderRadius: 7, marginBottom: 6,
-          background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{r.id}</span>
-            {r.primary && (
-              <span style={{
-                fontFamily: "var(--mono)", fontSize: 8.5, padding: "0 5px", borderRadius: 3,
-                background: "color-mix(in oklch, var(--accent), transparent 84%)", color: "var(--accent)",
-              }}>primary</span>
-            )}
+      {list.map((r) => (
+        <div key={r.id} className={"repo-card" + (r.primary ? " primary" : "")}>
+          <div className="repo-row">
+            <span className="sdot on" />
+            <span className="repo-name">{r.id}</span>
+            {r.primary && <span className="chip accent">primary</span>}
             <span style={{ flex: 1 }} />
+            {r.lang && <span className="chip">{r.lang}</span>}
             {r.cloned !== undefined && (
-              <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: r.cloned ? "var(--success)" : "var(--fg-dim)" }}>
+              <span className="repo-stat" style={{ color: r.cloned ? "var(--success)" : "var(--fg-dim)" }}>
                 {r.cloned ? "● cloned" : "○ not cloned"}
               </span>
             )}
           </div>
+          {r.desc && <div className="repo-desc">{r.desc}</div>}
+          <div className="repo-row repo-branchline">
+            <span className="branch-chip">⎇ {r.branch}</span>
+            <span className="repo-stat" style={{ color: "var(--success)" }}>↑{r.ahead}</span>
+            <span className="repo-stat" style={{ color: "var(--info)" }}>↓{r.behind}</span>
+            <span style={{ flex: 1 }} />
+            {r.agents.length > 0 && (
+              <span className="repo-agents">
+                {r.agents.map((id, i) => (
+                  <span key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={16} /></span>
+                ))}
+              </span>
+            )}
+          </div>
           {r.branches && r.branches.length > 0 && (
-            <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
+            <div className="repo-branches">
               {r.branches.map((b) => (
-                <BranchChip key={b.n} n={b.n} />
+                <span key={b.n} className="branch-chip" style={{ color: branchStateColor(b.state) }}>
+                  ⎇ {b.n} <span style={{ color: "var(--fg-dim)" }}>#{b.issue}</span>
+                </span>
               ))}
             </div>
           )}
         </div>
       ))}
+      {linkAffordance}
     </div>
   );
 }
