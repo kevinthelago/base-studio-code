@@ -28,6 +28,8 @@ import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
 import { publishFleetRoster } from "../../lib/fleetRoster";
+import { hubToCanonical } from "../../lib/plannerSync";
+import { tunnelSetPlanState } from "../../lib/tunnelClient";
 import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
@@ -286,6 +288,10 @@ export function Planning({ visible }: { visible: boolean }) {
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
   const paneId = `planning_${effectiveProjectId.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 80)}`;
+  // The planner's hub dir (set once setup_workspaces resolves) + whether the relay is live —
+  // used to mirror the planner pane + sync the plan over the tunnel (#801).
+  const [planningDir, setPlanningDir] = useState("");
+  const tunnelRunning = useAppStore((s) => s.tunnelRunning);
 
   // Prefer activeProjectRepos (populated from board items) but fall back to
   // any previously-cloned repos for this project if the board hasn't loaded yet.
@@ -402,6 +408,43 @@ export function Planning({ visible }: { visible: boolean }) {
   const goalForTitle = sections.find(s => s.k === "goal")?.content ?? "";
   const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
   const ghStructure  = buildGhStructure(sections, publishRepos, projectTitle, planFleet[effectiveProjectId]);
+
+  // ── Mobile relay: connect the planner session (#801) ──────────────────────────
+  // (1) Plan-sync — push the active project's canonical plan to the tunnel whenever it
+  // changes, so a paired mobile planner reconciles over the relay (E2E) instead of the API.
+  useEffect(() => {
+    if (!tunnelRunning || Object.keys(savedSections).length === 0) return;
+    // Route the JSON manifests to their canonical relpaths; everything else is a `.md`
+    // section. commands.json/features.json are outside the canonical-sync contract (see
+    // isPlanFile), so they're not sent.
+    const md: Record<string, string> = {};
+    let phasesJson, issuesJson, fleetJson, reposJson, skippedContent: string | undefined;
+    for (const [k, v] of Object.entries(savedSections)) {
+      if (k === "phases") phasesJson = v;
+      else if (k === "issues") issuesJson = v;
+      else if (k === FLEET_KEY) fleetJson = v;
+      else if (k === "repos") reposJson = v;
+      else if (k === SKIPPED_KEY) skippedContent = v;
+      else if (k === COMMANDS_KEY || k === FEATURES_KEY) continue;
+      else md[k] = v;
+    }
+    const { files, meta } = hubToCanonical({
+      projectTitle: effectiveProjectId, // sanitized key — derives the stable proj-<hex> id
+      sections: md,
+      confirmedSections: [...confirmedSet],
+      phasesJson, issuesJson, fleetJson, reposJson, skippedContent,
+    });
+    tunnelSetPlanState(meta.projectId, files).catch(() => {});
+  }, [tunnelRunning, savedSections, confirmedSet, effectiveProjectId]);
+
+  // (2) PTY mirror — expose the planner pane so a paired phone can view (and, if granted,
+  // drive) the live planner terminal. Cleared when the planner unmounts or the relay stops.
+  useEffect(() => {
+    const setExtra = useAppStore.getState().setTunnelExtraPanes;
+    if (!tunnelRunning || !planningDir) { setExtra([]); return; }
+    setExtra([{ id: paneId, cwd: planningDir, name: `Planner — ${projectTitle}`, status: "running" as const }]);
+    return () => useAppStore.getState().setTunnelExtraPanes([]);
+  }, [tunnelRunning, planningDir, paneId, projectTitle]);
 
   // Real plan data for the ProjectPane (#: wire-in). Maps the fleet, agent
   // profiles, decomposed issues, phases, repos, and sections into the pane's
@@ -989,6 +1032,7 @@ export function Planning({ visible }: { visible: boolean }) {
         return null;
       });
       refreshSetupSig(); // baseline updated (#756)
+      if (paths) setPlanningDir(paths.planning_dir); // for the relay planner-pane mirror (#801)
 
       // Launch claude inside the isolated planning directory.
       // Inject the stored GitHub token so `gh` CLI and direct API calls work

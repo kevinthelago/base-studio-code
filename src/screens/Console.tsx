@@ -10,9 +10,6 @@ import { useAppStore } from "../store";
 import { recordRender } from "../lib/perf";
 import { resetLaunchGate } from "../lib/launchGate";
 import { shouldAdvanceOnReply } from "../lib/consoleFocus";
-import { log } from "../lib/log";
-import { buildPanePayload } from "../lib/tunnel";
-import { tunnelSetPanes, tunnelSetSessions } from "../lib/tunnelClient";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import { useCoordinator } from "../lib/useCoordinator";
 import { usePipelineConductor } from "../lib/usePipelineConductor";
@@ -156,8 +153,6 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   const paneCwds          = useAppStore((s) => s.paneCwds);
   const paneInitCmds      = useAppStore((s) => s.paneInitCmds);
   const disabledPanes     = useAppStore((s) => s.disabledPanes);
-  const focusQueue        = useAppStore((s) => s.focusQueue);
-  const tunnelRunning     = useAppStore((s) => s.tunnelRunning);
   const autoAdvanceOnReply = useAppStore((s) => s.autoAdvanceOnReply);
   const consoleBroadcast  = useAppStore((s) => s.consoleBroadcast);
   // Action references are stable across store updates, so subscribing through a
@@ -251,21 +246,8 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
     reconcileFocusQueue(waitingByTab);
   }, [paneStatuses, tabs, reconcileFocusQueue]);
 
-  // Mobile tunnel (#253): while a phone is paired, push pane *metadata* so it mirrors
-  // the consoles. PTY output is teed in Rust (no-op while idle); this is the low-volume
-  // names/cwds/statuses + awaiting-input channel. The pure mapping lives in
-  // buildPanePayload; this effect only fires when those inputs (or the paired state)
-  // change, so it costs nothing when the tunnel is off.
-  useEffect(() => {
-    if (!tunnelRunning) return;
-    const awaiting = new Set(focusQueue.map((q) => paneId(q.tab, q.pane)));
-    const { panes, sessions } = buildPanePayload({
-      tabs, paneNames, paneCwds, paneStatuses, disabledPanes, awaiting,
-      nowIso: new Date().toISOString(),
-    });
-    tunnelSetPanes(panes).catch((e) => log.error(`tunnel: set_panes failed: ${e}`));
-    tunnelSetSessions(sessions).catch((e) => log.error(`tunnel: set_sessions failed: ${e}`));
-  }, [tunnelRunning, tabs, paneNames, paneCwds, paneStatuses, disabledPanes, focusQueue]);
+  // Mobile tunnel pane-sync moved to the always-on useTunnelSync hook (App) so the relay
+  // mirror stays current — and includes the planner pane — regardless of the active screen (#801).
 
   // All per-pane handlers are stable (useCallback) so the memoized PaneAt
   // children don't re-render on every ConsoleScreen commit. Each handler takes

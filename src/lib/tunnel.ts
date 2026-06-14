@@ -100,6 +100,9 @@ export interface PanePayloadInput {
   awaiting: ReadonlySet<string>;
   /** ISO timestamp stamped onto every session (injected for deterministic tests). */
   nowIso: string;
+  /** Ad-hoc panes outside the Console tab grid (e.g. the planner's `planning_<key>` pane),
+   *  so they mirror over the relay too (#801). A disabled extra pane is omitted. */
+  extraPanes?: PaneDescriptor[];
 }
 
 /** Pure transform: store pane state → the `{ panes, sessions }` the tunnel pushes
@@ -130,6 +133,18 @@ export function buildPanePayload(
       });
     }
   });
+
+  for (const p of input.extraPanes ?? []) {
+    if (input.disabledPanes[p.id]) continue;
+    panes.push(p);
+    sessions.push({
+      paneId: p.id,
+      status: p.status,
+      currentTask: p.name,
+      lastActivity: input.nowIso,
+      prompt: null,
+    });
+  }
 
   return { panes, sessions };
 }

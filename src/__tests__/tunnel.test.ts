@@ -110,6 +110,25 @@ describe("buildPanePayload", () => {
     expect(sessions[0].lastActivity).toBe("2026-05-29T00:00:00.000Z");
     expect(sessions[0].prompt).toBeNull();
   });
+
+  it("appends extraPanes (e.g. the planner pane) with a matching session (#801)", () => {
+    const { panes, sessions } = buildPanePayload({
+      ...base,
+      extraPanes: [{ id: "planning_proj", cwd: "/hub/proj", name: "Planner — Proj", status: "running" }],
+    });
+    expect(panes.map((p) => p.id)).toEqual(["t0p0", "t0p1", "planning_proj"]);
+    const sess = sessions.find((s) => s.paneId === "planning_proj")!;
+    expect(sess).toMatchObject({ status: "running", currentTask: "Planner — Proj" });
+  });
+
+  it("omits a disabled extra pane", () => {
+    const { panes } = buildPanePayload({
+      ...base,
+      disabledPanes: { planning_proj: true },
+      extraPanes: [{ id: "planning_proj", cwd: "/hub/proj", name: "Planner", status: "running" }],
+    });
+    expect(panes.map((p) => p.id)).toEqual(["t0p0", "t0p1"]);
+  });
 });
 
 // Guards that the shared fixture keeps the exact camelCase wire shape the mobile

@@ -36,6 +36,7 @@ import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import type { GradeResult } from "../screens/projects/grading";
 import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
 import { seedDataModels, emptyDataModel, type DataModel } from "../screens/projects/dataModel";
+import type { PaneDescriptor } from "../lib/tunnel";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/projects/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
@@ -454,6 +455,10 @@ interface AppStore {
   setTunnelRelayUrl: (url: string) => void;
   tunnelRunning: boolean;
   setTunnelRunning: (v: boolean) => void;
+  /** Ad-hoc panes (e.g. the active planner pane) mirrored over the relay alongside the
+   *  Console panes (#801). Transient — not persisted. */
+  tunnelExtraPanes: PaneDescriptor[];
+  setTunnelExtraPanes: (panes: PaneDescriptor[]) => void;
 
   // Knowledge Store
   kbBlocks: KbBlock[];
@@ -1278,6 +1283,8 @@ export const useAppStore = create<AppStore>()(
       setTunnelRelayUrl: (url) => set({ tunnelRelayUrl: url }),
       tunnelRunning: false,
       setTunnelRunning: (v) => set({ tunnelRunning: v }),
+      tunnelExtraPanes: [],
+      setTunnelExtraPanes: (panes) => set({ tunnelExtraPanes: panes }),
 
       kbBlocks: [],
       claudeApiKey: "",
