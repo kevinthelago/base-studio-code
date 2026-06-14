@@ -110,20 +110,6 @@ export const PLAN_STAGES: Stage[] = [
     gate: (s) => ({ done: s.repoCount > 0, fraction: s.repoCount > 0 ? 1 : 0 }),
   },
   {
-    id: "ui",
-    label: "UI",
-    description: "Screen skeletons and live preview via <ui_preview> tags",
-    optional: true,
-    hasOutputFile: false,
-    dependsOn: ["context"],
-    defaultEnabled: true,
-    applies: (s) => s.requiresUi,
-    gate: (s) => ({
-      done: s.ui.total > 0 && s.ui.approved >= s.ui.total,
-      fraction: s.ui.total > 0 ? s.ui.approved / s.ui.total : 0,
-    }),
-  },
-  {
     id: "features",
     label: "Features",
     description: "Define the user-facing capabilities, one at a time — each becomes a stream",
@@ -134,6 +120,22 @@ export const PLAN_STAGES: Stage[] = [
     gate: (s) => ({
       done: s.features.count > 0 && s.features.allConfirmed,
       fraction: s.features.count > 0 ? (s.features.allConfirmed ? 1 : 0.5) : 0,
+    }),
+  },
+  {
+    id: "ui",
+    label: "UI",
+    description: "Screen skeletons and live preview via <ui_preview> tags",
+    optional: true,
+    hasOutputFile: false,
+    // Features come FIRST so the UI stage designs screens for the defined capabilities
+    // (and can author a Claude Design kickoff from them) (#825).
+    dependsOn: ["context", "features"],
+    defaultEnabled: true,
+    applies: (s) => s.requiresUi,
+    gate: (s) => ({
+      done: s.ui.total > 0 && s.ui.approved >= s.ui.total,
+      fraction: s.ui.total > 0 ? s.ui.approved / s.ui.total : 0,
     }),
   },
   {

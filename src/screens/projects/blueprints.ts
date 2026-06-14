@@ -168,15 +168,22 @@ branch, and its role in the system. Write repos.json.
 Gate: at least one repository is linked.`,
   },
   ui: {
-    name: "UI", glyph: "▣", gate: "screens & flows defined", deps: ["context"],
+    // UI runs AFTER Features (#825) so the screens are designed for the defined capabilities —
+    // and so the stage can author a kickoff the user hands to Claude Design.
+    name: "UI", glyph: "▣", gate: "screens & flows defined", deps: ["context", "features"],
     // applies only when the project needs a UI; complete when every screen is approved.
     appliesWhen: { signal: "requiresUi", target: true },
     gateRule: { require: [{ signal: "screensApproved", of: "screensTotal", label: "approve the screen previews" }] },
-    blurb: "Screens, states, and primary flows.",
+    blurb: "Screens, states, and primary flows — designed from the features.",
     prompt:
-`Define the screens and primary flows. For each screen: its purpose, key states,
-and the components it needs from the design system. Produce ui.md plus a screen
-inventory the Render preview pipeline can visualize.
+`With the features defined, design the UI that delivers them. Walk the features and, for each
+screen a feature needs, capture its purpose, key states, and the components it needs from the
+design system. Produce ui.md plus a screen inventory the Render preview pipeline can visualize.
+
+Then author a **Claude Design kickoff** at \`prompts/ui-kickoff.md\` — a self-contained brief the
+user can paste into a Claude Design session: the product goal, the feature → screen map, each
+screen's states and flows, and the design-system constraints. This is the handoff that turns the
+plan's features into visual designs.
 
 Gate: every primary flow has its screens and states defined.`,
   },
@@ -579,8 +586,9 @@ export function makeBlueprints(): Blueprint[] {
       sections: [
         mkSection("context",     { pipelines: [["lint-plan", "on completion", true]] }),
         mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
-        mkSection("ui",          { optional: true, pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
+        // Features before UI (#825): design the screens from the defined capabilities + author the Claude Design kickoff.
         mkSection("features"),
+        mkSection("ui",          { optional: true, pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", false]] }),
         mkSection("permissions", { pipelines: [] }),
         mkSection("automations", { optional: true, pipelines: [["arm-schedule", "on completion", true]] }),
@@ -590,8 +598,9 @@ export function makeBlueprints(): Blueprint[] {
     {
       id: "fullstack", name: "Full-stack web app", desc: "Web client + API + DB", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
-        mkSection("context"), mkSection("repos"), mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
+        mkSection("context"), mkSection("repos"),
         mkSection("features"),
+        mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
         mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
         mkSection("automations"), mkSection("skills"),
@@ -600,8 +609,9 @@ export function makeBlueprints(): Blueprint[] {
     {
       id: "mobile", name: "Mobile MVP", desc: "Single app, ship fast", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
-        mkSection("context"), mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
+        mkSection("context"),
         mkSection("features"),
+        mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
         mkSection("permissions"), mkSection("skills"),
       ],
@@ -614,6 +624,19 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", true]] }),
         mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
         mkSection("automations"),
+      ],
+    },
+    {
+      id: "mcp-server", name: "MCP server", desc: "Headless Model Context Protocol server — tools/resources, no UI",
+      origin: "built-in", icon: "⚇", category: "greenfield", mode: "create",
+      sections: [
+        mkSection("context"), mkSection("repos"),
+        // No UI stage: an MCP server is headless (tools/resources over stdio/HTTP), so the plan
+        // goes straight from features to structure (#825).
+        mkSection("features"),
+        mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", true]] }),
+        mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("automations"), mkSection("skills"),
       ],
     },
     {
