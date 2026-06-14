@@ -6,6 +6,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { PaneDescriptor, SessionMeta, TunnelStatus } from "./tunnel";
+import type { CanonicalFile } from "./plannerCore";
 
 /** Mint a room + pairing secret and dial the relay. Returns the updated status. */
 export const tunnelStart = (relayUrl: string): Promise<TunnelStatus> =>
@@ -34,3 +35,9 @@ export const tunnelSetPanes = (panes: PaneDescriptor[]): Promise<void> =>
 /** Push per-pane session-state snapshots to connected clients. */
 export const tunnelSetSessions = (sessions: SessionMeta[]): Promise<void> =>
   invoke("tunnel_set_sessions", { sessions });
+
+/** Push the active project's canonical plan (files + manifest) to the relay so a paired
+ *  mobile planner syncs over the tunnel instead of hitting the API (#801). `projectId` is
+ *  the canonical `proj-<hex>` id from `hubToCanonical`. */
+export const tunnelSetPlanState = (projectId: string, files: CanonicalFile[]): Promise<void> =>
+  invoke("tunnel_set_plan_state", { projectId, files });
