@@ -1001,14 +1001,19 @@ export function Planning({ visible }: { visible: boolean }) {
       // (publishing is an explicit, separately-gated step).
       const plannerCap = roleCapability("planner");
       const plannerWrite = roleWriteRules(plannerCap);
+      // The role gate covers the planner's scoped plan-file writes + git/gh read-only.
+      // WebFetch (docs / version / pricing lookups) and Read are added explicitly here so
+      // this single role-launch path fully sources the planner's tools — replacing the
+      // hardcoded settings.json literal that setup_workspaces used to write (#799).
       await invoke("ensure_session_settings", {
         cwd:             paths?.planning_dir ?? "",
         allowedCommands: [],
         deniedCommands:  roleDeniedCommands(plannerCap),
         mcpServers:      null,
         hooks:           null,
-        allowToolRules:  plannerWrite.allow,
+        allowToolRules:  [...plannerWrite.allow, "Read", "WebFetch"],
         denyToolRules:   plannerWrite.deny,
+        replacePermissions: true,
       }).catch((e: unknown) => console.error("planner session settings failed:", e));
       await invoke("pty_create", {
         paneId:  paneId,

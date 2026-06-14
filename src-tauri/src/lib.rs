@@ -1289,6 +1289,7 @@ async fn ensure_session_settings(
     deny_tool_rules: Option<Vec<String>>,
     ask_tool_rules: Option<Vec<String>>,
     skills: Option<Vec<SkillCfg>>,
+    replace_permissions: Option<bool>,
 ) -> Result<(), String> {
     write_session_settings(
         &cwd, &allowed_commands, &denied_commands,
@@ -1296,6 +1297,7 @@ async fn ensure_session_settings(
         &allow_tool_rules.unwrap_or_default(), &deny_tool_rules.unwrap_or_default(),
         &ask_tool_rules.unwrap_or_default(),
         &skills.unwrap_or_default(),
+        replace_permissions.unwrap_or(false),
     )
 }
 
@@ -1320,6 +1322,7 @@ fn write_session_settings(
     deny_tool_rules: &[String],
     ask_tool_rules: &[String],
     skills: &[SkillCfg],
+    replace_permissions: bool,
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     let root = std::path::PathBuf::from(cwd);
@@ -1374,6 +1377,15 @@ fn write_session_settings(
         if !r.is_empty() && !ask_rules.contains(&r) { ask_rules.push(r); }
     }
 
+    // Replace mode (#799): drop the existing allow/deny/ask lists first, so the freshly
+    // computed role+profile set is AUTHORITATIVE. Without this, merge only UNIONS — a
+    // permission the user removed from a profile would linger across relaunches. Used when
+    // re-applying after a profile/permission edit.
+    if replace_permissions {
+        if let Some(perms) = config.get_mut("permissions").and_then(|p| p.as_object_mut()) {
+            for k in ["allow", "deny", "ask"] { perms.remove(k); }
+        }
+    }
     merge_permission_list(&mut config, "allow", &allow_rules);
     merge_permission_list(&mut config, "deny", &deny_rules);
     merge_permission_list(&mut config, "ask", &ask_rules);
@@ -1975,6 +1987,7 @@ mod tests {
             &[],
             &[],
             &[],
+            false,
         ).unwrap();
 
         let v: serde_json::Value =
@@ -2019,6 +2032,7 @@ mod tests {
             &[],
             &["Bash(git push *)".into(), "Bash(gh pr create *)".into()],
             &[],
+            false,
         ).unwrap();
 
         let v: serde_json::Value =
@@ -2053,6 +2067,7 @@ mod tests {
             &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
             &[],
             &[],
+            false,
         ).unwrap();
 
         let v: serde_json::Value =
@@ -2069,6 +2084,32 @@ mod tests {
         assert!(deny.contains(&"Write".to_string()));
         assert!(deny.contains(&"MultiEdit".to_string()));
         assert!(deny.contains(&"NotebookEdit".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_session_settings_replace_drops_removed_permissions() {
+        use super::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-replace-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        let cwd = dir.to_string_lossy();
+        let read = || -> Vec<String> {
+            let v: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+            v["permissions"]["allow"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect()
+        };
+
+        // First pass grants a custom command (merge mode).
+        write_session_settings(&cwd, &["cargo".into()], &[], &[], &[], &[], &[], &[], &[], false).unwrap();
+        assert!(read().contains(&"Bash(cargo *)".to_string()));
+
+        // Re-apply with the command REMOVED — replace mode must drop it (merge would keep it).
+        write_session_settings(&cwd, &[], &[], &[], &[], &[], &[], &[], &[], true).unwrap();
+        let allow = read();
+        assert!(!allow.contains(&"Bash(cargo *)".to_string()), "replace must drop the removed command (#799)");
+        assert!(allow.contains(&"Bash".to_string()), "but the broad Bash allow is recomputed");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2092,7 +2133,7 @@ mod tests {
         let hooks = vec![super::HookCfg {
             event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
         }];
-        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[], &[]).unwrap();
+        super::write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[], &[], false).unwrap();
 
         // .mcp.json carries both servers in the right transport shapes.
         let mcp_json: serde_json::Value =

@@ -8,18 +8,14 @@
 
 ## Tools available
 
-| Tool             | What you can do                                                         |
-|------------------|-------------------------------------------------------------------------|
-| **Read**         | Read any file on disk                                                   |
-| **Write**        | Create or overwrite any file — section files, CLAUDE.md, workflow YAMLs |
-| **Edit**         | Patch a single file in-place                                            |
-| **WebFetch**     | Fetch any URL — package registries, docs, GitHub raw content            |
-| **Bash(git \*)** | Read-only git — log, diff, status, show (context only; no commit/push) |
-| **Bash(gh \*)**  | Read-only gh — repo list, issue list, pr list (no create/merge/push)   |
-
-**Not available:** generic shell commands (`cp`, `ls`, `cat`, `mkdir`, etc.) and
-WebSearch. Use **Read**/**Write** wherever you would reach for `cat`/`cp`, and
-**WebFetch** for documentation or version lookups.
+Your exact tool permissions are set by **your session profile/role** (written to
+`.claude/settings.json` when this session launches) — not enumerated here, so this guide
+never drifts from what's actually enforced. **Discover your tools; don't assume a fixed
+list.** In practice you are **plan-only**: read freely, write/patch the plan's section
+files (`*.md`, `*.json`, `prompts/*`), use **WebFetch** for docs/version lookups, and run
+**read-only** git/gh for context. You **cannot** edit project code, or commit/push/merge
+or mutate GitHub (publishing is a separate, user-driven step). If a tool you expect is
+denied, that's the profile — surface it rather than working around it.
 
 ## Filling sections — two channels
 

@@ -65,6 +65,9 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // mount effect (after the GH token is resolved so gh-auth uses the right env).
   const [readinessVerdict, setReadinessVerdict] = useState<SessionVerdict | null>(null);
   const [warnDismissed, setWarnDismissed] = useState(false);
+  // #799 — true when this console's assigned profile was edited while it's running, so it
+  // shows a "relaunch to apply" nudge (settings.json is read at session start).
+  const permsStale = useAppStore((s) => !!s.panePermsStale[paneId]);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
@@ -447,7 +450,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           mcpServers: mcp, hooks: gatedHooks,
           allowToolRules, denyToolRules, askToolRules,
           skills,
+          // Replace (not merge) the permission block so a relaunch reflects the CURRENT
+          // role+profile exactly — incl. permissions the user removed from the profile (#799).
+          replacePermissions: true,
         }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
+        // Launch (re)wrote the current role+profile permissions — clear any "stale" nudge (#799).
+        useAppStore.getState().clearPanePermsStale(paneId);
         if (destroyed) return;
         // Preflight probe (#564): check all host prerequisites (Git Bash, claude,
         // git, gh, gh-auth) using the same env (GH_TOKEN) the session will have.
@@ -662,6 +670,24 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
               : undefined
           }
         />
+      )}
+      {permsStale && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
+          fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)",
+          background: "color-mix(in oklch, var(--accent), transparent 90%)",
+          borderBottom: "1px solid color-mix(in oklch, var(--accent), transparent 70%)",
+        }}>
+          <span>⟳</span>
+          <span style={{ flex: 1, color: "var(--fg-muted)" }}>
+            Permissions changed on the Agents page — <b style={{ color: "var(--fg)" }}>relaunch this console</b> to apply.
+          </span>
+          <span
+            onClick={() => useAppStore.getState().clearPanePermsStale(paneId)}
+            style={{ cursor: "pointer", color: "var(--fg-dim)" }}
+            title="Dismiss"
+          >✕</span>
+        </div>
       )}
       <div
         ref={containerRef}
