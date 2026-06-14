@@ -79,6 +79,26 @@ describe("PhaseHeader (#652)", () => {
     expect(container.querySelector(".ph-gate.fail")).toBeTruthy();
     expect(screen.getByText(/blocked/)).toBeInTheDocument();
   });
+
+  it("surfaces unmet gate reasons on click when blocked (#805)", () => {
+    const p = phase({ unmet: [
+      { label: "resolve the discovery topics", detail: "3 of 5" },
+      { label: "confirm goal, scope, stack & architecture" },
+    ] });
+    render(<PhaseHeader phase={p} pill="blocked" />);
+    // a "why?" affordance shows; the reason list is hidden until clicked
+    expect(screen.getByText("why?")).toBeInTheDocument();
+    expect(screen.queryByText(/Still needed to pass/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("why?"));
+    expect(screen.getByText(/Still needed to pass/)).toBeInTheDocument();
+    expect(screen.getByText(/confirm goal, scope/)).toBeInTheDocument();
+    expect(screen.getByText(/3 of 5/)).toBeInTheDocument();
+  });
+
+  it("offers no 'why?' when the gate passes", () => {
+    render(<PhaseHeader phase={phase({ unmet: [{ label: "x" }] })} pill="pass" />);
+    expect(screen.queryByText("why?")).not.toBeInTheDocument();
+  });
 });
 
 describe("PhaseFooter (#652)", () => {
