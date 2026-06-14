@@ -141,13 +141,11 @@ pub(crate) async fn setup_workspaces(
         r#"{"permissions":{"allow":["Read","Write","Edit"],"deny":["Bash","MultiEdit","WebFetch","WebSearch"]}}"#,
     ).map_err(|e| e.to_string())?;
 
-    // Planning: read/write markdown + WebFetch + git + gh CLI
-    // git: clone/fetch/log/status for linked repos
-    // gh:  issues, PRs, releases, workflows — full GitHub access via GH_TOKEN env var
-    std::fs::write(
-        planning_dir.join(".claude").join("settings.json"),
-        r#"{"permissions":{"allow":["Read","Write","Edit","WebFetch","Bash(git *)","Bash(gh *)"],"deny":["MultiEdit","WebSearch"]}}"#,
-    ).map_err(|e| e.to_string())?;
+    // Planner `.claude/settings.json` is NOT written here anymore — it's derived from the
+    // `planner` role gate (sessionRoles.ts) and written by `ensure_session_settings` at
+    // launch (Planning.tsx), so there is a SINGLE source for the planner's permissions
+    // instead of a hardcoded literal that drifts from the role. The `.claude` dir is
+    // created above; the role-launch call populates the file before the PTY starts.
 
     std::fs::write(kb_dir.join("CLAUDE.md"), KB_CLAUDE_MD)
         .map_err(|e| e.to_string())?;

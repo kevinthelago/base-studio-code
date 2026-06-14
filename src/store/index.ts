@@ -361,6 +361,10 @@ interface AppStore {
   setAgentProfiles: (profiles: AgentProfile[]) => void;
   updateAgentProfile: (id: string, patch: Partial<AgentProfile>) => void;
   paneProfiles: Record<string, string>;
+  /** Panes whose assigned profile was edited while running — drives a "relaunch to apply"
+   *  nudge (Claude Code reads settings.json at session start). Transient; cleared on relaunch (#799). */
+  panePermsStale: Record<string, boolean>;
+  clearPanePermsStale: (paneId: string) => void;
   // Worker write boundary: the stream's owned globs, fed to the role gate as
   // writeGlobs so a worker auto-approves edits within its lane (bsc-confine bounds the repo).
   paneRoleGlobs: Record<string, string[]>;
@@ -1064,9 +1068,26 @@ export const useAppStore = create<AppStore>()(
       agentProfiles: JSON.parse(JSON.stringify(PROFILES)) as AgentProfile[],
       setAgentProfiles: (profiles) => set({ agentProfiles: profiles }),
       updateAgentProfile: (id, patch) =>
-        set((s) => ({
-          agentProfiles: s.agentProfiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
-        })),
+        set((s) => {
+          // Mark every console using this profile as stale so it can prompt a relaunch to
+          // apply the edit — the launch path rewrites settings.json with replacePermissions (#799).
+          const panePermsStale = { ...s.panePermsStale };
+          for (const [paneId, profileId] of Object.entries(s.paneProfiles)) {
+            if (profileId === id) panePermsStale[paneId] = true;
+          }
+          return {
+            agentProfiles: s.agentProfiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+            panePermsStale,
+          };
+        }),
+      panePermsStale: {},
+      clearPanePermsStale: (paneId) =>
+        set((s) => {
+          if (!s.panePermsStale[paneId]) return {};
+          const next = { ...s.panePermsStale };
+          delete next[paneId];
+          return { panePermsStale: next };
+        }),
       paneProfiles: {},
       paneRoleGlobs: {},
       paneRepos: {},
