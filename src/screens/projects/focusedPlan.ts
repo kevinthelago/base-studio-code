@@ -8,7 +8,7 @@ import {
   enabledSections, currentSection, sectionStatus,
   type BlueprintSection,
 } from "./blueprints";
-import { evalGate, type PlanSignals } from "./stageGate";
+import { evalGate, gateReasons, type PlanSignals } from "./stageGate";
 
 // "complete" = done IN sequence (at/behind the current position); "ahead" = done OUT of
 // sequence (gate met past the current position — "banked"); "skipped" = an OPTIONAL section
@@ -31,6 +31,9 @@ export interface Phase {
   fraction: number;
   /** An optional stage — shown but never required (#676). */
   optional?: boolean;
+  /** The still-unmet gate requirements (label + progress detail) — drives the "why is this
+   *  blocked" feedback on the gate pill (#805). Empty once the gate passes. */
+  unmet?: { label: string; detail?: string }[];
 }
 
 /**
@@ -52,9 +55,12 @@ export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): 
     // an optional section the current position has already moved past, left unfinished
     else if (s.optional && i < activeIdx) status = "skipped";
     else status = current && s.key === current.key ? "active" : "upcoming";
+    const unmet = gateReasons(s.gateRule, signals)
+      .filter((r) => !r.pass)
+      .map(({ label, detail }) => ({ label, detail }));
     return {
       key: s.key, name: s.name, glyph: s.glyph, blurb: s.blurb, gate: s.gate,
-      index: i, total: visible.length, status, fraction: st.fraction, optional: s.optional,
+      index: i, total: visible.length, status, fraction: st.fraction, optional: s.optional, unmet,
     };
   });
 }
