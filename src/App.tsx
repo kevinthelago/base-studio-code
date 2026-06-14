@@ -9,6 +9,7 @@ import { Dialog } from "./components/Dialog";
 import { useAppStore } from "./store";
 import { useHotkeys } from "./hooks/useHotkeys";
 import { useScheduler } from "./hooks/useScheduler";
+import { useTunnelSync } from "./hooks/useTunnelSync";
 import { startPerfMonitor, recordStoreWrite } from "./lib/perf";
 import { log } from "./lib/log";
 import { ConsoleScreen } from "./screens/Console";
@@ -150,6 +151,7 @@ function renderDetachedSection(page: string, section: string): React.ReactNode {
 export default function App() {
   useHotkeys();
   useScheduler();
+  useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
 
   const {
     activeScreen, setScreen,
