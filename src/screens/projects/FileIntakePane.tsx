@@ -9,7 +9,7 @@ import { useAppStore } from "../../store";
 import { PipelineScreenFrame } from "./PipelineScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
-  INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
+  INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
 } from "./fileIntake";
 import type { PipelineScreenProps } from "./pipelineScreens";
 
@@ -38,7 +38,7 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
   // Load any already-staged manifest on open.
   useEffect(() => {
     let live = true;
-    invoke<[string, string][]>("read_project_files", { projectKey, subdir: ".intake" })
+    invoke<[string, string][]>("read_project_files", { projectKey, subdir: INTAKE_DIR })
       .then((files) => {
         const manifest = files.find(([rel]) => rel === "intake.json")?.[1];
         if (live && manifest) setEntries(parseIntake(manifest));
@@ -55,7 +55,7 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
       const added: IntakeEntry[] = [];
       for (const file of files) {
         const kind = classifyFile(file.name, file.type || undefined);
-        const relpath = `.intake/${file.name}`;
+        const relpath = `${INTAKE_DIR}/${file.name}`;
         if (isBinaryKind(kind)) {
           await invoke("write_project_file_bytes", { projectKey, relpath, b64: await fileToBase64(file) });
         } else {
