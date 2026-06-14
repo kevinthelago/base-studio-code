@@ -1306,12 +1306,58 @@ function FocusedPlanBody({ data, onApprovePlan }: {
   );
 }
 
-function FocusedPhaseBody({ phase, data, onLinkRepo, onApprovePlan, onView }: {
+// The focused Permissions stage (#817): the fleet's streams as least-privilege agent rows
+// (posture bar + per-stream editor), plus the "generate profiles" action that materializes the
+// profiles the stage's `profilesComplete` gate requires. Previously a hardcoded "No agents yet"
+// stub that never rendered the fleet — so the stage looked empty even with streams planned.
+function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProfiles }: {
+  data?: ProjectPaneData;
+  onPerm?: (streamId: string, perm: Perm) => void;
+  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
+  onFlow?: (streamId: string, flow: Flow) => void;
+  onGenerateProfiles?: () => void;
+}) {
+  const agents = data?.agents ?? [];
+  if (agents.length === 0) {
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">◎</span>
+        <span>No fleet yet — plan the work streams (fleet.json) first</span>
+      </div>
+    );
+  }
+  return (
+    <div>
+      {onGenerateProfiles && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+          padding: "9px 11px", marginBottom: 8, borderRadius: 8,
+          background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+        }}>
+          <span style={{ flex: 1, minWidth: 160, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)", lineHeight: 1.5 }}>
+            Each stream runs under a <strong style={{ color: "var(--fg)" }}>least-privilege profile</strong> —
+            generate them, then review the posture per stream below.
+          </span>
+          <button className="mini accent" onClick={onGenerateProfiles} style={{ whiteSpace: "nowrap" }}>
+            Generate least-privilege profiles
+          </button>
+        </div>
+      )}
+      <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+    </div>
+  );
+}
+
+function FocusedPhaseBody({ phase, data, onLinkRepo, onApprovePlan, onView, onPerm, onPreset, onFlow, onGenerateProfiles }: {
   phase: Phase;
   data?: ProjectPaneData;
   onLinkRepo?: (r: string) => void;
   onApprovePlan?: () => void;
   onView?: (f: ContextFile) => void;
+  onPerm?: (streamId: string, perm: Perm) => void;
+  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
+  onFlow?: (streamId: string, flow: Flow) => void;
+  onGenerateProfiles?: () => void;
 }) {
   switch (phase.key) {
     case "repos":
@@ -1323,12 +1369,7 @@ function FocusedPhaseBody({ phase, data, onLinkRepo, onApprovePlan, onView }: {
     case "structure":
       return <FocusedPlanBody data={data} onApprovePlan={onApprovePlan} />;
     case "permissions":
-      return (
-        <div className="empty-state">
-          <span className="empty-icon">◎</span>
-          <span>No agents yet</span>
-        </div>
-      );
+      return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} />;
     case "automations":
       return <FocusedAutomationsBody automations={data?.automations} />;
     case "skills":
@@ -1594,6 +1635,7 @@ export function ProjectPane({
   focus,
   onLinkRepo,
   onApprovePlan,
+  onGenerateProfiles,
 }: {
   data?: ProjectPaneData;
   projectName?: string;
@@ -1624,6 +1666,9 @@ export function ProjectPane({
   onLinkRepo?: (repo: string) => void;
   /** Approve the Plan stage's drafted phases + seams (#…) — confirms the roadmap. */
   onApprovePlan?: () => void;
+  /** Materialize least-privilege profiles for every fleet stream (#817) — what the focused
+   *  Permissions stage needs to satisfy its `profilesComplete` gate. */
+  onGenerateProfiles?: () => void;
 }) {
   // Determine whether to show the staged view or the legacy flat view.
   // Staged view: when sections prop is provided (real planning session).
@@ -1712,7 +1757,8 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing} />
+          <FocusedPhaseBody phase={selected} data={data} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing}
+            onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} />
         </div>
         <FocusedPhaseFooter phase={selected} action={focus.footer} onBack={focus.onBack} onPrimary={focus.onPrimary} />
         {viewerModal}
