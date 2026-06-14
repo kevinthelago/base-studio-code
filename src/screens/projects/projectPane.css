@@ -152,6 +152,65 @@
   display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
 }
 
+/* ----------------------------------------------------------------
+   Repos pane (#811) — mirrors the design's ReposView / planner.css.
+   All classes scoped under .repos-view so the generic names
+   (.tiles/.tile/.chip/.dropzone) never leak to the rest of the app.
+   ---------------------------------------------------------------- */
+.repos-view { display: flex; flex-direction: column; gap: 12px; }
+
+.repos-view .tiles {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px;
+}
+.repos-view .tile {
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--bg-canvas); border: 1px solid var(--border-soft);
+}
+.repos-view .tile .v { font-family: var(--mono); font-size: 19px; color: var(--fg); line-height: 1.1; }
+.repos-view .tile .k {
+  font-family: var(--mono); font-size: 9px; color: var(--fg-dim);
+  text-transform: uppercase; letter-spacing: .06em; margin-top: 3px;
+}
+
+.repos-view .repo-card {
+  padding: 12px 13px; border-radius: 9px;
+  background: var(--bg-canvas); border: 1px solid var(--border-soft);
+}
+.repos-view .repo-card.primary { border-color: color-mix(in oklch, var(--accent), transparent 65%); }
+.repos-view .repo-name { font-family: var(--mono); font-size: 12.5px; color: var(--fg); }
+.repos-view .repo-row { display: flex; align-items: center; gap: 8px; }
+.repos-view .repo-branchline { margin-top: 9px; }
+.repos-view .repo-desc { font-family: var(--mono); font-size: 10px; color: var(--fg-muted); margin: 7px 0 0; }
+.repos-view .repo-stat { font-family: var(--mono); font-size: 9px; white-space: nowrap; }
+.repos-view .repo-agents { display: inline-flex; align-items: center; }
+.repos-view .repo-branches { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+
+.repos-view .chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: 99px;
+  font-family: var(--mono); font-size: 9px;
+  background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted);
+}
+.repos-view .chip.accent { color: var(--accent); border-color: var(--accent-dim); }
+
+.repos-view .dropzone {
+  width: 100%; border: 1px dashed var(--border); border-radius: 8px; padding: 14px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: var(--mono); font-size: 10px; color: var(--fg-dim);
+  background: repeating-linear-gradient(135deg, transparent 0 8px,
+    color-mix(in oklch, var(--fg), transparent 95%) 8px 9px);
+  cursor: pointer; transition: border-color .12s, color .12s;
+}
+.repos-view .dropzone:hover { border-color: var(--accent-dim); color: var(--fg-muted); }
+
+.repos-view .repo-linkrow { display: flex; gap: 6px; align-items: center; }
+.repos-view .repo-linkrow input {
+  flex: 1; height: 26px; padding: 0 8px; border-radius: 6px;
+  background: var(--bg-canvas); border: 1px solid var(--border-soft); color: var(--fg);
+  font-family: var(--mono); font-size: 10px; outline: none;
+}
+.repos-view .repo-linkrow input:focus { border-color: var(--accent-dim); }
+
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
 /* ----------------------------------------------------------------
