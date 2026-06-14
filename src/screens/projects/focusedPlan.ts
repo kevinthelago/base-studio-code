@@ -65,6 +65,18 @@ export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): 
   });
 }
 
+/**
+ * The blueprint section for a phase, resolved BY KEY (#815). `phases` is a FILTERED subset of the
+ * raw section list (disabled / not-applicable sections like `ui` are dropped by {@link phasesFrom}),
+ * so indexing the raw sections with a phase index lands on the wrong section once any earlier one is
+ * dropped. The conductor uses this to inject the *active phase's* prompt, not a neighbor's.
+ */
+export function sectionForPhase<T extends { key: string }>(
+  sections: T[], phase: { key: string } | undefined,
+): T | undefined {
+  return phase ? sections.find((s) => s.key === phase.key) : undefined;
+}
+
 export type ConnectorKind = "solid" | "partial" | "dashed" | "dim";
 
 /** The rail connector AFTER node `i` (#668): solid traces the walked in-sequence path,

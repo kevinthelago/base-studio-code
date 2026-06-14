@@ -23,7 +23,7 @@ pub(crate) struct AutomationData {
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-const PLANNING_TEMPLATE_VERSION: u8 = 9;
+const PLANNING_TEMPLATE_VERSION: u8 = 10;
 
 #[derive(serde::Serialize)]
 pub(crate) struct WorkspacePaths {
@@ -60,7 +60,8 @@ fn stage_directive(id: &str) -> String {
         "context"     => "**Context** — discovery, one topic at a time. Write every discovery file into the **`context/`** subdir. The gate REQUIRES these four, written and confirmed: `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md` — always create them. Cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/users.md`, `context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, …); record every dimension you don't document in `context/_skipped.md`. Each file you create is a gate item the user must confirm — do NOT create files for tangential topics, or the gate can't complete.",
         "repos"       => "**Repos** — decide and link the repositories (emit `<repo_link>`, write `repos.json`).",
         "ui"          => "**UI** — design the screens: write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live.",
-        "structure"   => "**Structure** — run the feature workshop (new project → feature-by-feature; existing → section-by-section migration — inventory every screen/module first), then write `phases.json` + agent-ready `issues.json`. Go ONE unit at a time; never move on until the current unit is fully decomposed and written.",
+        "features"    => "**Features** — agree a short feature list, then drive ONE feature at a time and write each as an entry in `features.json` (a JSON array; one object per user-facing capability, which is ALSO its fleet stream). Per feature fill: `name`, `behavior` (what it does + when, in the user's terms), `acceptance` (a done-when checklist array), `approach` (how it's built), `tools` (libraries/services array), `data` (what it stores/reads + which features it depends on), `stream` (defaults to the slug). A feature is done when it has name + behavior + ≥1 acceptance; confirm it before the next. Do NOT design the integration contracts here — that's the Plan/Structure stage.",
+        "structure"   => "**Structure** — with the features defined, run the workshop to synthesize the plan (new project → feature-by-feature; existing → section-by-section migration — inventory every screen/module first), then write `phases.json` + agent-ready `issues.json`. Go ONE unit at a time; never move on until the current unit is fully decomposed and written.",
         "permissions" => "**Permissions** — plan the agent fleet (`fleet.json`): non-overlapping streams + least-privilege profiles.",
         "automations" => "**Automations** — propose cron automations (emit `<automation_assign>`).",
         "skills"      => "**Skills** — select reusable skills from the library (`skills.json`).",
@@ -397,6 +398,17 @@ mod tests {
         assert!(d.contains("stack.md"),        "missing stack.md");
         assert!(d.contains("architecture.md"), "missing architecture.md");
         assert!(d.contains("_skipped.md"),     "must mention _skipped.md fallback");
+    }
+
+    /// Features directive must steer the planner to write features.json (the artifact the
+    /// Features pane + gate read), not the per-feature markdown sections (#815).
+    #[test]
+    fn stage_directive_features_names_features_json() {
+        let d = super::stage_directive("features");
+        assert!(d.contains("features.json"), "must name the features.json artifact");
+        assert!(d.contains("acceptance"), "must mention the acceptance checklist");
+        assert!(d.contains("behavior"), "must mention behavior");
+        assert!(d.contains("ONE feature"), "must mandate one-feature-at-a-time pacing");
     }
 
     /// Structure directive must mention both workshop modes (#355).

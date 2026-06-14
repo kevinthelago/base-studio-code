@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, connectorKind,
-  type Phase, type PhaseStatus,
+  sectionForPhase, type Phase, type PhaseStatus,
 } from "../screens/projects/focusedPlan";
 import { confirmedSignal, type BlueprintSection } from "../screens/projects/blueprints";
 import type { PlanSignals } from "../screens/projects/stageGate";
@@ -126,5 +126,26 @@ describe("currentGateReady (#652)", () => {
     expect(currentGateReady(SECTIONS, {})).toBe(false);          // a's gate not met
     expect(currentGateReady(SECTIONS, { a: true })).toBe(false); // now b active, b not met
     expect(currentGateReady(SECTIONS, { a: true, b: true })).toBe(true); // b met → all done, last complete
+  });
+});
+
+describe("sectionForPhase (#815)", () => {
+  it("resolves the section by key, surviving the phases/sections index skew", () => {
+    // `c` is dropped from the visible phases (appliesWhen showC=false), so the phase at index 1
+    // is `b` — but in the RAW section list index 1 is also `b` here; the real skew shows once a
+    // section BEFORE the target is dropped. Build that case explicitly:
+    const sections = [sec("ui", { appliesWhen: { signal: "showUi", target: true } }), sec("features"), sec("structure")];
+    // showUi=false ⇒ phases = [features, structure]; phase index 0 is `features`.
+    const phases = phasesFrom(sections, {});
+    expect(phases.map((p) => p.key)).toEqual(["features", "structure"]);
+    // Indexing the RAW sections with the phase index 0 would wrongly pick `ui`; by-key picks `features`.
+    expect(sections[0].key).toBe("ui");
+    expect(sectionForPhase(sections, phases[0])?.key).toBe("features");
+    expect(sectionForPhase(sections, phases[1])?.key).toBe("structure");
+  });
+
+  it("returns undefined for a missing/absent phase", () => {
+    expect(sectionForPhase(SECTIONS, undefined)).toBeUndefined();
+    expect(sectionForPhase(SECTIONS, { key: "nope" } as Phase)).toBeUndefined();
   });
 });
