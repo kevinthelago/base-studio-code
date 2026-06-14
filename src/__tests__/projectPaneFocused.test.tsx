@@ -59,9 +59,10 @@ describe("ProjectPane focused mode (#652)", () => {
   // #674 — the focused planner shows REAL data (empty states), never the sample mocks.
   const reposPhase = { phases: [ph("repos", "Repos", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
 
-  it("lists the linked repositories with tiles, clone status, and branch chips", () => {
+  it("lists the linked repositories with tiles, metadata, and stateful branch chips (#811)", () => {
     const data = { agents: [], repos: [
-      { id: "acme/web", branch: "main", ahead: 0, behind: 0, agents: [], primary: true, cloned: true,
+      { id: "acme/web", branch: "main", ahead: 2, behind: 1, agents: [], primary: true, cloned: true,
+        lang: "TypeScript", desc: "Operator dashboard",
         branches: [{ n: "stream-ui", issue: 12, state: "draft", ahead: 0, behind: 0 }] },
     ], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
     render(<ProjectPane data={data} focus={baseFocus(reposPhase)} />);
@@ -69,7 +70,12 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText("primary")).toBeInTheDocument();
     expect(screen.getByText("● cloned")).toBeInTheDocument();        // clone status
     expect(screen.getByText("repositories")).toBeInTheDocument();     // tile
+    expect(screen.getByText("TypeScript")).toBeInTheDocument();       // language chip (#811)
+    expect(screen.getByText("Operator dashboard")).toBeInTheDocument(); // description (#811)
+    expect(screen.getByText("↑2")).toBeInTheDocument();              // ahead count (#811)
+    expect(screen.getByText("↓1")).toBeInTheDocument();              // behind count (#811)
     expect(screen.getByText(/stream-ui/)).toBeInTheDocument();        // planned branch chip
+    expect(screen.getByText(/#12/)).toBeInTheDocument();             // branch issue number (#811)
   });
 
   it("shows an empty state (no mock repos) when none are linked", () => {
@@ -77,16 +83,17 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText(/No repositories linked yet/)).toBeInTheDocument();
   });
 
-  it("lets the user manually link a repository from the empty repos state (#677)", () => {
+  it("lets the user manually link a repository via the dropzone (#677 / #811)", () => {
     const onLinkRepo = vi.fn();
     render(<ProjectPane focus={baseFocus(reposPhase)} onLinkRepo={onLinkRepo} />);
+    // The input is behind a dashed dropzone now — click to reveal it.
+    fireEvent.click(screen.getByText(/link another repository/));
     const input = screen.getByLabelText("Link a repository");
-    const btn = screen.getByText("link");
     fireEvent.change(input, { target: { value: "not-a-repo" } });
-    fireEvent.click(btn);
-    expect(onLinkRepo).not.toHaveBeenCalled(); // invalid (no owner/repo)
+    fireEvent.click(screen.getByText("link"));
+    expect(onLinkRepo).not.toHaveBeenCalled(); // invalid (no owner/repo) — button is disabled
     fireEvent.change(input, { target: { value: "acme/web" } });
-    fireEvent.click(btn);
+    fireEvent.click(screen.getByText("link"));
     expect(onLinkRepo).toHaveBeenCalledWith("acme/web");
   });
 
