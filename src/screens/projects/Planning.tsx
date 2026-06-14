@@ -401,7 +401,17 @@ export function Planning({ visible }: { visible: boolean }) {
     if (raw === fleetSyncedRef.current) return;
     fleetSyncedRef.current = raw;
     const fleet = parseFleetFile(raw);
-    if (fleet) useAppStore.getState().setPlanFleet(effectiveProjectId, fleet);
+    if (fleet) {
+      const store = useAppStore.getState();
+      store.setPlanFleet(effectiveProjectId, fleet);
+      // Materialize least-privilege profiles for every stream as soon as the fleet lands (#819).
+      // The planner writes profile ID references in fleet.json (e.g. `"profile": "engine-spine"`)
+      // but cannot create the AgentProfile objects — those live in app state. Without this, each
+      // agent falls back to default perms and the Permissions `profilesComplete` gate can never
+      // pass during planning (it previously only ran at fleet launch). Idempotent: streams whose
+      // profile already exists are skipped.
+      store.generateFleetProfiles(effectiveProjectId);
+    }
   }, [savedSections, effectiveProjectId]);
 
   // Title + derived GitHub object graph that the structure card renders and the
