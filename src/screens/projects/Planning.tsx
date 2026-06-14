@@ -40,7 +40,7 @@ import { buildProjectPaneData } from "./projectPaneData";
 import { derivePlanStageState, planStateToSignals, pendingStageConfirms } from "./planStageDerive";
 import { isGateBlocked } from "./pipelineRuntime";
 import { mkSection, planSectionsComplete, type BlueprintSection } from "./blueprints";
-import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
+import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, sectionForPhase } from "./focusedPlan";
 import { featureSectionsToIssues } from "./planFeatures";
 import { nextInjection, isStepDelivered, flattenPrompt } from "./plannerConductor";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
@@ -764,8 +764,12 @@ export function Planning({ visible }: { visible: boolean }) {
         return;
       }
 
-      // Nothing in flight — what's next?
-      const next = nextInjection(planSecs[focusActiveIdx], deliveredRef.current, conductorState);
+      // Nothing in flight — what's next? Resolve the active blueprint section BY KEY: phases is a
+      // filtered subset of planSecs (disabled / not-applicable sections like `ui` are dropped), so
+      // indexing planSecs with focusActiveIdx (a phases index) injects the WRONG stage's prompt
+      // once any earlier section is dropped (#815).
+      const activeSection = sectionForPhase(planSecs, phases[focusActiveIdx]);
+      const next = nextInjection(activeSection, deliveredRef.current, conductorState);
       if (!next) { conductorTickRef.current.stable = 0; conductorTickRef.current.len = len; return; }
       if (nudgeStep === next.id) return;     // blocked on a failed step, awaiting the user's re-send
       // Idle gate: inject only after ~2 quiet ticks so we land at the prompt, not mid-stream.
@@ -779,7 +783,7 @@ export function Planning({ visible }: { visible: boolean }) {
     };
     const id = setInterval(tick, 1500);
     return () => clearInterval(id);
-  }, [visible, conductorPaused, planSecs, focusActiveIdx, conductorState, paneId, isExisting, nudgeStep, savedSections, planFeatures, sendPrompt]);
+  }, [visible, conductorPaused, planSecs, phases, focusActiveIdx, conductorState, paneId, isExisting, nudgeStep, savedSections, planFeatures, sendPrompt]);
 
   // Mount xterm.js and spawn the planning PTY (once per Planning screen lifecycle).
   // pty_kill is called on unmount so navigating away ends the session cleanly.
