@@ -154,8 +154,33 @@ describe("ProjectPane focused mode (#652)", () => {
       ] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
     rerender(<ProjectPane data={data} focus={baseFocus(featuresPhase)} />);
     expect(screen.getByText("Invite teammates")).toBeInTheDocument();
-    expect(screen.getByText("✓ defined")).toBeInTheDocument();   // fully specified
-    expect(screen.getByText("drafting")).toBeInTheDocument();      // missing behavior/acceptance
+    expect(screen.getByText("✓ defined")).toBeInTheDocument();    // fully specified
+    expect(screen.getByText("○ drafting")).toBeInTheDocument();    // missing behavior/acceptance
+    // tiles summarize the workshop progress (the "defined" tile is distinct from the "✓ defined" badge)
+    expect(screen.getByText("defined")).toBeInTheDocument();
+  });
+
+  it("expands a feature card to show the full workshop spec (#811-followup)", () => {
+    const featuresPhase = { phases: [ph("features", "Features", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const data = { agents: [], repos: [], structure: [], phaseStructure: [], context: [], issues: [],
+      features: [
+        { slug: "invite", name: "Invite teammates", behavior: "send an invite",
+          approach: "POST /invites then email", tools: ["resend", "zod"], data: "writes invites table",
+          acceptance: ["email is sent", "invite expires in 7d"], stream: "invite" },
+      ] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    render(<ProjectPane data={data} focus={baseFocus(featuresPhase)} />);
+    // The single fully-defined feature is collapsed by default — only its summary shows.
+    expect(screen.getByText("send an invite")).toBeInTheDocument();
+    expect(screen.getByText(/2 acceptance criteria/)).toBeInTheDocument();
+    expect(screen.queryByText("email is sent")).not.toBeInTheDocument();
+    // Expanding reveals approach, tools, data + deps, and the acceptance checklist.
+    fireEvent.click(screen.getByText("Invite teammates"));
+    expect(screen.getByText("approach")).toBeInTheDocument();
+    expect(screen.getByText("POST /invites then email")).toBeInTheDocument();
+    expect(screen.getByText("resend")).toBeInTheDocument();
+    expect(screen.getByText("writes invites table")).toBeInTheDocument();
+    expect(screen.getByText("email is sent")).toBeInTheDocument();
+    expect(screen.getByText("invite expires in 7d")).toBeInTheDocument();
   });
 
   it("computes the real pinned token budget (not a hardcoded total)", () => {
