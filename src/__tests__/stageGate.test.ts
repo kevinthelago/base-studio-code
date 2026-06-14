@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evalGate, evalRequirement, gateApplies, type StageGate } from "../screens/projects/stageGate";
+import { evalGate, evalRequirement, gateApplies, gateReasons, type StageGate } from "../screens/projects/stageGate";
 
 describe("stageGate — evalRequirement", () => {
   it("boolean target matches identity; missing reads as false", () => {
@@ -55,5 +55,34 @@ describe("stageGate — gateApplies", () => {
     expect(gateApplies(undefined, {})).toBe(true);
     expect(gateApplies({ signal: "requiresUi", target: true }, { requiresUi: true })).toBe(true);
     expect(gateApplies({ signal: "requiresUi", target: true }, { requiresUi: false })).toBe(false);
+  });
+});
+
+describe("stageGate — gateReasons (#805)", () => {
+  const gate: StageGate = { require: [
+    { signal: "coreConfirmed", target: true, weight: 0, label: "confirm the core files" },
+    { signal: "topicsResolved", of: "topicsTotal", label: "resolve the discovery topics" },
+    { signal: "issueCount", target: 3, label: "generate agent-ready issues" },
+  ] };
+
+  it("reports per-requirement pass + a progress detail; filter !pass for what's missing", () => {
+    const reasons = gateReasons(gate, { coreConfirmed: false, topicsResolved: 3, topicsTotal: 5, issueCount: 3 });
+    expect(reasons).toEqual([
+      { label: "confirm the core files", pass: false, detail: undefined },
+      { label: "resolve the discovery topics", pass: false, detail: "3 of 5" },
+      { label: "generate agent-ready issues", pass: true, detail: "3 / 3" },
+    ]);
+    const missing = reasons.filter((r) => !r.pass).map((r) => r.label);
+    expect(missing).toEqual(["confirm the core files", "resolve the discovery topics"]);
+  });
+
+  it("falls back to a humanized signal name when a requirement has no label", () => {
+    const r = gateReasons({ require: [{ signal: "fleetStreams", target: 1 }] }, { fleetStreams: 0 });
+    expect(r[0].label).toBe("fleet streams");
+  });
+
+  it("an empty/absent gate has no reasons", () => {
+    expect(gateReasons(undefined, {})).toEqual([]);
+    expect(gateReasons({ require: [] }, {})).toEqual([]);
   });
 });
