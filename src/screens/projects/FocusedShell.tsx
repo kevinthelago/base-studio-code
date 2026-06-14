@@ -133,13 +133,18 @@ const FOOTER_LABEL: Record<FooterKind, string> = {
 };
 
 /** The advance bar: back · progress · the context-sensitive primary action. */
-export function PhaseFooter({ phase, action, onBack, onPrimary }: {
+export function PhaseFooter({ phase, action, published, onBack, onPrimary }: {
   phase: Phase;
   action: { kind: FooterKind; enabled: boolean };
+  /** The project already has a GitHub board — the publish action re-syncs it ("Update GitHub", #823). */
+  published?: boolean;
   onBack: () => void;
   onPrimary: () => void;
 }) {
-  const primaryLabel = action.kind === "approve-continue" && !action.enabled ? "gate blocking…" : FOOTER_LABEL[action.kind];
+  const primaryLabel =
+    action.kind === "approve-continue" && !action.enabled ? "gate blocking…"
+    : action.kind === "publish" && published ? "⟳ Update GitHub"
+    : FOOTER_LABEL[action.kind];
   const primary = action.kind === "approve-continue" || action.kind === "publish";
   // When the gate is blocking the advance button, the tooltip says what's still needed (#805).
   const unmet = phase.unmet ?? [];
