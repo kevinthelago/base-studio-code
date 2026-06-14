@@ -1661,6 +1661,8 @@ export function ProjectPane({
     footer: { kind: FooterKind; enabled: boolean };
     onBack: () => void;
     onPrimary: () => void;
+    /** The project already has a GitHub board — the publish action reads as "Update GitHub" (#823). */
+    published?: boolean;
   };
   /** Callback to link a repository from the focused repos body (#677). */
   onLinkRepo?: (repo: string) => void;
@@ -1760,7 +1762,7 @@ export function ProjectPane({
           <FocusedPhaseBody phase={selected} data={data} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing}
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} />
         </div>
-        <FocusedPhaseFooter phase={selected} action={focus.footer} onBack={focus.onBack} onPrimary={focus.onPrimary} />
+        <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} onBack={focus.onBack} onPrimary={focus.onPrimary} />
         {viewerModal}
       </div>
     );

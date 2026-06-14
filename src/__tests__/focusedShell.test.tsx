@@ -112,6 +112,15 @@ describe("PhaseFooter (#652)", () => {
     fireEvent.click(screen.getByText(/Publish to GitHub/));
     expect(onPrimary).toHaveBeenCalled();
   });
+  it("relabels publish as 'Update GitHub' once the project is published (#823)", () => {
+    const { rerender } = render(
+      <PhaseFooter phase={phase({ index: 1 })} action={{ kind: "publish", enabled: true }} onBack={vi.fn()} onPrimary={vi.fn()} />,
+    );
+    expect(screen.getByText(/Publish to GitHub/)).toBeInTheDocument();
+    rerender(<PhaseFooter phase={phase({ index: 1 })} action={{ kind: "publish", enabled: true }} published onBack={vi.fn()} onPrimary={vi.fn()} />);
+    expect(screen.getByText(/Update GitHub/)).toBeInTheDocument();
+    expect(screen.queryByText(/Publish to GitHub/)).not.toBeInTheDocument();
+  });
   it("disables back on the first phase", () => {
     render(<PhaseFooter phase={phase({ index: 0 })} action={{ kind: "approve-continue", enabled: true }} onBack={vi.fn()} onPrimary={vi.fn()} />);
     expect(screen.getByText("← back")).toBeDisabled();
