@@ -2,8 +2,13 @@
 // navigable stepper, the phase header with gate pill, lock/done banners, and the footer
 // advance bar. Pure presentational (props in, callbacks out); the phase model + footer
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { connectorKind, type Phase, type GatePill, type FooterKind } from "./focusedPlan";
+
+/** Format one unmet requirement: "resolve the discovery topics (3 of 5)". */
+function reasonText(u: { label: string; detail?: string }): string {
+  return u.detail ? `${u.label} (${u.detail})` : u.label;
+}
 
 /** The node glyph: ✓ for done (in-sequence or banked-ahead), ↷ for a skipped optional
  *  stage, ◆ for the current one, a number while pending. */
@@ -52,8 +57,14 @@ export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
   );
 }
 
-/** Eyebrow + title + blurb + gate pill for the focused phase. */
+/** Eyebrow + title + blurb + gate pill for the focused phase. The pill surfaces WHY the
+ *  gate isn't met (#805): a hover tooltip + a click-to-toggle popover of what's still needed. */
 export function PhaseHeader({ phase, pill }: { phase: Phase; pill: GatePill }) {
+  const [showReasons, setShowReasons] = useState(false);
+  const unmet = phase.unmet ?? [];
+  // Only offer reasons while the gate isn't passing and there's something to explain.
+  const hasReasons = pill !== "pass" && unmet.length > 0;
+  const tip = hasReasons ? "Still needed: " + unmet.map(reasonText).join("; ") : undefined;
   return (
     <div className="ph-head">
       <div className="ph-eyebrow">
@@ -66,10 +77,32 @@ export function PhaseHeader({ phase, pill }: { phase: Phase; pill: GatePill }) {
       </div>
       <div className="ph-title"><h2>{phase.name}</h2></div>
       <p className="ph-blurb">{phase.blurb}</p>
-      <span className={"ph-gate " + (pill === "blocked" ? "fail" : pill)}>
+      <span
+        className={"ph-gate " + (pill === "blocked" ? "fail" : pill)}
+        title={tip}
+        onClick={hasReasons ? () => setShowReasons((v) => !v) : undefined}
+        style={{ cursor: hasReasons ? "pointer" : undefined }}
+      >
         <span className="gd" />
         gate · {phase.gate} — {pill === "pass" ? "passing" : pill === "blocked" ? "blocked" : "waiting"}
+        {hasReasons && <span style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</span>}
       </span>
+      {hasReasons && showReasons && (
+        <div role="status" style={{
+          marginTop: 8, padding: "8px 11px", borderRadius: 7, maxWidth: 420,
+          background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+          fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.6, color: "var(--fg-muted)",
+        }}>
+          <div style={{ color: "var(--fg-dim)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>
+            Still needed to pass this gate
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 16 }}>
+            {unmet.map((u, i) => (
+              <li key={i}>{u.label}{u.detail && <span style={{ color: "var(--fg-dim)" }}> — {u.detail}</span>}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -108,12 +141,17 @@ export function PhaseFooter({ phase, action, onBack, onPrimary }: {
 }) {
   const primaryLabel = action.kind === "approve-continue" && !action.enabled ? "gate blocking…" : FOOTER_LABEL[action.kind];
   const primary = action.kind === "approve-continue" || action.kind === "publish";
+  // When the gate is blocking the advance button, the tooltip says what's still needed (#805).
+  const unmet = phase.unmet ?? [];
+  const blockedTip = action.kind === "approve-continue" && !action.enabled && unmet.length > 0
+    ? "Still needed: " + unmet.map(reasonText).join("; ")
+    : undefined;
   return (
     <div className="ph-foot">
       <button className="nav-btn" disabled={phase.index === 0} onClick={onBack}>← back</button>
       <span className="prog">phase {phase.index + 1} of {phase.total}</span>
       <span style={{ flex: 1 }} />
-      <button className={"nav-btn" + (primary ? " primary" : "")} disabled={!action.enabled} onClick={onPrimary}>
+      <button className={"nav-btn" + (primary ? " primary" : "")} disabled={!action.enabled} onClick={onPrimary} title={blockedTip}>
         {primaryLabel}
       </button>
     </div>

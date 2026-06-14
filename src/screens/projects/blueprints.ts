@@ -124,7 +124,7 @@ export const SECTION_DEFS: Record<string, SectionDef> = {
     name: "Context", glyph: "◆", gate: "all topics resolved", deps: [],
     // core four confirmed (must-pass, no fill) + every surfaced topic resolved.
     gateRule: { require: [
-      { signal: "coreConfirmed", target: true, weight: 0 },
+      { signal: "coreConfirmed", target: true, weight: 0, label: "confirm goal, scope, stack & architecture" },
       { signal: "topicsResolved", of: "topicsTotal", label: "resolve the discovery topics" },
     ] },
     blurb: "Discovery — goal, scope, stack, architecture (+ applicable dimensions).",
@@ -186,7 +186,7 @@ Gate: every primary flow has its screens and states defined.`,
   features: {
     name: "Features", glyph: "◇", gate: "every feature defined", deps: ["context"],
     gateRule: { require: [
-      { signal: "featuresConfirmed", target: true, weight: 0 },
+      { signal: "featuresConfirmed", target: true, weight: 0, label: "confirm the feature set" },
       { signal: "featuresDefined", target: 1, label: "define at least one feature" },
     ] },
     blurb: "The user-facing capabilities — each one a stream.",
