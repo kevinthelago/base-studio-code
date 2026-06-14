@@ -37,7 +37,15 @@ describe("buildProjectPaneData", () => {
       { k: "goal", title: "Goal", content: "   ", state: "confirmed" } as unknown as Section,
       { k: "scope", title: "Scope", content: "We will build X.", state: "draft" } as unknown as Section,
     ] }));
-    expect(d.context.map(c => c.name)).toEqual(["Scope.md"]);
+    // The display filename is the canonical KEY (matches the on-disk file), not the title (#803).
+    expect(d.context.map(c => c.name)).toEqual(["scope.md"]);
+  });
+
+  it("names context files by their canonical key, matching the on-disk file (#803)", () => {
+    const d = buildProjectPaneData(base({ sections: [
+      { k: "stack", title: "Tech stack", content: "Rust + React.", state: "confirmed" } as unknown as Section,
+    ] }));
+    expect(d.context.map(c => c.name)).toEqual(["stack.md"]); // not "Tech stack.md"
   });
 
   it("a fleet stream -> one agent with mapped flow push casing + derived perm", () => {
@@ -224,11 +232,11 @@ describe("buildProjectPaneData", () => {
     expect(claude.kind).toBe("claude");
     expect(claude.pinned).toBe(true);
     expect(claude.tok).toBe("1.2k");
-    const spec = d.context.find(c => c.name === "Settlement spec.md")!;
+    const spec = d.context.find(c => c.name === "settlement_spec.md")!;
     expect(spec.kind).toBe("spec");
     expect(spec.pinned).toBe(false);
     expect(spec.tok).toBe("4.1k");
-    const goal = d.context.find(c => c.name === "Goal.md")!;
+    const goal = d.context.find(c => c.name === "goal.md")!;
     expect(goal.kind).toBe("doc");
     expect(goal.pinned).toBe(false);
   });
@@ -261,8 +269,8 @@ describe("buildProjectPaneData", () => {
       { k: "settlement_spec", title: "Settlement spec", state: "drafted", content: "y".repeat(4100) },
     ];
     // Pin only the spec (which is NOT confirmed); CLAUDE (confirmed) is not in the set.
-    const d = buildProjectPaneData(base({ sections, pinned: ["Settlement spec.md"] }));
-    expect(d.context.find(c => c.name === "Settlement spec.md")!.pinned).toBe(true);
+    const d = buildProjectPaneData(base({ sections, pinned: ["settlement_spec.md"] }));
+    expect(d.context.find(c => c.name === "settlement_spec.md")!.pinned).toBe(true);
     expect(d.context.find(c => c.name === "CLAUDE.md")!.pinned).toBe(false);
   });
 
