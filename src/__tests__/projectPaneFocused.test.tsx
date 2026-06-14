@@ -34,6 +34,14 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText("PHASE 03 / 03")).toBeInTheDocument();
   });
 
+  it("renders the file-drop intake surface for the UI stage (#829)", () => {
+    render(<ProjectPane projectId="proj-x" focus={baseFocus({
+      phases: [ph("ui", "UI", "active", 0, 1)],
+      selectedIdx: 0, activeIdx: 0,
+    })} />);
+    expect(screen.getByText(/Drop design or any files/i)).toBeInTheDocument();
+  });
+
   it("renders a generic body for a section without a dedicated panel", () => {
     render(<ProjectPane focus={baseFocus({
       phases: [ph("testing", "Testing", "active", 0, 1)],

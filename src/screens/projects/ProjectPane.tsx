@@ -19,6 +19,7 @@ import {
   LockBanner as FocusedLockBanner,
   PhaseFooter as FocusedPhaseFooter,
 } from "./FocusedShell";
+import { FileIntakePane } from "./FileIntakePane";
 
 /* =================================================================
    types
@@ -1348,9 +1349,10 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
   );
 }
 
-function FocusedPhaseBody({ phase, data, onLinkRepo, onApprovePlan, onView, onPerm, onPreset, onFlow, onGenerateProfiles }: {
+function FocusedPhaseBody({ phase, data, projectId, onLinkRepo, onApprovePlan, onView, onPerm, onPreset, onFlow, onGenerateProfiles }: {
   phase: Phase;
   data?: ProjectPaneData;
+  projectId?: string;
   onLinkRepo?: (r: string) => void;
   onApprovePlan?: () => void;
   onView?: (f: ContextFile) => void;
@@ -1364,6 +1366,11 @@ function FocusedPhaseBody({ phase, data, onLinkRepo, onApprovePlan, onView, onPe
       return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} />;
     case "context":
       return <FocusedContextBody context={data?.context} onView={onView} />;
+    case "ui":
+      // The UI stage's drop-in-files surface (#604/#829): stage design assets into the
+      // project's `design/` dir for the planner to route. The pipeline-screen registry that
+      // hosted this was orphaned by the focused-pane refactor — render it directly here.
+      return <FileIntakePane projectKey={projectId ?? ""} />;
     case "features":
       return <FocusedFeaturesBody features={data?.features} />;
     case "structure":
@@ -1759,7 +1766,7 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing}
+          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing}
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} />
         </div>
         <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} onBack={focus.onBack} onPrimary={focus.onPrimary} />
