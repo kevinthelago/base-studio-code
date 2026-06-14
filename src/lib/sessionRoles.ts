@@ -40,6 +40,8 @@ export interface RoleCapability {
 // prompts/ kickoff scripts. The planner still has no git/GitHub writes.
 export const PLANNER_WRITE_GLOBS: string[] = [
   "*.md", "*.json", "prompts/*.md", "prompts/*",
+  // Context-stage discovery sections live in their own subdir (#807).
+  "context/*.md", "context/*",
 ];
 
 /**

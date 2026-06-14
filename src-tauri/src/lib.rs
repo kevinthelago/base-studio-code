@@ -142,6 +142,37 @@ fn plan_dir_for(project_key: &str) -> std::path::PathBuf {
     project_dir(project_key)
 }
 
+/// The Context-stage discovery sections live in their own subdir of the hub (#807):
+/// `projects/<sanitized-key>/context/`. Keeps the discovery topics easy to find (and the
+/// hub uncluttered) for larger / off-script plans. Created only when the blueprint has a
+/// context stage; read alongside the flat root so pre-existing projects still resolve.
+pub(crate) fn context_dir_for(project_key: &str) -> std::path::PathBuf {
+    project_dir(project_key).join("context")
+}
+
+/// Ingest every non-empty `.md`/`.json` section file in `dir` (top level only), keyed by
+/// file stem, into `sections` — skipping the workspace control files. Used to read the hub
+/// root + the `context/` subdir; a later call overrides earlier keys (context/ wins, #807).
+fn ingest_section_files(dir: &std::path::Path, sections: &mut std::collections::HashMap<String, String>) {
+    const CONTROL: &[&str] = &["CLAUDE.md", "kb_index.md", "automations.md", "extensions.md", "github_context.md"];
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() { continue; }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if CONTROL.contains(&name) { continue; }
+        if !matches!(path.extension().and_then(|e| e.to_str()), Some("md") | Some("json")) { continue; }
+        if let (Some(stem), Ok(content)) =
+            (path.file_stem().and_then(|s| s.to_str()), std::fs::read_to_string(&path))
+        {
+            let content = content.trim().to_string();
+            if !content.is_empty() {
+                sections.insert(stem.to_string(), content);
+            }
+        }
+    }
+}
+
 /// Delete a project's on-disk hub (`projects/<sanitized-key>`) and everything in
 /// it — plan sections, prompts, cloned repos. Best-effort: a missing dir is fine.
 /// Refuses an empty key so it can never wipe the `projects/` root.
@@ -316,6 +347,13 @@ fn clear_project_plan_files(project_key: String) -> Result<u32, String> {
         {
             removed += 1;
         }
+    }
+    // The Context-stage discovery sections live in `context/` (#807) — clear them too, or a
+    // blueprint reset would leave the old goal/scope/stack/architecture behind. Drop the whole
+    // subdir (it holds only generated section files).
+    let context = context_dir_for(&project_key);
+    if context.is_dir() && std::fs::remove_dir_all(&context).is_ok() {
+        removed += 1;
     }
     // Drop generated UI artifacts too (#650): the .ui-skeleton/ dir feeds the render-preview
     // pipeline, so leaving it would re-show the old UI after a clear.
@@ -1568,30 +1606,14 @@ async fn read_plan_sections(project_key: String) -> Result<std::collections::Has
     if !plans_dir.exists() {
         return Ok(std::collections::HashMap::new());
     }
-    // Dynamic: every non-empty .md/.json section file the planner wrote, keyed by
-    // file stem, excluding the workspace control files. Lets the planner document
-    // any topic (guided-dynamic sections) with no fixed key list. `_skipped` (the
-    // considered-but-skipped record) and `phases` (.json roadmap) ride along and
-    // are handled specially by the UI.
-    const CONTROL: &[&str] = &["CLAUDE.md", "kb_index.md", "automations.md", "extensions.md", "github_context.md"];
+    // Every non-empty .md/.json section file, keyed by file stem, from the hub root
+    // (manifests + legacy flat sections + the considered-but-skipped `_skipped` record +
+    // the `phases` roadmap — handled specially by the UI) AND the `context/` subdir (the
+    // Context-stage discovery topics, #807). Reading both keeps pre-existing flat projects
+    // working; context/ is ingested last so a section there wins over a stale root copy.
     let mut sections = std::collections::HashMap::new();
-    if let Ok(entries) = std::fs::read_dir(&plans_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() { continue; }
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if CONTROL.contains(&name) { continue; }
-            if !matches!(path.extension().and_then(|e| e.to_str()), Some("md") | Some("json")) { continue; }
-            if let (Some(stem), Ok(content)) =
-                (path.file_stem().and_then(|s| s.to_str()), std::fs::read_to_string(&path))
-            {
-                let content = content.trim().to_string();
-                if !content.is_empty() {
-                    sections.insert(stem.to_string(), content);
-                }
-            }
-        }
-    }
+    ingest_section_files(&plans_dir, &mut sections);
+    ingest_section_files(&context_dir_for(&project_key), &mut sections);
     Ok(sections)
 }
 
@@ -2249,6 +2271,39 @@ mod tests {
         let dir = plan_dir_for("acme/api project");
         let s = dir.to_string_lossy().replace('\\', "/");
         assert!(s.ends_with("/projects/acme_api_project"), "got {s}");
+    }
+
+    #[test]
+    fn ingest_section_files_reads_both_dirs_and_context_wins() {
+        use std::collections::HashMap;
+        let root = std::env::temp_dir().join(format!("bsc-ingest-{}", std::process::id()));
+        let context = root.join("context");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&context).unwrap();
+
+        // Hub root: a manifest (json) + a stale flat copy of `stack` + a control file.
+        std::fs::write(root.join("phases.json"), r#"{"phases":[]}"#).unwrap();
+        std::fs::write(root.join("stack.md"), "OLD flat stack").unwrap();
+        std::fs::write(root.join("CLAUDE.md"), "the planner spec").unwrap();
+        // An empty section is a created-but-unwritten ghost and must be dropped.
+        std::fs::write(root.join("empty.md"), "   \n").unwrap();
+        // context/: the discovery sections (one shadows the stale root `stack`).
+        std::fs::write(context.join("goal.md"), "ship it").unwrap();
+        std::fs::write(context.join("stack.md"), "NEW context stack").unwrap();
+
+        let mut sections: HashMap<String, String> = HashMap::new();
+        super::ingest_section_files(&root, &mut sections);
+        super::ingest_section_files(&context, &mut sections);
+
+        assert_eq!(sections.get("phases").map(String::as_str), Some(r#"{"phases":[]}"#));
+        assert_eq!(sections.get("goal").map(String::as_str), Some("ship it"));
+        // context/ is ingested last, so its section wins over the stale flat copy.
+        assert_eq!(sections.get("stack").map(String::as_str), Some("NEW context stack"));
+        // Control files and empty sections never become sections.
+        assert!(!sections.contains_key("CLAUDE"));
+        assert!(!sections.contains_key("empty"));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     use super::level_color;

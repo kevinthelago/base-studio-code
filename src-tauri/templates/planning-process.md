@@ -29,8 +29,13 @@ Whenever you draft or refine a section, do **both**:
 polls these files every 2 seconds and updates the right panel. Overwrite to
 refine — each write replaces the previous version.
 
-- Project-tier file: `{topic}.md` — e.g. `goal.md`, `stack.md`, `security.md`,
-  `observability.md`, or a custom `feature_flags.md`.
+- **Context-stage discovery file: `context/{topic}.md`** — e.g.
+  `context/goal.md`, `context/stack.md`, `context/security.md`,
+  `context/observability.md`, or a custom `context/feature_flags.md`. Every topic
+  you document during the **Context** stage lives in the `context/` subdir (#807);
+  the file stem is still the bare canonical key.
+- Other project-tier files (manifests, repo-tier sections) stay at the hub root:
+  `repos.json`, `repo__web__api.md`, etc.
 - The roadmap is JSON: `phases.json` (see "Special sections").
 
 **Channel 2 — emit an inline tag** for immediate display before the next poll:
@@ -53,14 +58,15 @@ genuinely applies; don't spin up tangential files (they just block the gate). Us
 **canonical key** as the file stem so the section maps to the right gate signal —
 `schema` (not "data-model"), `ux`, `api`, `auth`, `security`, `testing`, etc. The
 **Context** gate specifically requires `goal`, `scope`, `stack`, and `architecture` to be
-written and confirmed.
+written and confirmed — as `context/goal.md`, `context/scope.md`, `context/stack.md`, and
+`context/architecture.md` (every Context-stage file lives in the `context/` subdir).
 
 **Work one stage at a time.** Finish drafting the current stage's sections, then **stop and
 let the user review and approve** before moving on — you'll receive a `[The user confirmed
 …]` message when a section is approved. Do **not** jump ahead and produce a later stage's
 artifacts (issues, fleet, …) before the current stage is approved.
 
-Maintain `_skipped.md`: one line per checklist dimension you deliberately did
+Maintain `context/_skipped.md`: one line per checklist dimension you deliberately did
 **not** document, each with a short reason. Keep it current as you decide to skip
 things. The UI shows it as a collapsed "considered & skipped" list so the user
 can see the whole surface was weighed.
@@ -290,8 +296,8 @@ and `risks` apply to almost every project.
 
 **Core orientation — document these, briefly (each line is the template).**
 
-> **REQUIRED for the Context gate — always create and confirm four files: `goal.md`,
-> `scope.md`, `stack.md`, and `architecture.md`.** Do this for EVERY project, even a trivial
+> **REQUIRED for the Context gate — always create and confirm four files: `context/goal.md`,
+> `context/scope.md`, `context/stack.md`, and `context/architecture.md`.** Do this for EVERY project, even a trivial
 > one (keep them short if so, but never skip them — the "skip what doesn't apply" guidance
 > below does NOT cover these four). The Context stage cannot complete until all four exist and
 > the user has confirmed each. `users` is helpful orientation but is NOT gate-required.
@@ -324,7 +330,7 @@ identity needs, and third-party calls belong to that feature's issues, where an
 agent will actually build them. Only lift one to its own section if it is a
 shared contract many features depend on.
 
-**Skip by default — one line in `_skipped.md` unless the product is centrally
+**Skip by default — one line in `context/_skipped.md` unless the product is centrally
 about it:** `ux`, `observability`, `performance`, `infra`, `data_lifecycle`,
 `docs`, `analytics`, `accessibility`, `cost`. Document one only when it is a
 first-class concern (e.g. `ux` for a design tool, `performance` for a database).

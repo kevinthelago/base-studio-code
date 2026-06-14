@@ -23,7 +23,7 @@ pub(crate) struct AutomationData {
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-const PLANNING_TEMPLATE_VERSION: u8 = 8;
+const PLANNING_TEMPLATE_VERSION: u8 = 9;
 
 #[derive(serde::Serialize)]
 pub(crate) struct WorkspacePaths {
@@ -57,7 +57,7 @@ const PLANNING_PROCESS_MD: &str = include_str!("../templates/planning-process.md
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
     let line = match id {
-        "context"     => "**Context** — discovery, one topic at a time. The gate REQUIRES these four files, written and confirmed: `goal.md`, `scope.md`, `stack.md`, `architecture.md` — always create them. Cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`users`, `ux`, `schema`, `api`, `security`, `testing`, …); record every dimension you don't document in `_skipped.md`. Each file you create is a gate item the user must confirm — do NOT create files for tangential topics, or the gate can't complete.",
+        "context"     => "**Context** — discovery, one topic at a time. Write every discovery file into the **`context/`** subdir. The gate REQUIRES these four, written and confirmed: `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md` — always create them. Cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/users.md`, `context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, …); record every dimension you don't document in `context/_skipped.md`. Each file you create is a gate item the user must confirm — do NOT create files for tangential topics, or the gate can't complete.",
         "repos"       => "**Repos** — decide and link the repositories (emit `<repo_link>`, write `repos.json`).",
         "ui"          => "**UI** — design the screens: write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live.",
         "structure"   => "**Structure** — run the feature workshop (new project → feature-by-feature; existing → section-by-section migration — inventory every screen/module first), then write `phases.json` + agent-ready `issues.json`. Go ONE unit at a time; never move on until the current unit is fully decomposed and written.",
@@ -133,6 +133,12 @@ pub(crate) async fn setup_workspaces(
         planning_dir.join("contracts"),
     ] {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    // Context-stage discovery sections get their own subdir (#807) — created ONLY when the
+    // blueprint actually carries a context stage. The planner writes `context/<topic>.md`
+    // there; read_plan_sections ingests it alongside the hub root.
+    if enabled_stages.iter().any(|s| s == "context") {
+        std::fs::create_dir_all(planning_dir.join("context")).map_err(|e| e.to_string())?;
     }
 
     // KB: read + write/edit markdown only; no web access or shell
