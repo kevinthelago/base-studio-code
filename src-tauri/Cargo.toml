@@ -47,7 +47,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # (only tracked PIDs, no full system walk); rusqlite persists the time-series.
 # `bundled` compiles SQLite from source for cross-platform reliability.
 sysinfo = { version = "0.31", default-features = false, features = ["system"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 # Data platform (#781/#784): the canonical Data Model store (DuckDB) + connector
 # framework. Pulling this in compiles bundled DuckDB into the desktop build.
