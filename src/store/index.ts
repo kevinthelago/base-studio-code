@@ -135,8 +135,10 @@ export const TRIAGE_PROMPT = buildTriagePrompt(true);
 
 // Fallback first message for a fleet worker whose stream has no planner-authored
 // kickoff script. Plain text only (no double quotes / $ / backticks) so it is safe
-// to pass as claude's initial-message arg. The authoritative plan lives in
-// CLAUDE.local.md; this points the session at its lane and the autonomy rules.
+// to pass as claude's initial-message arg. The worker's SCOPE (owned globs, issues,
+// dependencies) lives in CLAUDE.local.md — NOT the full plan (#844): the worktree is
+// outside the hub, so the worker loads only its lane; high-level context is the
+// director's. This points the session at that scope file and the autonomy rules.
 function buildStreamPrompt(stream: AgentStream, strategy?: IntegrationStrategy): string {
   const owns   = stream.owns.length   ? stream.owns.join(", ")   : "the files for your area";
   const issues = stream.issues.length ? stream.issues.join(", ") : "the issues assigned to your area";
@@ -146,10 +148,11 @@ function buildStreamPrompt(stream: AgentStream, strategy?: IntegrationStrategy):
   const kick = flowKickoffText(effFlow, stream.id);
   return (
     `You are the ${stream.name} work stream, one of several Claude sessions building this project in parallel. ` +
-    `The full project plan is in CLAUDE.local.md — read it first; it is authoritative. ` +
+    `Your scope — the files and issues you own, and what you depend on — is in CLAUDE.local.md; read it first. ` +
+    `You do not have the full project plan; for high-level context, defer to the director. ` +
     `You are working in your own git worktree on branch ${stream.id}; do not switch branches or touch other worktrees. ` +
     `Your lane: you own ${owns}. Do not modify files outside your owned paths — another session owns them; ` +
-    `coordinate through the plan instead. Your issues: ${issues}. ` +
+    `coordinate through the director instead. Your issues: ${issues}. ` +
     `Integration interfaces between features live in the contracts directory — read them as the source of truth, ` +
     `and if one is unclear or must change, ask the director rather than reaching into another stream. ` +
     `${kick.autonomy} ` +

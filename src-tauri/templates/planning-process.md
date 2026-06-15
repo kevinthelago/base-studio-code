@@ -255,17 +255,20 @@ worker its own **git worktree** of its repo, checked out to a **branch named aft
 stream `id`** — so make ids lowercase-hyphen slugs, since they become branch names.
 Workers commit on their branch and, under the default self-merge strategy, integrate to develop themselves (rebase + push develop); the director only watches develop CI and flags breakage. (Under the pr-ci strategy workers open PRs and the director merges them.) Because each
 worker has its own worktree, several streams can share one repo without touching the
-same working tree. (The worktree also carries the plan: `CLAUDE.local.md` is copied in.)
+same working tree. The worktree lives outside the project hub, so a worker does NOT
+inherit this planning spec; it carries only its own **scope** — owned globs, issues, and
+dependencies — in `CLAUDE.local.md`, and defers high-level questions to the director.
 
 ### Stream kickoff scripts — designed for autonomy
 
 Each kickoff is the first message a worker session gets; its job is to let that
 session run with as little human input as possible. Every worker kickoff must:
 
-- State the stream's role and that the full plan is in `CLAUDE.local.md` — read it
-  first; it is authoritative.
+- State the stream's role and that its **scope** (owned files, issues, dependencies) is
+  in `CLAUDE.local.md` — read it first. It does NOT have the full plan; for high-level
+  context it defers to the director (`bsc-ask`).
 - State the ownership boundary: "you own <globs>; do not modify files outside them —
-  another stream owns them; coordinate through the plan, not by editing their files."
+  another stream owns them; coordinate through the director, not by editing their files."
 - State that it runs in its **own git worktree on a branch named after the stream**:
   commit there and integrate per the fleet strategy — self-merge (default): rebase onto develop and push develop yourself, do NOT open a PR; pr-ci: open a PR for the director to merge — never switch branches or edit
   another agent's worktree. (The app creates the worktree + branch at launch.)
