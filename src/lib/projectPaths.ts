@@ -54,15 +54,20 @@ export function worktreeSlug(agentId: string): string {
 
 /**
  * A fleet agent's git worktree directory — its isolated checkout + branch:
- * `<baseDir>/projects/<sanitizeProjectKey(projectKey)>/.worktrees/<repoShort>--<agentSlug>`.
- * Each agent edits/commits here on its own branch, so co-located agents (multiple
- * in one repo) never share a working tree. Mirrors the Rust `ensure_worktree` path.
+ * `<baseDir>/worktrees/<sanitizeProjectKey(projectKey)>/<repoShort>--<agentSlug>`.
+ *
+ * OUTSIDE the project hub (`projects/<key>/`) on purpose (#844): Claude Code loads
+ * `CLAUDE.md` from the cwd and every parent dir, so a worktree under the hub inherits the
+ * hub's planner spec — pulling the worker toward planning and inflating per-turn input
+ * tokens. Relocating worktrees here keeps the planner `CLAUDE.md` out of the ancestor walk.
+ * Each agent edits/commits here on its own branch, so co-located agents (multiple in one
+ * repo) never share a working tree. Mirrors the Rust `ensure_worktree` / `worktrees_dir`.
  */
 export function agentWorktreeCwd(baseDir: string, projectKey: string, fullName: string, agentId: string): string {
   if (!baseDir) return "";
   const sep = baseDir.includes("\\") ? "\\" : "/";
   const dir = `${repoShortName(fullName)}--${worktreeSlug(agentId)}`;
-  return [baseDir, "projects", sanitizeProjectKey(projectKey), ".worktrees", dir].join(sep);
+  return [baseDir, "worktrees", sanitizeProjectKey(projectKey), dir].join(sep);
 }
 
 /**
