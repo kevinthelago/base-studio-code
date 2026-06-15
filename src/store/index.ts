@@ -8,6 +8,7 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import type { ModelId } from "../components/pane/PaneMenu";
 import type { KbBlock, Schedule, Command } from "../data/mock";
 import { persistStorage } from "../lib/storage";
+import { DEFAULT_REAPER_CONFIG, type ReaperConfig } from "../lib/idleReaper";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { DEFAULT_ACCENT } from "../lib/appearance";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET, type QueuedPane, type FocusTarget, DEFAULT_AUTO_FOCUS_MODE, type ConsoleAutoFocusMode } from "../lib/focusQueue";
@@ -298,6 +299,20 @@ interface AppStore {
   // Record a pane's live status AND re-roll its tab's state in one step (#435) — the
   // store is the single source of truth for both the pane dot and the tab rollup.
   setPaneStatus: (paneId: string, status: "run" | "on" | "idle") => void;
+  // ── Idle session reaping (#849) ──
+  /** Panes whose PTY has been reaped for idleness; the view renders a dormant placeholder
+   *  and resumes on focus. Transient (not persisted) — panes relaunch on next app start. */
+  dormantPanes: Record<string, boolean>;
+  /** Epoch ms of each pane's last status change — the reaper's idle clock. Transient. */
+  paneLastActivity: Record<string, number>;
+  /** Idle-reaper config (enabled + thresholds). Persisted. */
+  idleReaper: ReaperConfig;
+  /** Mark a pane dormant after its PTY was reaped (the hook calls pty_kill alongside). */
+  reapPane: (paneId: string) => void;
+  /** Clear a pane's dormant state so the view relaunches it (resume on focus). */
+  resumePane: (paneId: string) => void;
+  /** Update the idle-reaper config (Settings). */
+  setIdleReaperConfig: (cfg: Partial<ReaperConfig>) => void;
   // Recompute one tab's rolled-up state from the current pane statuses + layout +
   // disabled set (#435). Called whenever a rollup input changes that isn't itself a
   // status event — a layout change or a pane enable/disable — so the tab dot never
@@ -1012,18 +1027,46 @@ export const useAppStore = create<AppStore>()(
         set((s) => {
           if (s.paneStatus[paneId] === status) return {}; // no-op — same status
           const paneStatus = { ...s.paneStatus, [paneId]: status };
+          // Stamp last-activity on every status CHANGE (#849): a run↔idle transition is the
+          // idle-reaper's clock — for an idle pane this records the moment it went idle, which
+          // is exactly what the reaper ages from. (Same-status pings early-return above, so an
+          // idle pane that stays idle keeps aging correctly.)
+          const paneLastActivity = { ...s.paneLastActivity, [paneId]: Date.now() };
           const parsed = parsePaneKey(paneId);
           const tab = parsed ? s.tabs[parsed.tabIdx] : undefined;
-          if (!parsed || !tab) return { paneStatus };
+          if (!parsed || !tab) return { paneStatus, paneLastActivity };
           // Re-roll the owning tab from the full live set; only rebuild the tabs
           // array when the rollup actually changes (status events are frequent).
           const nextState = aggregateTabState(parsed.tabIdx, tab.layout, paneStatus, s.disabledPanes);
-          if (nextState === tab.state) return { paneStatus };
+          if (nextState === tab.state) return { paneStatus, paneLastActivity };
           return {
             paneStatus,
+            paneLastActivity,
             tabs: s.tabs.map((t, i) => (i === parsed.tabIdx ? { ...t, state: nextState } : t)),
           };
         }),
+      // ── Idle session reaping (#849) ──────────────────────────────────────────
+      dormantPanes: {},
+      paneLastActivity: {},
+      idleReaper: DEFAULT_REAPER_CONFIG,
+      reapPane: (paneId) =>
+        set((s) => {
+          if (s.dormantPanes[paneId]) return {};
+          // Mark dormant + drop the live status so the pane reads as not-running while its
+          // PTY is gone (the hook fires pty_kill alongside this).
+          const paneStatus = { ...s.paneStatus };
+          delete paneStatus[paneId];
+          return { dormantPanes: { ...s.dormantPanes, [paneId]: true }, paneStatus };
+        }),
+      resumePane: (paneId) =>
+        set((s) => {
+          if (!s.dormantPanes[paneId]) return {};
+          const dormantPanes = { ...s.dormantPanes };
+          delete dormantPanes[paneId];
+          return { dormantPanes, paneLastActivity: { ...s.paneLastActivity, [paneId]: Date.now() } };
+        }),
+      setIdleReaperConfig: (cfg) =>
+        set((s) => ({ idleReaper: { ...s.idleReaper, ...cfg } })),
       recomputeTabState: (tabIdx) =>
         set((s) => {
           const tab = s.tabs[tabIdx];
@@ -2499,6 +2542,7 @@ export const useAppStore = create<AppStore>()(
         pageTabOrder:    s.pageTabOrder,
         settingsSection: s.settingsSection,
         perfConfig:      s.perfConfig,
+        idleReaper:      s.idleReaper,
         tunnelRelayUrl:  s.tunnelRelayUrl,
         agentProfiles:   s.agentProfiles,
         paneProfiles:    s.paneProfiles,
