@@ -26,6 +26,7 @@ import {
 } from "./planSections";
 import { parseFeaturesFile, featuresSummary, featureDefined } from "./featureList";
 import { buildWorkerScope } from "./workerScope";
+import { resolveIssueAssignee } from "./fleetAssignee";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
@@ -1661,6 +1662,13 @@ export function Planning({ visible }: { visible: boolean }) {
               if (issue.node_id) nodeByRef[iss.ref] = issue.node_id;
               if (projectId && issue.node_id) {
                 await gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
+              }
+              // Assign the issue to its owning stream's GitHub login (#847), defaulting to the
+              // publishing account. Done as a follow-up POST AFTER the issue exists, so an
+              // invalid / no-access login (a 422) is skipped gracefully and never loses the issue.
+              const assignee = resolveIssueAssignee(iss.stream, fleet?.streams ?? [], viewerLogin);
+              if (assignee) {
+                await post(`repos/${fullName}/issues/${issue.number}/assignees`, { assignees: [assignee] }).catch(() => {});
               }
               upd(id, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
             } catch (e) {

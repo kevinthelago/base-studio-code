@@ -87,6 +87,11 @@ export interface AgentStream {
   flow?: AgentFlow;
   /** Per-stream integration-strategy override (#378). Unset ⇒ the fleet default. */
   strategy?: IntegrationStrategy;
+  /** GitHub login this stream's issues are assigned to at publish (#847). A worker is an
+   *  agent session, not a GitHub user, so this maps the stream to a human/collaborator
+   *  login. Unset ⇒ the publishing account (viewer). The `stream:<id>` label remains the
+   *  agent-ownership marker; this is the first-class GitHub assignee. */
+  assignee?: string;
   /** Per-capability permission posture chosen in the project pane's agent editor.
    *  When present it overrides the profile-derived posture in the pane. */
   perm?: Record<string, "allow" | "ask" | "deny">;
@@ -378,6 +383,7 @@ export function parseFleetFile(raw: string): FleetPlan | null {
         ? (so.perm as Record<string, "allow" | "ask" | "deny">) : undefined,
       preset: typeof so.preset === "string" && so.preset.trim() ? so.preset.trim() : undefined,
       strategy: normalizeStrategy(so.strategy),
+      assignee: typeof so.assignee === "string" && so.assignee.trim() ? so.assignee.trim() : undefined,
     });
   }
 
