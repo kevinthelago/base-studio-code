@@ -161,7 +161,9 @@ pub fn tick(state: &PerfState) {
     if g.config.track_process {
         g.sys.refresh_processes_specifics(
             ProcessesToUpdate::Some(&pids),
-            ProcessRefreshKind::new().with_memory().with_cpu(),
+            true, // remove_dead_processes (sysinfo 0.33+): a since-exited PID drops out, so
+                  // process() returns None for it rather than stale memory/CPU.
+            ProcessRefreshKind::nothing().with_memory().with_cpu(),
         );
     }
     g.sys.refresh_memory();
