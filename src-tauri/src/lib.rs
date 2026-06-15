@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use tauri::{Manager, RunEvent};
 
 mod tunnel;
+mod fcm;
 mod perf;
 mod docstore;
 mod tokens;
