@@ -246,6 +246,10 @@ files and rarely need a human.
    project's toolchain, either reuse an existing profile or, in the fleet card, click
    **Generate least-privilege profiles** to derive one per agent from its role + `owns`
    + the project's commands; `<agent_assign … profile="…">` assigns one inline.
+   A stream may also carry **`"assignee"`** — a GitHub login the stream's issues are
+   assigned to at publish (#847). A worker is an agent session, not a GitHub user, so this
+   maps the stream to a human/collaborator login; omit it and the issues default to the
+   publishing account. The `stream:<id>` label is still the agent-ownership marker.
 7. **Write a kickoff script per stream** to `prompts/{id}-kickoff.md` (and
    `prompts/director-kickoff.md` if a director). These are the first messages those
    sessions receive — design them for autonomy (next).
