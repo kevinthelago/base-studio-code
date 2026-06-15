@@ -24,6 +24,7 @@
   "clientToServer": {
     "auth": { "type": "auth", "token": "0123456789abcdef", "fcmToken": "fcm-token-xyz" },
     "auth_no_fcm": { "type": "auth", "token": "0123456789abcdef" },
+    "set_fcm_token": { "type": "set_fcm_token", "fcmToken": "fcm-token-xyz" },
     "pane_set_state": { "type": "pane_set_state", "paneId": "t0p0", "state": "streaming" },
     "pane_focus": { "type": "pane_focus", "paneId": "t0p0" },
     "pane_input": { "type": "pane_input", "paneId": "t0p0", "data": "ls\n" },

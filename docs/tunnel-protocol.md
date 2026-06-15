@@ -64,7 +64,8 @@ Multi-word field names are **camelCase** (`paneId`, `currentTask`, `lastActivity
 
 | `type`            | Fields                                  | Meaning |
 |-------------------|-----------------------------------------|---------|
-| `auth`            | `token`, `fcmToken?`                     | First frame inside the Noise session. `fcmToken` reserved for future push wake-ups. |
+| `auth`            | `token`, `fcmToken?`                     | First frame inside the Noise session. `fcmToken` is the device's FCM registration token, persisted as the push target for `user_request` notifications (see [FCM push](#fcm-push-user_request), #846). |
+| `set_fcm_token`   | `fcmToken`                               | Refreshed FCM registration token (tokens rotate). Updates the stored push target mid-session; allowed even while view-only. |
 | `pane_set_state`  | `paneId`, `state` (`streaming`/`minimized`/`dormant`) | Mark a pane focused (`streaming`) or background. |
 | `pane_focus`      | `paneId`                                 | Focus a pane (begin streaming its output). |
 | `pane_input`      | `paneId`, `data`                         | Keystrokes → the pane's PTY. |
@@ -95,6 +96,40 @@ Multi-word field names are **camelCase** (`paneId`, `currentTask`, `lastActivity
 6. Mobile sends `pane_input` / `pane_resize`; desktop routes them to the PTY.
 7. Either side reconnects to the relay with backoff on a transient drop; a fresh Noise
    handshake re-establishes the session.
+
+## FCM push (`user_request`)
+
+The relay session only reaches a phone whose app is **foregrounded** — when MSC is
+backgrounded or quit, it drops its relay connection, so a `user_request` sent over the
+tunnel never arrives. To reach the phone anyway, the desktop also pushes the
+`user_request` out-of-band via **Firebase Cloud Messaging** (#846, `src-tauri/src/fcm.rs`).
+
+- **Trigger.** Exactly one push per `awaiting_input` transition per pane — fired from
+  `tunnel_set_sessions` alongside the relay `user_request` broadcast, debounced by the same
+  `!was_awaiting` guard (repeated state syncs while a pane stays awaiting don't re-push).
+- **Target.** The device's FCM registration token, captured from the `auth` handshake
+  (`fcmToken`) and updated by `set_fcm_token` refreshes. Stored in-memory per desktop
+  session; dropped automatically when FCM reports it `UNREGISTERED` / `INVALID_ARGUMENT`.
+- **Message (FCM HTTP v1, combined notification + data).** iOS shows the banner itself
+  when MSC is backgrounded/quit (no on-device background handler), and the `data` block
+  rides along for tap-routing. Fixed contract the mobile app parses:
+  - `notification = { title: <pane/session name>, body: <prompt summary> }`
+  - `data = { type: "user_request", paneId, prompt }` — **all values are strings**
+  - `apns.headers["apns-priority"] = "10"`, `apns.payload.aps = { sound: "default", "mutable-content": 1 }`
+    (deliberately **no** `content-available` — this is a visible alert, not a silent push).
+
+### Configuration
+
+| Setting | Value |
+|---|---|
+| Firebase project | The `project_id` inside the service-account key — use a key from the **same** Firebase project as the app's `GoogleService-Info.plist`. |
+| Service-account key | A Firebase service-account JSON key. Path = env **`BSC_FCM_SERVICE_ACCOUNT`**, else `~/.base-studio-code/fcm-service-account.json`. |
+| Auth | RS256-signed JWT assertion → OAuth2 access token (scope `https://www.googleapis.com/auth/firebase.messaging`), cached until ~60s before expiry. |
+
+If no key is present, FCM push is silently disabled — the tunnel still broadcasts
+`user_request` to any foregrounded client. The key is a secret: keep it out of the repo
+(generate it in the Firebase console → Project settings → Service accounts → *Generate new
+private key*, and place it at the path above).
 
 ## Desktop bridge
 

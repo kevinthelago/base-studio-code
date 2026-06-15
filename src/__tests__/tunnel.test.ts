@@ -161,6 +161,10 @@ describe("shared protocol fixture", () => {
     expect(clientToServer.auth_no_fcm).not.toHaveProperty("fcmToken");
   });
 
+  it("client set_fcm_token carries the refreshed token (#846)", () => {
+    expect(clientToServer.set_fcm_token).toMatchObject({ type: "set_fcm_token", fcmToken: expect.any(String) });
+  });
+
   it("every message is tagged with a snake_case type", () => {
     const all = [...Object.values(serverToClient), ...Object.values(clientToServer)] as { type: string }[];
     for (const m of all) {
