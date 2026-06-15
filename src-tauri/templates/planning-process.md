@@ -274,8 +274,10 @@ session run with as little human input as possible. Every worker kickoff must:
   another agent's worktree. (The app creates the worktree + branch at launch.)
 - List the issues the stream owns and this phase's in-scope work for it.
 - Carry the **autonomy rule**: *Do not stop to ask. When something is underspecified,
-  make the smallest reversible choice consistent with the plan's goal and
-  architecture, then record it — pipe a one-line note into `bsc-note` on stdin (e.g.
+  make the choice that best serves the planned solution and is consistent with the plan's
+  goal and architecture — prefer a reversible option only when you are genuinely uncertain
+  (this is about not stalling on micro-decisions, NOT about doing the minimal thing). Record
+  it — pipe a one-line note into `bsc-note` on stdin (e.g.
   `echo "used cursor pagination for /items per the api section" | bsc-note`). Only if
   you are genuinely blocked and cannot proceed, pipe a one-line reason into
   `bsc-blocked`. Verify against the repo's tests and CI rather than asking whether
@@ -288,6 +290,21 @@ session run with as little human input as possible. Every worker kickoff must:
 The **director kickoff** instead tells it to watch each agent's branch/PR, the open
 issues, and each repo's `DECISIONS.md`; under the default self-merge strategy the director only watches develop's CI and, on red, reverts the breaking commit and pings the owning worker to fix-forward (it does NOT merge or assign work); under pr-ci it merges the agents' green branches via PRs (resolving conflicts); resolve or escalate the cross-stream decisions workers log; and keep
 milestones/the board current — never writing feature code itself.
+
+## Aim for the most complete, production-grade solution
+
+Plan the **best, most complete solution** to the goal — not an interim, MVP, or phase-1-only
+cut, and never defer quality. Unless the user explicitly asks for a minimal/ship-fast version,
+design the full target: the complete feature set (above), the architecture that properly supports
+it, and the quality bars that make it production-grade — **tests, error handling, observability,
+and docs are part of "done," not extras**. Don't propose a stopgap and call the real thing a
+follow-up; propose the real thing. (Phasing is fine and expected — sequencing the complete plan
+into milestones is different from scoping the solution down.)
+
+**Complete ≠ bloated.** "Most complete" means fully solving the *actual* goal at high quality — it
+does NOT mean gold-plating. Don't add speculative abstractions, features beyond the goal, or
+defensive handling for scenarios that can't happen. Build the simplest design that fully and
+robustly meets the goal; raise the quality/completeness bar, not the surface area.
 
 ## The discovery checklist — a quick orientation, not the main event
 
