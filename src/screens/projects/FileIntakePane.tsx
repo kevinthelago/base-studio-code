@@ -3,7 +3,7 @@
 // directly), classifies each, and maintains `.intake/intake.json`. Routing the staged
 // files to the right repo is the planner's job (next slice); this is the intake surface.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { PipelineScreenFrame } from "./PipelineScreenFrame";
@@ -35,6 +35,20 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routed, setRouted] = useState(false);
+  // A second hidden input with `webkitdirectory` — the native FOLDER picker (#831). The
+  // attribute isn't in React's input types, so it's set imperatively once mounted.
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const el = folderInputRef.current;
+    if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); }
+  }, []);
+
+  // Stage the files chosen by either browse input — `webkitRelativePath` carries the folder
+  // structure when a directory was picked, else just the file name.
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    void ingest(Array.from(e.target.files ?? []).map((file) => ({ file, path: file.webkitRelativePath || file.name })));
+    e.currentTarget.value = "";
+  };
 
   // Load any already-staged manifest on open.
   useEffect(() => {
@@ -115,16 +129,18 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
           }}
         >
           <span style={{ fontSize: 22 }}>⬇</span>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>Drop design or any files here</span>
-          <span className="hint">or click to browse — images, SVG, components, markup, anything</span>
-          <input
-            type="file" multiple style={{ display: "none" }}
-            onChange={(e) => {
-              void ingest(Array.from(e.target.files ?? []).map((file) => ({ file, path: file.webkitRelativePath || file.name })));
-              e.currentTarget.value = "";
-            }}
-          />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>Drop design files or a folder here</span>
+          <span className="hint">or click to browse files — images, SVG, components, markup, anything</span>
+          <input type="file" multiple style={{ display: "none" }} onChange={onPick} />
         </label>
+
+        {/* Folder picker — the native directory selector (the drop zone above browses files). */}
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <button type="button" className="mini" onClick={() => folderInputRef.current?.click()}>
+            ⊞ browse a folder…
+          </button>
+          <input ref={folderInputRef} type="file" multiple style={{ display: "none" }} onChange={onPick} />
+        </div>
 
         {error && <div style={{ color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11 }}>{error}</div>}
 
