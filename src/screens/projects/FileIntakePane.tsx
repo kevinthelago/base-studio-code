@@ -12,6 +12,7 @@ import {
   INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
 } from "./fileIntake";
 import type { PipelineScreenProps } from "./pipelineScreens";
+import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "./dropFiles";
 
 const KIND_COLOR: Record<IntakeKind, string> = {
   image: "var(--violet, oklch(0.72 0.12 300))", vector: "var(--violet, oklch(0.72 0.12 300))",
@@ -47,21 +48,23 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
     return () => { live = false; };
   }, [projectKey]);
 
-  async function ingest(files: File[]) {
-    if (files.length === 0) return;
+  // Stage a set of dropped files, each carrying its path relative to the drop root so a
+  // dropped FOLDER's structure is preserved under design/ (#831).
+  async function ingest(dropped: DroppedFile[]) {
+    if (dropped.length === 0) return;
     setBusy(true);
     setError(null);
     try {
       const added: IntakeEntry[] = [];
-      for (const file of files) {
+      for (const { file, path } of dropped) {
         const kind = classifyFile(file.name, file.type || undefined);
-        const relpath = `${INTAKE_DIR}/${file.name}`;
+        const relpath = `${INTAKE_DIR}/${path}`;
         if (isBinaryKind(kind)) {
           await invoke("write_project_file_bytes", { projectKey, relpath, b64: await fileToBase64(file) });
         } else {
           await invoke("write_project_file", { projectKey, relpath, contents: await file.text() });
         }
-        added.push(intakeEntry(file.name, file.size, file.type || undefined));
+        added.push(intakeEntry(path, file.size, file.type || undefined));
       }
       const merged = mergeIntake(entries, added);
       await invoke("write_project_file", { projectKey, relpath: INTAKE_MANIFEST, contents: serializeIntake(merged) });
@@ -70,6 +73,24 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
       setError(String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Handle a drop: a dropped FOLDER is not in `dataTransfer.files` — it's reachable only via
+  // `webkitGetAsEntry()`, which must be called SYNCHRONOUSLY (the DataTransfer is only valid
+  // during the event). Capture the entries first, then walk them async (#831). Falls back to
+  // the flat file list when the entry API is unavailable.
+  function onDropFiles(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const items = Array.from(e.dataTransfer.items ?? []);
+    const entriesIn = items
+      .map((it) => (typeof it.webkitGetAsEntry === "function" ? it.webkitGetAsEntry() : null))
+      .filter((en): en is FileSystemEntry => en != null);
+    if (entriesIn.length > 0) {
+      void collectDroppedEntries(entriesIn as unknown as FsEntryLike[]).then(ingest);
+    } else {
+      void ingest(Array.from(e.dataTransfer.files).map((file) => ({ file, path: file.name })));
     }
   }
 
@@ -85,7 +106,7 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
         <label
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); void ingest(Array.from(e.dataTransfer.files)); }}
+          onDrop={onDropFiles}
           style={{
             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
             padding: "28px 16px", borderRadius: "var(--r-lg)", cursor: "pointer", textAlign: "center",
@@ -98,7 +119,10 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
           <span className="hint">or click to browse — images, SVG, components, markup, anything</span>
           <input
             type="file" multiple style={{ display: "none" }}
-            onChange={(e) => { void ingest(Array.from(e.target.files ?? [])); e.currentTarget.value = ""; }}
+            onChange={(e) => {
+              void ingest(Array.from(e.target.files ?? []).map((file) => ({ file, path: file.webkitRelativePath || file.name })));
+              e.currentTarget.value = "";
+            }}
           />
         </label>
 
