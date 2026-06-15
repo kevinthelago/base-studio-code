@@ -32,8 +32,10 @@ export interface PlanStageState {
   repoCount: number;
   /** Whether the project needs a UI at all — drives the UI stage's applicability. */
   requiresUi: boolean;
-  /** Required screens approved vs total (only meaningful when requiresUi). */
-  ui: { approved: number; total: number };
+  /** Required screens approved vs total (only meaningful when requiresUi). `routed` is set
+   *  when the user routes dropped design files to the project — an alternative completion to
+   *  approving screen previews (#837). */
+  ui: { approved: number; total: number; routed?: boolean };
   /** Features: how many user-facing capabilities are defined, and whether all are
    *  confirmed. Each feature becomes a fleet stream; the Plan stage reads them. */
   features: { count: number; allConfirmed: boolean };
@@ -133,9 +135,10 @@ export const PLAN_STAGES: Stage[] = [
     dependsOn: ["context", "features"],
     defaultEnabled: true,
     applies: (s) => s.requiresUi,
+    // Done when the design is routed to the project OR every screen preview is approved (#837).
     gate: (s) => ({
-      done: s.ui.total > 0 && s.ui.approved >= s.ui.total,
-      fraction: s.ui.total > 0 ? s.ui.approved / s.ui.total : 0,
+      done: s.ui.routed || (s.ui.total > 0 && s.ui.approved >= s.ui.total),
+      fraction: s.ui.routed ? 1 : (s.ui.total > 0 ? s.ui.approved / s.ui.total : 0),
     }),
   },
   {
@@ -206,7 +209,7 @@ export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageS
     context: p.context ?? { resolved: 0, total: 0, coreConfirmed: false },
     repoCount: p.repoCount ?? 0,
     requiresUi: p.requiresUi ?? false,
-    ui: p.ui ?? { approved: 0, total: 0 },
+    ui: p.ui ?? { approved: 0, total: 0, routed: false },
     features: p.features ?? { count: 0, allConfirmed: false },
     phasesConfirmed: p.phasesConfirmed ?? false,
     issueCount: p.issueCount ?? 0,

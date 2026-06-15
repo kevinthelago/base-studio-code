@@ -522,9 +522,12 @@ export function Planning({ visible }: { visible: boolean }) {
       skillsAck: false,
       requiresUi,
       ui: uiCounts,
+      // Routing dropped design files to the project completes the UI stage — recorded as a
+      // confirmation of the `ui` section so it persists (#837).
+      uiRouted: confirmedSet.has("ui"),
       features: featureState,
     });
-  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState]);
+  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, confirmedSet]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
     const bp = blueprints.find(b => b.id === activeBlueprintId);
