@@ -27,6 +27,7 @@ import {
 import { parseFeaturesFile, featuresSummary, featureDefined } from "./featureList";
 import { buildWorkerScope } from "./workerScope";
 import { resolveIssueAssignee } from "./fleetAssignee";
+import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "./repoScaffold";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
@@ -1472,6 +1473,7 @@ export function Planning({ visible }: { visible: boolean }) {
       invoke<Record<string, unknown>>("github_graphql", { token, query, variables });
     const rest = <T,>(path: string) => invoke<T>("github_request", { token, path });
     const post = <T,>(path: string, body: unknown) => invoke<T>("github_post", { token, path, body });
+    const put = (path: string, body: unknown) => invoke("github_put", { token, path, body });
 
     try {
       // ── 1. Repositories — verify each exists; create if missing ───────────
@@ -1501,6 +1503,43 @@ export function Planning({ visible }: { visible: boolean }) {
           }
         } catch (e) {
           upd(id, { status: "error", detail: String(e) });
+        }
+      }
+
+      // ── 1b. Repo presentation (#848): topics from the stack + a thorough README
+      //        with CI/version badges + the standard community-health files. Files are
+      //        created only when ABSENT (never clobber a hand-written one); a repo with
+      //        no workflows simply omits CI badges; any failure is surfaced, not fatal. ──
+      {
+        const stackText = sections.find(s => s.k === "stack")?.content ?? "";
+        const topics = deriveTopics(stackText);
+        for (const fullName of repos) {
+          const id = `scaffold:${fullName}`;
+          upd(id, { status: "running" });
+          try {
+            if (topics.length) await put(`repos/${fullName}/topics`, { names: topics }).catch(() => {});
+            // CI badges reference the repo's actual workflow files (graceful — none yet ⇒ none).
+            const wfs = await rest<{ name: string }[]>(`repos/${fullName}/contents/.github/workflows`).catch(() => []);
+            const workflows = (Array.isArray(wfs) ? wfs : []).map(w => w.name).filter(n => /\.ya?ml$/i.test(n));
+            const files: ScaffoldFile[] = [
+              { path: "README.md", content: buildReadme({ fullName, description: projectDesc, stackText, workflows }) },
+              ...communityFiles(projectTitle),
+            ];
+            let wrote = 0;
+            for (const f of files) {
+              const path = `repos/${fullName}/contents/${f.path}`;
+              const exists = await rest<{ sha?: string }>(path).then(r => !!r?.sha).catch(() => false);
+              if (exists) continue; // don't clobber an existing file
+              const content = btoa(unescape(encodeURIComponent(f.content)));
+              await put(path, { message: `docs: scaffold ${f.path}`, content }).catch(() => {});
+              wrote++;
+            }
+            upd(id, wrote
+              ? { status: "created", detail: `${topics.length} topics · ${wrote} file${wrote === 1 ? "" : "s"}` }
+              : { status: "exists", detail: topics.length ? `${topics.length} topics · files present` : "already scaffolded" });
+          } catch (e) {
+            upd(id, { status: "error", detail: String(e) });
+          }
         }
       }
 
