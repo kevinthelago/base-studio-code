@@ -39,7 +39,7 @@ describe("ProjectPane focused mode (#652)", () => {
       phases: [ph("ui", "UI", "active", 0, 1)],
       selectedIdx: 0, activeIdx: 0,
     })} />);
-    expect(screen.getByText(/Drop design or any files/i)).toBeInTheDocument();
+    expect(screen.getByText(/Drop design files or a folder/i)).toBeInTheDocument();
   });
 
   it("renders a generic body for a section without a dedicated panel", () => {
