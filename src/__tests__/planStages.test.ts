@@ -76,6 +76,11 @@ describe("planStages — applicability", () => {
     const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 1, total: 1 } });
     expect(status("ui", s)).toBe("complete");
   });
+
+  it("ui completes when the design is routed, even with no screens (#837)", () => {
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 0, total: 0, routed: true } });
+    expect(status("ui", s)).toBe("complete");
+  });
 });
 
 describe("planStages — dependency gating", () => {
