@@ -189,8 +189,9 @@ plan's features into visual designs.
 Gate: every primary flow has its screens and states defined.`,
   },
   // Features (#…): the INTERACTIVE heart — define the user-facing capabilities, one at a time.
-  // Each feature is a fleet stream. Claude proposes a starter set; the user curates, then drills
-  // into each. Integration seams are NOT defined here — the Plan stage owns them.
+  // Each feature is a fleet stream. Claude proposes the COMPLETE set a production-grade solution
+  // needs (#850 — not a truncated "starter" cut); the user curates + phases it, then drills into
+  // each. Integration seams are NOT defined here — the Plan stage owns them.
   features: {
     name: "Features", glyph: "◇", gate: "every feature defined", deps: ["context"],
     gateRule: { require: [
@@ -201,15 +202,18 @@ Gate: every primary flow has its screens and states defined.`,
     prompt:
 `Define the app's user-facing capabilities — the things a user DOES ("invite teammates", "export
 to CSV"), never infrastructure (auth, queues, storage are implementation detail under a feature).
-Each capability becomes its own fleet stream. Propose a starter set, let the user curate it, then
-take each one in turn.`,
+Each capability becomes its own fleet stream. Propose the COMPLETE set a production-grade solution
+to the goal needs — not a minimal cut — then let the user curate and phase it, and take each in turn.`,
     substeps: [
       { key: "propose", label: "Propose the feature set", gate: "the feature list is confirmed", prompt:
-`From the goal, scope, and what you've discussed, propose a STARTER set of user-facing capabilities
-— enough to get going, not exhaustive. Write them to features.json: a JSON array of
-\`{"slug","name"}\` objects (e.g. \`{"slug":"invite-teammates","name":"Invite teammates"}\`). They
-appear in the Features board for the user to curate — add, remove, merge, rename. Confirm the SET
-with the user before drilling into any single feature.` },
+`From the goal, scope, and what you've discussed, propose the COMPLETE set of user-facing
+capabilities a production-grade solution to this goal needs — aim for the best, most complete
+product, not a minimal first-pass cut. (Completeness is about capabilities, not
+phasing — the user sequences them into phases next; don't pre-trim to a phase-1 slice.) Write them
+to features.json: a JSON array of \`{"slug","name"}\` objects (e.g.
+\`{"slug":"invite-teammates","name":"Invite teammates"}\`). They appear in the Features board for the
+user to curate — add, remove, merge, rename. Confirm the SET with the user before drilling into any
+single feature.` },
       { key: "features", label: "Define each feature", loop: "features", prompt:
 `Now take ONE feature at a time. For THIS feature, fill in its features.json entry before moving on:
 • \`behavior\` + \`acceptance\` (a string array) — what it does, and the done-when checklist.
