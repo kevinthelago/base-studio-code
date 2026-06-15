@@ -32,6 +32,7 @@ import { publishFleetRoster } from "../../lib/fleetRoster";
 import { hubToCanonical } from "../../lib/plannerSync";
 import { tunnelSetPlanState } from "../../lib/tunnelClient";
 import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
+import { effectiveProjectRepos } from "./projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { buildProjectPaneData } from "./projectPaneData";
@@ -295,15 +296,14 @@ export function Planning({ visible }: { visible: boolean }) {
   const [planningDir, setPlanningDir] = useState("");
   const tunnelRunning = useAppStore((s) => s.tunnelRunning);
 
-  // Prefer activeProjectRepos (populated from board items) but fall back to
-  // any previously-cloned repos for this project if the board hasn't loaded yet.
-  // Memoized so the headless auto-clone effect below doesn't see a fresh array ref
-  // (and re-run) on every render.
-  const effectiveRepos: string[] = useMemo(() => activeProjectId
-    ? (activeProjectRepos.length > 0
-        ? activeProjectRepos
-        : (projectLocalRepos[activeProjectId] ?? []))
-    : [], [activeProjectId, activeProjectRepos, projectLocalRepos]);
+  // The repos linked to this project (#833). For a published project that's the board's repos;
+  // for an UNPUBLISHED one it's the linked+cloned set persisted under effectiveProjectId — so a
+  // repo linked before publish survives a restart instead of needing to be re-linked. Memoized
+  // so the headless auto-clone effect below doesn't see a fresh array ref (and re-run) each render.
+  const effectiveRepos: string[] = useMemo(
+    () => effectiveProjectRepos(activeProjectId, effectiveProjectId, activeProjectRepos, projectLocalRepos),
+    [activeProjectId, effectiveProjectId, activeProjectRepos, projectLocalRepos],
+  );
 
   // Full_names that are both linked to this project and known to be cloned.
   const linkedRepos: string[] =
