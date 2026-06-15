@@ -8,7 +8,7 @@ import { useAppStore } from "../store";
 describe("FileIntakePane (#604)", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
-    useAppStore.setState({ pendingPlannerPrompt: {} });
+    useAppStore.setState({ pendingPlannerPrompt: {}, planConfirmedSections: {} });
   });
 
   it("renders the drop zone and a folder picker (#831)", () => {
@@ -34,6 +34,8 @@ describe("FileIntakePane (#604)", () => {
     render(<FileIntakePane projectKey="proj-x" />);
     fireEvent.click(await screen.findByRole("button", { name: /Route to project/i }));
     expect(useAppStore.getState().pendingPlannerPrompt["proj-x"]).toBe(ROUTE_PROMPT);
+    // routing also completes the UI stage by confirming the `ui` section (#837)
+    expect(useAppStore.getState().planConfirmedSections["proj-x"]).toContain("ui");
   });
 });
 

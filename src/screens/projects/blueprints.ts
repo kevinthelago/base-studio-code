@@ -170,10 +170,11 @@ Gate: at least one repository is linked.`,
   ui: {
     // UI runs AFTER Features (#825) so the screens are designed for the defined capabilities —
     // and so the stage can author a kickoff the user hands to Claude Design.
-    name: "UI", glyph: "▣", gate: "screens & flows defined", deps: ["context", "features"],
-    // applies only when the project needs a UI; complete when every screen is approved.
+    name: "UI", glyph: "▣", gate: "design routed", deps: ["context", "features"],
+    // applies only when the project needs a UI; complete when the design is routed to the
+    // project (drop + Route) OR every screen preview is approved — `uiDone` combines both (#837).
     appliesWhen: { signal: "requiresUi", target: true },
-    gateRule: { require: [{ signal: "screensApproved", of: "screensTotal", label: "approve the screen previews" }] },
+    gateRule: { require: [{ signal: "uiDone", target: true, label: "route the design to the project" }] },
     blurb: "Screens, states, and primary flows — designed from the features.",
     prompt:
 `With the features defined, design the UI that delivers them. Walk the features and, for each
