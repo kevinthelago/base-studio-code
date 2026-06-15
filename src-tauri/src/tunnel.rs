@@ -15,12 +15,14 @@
 // #242b; `tunnel_write_pty` / `tunnel_resize_pty` (the inbound PTY bridge) arrive with
 // it. See docs/tunnel-protocol.md.
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
+
+use crate::fcm::{self, FcmSender, SendOutcome};
 
 // ── Wire protocol ───────────────────────────────────────────────────────────────
 // Conforms to the shipped mobile client (mobile-studio-code/src/lib/types.ts). The
@@ -134,6 +136,12 @@ pub enum ClientMsg {
         #[serde(default)]
         fcm_token: Option<String>,
     },
+    /// Mobile pushes a refreshed FCM registration token mid-session (#846). The initial
+    /// token rides in `Auth.fcmToken`; FCM tokens rotate, so the client re-sends here and
+    /// the desktop updates its push target. Allowed even while view-only (it's not a
+    /// PTY-mutating frame).
+    #[serde(rename_all = "camelCase")]
+    SetFcmToken { fcm_token: String },
     #[serde(rename_all = "camelCase")]
     PaneSetState { pane_id: String, state: String },
     #[serde(rename_all = "camelCase")]
@@ -279,6 +287,88 @@ pub struct TunnelState {
     /// The desktop's long-lived Noise static keypair (identity proven to mobile).
     static_priv: Vec<u8>,
     static_pub: Vec<u8>,
+    /// FCM registration tokens of paired devices (#846), captured from the auth handshake
+    /// and `set_fcm_token` refreshes. Shared with the push worker so it can drop a token
+    /// the moment FCM reports it stale. A `HashSet` dedupes a re-auth re-sending the same
+    /// token. In-memory only — re-populated on the next pairing after a desktop restart.
+    fcm_tokens: Arc<Mutex<HashSet<String>>>,
+    /// Hands `user_request` pushes to the background FCM worker. Unbounded + non-blocking
+    /// so the Tauri command thread never waits on a network send; the worker owns its own
+    /// runtime (see `spawn_push_worker`).
+    push_tx: mpsc::UnboundedSender<PushJob>,
+}
+
+/// One queued FCM push: a `user_request` transition that should notify every paired device.
+/// The worker reads the live token set itself (so it always uses the latest), so the job
+/// only carries the per-request content.
+struct PushJob {
+    pane_id: String,
+    prompt: String,
+    /// Human-readable banner title — the pane/session name.
+    session_name: String,
+}
+
+/// Drain `rx` and send an FCM push per paired token for each job. Runs on its own OS thread
+/// with a dedicated current-thread tokio runtime, so a network send never blocks the Tauri
+/// command thread and never depends on whether the relay transport is connected (the whole
+/// point of FCM: notify a phone whose app is backgrounded/quit and thus off the relay).
+///
+/// Credentials are loaded once at startup: if no service-account key is present FCM is
+/// disabled — the worker still drains the channel (so senders never block) but every job is
+/// a no-op. A token FCM reports stale (UNREGISTERED / INVALID_ARGUMENT) is removed from the
+/// shared set so the next pairing's token isn't shadowed by a dead one.
+fn spawn_push_worker(mut rx: mpsc::UnboundedReceiver<PushJob>, tokens: Arc<Mutex<HashSet<String>>>) {
+    std::thread::Builder::new()
+        .name("fcm-push".into())
+        .spawn(move || {
+            let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    log::error!("fcm: push worker runtime build failed: {e}");
+                    return;
+                }
+            };
+            let sender = match fcm::ServiceAccount::load() {
+                Ok(Some(sa)) => {
+                    log::info!("fcm: push enabled for Firebase project {}", sa.project_id);
+                    Some(FcmSender::new(sa))
+                }
+                Ok(None) => {
+                    log::info!(
+                        "fcm: no service-account key at {} (set {} to enable mobile push); user_request pushes disabled",
+                        fcm::ServiceAccount::key_path().display(),
+                        fcm::KEY_PATH_ENV,
+                    );
+                    None
+                }
+                Err(e) => {
+                    log::warn!("fcm: service-account key present but unusable: {e}; push disabled");
+                    None
+                }
+            };
+            rt.block_on(async move {
+                while let Some(job) = rx.recv().await {
+                    let Some(sender) = sender.as_ref() else { continue };
+                    let targets: Vec<String> = tokens.lock().unwrap().iter().cloned().collect();
+                    if targets.is_empty() {
+                        continue;
+                    }
+                    for token in targets {
+                        match sender.send(&token, &job.pane_id, &job.prompt, &job.session_name).await {
+                            SendOutcome::Sent => {
+                                log::debug!("fcm: pushed user_request for pane {}", job.pane_id);
+                            }
+                            SendOutcome::DropToken => {
+                                tokens.lock().unwrap().remove(&token);
+                            }
+                            SendOutcome::Error => {}
+                        }
+                    }
+                }
+            });
+        })
+        .map(|_| ())
+        .unwrap_or_else(|e| log::error!("fcm: could not spawn push worker: {e}"));
 }
 
 impl TunnelState {
@@ -295,6 +385,9 @@ impl TunnelState {
                 (Vec::new(), Vec::new())
             }
         };
+        let fcm_tokens: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+        let (push_tx, push_rx) = mpsc::unbounded_channel();
+        spawn_push_worker(push_rx, fcm_tokens.clone());
         TunnelState {
             inner: Mutex::new(Inner {
                 running: false,
@@ -315,7 +408,36 @@ impl TunnelState {
             event_tx,
             static_priv,
             static_pub,
+            fcm_tokens,
+            push_tx,
         }
+    }
+
+    /// Store an FCM registration token from the auth handshake or a `set_fcm_token` refresh
+    /// (#846). Idempotent (a `HashSet`), so a re-auth re-sending the same token is a no-op.
+    pub fn add_fcm_token(&self, token: String) {
+        let token = token.trim().to_string();
+        if token.is_empty() {
+            return;
+        }
+        let inserted = self.fcm_tokens.lock().unwrap().insert(token);
+        if inserted {
+            log::info!("tunnel: stored an FCM push token for the paired device");
+        }
+    }
+
+    /// Queue an FCM `user_request` push for the paired device(s). Non-blocking — the actual
+    /// HTTP send happens on the push worker. No-op when there are no stored tokens (no phone
+    /// has paired / shared a token this session).
+    fn enqueue_user_request_push(&self, pane_id: &str, prompt: &str, session_name: &str) {
+        if self.fcm_tokens.lock().unwrap().is_empty() {
+            return;
+        }
+        let _ = self.push_tx.send(PushJob {
+            pane_id: pane_id.to_string(),
+            prompt: prompt.to_string(),
+            session_name: session_name.to_string(),
+        });
     }
 
     /// base64 of the static public key — embedded in the pairing QR (#243).
@@ -488,7 +610,10 @@ pub fn tunnel_set_panes(panes: Vec<PaneDescriptor>, state: State<'_, TunnelState
 /// a prompt.
 #[tauri::command]
 pub fn tunnel_set_sessions(sessions: Vec<SessionMeta>, state: State<'_, TunnelState>) {
-    let mut newly_awaiting: Vec<(String, String)> = Vec::new();
+    // (pane_id, prompt, session_name) for each pane that JUST entered awaiting_input — the
+    // `!was_awaiting` guard debounces it to exactly one event per transition, so repeated
+    // state syncs while a pane stays awaiting don't re-fire the push (#846 deliverable 4).
+    let mut newly_awaiting: Vec<(String, String, String)> = Vec::new();
     {
         let mut inner = state.inner.lock().unwrap();
         for s in &sessions {
@@ -499,7 +624,17 @@ pub fn tunnel_set_sessions(sessions: Vec<SessionMeta>, state: State<'_, TunnelSt
                 .unwrap_or(false);
             if s.status == "awaiting_input" && !was_awaiting {
                 if let Some(prompt) = &s.prompt {
-                    newly_awaiting.push((s.pane_id.clone(), prompt.clone()));
+                    // Banner title: the pane's display name, falling back to its current
+                    // task, then the pane id — so the notification is always identifiable.
+                    let name = inner
+                        .panes
+                        .iter()
+                        .find(|p| p.id == s.pane_id)
+                        .map(|p| p.name.clone())
+                        .filter(|n| !n.trim().is_empty())
+                        .or_else(|| (!s.current_task.trim().is_empty()).then(|| s.current_task.clone()))
+                        .unwrap_or_else(|| s.pane_id.clone());
+                    newly_awaiting.push((s.pane_id.clone(), prompt.clone(), name));
                 }
             }
             inner.sessions.insert(s.pane_id.clone(), s.clone());
@@ -513,8 +648,13 @@ pub fn tunnel_set_sessions(sessions: Vec<SessionMeta>, state: State<'_, TunnelSt
         sessions.len(),
         newly_awaiting.len()
     );
-    for (pane_id, prompt) in newly_awaiting {
-        let _ = state.event_tx.send(ServerMsg::UserRequest { pane_id, prompt });
+    for (pane_id, prompt, session_name) in newly_awaiting {
+        // Notify a connected (foregrounded) phone over the relay…
+        let _ = state
+            .event_tx
+            .send(ServerMsg::UserRequest { pane_id: pane_id.clone(), prompt: prompt.clone() });
+        // …and push via FCM so a backgrounded/quit phone (off the relay) still gets it (#846).
+        state.enqueue_user_request_push(&pane_id, &prompt, &session_name);
     }
 }
 
@@ -897,7 +1037,7 @@ mod transport {
         // First app frame must be `auth`; validate the pairing secret.
         let frame = next_binary(&mut read).await?;
         match decode_room_msg(&mut noise_tx, &frame)? {
-            ClientMsg::Auth { token, .. } => {
+            ClientMsg::Auth { token, fcm_token } => {
                 let psk = app
                     .try_state::<TunnelState>()
                     .map(|s| s.psk())
@@ -905,6 +1045,11 @@ mod transport {
                 if !ct_eq(&token, &psk) {
                     log::warn!("tunnel: auth rejected — pairing secret mismatch (stale QR or wrong desktop?)");
                     return Err("auth rejected (bad pairing secret)".into());
+                }
+                // Persist the device's FCM push token (#846) so a `user_request` can reach it
+                // even after the app backgrounds/quits and drops this relay connection.
+                if let (Some(state), Some(t)) = (app.try_state::<TunnelState>(), fcm_token) {
+                    state.add_fcm_token(t);
                 }
                 log::info!("tunnel: auth accepted");
             }
@@ -1032,6 +1177,12 @@ mod transport {
                 if state == "streaming" {
                     log::debug!("tunnel: stream → pane[{pane_id}]");
                     *focused = Some(pane_id);
+                }
+            }
+            ClientMsg::SetFcmToken { fcm_token } => {
+                // FCM tokens rotate; the client re-sends the fresh one (#846).
+                if let Some(state) = app.try_state::<TunnelState>() {
+                    state.add_fcm_token(fcm_token);
                 }
             }
             ClientMsg::Auth { .. } => {} // already authenticated for this session
@@ -1205,6 +1356,10 @@ mod tests {
         assert!(matches!(
             serde_json::from_value::<ClientMsg>(c["auth_no_fcm"].clone()).unwrap(),
             ClientMsg::Auth { fcm_token: None, .. }
+        ));
+        assert!(matches!(
+            serde_json::from_value::<ClientMsg>(c["set_fcm_token"].clone()).unwrap(),
+            ClientMsg::SetFcmToken { fcm_token } if fcm_token == "fcm-token-xyz"
         ));
         assert!(matches!(
             serde_json::from_value::<ClientMsg>(c["pane_set_state"].clone()).unwrap(),
