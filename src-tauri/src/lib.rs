@@ -134,6 +134,20 @@ pub(crate) fn repo_dir(project_key: &str, repo_full_name: &str) -> std::path::Pa
     project_dir(project_key).join(short)
 }
 
+/// The fleet's git worktrees live OUTSIDE the project hub, at
+/// `~/.base-studio-code/worktrees/<sanitized-project-key>/`, so the hub's `CLAUDE.md`
+/// (the planner spec) is NOT an ancestor of a worker's CWD. Claude Code loads `CLAUDE.md`
+/// from the cwd and every parent directory, and that walk can't be suppressed per-directory
+/// — keeping worktrees under the hub leaked the full ~52KB planning spec into every worker
+/// session (pulling workers toward planning and inflating per-turn input tokens), and made
+/// the hub-rooted director believe it launches the fleet. Relocating them here makes each
+/// worker load only its own scoped `CLAUDE.local.md` + the repo's tracked `CLAUDE.md` (#844).
+pub(crate) fn worktrees_dir(project_key: &str) -> std::path::PathBuf {
+    bsc_base_dir()
+        .join("worktrees")
+        .join(sanitize_project_key(project_key))
+}
+
 /// Absolute on-disk location of a project's plan section files, which live FLAT
 /// in the project hub: `~/.base-studio-code/projects/<sanitized-project-key>`.
 /// Plan sections sit alongside the control files (CLAUDE.md, kb_index.md, …) in
@@ -192,6 +206,17 @@ fn delete_project_dir(project_key: String) -> Result<(), String> {
         std::fs::remove_dir_all(&dir).map_err(|e| format!("delete_project_dir: {e}"))?;
         log::info!("deleted project hub {:?}", dir);
     }
+    // The fleet's worktrees now live outside the hub (see `worktrees_dir`, #844), so the
+    // hub delete above no longer reaches them — remove them explicitly. Best-effort: a
+    // missing dir is fine, and an orphaned worktree dir must not block deleting the hub.
+    let wts = worktrees_dir(&project_key);
+    if wts.exists() {
+        #[cfg(windows)]
+        clear_readonly_recursive(&wts);
+        if let Err(e) = std::fs::remove_dir_all(&wts) {
+            log::warn!("delete_project_dir: leftover worktrees {:?}: {e}", wts);
+        }
+    }
     Ok(())
 }
 
@@ -224,8 +249,8 @@ fn clear_readonly_recursive(dir: &std::path::Path) {
 /// Clear every project's plan files for a from-scratch dev reset, WITHOUT touching
 /// the cloned repos. Deletes only the top-level `.md` / `.json` plan files in each
 /// `projects/<key>/` dir (goal.md, issues.json, phases.json, fleet.json, the
-/// context docs, …) and leaves all SUBDIRECTORIES — the cloned repos, their
-/// `.worktrees`, and `prompts/` — intact. Best-effort; returns how many files were
+/// context docs, …) and leaves all SUBDIRECTORIES — the cloned repos and
+/// `prompts/` — intact. Best-effort; returns how many files were
 /// removed. Without this, the planning poll re-reads the files and a store-only
 /// clear is undone within a tick.
 #[tauri::command]
@@ -247,7 +272,7 @@ fn clear_all_plan_files() -> Result<u32, String> {
         };
         for item in items.flatten() {
             let p = item.path();
-            // Preserve every subdirectory (cloned repos, .worktrees, prompts, .claude).
+            // Preserve every subdirectory (cloned repos, prompts, .claude).
             if !p.is_file() {
                 continue;
             }
@@ -323,7 +348,7 @@ fn list_local_projects() -> Result<Vec<LocalProject>, String> {
 }
 
 /// Delete every plan section file (`.md` / `.json`) in a single project's hub
-/// directory, leaving subdirectories (cloned repos, `.worktrees`, `prompts/`,
+/// directory, leaving subdirectories (cloned repos, `prompts/`,
 /// `.claude/`) intact. The section poll re-reads from disk, so this must run
 /// before the store is cleared — otherwise the next poll repopulates the store.
 /// Returns how many files were deleted. Best-effort: any unreadable file is skipped.
@@ -901,15 +926,21 @@ fn ensure_director_protocol(project_key: String) -> Result<(), String> {
 
 /// Create (idempotently) a git worktree for one fleet agent: an isolated checkout
 /// of `repo` on a branch named after the agent, at
-/// `projects/<key>/.worktrees/<repoShort>--<agentSlug>`. Each agent edits and
-/// commits in its own worktree+branch, so co-located agents (several in one repo)
-/// never share a working tree; the director merges the branches via PRs.
+/// `~/.base-studio-code/worktrees/<key>/<repoShort>--<agentSlug>` — OUTSIDE the project
+/// hub (see `worktrees_dir`, #844), so the planner spec at `projects/<key>/CLAUDE.md` is
+/// not an ancestor of the worker's CWD. Each agent edits and commits in its own
+/// worktree+branch, so co-located agents (several in one repo) never share a working
+/// tree; the director merges the branches via PRs.
+///
+/// `scope_md` is this worker's focused context — its owned globs, issues, and
+/// dependencies — written as the lead of the worktree's `CLAUDE.local.md` (see
+/// `write_worker_context`) instead of the full plan.
 ///
 /// The repo's main clone must already exist (cloned during planning). A worktree or
 /// branch left over from a prior run is reused. Returns the worktree's absolute path
 /// (native form — mirrors `agentWorktreeCwd` so the launched pane's cwd matches).
 #[tauri::command]
-async fn ensure_worktree(project_key: String, repo: String, agent_id: String) -> Result<String, String> {
+async fn ensure_worktree(project_key: String, repo: String, agent_id: String, scope_md: Option<String>) -> Result<String, String> {
     let _perf = PerfSpan::new("ensure_worktree");
     let clone = repo_dir(&project_key, &repo);
     if !clone.join(".git").exists() {
@@ -917,7 +948,7 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
     }
     let slug  = worktree_slug(&agent_id);
     let short = repo.rsplit('/').next().unwrap_or(&repo);
-    let wt    = project_dir(&project_key).join(".worktrees").join(format!("{short}--{slug}"));
+    let wt    = worktrees_dir(&project_key).join(format!("{short}--{slug}"));
     let wt_str = wt.to_string_lossy().into_owned();
     // A worktree's `.git` is a FILE pointing into the main repo; create it only if
     // it isn't there yet (reuse across re-runs).
@@ -947,21 +978,53 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
         }
         log::info!("ensure_worktree: {repo} agent {agent_id} → {wt_str}");
     }
-    // Carry the planner's app-managed per-repo context into the worktree. CLAUDE.local.md
-    // is UNTRACKED in the main clone (git-excluded), so a fresh worktree wouldn't have it —
-    // refresh it every launch. Copy CLAUDE.md only when the worktree lacks one, so a
-    // tracked/checked-out CLAUDE.md isn't clobbered.
-    let local = clone.join("CLAUDE.local.md");
-    if local.is_file() {
-        let _ = std::fs::copy(&local, wt.join("CLAUDE.local.md"));
-    }
+    // Copy the repo's own (tracked) CLAUDE.md only when the worktree lacks one, so a
+    // checked-out CLAUDE.md isn't clobbered. (The hub's planner CLAUDE.md is no longer an
+    // ancestor — that's the whole point of relocating the worktree — so this is just the
+    // repo's real guidance.)
     let claude_md = clone.join("CLAUDE.md");
     if claude_md.is_file() && !wt.join("CLAUDE.md").exists() {
         let _ = std::fs::copy(&claude_md, wt.join("CLAUDE.md"));
     }
-    // Carry the coordination protocol (#369) into the worktree so the worker always has
-    // the defer-to-director / never-ask-the-user rules as authoritative context.
+    write_worker_context(&wt, &clone, &project_dir(&project_key), scope_md.as_deref());
+    Ok(wt_str)
+}
+
+/// Assemble a fleet worker's `CLAUDE.local.md` in its worktree (`wt`): its own `scope_md`
+/// (owned globs / issues / dependencies) first, then the planner's app-managed per-repo
+/// context (`CLAUDE.local.md` in the `clone`, which is git-excluded and so absent from a
+/// fresh worktree), then the fleet coordination protocol (#369) and the hub's attached
+/// skills (#636). Because the worktree lives outside the hub (`worktrees_dir`, #844), THIS
+/// scoped file — not the planner spec — is what Claude Code loads as the worker's context.
+///
+/// Rewritten on every launch (the per-repo context is untracked and not in a fresh
+/// worktree); deterministic, so re-runs converge to identical content. Best-effort writes,
+/// matching the rest of the worktree-context setup — a context-file failure must not abort
+/// an otherwise-good launch.
+fn write_worker_context(
+    wt: &std::path::Path,
+    clone: &std::path::Path,
+    hub: &std::path::Path,
+    scope_md: Option<&str>,
+) {
+    let mut md = String::new();
+    if let Some(scope) = scope_md {
+        let scope = scope.trim();
+        if !scope.is_empty() {
+            md.push_str(scope);
+            md.push_str("\n\n");
+        }
+    }
+    if let Ok(repo_ctx) = std::fs::read_to_string(clone.join("CLAUDE.local.md")) {
+        let repo_ctx = repo_ctx.trim();
+        if !repo_ctx.is_empty() {
+            md.push_str(repo_ctx);
+            md.push('\n');
+        }
+    }
     let wt_local = wt.join("CLAUDE.local.md");
+    let _ = std::fs::write(&wt_local, &md);
+    // Coordination protocol (#369): the defer-to-director / never-ask-the-user rules.
     let cur = std::fs::read_to_string(&wt_local).unwrap_or_default();
     if !cur.contains("## Fleet coordination protocol") {
         let _ = std::fs::write(&wt_local, format!("{cur}{FLEET_PROTOCOL_MD}"));
@@ -969,8 +1032,7 @@ async fn ensure_worktree(project_key: String, repo: String, agent_id: String) ->
     // Inline the blueprint's attached skills (#636) so each worker carries the same skill
     // context the planner had. skills.md lives at the hub (not in the worktree), so the
     // planner's "read skills.md" note doesn't help a worker — inline it instead.
-    inject_skills(&project_dir(&project_key), &wt_local);
-    Ok(wt_str)
+    inject_skills(hub, &wt_local);
 }
 
 /// Inline the hub's attached skills (`skills.md`, #636) into a worker's CLAUDE.local.md
@@ -2480,6 +2542,77 @@ mod tests {
         // Second call ⇒ idempotent (not appended twice).
         super::inject_skills(&hub, &wt_local);
         assert_eq!(after, std::fs::read_to_string(&wt_local).unwrap());
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn worktrees_dir_is_outside_the_project_hub() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("wtdir");
+        let key = "my-proj";
+        let wts = super::worktrees_dir(key);
+        let hub = super::project_dir(key);
+        // The whole point of #844: a worker's worktree is NOT under the hub, so the hub's
+        // planner CLAUDE.md is not an ancestor of the worker's cwd.
+        assert!(wts.starts_with(super::bsc_base_dir().join("worktrees")), "got {wts:?}");
+        assert!(!wts.starts_with(&hub), "worktrees must not be under the hub: {wts:?} ⊄ {hub:?}");
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn write_worker_context_leads_with_scope_then_repo_ctx_protocol_skills() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("workerctx");
+        let wt = home.join("wt");
+        let clone = home.join("clone");
+        let hub = home.join("hub");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::create_dir_all(&clone).unwrap();
+        std::fs::create_dir_all(&hub).unwrap();
+        // Per-repo app-managed context (untracked in the clone) + attached skills at the hub.
+        std::fs::write(clone.join("CLAUDE.local.md"), "# repo notes\nUse the shared client.\n").unwrap();
+        std::fs::write(hub.join("skills.md"), "# Attached skills & knowledge\n\n### Auth\nUse OAuth.\n").unwrap();
+
+        let scope = "# Your scope\n\nYou own `src/auth/**`. Issues: #12, #13.";
+        super::write_worker_context(&wt, &clone, &hub, Some(scope));
+        let out = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
+
+        // Scope leads, then per-repo context, then protocol, then skills — in that order.
+        let i_scope = out.find("You own `src/auth/**`").expect("scope present");
+        let i_repo = out.find("Use the shared client").expect("repo ctx present");
+        let i_proto = out.find("## Fleet coordination protocol").expect("protocol present");
+        let i_skills = out.find("Use OAuth.").expect("skills inlined");
+        assert!(i_scope < i_repo, "scope must lead the per-repo context");
+        assert!(i_repo < i_proto, "per-repo context must precede the protocol");
+        assert!(i_proto < i_skills, "protocol must precede the skills");
+        // The full planner spec is NOT here — only the worker's scope.
+        assert!(!out.contains("Project Planner"), "must not carry the planner spec");
+
+        // Idempotent: a second launch converges to identical content (protocol/skills not doubled).
+        super::write_worker_context(&wt, &clone, &hub, Some(scope));
+        assert_eq!(out, std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap());
+        assert_eq!(out.matches("## Fleet coordination protocol").count(), 1);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn delete_project_dir_removes_relocated_worktrees() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("dpdwt");
+        let key = "doomed-with-wt".to_string();
+        // A hub file and a relocated worktree with a (Windows-hostile) read-only file.
+        write_file(&super::project_dir(&key).join("goal.md"), "# goal");
+        let wt_file = super::worktrees_dir(&key).join("web--auth").join("src").join("x.rs");
+        write_file(&wt_file, "fn main() {}");
+        let mut perms = std::fs::metadata(&wt_file).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&wt_file, perms).unwrap();
+
+        super::delete_project_dir(key.clone()).unwrap();
+        assert!(!super::project_dir(&key).exists(), "hub should be deleted");
+        assert!(!super::worktrees_dir(&key).exists(), "relocated worktrees should be deleted too");
 
         std::fs::remove_dir_all(&home).ok();
     }

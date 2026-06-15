@@ -1105,13 +1105,13 @@ describe("agent fleet store", () => {
     expect(st.paneStartupPromptDocs["t3p0"]).toBe("projects/proj-key/prompts/director-kickoff.md");
     expect(st.paneNames[idx][0]).toBe("director");
 
-    // pane 1 = first worker in its OWN git worktree, planner-authored kickoff doc
-    expect(st.paneCwds["t3p1"]).toBe("/base/projects/proj-key/.worktrees/web--auth-ui");
+    // pane 1 = first worker in its OWN git worktree (outside the hub, #844), planner-authored kickoff doc
+    expect(st.paneCwds["t3p1"]).toBe("/base/worktrees/proj-key/web--auth-ui");
     expect(st.paneStartupPromptDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-kickoff.md");
     expect(st.paneNames[idx][1]).toBe("Auth UI");
 
     // pane 2 = second worker (own worktree) with no kickoff doc → generated text
-    expect(st.paneCwds["t3p2"]).toBe("/base/projects/proj-key/.worktrees/api--api");
+    expect(st.paneCwds["t3p2"]).toBe("/base/worktrees/proj-key/api--api");
     expect(st.paneStartupPromptText["t3p2"]).toContain("API");
 
     // worker write boundary (#354): the stream's owned globs feed the role gate so
@@ -1195,9 +1195,9 @@ describe("agent fleet store", () => {
     const idx = useAppStore.getState().findFleetTabIdx("k");
     const st1 = useAppStore.getState();
     // Two agents in own/web get separate worktree cwds — no shared working tree.
-    expect(st1.paneCwds[`t${idx}p0`]).toBe("/base/projects/k/.worktrees/web--web-a");
-    expect(st1.paneCwds[`t${idx}p1`]).toBe("/base/projects/k/.worktrees/web--web-b");
-    expect(st1.paneCwds[`t${idx}p2`]).toBe("/base/projects/k/.worktrees/api--api");
+    expect(st1.paneCwds[`t${idx}p0`]).toBe("/base/worktrees/k/web--web-a");
+    expect(st1.paneCwds[`t${idx}p1`]).toBe("/base/worktrees/k/web--web-b");
+    expect(st1.paneCwds[`t${idx}p2`]).toBe("/base/worktrees/k/api--api");
     // …and distinct per-agent checkpoint docs.
     expect(st1.paneCheckpointDocs[`t${idx}p0`]).toBe("projects/k/prompts/web-a-checkpoint.md");
     expect(st1.paneCheckpointDocs[`t${idx}p1`]).toBe("projects/k/prompts/web-b-checkpoint.md");
@@ -1228,7 +1228,7 @@ describe("agent fleet store", () => {
     expect(st.tabs[idx + 1].layout).toBe("2×2");
     // tab 2's first pane is the 17th worker (s16), in its own worktree.
     expect(st.paneNames[idx + 1][0]).toBe("S16");
-    expect(st.paneCwds[`t${idx + 1}p0`]).toBe("/base/projects/big/.worktrees/web--s16");
+    expect(st.paneCwds[`t${idx + 1}p0`]).toBe("/base/worktrees/big/web--s16");
   });
 
   // #479 — no silent drop: ALL workers launch regardless of the recommended count.
