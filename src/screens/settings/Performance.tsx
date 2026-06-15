@@ -93,6 +93,9 @@ function Select({ value, options, onChange }: {
 
 export function PerformanceSettings() {
   const { perfConfig, setPerfConfig } = useAppStore();
+  const idleReaper = useAppStore((s) => s.idleReaper);
+  const setIdleReaperConfig = useAppStore((s) => s.setIdleReaperConfig);
+  const MIN = 60_000;
   const [clearStatus, setClearStatus] = useState<"idle" | "ok" | "err">("idle");
 
   const update = (patch: Partial<PerfConfig>) => {
@@ -159,6 +162,39 @@ export function PerformanceSettings() {
               Frontend
             </label>
           </div>
+        </Row>
+      </div>
+
+      <div style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "4px 16px", marginTop: 12 }}>
+        <Row
+          label="Reap idle background sessions"
+          hint="Kill the PTY of an idle, non-visible project/planner session after the timeout to free memory. It shows a dormant placeholder and resumes (where it left off) on click — never destructive."
+        >
+          <Toggle on={idleReaper.enabled} onToggle={() => setIdleReaperConfig({ enabled: !idleReaper.enabled })} />
+        </Row>
+        <Row
+          label="Idle timeout"
+          hint="How long a project/planner session sits idle (and unwatched) before it's reaped."
+        >
+          <Select
+            value={idleReaper.idleMs}
+            options={[
+              { label: "15 min", value: 15 * MIN },
+              { label: "30 min (default)", value: 30 * MIN },
+              { label: "1 hour", value: 60 * MIN },
+              { label: "2 hours", value: 120 * MIN },
+            ]}
+            onChange={(v) => setIdleReaperConfig({ idleMs: v as number })}
+          />
+        </Row>
+        <Row
+          label="Also reap idle workers"
+          hint="Off by default — fleet workers idle legitimately (parked on a dependency or the director). When on, a worker is reaped only after a much longer idle (2×)."
+        >
+          <Toggle
+            on={idleReaper.workerIdleMs !== null}
+            onToggle={() => setIdleReaperConfig({ workerIdleMs: idleReaper.workerIdleMs === null ? idleReaper.idleMs * 2 : null })}
+          />
         </Row>
       </div>
 

@@ -14,6 +14,7 @@ import type { ViewKey } from "../components/pane/ViewTabs";
 import { useCoordinator } from "../lib/useCoordinator";
 import { usePipelineConductor } from "../lib/usePipelineConductor";
 import { useDirectorPump } from "../lib/useDirectorPump";
+import { useIdleReaper } from "../lib/useIdleReaper";
 import { useCiWatcher } from "../lib/useCiWatcher";
 
 function resolvePaneName(
@@ -69,6 +70,11 @@ const PaneAt = memo(function PaneAt({
   const defaultModel = useAppStore((s) => s.defaultModel);
   const paneModel = useAppStore((s) => s.paneModels[pid]);
   const setPaneModel = useAppStore((s) => s.setPaneModel);
+  // Idle-reaped (#849): the PTY was killed for idleness. Unmount the terminal (this frees
+  // its renderer buffer + the dead session) and show a resume placeholder; resuming clears
+  // the flag, remounting TerminalView, which spawns a fresh PTY (--continue resumes it).
+  const dormant = useAppStore((s) => !!s.dormantPanes[pid]);
+  const resumePane = useAppStore((s) => s.resumePane);
   return (
     <PaneShell
       agent={name}
@@ -92,6 +98,8 @@ const PaneAt = memo(function PaneAt({
     >
       {disabled ? (
         <DisabledConsole onEnable={() => onToggleDisable(tabIdx, i)} />
+      ) : dormant ? (
+        <DormantConsole onResume={() => resumePane(pid)} />
       ) : (
       <>
       {/* Terminal stays mounted so the PTY session survives view switches */}
@@ -129,10 +137,28 @@ function DisabledConsole({ onEnable }: { onEnable: () => void }) {
   );
 }
 
+/** Placeholder for an idle-reaped pane (#849): its PTY was killed to free memory after a
+ *  long idle. Resuming relaunches the session (its cwd persists; `--continue` resumes the
+ *  conversation), so reaping is non-destructive. */
+function DormantConsole({ onResume }: { onResume: () => void }) {
+  return (
+    <div style={{
+      flex: 1, display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", gap: 12,
+      background: "var(--bg-canvas)", color: "var(--fg-dim)",
+      fontFamily: "var(--mono)", fontSize: 11,
+    }}>
+      <span>session dormant · reaped after idle to free memory</span>
+      <button className="btn" onClick={onResume}>resume</button>
+    </div>
+  );
+}
+
 export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = {}) {
   // #199: the always-on coordinator — auto-wakes ready parked panes when enabled.
   // Mounted here because ConsoleScreen stays mounted across every screen (#187).
   useCoordinator();
+  useIdleReaper(); // #849 — reap idle background PTYs to bound memory
   // #220: the pipeline conductor — auto-advances pipeline runs as stages report.
   usePipelineConductor();
   // Subscribe per-slice instead of `useAppStore()`-the-whole-state, so a mutation
