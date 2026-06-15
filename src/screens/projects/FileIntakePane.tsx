@@ -30,6 +30,7 @@ async function fileToBase64(file: File): Promise<string> {
 
 export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
   const requestPlannerPrompt = useAppStore((s) => s.requestPlannerPrompt);
+  const confirmPlanSection = useAppStore((s) => s.confirmPlanSection);
   const [entries, setEntries] = useState<IntakeEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -159,7 +160,12 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
               className="btn primary"
               style={{ marginTop: 6, width: "100%", justifyContent: "center" }}
               disabled={busy}
-              onClick={() => { requestPlannerPrompt(projectKey, ROUTE_PROMPT); setRouted(true); }}
+              onClick={() => {
+                requestPlannerPrompt(projectKey, ROUTE_PROMPT);
+                // Routing the design to the project completes the UI stage (#837).
+                confirmPlanSection(projectKey, "ui");
+                setRouted(true);
+              }}
             >Route to project →</button>
             {routed && (
               <div className="hint" style={{ color: "var(--success)" }}>

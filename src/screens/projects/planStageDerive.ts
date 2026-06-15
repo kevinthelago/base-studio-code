@@ -23,6 +23,9 @@ export interface DerivePlanStageInput {
   skillsAck: boolean;
   requiresUi: boolean;
   ui: { approved: number; total: number };
+  /** The user routed dropped design files to the project — completes the UI stage without a
+   *  screen-preview approval pass (#837). */
+  uiRouted?: boolean;
   /** User-facing capabilities defined in the Features stage (each becomes a stream). */
   features: { count: number; allConfirmed: boolean };
 }
@@ -81,7 +84,7 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
     context: { resolved, total, coreConfirmed },
     repoCount: input.repoCount,
     requiresUi: input.requiresUi,
-    ui: input.ui,
+    ui: { ...input.ui, routed: input.uiRouted ?? false },
     features: input.features,
     phasesConfirmed,
     issueCount: input.issueCount,
@@ -106,6 +109,9 @@ export function planStateToSignals(s: PlanStageState): PlanSignals {
     requiresUi: s.requiresUi,
     screensApproved: s.ui.approved,
     screensTotal: s.ui.total,
+    // UI completes when the design is routed to the project OR every screen preview is
+    // approved (#837) — the gate reads this combined signal.
+    uiDone: s.ui.routed || (s.ui.total > 0 && s.ui.approved >= s.ui.total),
     featuresDefined: s.features.count,
     featuresConfirmed: s.features.allConfirmed,
     phasesConfirmed: s.phasesConfirmed,
