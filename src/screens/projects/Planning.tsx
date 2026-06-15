@@ -25,6 +25,7 @@ import {
   parseFleetFile, canonicalSectionKey,
 } from "./planSections";
 import { parseFeaturesFile, featuresSummary, featureDefined } from "./featureList";
+import { buildWorkerScope } from "./workerScope";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
@@ -1407,7 +1408,10 @@ export function Planning({ visible }: { visible: boolean }) {
       // abort the launch so no agent starts in a fallback dir. (Restored: the refactor had
       // weakened this to a non-fatal .catch that let the launch continue.)
       const worktreeResults = await Promise.all(launchPlan.streams.map(st =>
-        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
+        // Seed each worktree's CLAUDE.local.md with the worker's SCOPE (owns/issues/deps),
+        // not the full plan — the worktree lives outside the hub so the planner spec is no
+        // longer an ancestor (#844).
+        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd: buildWorkerScope(st) })
           .then(path => ({ id: st.id, path, err: null as string | null }))
           .catch(e => ({ id: st.id, path: null as string | null, err: String(e) })),
       ));
