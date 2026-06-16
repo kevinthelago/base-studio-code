@@ -1,5 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { agentWorktreeCwd, projectHubCwd, worktreeSlug } from "./projectPaths";
+import { agentWorktreeCwd, projectHubCwd, worktreeSlug, mcpInstallDir } from "./projectPaths";
+
+describe("mcpInstallDir (#859 follow-up — download location)", () => {
+  it("places a server under <base>/mcp/<name>", () => {
+    expect(mcpInstallDir("/base", "compliance-mcp-server")).toBe("/base/mcp/compliance-mcp-server");
+  });
+  it("uses backslashes for a Windows base", () => {
+    expect(mcpInstallDir("C:\\base", "complexity-analyzer-mcp")).toBe("C:\\base\\mcp\\complexity-analyzer-mcp");
+  });
+  it("returns empty string when base is empty", () => {
+    expect(mcpInstallDir("", "x")).toBe("");
+  });
+});
 
 describe("agentWorktreeCwd (#844 — worktrees live outside the hub)", () => {
   it("places worktrees under <base>/worktrees/<key>/, NOT under the project hub", () => {
