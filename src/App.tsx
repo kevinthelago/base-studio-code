@@ -245,7 +245,7 @@ export default function App() {
         parts.push("Skills");
         break;
       case "agents":
-        parts.push("Agents");
+        parts.push("Permissions");
         break;
       case "settings":
         parts.push("Settings");
