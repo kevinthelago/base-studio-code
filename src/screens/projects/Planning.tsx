@@ -35,7 +35,7 @@ import { publishFleetRoster } from "../../lib/fleetRoster";
 import { hubToCanonical } from "../../lib/plannerSync";
 import { tunnelSetPlanState } from "../../lib/tunnelClient";
 import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
-import { effectiveProjectRepos } from "./projectRepos";
+import { effectiveProjectRepos, localReposFor } from "./projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { catalogLink, repoNameFromLink, mcpRepoName } from "../../lib/mcpInstall";
@@ -313,9 +313,11 @@ export function Planning({ visible }: { visible: boolean }) {
     [activeProjectId, effectiveProjectId, activeProjectRepos, projectLocalRepos],
   );
 
-  // Full_names that are both linked to this project and known to be cloned.
+  // Full_names that are both linked to this project and known to be cloned. Read the persisted
+  // set under BOTH keys (title-derived + node id) so it matches effectiveRepos — otherwise a
+  // repo linked under the other key is in effectiveRepos but missing here (#881).
   const linkedRepos: string[] =
-    (projectLocalRepos[effectiveProjectId] ?? []).filter(r =>
+    localReposFor(projectLocalRepos, effectiveProjectId, activeProjectId).filter(r =>
       effectiveRepos.includes(r)
     );
 
