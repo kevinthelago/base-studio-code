@@ -439,6 +439,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
              // PostToolUse line per success → the skills.log the Skills screen reads.
              { event: "PreToolUse", matcher: "Skill", command: "bsc-skill" },
              { event: "PostToolUse", matcher: "Skill", command: "bsc-skill" },
+             // MCP-call telemetry (#879 PR 2): time each MCP tool call (Pre stamps start,
+             // Post logs round-trip ms + outcome) → mcp.log for the MCP Analytics tab.
+             { event: "PreToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
+             { event: "PostToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
              { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
              // Worker-only Stop hook (#369): when a worker tries to end its turn, bounce it
              // once toward continuing / deferring to the director via bsc-ask instead of
