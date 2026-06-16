@@ -57,15 +57,17 @@ Use a short imperative subject line: `feat: add X`, `fix: Y`, `docs: Z`, `refact
 
 ## Contributing Blueprints & Extensions
 
-Authoring and sharing a **blueprint** is a first-class contribution — no code required. (As the pipeline work lands, the same applies to other **extensions**.) A blueprint is a reusable planning template: an ordered set of stages, each with its prompt, completion gate, and pipelines. A good one helps everyone start projects faster.
+Authoring and sharing a **blueprint** is a first-class contribution — no code required. A blueprint is a reusable planning template: an ordered set of stages, each with its prompt and completion gate, plus the **capabilities it attaches** — **skills** (reusable knowledge) and **MCP servers** (tools the planner / fleet can call). A good one lets anyone generate a whole class of app with the right knowledge and tools prepackaged. Skills and MCP servers are the two attachable capability types; there is no separate "pipeline" concept (see #897).
 
 ### Create one
 
-In the app: **Projects → Blueprints**. Start from a built-in, reorder / toggle stages, edit each stage's prompt, attach pipelines, and name it. It saves locally and seeds new projects when set active.
+In the app: **Projects → Blueprints**. Start from a built-in, reorder / toggle stages, edit each stage's prompt, **attach skills and MCP servers** to a stage (or the whole blueprint), and name it. It saves locally and seeds new projects when set active.
 
 ### The shareable unit
 
-Everything shareable is wrapped in a small, versioned **extension manifest** — a JSON envelope (`kind`, `id`, `name`, `version`, optional `capabilities` / `integrity`, and a `payload`). Blueprints serialize into it losslessly; the app validates the envelope on import and refuses any manifest newer than it understands. This one envelope is the contract for every kind, so a blueprint today and a pipeline tomorrow install the same way.
+Everything shareable is wrapped in a small, versioned **extension manifest** — a JSON envelope (`kind`, `id`, `name`, `version`, optional `capabilities` / `integrity`, and a `payload`). Blueprints serialize into it losslessly; the app validates the envelope on import and refuses any manifest newer than it understands. One envelope is the contract for every kind, so a blueprint, a skill, and an MCP server install the same way.
+
+A shared blueprint aims to be **turnkey**: its **skills travel as embedded content** (the share fully contains them), while its **MCP servers travel by reference** — a name + git link the app registers on import and clones/builds on first use (so those repos must be public). Bundling the attached skills + MCP refs into the shared unit is in progress (#897).
 
 ### Share it (works today)
 
