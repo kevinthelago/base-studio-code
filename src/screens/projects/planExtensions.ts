@@ -10,6 +10,7 @@
 // shared between Planning.tsx and its tests.
 
 import { defFromCatalog, type ExtensionDef } from "../../lib/extensions";
+import { resolveMcpInstallDir, catalogLink } from "../../lib/mcpInstall";
 
 // Quote-flexible: matches a straight double quote and both curly quotes, so an LLM's
 // smart-quote output doesn't silently break tag detection (mirrors Planning.tsx's Q).
@@ -56,9 +57,20 @@ export function stripMcpAssigns(text: string): string {
  * template for `name`, **enabled** and **scoped to `projectId`** so it applies to that
  * project's build/triage sessions. An unknown name yields a blank stdio MCP the user
  * completes; required env values stay blank (never invent secrets).
+ *
+ * For a downloadable (first-party) server, `baseDir` resolves the `{dir}` placeholder in
+ * the run config to its on-disk install path (`~/.base-studio-code/mcp/<repo>`). Without
+ * this the launched config keeps a literal `--directory {dir}` and the server never starts.
  */
-export function mcpAssignToExtension(name: string, projectId: string): Omit<ExtensionDef, "id"> {
-  return { ...defFromCatalog(name), enabled: true, projects: projectId ? [projectId] : [] };
+export function mcpAssignToExtension(name: string, projectId: string, baseDir = ""): Omit<ExtensionDef, "id"> {
+  const def = resolveMcpInstallDir(defFromCatalog(name), name, baseDir);
+  return { ...def, enabled: true, projects: projectId ? [projectId] : [] };
+}
+
+/** Whether a `<mcp_assign>` name is a downloadable first-party server (has a catalog
+ *  download link) — i.e. assigning it should also clone its repo. */
+export function isDownloadableMcp(name: string): boolean {
+  return !!catalogLink(name);
 }
 
 export interface ExtensionStoreLike {
@@ -75,7 +87,7 @@ export interface ExtensionStoreLike {
  * updated), for callers that want to report it. Keeping this here (not in the React
  * component) makes the dedup/scope rule unit-testable.
  */
-export function applyMcpAssign(store: ExtensionStoreLike, name: string, projectId: string): boolean {
+export function applyMcpAssign(store: ExtensionStoreLike, name: string, projectId: string, baseDir = ""): boolean {
   const existing = store.extensions.find(
     (e) => e.kind === "mcp" && e.name.toLowerCase() === name.toLowerCase(),
   );
@@ -87,6 +99,6 @@ export function applyMcpAssign(store: ExtensionStoreLike, name: string, projectI
     store.updateExtension(existing.id, { enabled: true, projects });
     return false;
   }
-  store.addExtension(mcpAssignToExtension(name, projectId));
+  store.addExtension(mcpAssignToExtension(name, projectId, baseDir));
   return true;
 }
