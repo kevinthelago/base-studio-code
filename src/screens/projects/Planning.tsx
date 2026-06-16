@@ -38,6 +38,7 @@ import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
 import { effectiveProjectRepos } from "./projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
+import { catalogLink, repoNameFromLink } from "../../lib/mcpInstall";
 import { buildProjectPaneData } from "./projectPaneData";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
@@ -1040,7 +1041,18 @@ export function Planning({ visible }: { visible: boolean }) {
         const mcpNames = parseMcpAssigns(bufRef.current);
         if (mcpNames.length > 0) {
           const store = useAppStore.getState();
-          for (const name of mcpNames) applyMcpAssign(store, name, projIdSnap);
+          for (const name of mcpNames) {
+            applyMcpAssign(store, name, projIdSnap, store.bscBaseDir);
+            // A first-party server installs from source — clone its repo into
+            // ~/.base-studio-code/mcp/<repo> now so it's present for the build button +
+            // the fleet launch. Best-effort + idempotent (mcp_clone is a no-op/pull when
+            // the dir exists); the build itself is run on demand from the MCP panel.
+            const link = catalogLink(name);
+            if (link) {
+              invoke("mcp_clone", { name: repoNameFromLink(link), url: link })
+                .catch((e) => console.warn(`mcp_clone(${name}) during planning failed:`, e));
+            }
+          }
           bufRef.current = stripMcpAssigns(bufRef.current);
         }
 

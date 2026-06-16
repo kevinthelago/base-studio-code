@@ -1146,6 +1146,25 @@ describe("agent fleet store", () => {
     expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
   });
 
+  it("gives the director AND every worker the project's MCP extensions (#876)", () => {
+    useAppStore.setState({
+      bscBaseDir: "/base",
+      // An MCP server scoped to this project (as a planner <mcp_assign> would create it),
+      // with {dir} already resolved to its install path.
+      extensions: [{
+        id: "mcp_comp", kind: "mcp", name: "Compliance", enabled: true, projects: ["mcp-proj"],
+        transport: "stdio", command: "uv", args: "run --directory /base/mcp/compliance-mcp-server compliance-mcp", env: [],
+      }],
+    });
+    useAppStore.getState().fleetStartProject("McpProj", fleet, "mcp-proj");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("mcp-proj");
+    const names = (p: number) => (st.paneExtensions[`t${idx}p${p}`] ?? []).map((e) => e.name);
+    expect(names(0)).toContain("Compliance"); // director (pane 0)
+    expect(names(1)).toContain("Compliance"); // worker 1
+    expect(names(2)).toContain("Compliance"); // worker 2
+  });
+
   it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
     useAppStore.setState({ bscBaseDir: "/base" });
     const dirFleet: FleetPlan = {

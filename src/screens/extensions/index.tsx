@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { mcpInstallDir } from "../../lib/projectPaths";
+import { resolveMcpInstallDir, repoNameFromLink } from "../../lib/mcpInstall";
 import { useAppStore } from "../../store";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { usePageTabs } from "../../hooks/usePageTabs";
@@ -121,10 +121,6 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
   }
 
   /** The repo's short name from its catalog link (the on-disk download dir name). */
-  function repoNameFromLink(link: string): string {
-    return link.replace(/\/+$/, "").split("/").pop() ?? "";
-  }
-
   /** Download a catalog server's repo into ~/.base-studio-code/mcp/<repo> (clone via git). */
   async function downloadFromCatalog(item: CatalogItem) {
     if (!item.link) return;
@@ -139,12 +135,9 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
   }
 
   function addFromCatalog(item: CatalogItem) {
-    const def = defFromCatalog(item.name);
-    // Point the run config at the on-disk download location (#859 follow-up): substitute the
-    // `{dir}` placeholder with the resolved ~/.base-studio-code/mcp/<repo> path.
-    if (item.link && def.args?.includes("{dir}")) {
-      def.args = def.args.replace("{dir}", mcpInstallDir(bscBaseDir, repoNameFromLink(item.link)));
-    }
+    // Point the run config at the on-disk download location (#859): substitute the `{dir}`
+    // placeholder with the resolved ~/.base-studio-code/mcp/<repo> path (shared resolver).
+    const def = resolveMcpInstallDir(defFromCatalog(item.name), item.name, bscBaseDir);
     addExtension(def);
     // The new def is appended with a store-assigned id; select it for editing.
     const created = useAppStore.getState().extensions;
