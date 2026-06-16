@@ -72,6 +72,21 @@ pub(crate) const BSC_HOOK_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-mcp` helper (#879 PR 2 — MCP-call logging): a PreToolUse + PostToolUse hook on a
+/// gated pane, matched to MCP tools (`mcp__<server>__<tool>`). It measures the round-trip
+/// latency of each MCP call and logs one TAB line — `ts \t server \t tool \t outcome \t ms \t
+/// detail` — to `$BSC_MCP_LOG` for the MCP Analytics tab. `ts` is epoch ms (matches
+/// `mcpTelemetry.parseMcpLog`). PreToolUse stamps a start time keyed by pane+tool under a temp
+/// dir; PostToolUse reads it back, computes `ms = now − start`, derives the outcome (`fail` when
+/// the tool response carries `isError/is_error: true`, `warn` when rate-limited or slower than
+/// `$BSC_MCP_SLOW_MS` (default 2000ms), else `ok`), and appends the line. Non-MCP tools are
+/// ignored. Best-effort + always returns 0 so it never blocks a tool. A raw string keeps the
+/// embedded quotes/regex readable.
+pub(crate) const BSC_MCP_RC: &str = concat!(
+    r#"bsc-mcp() { l="${BSC_MCP_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat | tr '\t\n' '  ')"; now="$(date +%s%3N 2>/dev/null)"; case "$now" in ''|*[!0-9]*) now="$(( $(date -u +%s) * 1000 ))" ;; esac; tn="$(printf '%s' "$j" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; case "$tn" in mcp__*) ;; *) return 0 ;; esac; ev="$(printf '%s' "$j" | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; rest="${tn#mcp__}"; server="${rest%%__*}"; tool="${rest#*__}"; d="${TMPDIR:-/tmp}/bsc-mcp"; mkdir -p "$d" 2>/dev/null; key="$(printf '%s_%s' "${BSC_AUDIT_PANE:-x}" "$tn" | tr -c 'A-Za-z0-9_-' '_' | cut -c1-150)"; if [ "$ev" = "PreToolUse" ]; then printf '%s' "$now" > "$d/$key" 2>/dev/null; return 0; fi; start="$(cat "$d/$key" 2>/dev/null)"; rm -f "$d/$key" 2>/dev/null; ms=0; case "$start" in *[0-9]*) ms=$(( now - start )) ;; esac; [ "$ms" -lt 0 ] && ms=0; oc="ok"; detail=""; if printf '%s' "$j" | grep -qE '"(is_error|isError)"[[:space:]]*:[[:space:]]*true'; then oc="fail"; detail="$(printf '%s' "$j" | grep -oE '"(text|message|error)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-100)"; [ -z "$detail" ] && detail="error"; elif printf '%s' "$j" | grep -qiE 'rate.?limit'; then oc="warn"; detail="rate-limited"; elif [ "$ms" -gt "${BSC_MCP_SLOW_MS:-2000}" ]; then oc="warn"; detail="slow"; fi; server="$(printf '%s' "$server" | cut -c1-60)"; tool="$(printf '%s' "$tool" | cut -c1-60)"; detail="$(printf '%s' "$detail" | cut -c1-120)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "$server" "$tool" "$oc" "$ms" "$detail" >> "$l"; return 0; }"#,
+    "\n",
+);
+
 /// The `bsc-tokens` helper (#416): a Stop / SubagentStop hook on a gated pane pipes
 /// Claude Code's hook JSON into this; it extracts the `session_id` and `transcript_path`
 /// (Claude Code's hooks carry these but NOT token usage, so the transcript is the only
@@ -358,12 +373,13 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
             super::BSC_SKILL_RC,
             super::BSC_HOOK_RC,
+            super::BSC_MCP_RC,
             super::BSC_TOKENS_RC,
             super::BSC_CONFINE_RC,
             super::BSC_COORD_EMIT_RC,
@@ -536,6 +552,72 @@ mod tests {
         assert_eq!((lines[0][1], lines[0][2], lines[0][3]), ("PreToolUse", "Block PII", "block"));
         assert_eq!(lines[1][3], "allow");
         assert_eq!(lines[2][3], "ok");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bsc_mcp_pairs_pre_post_and_logs_latency_and_outcome() {
+        // bsc-mcp logs one line per MCP call: PreToolUse stamps a start; PostToolUse computes
+        // `ms` and the outcome and appends `ts \t server \t tool \t outcome \t ms \t detail`.
+        // Non-MCP tools and a lone PreToolUse write nothing. Skips where bash isn't on PATH.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = crate::shell::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_mcp subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-mcp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_MCP_RC).unwrap();
+        let log = dir.join("nested").join("mcp.log");
+        let tmp = dir.join("tmp");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
+        let log_bash = crate::to_bash_path(&log.to_string_lossy());
+        let tmp_bash = crate::to_bash_path(&tmp.to_string_lossy());
+
+        // Feed one hook-JSON payload to bsc-mcp.
+        let fire = |json: &str| {
+            let mut child = Command::new(&shell)
+                .arg("-c").arg("bsc-mcp")
+                .env("BASH_ENV", &rc_bash)
+                .env("BSC_MCP_LOG", &log_bash)
+                .env("TMPDIR", &tmp_bash)
+                .env("BSC_AUDIT_PANE", "t0p0")
+                .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+                .spawn().unwrap();
+            child.stdin.take().unwrap().write_all(json.as_bytes()).unwrap();
+            child.wait().unwrap();
+        };
+
+        // A non-MCP tool is ignored entirely.
+        fire(r#"{"hook_event_name":"PreToolUse","tool_name":"Write"}"#);
+        // A full MCP call: Pre then Post (success).
+        fire(r#"{"hook_event_name":"PreToolUse","tool_name":"mcp__github__list_issues"}"#);
+        fire(r#"{"hook_event_name":"PostToolUse","tool_name":"mcp__github__list_issues","tool_response":{"isError":false}}"#);
+        // A failed MCP call (isError true) → outcome "fail".
+        fire(r#"{"hook_event_name":"PreToolUse","tool_name":"mcp__playwright__navigate"}"#);
+        fire(r#"{"hook_event_name":"PostToolUse","tool_name":"mcp__playwright__navigate","tool_response":{"isError":true,"content":[{"type":"text","text":"spawn npx ENOENT"}]}}"#);
+
+        let body = std::fs::read_to_string(&log).unwrap();
+        let lines: Vec<Vec<&str>> = body.lines().map(|l| l.split('\t').collect()).collect();
+        assert_eq!(lines.len(), 2, "only the two completed MCP calls log (lone Pre + non-MCP write nothing): {body:?}");
+        // ts(epoch-ms) \t server \t tool \t outcome \t ms \t detail
+        assert!(lines[0][0].chars().all(|c| c.is_ascii_digit()), "ts is epoch ms: {:?}", lines[0][0]);
+        assert_eq!((lines[0][1], lines[0][2]), ("github", "list_issues"));
+        // A non-error response is a success — "ok", or "warn" if the measured round-trip (which
+        // here includes cold subprocess-spawn overhead in the test harness) crossed the slow
+        // threshold. Never "fail" without an error response.
+        assert!(matches!(lines[0][3], "ok" | "warn"), "success outcome: {:?}", lines[0][3]);
+        assert!(lines[0][4].chars().all(|c| c.is_ascii_digit()), "ms is numeric: {:?}", lines[0][4]);
+        assert_eq!((lines[1][1], lines[1][2], lines[1][3]), ("playwright", "navigate", "fail"));
+        assert_eq!(lines[1][5], "spawn npx ENOENT", "fail detail pulled from the response text");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
