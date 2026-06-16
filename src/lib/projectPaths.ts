@@ -22,6 +22,17 @@ export function repoShortName(fullName: string): string {
 }
 
 /**
+ * Where a catalog MCP server is downloaded: `<baseDir>/mcp/<name>` (#859 follow-up).
+ * Mirrors the Rust `mcp_install_dir` so the frontend can reference the cloned path in a
+ * run config. Returns "" when `baseDir` is empty.
+ */
+export function mcpInstallDir(baseDir: string, name: string): string {
+  if (!baseDir) return "";
+  const sep = baseDir.includes("\\") ? "\\" : "/";
+  return [baseDir, "mcp", name].join(sep);
+}
+
+/**
  * Build the local clone path for a repo:
  * `<baseDir>/projects/<sanitizeProjectKey(projectName)>/<repoShortName(fullName)>`.
  *
