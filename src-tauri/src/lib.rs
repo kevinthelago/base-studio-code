@@ -954,6 +954,72 @@ async fn mcp_clone(name: String, url: String) -> Result<String, String> {
     Ok(dir_str)
 }
 
+/// The shell build command for a downloaded MCP server, detected from its repo files,
+/// or `None` if the toolchain isn't recognized. A `uv`/Python project builds with
+/// `uv sync`; a pnpm project with `pnpm install && pnpm build`; any other Node project
+/// falls back to npm. Pure over the dir contents — unit-tested.
+fn mcp_build_command(dir: &std::path::Path) -> Option<String> {
+    if dir.join("pyproject.toml").exists() || dir.join("uv.lock").exists() {
+        Some("uv sync".into())
+    } else if dir.join("pnpm-lock.yaml").exists() {
+        Some("pnpm install && pnpm build".into())
+    } else if dir.join("package.json").exists() {
+        Some("npm install && npm run build".into())
+    } else {
+        None
+    }
+}
+
+/// Result of building a downloaded MCP server. `ok` is the overall success; `ran` is the
+/// shell command that was executed; `stdout`/`stderr` are its (truncated) output so the
+/// MCP panel can show why a build failed.
+#[derive(serde::Serialize)]
+struct McpBuildResult {
+    ok: bool,
+    ran: String,
+    stdout: String,
+    stderr: String,
+}
+
+/// Build a downloaded MCP server in place (`~/.base-studio-code/mcp/<name>`), running its
+/// detected toolchain build (`uv sync` / `pnpm install && pnpm build` / npm). Invoked by the
+/// MCP panel's "build" button — kept separate from `mcp_clone` so downloading is cheap and
+/// the (slow, toolchain-dependent) build is opt-in. Returns the outcome instead of erroring on
+/// a failed build so the panel can surface stdout/stderr; only setup problems (missing dir,
+/// unknown toolchain) are `Err`.
+#[tauri::command]
+async fn mcp_build(name: String) -> Result<McpBuildResult, String> {
+    let _perf = PerfSpan::new("mcp_build");
+    let dir = mcp_install_dir(&name)?;
+    if !dir.exists() {
+        return Err(format!("mcp_build: {name} is not downloaded yet — download it first"));
+    }
+    let Some(command) = mcp_build_command(&dir) else {
+        return Err(format!("mcp_build: don't recognize how to build {name} (no pyproject.toml / package.json)"));
+    };
+    // Run through the platform shell so `&&` chains work and Windows `.cmd` shims
+    // (pnpm/npm) resolve — a bare `Command::new("pnpm")` only finds `.exe` on Windows.
+    #[cfg(windows)]
+    let (shell, flag) = ("cmd", "/C");
+    #[cfg(not(windows))]
+    let (shell, flag) = ("sh", "-c");
+    let mut cmd = std::process::Command::new(shell);
+    cmd.current_dir(&dir).args([flag, &command]);
+    let output = no_window(&mut cmd).output().map_err(|e| format!("mcp_build: failed to run `{command}`: {e}"))?;
+    // Truncate captured output so a noisy build log doesn't bloat the IPC payload.
+    let cap = |b: &[u8]| {
+        let s = String::from_utf8_lossy(b);
+        if s.len() > 8000 { format!("…{}", &s[s.len() - 8000..]) } else { s.into_owned() }
+    };
+    let ok = output.status.success();
+    if ok {
+        log::info!("mcp_build: built {name} via `{command}`");
+    } else {
+        log::warn!("mcp_build: `{command}` failed for {name}");
+    }
+    Ok(McpBuildResult { ok, ran: command, stdout: cap(&output.stdout), stderr: cap(&output.stderr) })
+}
+
 /// Branch/dir slug for a fleet agent — keeps only `[A-Za-z0-9._-]`, every other
 /// char becomes `-`. Must match the frontend `worktreeSlug` so the computed
 /// worktree cwd and the on-disk worktree path agree.
@@ -1817,6 +1883,7 @@ pub fn run() {
             setup_kb_workspace,
             clone_repo,
             mcp_clone,
+            mcp_build,
             ensure_worktree,
             ensure_director_protocol,
             docstore::get_base_dir,
@@ -2628,6 +2695,32 @@ mod tests {
         assert!(super::mcp_install_dir(".").is_err());
         assert!(super::mcp_install_dir("..").is_err());
         std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn mcp_build_command_detects_the_toolchain() {
+        let base = std::env::temp_dir().join(format!("bsc-mcpbuild-{}", std::process::id()));
+        let uv = base.join("uv");
+        let pnpm = base.join("pnpm");
+        let npm = base.join("npm");
+        let none = base.join("none");
+        for d in [&uv, &pnpm, &npm, &none] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        // Python/uv project → uv sync.
+        std::fs::write(uv.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
+        assert_eq!(super::mcp_build_command(&uv).as_deref(), Some("uv sync"));
+        // pnpm project → pnpm install && build (a package.json is also present, but the
+        // pnpm lockfile wins over the npm fallback).
+        std::fs::write(pnpm.join("package.json"), "{}").unwrap();
+        std::fs::write(pnpm.join("pnpm-lock.yaml"), "lockfileVersion: 9\n").unwrap();
+        assert_eq!(super::mcp_build_command(&pnpm).as_deref(), Some("pnpm install && pnpm build"));
+        // Plain Node project → npm fallback.
+        std::fs::write(npm.join("package.json"), "{}").unwrap();
+        assert_eq!(super::mcp_build_command(&npm).as_deref(), Some("npm install && npm run build"));
+        // Unknown toolchain → None.
+        assert_eq!(super::mcp_build_command(&none), None);
+        std::fs::remove_dir_all(&base).ok();
     }
 
     #[test]

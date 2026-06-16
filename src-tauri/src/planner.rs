@@ -268,23 +268,25 @@ pub(crate) async fn setup_workspaces(
     let ext_md = String::from(
         "# Extensions Catalogue (MCP servers)\n\n\
          Assign an MCP server/extension to this project with a single-line tag:\n\
-         `<mcp_assign name=\"Postgres\" />`\n\n\
-         Each assigned server is scoped to THIS project and loaded into every build &\n\
-         triage session this plan launches — written to the session's `.mcp.json` and\n\
-         pre-trusted, so the agent never blocks on a \"trust these MCP servers?\" prompt.\n\
-         Assign only the servers the project's agents actually need.\n\n\
-         ## Available servers\n\n\
-         - **Postgres** — query/inspect a Postgres database (env: POSTGRES_CONNECTION_STRING)\n\
-         - **SQLite** — query a local SQLite database\n\
-         - **Slack** — post/read Slack (env: SLACK_BOT_TOKEN, SLACK_TEAM_ID)\n\
-         - **Brave Search** — web search (env: BRAVE_API_KEY)\n\
-         - **Stripe** — Stripe API tools (env: STRIPE_SECRET_KEY)\n\
-         - **Sentry** — error tracking (HTTP)\n\
-         - **Linear** — issue tracking (HTTP)\n\
-         - **Notion** — docs/notes (HTTP)\n\n\
-         A name not in this list creates a blank stdio MCP entry the user completes in\n\
-         the Extensions screen. Required env values (tokens, connection strings) are left\n\
-         blank for the user to fill — never invent secrets.\n\n\
+         `<mcp_assign name=\"Compliance\" />`\n\n\
+         Each assigned server is scoped to THIS project and loaded into every session this\n\
+         plan launches — the director AND every worker — written to each session's\n\
+         `.mcp.json` and pre-trusted, so the agent never blocks on a \"trust these MCP\n\
+         servers?\" prompt. Assign only the servers the project's agents actually need.\n\n\
+         ## First-party servers (recommended)\n\n\
+         These install from source. Assigning one **downloads its repo automatically** into\n\
+         `~/.base-studio-code/mcp/<repo>`; the user then clicks **build** once in the\n\
+         planning page's MCP panel (it runs `uv sync` / `pnpm build`) before the fleet runs.\n\n\
+         - **Compliance** — scan a project or git diff for compliance findings (GDPR, SOC 2,\n\
+           ISO 27001, HIPAA, PCI DSS) and gate CI on severity thresholds.\n\
+         - **Complexity Analyzer** — measure code complexity (cyclomatic, cognitive,\n\
+           hotspots) across a codebase to target refactors.\n\
+         - **Dependency Graph** — explore a project's dependency graph: nodes, neighbors,\n\
+           cycles, and stats.\n\n\
+         ## Other servers\n\n\
+         A name not listed above creates a blank stdio MCP entry the user completes in the\n\
+         MCP panel. Required env values (tokens, connection strings) are left blank for the\n\
+         user to fill — never invent secrets.\n\n\
          Pair this with `<automation_assign …>` (see automations.md) in the planner's\n\
          \"Automations & extensions\" step.\n"
     );
