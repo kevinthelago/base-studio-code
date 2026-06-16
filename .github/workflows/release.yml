@@ -13,7 +13,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-latest
+          # Pinned to windows-2022 (VS 2022 / MSVC 17.x), NOT windows-latest: the latter floated
+          # to a VS 2026 preview (MSVC 14.51) whose STL removed `stdext::checked_array_iterator`,
+          # which DuckDB's bundled fmt (libduckdb-sys) still references → the C++ build fails. VS
+          # 2022 still has that symbol. Revisit when libduckdb-sys ships an fmt that drops it.
+          - platform: windows-2022
             args: ''
           - platform: macos-latest
             args: '--target universal-apple-darwin'
@@ -60,7 +64,7 @@ jobs:
       # uncomment to sign the .exe/.msi during bundling. Kept disabled so unsigned
       # CI builds don't fail for a missing cert. See docs/release-signing.md.
       # - name: Azure Trusted Signing (Windows)
-      #   if: matrix.platform == 'windows-latest'
+      #   if: matrix.platform == 'windows-2022'
       #   uses: azure/trusted-signing-action@v0
       #   with:
       #     azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
