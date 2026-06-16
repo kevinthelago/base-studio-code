@@ -50,6 +50,36 @@ describe("blueprintShare (#598)", () => {
     expect(p.trigger).toBe("on completion"); // unknown trigger → default
     expect(bp!.sections[0].glyph).toBe("✚"); // missing glyph → default
   });
+
+  it("preserves attached skills + MCP servers + lifecycle metadata through import (#897)", () => {
+    const bp = coerceBlueprint({
+      id: "x", name: "Imported", category: "transform", mode: "operate",
+      skills: ["bp-skill-1"], mcp: ["Compliance"],
+      sections: [{
+        key: "structure", name: "Structure",
+        skills: ["sk-a", "sk-b"], mcp: ["Complexity Analyzer", "Dependency Graph"],
+        optional: true, output: "issues",
+      }],
+    });
+    expect(bp).not.toBeNull();
+    // Blueprint-wide capabilities + metadata survive.
+    expect(bp!.skills).toEqual(["bp-skill-1"]);
+    expect(bp!.mcp).toEqual(["Compliance"]);
+    expect(bp!.category).toBe("transform");
+    expect(bp!.mode).toBe("operate");
+    // Per-section capabilities + shape survive.
+    const s = bp!.sections[0];
+    expect(s.skills).toEqual(["sk-a", "sk-b"]);
+    expect(s.mcp).toEqual(["Complexity Analyzer", "Dependency Graph"]);
+    expect(s.optional).toBe(true);
+    expect(s.output).toBe("issues");
+  });
+
+  it("ignores a bogus category/mode (falls back to undefined)", () => {
+    const bp = coerceBlueprint({ id: "x", name: "y", category: "bogus", mode: "nope", sections: [{ key: "context", name: "Context" }] });
+    expect(bp!.category).toBeUndefined();
+    expect(bp!.mode).toBeUndefined();
+  });
 });
 
 describe("blueprint CRUD store actions (#598)", () => {
