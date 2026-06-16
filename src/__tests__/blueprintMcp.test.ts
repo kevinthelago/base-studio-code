@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { buildMcpLibrary, resolveBlueprintMcp, collectBlueprintMcp } from "../screens/projects/blueprintMcp";
+import { buildMcpLibrary, resolveBlueprintMcp, collectBlueprintMcp, applyBlueprintMcp } from "../screens/projects/blueprintMcp";
 import { addMcpServer, removeMcpServer } from "../screens/projects/blueprintEdit";
+import { type ExtensionStoreLike } from "../screens/projects/planExtensions";
 import type { ExtensionDef } from "../lib/extensions";
 import type { Blueprint, BlueprintSection } from "../screens/projects/blueprints";
 
@@ -60,6 +61,41 @@ describe("collectBlueprintMcp", () => {
 
   it("is empty when nothing is attached", () => {
     expect(collectBlueprintMcp({ sections: [sec({})] } as unknown as Blueprint)).toEqual([]);
+  });
+});
+
+describe("applyBlueprintMcp (#897 Phase 2)", () => {
+  const makeStore = (initial: ExtensionDef[] = []): ExtensionStoreLike & { extensions: ExtensionDef[] } => {
+    const store = {
+      extensions: [...initial],
+      addExtension(def: Omit<ExtensionDef, "id">) { store.extensions.push({ ...def, id: `ext_${store.extensions.length}` }); },
+      updateExtension(id: string, patch: Partial<ExtensionDef>) { store.extensions = store.extensions.map((e) => (e.id === id ? { ...e, ...patch } : e)); },
+    };
+    return store;
+  };
+
+  it("scopes every attached server to the project (enabled) and returns the downloadable ones", () => {
+    const bp = {
+      mcp: ["Compliance"],
+      sections: [sec({ uid: "a", mcp: ["Dependency Graph"] })],
+    } as unknown as Blueprint;
+    const store = makeStore();
+    const downloadable = applyBlueprintMcp(store, bp, "proj", "/base");
+    // Both servers added, enabled, scoped to the project.
+    expect(store.extensions.map((e) => e.name).sort()).toEqual(["Compliance", "Dependency Graph"]);
+    expect(store.extensions.every((e) => e.enabled && e.projects.includes("proj"))).toBe(true);
+    // First-party (catalog-linked) servers are returned for the caller to clone.
+    expect(downloadable.sort()).toEqual(["Compliance", "Dependency Graph"]);
+    // {dir} resolved for the first-party server.
+    expect(store.extensions.find((e) => e.name === "Compliance")!.args).not.toContain("{dir}");
+  });
+
+  it("is idempotent — re-applying enables + scopes without duplicating", () => {
+    const bp = { mcp: ["Compliance"], sections: [] } as unknown as Blueprint;
+    const store = makeStore();
+    applyBlueprintMcp(store, bp, "proj", "/base");
+    applyBlueprintMcp(store, bp, "proj", "/base");
+    expect(store.extensions.filter((e) => e.name === "Compliance")).toHaveLength(1);
   });
 });
 
