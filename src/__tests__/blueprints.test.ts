@@ -38,6 +38,17 @@ describe("blueprints — seed library", () => {
     expect(SECTION_DEFS.ui.deps).toContain("features");
   });
 
+  it("adds an optional MCP Servers stage after Permissions in the greenfield blueprints (#878)", () => {
+    expect(SECTION_DEFS.mcp).toBeTruthy();
+    expect(SECTION_DEFS.mcp.optional).toBe(true);
+    for (const id of ["default", "fullstack", "mobile", "api"]) {
+      const bp = makeBlueprints().find((b) => b.id === id)!;
+      const keys = bp.sections.map((s) => s.key);
+      expect(keys, `${id} has an mcp stage`).toContain("mcp");
+      expect(keys.indexOf("mcp"), `${id}: mcp after permissions`).toBeGreaterThan(keys.indexOf("permissions"));
+    }
+  });
+
   it("includes a headless 'mcp-server' greenfield blueprint with no UI stage (#825)", () => {
     const mcp = makeBlueprints().find((b) => b.id === "mcp-server");
     expect(mcp).toBeTruthy();

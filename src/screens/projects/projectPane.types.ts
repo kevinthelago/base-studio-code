@@ -18,6 +18,38 @@ export type Posture = "allow" | "ask" | "deny";
 export type Perm = Record<string, Posture>;
 export interface Flow { autonomy: string; push: string; gate: string }
 
+/** An MCP server as the planning page's MCP pane renders it (#878) — the project's MCP
+ *  extensions joined with catalog metadata and on-disk install state. A project-scoped
+ *  enabled server reaches the whole fleet (director + every worker) via the launch wiring,
+ *  so `scope` describes that reach and `agents` lists the fleet ids it's granted to. */
+export interface McpServer {
+  /** Extension id (stable key for toggle/build/remove). */
+  id: string;
+  name: string;
+  transport: "stdio" | "http";
+  /** The launch command (stdio: `command args`) or remote URL (http). */
+  cmd: string;
+  /** One-line description from the catalog, or "" for a custom server. */
+  desc: string;
+  enabled: boolean;
+  /** Built by the @modelcontextprotocol org (vs. a first-party or custom server). */
+  official: boolean;
+  /** A downloadable first-party server (installs from source); drives download/build. */
+  downloadable: boolean;
+  /** Resolved install lifecycle for a downloadable server (else "n/a"):
+   *  not-downloaded → "available", downloaded-not-built → "downloaded",
+   *  built → "ready", a failed build → "error". A remote/built-in server is "ready". */
+  status: "available" | "downloaded" | "ready" | "error" | "building" | "downloading";
+  /** Human scope label: "fleet" (director + all workers) or "—" when not yet wired. */
+  scope: string;
+  /** Fleet agent ids this server is granted to (the whole fleet for a project server). */
+  agents: string[];
+  /** Tools the server exposes, if known (discovered at launch; usually empty pre-run). */
+  tools: string[];
+  /** Why the build failed, when `status === "error"`. */
+  err?: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -108,6 +140,8 @@ export interface ProjectPaneData {
   automations?: PaneAutomation[];
   /** Reusable skills/knowledge attached to the project's blueprint (#674). */
   skills?: PaneSkill[];
+  /** MCP servers configured for this project (#878) — rendered in the MCP stage. */
+  mcpServers?: McpServer[];
   /** User-facing capabilities defined in the Features stage (#…); each is a fleet stream. */
   features?: PlanFeature[];
   /** The feature seam/dependency DAG (#…) — the Plan stage's approval surface. */
