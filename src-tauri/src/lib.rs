@@ -969,11 +969,12 @@ async fn mcp_clone(name: String, url: String) -> Result<String, String> {
 
 /// The shell build command for a downloaded MCP server, detected from its repo files,
 /// or `None` if the toolchain isn't recognized. A `uv`/Python project builds with
-/// `uv sync`; a pnpm project with `pnpm install && pnpm build`; any other Node project
-/// falls back to npm. Pure over the dir contents — unit-tested.
+/// `python -m uv sync` (uv is a Python module; its shim is often off PATH — `python -m uv`
+/// runs without any PATH setup, #887); a pnpm project with `pnpm install && pnpm build`;
+/// any other Node project falls back to npm. Pure over the dir contents — unit-tested.
 fn mcp_build_command(dir: &std::path::Path) -> Option<String> {
     if dir.join("pyproject.toml").exists() || dir.join("uv.lock").exists() {
-        Some("uv sync".into())
+        Some("python -m uv sync".into())
     } else if dir.join("pnpm-lock.yaml").exists() {
         Some("pnpm install && pnpm build".into())
     } else if dir.join("package.json").exists() {
@@ -2795,9 +2796,9 @@ mod tests {
         for d in [&uv, &pnpm, &npm, &none] {
             std::fs::create_dir_all(d).unwrap();
         }
-        // Python/uv project → uv sync.
+        // Python/uv project → `python -m uv sync` (module form — no PATH dependency, #887).
         std::fs::write(uv.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
-        assert_eq!(super::mcp_build_command(&uv).as_deref(), Some("uv sync"));
+        assert_eq!(super::mcp_build_command(&uv).as_deref(), Some("python -m uv sync"));
         // pnpm project → pnpm install && build (a package.json is also present, but the
         // pnpm lockfile wins over the npm fallback).
         std::fs::write(pnpm.join("package.json"), "{}").unwrap();

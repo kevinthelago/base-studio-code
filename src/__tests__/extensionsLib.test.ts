@@ -81,7 +81,7 @@ describe("catalog templates + blanks", () => {
     }
     // "add" produces a stdio MCP config whose args carry the {dir} placeholder, substituted
     // with the on-disk download path (~/.base-studio-code/mcp/<repo>) when added.
-    expect(defFromCatalog("Compliance")).toMatchObject({ kind: "mcp", transport: "stdio", command: "uv", args: "run --directory {dir} compliance-mcp" });
+    expect(defFromCatalog("Compliance")).toMatchObject({ kind: "mcp", transport: "stdio", command: "python", args: "-m uv run --directory {dir} compliance-mcp" });
     expect(defFromCatalog("Complexity Analyzer")).toMatchObject({ command: "node", args: "{dir}/dist/mcp/index.js" });
     expect(defFromCatalog("Dependency Graph")).toMatchObject({ command: "node", args: "{dir}/dist/index.js" });
   });

@@ -121,7 +121,9 @@ const CATALOG_TEMPLATES: Record<string, Partial<ExtensionDef>> = {
   // First-party servers (#858) — downloaded to ~/.base-studio-code/mcp/<repo>, so the command
   // runs the built entrypoint from there. `{dir}` is replaced with the resolved clone path
   // when the entry is added (addFromCatalog); the user downloads + builds via the card.
-  "Compliance":          { kind: "mcp", transport: "stdio", command: "uv",   args: "run --directory {dir} compliance-mcp" },
+  // `python -m uv` (not a bare `uv`): uv is installed as a Python module and its console-script
+  // shim often isn't on PATH on a fresh machine — `python -m uv` runs without any PATH setup (#887).
+  "Compliance":          { kind: "mcp", transport: "stdio", command: "python", args: "-m uv run --directory {dir} compliance-mcp" },
   "Complexity Analyzer": { kind: "mcp", transport: "stdio", command: "node", args: "{dir}/dist/mcp/index.js" },
   "Dependency Graph":    { kind: "mcp", transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
   // Well-known third-party servers — pruned from the browse catalog (#870) but kept here so the
