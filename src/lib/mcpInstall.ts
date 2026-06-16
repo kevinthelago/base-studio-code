@@ -17,6 +17,13 @@ export function catalogLink(name: string): string | undefined {
   return EXT_CATALOG.find((c) => c.name === name)?.link;
 }
 
+/** The repo slug (== install dir name) for a downloadable server, or "" if it isn't one.
+ *  This is the `name` arg `mcp_clone` / `mcp_build` / `mcp_status` take. */
+export function mcpRepoName(name: string): string {
+  const link = catalogLink(name);
+  return link ? repoNameFromLink(link) : "";
+}
+
 /** The on-disk install dir for a downloadable server, or "" if it isn't downloadable
  *  or `baseDir` is empty. `~/.base-studio-code/mcp/<repo>`. */
 export function mcpDirForServer(name: string, baseDir: string): string {
