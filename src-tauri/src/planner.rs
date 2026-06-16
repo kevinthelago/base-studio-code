@@ -276,7 +276,7 @@ pub(crate) async fn setup_workspaces(
          ## First-party servers (recommended)\n\n\
          These install from source. Assigning one **downloads its repo automatically** into\n\
          `~/.base-studio-code/mcp/<repo>`; the user then clicks **build** once in the\n\
-         planning page's MCP panel (it runs `uv sync` / `pnpm build`) before the fleet runs.\n\n\
+         planning page's MCP panel (it runs `python -m uv sync` / `pnpm build`) before the fleet runs.\n\n\
          - **Compliance** — scan a project or git diff for compliance findings (GDPR, SOC 2,\n\
            ISO 27001, HIPAA, PCI DSS) and gate CI on severity thresholds.\n\
          - **Complexity Analyzer** — measure code complexity (cyclomatic, cognitive,\n\
