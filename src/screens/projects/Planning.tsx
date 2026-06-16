@@ -38,6 +38,7 @@ import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
 import { effectiveProjectRepos, localReposFor } from "./projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
+import { applyBlueprintMcp, collectBlueprintMcp } from "./blueprintMcp";
 import { catalogLink, repoNameFromLink, mcpRepoName } from "../../lib/mcpInstall";
 import { type McpInstallState } from "./mcpPaneData";
 import { EXT_CATALOG } from "../../data/extensions";
@@ -524,6 +525,25 @@ export function Planning({ visible }: { visible: boolean }) {
     return () => { cancelled = true; };
     // Re-probe only when the set of downloadable server ids changes.
   }, [paneData.mcpServers?.filter(s => s.downloadable).map(s => s.id).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scope the active blueprint's attached MCP servers to this project (#897 Phase 2), so the
+  // planner + fleet get the tools the blueprint declares. Idempotent (applyMcpAssign enables +
+  // scopes existing, or adds); clones the downloadable (first-party) ones like the <mcp_assign>
+  // handler. Re-runs when the project or the blueprint's attached-MCP set changes.
+  const bpMcpKey = useMemo(() => {
+    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    return bp ? collectBlueprintMcp(bp).join("\n") : "";
+  }, [blueprints, activeBlueprintId]);
+  useEffect(() => {
+    if (!effectiveProjectId || !bpMcpKey) return;
+    const store = useAppStore.getState();
+    const bp = store.blueprints.find(b => b.id === activeBlueprintId);
+    if (!bp) return;
+    for (const name of applyBlueprintMcp(store, bp, effectiveProjectId, store.bscBaseDir)) {
+      const link = catalogLink(name);
+      if (link) invoke("mcp_clone", { name: repoNameFromLink(link), url: link }).catch(() => {});
+    }
+  }, [bpMcpKey, effectiveProjectId, activeBlueprintId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── MCP stage handlers (#878) ──────────────────────────────────────────────
   const onToggleMcp = useCallback((id: string) => useAppStore.getState().toggleExtension(id), []);
