@@ -107,6 +107,25 @@ describe("ExtensionsScreen", () => {
     expect((container.querySelector(".drawer") as HTMLElement).className).not.toContain("on");
   });
 
+  it("MCP page has an Analytics tab that renders the telemetry surface (zero state)", async () => {
+    const { container } = render(<ExtensionsScreen kind="mcp" />);
+    const analyticsTab = Array.from(container.querySelectorAll(".tabstrip .tab"))
+      .find((t) => t.textContent?.includes("Analytics")) as HTMLElement;
+    expect(analyticsTab).toBeTruthy();
+    fireEvent.click(analyticsTab);
+    // KPI cards + the call-results zero state render (read_mcp_log mock resolves null → empty).
+    expect(await screen.findByText("Total calls")).toBeTruthy();
+    expect(screen.getByText("Calls over time")).toBeTruthy();
+    expect(screen.getByText(/No calls recorded yet/)).toBeTruthy();
+  });
+
+  it("the embedded Hooks view has no Analytics tab", () => {
+    const { container } = render(<ExtensionsScreen kind="hook" embedded />);
+    const hasAnalytics = Array.from(container.querySelectorAll(".tabstrip .tab"))
+      .some((t) => t.textContent?.includes("Analytics"));
+    expect(hasAnalytics).toBe(false);
+  });
+
   it("opens the first tab; empty installed shows a CTA to the catalog", () => {
     useAppStore.setState({ extensions: [], pageTabOrder: {}, detachedSections: {} });
     const { container } = render(<ExtensionsScreen />);
