@@ -7,8 +7,8 @@ use crate::{
     has_claude_history, split_utf8_at_boundary,
 };
 use crate::bsc::{
-    BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_TOKENS_RC,
-    BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC,
+    BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
+    BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC,
 };
 use crate::{config, perf, tunnel};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -322,7 +322,7 @@ pub(crate) async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -341,6 +341,11 @@ pub(crate) async fn pty_create(
     // app-wide log, for the Hook Analytics tab. Set for every pane (harmless — only panes
     // whose settings install wrapped user hooks write).
     cmd.env("BSC_HOOK_LOG", to_bash_path(&base.join("hooks.log").to_string_lossy()));
+    // MCP-call log (#879 PR 2): the `bsc-mcp` PreToolUse+PostToolUse hook pair (added to gated
+    // panes' settings.json by the frontend) appends one TSV line per MCP call — round-trip
+    // latency + outcome — to this app-wide log, for the MCP Analytics tab. Set for every pane
+    // (harmless — only panes whose settings install the hooks actually write).
+    cmd.env("BSC_MCP_LOG", to_bash_path(&base.join("mcp.log").to_string_lossy()));
     // Token + cost accounting (#416): the `bsc-tokens` Stop/SubagentStop hook (added to
     // gated panes' settings.json by the frontend) pipes Claude Code's hook JSON — which
     // carries `session_id` + `transcript_path` — into this; it appends one TSV line
