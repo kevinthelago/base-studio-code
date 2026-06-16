@@ -38,7 +38,9 @@ import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
 import { effectiveProjectRepos } from "./projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
-import { catalogLink, repoNameFromLink } from "../../lib/mcpInstall";
+import { catalogLink, repoNameFromLink, mcpRepoName } from "../../lib/mcpInstall";
+import { type McpInstallState } from "./mcpPaneData";
+import { EXT_CATALOG } from "../../data/extensions";
 import { buildProjectPaneData } from "./projectPaneData";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
@@ -279,6 +281,8 @@ export function Planning({ visible }: { visible: boolean }) {
   } = useAppStore();
   const autoPlanWithClaude = useAppStore(s => s.autoPlanWithClaude);
   const claudeApiKey = useAppStore(s => s.claudeApiKey);
+  // The extensions store drives the MCP stage pane (#878); the base dir is read on demand.
+  const extensions = useAppStore(s => s.extensions);
 
   // The session key (set once at session entry) is the single source of truth
   // for the planning directory, PTY slot, and plan buckets — identical to the
@@ -475,6 +479,9 @@ export function Planning({ visible }: { visible: boolean }) {
     () => parseFeaturesFile(savedSections[FEATURES_KEY] ?? ""),
     [savedSections],
   );
+  // Per-server MCP install lifecycle (#878): seeded by a disk probe on mount, advanced by the
+  // download/build button. Keyed by extension id so the MCP pane shows real status.
+  const [mcpInstallState, setMcpInstallState] = useState<McpInstallState>({});
   const paneData = useMemo(
     () => buildProjectPaneData({
       fleet:    planFleet[effectiveProjectId],
@@ -485,9 +492,76 @@ export function Planning({ visible }: { visible: boolean }) {
       sections,
       features: planFeatures,
       pinned:   pinnedContext[effectiveProjectId],
+      extensions,
+      projectKey: effectiveProjectId,
+      mcpInstallState,
     }),
-    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures],
+    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, extensions, mcpInstallState],
   );
+
+  // Probe each downloadable MCP server's on-disk state so the pane opens with real status
+  // (downloaded? built?) instead of "available" for already-installed servers.
+  useEffect(() => {
+    const probe = paneData.mcpServers?.filter(s => s.downloadable) ?? [];
+    if (probe.length === 0) return;
+    let cancelled = false;
+    Promise.all(probe.map(async (s) => {
+      try {
+        const r = await invoke<{ downloaded: boolean; built: boolean }>("mcp_status", { name: mcpRepoName(s.name) });
+        return [s.id, r.built ? "ready" : r.downloaded ? "downloaded" : "available"] as const;
+      } catch { return [s.id, "available"] as const; }
+    })).then((rows) => {
+      if (cancelled) return;
+      setMcpInstallState((prev) => {
+        const next = { ...prev };
+        // Don't clobber an in-flight downloading/building status with a probe result.
+        for (const [id, st] of rows) if (next[id] !== "downloading" && next[id] !== "building") next[id] = st;
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+    // Re-probe only when the set of downloadable server ids changes.
+  }, [paneData.mcpServers?.filter(s => s.downloadable).map(s => s.id).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── MCP stage handlers (#878) ──────────────────────────────────────────────
+  const onToggleMcp = useCallback((id: string) => useAppStore.getState().toggleExtension(id), []);
+  const onRemoveMcp = useCallback((id: string) => useAppStore.getState().removeExtension(id), []);
+  const onAddMcp = useCallback((input: string) => {
+    const store = useAppStore.getState();
+    // A bare catalog name maps to its template; anything with a scheme is a remote URL; else a
+    // stdio command line. New servers are enabled + scoped to this project so the fleet gets them.
+    const link = catalogLink(input);
+    if (link || EXT_CATALOG.some(c => c.name.toLowerCase() === input.toLowerCase())) {
+      const name = EXT_CATALOG.find(c => c.name.toLowerCase() === input.toLowerCase())?.name ?? input;
+      applyMcpAssign(store, name, effectiveProjectId, store.bscBaseDir);
+      if (link) invoke("mcp_clone", { name: repoNameFromLink(link), url: link }).catch(() => {});
+      return;
+    }
+    const isUrl = /^https?:\/\//i.test(input);
+    store.addExtension({
+      kind: "mcp", name: input.split(/\s+/)[0].slice(0, 40) || "server", enabled: true, projects: [effectiveProjectId],
+      transport: isUrl ? "http" : "stdio",
+      ...(isUrl ? { url: input } : { command: input.split(/\s+/)[0], args: input.split(/\s+/).slice(1).join(" ") }),
+      env: [],
+    });
+  }, [effectiveProjectId]);
+  const onBuildMcp = useCallback(async (s: { id: string; name: string; status: string }) => {
+    const repo = mcpRepoName(s.name);
+    const link = catalogLink(s.name);
+    // Ensure it's downloaded, then build, tracking status so the pane reflects progress.
+    if (link && (s.status === "available")) {
+      setMcpInstallState(p => ({ ...p, [s.id]: "downloading" }));
+      try { await invoke("mcp_clone", { name: repo, url: link }); }
+      catch { setMcpInstallState(p => ({ ...p, [s.id]: "available" })); return; }
+    }
+    setMcpInstallState(p => ({ ...p, [s.id]: "building" }));
+    try {
+      const r = await invoke<{ ok: boolean }>("mcp_build", { name: repo });
+      setMcpInstallState(p => ({ ...p, [s.id]: r.ok ? "ready" : "error" }));
+    } catch {
+      setMcpInstallState(p => ({ ...p, [s.id]: "error" }));
+    }
+  }, []);
 
   // ── Blueprint-driven plan model (#652) — restored (#776) ────────────────────
   // The authoritative plan sections come from the active BLUEPRINT; each carries its own
@@ -1990,6 +2064,10 @@ _Auto-generated by base-studio-code planner._`,
               onLinkRepo={(repo) => addProjectRepo(effectiveProjectId, repo)}
               onApprovePlan={() => confirmPlanSection(effectiveProjectId, "phases")}
               onGenerateProfiles={() => useAppStore.getState().generateFleetProfiles(effectiveProjectId)}
+              onToggleMcp={onToggleMcp}
+              onBuildMcp={onBuildMcp}
+              onAddMcp={onAddMcp}
+              onRemoveMcp={onRemoveMcp}
               focus={{
                 phases,
                 selectedIdx: focusSelectedIdx,

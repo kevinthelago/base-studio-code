@@ -1020,6 +1020,31 @@ async fn mcp_build(name: String) -> Result<McpBuildResult, String> {
     Ok(McpBuildResult { ok, ran: command, stdout: cap(&output.stdout), stderr: cap(&output.stderr) })
 }
 
+/// (downloaded, built) for an MCP server's install dir. Downloaded ⇒ a clone is present;
+/// built ⇒ its toolchain's install/build output exists (`.venv` for uv, `node_modules` for
+/// npm/pnpm, `dist` for a TS build). Pure over the dir — unit-tested.
+fn mcp_status_of(dir: &std::path::Path) -> (bool, bool) {
+    let downloaded = dir.join(".git").exists();
+    let built = downloaded
+        && (dir.join(".venv").exists() || dir.join("node_modules").exists() || dir.join("dist").exists());
+    (downloaded, built)
+}
+
+#[derive(serde::Serialize)]
+struct McpStatusResult {
+    downloaded: bool,
+    built: bool,
+}
+
+/// Report whether a catalog MCP server has been downloaded and built, so the planning page's
+/// MCP panel can open with real install status instead of assuming "not installed".
+#[tauri::command]
+async fn mcp_status(name: String) -> Result<McpStatusResult, String> {
+    let dir = mcp_install_dir(&name)?;
+    let (downloaded, built) = mcp_status_of(&dir);
+    Ok(McpStatusResult { downloaded, built })
+}
+
 /// Branch/dir slug for a fleet agent — keeps only `[A-Za-z0-9._-]`, every other
 /// char becomes `-`. Must match the frontend `worktreeSlug` so the computed
 /// worktree cwd and the on-disk worktree path agree.
@@ -1884,6 +1909,7 @@ pub fn run() {
             clone_repo,
             mcp_clone,
             mcp_build,
+            mcp_status,
             ensure_worktree,
             ensure_director_protocol,
             docstore::get_base_dir,
@@ -2720,6 +2746,22 @@ mod tests {
         assert_eq!(super::mcp_build_command(&npm).as_deref(), Some("npm install && npm run build"));
         // Unknown toolchain → None.
         assert_eq!(super::mcp_build_command(&none), None);
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn mcp_status_of_reports_downloaded_and_built() {
+        let base = std::env::temp_dir().join(format!("bsc-mcpstatus-{}", std::process::id()));
+        let dir = base.join("srv");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Nothing yet → neither downloaded nor built.
+        assert_eq!(super::mcp_status_of(&dir), (false, false));
+        // A clone (.git) → downloaded, not built.
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        assert_eq!(super::mcp_status_of(&dir), (true, false));
+        // A build artifact (node_modules) → built. (dist / .venv count too.)
+        std::fs::create_dir_all(dir.join("node_modules")).unwrap();
+        assert_eq!(super::mcp_status_of(&dir), (true, true));
         std::fs::remove_dir_all(&base).ok();
     }
 

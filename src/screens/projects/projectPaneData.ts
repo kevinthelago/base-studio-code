@@ -24,10 +24,12 @@ import type {
 } from "./projectPane.types";
 import type { PlanFeature } from "./featureList";
 import { buildSeamGraph as buildPlanSeamGraph } from "../../lib/planSeamGraph";
+import { buildMcpServers, type McpInstallState } from "./mcpPaneData";
+import type { ExtensionDef } from "../../lib/extensions";
 
 export type {
   Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone, PhaseGroup,
-  ContextFile, ProjectPaneData, PaneAutomation, PaneSkill,
+  ContextFile, ProjectPaneData, PaneAutomation, PaneSkill, McpServer,
 } from "./projectPane.types";
 
 export interface BuildProjectPaneInput {
@@ -42,6 +44,11 @@ export interface BuildProjectPaneInput {
   automations?: PaneAutomation[];
   /** Skills/knowledge attached to the project's blueprint, pre-resolved (#674). */
   skills?: PaneSkill[];
+  /** The full extensions store + the project key, to build the MCP pane (#878). */
+  extensions?: ExtensionDef[];
+  projectKey?: string;
+  /** Per-server install lifecycle (probe + build button), keyed by extension id (#878). */
+  mcpInstallState?: McpInstallState;
   /** Features defined in the Features stage (parsed from features.json) (#…). */
   features?: PlanFeature[];
   sections: Section[];
@@ -330,6 +337,7 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     fleetStrategy: input.fleet?.strategy,
     automations: (input.automations ?? []).map(a => ({ name: a.name, command: a.command, schedule: a.schedule })),
     skills: input.skills ?? [],
+    mcpServers: buildMcpServers(input.extensions ?? [], input.projectKey ?? "", input.fleet, input.mcpInstallState),
     features: input.features ?? [],
     seamGraph: buildPlanSeamGraph(input.issues),
   };
