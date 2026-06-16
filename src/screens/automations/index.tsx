@@ -3,6 +3,7 @@ import { useAppStore } from "../../store";
 import { SchedulesTab } from "./Schedules";
 import { HistoryTab } from "./History";
 import { ExtensionsScreen } from "../extensions";
+import { HookAnalyticsTab } from "./HookAnalytics";
 import { fmtClock } from "./format";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { usePageTabs } from "../../hooks/usePageTabs";
@@ -35,6 +36,7 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
     { id: "schedules", label: "Schedules", count: automations.length, hint: `· ${armed} armed` },
     { id: "history", label: "History", count: totalRuns },
     { id: "hooks", label: "Hooks", count: hookCount },
+    { id: "analytics", label: "Hook Analytics" },
   ], [automations.length, armed, totalRuns, hookCount]);
 
   const { tabs: tabItems, activeId, select, reorder, tearOff } = usePageTabs("automations", defs);
@@ -59,7 +61,9 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
     select("history");
   }
 
-  const body = active === "hooks"
+  const body = active === "analytics"
+    ? <HookAnalyticsTab />
+    : active === "hooks"
     ? <ExtensionsScreen kind="hook" embedded />
     : active === "history"
     ? <HistoryTab status={histStatus} setStatus={setHistStatus} sched={histSched} setSched={setHistSched} />
