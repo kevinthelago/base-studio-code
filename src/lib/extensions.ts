@@ -103,6 +103,11 @@ export function toSessionPayloads(defs: ExtensionDef[]): { mcp: McpServerPayload
 // Unknown names fall back to a blank stdio MCP the user completes.
 
 const CATALOG_TEMPLATES: Record<string, Partial<ExtensionDef>> = {
+  // First-party servers (#858) — installed from a local clone, so the command runs the built
+  // entrypoint from the cloned repo dir (the user downloads + builds via the catalog link).
+  "Compliance":          { kind: "mcp", transport: "stdio", command: "uv",   args: "run compliance-mcp" },
+  "Complexity Analyzer": { kind: "mcp", transport: "stdio", command: "node", args: "dist/mcp/index.js" },
+  "Dependency Graph":    { kind: "mcp", transport: "stdio", command: "node", args: "dist/index.js" },
   "Postgres":     { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres", env: [["POSTGRES_CONNECTION_STRING", ""]] },
   "SQLite":       { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-sqlite --db-path ./data.db" },
   "Slack":        { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-slack", env: [["SLACK_BOT_TOKEN", ""], ["SLACK_TEAM_ID", ""]] },
