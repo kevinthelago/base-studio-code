@@ -6,12 +6,12 @@ export type Screen = "console" | "knowledge" | "automation" | "extensions" | "gi
 const NAV: Array<{ key: Screen; Icon: LucideIcon; title: string }> = [
   { key: "console",    Icon: TerminalSquare, title: "Console"         },
   { key: "projects",   Icon: FolderKanban,   title: "Projects"        },
-  { key: "knowledge",  Icon: BookOpen,       title: "Knowledge Store" },
-  { key: "automation", Icon: Zap,            title: "Automations"     },
-  { key: "extensions", Icon: Server,         title: "MCP"             },
   { key: "github",     Icon: GitFork,        title: "GitHub"          },
+  { key: "agents",     Icon: ShieldCheck,    title: "Permissions"     },
+  { key: "extensions", Icon: Server,         title: "MCP"             },
   { key: "skills",     Icon: Sparkles,       title: "Skills"          },
-  { key: "agents",     Icon: ShieldCheck,    title: "Agents"          },
+  { key: "automation", Icon: Zap,            title: "Automations"     },
+  { key: "knowledge",  Icon: BookOpen,       title: "Knowledge Store" },
   { key: "settings",   Icon: Settings,       title: "Settings"        },
 ];
 
