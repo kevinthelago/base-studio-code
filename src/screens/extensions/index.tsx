@@ -51,7 +51,14 @@ function kindLabel(e: ExtensionDef): string {
  * `[]` projects = global (every project). Health, call counts, and logs are not
  * monitored yet and render as neutral placeholders.
  */
-export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
+/**
+ * One screen, parameterized by `kind` (#865): `kind="mcp"` is the MCP page (Rail route);
+ * `kind="hook"` (with `embedded`) is the Hooks view inside Automations. Filters the
+ * installed list, catalog, add menu, and counts to that kind. `embedded` drops the
+ * page-level Installed/Catalog tabstrip and stacks both sections in one scroll (so it sits
+ * cleanly under the Automations tabstrip).
+ */
+export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = false }: { sectionOverride?: string; kind?: ExtKind; embedded?: boolean } = {}) {
   const extensions       = useAppStore(s => s.extensions);
   const addExtension     = useAppStore(s => s.addExtension);
   const updateExtension  = useAppStore(s => s.updateExtension);
@@ -86,13 +93,17 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
     return () => { cancelled = true; };
   }, [githubToken]);
 
-  const enabledCount = extensions.filter(e => e.enabled).length;
+  // Everything is scoped to this screen's `kind` (#865): the MCP page shows only MCP servers;
+  // the Hooks view only hooks. The shared `extensions` store + config-writer are unchanged.
+  const kindExtensions = useMemo(() => extensions.filter(e => e.kind === kind), [extensions, kind]);
+  const kindCatalog = useMemo(() => EXT_CATALOG.filter(c => defFromCatalog(c.name).kind === kind), [kind]);
+  const enabledCount = kindExtensions.filter(e => e.enabled).length;
   const extDefs: TabItem[] = useMemo(() => [
     { id: "installed", label: "Installed", count: enabledCount, hint: "· active capabilities" },
-    { id: "catalog", label: "Catalog", count: EXT_CATALOG.length },
-  ], [enabledCount]);
-  const { tabs: extTabs, activeId, select, reorder, tearOff } = usePageTabs("extensions", extDefs);
-  const tab = sectionOverride ?? activeId; // active section
+    { id: "catalog", label: "Catalog", count: kindCatalog.length },
+  ], [enabledCount, kindCatalog.length]);
+  const { tabs: extTabs, activeId, select, reorder, tearOff } = usePageTabs(`extensions-${kind}`, extDefs);
+  const tab = embedded ? "all" : (sectionOverride ?? activeId); // active section ("all" = stacked embedded)
   const selected = selectedId ? extensions.find(e => e.id === selectedId) ?? null : null;
 
   // ── helpers ────────────────────────────────────────────────────────────────
@@ -181,17 +192,20 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
   }
 
   // ── installed view ───────────────────────────────────────────────────────────
+  const NOUN = kind === "mcp" ? "MCP servers" : "hooks";
   function installedView() {
     // Nothing installed yet → a clear CTA into the catalog instead of empty groups.
-    if (extensions.length === 0) {
+    if (kindExtensions.length === 0 && !embedded) {
       return (
         <div style={{
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
           gap: 12, padding: "64px 24px", textAlign: "center",
         }}>
-          <h3 style={{ margin: 0 }}>No extensions installed</h3>
+          <h3 style={{ margin: 0 }}>No {NOUN} installed</h3>
           <p className="hint" style={{ maxWidth: 380, margin: 0 }}>
-            Add MCP servers and hooks from the catalog to give your agents new tools and lifecycle automations.
+            {kind === "mcp"
+              ? "Add MCP servers from the catalog to give your agents new tools."
+              : "Add hooks from the catalog to run commands on Claude Code lifecycle events."}
           </p>
           <button className="btn primary" onClick={() => select("catalog")}>Browse the catalog →</button>
         </div>
@@ -199,8 +213,8 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
     }
     return (
       <>
-        {GROUPS.map(g => {
-          const rows = extensions.filter(e => e.kind === g.kind);
+        {GROUPS.filter(g => g.kind === kind).map(g => {
+          const rows = kindExtensions;
           const onCount = rows.filter(e => e.enabled).length;
           return (
             <div key={g.kind}>
@@ -246,11 +260,13 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
           );
         })}
 
-        {/* First-party tools are not built yet — a static, non-fabricated note. */}
-        <div className="sec-head">
-          <h3 style={{ color: "var(--fg-dim)" }}>First-party tools</h3>
-          <span className="hint">coming soon</span>
-        </div>
+        {/* First-party tools are not built yet — a static, non-fabricated note (MCP page only). */}
+        {kind === "mcp" && (
+          <div className="sec-head">
+            <h3 style={{ color: "var(--fg-dim)" }}>First-party tools</h3>
+            <span className="hint">coming soon</span>
+          </div>
+        )}
       </>
     );
   }
@@ -259,13 +275,13 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
   function catalogView() {
     const q = search.trim().toLowerCase();
     const items = q
-      ? EXT_CATALOG.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q))
-      : EXT_CATALOG;
+      ? kindCatalog.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q))
+      : kindCatalog;
     return (
       <>
         <div className="sec-head">
-          <h3>Browse</h3>
-          <span className="hint">First-party extensions, hooks, and MCP servers you can add with one click.</span>
+          <h3>{embedded ? "Add from catalog" : "Browse"}</h3>
+          <span className="hint">{kind === "mcp" ? "First-party and third-party MCP servers you can add with one click." : "First-party hooks."}</span>
           <div className="spacer" />
           <input
             className="input"
@@ -456,8 +472,45 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
   const body = tab === "catalog" ? catalogView() : installedView();
 
   const summary = useMemo<React.ReactNode>(() => (
-    <>showing extensions enabled <b style={{ color: "var(--fg-muted)" }}>{SCOPE_COPY[scope]}</b></>
-  ), [scope]);
+    <>showing {NOUN} <b style={{ color: "var(--fg-muted)" }}>{SCOPE_COPY[scope]}</b></>
+  ), [scope, NOUN]);
+
+  const drawer = selected && (
+    <>
+      <div className="dr-head">
+        <div className={"health " + (selected.enabled ? "" : "off")} />
+        <div className="name">{selected.name || "Untitled extension"}</div>
+        <span className={"tag " + tagClass(selected.kind)}>{kindLabel(selected)}</span>
+        <button className="x" title="close" onClick={() => setSelectedId(null)}>×</button>
+      </div>
+      <div className="dr-body">{drawerBody(selected)}</div>
+      <div className="dr-foot">
+        <button className="btn ghost danger" onClick={() => { removeExtension(selected.id); setSelectedId(null); }}>remove</button>
+        <div className="spacer" />
+        <button className="btn primary" onClick={() => setSelectedId(null)}>done</button>
+      </div>
+    </>
+  );
+
+  // Embedded (Hooks-in-Automations): a compact toolbar + both sections stacked, no tabstrip.
+  if (embedded) {
+    return (
+      <div className="ext-screen">
+        <div className="ext-page">
+          <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 22px 0" }}>
+            <button className="btn ghost" onClick={() => addCustom(kind)}>+ Custom {kind === "hook" ? "hook" : "MCP server"}</button>
+          </div>
+          <div className="ext-body">
+            {installedView()}
+            <div style={{ height: 20 }} />
+            {catalogView()}
+          </div>
+        </div>
+        <div className={"scrim" + (selected ? " on" : "")} onClick={() => setSelectedId(null)} />
+        <div className={"drawer" + (selected ? " on" : "")}>{drawer}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="ext-screen">
@@ -481,7 +534,7 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
                   ))}
                 </div>
                 <div style={{ position: "relative" }}>
-                  <button className="btn primary" onClick={() => setAddOpen(o => !o)}>+ Add Extension</button>
+                  <button className="btn primary" onClick={() => setAddOpen(o => !o)}>+ Add {kind === "mcp" ? "MCP server" : "hook"}</button>
                   {addOpen && (
                     <div style={{
                       position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 10,
@@ -490,8 +543,7 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
                       display: "flex", flexDirection: "column", gap: 2,
                       boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
                     }}>
-                      <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => addCustom("mcp")}>Custom MCP server</button>
-                      <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => addCustom("hook")}>Custom hook</button>
+                      <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => addCustom(kind)}>Custom {kind === "mcp" ? "MCP server" : "hook"}</button>
                       <div style={{ borderTop: "1px solid var(--border-soft)", margin: "2px 0" }} />
                       <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => { setAddOpen(false); select("catalog"); }}>Browse catalog…</button>
                     </div>
@@ -507,27 +559,7 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
 
       {/* drawer */}
       <div className={"scrim" + (selected ? " on" : "")} onClick={() => setSelectedId(null)} />
-      <div className={"drawer" + (selected ? " on" : "")}>
-        {selected && (
-          <>
-            <div className="dr-head">
-              <div className={"health " + (selected.enabled ? "" : "off")} />
-              <div className="name">{selected.name || "Untitled extension"}</div>
-              <span className={"tag " + tagClass(selected.kind)}>{kindLabel(selected)}</span>
-              <button className="x" title="close" onClick={() => setSelectedId(null)}>×</button>
-            </div>
-            <div className="dr-body">{drawerBody(selected)}</div>
-            <div className="dr-foot">
-              <button
-                className="btn ghost danger"
-                onClick={() => { removeExtension(selected.id); setSelectedId(null); }}
-              >remove</button>
-              <div className="spacer" />
-              <button className="btn primary" onClick={() => setSelectedId(null)}>done</button>
-            </div>
-          </>
-        )}
-      </div>
+      <div className={"drawer" + (selected ? " on" : "")}>{drawer}</div>
     </div>
   );
 }

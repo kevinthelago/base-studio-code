@@ -13,7 +13,8 @@ const SEED: ExtensionDef[] = [
   { id: "e3", kind: "hook", name: "Guard lockfiles", enabled: true, projects: [], event: "PreToolUse", matcher: "Write|Edit", hookCommand: "./guard.sh" },
 ];
 
-const ENABLED = SEED.filter(e => e.enabled).length; // 2
+const ENABLED = SEED.filter(e => e.enabled).length;              // 2 overall
+const MCP_ENABLED = SEED.filter(e => e.kind === "mcp" && e.enabled).length; // 1 on the MCP page
 
 function installedCount(container: HTMLElement): string {
   const installedTab = container.querySelectorAll(".tabstrip .tab")[0];
@@ -27,24 +28,31 @@ describe("ExtensionsScreen", () => {
     useAppStore.setState({ extensions: SEED.map(e => ({ ...e })), githubToken: "" });
   });
 
-  it("renders the MCP + Hooks groups and the seeded extensions from the store", () => {
-    render(<ExtensionsScreen />);
+  it("MCP page shows only MCP servers (hooks moved to Automations, #865)", () => {
+    render(<ExtensionsScreen kind="mcp" />);
     expect(screen.getByText("MCP servers")).toBeTruthy();
-    expect(screen.getByText("Hooks")).toBeTruthy();
     expect(screen.getByText("GitHub")).toBeTruthy();
     expect(screen.getByText("Filesystem")).toBeTruthy();
-    expect(screen.getByText("Guard lockfiles")).toBeTruthy();
     // First-party group is a static "coming soon" note, not fabricated rows.
     expect(screen.getByText("First-party tools")).toBeTruthy();
+    // The hook is NOT on the MCP page.
+    expect(screen.queryByText("Guard lockfiles")).toBeNull();
   });
 
-  it("shows the enabled count from the store and decrements it on toggle off", () => {
-    const { container } = render(<ExtensionsScreen />);
-    expect(installedCount(container)).toBe(String(ENABLED));
+  it("the embedded Hooks view shows only hooks", () => {
+    render(<ExtensionsScreen kind="hook" embedded />);
+    expect(screen.getByText("Guard lockfiles")).toBeTruthy();
+    expect(screen.queryByText("GitHub")).toBeNull();
+    expect(screen.queryByText("First-party tools")).toBeNull();
+  });
+
+  it("shows the MCP enabled count from the store and decrements it on toggle off", () => {
+    const { container } = render(<ExtensionsScreen kind="mcp" />);
+    expect(installedCount(container)).toBe(String(MCP_ENABLED)); // 1
     const firstOn = container.querySelector(".row-aside .toggle.on") as HTMLElement;
     fireEvent.click(firstOn);
-    expect(installedCount(container)).toBe(String(ENABLED - 1));
-    // The store itself was flipped, not just local UI state.
+    expect(installedCount(container)).toBe(String(MCP_ENABLED - 1)); // 0
+    // The store itself was flipped (the hook stays enabled, so 1 overall remains).
     expect(useAppStore.getState().extensions.filter(e => e.enabled).length).toBe(ENABLED - 1);
   });
 
@@ -105,7 +113,7 @@ describe("ExtensionsScreen", () => {
     // New model (#463): the page opens its front tab (installed) — empty installed
     // renders a clear CTA into the catalog.
     expect(container.querySelectorAll(".tabstrip .tab")[0].className).toContain("active");
-    expect(screen.getByText("No extensions installed")).toBeTruthy();
+    expect(screen.getByText("No MCP servers installed")).toBeTruthy();
     // The CTA switches to the catalog tab.
     fireEvent.click(screen.getByText("Browse the catalog →"));
     expect(container.querySelectorAll(".tabstrip .tab")[1].className).toContain("active");
