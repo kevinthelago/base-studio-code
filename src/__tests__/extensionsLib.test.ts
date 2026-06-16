@@ -37,9 +37,14 @@ describe("payload conversion", () => {
     expect(toMcpPayload(mk({ transport: "stdio", command: "" }))).toBeNull();
     expect(toMcpPayload(mk({ transport: "http", url: "" }))).toBeNull();
     expect(toMcpPayload(mk({ kind: "hook" }))).toBeNull();
-    expect(toHookPayload(mk({ kind: "hook", event: "PostToolUse", matcher: "Write", hookCommand: "fmt" })))
-      .toEqual({ event: "PostToolUse", matcher: "Write", command: "fmt" });
+    expect(toHookPayload(mk({ kind: "hook", name: "fmt-hook", event: "PostToolUse", matcher: "Write", hookCommand: "fmt" })))
+      .toEqual({ event: "PostToolUse", matcher: "Write", command: "bsc-hook 'fmt-hook' 'fmt'" });
     expect(toHookPayload(mk({ kind: "hook", event: "PostToolUse", hookCommand: "" }))).toBeNull();
+  });
+
+  it("toHookPayload single-quote-escapes the name and command", () => {
+    expect(toHookPayload(mk({ kind: "hook", name: "it's a hook", event: "PreToolUse", hookCommand: "echo 'hi'" })))
+      .toEqual({ event: "PreToolUse", matcher: "", command: "bsc-hook 'it'\\''s a hook' 'echo '\\''hi'\\'''" });
   });
 
   it("toSessionPayloads splits mcp vs hook and drops incomplete", () => {
