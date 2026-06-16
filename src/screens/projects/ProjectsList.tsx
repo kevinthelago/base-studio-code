@@ -263,7 +263,9 @@ export function ProjectsList() {
   useEffect(() => {
     if (activeScreen !== "projects") return;
     invoke<{ key: string; title: string; hasPlan: boolean; updatedAt: number }[]>("list_local_projects")
-      .then(setLocalProjects)
+      // Coerce to an array: a null/garbage return would make `for (const lp of localProjects)`
+      // non-iterable and throw during render (#874).
+      .then((list) => setLocalProjects(Array.isArray(list) ? list : []))
       .catch(() => setLocalProjects([]));
   }, [activeScreen]);
 
@@ -388,9 +390,16 @@ export function ProjectsList() {
       setDraftError(`Couldn't delete the folder for "${key}": ${e}. It may be open in a console session — close it and retry.`);
       return;
     }
-    removeDraftProject(key);
-    deleteLocalProject([key]);
-    setLocalProjects(prev => prev.filter(lp => lp.key !== key));
+    // The folder is gone; clear the store + on-disk list. Guard the store mutations too —
+    // a throw here would otherwise become an unhandled rejection (and the card would linger)
+    // rather than a surfaced error (#874).
+    try {
+      removeDraftProject(key);
+      deleteLocalProject([key]);
+      setLocalProjects(prev => (Array.isArray(prev) ? prev : []).filter(lp => lp.key !== key));
+    } catch (e) {
+      setDraftError(`Removed the folder for "${key}" but couldn't update the project list: ${e}.`);
+    }
   }
 
   const repos = new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? []));
@@ -537,8 +546,8 @@ export function ProjectsList() {
           // Merge the on-disk projects (durable truth) with the store's draft map (carries the
           // pitch), keyed by project key, then drop any that are already published (#…).
           const byKey = new Map<string, { key: string; title: string; pitch: string; sort: number }>();
-          for (const lp of localProjects) {
-            if (!lp.hasPlan) continue; // skip bare scaffold dirs
+          for (const lp of Array.isArray(localProjects) ? localProjects : []) {
+            if (!lp?.hasPlan) continue; // skip bare scaffold dirs
             byKey.set(lp.key, { key: lp.key, title: lp.title, pitch: "", sort: lp.updatedAt });
           }
           for (const [key, d] of Object.entries(localDraftProjects)) {
