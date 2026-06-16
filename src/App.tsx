@@ -6,6 +6,7 @@ import { Rail } from "./components/chrome/Rail";
 import { Tabstrip } from "./components/chrome/Tabstrip";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { Dialog } from "./components/Dialog";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useAppStore } from "./store";
 import { useHotkeys } from "./hooks/useHotkeys";
 import { useScheduler } from "./hooks/useScheduler";
@@ -394,6 +395,7 @@ export default function App() {
               instances and PTY sessions are never torn down unnecessarily. CSS
               hides it when another screen is active. */}
           <div className="page">
+          <ErrorBoundary label="this view" resetKeys={[activeScreen]}>
           {tabs.length > 0 && (
             <div style={{
               display: activeScreen === "console" ? "flex" : "none",
@@ -423,6 +425,7 @@ export default function App() {
           {activeScreen === "skills"     && <SkillsScreen />}
           {activeScreen === "agents"     && <AgentsScreen />}
           {activeScreen === "settings"   && <SettingsScreen />}
+          </ErrorBoundary>
           </div>
           <StatusBar extra={
             activeScreen === "automation"

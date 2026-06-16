@@ -1477,12 +1477,14 @@ export const useAppStore = create<AppStore>()(
       deleteLocalProject: (keys) =>
         set((s) => {
           const keySet = new Set(keys.filter(Boolean));
-          // Drop entries whose key is the project key.
+          // Drop entries whose key is the project key. `m ?? {}` guards a slice that's
+          // missing/null in a long-lived persisted store — `Object.entries(undefined)`
+          // would throw and (without a boundary) crash the whole app on delete (#874).
           const byKey = <T,>(m: Record<string, T>): Record<string, T> =>
-            Object.fromEntries(Object.entries(m).filter(([k]) => !keySet.has(k)));
+            Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => !keySet.has(k)));
           // Drop repo-scoped entries (`<projectKey>::<repo>`) for this project.
           const byRepoKey = <T,>(m: Record<string, T>): Record<string, T> =>
-            Object.fromEntries(Object.entries(m).filter(([k]) => !keySet.has(k.split("::")[0])));
+            Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => !keySet.has(k.split("::")[0])));
           const clearActive = s.activeProjectId != null && keySet.has(s.activeProjectId);
           return {
             planSections:           byKey(s.planSections),
@@ -1500,9 +1502,9 @@ export const useAppStore = create<AppStore>()(
             // Drop the deleted project id from every extension's scope list. `projects` may be
             // undefined (a def added without it, or persisted data predating the field) — guard,
             // or `.filter` throws and crashes the app on delete (#791).
-            extensions:             s.extensions.map((e) => ({ ...e, projects: (e.projects ?? []).filter((p) => !keySet.has(p)) })),
+            extensions:             (s.extensions ?? []).map((e) => ({ ...e, projects: (e.projects ?? []).filter((p) => !keySet.has(p)) })),
             // …and from every skill's scope list.
-            skills:                 s.skills.map((sk) => ({ ...sk, projects: (sk.projects ?? []).filter((p) => !keySet.has(p)) })),
+            skills:                 (s.skills ?? []).map((sk) => ({ ...sk, projects: (sk.projects ?? []).filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             projectLocalRepos:      byKey(s.projectLocalRepos),
         localDraftProjects:     byKey(s.localDraftProjects),
