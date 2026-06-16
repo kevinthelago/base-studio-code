@@ -20,7 +20,8 @@ import {
   PublishModal, ImportModal, PreviewModal, NewBlueprintModal, HistoryModal, SyncModal,
   type PreviewBlueprint, type PublishResult, type Revision,
 } from "./BlueprintModals";
-import { blueprintToManifest, manifestToBlueprint } from "./blueprintShare";
+import { blueprintToManifest, manifestToBlueprint, bundledSkillsFromManifest } from "./blueprintShare";
+import { resolveBlueprintSkillPayloads } from "./blueprintSkills";
 import { publishGist, installFromGist, gistRevisions, installFromGistRevision } from "../../lib/extensions/gist";
 import { diffBlueprints, type DiffLine } from "./blueprintDiff";
 
@@ -93,6 +94,7 @@ export function BlueprintsPage() {
   const skillLibrary = useMemo(() => buildSkillLibrary(skillDefs, kbBlocks), [skillDefs, kbBlocks]);
   const extensions = useAppStore((s) => s.extensions);
   const mcpLibrary = useMemo(() => buildMcpLibrary(extensions), [extensions]);
+  const installBundledSkills = useAppStore((s) => s.installBundledSkills);
 
   const [view, setView] = useState<View>("library");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -183,7 +185,10 @@ export function BlueprintsPage() {
   // ── gist publish / import ──
   async function doPublish(isPublic: boolean): Promise<{ url?: string; id?: string; rev?: string }> {
     if (!active) throw new Error("no active blueprint");
-    const res = await publishGist(githubToken, blueprintToManifest(active), { public: isPublic });
+    // Bundle the attached skills' content (#897 Phase 5b) so the share is self-contained for
+    // knowledge; MCP servers stay by reference (their names are already in the blueprint).
+    const bundled = resolveBlueprintSkillPayloads(active, skillDefs, kbBlocks);
+    const res = await publishGist(githubToken, blueprintToManifest(active, bundled), { public: isPublic });
     return { url: res.htmlUrl, id: res.id, rev: "r1" };
   }
   function onPublished(r: PublishResult) {
@@ -197,11 +202,19 @@ export function BlueprintsPage() {
     const bpRes = manifestToBlueprint(r.manifest);
     if (!bpRes.ok) throw new Error(bpRes.error);
     const bp = bpRes.blueprint;
-    return { name: bp.name, icon: bp.icon ?? bp.name[0]?.toUpperCase() ?? "B", h: bp.h ?? 70, sections: bp.sections };
+    // Carry the full coerced blueprint + embedded skill content through the preview so import
+    // preserves blueprint-wide skills/mcp/category/mode and reconstitutes the skills (#897).
+    return { name: bp.name, icon: bp.icon ?? bp.name[0]?.toUpperCase() ?? "B", h: bp.h ?? 70, sections: bp.sections, blueprint: bp, bundled: bundledSkillsFromManifest(r.manifest) };
   }
   function importPreview(preview: PreviewBlueprint) {
+    // Reconstitute the share's embedded skills into the library first (#897 Phase 5b) so the
+    // blueprint's skill refs resolve once it's imported.
+    if (preview.bundled?.length) installBundledSkills(preview.bundled);
+    // Prefer the fully-coerced blueprint (keeps blueprint-wide skills/mcp/category/mode);
+    // fall back to the lossy preview fields for older callers.
+    const base = preview.blueprint;
     const bp: Blueprint = {
-      id: "tmp", name: preview.name, desc: "Imported from gist.", sections: preview.sections,
+      ...(base ?? { id: "tmp", name: preview.name, desc: "Imported from gist.", sections: preview.sections }),
       icon: preview.icon, h: preview.h, origin: "imported", tags: ["imported"],
       gist: { state: "synced", author: preview.author, rev: preview.rev ?? "r1", public: true },
     };
