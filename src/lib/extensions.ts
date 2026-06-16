@@ -103,11 +103,12 @@ export function toSessionPayloads(defs: ExtensionDef[]): { mcp: McpServerPayload
 // Unknown names fall back to a blank stdio MCP the user completes.
 
 const CATALOG_TEMPLATES: Record<string, Partial<ExtensionDef>> = {
-  // First-party servers (#858) — installed from a local clone, so the command runs the built
-  // entrypoint from the cloned repo dir (the user downloads + builds via the catalog link).
-  "Compliance":          { kind: "mcp", transport: "stdio", command: "uv",   args: "run compliance-mcp" },
-  "Complexity Analyzer": { kind: "mcp", transport: "stdio", command: "node", args: "dist/mcp/index.js" },
-  "Dependency Graph":    { kind: "mcp", transport: "stdio", command: "node", args: "dist/index.js" },
+  // First-party servers (#858) — downloaded to ~/.base-studio-code/mcp/<repo>, so the command
+  // runs the built entrypoint from there. `{dir}` is replaced with the resolved clone path
+  // when the entry is added (addFromCatalog); the user downloads + builds via the card.
+  "Compliance":          { kind: "mcp", transport: "stdio", command: "uv",   args: "run --directory {dir} compliance-mcp" },
+  "Complexity Analyzer": { kind: "mcp", transport: "stdio", command: "node", args: "{dir}/dist/mcp/index.js" },
+  "Dependency Graph":    { kind: "mcp", transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
   "Postgres":     { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres", env: [["POSTGRES_CONNECTION_STRING", ""]] },
   "SQLite":       { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-sqlite --db-path ./data.db" },
   "Slack":        { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-slack", env: [["SLACK_BOT_TOKEN", ""], ["SLACK_TEAM_ID", ""]] },
