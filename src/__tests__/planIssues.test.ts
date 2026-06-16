@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseIssuesFile, validateIssues, renderIssueBody, resolvePhaseIndex, phaseTagMatches, type PlanIssue } from "../screens/projects/planIssues";
+import { parseIssuesFile, validateIssues, renderIssueBody, resolvePhaseIndex, phaseTagMatches, issueTree, subIssueLinks, type PlanIssue } from "../screens/projects/planIssues";
 
 const issue = (p: Partial<PlanIssue>): PlanIssue => ({
   ref: "F1", title: "Do the thing", acceptance: [], owns: [], dependsOn: [], labels: [], ...p,
@@ -19,6 +19,58 @@ describe("parseIssuesFile", () => {
 
   it("accepts a { issues: [...] } wrapper and an id alias for ref", () => {
     expect(parseIssuesFile(JSON.stringify({ issues: [{ id: "X", title: "t" }] }))[0].ref).toBe("X");
+  });
+
+  it("parses the parent ref for sub-issues (#…)", () => {
+    const out = parseIssuesFile(JSON.stringify([
+      { ref: "invite", title: "Invite teammates" },
+      { ref: "invite-form", title: "Invite form UI", parent: "invite" },
+    ]));
+    expect(out[0].parent).toBeUndefined();
+    expect(out[1].parent).toBe("invite");
+  });
+});
+
+describe("issueTree (feature → sub-issue tree)", () => {
+  it("nests sub-issues under their parent feature, keeping order", () => {
+    const issues: PlanIssue[] = [
+      issue({ ref: "invite", title: "Invite teammates" }),
+      issue({ ref: "invite-api", title: "Invite API", parent: "invite" }),
+      issue({ ref: "invite-ui", title: "Invite UI", parent: "invite" }),
+      issue({ ref: "export", title: "Export" }),
+    ];
+    const tree = issueTree(issues);
+    expect(tree.map((n) => n.issue.ref)).toEqual(["invite", "export"]);
+    expect(tree[0].children.map((c) => c.ref)).toEqual(["invite-api", "invite-ui"]);
+    expect(tree[1].children).toEqual([]);
+  });
+
+  it("treats an orphan parent (or self-parent) as a root, never dropping it", () => {
+    const issues: PlanIssue[] = [
+      issue({ ref: "a", title: "A", parent: "missing" }),
+      issue({ ref: "b", title: "B", parent: "b" }),
+    ];
+    expect(issueTree(issues).map((n) => n.issue.ref)).toEqual(["a", "b"]);
+  });
+});
+
+describe("subIssueLinks (publish — GitHub sub-issue node-id pairs)", () => {
+  const issues: PlanIssue[] = [
+    issue({ ref: "invite", title: "Invite teammates" }),
+    issue({ ref: "invite-api", title: "Invite API", parent: "invite" }),
+    issue({ ref: "invite-ui", title: "Invite UI", parent: "invite" }),
+    issue({ ref: "orphan", title: "Orphan", parent: "invite" }), // parent resolves, child unresolved below
+  ];
+  it("returns parent→child node-id pairs only when both ends resolve", () => {
+    const nodes = { invite: "N_invite", "invite-api": "N_api", "invite-ui": "N_ui" };
+    const links = subIssueLinks(issues, nodes);
+    expect(links).toEqual([
+      { parent: "N_invite", child: "N_api" },
+      { parent: "N_invite", child: "N_ui" },
+    ]); // "orphan" dropped: no node id for it
+  });
+  it("skips when the parent node id is unknown", () => {
+    expect(subIssueLinks(issues, { "invite-api": "N_api" })).toEqual([]);
   });
 
   it("drops entries missing ref or title, and tolerates bad JSON", () => {

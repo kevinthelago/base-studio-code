@@ -3,15 +3,16 @@
 // directly), classifies each, and maintains `.intake/intake.json`. Routing the staged
 // files to the right repo is the planner's job (next slice); this is the intake surface.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { PipelineScreenFrame } from "./PipelineScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
-  INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
+  INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
 } from "./fileIntake";
 import type { PipelineScreenProps } from "./pipelineScreens";
+import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "./dropFiles";
 
 const KIND_COLOR: Record<IntakeKind, string> = {
   image: "var(--violet, oklch(0.72 0.12 300))", vector: "var(--violet, oklch(0.72 0.12 300))",
@@ -29,16 +30,31 @@ async function fileToBase64(file: File): Promise<string> {
 
 export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
   const requestPlannerPrompt = useAppStore((s) => s.requestPlannerPrompt);
+  const confirmPlanSection = useAppStore((s) => s.confirmPlanSection);
   const [entries, setEntries] = useState<IntakeEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routed, setRouted] = useState(false);
+  // A second hidden input with `webkitdirectory` — the native FOLDER picker (#831). The
+  // attribute isn't in React's input types, so it's set imperatively once mounted.
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const el = folderInputRef.current;
+    if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); }
+  }, []);
+
+  // Stage the files chosen by either browse input — `webkitRelativePath` carries the folder
+  // structure when a directory was picked, else just the file name.
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    void ingest(Array.from(e.target.files ?? []).map((file) => ({ file, path: file.webkitRelativePath || file.name })));
+    e.currentTarget.value = "";
+  };
 
   // Load any already-staged manifest on open.
   useEffect(() => {
     let live = true;
-    invoke<[string, string][]>("read_project_files", { projectKey, subdir: ".intake" })
+    invoke<[string, string][]>("read_project_files", { projectKey, subdir: INTAKE_DIR })
       .then((files) => {
         const manifest = files.find(([rel]) => rel === "intake.json")?.[1];
         if (live && manifest) setEntries(parseIntake(manifest));
@@ -47,21 +63,23 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
     return () => { live = false; };
   }, [projectKey]);
 
-  async function ingest(files: File[]) {
-    if (files.length === 0) return;
+  // Stage a set of dropped files, each carrying its path relative to the drop root so a
+  // dropped FOLDER's structure is preserved under design/ (#831).
+  async function ingest(dropped: DroppedFile[]) {
+    if (dropped.length === 0) return;
     setBusy(true);
     setError(null);
     try {
       const added: IntakeEntry[] = [];
-      for (const file of files) {
+      for (const { file, path } of dropped) {
         const kind = classifyFile(file.name, file.type || undefined);
-        const relpath = `.intake/${file.name}`;
+        const relpath = `${INTAKE_DIR}/${path}`;
         if (isBinaryKind(kind)) {
           await invoke("write_project_file_bytes", { projectKey, relpath, b64: await fileToBase64(file) });
         } else {
           await invoke("write_project_file", { projectKey, relpath, contents: await file.text() });
         }
-        added.push(intakeEntry(file.name, file.size, file.type || undefined));
+        added.push(intakeEntry(path, file.size, file.type || undefined));
       }
       const merged = mergeIntake(entries, added);
       await invoke("write_project_file", { projectKey, relpath: INTAKE_MANIFEST, contents: serializeIntake(merged) });
@@ -70,6 +88,24 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
       setError(String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Handle a drop: a dropped FOLDER is not in `dataTransfer.files` — it's reachable only via
+  // `webkitGetAsEntry()`, which must be called SYNCHRONOUSLY (the DataTransfer is only valid
+  // during the event). Capture the entries first, then walk them async (#831). Falls back to
+  // the flat file list when the entry API is unavailable.
+  function onDropFiles(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const items = Array.from(e.dataTransfer.items ?? []);
+    const entriesIn = items
+      .map((it) => (typeof it.webkitGetAsEntry === "function" ? it.webkitGetAsEntry() : null))
+      .filter((en): en is FileSystemEntry => en != null);
+    if (entriesIn.length > 0) {
+      void collectDroppedEntries(entriesIn as unknown as FsEntryLike[]).then(ingest);
+    } else {
+      void ingest(Array.from(e.dataTransfer.files).map((file) => ({ file, path: file.name })));
     }
   }
 
@@ -85,7 +121,7 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
         <label
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); void ingest(Array.from(e.dataTransfer.files)); }}
+          onDrop={onDropFiles}
           style={{
             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
             padding: "28px 16px", borderRadius: "var(--r-lg)", cursor: "pointer", textAlign: "center",
@@ -94,13 +130,18 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
           }}
         >
           <span style={{ fontSize: 22 }}>⬇</span>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>Drop design or any files here</span>
-          <span className="hint">or click to browse — images, SVG, components, markup, anything</span>
-          <input
-            type="file" multiple style={{ display: "none" }}
-            onChange={(e) => { void ingest(Array.from(e.target.files ?? [])); e.currentTarget.value = ""; }}
-          />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>Drop design files or a folder here</span>
+          <span className="hint">or click to browse files — images, SVG, components, markup, anything</span>
+          <input type="file" multiple style={{ display: "none" }} onChange={onPick} />
         </label>
+
+        {/* Folder picker — the native directory selector (the drop zone above browses files). */}
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <button type="button" className="mini" onClick={() => folderInputRef.current?.click()}>
+            ⊞ browse a folder…
+          </button>
+          <input ref={folderInputRef} type="file" multiple style={{ display: "none" }} onChange={onPick} />
+        </div>
 
         {error && <div style={{ color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11 }}>{error}</div>}
 
@@ -119,7 +160,12 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
               className="btn primary"
               style={{ marginTop: 6, width: "100%", justifyContent: "center" }}
               disabled={busy}
-              onClick={() => { requestPlannerPrompt(projectKey, ROUTE_PROMPT); setRouted(true); }}
+              onClick={() => {
+                requestPlannerPrompt(projectKey, ROUTE_PROMPT);
+                // Routing the design to the project completes the UI stage (#837).
+                confirmPlanSection(projectKey, "ui");
+                setRouted(true);
+              }}
             >Route to project →</button>
             {routed && (
               <div className="hint" style={{ color: "var(--success)" }}>

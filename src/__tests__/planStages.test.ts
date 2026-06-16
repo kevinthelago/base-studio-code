@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   PLAN_STAGES, STAGE_BY_ID, defaultStageConfig, buildPlanStageState,
-  stageStatus, enabledOrderedStages, currentStage,
+  stageStatus, enabledOrderedStages, currentStage, BUILT_IN_BLUEPRINTS, resolveEnabledStages,
   type StageConfig, type StageId,
 } from "../screens/projects/planStages";
 
@@ -38,7 +38,7 @@ describe("planStages — gates", () => {
   });
 
   it("structure completes only with phases confirmed AND issues", () => {
-    const base = { context: { resolved: 1, total: 1, coreConfirmed: true }, repoCount: 1, requiresUi: false };
+    const base = { context: { resolved: 1, total: 1, coreConfirmed: true }, repoCount: 1, requiresUi: false, features: { count: 1, allConfirmed: true } };
     expect(status("structure", buildPlanStageState({ ...base, phasesConfirmed: true, issueCount: 0 }))).toBe("in-progress");
     expect(status("structure", buildPlanStageState({ ...base, phasesConfirmed: true, issueCount: 5 }))).toBe("complete");
   });
@@ -62,12 +62,23 @@ describe("planStages — applicability", () => {
   });
 
   it("ui is in-progress when required but no screens approved", () => {
-    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, ui: { approved: 0, total: 3 } });
+    // ui now depends on features (#825), so features must be complete for ui to be reachable.
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 0, total: 3 } });
     expect(status("ui", s)).toBe("in-progress");
   });
 
+  it("ui is locked until features are defined (#825)", () => {
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, features: { count: 0, allConfirmed: false }, ui: { approved: 0, total: 3 } });
+    expect(status("ui", s)).toBe("locked");
+  });
+
   it("ui completes when the preview is approved (#544)", () => {
-    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, ui: { approved: 1, total: 1 } });
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 1, total: 1 } });
+    expect(status("ui", s)).toBe("complete");
+  });
+
+  it("ui completes when the design is routed, even with no screens (#837)", () => {
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 0, total: 0, routed: true } });
     expect(status("ui", s)).toBe("complete");
   });
 });
@@ -81,14 +92,14 @@ describe("planStages — dependency gating", () => {
 
   it("a disabled dependency counts as satisfied", () => {
     // Disable context+repos+ui; structure should no longer be locked by them.
-    const c = cfg({ enabled: { ...defaultStageConfig().enabled, context: false, repos: false, ui: false } });
+    const c = cfg({ enabled: { ...defaultStageConfig().enabled, context: false, repos: false, ui: false, features: false } });
     const s = buildPlanStageState({ phasesConfirmed: false, issueCount: 0 });
     expect(stageStatus(STAGE_BY_ID.structure, s, c).status).toBe("in-progress");
   });
 
   it("an N/A dependency (ui off via requiresUi) does not block structure", () => {
-    const s = buildPlanStageState({ context: { resolved: 1, total: 1, coreConfirmed: true }, repoCount: 1, requiresUi: false });
-    // context+repos complete, ui N/A -> structure unlocked (in-progress, not locked)
+    const s = buildPlanStageState({ context: { resolved: 1, total: 1, coreConfirmed: true }, repoCount: 1, requiresUi: false, features: { count: 1, allConfirmed: true } });
+    // context+repos+features complete, ui N/A -> structure unlocked (in-progress, not locked)
     expect(status("structure", s)).toBe("in-progress");
   });
 });
@@ -120,8 +131,9 @@ describe("planStages — currentStage (reached frontier)", () => {
   it("skips N/A stages (ui when the project needs no UI)", () => {
     const state = buildPlanStageState({
       context: { resolved: 6, total: 6, coreConfirmed: true },
-      repoCount: 1,        // repos complete
-      requiresUi: false,   // ui n/a → skipped
+      repoCount: 1,                              // repos complete
+      features: { count: 1, allConfirmed: true }, // features complete
+      requiresUi: false,   // ui (now after features, #825) is n/a → skipped → next is structure
     });
     expect(currentStage(cfg(), state)?.id).toBe("structure");
   });
@@ -131,11 +143,45 @@ describe("planStages — currentStage (reached frontier)", () => {
       context: { resolved: 1, total: 1, coreConfirmed: true },
       repoCount: 1,
       requiresUi: false,
+      features: { count: 2, allConfirmed: true },
       phasesConfirmed: true, issueCount: 3,
       fleet: { streams: 2, profilesComplete: true },
       automationsAck: true,
       skillsAck: true,
     });
     expect(currentStage(cfg(), allDone)?.id).toBe("skills");
+  });
+});
+
+describe("planStages — BUILT_IN_BLUEPRINTS (#666/#458)", () => {
+  it("includes a 'refactor' blueprint without the structure stage", () => {
+    const refactor = BUILT_IN_BLUEPRINTS.find((b) => b.id === "refactor");
+    expect(refactor).toBeDefined();
+    expect(refactor!.enabledStages).not.toContain("structure");
+    expect(refactor!.enabledStages).toContain("context");
+    expect(refactor!.enabledStages).toContain("permissions");
+  });
+
+  it("resolveEnabledStages forces only context (the sole required stage) — structure is optional (#666)", () => {
+    const refactor = BUILT_IN_BLUEPRINTS.find((b) => b.id === "refactor")!;
+    const stages = resolveEnabledStages(refactor);
+    // context is the only required stage (optional: false), so it is always included
+    expect(stages).toContain("context");
+    // structure is optional — refactor blueprint omits it and resolveEnabledStages respects that
+    expect(stages).not.toContain("structure");
+    // but the stages the blueprint did enable are present
+    expect(stages).toContain("permissions");
+  });
+
+  it("all built-in blueprints have unique ids", () => {
+    const ids = BUILT_IN_BLUEPRINTS.map((b) => b.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("all built-in blueprints always include context (required stage)", () => {
+    for (const bp of BUILT_IN_BLUEPRINTS) {
+      const resolved = resolveEnabledStages(bp);
+      expect(resolved).toContain("context");
+    }
   });
 });

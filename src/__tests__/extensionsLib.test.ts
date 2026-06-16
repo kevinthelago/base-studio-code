@@ -3,6 +3,7 @@ import {
   resolveExtensions, toMcpPayload, toHookPayload, toSessionPayloads,
   defFromCatalog, blankExtension, type ExtensionDef,
 } from "../lib/extensions";
+import { EXT_CATALOG } from "../data/extensions";
 
 // Helper: a minimal enabled MCP def; `name` defaults to the id for readable asserts.
 const mk = (over: Partial<ExtensionDef>): ExtensionDef => ({
@@ -36,9 +37,14 @@ describe("payload conversion", () => {
     expect(toMcpPayload(mk({ transport: "stdio", command: "" }))).toBeNull();
     expect(toMcpPayload(mk({ transport: "http", url: "" }))).toBeNull();
     expect(toMcpPayload(mk({ kind: "hook" }))).toBeNull();
-    expect(toHookPayload(mk({ kind: "hook", event: "PostToolUse", matcher: "Write", hookCommand: "fmt" })))
-      .toEqual({ event: "PostToolUse", matcher: "Write", command: "fmt" });
+    expect(toHookPayload(mk({ kind: "hook", name: "fmt-hook", event: "PostToolUse", matcher: "Write", hookCommand: "fmt" })))
+      .toEqual({ event: "PostToolUse", matcher: "Write", command: "bsc-hook 'fmt-hook' 'fmt'" });
     expect(toHookPayload(mk({ kind: "hook", event: "PostToolUse", hookCommand: "" }))).toBeNull();
+  });
+
+  it("toHookPayload single-quote-escapes the name and command", () => {
+    expect(toHookPayload(mk({ kind: "hook", name: "it's a hook", event: "PreToolUse", hookCommand: "echo 'hi'" })))
+      .toEqual({ event: "PreToolUse", matcher: "", command: "bsc-hook 'it'\\''s a hook' 'echo '\\''hi'\\'''" });
   });
 
   it("toSessionPayloads splits mcp vs hook and drops incomplete", () => {
@@ -62,6 +68,22 @@ describe("catalog templates + blanks", () => {
   it("maps a hook catalog item, and falls back to a blank stdio mcp for unknowns", () => {
     expect(defFromCatalog("Block PII")).toMatchObject({ kind: "hook", event: "PreToolUse" });
     expect(defFromCatalog("Nope")).toMatchObject({ kind: "mcp", transport: "stdio", command: "", name: "Nope" });
+  });
+
+  it("includes the first-party MCP servers with download links + run configs (#858)", () => {
+    const firstParty = ["Compliance", "Complexity Analyzer", "Dependency Graph"];
+    for (const name of firstParty) {
+      const item = EXT_CATALOG.find((c) => c.name === name);
+      expect(item, `${name} in catalog`).toBeDefined();
+      // Each carries a GitHub download link + a setup hint (they install from source, not npm).
+      expect(item!.link).toMatch(/^https:\/\/github\.com\/kevinthelago\//);
+      expect(item!.install).toBeTruthy();
+    }
+    // "add" produces a stdio MCP config whose args carry the {dir} placeholder, substituted
+    // with the on-disk download path (~/.base-studio-code/mcp/<repo>) when added.
+    expect(defFromCatalog("Compliance")).toMatchObject({ kind: "mcp", transport: "stdio", command: "python", args: "-m uv run --directory {dir} compliance-mcp" });
+    expect(defFromCatalog("Complexity Analyzer")).toMatchObject({ command: "node", args: "{dir}/dist/mcp/index.js" });
+    expect(defFromCatalog("Dependency Graph")).toMatchObject({ command: "node", args: "{dir}/dist/index.js" });
   });
 
   it("blankExtension produces empty mcp/hook shapes", () => {

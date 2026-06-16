@@ -199,9 +199,10 @@ function useProjectsSummaryData() {
 export function ProjectsPageModeStrip() {
   const { projectsPageMode, setProjectsPageMode } = useAppStore();
   const modes = [
-    { k: "projects",   label: "Projects",   hint: "drill into a project" },
-    { k: "fleet",      label: "Fleet",      hint: "live orchestration" },
-    { k: "blueprints", label: "Blueprints", hint: "planning presets" },
+    { k: "projects",   label: "Projects",    hint: "drill into a project" },
+    { k: "fleet",      label: "Fleet",       hint: "live orchestration" },
+    { k: "blueprints", label: "Blueprints",  hint: "planning presets" },
+    { k: "dataModels", label: "Data Models", hint: "canonical schemas" },
   ] as const;
   return (
     <div style={{

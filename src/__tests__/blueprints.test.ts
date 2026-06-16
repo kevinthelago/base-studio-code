@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkSection, computeStatus, reorder, cloneSections, blueprintToStageConfig,
-  sectionStatus, incompleteSections, planSectionsComplete, currentSection,
+  sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal,
   PIPELINE_LIB, SECTION_DEFS, type BlueprintSection,
 } from "../screens/projects/blueprints";
 import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
@@ -23,6 +23,40 @@ describe("blueprints — seed library", () => {
     const ctx = makeBlueprints()[0].sections.find((s) => s.key === "context")!;
     expect(ctx.prompt.length).toBeGreaterThan(20);
     expect(ctx.gate).toBe(SECTION_DEFS.context.gate);
+  });
+
+  it("orders Features before UI in every UI-bearing blueprint (#825)", () => {
+    for (const bp of makeBlueprints()) {
+      const keys = bp.sections.map((s) => s.key);
+      const ui = keys.indexOf("ui");
+      if (ui < 0) continue; // headless blueprints have no UI stage
+      const features = keys.indexOf("features");
+      expect(features, `${bp.id}: features must precede ui`).toBeGreaterThanOrEqual(0);
+      expect(features).toBeLessThan(ui);
+    }
+    // and the UI stage declares the features dependency that enforces it
+    expect(SECTION_DEFS.ui.deps).toContain("features");
+  });
+
+  it("adds an optional MCP Servers stage after Permissions in the greenfield blueprints (#878)", () => {
+    expect(SECTION_DEFS.mcp).toBeTruthy();
+    expect(SECTION_DEFS.mcp.optional).toBe(true);
+    for (const id of ["default", "fullstack", "mobile", "api"]) {
+      const bp = makeBlueprints().find((b) => b.id === id)!;
+      const keys = bp.sections.map((s) => s.key);
+      expect(keys, `${id} has an mcp stage`).toContain("mcp");
+      expect(keys.indexOf("mcp"), `${id}: mcp after permissions`).toBeGreaterThan(keys.indexOf("permissions"));
+    }
+  });
+
+  it("includes a headless 'mcp-server' greenfield blueprint with no UI stage (#825)", () => {
+    const mcp = makeBlueprints().find((b) => b.id === "mcp-server");
+    expect(mcp).toBeTruthy();
+    expect(mcp!.category).toBe("greenfield");
+    const keys = mcp!.sections.map((s) => s.key);
+    expect(keys).not.toContain("ui");
+    expect(keys).toContain("features");
+    expect(keys).toContain("structure");
   });
 
   it("mkSection resolves pipeline ids against the catalog", () => {
@@ -101,10 +135,29 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     expect(sectionStatus(structure, secs, sig({ requiresUi: false })).status).toBe("locked");
   });
 
-  it("a section with no registry analog (testing) is informational → complete", () => {
+  it("a gateless (informational) section completes only when confirmed, not vacuously (#664)", () => {
     const secs = [mkSection("context"), mkSection("testing")];
     const testing = secs.find((s) => s.key === "testing")!;
-    expect(sectionStatus(testing, secs, sig()).status).toBe("complete");
+    // not vacuously complete on a fresh/cleared plan
+    expect(sectionStatus(testing, secs, sig()).status).toBe("in-progress");
+    // complete once the section is confirmed
+    expect(sectionStatus(testing, secs, { ...sig(), [confirmedSignal("testing")]: true }).status).toBe("complete");
+  });
+
+  it("an optional section is shown but never blocks completion, deps, or the current stage (#676)", () => {
+    const secs = [mkSection("context"), mkSection("ui", { optional: true }), mkSection("structure")];
+    const signals = sig({ context: { resolved: 1, total: 1, coreConfirmed: true }, requiresUi: true,
+      phasesConfirmed: true, issueCount: 1 });
+    const ui = secs.find((s) => s.key === "ui")!;
+    // shown (not N/A) even though its screens gate is unmet
+    expect(sectionStatus(ui, secs, signals).status).not.toBe("na");
+    // off the critical path — never the current stage
+    expect(currentSection(secs, signals)?.key).not.toBe("ui");
+    // structure depends on ui, but optional ui doesn't lock it
+    expect(sectionStatus(secs.find((s) => s.key === "structure")!, secs, signals).status).not.toBe("locked");
+    // the incomplete optional ui doesn't block plan completion
+    expect(planSectionsComplete([mkSection("context"), mkSection("ui", { optional: true })],
+      sig({ context: { resolved: 1, total: 1, coreConfirmed: true }, requiresUi: true }))).toBe(true);
   });
 
   it("incompleteSections lists each unfinished section with its gate reason", () => {

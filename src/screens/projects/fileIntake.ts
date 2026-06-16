@@ -81,9 +81,10 @@ export function parseIntake(raw: string): IntakeEntry[] {
   }
 }
 
-/** Where intake stages files within the project hub. */
-export const INTAKE_DIR = ".intake";
-export const INTAKE_MANIFEST = ".intake/intake.json";
+/** Where intake stages files within the project hub — a visible `design/` directory so
+ *  dropped design assets are easy to find (#829), not a hidden `.intake/`. */
+export const INTAKE_DIR = "design";
+export const INTAKE_MANIFEST = "design/intake.json";
 
 /** The built-in pipeline id (matches its PIPELINE_LIB entry + screen registration). */
 export const FILE_INTAKE_ID = "file-intake";
@@ -92,7 +93,7 @@ export const FILE_INTAKE_ID = "file-intake";
  *  It tells the planner to read the staged files and route each to the right repo —
  *  the planner does the intelligent routing; the pipeline only stages + asks. (#604) */
 export const ROUTE_PROMPT =
-  "The user just added files under .intake/ — see .intake/intake.json for the manifest. " +
+  "The user just added files under design/ — see design/intake.json for the manifest. " +
   "For each staged file: examine it, classify it, and route it to the right place in this " +
   "project. Use repos.json to pick the relevant repo (e.g. copy design assets into the repo " +
   "that owns the UI), copy the file into that repo's directory, and reference it in the " +

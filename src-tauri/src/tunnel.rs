@@ -15,12 +15,14 @@
 // #242b; `tunnel_write_pty` / `tunnel_resize_pty` (the inbound PTY bridge) arrive with
 // it. See docs/tunnel-protocol.md.
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
+
+use crate::fcm::{self, FcmSender, SendOutcome};
 
 // ── Wire protocol ───────────────────────────────────────────────────────────────
 // Conforms to the shipped mobile client (mobile-studio-code/src/lib/types.ts). The
@@ -48,6 +50,15 @@ pub struct SessionMeta {
     pub last_activity: String,
     /// Populated when `status == "awaiting_input"`.
     pub prompt: Option<String>,
+}
+
+/// One plan file in the canonical planner-sync representation.
+/// Mirrors TS `CanonicalFile` in src/lib/plannerCore/types.ts.
+/// Pinned wire shape in src/lib/plannerCore.fixtures.json (wireFrames.plan_sync_files).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlanFile {
+    pub relpath: String,
+    pub content: String,
 }
 
 /// Messages the desktop sends to the mobile client. Tagged by snake_case `type`.
@@ -90,6 +101,27 @@ pub enum ServerMsg {
         pane_id: String,
         prompt: String,
     },
+    // ── Planner sync (#588) ──────────────────────────────────────────────────
+    /// Desktop pushes its plan manifest (relpath → hex hash) to mobile.
+    /// Also sent proactively on connect so mobile can start reconciling immediately.
+    #[serde(rename_all = "camelCase")]
+    PlanSyncManifest {
+        project_id: String,
+        /// relpath → lowercase 8-char hex FNV-1a 32-bit content hash.
+        files: HashMap<String, String>,
+    },
+    /// Desktop sends requested plan files to mobile (response to PlanSyncPull).
+    #[serde(rename_all = "camelCase")]
+    PlanSyncFiles {
+        project_id: String,
+        files: Vec<PlanFile>,
+    },
+    /// Desktop acknowledges a plan push from mobile.
+    #[serde(rename_all = "camelCase")]
+    PlanSyncAck {
+        project_id: String,
+        applied: bool,
+    },
 }
 
 /// Messages the mobile client sends to the desktop. Tagged by snake_case `type`.
@@ -104,6 +136,12 @@ pub enum ClientMsg {
         #[serde(default)]
         fcm_token: Option<String>,
     },
+    /// Mobile pushes a refreshed FCM registration token mid-session (#846). The initial
+    /// token rides in `Auth.fcmToken`; FCM tokens rotate, so the client re-sends here and
+    /// the desktop updates its push target. Allowed even while view-only (it's not a
+    /// PTY-mutating frame).
+    #[serde(rename_all = "camelCase")]
+    SetFcmToken { fcm_token: String },
     #[serde(rename_all = "camelCase")]
     PaneSetState { pane_id: String, state: String },
     #[serde(rename_all = "camelCase")]
@@ -112,6 +150,24 @@ pub enum ClientMsg {
     PaneInput { pane_id: String, data: String },
     #[serde(rename_all = "camelCase")]
     PaneResize { pane_id: String, cols: u16, rows: u16 },
+    // ── Planner sync (#588) ──────────────────────────────────────────────────
+    /// Mobile requests the desktop's current plan manifest for a project.
+    #[serde(rename_all = "camelCase")]
+    PlanSyncManifestRequest { project_id: String },
+    /// Mobile requests specific files from the desktop's plan.
+    #[serde(rename_all = "camelCase")]
+    PlanSyncPull {
+        project_id: String,
+        /// Relpaths of the files to retrieve.
+        paths: Vec<String>,
+    },
+    /// Mobile pushes its merged plan state to the desktop (desktop is not the merge
+    /// authority in v1 — it applies the push and acks; no conflict frames returned).
+    #[serde(rename_all = "camelCase")]
+    PlanSyncPush {
+        project_id: String,
+        files: Vec<PlanFile>,
+    },
 }
 
 /// One PTY output chunk fanned out to the relay transport (which filters per pane).
@@ -209,6 +265,13 @@ struct Inner {
     input_requested: bool,
     /// Send `true` to signal the relay transport task(s) to stop (#242b).
     shutdown_tx: Option<watch::Sender<bool>>,
+    // ── Planner sync (#588) ──────────────────────────────────────────────────
+    /// Plan manifests per projectId — pushed by the frontend so mobile can request
+    /// them via PlanSyncManifestRequest. relpath → hex hash.
+    plan_manifests: HashMap<String, HashMap<String, String>>,
+    /// Full plan file caches per projectId — pushed by the frontend so mobile can
+    /// pull individual files via PlanSyncPull.
+    plan_files: HashMap<String, Vec<PlanFile>>,
 }
 
 /// Single source of truth for the tunnel, managed by Tauri. Holds the desktop's static
@@ -224,6 +287,88 @@ pub struct TunnelState {
     /// The desktop's long-lived Noise static keypair (identity proven to mobile).
     static_priv: Vec<u8>,
     static_pub: Vec<u8>,
+    /// FCM registration tokens of paired devices (#846), captured from the auth handshake
+    /// and `set_fcm_token` refreshes. Shared with the push worker so it can drop a token
+    /// the moment FCM reports it stale. A `HashSet` dedupes a re-auth re-sending the same
+    /// token. In-memory only — re-populated on the next pairing after a desktop restart.
+    fcm_tokens: Arc<Mutex<HashSet<String>>>,
+    /// Hands `user_request` pushes to the background FCM worker. Unbounded + non-blocking
+    /// so the Tauri command thread never waits on a network send; the worker owns its own
+    /// runtime (see `spawn_push_worker`).
+    push_tx: mpsc::UnboundedSender<PushJob>,
+}
+
+/// One queued FCM push: a `user_request` transition that should notify every paired device.
+/// The worker reads the live token set itself (so it always uses the latest), so the job
+/// only carries the per-request content.
+struct PushJob {
+    pane_id: String,
+    prompt: String,
+    /// Human-readable banner title — the pane/session name.
+    session_name: String,
+}
+
+/// Drain `rx` and send an FCM push per paired token for each job. Runs on its own OS thread
+/// with a dedicated current-thread tokio runtime, so a network send never blocks the Tauri
+/// command thread and never depends on whether the relay transport is connected (the whole
+/// point of FCM: notify a phone whose app is backgrounded/quit and thus off the relay).
+///
+/// Credentials are loaded once at startup: if no service-account key is present FCM is
+/// disabled — the worker still drains the channel (so senders never block) but every job is
+/// a no-op. A token FCM reports stale (UNREGISTERED / INVALID_ARGUMENT) is removed from the
+/// shared set so the next pairing's token isn't shadowed by a dead one.
+fn spawn_push_worker(mut rx: mpsc::UnboundedReceiver<PushJob>, tokens: Arc<Mutex<HashSet<String>>>) {
+    std::thread::Builder::new()
+        .name("fcm-push".into())
+        .spawn(move || {
+            let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    log::error!("fcm: push worker runtime build failed: {e}");
+                    return;
+                }
+            };
+            let sender = match fcm::ServiceAccount::load() {
+                Ok(Some(sa)) => {
+                    log::info!("fcm: push enabled for Firebase project {}", sa.project_id);
+                    Some(FcmSender::new(sa))
+                }
+                Ok(None) => {
+                    log::info!(
+                        "fcm: no service-account key at {} (set {} to enable mobile push); user_request pushes disabled",
+                        fcm::ServiceAccount::key_path().display(),
+                        fcm::KEY_PATH_ENV,
+                    );
+                    None
+                }
+                Err(e) => {
+                    log::warn!("fcm: service-account key present but unusable: {e}; push disabled");
+                    None
+                }
+            };
+            rt.block_on(async move {
+                while let Some(job) = rx.recv().await {
+                    let Some(sender) = sender.as_ref() else { continue };
+                    let targets: Vec<String> = tokens.lock().unwrap().iter().cloned().collect();
+                    if targets.is_empty() {
+                        continue;
+                    }
+                    for token in targets {
+                        match sender.send(&token, &job.pane_id, &job.prompt, &job.session_name).await {
+                            SendOutcome::Sent => {
+                                log::debug!("fcm: pushed user_request for pane {}", job.pane_id);
+                            }
+                            SendOutcome::DropToken => {
+                                tokens.lock().unwrap().remove(&token);
+                            }
+                            SendOutcome::Error => {}
+                        }
+                    }
+                }
+            });
+        })
+        .map(|_| ())
+        .unwrap_or_else(|e| log::error!("fcm: could not spawn push worker: {e}"));
 }
 
 impl TunnelState {
@@ -240,6 +385,9 @@ impl TunnelState {
                 (Vec::new(), Vec::new())
             }
         };
+        let fcm_tokens: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+        let (push_tx, push_rx) = mpsc::unbounded_channel();
+        spawn_push_worker(push_rx, fcm_tokens.clone());
         TunnelState {
             inner: Mutex::new(Inner {
                 running: false,
@@ -253,12 +401,43 @@ impl TunnelState {
                 input_granted: false,
                 input_requested: false,
                 shutdown_tx: None,
+                plan_manifests: HashMap::new(),
+                plan_files: HashMap::new(),
             }),
             output_tx,
             event_tx,
             static_priv,
             static_pub,
+            fcm_tokens,
+            push_tx,
         }
+    }
+
+    /// Store an FCM registration token from the auth handshake or a `set_fcm_token` refresh
+    /// (#846). Idempotent (a `HashSet`), so a re-auth re-sending the same token is a no-op.
+    pub fn add_fcm_token(&self, token: String) {
+        let token = token.trim().to_string();
+        if token.is_empty() {
+            return;
+        }
+        let inserted = self.fcm_tokens.lock().unwrap().insert(token);
+        if inserted {
+            log::info!("tunnel: stored an FCM push token for the paired device");
+        }
+    }
+
+    /// Queue an FCM `user_request` push for the paired device(s). Non-blocking — the actual
+    /// HTTP send happens on the push worker. No-op when there are no stored tokens (no phone
+    /// has paired / shared a token this session).
+    fn enqueue_user_request_push(&self, pane_id: &str, prompt: &str, session_name: &str) {
+        if self.fcm_tokens.lock().unwrap().is_empty() {
+            return;
+        }
+        let _ = self.push_tx.send(PushJob {
+            pane_id: pane_id.to_string(),
+            prompt: prompt.to_string(),
+            session_name: session_name.to_string(),
+        });
     }
 
     /// base64 of the static public key — embedded in the pairing QR (#243).
@@ -365,6 +544,11 @@ impl TunnelState {
         (inner.panes.clone(), inner.sessions.values().cloned().collect())
     }
 
+    /// Snapshot all stored plan manifests to replay to a freshly-paired mobile client.
+    fn plan_manifests_snapshot(&self) -> HashMap<String, HashMap<String, String>> {
+        self.inner.lock().unwrap().plan_manifests.clone()
+    }
+
     /// Record how many mobile clients are connected (for the settings card).
     fn set_client_count(&self, n: usize) {
         self.inner.lock().unwrap().client_count = n;
@@ -426,7 +610,10 @@ pub fn tunnel_set_panes(panes: Vec<PaneDescriptor>, state: State<'_, TunnelState
 /// a prompt.
 #[tauri::command]
 pub fn tunnel_set_sessions(sessions: Vec<SessionMeta>, state: State<'_, TunnelState>) {
-    let mut newly_awaiting: Vec<(String, String)> = Vec::new();
+    // (pane_id, prompt, session_name) for each pane that JUST entered awaiting_input — the
+    // `!was_awaiting` guard debounces it to exactly one event per transition, so repeated
+    // state syncs while a pane stays awaiting don't re-fire the push (#846 deliverable 4).
+    let mut newly_awaiting: Vec<(String, String, String)> = Vec::new();
     {
         let mut inner = state.inner.lock().unwrap();
         for s in &sessions {
@@ -437,7 +624,17 @@ pub fn tunnel_set_sessions(sessions: Vec<SessionMeta>, state: State<'_, TunnelSt
                 .unwrap_or(false);
             if s.status == "awaiting_input" && !was_awaiting {
                 if let Some(prompt) = &s.prompt {
-                    newly_awaiting.push((s.pane_id.clone(), prompt.clone()));
+                    // Banner title: the pane's display name, falling back to its current
+                    // task, then the pane id — so the notification is always identifiable.
+                    let name = inner
+                        .panes
+                        .iter()
+                        .find(|p| p.id == s.pane_id)
+                        .map(|p| p.name.clone())
+                        .filter(|n| !n.trim().is_empty())
+                        .or_else(|| (!s.current_task.trim().is_empty()).then(|| s.current_task.clone()))
+                        .unwrap_or_else(|| s.pane_id.clone());
+                    newly_awaiting.push((s.pane_id.clone(), prompt.clone(), name));
                 }
             }
             inner.sessions.insert(s.pane_id.clone(), s.clone());
@@ -451,9 +648,55 @@ pub fn tunnel_set_sessions(sessions: Vec<SessionMeta>, state: State<'_, TunnelSt
         sessions.len(),
         newly_awaiting.len()
     );
-    for (pane_id, prompt) in newly_awaiting {
-        let _ = state.event_tx.send(ServerMsg::UserRequest { pane_id, prompt });
+    for (pane_id, prompt, session_name) in newly_awaiting {
+        // Notify a connected (foregrounded) phone over the relay…
+        let _ = state
+            .event_tx
+            .send(ServerMsg::UserRequest { pane_id: pane_id.clone(), prompt: prompt.clone() });
+        // …and push via FCM so a backgrounded/quit phone (off the relay) still gets it (#846).
+        state.enqueue_user_request_push(&pane_id, &prompt, &session_name);
     }
+}
+
+// ── Planner sync (#588) — Tauri commands ────────────────────────────────────
+
+/// Push the current plan manifest + files for a project from the frontend.
+/// Computes the content manifest (relpath → FNV-1a hex hash), stores both for
+/// mobile to request, and broadcasts `plan_sync_manifest` so any connected mobile
+/// client receives the update immediately.
+#[tauri::command]
+pub fn tunnel_set_plan_state(
+    project_id: String,
+    files: Vec<PlanFile>,
+    state: State<'_, TunnelState>,
+) {
+    let manifest: HashMap<String, String> = files
+        .iter()
+        .map(|f| (f.relpath.clone(), fnv1a32_hex(&f.content)))
+        .collect();
+    let broadcast_manifest = manifest.clone();
+    {
+        let mut inner = state.inner.lock().unwrap();
+        inner.plan_manifests.insert(project_id.clone(), manifest);
+        inner.plan_files.insert(project_id.clone(), files);
+    }
+    log::debug!("tunnel: plan state pushed for project {project_id}");
+    let _ = state.event_tx.send(ServerMsg::PlanSyncManifest {
+        project_id,
+        files: broadcast_manifest,
+    });
+}
+
+/// Acknowledge a plan push (called by the frontend after applying the received files
+/// to the hub directory). Broadcasts `plan_sync_ack` back to the mobile client.
+#[tauri::command]
+pub fn tunnel_ack_plan_push(
+    project_id: String,
+    applied: bool,
+    state: State<'_, TunnelState>,
+) {
+    log::debug!("tunnel: plan push ack for {project_id} (applied={applied})");
+    let _ = state.event_tx.send(ServerMsg::PlanSyncAck { project_id, applied });
 }
 
 /// Start the relay transport: mint a room id + pairing secret, mark running, and spawn
@@ -794,7 +1037,7 @@ mod transport {
         // First app frame must be `auth`; validate the pairing secret.
         let frame = next_binary(&mut read).await?;
         match decode_room_msg(&mut noise_tx, &frame)? {
-            ClientMsg::Auth { token, .. } => {
+            ClientMsg::Auth { token, fcm_token } => {
                 let psk = app
                     .try_state::<TunnelState>()
                     .map(|s| s.psk())
@@ -802,6 +1045,11 @@ mod transport {
                 if !ct_eq(&token, &psk) {
                     log::warn!("tunnel: auth rejected — pairing secret mismatch (stale QR or wrong desktop?)");
                     return Err("auth rejected (bad pairing secret)".into());
+                }
+                // Persist the device's FCM push token (#846) so a `user_request` can reach it
+                // even after the app backgrounds/quits and drops this relay connection.
+                if let (Some(state), Some(t)) = (app.try_state::<TunnelState>(), fcm_token) {
+                    state.add_fcm_token(t);
                 }
                 log::info!("tunnel: auth accepted");
             }
@@ -823,6 +1071,15 @@ mod transport {
         let sizes = app.try_state::<TunnelState>().map(|s| s.pane_sizes()).unwrap_or_default();
         for (pane_id, cols, rows) in sizes {
             send_msg(&mut sink, &mut noise_tx, &ServerMsg::PaneSize { pane_id, cols, rows }).await?;
+        }
+
+        // Replay plan manifests so mobile can start reconciling immediately (#588).
+        let plan_manifests = app
+            .try_state::<TunnelState>()
+            .map(|s| s.plan_manifests_snapshot())
+            .unwrap_or_default();
+        for (project_id, files) in plan_manifests {
+            send_msg(&mut sink, &mut noise_tx, &ServerMsg::PlanSyncManifest { project_id, files }).await?;
         }
 
         // Subscribe AFTER replay so we don't double-send; then pump until either side closes.
@@ -908,9 +1165,9 @@ mod transport {
             return;
         }
         match msg {
-            ClientMsg::PaneInput { pane_id, data } => crate::tunnel_write_pty(app, &pane_id, &data),
+            ClientMsg::PaneInput { pane_id, data } => crate::pty::tunnel_write_pty(app, &pane_id, &data),
             ClientMsg::PaneResize { pane_id, cols, rows } => {
-                crate::tunnel_resize_pty(app, &pane_id, cols, rows)
+                crate::pty::tunnel_resize_pty(app, &pane_id, cols, rows)
             }
             ClientMsg::PaneFocus { pane_id } => {
                 log::debug!("tunnel: focus → pane[{pane_id}]");
@@ -922,9 +1179,65 @@ mod transport {
                     *focused = Some(pane_id);
                 }
             }
+            ClientMsg::SetFcmToken { fcm_token } => {
+                // FCM tokens rotate; the client re-sends the fresh one (#846).
+                if let Some(state) = app.try_state::<TunnelState>() {
+                    state.add_fcm_token(fcm_token);
+                }
+            }
             ClientMsg::Auth { .. } => {} // already authenticated for this session
+            // ── Planner sync (#588) ──────────────────────────────────────────
+            ClientMsg::PlanSyncManifestRequest { project_id } => {
+                if let Some(ts) = app.try_state::<TunnelState>() {
+                    let files = ts
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .plan_manifests
+                        .get(&project_id)
+                        .cloned()
+                        .unwrap_or_default();
+                    log::debug!("tunnel: plan manifest requested for {project_id} ({} files)", files.len());
+                    let _ = ts.event_tx.send(ServerMsg::PlanSyncManifest { project_id, files });
+                }
+            }
+            ClientMsg::PlanSyncPull { project_id, paths } => {
+                if let Some(ts) = app.try_state::<TunnelState>() {
+                    let all = ts
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .plan_files
+                        .get(&project_id)
+                        .cloned()
+                        .unwrap_or_default();
+                    let path_set: std::collections::HashSet<_> = paths.into_iter().collect();
+                    let files: Vec<_> = all.into_iter().filter(|f| path_set.contains(&f.relpath)).collect();
+                    log::debug!("tunnel: plan pull for {project_id} — serving {} file(s)", files.len());
+                    let _ = ts.event_tx.send(ServerMsg::PlanSyncFiles { project_id, files });
+                }
+            }
+            ClientMsg::PlanSyncPush { project_id, files } => {
+                // Emit a Tauri event so the frontend applies the pushed files to the hub dir,
+                // then calls tunnel_ack_plan_push with the result.
+                log::info!("tunnel: plan push received for {project_id} ({} file(s))", files.len());
+                let payload = serde_json::json!({ "projectId": project_id, "files": files });
+                let _ = app.emit("tunnel://plan-sync-push", payload);
+            }
         }
     }
+}
+
+/// FNV-1a 32-bit hash of a UTF-8 string, returned as a lowercase 8-char hex string.
+/// Mirrors the TS `fnv1a32hex` in src/lib/plannerCore/hash.ts; both hash UTF-8 bytes.
+/// Test vectors pinned in src/lib/plannerCore.fixtures.json (fnv1a32 section).
+fn fnv1a32_hex(s: &str) -> String {
+    let mut h: u32 = 0x811c9dc5;
+    for b in s.bytes() {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(0x01000193);
+    }
+    format!("{h:08x}")
 }
 
 /// Decrypt + deserialize one Noise transport frame into a client message. Kept at module
@@ -941,6 +1254,86 @@ fn decode_room_msg(tx: &mut snow::TransportState, frame: &[u8]) -> Result<Client
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Validate the plannerCore fixture: FNV-1a hash vectors + plan-sync wire frame serde.
+    /// Shared with mobile-studio-code and the TS tests; any drift is a breaking protocol
+    /// change (#588).
+    #[test]
+    fn planner_core_fixture_matches_hash_and_serde() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../src/lib/plannerCore.fixtures.json");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read plannerCore fixture {}: {e}", path.display()));
+        let fx: serde_json::Value = serde_json::from_str(&raw).unwrap();
+
+        // FNV-1a 32-bit hash vectors.
+        let v = &fx["fnv1a32"];
+        assert_eq!(fnv1a32_hex(""),      v["empty"].as_str().unwrap(), "empty");
+        assert_eq!(fnv1a32_hex("a"),     v["a"].as_str().unwrap(),     "\"a\"");
+        assert_eq!(fnv1a32_hex("foobar"),v["foobar"].as_str().unwrap(),"\"foobar\"");
+
+        // projectId derivation.
+        let pi = &fx["projectId"];
+        let expected_pid = format!("proj-{}", fnv1a32_hex(pi["input"].as_str().unwrap()));
+        assert_eq!(expected_pid, pi["id"].as_str().unwrap());
+
+        // phaseId derivation.
+        let ph = &fx["phaseId"];
+        let expected_ph = format!("pid-{}", fnv1a32_hex(ph["input"].as_str().unwrap()));
+        assert_eq!(expected_ph, ph["id"].as_str().unwrap());
+
+        // Wire frame serde — ClientMsg round-trips.
+        let frames = &fx["wireFrames"];
+        let req = serde_json::from_value::<ClientMsg>(frames["plan_sync_manifest_request"].clone())
+            .expect("plan_sync_manifest_request deserializes");
+        assert!(
+            matches!(&req, ClientMsg::PlanSyncManifestRequest { project_id, .. } if project_id == "proj-bf9cf968"),
+            "expected PlanSyncManifestRequest with proj-bf9cf968, got {req:?}"
+        );
+        let pull = serde_json::from_value::<ClientMsg>(frames["plan_sync_pull"].clone())
+            .expect("plan_sync_pull deserializes");
+        assert!(matches!(&pull, ClientMsg::PlanSyncPull { paths, .. } if paths == &["goal.md"]),
+            "expected PlanSyncPull with [\"goal.md\"], got {pull:?}");
+        let push = serde_json::from_value::<ClientMsg>(frames["plan_sync_push"].clone())
+            .expect("plan_sync_push deserializes");
+        assert!(matches!(&push, ClientMsg::PlanSyncPush { files, .. } if files.len() == 1),
+            "expected PlanSyncPush with 1 file, got {push:?}");
+
+        // ServerMsg serialization matches fixture wire shapes.
+        let manifest_frame = serde_json::to_value(ServerMsg::PlanSyncManifest {
+            project_id: "proj-bf9cf968".into(),
+            files: [("goal.md".to_string(), "bf9cf968".to_string())].into_iter().collect(),
+        })
+        .unwrap();
+        assert_eq!(manifest_frame, frames["plan_sync_manifest"], "plan_sync_manifest shape");
+
+        let files_frame = serde_json::to_value(ServerMsg::PlanSyncFiles {
+            project_id: "proj-bf9cf968".into(),
+            files: vec![PlanFile { relpath: "goal.md".into(), content: "foobar".into() }],
+        })
+        .unwrap();
+        assert_eq!(files_frame, frames["plan_sync_files"], "plan_sync_files shape");
+
+        let ack_frame = serde_json::to_value(ServerMsg::PlanSyncAck {
+            project_id: "proj-bf9cf968".into(),
+            applied: true,
+        })
+        .unwrap();
+        assert_eq!(ack_frame, frames["plan_sync_ack"], "plan_sync_ack shape");
+
+        // Manifest content hash: fnv1a32("foobar") == fixture manifest files["goal.md"].
+        let manifest = &fx["manifest"];
+        let expected_hash = fnv1a32_hex("foobar");
+        assert_eq!(expected_hash, manifest["files"]["goal.md"].as_str().unwrap());
+    }
+
+    /// FNV-1a 32-bit is a 32-bit operation even for long strings.
+    #[test]
+    fn fnv1a32_stays_in_u32_range() {
+        let h = fnv1a32_hex("the quick brown fox jumps over the lazy dog");
+        assert_eq!(h.len(), 8);
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+    }
 
     /// Validate serde against the shared cross-repo fixture
     /// (`src/lib/tunnelProtocol.fixtures.json`, also consumed by the TS tests and
@@ -963,6 +1356,10 @@ mod tests {
         assert!(matches!(
             serde_json::from_value::<ClientMsg>(c["auth_no_fcm"].clone()).unwrap(),
             ClientMsg::Auth { fcm_token: None, .. }
+        ));
+        assert!(matches!(
+            serde_json::from_value::<ClientMsg>(c["set_fcm_token"].clone()).unwrap(),
+            ClientMsg::SetFcmToken { fcm_token } if fcm_token == "fcm-token-xyz"
         ));
         assert!(matches!(
             serde_json::from_value::<ClientMsg>(c["pane_set_state"].clone()).unwrap(),

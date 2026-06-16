@@ -36,15 +36,15 @@ type Modal =
 interface MenuState { x: number; y: number; bp: Blueprint; header?: boolean }
 interface Toast { id: string; text: string; accent?: boolean }
 
-function EditorHeader({ bp, onBack, onRename, onRedesc, onPublish, onAssistant, onMenu }: {
-  bp: Blueprint; onBack: () => void;
+function EditorHeader({ bp, active, onBack, onRename, onRedesc, onUse, onPublish, onAssistant, onMenu }: {
+  bp: Blueprint; active: boolean; onBack: () => void;
   onRename: (v: string) => void; onRedesc: (v: string) => void;
-  onPublish: () => void; onAssistant: () => void; onMenu: (e: React.MouseEvent) => void;
+  onUse: () => void; onPublish: () => void; onAssistant: () => void; onMenu: (e: React.MouseEvent) => void;
 }) {
   const g: BlueprintGist = bp.gist ?? { state: "local" };
-  const primary = g.state === "local" ? { label: "Publish to gist", ghost: false }
-    : g.state === "dirty" ? { label: "Publish update", ghost: false }
-    : { label: "Published ✓", ghost: true };
+  const publishLabel = g.state === "local" ? "Publish to gist"
+    : g.state === "dirty" ? "Publish update"
+    : "Published ✓";
   const chipCls = g.state === "dirty" ? "gchip dirty" : g.state === "local" ? "gchip local" : "gchip synced";
   const chipLabel = g.state === "local" ? "local only" : g.state === "dirty" ? "unpublished changes" : "synced · " + (g.rev ?? "r1");
   const h = bp.h ?? 70;
@@ -60,7 +60,15 @@ function EditorHeader({ bp, onBack, onRename, onRedesc, onPublish, onAssistant, 
       <div className="ed-acts">
         <span className={chipCls} title="Gist status"><i />{chipLabel}</span>
         <button className="btn ghost sm" onClick={onAssistant}><span>✦</span> Design with Claude</button>
-        <button className={"btn sm" + (primary.ghost ? " ghost" : " primary")} onClick={onPublish}>{primary.label}</button>
+        {/* Publish-to-gist demoted to a side action; Use is the main CTA (#662). */}
+        <button className="btn ghost sm" onClick={onPublish}>{publishLabel}</button>
+        <button
+          className={"btn sm" + (active ? "" : " primary")}
+          onClick={onUse}
+          disabled={active}
+          title={active ? "This blueprint seeds new projects" : "Use this blueprint for new projects"}
+          style={active ? { color: "var(--success)", borderColor: "var(--success)" } : undefined}
+        >{active ? "✓ in use" : "Use this blueprint"}</button>
         <button className="iconbtn" title="More" onClick={onMenu}>⋯</button>
       </div>
     </div>
@@ -71,6 +79,7 @@ export function BlueprintsPage() {
   const blueprints = useAppStore((s) => s.blueprints);
   const githubToken = useAppStore((s) => s.githubToken);
   const setActiveBlueprint = useAppStore((s) => s.setActiveBlueprint);
+  const activeBlueprintId = useAppStore((s) => s.activeBlueprintId);
   const addBlueprint = useAppStore((s) => s.addBlueprint);
   const duplicateBlueprint = useAppStore((s) => s.duplicateBlueprint);
   const updateBlueprintMeta = useAppStore((s) => s.updateBlueprintMeta);
@@ -107,12 +116,17 @@ export function BlueprintsPage() {
     return () => window.removeEventListener("click", h);
   }, [menu]);
 
+  // Opening a card edits it — it does NOT make it the active blueprint. Only the explicit
+  // "use" / "Use this blueprint" CTA selects (#662).
   function openBp(id: string) {
     const b = blueprints.find((x) => x.id === id);
     setActiveId(id);
-    setActiveBlueprint(id);
     setSelStage(b?.sections[0]?.uid ?? null);
     setView("editor");
+  }
+  function selectBlueprint(id: string) {
+    setActiveBlueprint(id);
+    toast(`"${blueprints.find((b) => b.id === id)?.name ?? id}" selected — it'll seed new projects`, true);
   }
 
   // ── create / duplicate / delete ──
@@ -251,9 +265,10 @@ export function BlueprintsPage() {
     <div className="bp-page">
       {view === "editor" && active ? (
         <>
-          <EditorHeader bp={active} onBack={() => setView("library")}
+          <EditorHeader bp={active} active={active.id === activeBlueprintId} onBack={() => setView("library")}
             onRename={(v) => updateBlueprintMeta(active.id, { name: v })}
             onRedesc={(v) => updateBlueprintMeta(active.id, { desc: v })}
+            onUse={() => selectBlueprint(active.id)}
             onPublish={() => setModal({ type: "publish" })} onAssistant={() => setDrawer({})} onMenu={headerMenu} />
           <BlueprintEditorView sections={active.sections} selectedUid={selStage} onSelect={setSelStage} onChange={onSectionsChange} skillLibrary={skillLibrary} />
         </>
@@ -266,6 +281,8 @@ export function BlueprintsPage() {
       ) : (
         <div className="scroll">
           <LibraryView blueprints={blueprints} onOpen={openBp} onMenu={onCardMenu}
+            activeId={activeBlueprintId}
+            onUse={selectBlueprint}
             onNew={() => setModal({ type: "new" })} onImport={() => setView("catalog")} />
         </div>
       )}

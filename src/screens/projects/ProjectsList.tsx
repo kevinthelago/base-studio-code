@@ -216,7 +216,7 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -227,6 +227,10 @@ export function ProjectsList() {
   const [deleteTarget, setDeleteTarget] = useState<GhProject | null>(null);
   const [deleting, setDeleting]   = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  // On-disk local projects (#…) — the durable source of truth for unpublished work, since the
+  // store's draft map drifts out of sync with the `projects/` dir.
+  const [localProjects, setLocalProjects] = useState<{ key: string; title: string; hasPlan: boolean; updatedAt: number }[]>([]);
   // Live fleet (for the per-project "agents running" pill).
   const { workers } = useFleetLive();
 
@@ -253,6 +257,30 @@ export function ProjectsList() {
   useEffect(() => {
     if (activeScreen === "projects") fetchProjects();
   }, [activeScreen, fetchProjects]);
+
+  // Enumerate on-disk local projects whenever the tab opens, so unpublished local work always
+  // shows even when it isn't in the store's draft map or on GitHub (#…).
+  useEffect(() => {
+    if (activeScreen !== "projects") return;
+    invoke<{ key: string; title: string; hasPlan: boolean; updatedAt: number }[]>("list_local_projects")
+      // Coerce to an array: a null/garbage return would make `for (const lp of localProjects)`
+      // non-iterable and throw during render (#874).
+      .then((list) => setLocalProjects(Array.isArray(list) ? list : []))
+      .catch(() => setLocalProjects([]));
+  }, [activeScreen]);
+
+  // Reconcile legacy board node ids → on-disk folder keys (#…). The alias was never populated, so
+  // a project opened from the board keyed its store state under the node id, splitting it from the
+  // title-keyed on-disk hub. When a published project has a matching local folder and no alias yet,
+  // record it — safely (record-if-absent never clobbers a publish-set alias; only fires when the
+  // folder actually exists, so we never alias to a phantom key).
+  useEffect(() => {
+    for (const p of projects) {
+      if (projectKeyAlias[p.id]) continue;
+      const folderKey = sanitizeProjectKey(p.title);
+      if (localProjects.some(lp => lp.key === folderKey)) setProjectKeyAlias(p.id, folderKey);
+    }
+  }, [projects, localProjects, projectKeyAlias, setProjectKeyAlias]);
 
   // The GitHub Projects v2 board now lives on the GitHub page (#498).
   function handleOpenGithubBoard(p: GhProject) {
@@ -349,10 +377,29 @@ export function ProjectsList() {
     setProjectsView("planning");
   }
 
-  function deleteDraft(key: string) {
-    removeDraftProject(key);
-    deleteLocalProject([key]);
-    void invoke("delete_project_dir", { projectKey: key }).catch(() => {});
+  // Delete a local/draft project: remove its on-disk folder FIRST (awaited, so a failure —
+  // e.g. the folder is open in a console session — surfaces instead of silently leaving it to
+  // reappear on the next scan), then clear the store entries AND prune it from `localProjects`
+  // so the card disappears immediately (it isn't in the draft map, so removeDraftProject alone
+  // never removed it).
+  async function deleteDraft(key: string) {
+    setDraftError(null);
+    try {
+      await invoke("delete_project_dir", { projectKey: key });
+    } catch (e) {
+      setDraftError(`Couldn't delete the folder for "${key}": ${e}. It may be open in a console session — close it and retry.`);
+      return;
+    }
+    // The folder is gone; clear the store + on-disk list. Guard the store mutations too —
+    // a throw here would otherwise become an unhandled rejection (and the card would linger)
+    // rather than a surfaced error (#874).
+    try {
+      removeDraftProject(key);
+      deleteLocalProject([key]);
+      setLocalProjects(prev => (Array.isArray(prev) ? prev : []).filter(lp => lp.key !== key));
+    } catch (e) {
+      setDraftError(`Removed the folder for "${key}" but couldn't update the project list: ${e}.`);
+    }
   }
 
   const repos = new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? []));
@@ -496,18 +543,36 @@ export function ProjectsList() {
 
         {(() => {
           const publishedTitles = new Set(visibleProjects.map(p => p.title.toLowerCase()));
-          const drafts = Object.entries(localDraftProjects)
-            .filter(([, d]) => !publishedTitles.has(d.title.toLowerCase()))
-            .sort((a, b) => b[1].createdAt - a[1].createdAt);
+          // Merge the on-disk projects (durable truth) with the store's draft map (carries the
+          // pitch), keyed by project key, then drop any that are already published (#…).
+          const byKey = new Map<string, { key: string; title: string; pitch: string; sort: number }>();
+          for (const lp of Array.isArray(localProjects) ? localProjects : []) {
+            if (!lp?.hasPlan) continue; // skip bare scaffold dirs
+            byKey.set(lp.key, { key: lp.key, title: lp.title, pitch: "", sort: lp.updatedAt });
+          }
+          for (const [key, d] of Object.entries(localDraftProjects)) {
+            const ex = byKey.get(key);
+            byKey.set(key, { key, title: d.title, pitch: d.pitch, sort: Math.max(ex?.sort ?? 0, d.createdAt) });
+          }
+          const drafts = [...byKey.values()]
+            .filter(d => !publishedTitles.has(d.title.toLowerCase()))
+            .sort((a, b) => b.sort - a.sort);
           if (drafts.length === 0) return null;
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 10 }}>
-              {drafts.map(([key, d]) => (
-                <div key={key} style={{
+              {draftError && (
+                <div style={{
+                  padding: "8px 12px", borderRadius: "var(--r-md)", fontFamily: "var(--mono)", fontSize: 11,
+                  color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)",
+                  border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
+                }}>{draftError}</div>
+              )}
+              {drafts.map(d => (
+                <div key={d.key} style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
                   background: "var(--bg-elev)", border: "1px dashed var(--border-soft)", borderRadius: "var(--r-md)",
                 }}>
-                  <div onClick={() => reopenDraft(key, d)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
+                  <div onClick={() => reopenDraft(d.key, d)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span className="tag amber">draft</span>
                       <span style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg)" }}>{d.title}</span>
@@ -520,11 +585,11 @@ export function ProjectsList() {
                   <button
                     className="btn ghost"
                     style={{ height: 24, padding: "0 8px", fontSize: 10.5, color: "var(--fg-muted)" }}
-                    onClick={() => reopenDraft(key, d)}
+                    onClick={() => reopenDraft(d.key, d)}
                   >resume →</button>
                   <button
                     title="Delete draft (removes its local plan files)"
-                    onClick={() => deleteDraft(key)}
+                    onClick={() => deleteDraft(d.key)}
                     style={{ background: "none", border: "none", cursor: "pointer", color: "var(--fg-dim)", padding: 4 }}
                   ><Trash2 size={14} /></button>
                 </div>

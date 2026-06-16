@@ -38,6 +38,12 @@ export const REPOS_KEY = "repos";
  *  skills store. See {@link parseSkillsFile} in lib/skills. (#404) */
 export const SKILLS_KEY = "skills";
 
+/** The feature list file (JSON: `features.json` — an array of feature objects). The
+ *  authoritative artifact of the Features stage (#…): each entry is a user-facing capability
+ *  and a fleet stream. Surfaced by the poll like `fleet.json`; not rendered as a plan section —
+ *  it drives the Features board. See {@link parseFeaturesFile} in featureList. */
+export const FEATURES_KEY = "features";
+
 /** Parse `repos.json` into a deduped list of `owner/repo` full names. Accepts a bare
  *  JSON array of strings, or `{ "repos": [...] }`. Returns [] on blank/malformed. */
 export function parseReposFile(raw: string): string[] {
@@ -81,6 +87,11 @@ export interface AgentStream {
   flow?: AgentFlow;
   /** Per-stream integration-strategy override (#378). Unset ⇒ the fleet default. */
   strategy?: IntegrationStrategy;
+  /** GitHub login this stream's issues are assigned to at publish (#847). A worker is an
+   *  agent session, not a GitHub user, so this maps the stream to a human/collaborator
+   *  login. Unset ⇒ the publishing account (viewer). The `stream:<id>` label remains the
+   *  agent-ownership marker; this is the first-class GitHub assignee. */
+  assignee?: string;
   /** Per-capability permission posture chosen in the project pane's agent editor.
    *  When present it overrides the profile-derived posture in the pane. */
   perm?: Record<string, "allow" | "ask" | "deny">;
@@ -156,6 +167,27 @@ export const KNOWN_DIMENSIONS: { key: string; title: string }[] = [
 
 const TITLE_BY_KEY = new Map(KNOWN_DIMENSIONS.map(d => [d.key, d.title]));
 const ORDER_BY_KEY = new Map(KNOWN_DIMENSIONS.map((d, i) => [d.key, i]));
+
+// Reverse map (#…): a section the planner named after its DISPLAY TITLE ("Tech stack.md") or a
+// casing/separator variant is canonicalized back to its key ("stack"), so the Context gate —
+// which keys off goal/scope/stack/architecture — stays robust to how the file is named.
+const KEY_BY_TITLE = new Map(KNOWN_DIMENSIONS.map(d => [d.title.toLowerCase(), d.key]));
+// Synonyms with no separator / alternate wording the title map alone wouldn't catch.
+const KEY_ALIASES: Record<string, string> = {
+  techstack: "stack", "technology stack": "stack",
+  "data schema": "schema", personas: "users",
+};
+/**
+ * Map a section key/stem the planner may have written as a display title or alias (e.g.
+ * "Tech stack", "Tech_stack") back to its canonical key ("stack"). Canonical keys and unknown
+ * custom topics pass through unchanged.
+ */
+export function canonicalSectionKey(key: string): string {
+  const raw = key.trim();
+  if (TITLE_BY_KEY.has(raw)) return raw; // already canonical
+  const norm = raw.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return KEY_BY_TITLE.get(norm) ?? KEY_ALIASES[norm] ?? key;
+}
 
 // Words that should keep a specific casing rather than be Title-cased.
 const ACRONYMS: Record<string, string> = {
@@ -235,7 +267,7 @@ export function groupSections(keys: string[]): {
   const project: string[] = [];
   const byRepo = new Map<string, string[]>();
   for (const key of keys) {
-    if (key === SKIPPED_KEY || key === COMMANDS_KEY || key === FLEET_KEY || key === REPOS_KEY || key === SKILLS_KEY) continue;
+    if (key === SKIPPED_KEY || key === COMMANDS_KEY || key === FLEET_KEY || key === REPOS_KEY || key === SKILLS_KEY || key === FEATURES_KEY) continue;
     const info = parseSectionKey(key);
     if (info.tier === "repo" && info.repo) {
       const list = byRepo.get(info.repo) ?? [];
@@ -351,6 +383,7 @@ export function parseFleetFile(raw: string): FleetPlan | null {
         ? (so.perm as Record<string, "allow" | "ask" | "deny">) : undefined,
       preset: typeof so.preset === "string" && so.preset.trim() ? so.preset.trim() : undefined,
       strategy: normalizeStrategy(so.strategy),
+      assignee: typeof so.assignee === "string" && so.assignee.trim() ? so.assignee.trim() : undefined,
     });
   }
 

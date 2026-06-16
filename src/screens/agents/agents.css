@@ -118,9 +118,13 @@
 .agents-page .console-card .ch .cn { font-family: var(--mono); font-size: 13px; color: var(--fg); font-weight: 600; }
 .agents-page .console-card .ch .repo { font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim); }
 .agents-page .console-card .ch .spacer { flex: 1; }
-.agents-page .pane-row { display: grid; grid-template-columns: 170px 200px 1fr auto; gap: 14px; align-items: center; padding: 11px 16px; border-top: 1px solid var(--border-soft); }
+.agents-page .pane-row { display: grid; grid-template-columns: 188px 200px 1fr auto; gap: 14px; align-items: center; padding: 11px 16px; border-top: 1px solid var(--border-soft); }
 .agents-page .pane-row:first-of-type { border-top: 0; }
-.agents-page .pane-row .pident { display: flex; align-items: center; gap: 8px; }
+.agents-page .pane-row .pident { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* Title (type) stacked over subtitle (session) so neither clips the other (#740). */
+.agents-page .pane-row .psess { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.agents-page .pane-row .psess .pa,
+.agents-page .pane-row .psess .pstat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .agents-page .pane-row .pdot { width: 7px; height: 7px; border-radius: 50%; }
 .agents-page .pane-row .pdot.running { background: var(--success); }
 .agents-page .pane-row .pdot.awaiting { background: var(--accent); }
@@ -131,6 +135,16 @@
 .agents-page .prof-select .sw { width: 9px; height: 9px; border-radius: 3px; }
 .agents-page .prof-select .nm { color: var(--fg); }
 .agents-page .prof-select .cv { color: var(--fg-dim); margin-left: 2px; }
+/* prof-select dropdown menu (#681) */
+.agents-page .prof-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 100%;
+  display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 8px;
+  background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.agents-page .prof-opt { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border: none; border-radius: 5px;
+  background: none; cursor: pointer; font-family: var(--mono); font-size: 11px; color: var(--fg-muted); text-align: left; white-space: nowrap; }
+.agents-page .prof-opt:hover { background: var(--bg-elev2); color: var(--fg); }
+.agents-page .prof-opt.on { color: var(--fg); }
+.agents-page .prof-opt.on::after { content: "✓"; margin-left: auto; color: var(--accent); }
+.agents-page .prof-opt .sw { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 9px; }
 .agents-page .resolved { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--mono); font-size: 10px; color: var(--fg-dim); }
 .agents-page .resolved .lbl { text-transform: uppercase; letter-spacing: .06em; }
 .agents-page .rchip { padding: 1px 7px; border-radius: 99px; background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted); font-size: 10px; }

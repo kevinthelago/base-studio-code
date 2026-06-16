@@ -1,5 +1,8 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import { timed, formatPerfSummary } from "../lib/perf";
+import { useAppStore } from "../store";
+import type { PerfConfig } from "../store";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -82,5 +85,93 @@ describe("timed", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await expect(timed("boom", async () => { throw new Error("nope"); }, 0)).rejects.toThrow("nope");
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── perfConfig store slice ────────────────────────────────────────────────────
+
+const DEFAULT_CONFIG: PerfConfig = {
+  enabled: true,
+  intervalSecs: 2,
+  retentionHours: 24,
+  maxDbMb: 50,
+  trackProcess: true,
+  trackFrontend: true,
+};
+
+describe("perfConfig store slice", () => {
+  beforeEach(() => {
+    useAppStore.setState({ perfConfig: { ...DEFAULT_CONFIG } });
+    vi.clearAllMocks();
+  });
+
+  it("has default config with collection enabled at 2s", () => {
+    const { perfConfig } = useAppStore.getState();
+    expect(perfConfig.enabled).toBe(true);
+    expect(perfConfig.intervalSecs).toBe(2);
+  });
+
+  it("setPerfConfig updates the in-store config", () => {
+    useAppStore.getState().setPerfConfig({ ...DEFAULT_CONFIG, enabled: false, intervalSecs: 5 });
+    const { perfConfig } = useAppStore.getState();
+    expect(perfConfig.enabled).toBe(false);
+    expect(perfConfig.intervalSecs).toBe(5);
+  });
+
+  it("setPerfConfig calls perf_set_config on the backend", () => {
+    useAppStore.getState().setPerfConfig({ ...DEFAULT_CONFIG, retentionHours: 6 });
+    expect(invoke).toHaveBeenCalledWith(
+      "perf_set_config",
+      expect.objectContaining({ retentionHours: 6 }),
+    );
+  });
+
+  it("setPerfConfig passes camelCase keys matching the Rust command", () => {
+    useAppStore.getState().setPerfConfig({
+      enabled: true,
+      intervalSecs: 1,
+      retentionHours: 72,
+      maxDbMb: 10,
+      trackProcess: false,
+      trackFrontend: true,
+    });
+    expect(invoke).toHaveBeenCalledWith("perf_set_config", {
+      enabled: true,
+      intervalSecs: 1,
+      retentionHours: 72,
+      maxDbMb: 10,
+      trackProcess: false,
+      trackFrontend: true,
+    });
+  });
+});
+
+// ── perf_record_frontend_sample / perf_clear_history via mocked invoke ────────
+
+describe("perf backend commands (mocked invoke)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("perf_record_frontend_sample resolves without throwing", async () => {
+    await expect(
+      invoke("perf_record_frontend_sample", {
+        heapUsedMb: 128,
+        jankCount: 3,
+        jankTotalMs: 450,
+        ptyEvents: 20,
+        ptyBytes: 40960,
+      })
+    ).resolves.toBeNull();
+  });
+
+  it("perf_clear_history resolves without throwing", async () => {
+    await expect(
+      invoke("perf_clear_history")
+    ).resolves.toBeNull();
+  });
+
+  it("perf_get_config resolves without throwing", async () => {
+    await expect(
+      invoke("perf_get_config")
+    ).resolves.toBeNull();
   });
 });

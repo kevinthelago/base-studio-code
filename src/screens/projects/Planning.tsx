@@ -1,58 +1,62 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../../store";
-import { sanitizeProjectKey, resolveProjectKey } from "../../lib/projectPaths";
-import { ensureGithubProject, canLaunchTriage, triageLockReason, type TriageGateState } from "../../lib/projectSync";
+import { Dialog } from "../../components/Dialog";
+import { BlueprintUpdateModal } from "./BlueprintUpdateModal";
+import { sanitizeProjectKey } from "../../lib/projectPaths";
 import { useDragResize } from "../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "./ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
-import { buildProgressOverlay } from "./ghProgress";
-import type { IssueState, MilestoneState, NodeProgress } from "./ghProgress";
 import {
   parsePlanFocus, stripPlanFocus,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
   parseAllowCommands, stripAllowCommands,
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
+  buildSectionConfirmMessage,
 } from "./planningSession";
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, REPOS_KEY, SKILLS_KEY, parseReposFile, titleForKey, groupSections,
-  parseFleetFile,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
+  parseFleetFile, canonicalSectionKey,
 } from "./planSections";
-import { parseSkillsFile } from "../../lib/skills";
+import { parseFeaturesFile, featuresSummary, featureDefined } from "./featureList";
+import { buildWorkerScope } from "./workerScope";
+import { resolveIssueAssignee } from "./fleetAssignee";
+import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "./repoScaffold";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
-import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, validateIssues } from "./planIssues";
-import { derivePlanStageState, planStateToSignals } from "./planStageDerive";
-import { isGateBlocked } from "./pipelineRuntime";
+import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./planIssues";
+import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
+import { publishFleetRoster } from "../../lib/fleetRoster";
+import { hubToCanonical } from "../../lib/plannerSync";
+import { tunnelSetPlanState } from "../../lib/tunnelClient";
+import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
+import { effectiveProjectRepos, localReposFor } from "./projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
-import { pipelineScreen, type PipelineScreenComponent } from "./pipelineScreens";
-import { RENDER_PREVIEW_ID } from "./renderPreview";
-import { FILE_INTAKE_ID } from "./fileIntake";
-import { dispatchPipelineCommand } from "./pipelineCommands";
-import { parsePipelineTags, stripPipelineTags } from "./pipelineTag";
-import {
-  blueprintToStageConfig, incompleteSections, planSectionsComplete, currentSection, mkSection,
-  type BlueprintSection, type IncompleteSection,
-} from "./blueprints";
-import { writeBlueprintSkillContext } from "./blueprintSkills";
-import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
-import { featureSectionsToIssues, featureSlug, parseFeatureSection, incompleteFeatureSections } from "./planFeatures";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
-import { ProjectPane, type SyncState } from "./ProjectPane";
-import { Dialog } from "../../components/Dialog";
-import { parseUiPreviewTags, stripUiPreviewTags } from "./uiPreviewTag";
-import { dispatchGradePlan } from "./gradePlan";
+import { catalogLink, repoNameFromLink, mcpRepoName } from "../../lib/mcpInstall";
+import { type McpInstallState } from "./mcpPaneData";
+import { EXT_CATALOG } from "../../data/extensions";
 import { buildProjectPaneData } from "./projectPaneData";
-
-// Pipeline screens that are interactive surfaces — always available on their active stage,
-// unlike result screens (preview, grade) that only open once their pipeline has run (#654).
-const ALWAYS_OPEN_SCREENS = new Set<string>([FILE_INTAKE_ID]);
+// Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
+// (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
+// not a hardcoded stage list.
+import { derivePlanStageState, planStateToSignals, pendingStageConfirms } from "./planStageDerive";
+import { isGateBlocked } from "./pipelineRuntime";
+import { mkSection, planSectionsComplete, type BlueprintSection } from "./blueprints";
+import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, sectionForPhase } from "./focusedPlan";
+import { featureSectionsToIssues } from "./planFeatures";
+import { nextInjection, isStepDelivered, flattenPrompt } from "./plannerConductor";
+// Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
+// the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
+import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
+import { oneShotComplete } from "../../lib/claudeComplete";
+import { fleetProfilesComplete } from "../../lib/profileGen";
+import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "../../lib/issueProvenance";
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
   background:          "#181a1f",
@@ -88,143 +92,24 @@ function stripAnsi(s: string): string {
   );
 }
 
-
-interface PlanningRepoCloneState {
-  /** Full_names known to be cloned into the project hub. */
-  clonedNames: string[];
-  /** Full_names with a clone in flight. */
-  cloning: Set<string>;
-  /** Per-repo clone error message, keyed by full_name. */
-  cloneErrors: Record<string, string>;
-  /** Start (or retry) cloning a single repo by full_name. */
-  cloneRepo: (fullName: string) => void;
-}
-
-/**
- * Auto-clone every linked repo into the app-managed project directory as soon as
- * it appears, reporting per-repo clone status. Headless — the planning header's
- * repo pill surfaces the state (and triggers {@link PlanningRepoCloneState.retryFailed}
- * on click). Idempotent: a repo already cloned or mid-clone is skipped, so it is
- * safe to call with the canonical `publishRepos` set on every render.
- */
-function usePlanningRepoClone(projectId: string, repos: string[]): PlanningRepoCloneState {
-  const projectLocalRepos = useAppStore(s => s.projectLocalRepos);
-  const clonedNames = projectLocalRepos[projectId] ?? [];
-  const [cloning, setCloning] = useState<Set<string>>(new Set());
-  const [cloneErrors, setCloneErrors] = useState<Record<string, string>>({});
-  // Ref guards against starting the same clone twice across renders.
-  const cloningRef = useRef<Set<string>>(new Set());
-
-  const clone = (fullName: string) => {
-    cloningRef.current.add(fullName);
-    setCloning(s => new Set([...s, fullName]));
-    setCloneErrors(e => { const n = { ...e }; delete n[fullName]; return n; });
-    invoke<string>("clone_repo", { project: projectId, fullName })
-      .then(() => useAppStore.getState().addProjectRepo(projectId, fullName))
-      .catch(e => setCloneErrors(prev => ({ ...prev, [fullName]: String(e) })))
-      .finally(() => {
-        cloningRef.current.delete(fullName);
-        setCloning(s => { const n = new Set(s); n.delete(fullName); return n; });
-      });
-  };
-
-  // Auto-clone as soon as a repo appears. Keyed on the joined repo set (not the
-  // array identity) so a new repo_link / repos.json entry triggers a pass without
-  // re-running every render — and a failed clone is left for explicit retry rather
-  // than hammered each render.
-  const repoKey = repos.join(",");
-  useEffect(() => {
-    if (!projectId) return;
-    const currentCloned = new Set(useAppStore.getState().projectLocalRepos[projectId] ?? []);
-    for (const fullName of repos) {
-      if (!currentCloned.has(fullName) && !cloningRef.current.has(fullName)) clone(fullName);
+// Read the visible terminal rows (where Claude's input bar lives) and report whether they already
+// contain `snippet` — so a re-send doesn't duplicate a prompt that was pasted but never submitted.
+// Heuristic: a normalized substring match over the viewport. Best-effort; never throws.
+function terminalShows(term: Terminal | null, snippet: string): boolean {
+  if (!term || !snippet.trim()) return false;
+  try {
+    const buf = term.buffer.active;
+    let text = "";
+    for (let i = 0; i < term.rows; i++) {
+      text += " " + (buf.getLine(buf.baseY + i)?.translateToString(true) ?? "");
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, repoKey]);
-
-  return { clonedNames, cloning, cloneErrors, cloneRepo: clone };
-}
-
-// Header repo pill: shows the repo count + clone status; click to reveal the
-// per-repo list with clone/retry actions (replaces the old always-visible strip).
-function RepoPill({ repos, state }: { repos: string[]; state: PlanningRepoCloneState }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  if (repos.length === 0) {
-    return (
-      <span className="tag" title="Ask Claude to create or link repositories"
-        style={{ color: "var(--fg-dim)", opacity: 0.7 }}>no repos linked</span>
-    );
+    const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+    return norm(text).includes(norm(snippet));
+  } catch {
+    return false;
   }
-
-  const clonedSet = new Set(state.clonedNames);
-  const clonedCount = repos.filter(r => clonedSet.has(r)).length;
-  const failed = repos.filter(r => state.cloneErrors[r] && !state.cloning.has(r));
-  const allCloned = clonedCount === repos.length;
-  const n = repos.length;
-  const noun = `repo${n === 1 ? "" : "s"}`;
-  const label =
-    failed.length > 0 ? `${n} ${noun} · clone failed`
-    : state.cloning.size > 0 ? `${n} ${noun} · cloning…`
-    : allCloned ? `${n} cloned ${noun}`
-    : clonedCount > 0 ? `${clonedCount}/${n} cloned`
-    : `${n} ${noun}`;
-
-  return (
-    <span ref={ref} style={{ position: "relative", display: "inline-flex" }}>
-      <span
-        className="tag"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          cursor: "pointer",
-          color: failed.length ? "var(--danger)" : allCloned ? "var(--success)" : undefined,
-          borderColor: failed.length ? "var(--danger)" : undefined,
-        }}
-      >{label} {open ? "▴" : "▾"}</span>
-
-      {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 50,
-          minWidth: 240, maxWidth: 380, padding: 6,
-          background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
-          borderRadius: 8, boxShadow: "0 10px 30px rgba(0,0,0,.4)",
-          display: "flex", flexDirection: "column", gap: 2,
-          fontFamily: "var(--mono)", fontSize: 10.5,
-        }}>
-          {repos.map(r => {
-            const isCloned = clonedSet.has(r);
-            const isCloning = state.cloning.has(r);
-            const err = state.cloneErrors[r];
-            return (
-              <div key={r} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 6px" }}>
-                <span title={r} style={{ flex: 1, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r}</span>
-                {isCloned ? (
-                  <span style={{ color: "var(--success)" }}>● cloned</span>
-                ) : isCloning ? (
-                  <span style={{ color: "var(--accent)" }}>cloning…</span>
-                ) : (
-                  <span onClick={() => state.cloneRepo(r)}
-                    style={{ cursor: "pointer", color: err ? "var(--danger)" : "var(--accent)" }}>
-                    {err ? "retry clone →" : "clone →"}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </span>
-  );
 }
+
 // ── GitHub structure card ─────────────────────────────────────────────────────
 //
 // A live map of the GitHub objects this plan produces. Each node mirrors a real
@@ -245,60 +130,20 @@ const GH_STATUS_GLYPH: Record<GhItemStatus, { icon: string; color: string }> = {
   error:   { icon: "✗", color: "var(--danger)" },
 };
 
-// A small {closed}/{total} counter plus a thin progress bar, matching the
-// existing mono 9.5px detail styling. Rendered for rollup nodes (milestone /
-// repo / project) that carry a `total`.
-function ProgressMeter({ closed, total }: { closed: number; total: number }) {
-  const frac = total > 0 ? Math.max(0, Math.min(1, closed / total)) : 0;
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-      <span style={{ color: "var(--fg-dim)", fontSize: 9.5, fontFamily: "var(--mono)" }}>
-        {closed}/{total}
-      </span>
-      <span style={{
-        width: 36, height: 4, borderRadius: 2,
-        background: "var(--border-soft)", overflow: "hidden", flexShrink: 0,
-      }}>
-        <span style={{
-          display: "block", height: "100%",
-          width: `${Math.round(frac * 100)}%`, background: "var(--accent)",
-        }} />
-      </span>
-    </span>
-  );
-}
-
-function GhItemRow({ node, state, progress }: { node: GhNode; state: GhItemState; progress?: NodeProgress }) {
+function GhItemRow({ node, state }: { node: GhNode; state: GhItemState }) {
   const g = GH_STATUS_GLYPH[state.status];
-  // Live progression (#393 Layer 2) takes visual precedence over publish status:
-  // a green check + dimmed label for done issues, an inline meter for rollups.
-  const isDone = progress?.done === true;
-  const hasMeter = progress?.total !== undefined && progress.total > 0;
-  const icon  = isDone ? "✓" : g.icon;
-  const color = isDone ? "var(--success)" : g.color;
-  // Prefer the live issue link (#number) when the overlay carries one.
-  const liveUrl = progress?.url;
-  const liveNum = progress?.number;
   return (
     <div style={{
       display: "flex", alignItems: "baseline", gap: 8,
       fontFamily: "var(--mono)", fontSize: 10.5,
-      opacity: state.status === "planned" && !progress ? 0.6 : 1,
+      opacity: state.status === "planned" ? 0.6 : 1,
     }}>
-      <span style={{ width: 11, textAlign: "center", flexShrink: 0, color }}>{icon}</span>
+      <span style={{ width: 11, textAlign: "center", flexShrink: 0, color: g.color }}>{g.icon}</span>
       <span style={{
-        color: state.status === "error" ? "var(--danger)" : isDone ? "var(--fg-dim)" : "var(--fg)",
-        textDecoration: isDone ? "line-through" : "none",
+        color: state.status === "error" ? "var(--danger)" : "var(--fg)",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
       }}>{node.label}</span>
-      {hasMeter && <ProgressMeter closed={progress!.closed ?? 0} total={progress!.total!} />}
-      {liveUrl && liveNum !== undefined ? (
-        <a href={liveUrl} target="_blank" rel="noreferrer"
-          style={{ color: "var(--fg-dim)", fontSize: 9.5, textDecoration: "none" }}
-          title={liveUrl}>
-          #{liveNum} ↗
-        </a>
-      ) : state.url ? (
+      {state.url ? (
         <a href={state.url} target="_blank" rel="noreferrer"
           style={{ color: "var(--fg-dim)", fontSize: 9.5, textDecoration: "none" }}
           title={state.url}>
@@ -311,9 +156,8 @@ function GhItemRow({ node, state, progress }: { node: GhNode; state: GhItemState
   );
 }
 
-function GhGroup({ title, count, nodes, status, progress, empty }: {
-  title: string; count?: number; nodes: GhNode[]; status: GhStatusMap;
-  progress: Record<string, NodeProgress>; empty?: string;
+function GhGroup({ title, count, nodes, status, empty }: {
+  title: string; count?: number; nodes: GhNode[]; status: GhStatusMap; empty?: string;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -330,7 +174,7 @@ function GhGroup({ title, count, nodes, status, progress, empty }: {
         : (
           <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingLeft: 8 }}>
             {nodes.map(n => (
-              <GhItemRow key={n.id} node={n} state={status[n.id] ?? { status: "planned" }} progress={progress[n.id]} />
+              <GhItemRow key={n.id} node={n} state={status[n.id] ?? { status: "planned" }} />
             ))}
           </div>
         )
@@ -341,9 +185,7 @@ function GhGroup({ title, count, nodes, status, progress, empty }: {
 
 // Repositories group: each repo row owns its phase tracking issues, indented
 // beneath it with a connector so issue ownership is clear at a glance.
-function GhReposGroup({ repos, status, progress }: {
-  repos: GhRepoNode[]; status: GhStatusMap; progress: Record<string, NodeProgress>;
-}) {
+function GhReposGroup({ repos, status }: { repos: GhRepoNode[]; status: GhStatusMap }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
       <div style={{
@@ -362,7 +204,7 @@ function GhReposGroup({ repos, status, progress }: {
           <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 8 }}>
             {repos.map(r => (
               <div key={r.node.id} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                <GhItemRow node={r.node} state={status[r.node.id] ?? { status: "planned" }} progress={progress[r.node.id]} />
+                <GhItemRow node={r.node} state={status[r.node.id] ?? { status: "planned" }} />
                 {r.issues.length > 0 && (
                   <div style={{
                     display: "flex", flexDirection: "column", gap: 2,
@@ -370,7 +212,7 @@ function GhReposGroup({ repos, status, progress }: {
                     borderLeft: "1px solid var(--border-soft)",
                   }}>
                     {r.issues.map(iss => (
-                      <GhItemRow key={iss.id} node={iss} state={status[iss.id] ?? { status: "planned" }} progress={progress[iss.id]} />
+                      <GhItemRow key={iss.id} node={iss} state={status[iss.id] ?? { status: "planned" }} />
                     ))}
                   </div>
                 )}
@@ -383,12 +225,7 @@ function GhReposGroup({ repos, status, progress }: {
   );
 }
 
-function GitHubStructureCard({ structure, status, progress }: {
-  structure: GhStructure; status: GhStatusMap; progress: Record<string, NodeProgress>;
-}) {
-  // Overall rollup from the project node the overlay computes (matched issues
-  // across every repo). Drives the small "{closed}/{total} issues done" summary.
-  const overall = progress["project"];
+function GitHubStructureCard({ structure, status }: { structure: GhStructure; status: GhStatusMap }) {
   return (
     <div style={{
       padding: "12px 14px", borderRadius: 6,
@@ -398,34 +235,21 @@ function GitHubStructureCard({ structure, status, progress }: {
       flexShrink: 0,
     }}>
       <div style={{
-        display: "flex", alignItems: "center", gap: 10,
         color: "var(--info)", textTransform: "uppercase", letterSpacing: ".06em",
         fontFamily: "var(--mono)", fontSize: 10,
       }}>
-        <span>github structure</span>
-        {overall?.total !== undefined && overall.total > 0 && (
-          <span style={{
-            display: "inline-flex", alignItems: "center", gap: 6,
-            marginLeft: "auto", textTransform: "none", letterSpacing: 0,
-          }}>
-            <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>
-              {overall.closed ?? 0}/{overall.total} issues done
-            </span>
-            <ProgressMeter closed={overall.closed ?? 0} total={overall.total} />
-          </span>
-        )}
+        github structure
       </div>
-      <GhGroup title="Project board" nodes={[structure.project]} status={status} progress={progress} />
-      <GhGroup title="Milestones" count={structure.milestones.length} nodes={structure.milestones} status={status} progress={progress}
+      <GhGroup title="Project board" nodes={[structure.project]} status={status} />
+      <GhGroup title="Milestones" count={structure.milestones.length} nodes={structure.milestones} status={status}
         empty="defined by the Phases section" />
-      <GhReposGroup repos={structure.repos} status={status} progress={progress} />
+      <GhReposGroup repos={structure.repos} status={status} />
       {structure.streams.length > 0 && (
         <GhGroup
           title="Agents"
           count={structure.streams.length}
           nodes={structure.streams.map(s => ({ id: s.id, label: `${s.label} · stream:${s.id.replace(/^stream:/, "")}` }))}
           status={status}
-          progress={progress}
         />
       )}
     </div>
@@ -444,24 +268,21 @@ export function Planning({ visible }: { visible: boolean }) {
     projectLocalRepos,
     planSections, planConfirmedSections,
     planFleet,
-    planAutomations,
-    planStageConfig,
-    uiScreens,
-    uiApproved,
-    blueprints,
-    activeBlueprintId,
-    stagePipelineRuns,
     projectKeyAlias,
     pinnedContext,
-    setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow, setPlanAgentStreamStrategy,
-    setPlanDirectorDrive,
+    blueprints, activeBlueprintId, planStageConfig,
+    uiScreens, uiApproved, planAutomations, stagePipelineRuns,
+    setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
     togglePinnedContext,
-    addProjectRepo, fleetStartProject, removeDraftProject, clearPlan,
+    addProjectRepo, fleetStartProject,
     agentProfiles,
     commands, schedules,
-    pendingPlannerPrompt, clearPlannerPrompt,
-    projectBlueprintId, applyBlueprintToProject, setActiveBlueprint,
+    confirmPlanSection,
   } = useAppStore();
+  const autoPlanWithClaude = useAppStore(s => s.autoPlanWithClaude);
+  const claudeApiKey = useAppStore(s => s.claudeApiKey);
+  // The extensions store drives the MCP stage pane (#878); the base dir is read on demand.
+  const extensions = useAppStore(s => s.extensions);
 
   // The session key (set once at session entry) is the single source of truth
   // for the planning directory, PTY slot, and plan buckets — identical to the
@@ -472,54 +293,31 @@ export function Planning({ visible }: { visible: boolean }) {
   // `activeProjectId` set = the GitHub node id) maps to the stable folder/data
   // key its plan files live under, instead of an empty node-id key.
   const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
-  // One canonical resolver (#380) — the same helper everything per-project keys off, so
-  // a write (addProjectRepo) and a later read (the linked-repo list) never diverge.
-  const sessionKeyRef = useRef(resolveProjectKey(rawSessionKey, projectKeyAlias));
+  const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
-
-  // Blueprint mismatch (#647): a project seeded with one blueprint, but a different one
-  // is selected. Prompt before opening — reset to the selected blueprint, or keep the
-  // project's. `mismatchAck` resets per project so re-opening re-checks.
-  const [mismatchAck, setMismatchAck] = useState(false);
-  useEffect(() => { setMismatchAck(false); }, [effectiveProjectId]);
-  const projectBpId = projectBlueprintId[effectiveProjectId];
-  const blueprintMismatch = !!projectBpId && projectBpId !== activeBlueprintId && !mismatchAck;
-  const projectBpName = blueprints.find((b) => b.id === projectBpId)?.name ?? projectBpId ?? "";
-  const activeBpName = blueprints.find((b) => b.id === activeBlueprintId)?.name ?? activeBlueprintId;
-  // Reveal the project hub so the user can back up authored plan files before a reset (#647).
-  const exportProjectFiles = async () => {
-    try {
-      const path = await invoke<string>("project_dir_path", { projectKey: effectiveProjectId });
-      await revealItemInDir(path);
-    } catch (e) { console.error("export project files failed:", e); }
-  };
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
   const paneId = `planning_${effectiveProjectId.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 80)}`;
+  // The planner's hub dir (set once setup_workspaces resolves) + whether the relay is live —
+  // used to mirror the planner pane + sync the plan over the tunnel (#801).
+  const [planningDir, setPlanningDir] = useState("");
+  const tunnelRunning = useAppStore((s) => s.tunnelRunning);
 
-  // Deliver a queued planner prompt (e.g. the file-intake "Route" action) into the live
-  // planner PTY — a deliberate, user-triggered inject — then clear it. (#604)
-  const queuedPrompt = pendingPlannerPrompt[effectiveProjectId];
-  useEffect(() => {
-    if (!queuedPrompt) return;
-    invoke("pty_write", { paneId, data: `${queuedPrompt}\r` }).catch(console.error);
-    clearPlannerPrompt(effectiveProjectId);
-  }, [queuedPrompt, paneId, effectiveProjectId, clearPlannerPrompt]);
+  // The repos linked to this project (#833). For a published project that's the board's repos;
+  // for an UNPUBLISHED one it's the linked+cloned set persisted under effectiveProjectId — so a
+  // repo linked before publish survives a restart instead of needing to be re-linked. Memoized
+  // so the headless auto-clone effect below doesn't see a fresh array ref (and re-run) each render.
+  const effectiveRepos: string[] = useMemo(
+    () => effectiveProjectRepos(activeProjectId, effectiveProjectId, activeProjectRepos, projectLocalRepos),
+    [activeProjectId, effectiveProjectId, activeProjectRepos, projectLocalRepos],
+  );
 
-  // Prefer activeProjectRepos (populated from board items) but fall back to
-  // any previously-cloned repos for this project if the board hasn't loaded yet.
-  const effectiveRepos: string[] = activeProjectId
-    ? (activeProjectRepos.length > 0
-        ? activeProjectRepos
-        // Fall back to the canonical (alias-resolved) key, never the raw node id, so reads
-        // and writes can't land on divergent projectLocalRepos entries (#380).
-        : (projectLocalRepos[effectiveProjectId] ?? []))
-    : [];
-
-  // Full_names that are both linked to this project and known to be cloned.
+  // Full_names that are both linked to this project and known to be cloned. Read the persisted
+  // set under BOTH keys (title-derived + node id) so it matches effectiveRepos — otherwise a
+  // repo linked under the other key is in effectiveRepos but missing here (#881).
   const linkedRepos: string[] =
-    (projectLocalRepos[effectiveProjectId] ?? []).filter(r =>
+    localReposFor(projectLocalRepos, effectiveProjectId, activeProjectId).filter(r =>
       effectiveRepos.includes(r)
     );
 
@@ -528,26 +326,34 @@ export function Planning({ visible }: { visible: boolean }) {
 
   const isExisting = !!activeProjectId;
 
+  // Eager auto-clone (#508): the visible repo strip was removed from the header, but its
+  // clone engine lives on headlessly here. Each linked / <repo_link>-surfaced repo is cloned
+  // into the project dir as soon as it appears, populating projectLocalRepos → linkedRepos →
+  // setup_workspaces, so the planner can read repo contents during planning (triage launch
+  // re-clones fail-soft, but that's too late for in-session context). Idempotent on the Rust side.
+  const autoCloneRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    const repos = [...new Set([...effectiveRepos, ...repoLinkFullNames])];
+    const cloned = new Set(useAppStore.getState().projectLocalRepos[effectiveProjectId] ?? []);
+    for (const fullName of repos) {
+      if (cloned.has(fullName) || autoCloneRef.current.has(fullName)) continue;
+      autoCloneRef.current.add(fullName);
+      invoke<string>("clone_repo", { project: effectiveProjectId, fullName })
+        .then(() => useAppStore.getState().addProjectRepo(effectiveProjectId, fullName))
+        .catch(e => console.error(`clone ${fullName} failed:`, e))
+        .finally(() => autoCloneRef.current.delete(fullName));
+    }
+  }, [effectiveProjectId, effectiveRepos, repoLinkFullNames]);
+
   // Canonical set of repos for publish/sync — union of project-linked repos,
   // Claude-surfaced repo_link tags, and the store's planningRepo fallback.
   // Feeds both handlePublish and the GitHubStructureCard.
   const publishRepos = [...new Set([
     ...effectiveRepos,
-    // The planner's repos.json — the persistent, resume-safe repo registration (a
-    // resumed session can't replay a stream-only <repo_link> tag, but it can write this
-    // file). This is what makes the right pane reliably show repos across reloads.
-    ...parseReposFile((planSections[effectiveProjectId] ?? {})[REPOS_KEY] ?? ""),
-    // Repos the planner linked + auto-cloned this project, persisted under the planning
-    // session key. effectiveRepos keys off the GitHub board id (empty for a not-yet-published
-    // project), so without this the visualizer/publish lose planner-linked repos on reload.
-    ...(projectLocalRepos[effectiveProjectId] ?? []),
     ...repoLinkFullNames,
     ...(planningRepo ? [planningRepo] : []),
   ])].filter(Boolean);
-
-  // Auto-clone the canonical repo set into the project hub as it grows; the header
-  // repo pill surfaces the per-repo clone status (click to reveal the list).
-  const repoClone = usePlanningRepoClone(effectiveProjectId, publishRepos);
 
   // Sections are DYNAMIC: derived from whatever section files Claude has written
   // (surfaced via the store), not a fixed list. The store — populated by the
@@ -567,21 +373,20 @@ export function Planning({ visible }: { visible: boolean }) {
   const sections = useMemo<Section[]>(() => {
     const keys = new Set<string>(ANCHOR_KEYS);
     for (const k of Object.keys(savedSections)) {
-      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== REPOS_KEY && k !== SKILLS_KEY) keys.add(k);
+      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY) keys.add(k);
     }
     const { project, repos } = groupSections([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
     return ordered.map(k => {
       const content = savedSections[k] ?? "";
       const state: SectionState = confirmedSet.has(k) ? "confirmed" : (content ? "drafted" : "pending");
-      // A per-repo feature section (#177) shows its parsed feature title (the section's
-      // heading, else the humanized slug) instead of the raw `feat__slug` topic.
-      const slug = featureSlug(k);
-      const title = slug ? parseFeatureSection(content, slug).title : titleForKey(k);
-      return { k, title, state, content };
+      return { k, title: titleForKey(k), state, content };
     });
   }, [savedSections, confirmedSet]);
 
+  // Key→section lookup (the section progress rail that also needed the tier grouping was
+  // removed in #776/#778 — the focused pane's blueprint-driven rail replaces it).
+  const sectionByKey = useMemo(() => new Map(sections.map(s => [s.k, s])), [sections]);
   // Sync the planner's commands.json (the reliable channel — surfaced by the file
   // poll like plan sections, so it can't be lost in the PTY stream) into the
   // per-project/repo command store. Additive: file commands merge in; manual
@@ -610,82 +415,176 @@ export function Planning({ visible }: { visible: boolean }) {
     if (fleet) useAppStore.getState().setPlanFleet(effectiveProjectId, fleet);
   }, [savedSections, effectiveProjectId]);
 
-  // Sync skills.json (the planner's CRUD channel into the global Skills library —
-  // surfaced by the poll like commands.json/fleet.json). Upsert by id/name-slug so
-  // a re-emitted definition refines in place. Runs only when the file changes.
-  const skillsSyncedRef = useRef("");
+  // Materialize least-privilege profiles for every stream (#819/#821). The planner writes profile
+  // ID references in fleet.json (e.g. `"profile": "engine-spine"`) but cannot create the
+  // AgentProfile objects — those live in app state. This reacts to the FLEET DATA itself (not to
+  // fleet.json content changing), so it fires for an already-synced project loaded from
+  // persistence and after HMR — exactly the cases the content-gated sync effect above misses.
+  // Whenever a stream lacks a resolvable profile the gate can't pass, so generate; idempotent, and
+  // once every stream resolves, `fleetProfilesComplete` is true and this is a no-op (no loop).
   useEffect(() => {
-    const raw = savedSections[SKILLS_KEY] ?? "";
-    if (raw === skillsSyncedRef.current) return;
-    skillsSyncedRef.current = raw;
-    const defs = parseSkillsFile(raw);
-    if (defs.length) useAppStore.getState().upsertSkills(defs);
-  }, [savedSections]);
+    const streams = planFleet[effectiveProjectId]?.streams ?? [];
+    if (streams.length > 0 && !fleetProfilesComplete(streams, agentProfiles)) {
+      useAppStore.getState().generateFleetProfiles(effectiveProjectId);
+    }
+  }, [planFleet, agentProfiles, effectiveProjectId]);
 
   // Title + derived GitHub object graph that the structure card renders and the
   // publish flow fills in. Kept in sync with handlePublish's own derivation.
   const goalForTitle = sections.find(s => s.k === "goal")?.content ?? "";
   const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
+  const ghStructure  = buildGhStructure(sections, publishRepos, projectTitle, planFleet[effectiveProjectId]);
 
-  // Per-repo feature plans (#177): each `repo__{short}__feat__{slug}` section becomes a
-  // synthetic granular issue, so it flows through the existing structure + publish
-  // machinery (one GitHub issue per feature, pinned to its phase milestone) — supplementing
-  // the per-phase tracking issues. Fold them into the `issues` section the builder reads.
-  const featureIssues = useMemo(
-    () => featureSectionsToIssues(sections, publishRepos),
-    [sections, publishRepos],
-  );
-  // Feature sections that failed the discovery gate (#490) — blocked from issue
-  // generation until they have behavior + acceptance. Surfaced as a UI warning.
-  const incompleteFeatures = useMemo(
-    () => incompleteFeatureSections(sections),
-    [sections],
-  );
-
-  // Modular planning stages (#512): the per-project config (defaulting to all-on)
-  // and the live snapshot the stage gates read, feeding the macro progress bar.
-  // The UI stage is gated on the blueprint (requiresUi = the `ui` stage being enabled,
-  // #544) and completes when the generated preview is approved (uiApproved). The other
-  // explicit ack/profile signals are wired in later slices.
-  // Seed a new project's stage config from the active blueprint on first plan, so it
-  // inherits the chosen preset, then diverges per-project as the user edits stages.
+  // ── Mobile relay: connect the planner session (#801) ──────────────────────────
+  // (1) Plan-sync — push the active project's canonical plan to the tunnel whenever it
+  // changes, so a paired mobile planner reconciles over the relay (E2E) instead of the API.
   useEffect(() => {
-    if (!effectiveProjectId) return;
-    const st = useAppStore.getState();
-    if (st.planStageConfig[effectiveProjectId]) return; // already has its own copy
-    const active = st.blueprints.find((b) => b.id === st.activeBlueprintId);
-    if (active) {
-      st.setProjectStageConfig(effectiveProjectId, blueprintToStageConfig(active));
-      st.setProjectBlueprintId(effectiveProjectId, active.id); // remember which blueprint seeded it (#647)
+    if (!tunnelRunning || Object.keys(savedSections).length === 0) return;
+    // Route the JSON manifests to their canonical relpaths; everything else is a `.md`
+    // section. commands.json/features.json are outside the canonical-sync contract (see
+    // isPlanFile), so they're not sent.
+    const md: Record<string, string> = {};
+    let phasesJson, issuesJson, fleetJson, reposJson, skippedContent: string | undefined;
+    for (const [k, v] of Object.entries(savedSections)) {
+      if (k === "phases") phasesJson = v;
+      else if (k === "issues") issuesJson = v;
+      else if (k === FLEET_KEY) fleetJson = v;
+      else if (k === "repos") reposJson = v;
+      else if (k === SKIPPED_KEY) skippedContent = v;
+      else if (k === COMMANDS_KEY || k === FEATURES_KEY) continue;
+      else md[k] = v;
     }
-  }, [effectiveProjectId]);
+    const { files, meta } = hubToCanonical({
+      projectTitle: effectiveProjectId, // sanitized key — derives the stable proj-<hex> id
+      sections: md,
+      confirmedSections: [...confirmedSet],
+      phasesJson, issuesJson, fleetJson, reposJson, skippedContent,
+    });
+    tunnelSetPlanState(meta.projectId, files).catch(() => {});
+  }, [tunnelRunning, savedSections, confirmedSet, effectiveProjectId]);
 
-  // Write the active blueprint's attached skills/knowledge to the hub's skills.md so the
-  // planner can read the context for the current stage (#636). Re-writes when the
-  // blueprint (or its attachments) changes; no-op when nothing is attached.
+  // (2) PTY mirror — expose the planner pane so a paired phone can view (and, if granted,
+  // drive) the live planner terminal. Cleared when the planner unmounts or the relay stops.
   useEffect(() => {
-    if (!effectiveProjectId) return;
-    const st = useAppStore.getState();
-    const active = st.blueprints.find((b) => b.id === st.activeBlueprintId);
-    if (active) void writeBlueprintSkillContext({ projectKey: effectiveProjectId, blueprint: active, skills: st.skills, kb: st.kbBlocks });
-  }, [effectiveProjectId, activeBlueprintId, blueprints]);
+    const setExtra = useAppStore.getState().setTunnelExtraPanes;
+    if (!tunnelRunning || !planningDir) { setExtra([]); return; }
+    setExtra([{ id: paneId, cwd: planningDir, name: `Planner — ${projectTitle}`, status: "running" as const }]);
+    return () => useAppStore.getState().setTunnelExtraPanes([]);
+  }, [tunnelRunning, planningDir, paneId, projectTitle]);
 
+  // Real plan data for the ProjectPane (#: wire-in). Maps the fleet, agent
+  // profiles, decomposed issues, phases, repos, and sections into the pane's
+  // render shapes; the pane falls back to its sample data when this is empty.
+  // Features defined in the Features stage (#…) — the planner writes features.json (one entry per
+  // user-facing capability / stream); the board renders them and the gate needs all fully defined.
+  const planFeatures = useMemo(
+    () => parseFeaturesFile(savedSections[FEATURES_KEY] ?? ""),
+    [savedSections],
+  );
+  // Per-server MCP install lifecycle (#878): seeded by a disk probe on mount, advanced by the
+  // download/build button. Keyed by extension id so the MCP pane shows real status.
+  const [mcpInstallState, setMcpInstallState] = useState<McpInstallState>({});
+  const paneData = useMemo(
+    () => buildProjectPaneData({
+      fleet:    planFleet[effectiveProjectId],
+      profiles: agentProfiles,
+      issues:   parseIssuesFile(sections.find(sec => sec.k === "issues")?.content ?? ""),
+      phases:   parsePhases(sections.find(sec => sec.k === "phases")?.content ?? ""),
+      repos:    publishRepos,
+      sections,
+      features: planFeatures,
+      pinned:   pinnedContext[effectiveProjectId],
+      extensions,
+      projectKey: effectiveProjectId,
+      mcpInstallState,
+    }),
+    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, extensions, mcpInstallState],
+  );
+
+  // Probe each downloadable MCP server's on-disk state so the pane opens with real status
+  // (downloaded? built?) instead of "available" for already-installed servers.
+  useEffect(() => {
+    const probe = paneData.mcpServers?.filter(s => s.downloadable) ?? [];
+    if (probe.length === 0) return;
+    let cancelled = false;
+    Promise.all(probe.map(async (s) => {
+      try {
+        const r = await invoke<{ downloaded: boolean; built: boolean }>("mcp_status", { name: mcpRepoName(s.name) });
+        return [s.id, r.built ? "ready" : r.downloaded ? "downloaded" : "available"] as const;
+      } catch { return [s.id, "available"] as const; }
+    })).then((rows) => {
+      if (cancelled) return;
+      setMcpInstallState((prev) => {
+        const next = { ...prev };
+        // Don't clobber an in-flight downloading/building status with a probe result.
+        for (const [id, st] of rows) if (next[id] !== "downloading" && next[id] !== "building") next[id] = st;
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+    // Re-probe only when the set of downloadable server ids changes.
+  }, [paneData.mcpServers?.filter(s => s.downloadable).map(s => s.id).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── MCP stage handlers (#878) ──────────────────────────────────────────────
+  const onToggleMcp = useCallback((id: string) => useAppStore.getState().toggleExtension(id), []);
+  const onRemoveMcp = useCallback((id: string) => useAppStore.getState().removeExtension(id), []);
+  const onAddMcp = useCallback((input: string) => {
+    const store = useAppStore.getState();
+    // A bare catalog name maps to its template; anything with a scheme is a remote URL; else a
+    // stdio command line. New servers are enabled + scoped to this project so the fleet gets them.
+    const link = catalogLink(input);
+    if (link || EXT_CATALOG.some(c => c.name.toLowerCase() === input.toLowerCase())) {
+      const name = EXT_CATALOG.find(c => c.name.toLowerCase() === input.toLowerCase())?.name ?? input;
+      applyMcpAssign(store, name, effectiveProjectId, store.bscBaseDir);
+      if (link) invoke("mcp_clone", { name: repoNameFromLink(link), url: link }).catch(() => {});
+      return;
+    }
+    const isUrl = /^https?:\/\//i.test(input);
+    store.addExtension({
+      kind: "mcp", name: input.split(/\s+/)[0].slice(0, 40) || "server", enabled: true, projects: [effectiveProjectId],
+      transport: isUrl ? "http" : "stdio",
+      ...(isUrl ? { url: input } : { command: input.split(/\s+/)[0], args: input.split(/\s+/).slice(1).join(" ") }),
+      env: [],
+    });
+  }, [effectiveProjectId]);
+  const onBuildMcp = useCallback(async (s: { id: string; name: string; status: string }) => {
+    const repo = mcpRepoName(s.name);
+    const link = catalogLink(s.name);
+    // Ensure it's downloaded, then build, tracking status so the pane reflects progress.
+    if (link && (s.status === "available")) {
+      setMcpInstallState(p => ({ ...p, [s.id]: "downloading" }));
+      try { await invoke("mcp_clone", { name: repo, url: link }); }
+      catch { setMcpInstallState(p => ({ ...p, [s.id]: "available" })); return; }
+    }
+    setMcpInstallState(p => ({ ...p, [s.id]: "building" }));
+    try {
+      const r = await invoke<{ ok: boolean }>("mcp_build", { name: repo });
+      setMcpInstallState(p => ({ ...p, [s.id]: r.ok ? "ready" : "error" }));
+    } catch {
+      setMcpInstallState(p => ({ ...p, [s.id]: "error" }));
+    }
+  }, []);
+
+  // ── Blueprint-driven plan model (#652) — restored (#776) ────────────────────
+  // The authoritative plan sections come from the active BLUEPRINT; each carries its own
+  // declarative gate over a flat signal bag — NOT a hardcoded stage list. The focused
+  // progress rail, current-phase, and advance/publish footer all read these. #668 deleted
+  // this whole substrate; the store data (blueprints, ui, automations, pipelines) survived.
   const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
-  // A project "needs UI" when its blueprint enables the `ui` stage (#544); the UI stage
-  // then shows in the N-bar and completes once every declared screen is approved (#546).
   const requiresUi = stageConfig.enabled.ui;
-  // Per-screen progress: total = screens the planner declared, approved = those signed
-  // off (intersected with the declared set, so a removed screen never inflates approval).
   const uiCounts = useMemo(() => {
     if (!requiresUi) return { approved: 0, total: 0 };
     const declared = uiScreens[effectiveProjectId] ?? [];
     const approvedSet = new Set(uiApproved[effectiveProjectId] ?? []);
     return { approved: declared.filter((s) => approvedSet.has(s)).length, total: declared.length };
   }, [requiresUi, uiScreens, uiApproved, effectiveProjectId]);
-  // The enabled stage ids (in order) for a project — passed to setup_workspaces so the
-  // planner's CLAUDE.md is scoped to the blueprint's stages (#542). Read fresh.
-  const stageIdsFor = (key: string) =>
-    enabledOrderedStages(useAppStore.getState().planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
+  // Per-repo feature plans (#177) fold into the issue count the gates read.
+  const featureIssues = useMemo(
+    () => featureSectionsToIssues(sections, publishRepos),
+    [sections, publishRepos],
+  );
+  const featureState = useMemo(() => featuresSummary(planFeatures), [planFeatures]);
+  // The live snapshot the declarative section gates read.
   const stageState = useMemo(() => {
     const streams = planFleet[effectiveProjectId]?.streams ?? [];
     const issueCount =
@@ -695,170 +594,71 @@ export function Planning({ visible }: { visible: boolean }) {
       repoCount: publishRepos.length,
       issueCount,
       fleetStreams: streams.length,
-      fleetProfilesComplete: streams.length > 0 && streams.every(st => agentProfiles.some(p => p.id === st.id)),
+      // Match each stream's ASSIGNED profile id (`st.profile`, e.g. `gen_<stream>`), NOT the
+      // stream id — generateAgentProfile never produces a profile whose id equals the stream id,
+      // so the old `p.id === st.id` check could never pass and the Permissions gate was stuck (#817).
+      fleetProfilesComplete: fleetProfilesComplete(streams, agentProfiles),
       automationsAck: (planAutomations[effectiveProjectId]?.length ?? 0) > 0,
       skillsAck: false,
       requiresUi,
       ui: uiCounts,
+      // Routing dropped design files to the project completes the UI stage — recorded as a
+      // confirmation of the `ui` section so it persists (#837).
+      uiRouted: confirmedSet.has("ui"),
+      features: featureState,
     });
-  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts]);
-
-  // The authoritative plan sections come from the BLUEPRINT object — not the hardcoded
-  // PLAN_STAGES enum (#…). Each section carries its own declarative gate, applicability,
-  // deps, and pipelines, so a built-in or a cloud-distributed section is treated the
-  // same. The N-bar, readiness, current-section, and "what's incomplete" all read these.
-  // Fallback (no active blueprint) synthesizes built-in sections from the project's
-  // enabled stage ids so the page still renders.
+  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, confirmedSet]);
+  // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
     const bp = blueprints.find(b => b.id === activeBlueprintId);
     if (bp) return bp.sections;
     return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
   }, [blueprints, activeBlueprintId, stageConfig]);
-
-  // The flat, serializable signal bag the declarative section gates read.
   const signals = useMemo(() => planStateToSignals(stageState), [stageState]);
-
   // Sections blocked by an unpassed gate pipeline (#532), straight from the blueprint.
   const blockedStages = useMemo(() => {
     const runs = stagePipelineRuns[effectiveProjectId] ?? {};
     const set = new Set<string>();
-    for (const sec of planSecs) {
-      if (isGateBlocked(sec.pipelines, runs)) set.add(sec.key);
-    }
+    for (const sec of planSecs) if (isGateBlocked(sec.pipelines, runs)) set.add(sec.key);
     return set;
   }, [planSecs, stagePipelineRuns, effectiveProjectId]);
 
-  // The current (reached) planning section — drives which pipelines' second screens show.
-  const currentStageId = useMemo(() => currentSection(planSecs, signals)?.key, [planSecs, signals]);
-
-  // Pipeline second screens for the reached section: its enabled pipelines that declare
-  // a screen. Sections own the page; pipelines render their own second surface here.
-  const stageScreens = useMemo(() => {
-    const section = planSecs.find(s => s.key === currentStageId && s.enabled);
-    const runs = stagePipelineRuns[effectiveProjectId] ?? {};
-    const out: { uid: string; id: string; name: string; Screen: PipelineScreenComponent }[] = [];
-    for (const p of section?.pipelines ?? []) {
-      if (!p.enabled) continue;
-      // Only open a pipeline's screen when it's actually active (#654): result screens
-      // (preview, grade) show once the pipeline has a non-idle run; interactive screens
-      // (file-intake's drop zone) are always available on their stage.
-      const status = runs[p.uid]?.status;
-      const active = ALWAYS_OPEN_SCREENS.has(p.id) || (!!status && status !== "idle");
-      if (!active) continue;
-      const Screen = pipelineScreen(p.id);
-      if (Screen) out.push({ uid: p.uid, id: p.id, name: p.name, Screen });
-    }
-    return out;
-  }, [planSecs, currentStageId, stagePipelineRuns, effectiveProjectId]);
-
-  const sectionsForGh = useMemo<Section[]>(() => {
-    if (featureIssues.length === 0) return sections;
-    const existing = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
-    const merged = JSON.stringify([...existing, ...featureIssues]);
-    return [
-      ...sections.filter(s => s.k !== "issues"),
-      { k: "issues", title: titleForKey("issues"), state: "drafted" as SectionState, content: merged },
-    ];
-  }, [sections, featureIssues]);
-
-  const ghStructure  = buildGhStructure(sectionsForGh, publishRepos, projectTitle, planFleet[effectiveProjectId]);
-
-  // Live status of each GitHub object, keyed by the ids in buildGhStructure.
-  const [ghStatus, setGhStatus] = useState<GhStatusMap>({});
-  // Live issue-progression overlay (#393 Layer 2): node id -> NodeProgress
-  // reflecting what's actually CLOSED/done on GitHub for a published project.
-  // Declared before paneData so the memo below can fold it into the pane data.
-  const [ghProgress, setGhProgress] = useState<Record<string, NodeProgress>>({});
-
-  // Real plan data for the ProjectPane (#: wire-in). Maps the fleet, agent
-  // profiles, decomposed issues, phases, repos, and sections into the pane's
-  // render shapes; the pane falls back to its sample data when this is empty.
-  const paneData = useMemo(
-    () => buildProjectPaneData({
-      fleet:    planFleet[effectiveProjectId],
-      profiles: agentProfiles,
-      // Hand-authored issues plus the per-repo feature sections (#177) so the pane's
-      // issue list matches the structure card and what publish creates.
-      issues:   [...parseIssuesFile(sections.find(sec => sec.k === "issues")?.content ?? ""), ...featureIssues],
-      phases:   parsePhases(sections.find(sec => sec.k === "phases")?.content ?? ""),
-      repos:    publishRepos,
-      sections,
-      pinned:   pinnedContext[effectiveProjectId],
-      // Live GitHub progression (#393 Layer 2) so the always-visible ProjectPane
-      // shows real milestone/issue percentages — not 0% — for a published project
-      // (#429). Same overlay the publish-time GitHubStructureCard renders.
-      progress: ghProgress,
-    }),
-    [planFleet, effectiveProjectId, agentProfiles, sections, featureIssues, publishRepos, pinnedContext, ghProgress],
-  );
-
-  // Run the grade-plan pipeline whenever the structure inputs actually change, so the
-  // always-visible ProjectPane's readiness report stays current (#445 → pipeline). The
-  // pipeline is the single source of truth — the pane reads it from sectionGrades.
-  //
-  // Gate on a stable CONTENT signature, not on the input references: publishRepos is a
-  // fresh array every render, so depending on it directly would re-fire the effect every
-  // render → dispatch → store write → re-render → … an infinite loop that floods the
-  // persist layer (storage.setItem/save) until the process OOMs.
-  const gradeIssuesContent = sections.find(s => s.k === "issues")?.content ?? "";
-  const gradePhasesContent = sections.find(s => s.k === "phases")?.content ?? "";
-  const gradeInputSig = JSON.stringify([effectiveProjectId, publishRepos, gradeIssuesContent, gradePhasesContent, featureIssues]);
-  useEffect(() => {
-    const issues = [...parseIssuesFile(gradeIssuesContent), ...featureIssues];
-    const phases = parsePhases(gradePhasesContent);
-    void dispatchGradePlan({ projectKey: effectiveProjectId, issues, phases, repos: publishRepos });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gradeInputSig]);
-
-  const [restarting, setRestarting] = useState(false);
-  // Signature of the inputs that were active when setup_workspaces last ran (#175).
-  // Compared against currentSig to show the "context updated" badge.
-  const [lastSetupSig, setLastSetupSig] = useState<string | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
-
-  const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
-
-  // Every enabled, applicable blueprint section complete/N/A → ready to triage (#551).
-  const planReady = useMemo(() => planSectionsComplete(planSecs, signals), [planSecs, signals]);
-
-  // Signature of the current inputs — changes when repos/kb/stages change (#175).
-  // Compared against lastSetupSig to decide whether to show the "context updated" badge.
-  const currentSig = useMemo(() => {
-    const repos  = [...linkedRepos].sort().join(",");
-    const kb     = kbBlocks.map(b => b.id).sort().join(",");
-    const stages = enabledOrderedStages(stageConfig).map(s => s.id).sort().join(",");
-    return `v1|${repos}|${kb}|${stages}`;
-  }, [linkedRepos, kbBlocks, stageConfig]);
-  const contextStale = lastSetupSig !== null && currentSig !== lastSetupSig;
-
-  const [triaging, setTriaging] = useState(false);
-  // Worktree creation error shown inline by the Triage button (#551).
-  const [triageError, setTriageError] = useState<string | null>(null);
-  // Locked-Triage feedback (#…): which sections to flag, and the "what's incomplete"
-  // banner. Clicking a locked Triage reveals exactly what's left to finish.
-  const [highlightSections, setHighlightSections] = useState<Set<string>>(new Set());
-  const [triageBlock, setTriageBlock] = useState<{ headline: string; items: IncompleteSection[] } | null>(null);
-  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (highlightTimer.current) clearTimeout(highlightTimer.current); }, []);
-  // Once the plan is ready the feedback is stale — clear it.
-  useEffect(() => { if (planReady) { setTriageBlock(null); setHighlightSections(new Set()); } }, [planReady]);
-
-  // Focused pane (#652): one phase at a time. `phases` derive from the enabled sections +
-  // signals; `focusActiveIdx` auto-follows the session. `focusSel` is user navigation:
-  // null ⇒ follow the active phase; a number ⇒ pinned to that phase. Reset on project /
-  // blueprint change so a switched plan opens on its current phase.
+  // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
+  // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user
+  // pick; reset on project/blueprint switch.
   const phases = useMemo(() => phasesFrom(planSecs, signals), [planSecs, signals]);
   const focusActiveIdx = useMemo(() => activeIndex(phases), [phases]);
   const [focusSel, setFocusSel] = useState<number | null>(null);
   useEffect(() => { setFocusSel(null); }, [effectiveProjectId, activeBlueprintId]);
   const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, phases.length);
   const focusGateReady = useMemo(() => currentGateReady(planSecs, signals), [planSecs, signals]);
-  const focusFooter = footerAction(focusSelectedIdx, focusActiveIdx, planReady, focusGateReady);
+  const planComplete = useMemo(() => planSectionsComplete(planSecs, signals), [planSecs, signals]);
+  // The active stage's drafted sections "approve & continue" confirms in one click (#807-followup)
+  // — so the user approves a whole stage at once instead of confirming each discovery file (for
+  // which the focused pane has no control). Empty ⇒ nothing pending (gate drives the button).
+  const pendingConfirm = useMemo(
+    () => pendingStageConfirms(phases[focusActiveIdx]?.key, sections),
+    [phases, focusActiveIdx, sections]);
+  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady);
+  // Let "approve & continue" light up as soon as there are drafted sections to confirm, even
+  // before the gate flips — clicking it performs that confirmation (see onPrimary below).
+  const focusFooter = footerRaw.kind === "approve-continue" && !footerRaw.enabled && pendingConfirm.length > 0
+    ? { ...footerRaw, enabled: true }
+    : footerRaw;
   const focusSelPhase = phases[focusSelectedIdx];
   const focusPill = focusSelPhase ? gatePill(focusSelPhase, blockedStages.has(focusSelPhase.key)) : "wait";
+
+  const [restarting, setRestarting] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false); // clear-plan confirmation modal (#…)
+
+  const [docsSync, setDocsSync] = useState<SyncState>("idle");
+  const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
+  const [triaging, setTriaging] = useState(false);
+  const [triageError, setTriageError] = useState<string | null>(null); // launch-failure surfacing (#551)
   type PublishPhase = "idle" | "running" | "done" | "error";
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
-  const [publishEarlyError, setPublishEarlyError] = useState<string | null>(null);
+  // Live status of each GitHub object, keyed by the ids in buildGhStructure.
+  const [ghStatus, setGhStatus] = useState<GhStatusMap>({});
 
   // The section Claude is currently discussing, driven by <plan_focus> tags.
   // Null until the first focus tag arrives. Highlights the matching card.
@@ -873,11 +673,235 @@ export function Planning({ visible }: { visible: boolean }) {
   const unlistenExit   = useRef<UnlistenFn | null>(null);
   // Accumulated stripped output used to scan for complete <plan_update> tags
   const bufRef         = useRef("");
+  // Autopilot (#746): an un-consumed copy of the planner's raw output (bufRef is drained by
+  // the tag parsers), for idle-detection + the user-sim.
+  const autopilotTxRef = useRef("");
+  const apLastSnapLen  = useRef(0);
+  const apLastAnswered = useRef(0);
   // Tracks whether the auto-send of the initial pitch has fired this session
   const initSentRef    = useRef(false);
   const initSendTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const confirmedCount     = sections.filter(s => s.state === "confirmed").length;
+
+  // ── Planning autopilot (#746) ───────────────────────────────────────────────
+  // Driven by the Settings "Automate planning with Claude" toggle. Answers the planner's own
+  // discovery questions from the pitch + confirms each stage, driving to a publishable plan for
+  // review (never auto-publishes). The snapshot reads the SAME PLAN_STAGES gate model ProjectPane
+  // renders, so the autopilot and the UI agree on what's left.
+  const autopilotProgressPct = useMemo(() => {
+    const required = PLAN_STAGES.filter(st => !st.optional);
+    const fleet = planFleet[effectiveProjectId];
+    const done = required.filter(st => isStageGateMet(st, sections, linkedRepos, fleet)).length;
+    return required.length ? Math.round((done / required.length) * 100) : 0;
+  }, [sections, linkedRepos, planFleet, effectiveProjectId]);
+  // The plan is "ready" when every non-optional stage's gate is met — gates the Triage launch
+  // (#444/#551) the same way the autopilot decides the plan is publishable.
+  // Triage unlocks on the SAME completion the focused footer publishes on — the blueprint-driven
+  // gate (planComplete). The legacy PLAN_STAGES check used different per-section confirmed-state
+  // criteria and could stay false after the blueprint plan was done, leaving triage locked even
+  // though the footer offered Publish (#823). The blueprint is the authoritative section model.
+  const planReady = planComplete;
+  // The blueprint's enabled stage ids — passed to setup_workspaces so the planner's CLAUDE.md
+  // is scoped to this project's stages (#542/#667). The refactor stopped passing this, which
+  // silently reverted a refactor/transform plan to the greenfield stage set. (#A — restored.)
+  const stageIdsFor = (key: string): string[] => {
+    const st = useAppStore.getState();
+    const bp = st.blueprints.find(b => b.id === st.activeBlueprintId);
+    if (bp) return bp.sections.filter(s => s.enabled).map(s => s.key);
+    return enabledOrderedStages(st.planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
+  };
+
+  // ── Context-updated badge (#175/#756) ───────────────────────────────────────
+  // currentSig = the live signature of the inputs (computed in Rust so its format/version can't
+  // drift from the baseline); lastSetupSig = the baseline setup_workspaces last wrote. When they
+  // diverge (you linked a repo / changed the blueprint mid-session, or the planner template
+  // version bumped), the "context updated · refresh" badge offers a regenerating restart.
+  const [currentSig, setCurrentSig]   = useState<string | null>(null);
+  const [lastSetupSig, setLastSetupSig] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    invoke<string>("compute_context_signature", {
+      repoFullNames: linkedRepos,
+      kbIds:         kbBlocks.map(b => b.id),
+      enabledStages: stageIdsFor(effectiveProjectId),
+    }).then(sig => { if (live) setCurrentSig(sig); }).catch(() => { if (live) setCurrentSig(null); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedRepos, kbBlocks, effectiveProjectId]);
+  // Re-read the baseline the backend last wrote — called on open and after every workspace
+  // setup (mount / link / restart), so the badge reflects the most recent regeneration.
+  const refreshSetupSig = useCallback(() => {
+    invoke<string>("get_context_signature", { projectKey: effectiveProjectId })
+      .then(s => setLastSetupSig(s || null)).catch(() => {});
+  }, [effectiveProjectId]);
+  useEffect(() => { refreshSetupSig(); }, [refreshSetupSig]);
+  const contextStale = !!currentSig && !!lastSetupSig && currentSig !== lastSetupSig;
+
+  // Blueprint-update modal (#827): when a project is opened whose blueprint/template version
+  // differs from the one it was seeded with (contextStale) AND it already has a plan, surface a
+  // modal so the user explicitly chooses go-back / restart / keep — rather than the old silent
+  // refresh, which restarted the planner into a destructive reconciliation that deleted plan files.
+  const [showBlueprintModal, setShowBlueprintModal] = useState(false);
+  const [bpModalAutoShown, setBpModalAutoShown] = useState(false);
+  const hasExistingPlan = Object.keys(savedSections).length > 0;
+  useEffect(() => { setBpModalAutoShown(false); setShowBlueprintModal(false); }, [effectiveProjectId]);
+  useEffect(() => {
+    if (contextStale && hasExistingPlan && !bpModalAutoShown) {
+      setShowBlueprintModal(true);
+      setBpModalAutoShown(true);
+    }
+  }, [contextStale, hasExistingPlan, bpModalAutoShown]);
+
+  const autopilotDeps: AutopilotDeps = {
+    pitch: planningPitch,
+    strategy: "llm",
+    snapshot: () => {
+      const len = autopilotTxRef.current.length;
+      const grew = len > apLastSnapLen.current;
+      apLastSnapLen.current = len;
+      const plannerAwaiting = !grew && len > apLastAnswered.current;
+      const fleet = planFleet[effectiveProjectId];
+      // Frontier = first NON-optional stage whose gate isn't met (optional stages never block).
+      const required = PLAN_STAGES.filter(st => !st.optional);
+      const frontier = required.find(st => !isStageGateMet(st, sections, linkedRepos, fleet));
+      // Confirmable = the frontier stage's required sections that are drafted but unconfirmed.
+      const confirmKeys = frontier
+        ? frontier.requiredConfirmed.filter(k => sectionByKey.get(k)?.state === "drafted")
+        : [];
+      const done = required.filter(st => isStageGateMet(st, sections, linkedRepos, fleet)).length;
+      return {
+        planReady: !frontier,
+        confirmKeys,
+        plannerAwaiting,
+        working: grew,
+        autoPublish: false, // the feature stops at a publishable plan for review
+        progress: { done, total: required.length, fraction: required.length ? done / required.length : 0 },
+      };
+    },
+    pendingOutput: () => autopilotTxRef.current.slice(apLastAnswered.current),
+    userSim: (system, user) => oneShotComplete(claudeApiKey, system, user),
+    sendReply: (text) => {
+      invoke("pty_write", { paneId, data: `${text}\r` }).catch(console.error);
+      apLastAnswered.current = autopilotTxRef.current.length;
+    },
+    confirm: (keys) => {
+      for (const k of keys) confirmPlanSection(effectiveProjectId, k);
+      const name = keys.map(k => titleForKey(k)).join(", ") || "section";
+      invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
+      apLastAnswered.current = autopilotTxRef.current.length;
+    },
+    mockPublish: () => { /* feature stops at publishable (autoPublish=false) — unused */ },
+    log: (e) => console.debug("[auto-plan]", e.action, e.detail ?? ""),
+  };
+  const autopilot = usePlanAutopilot(autopilotDeps, { enabled: autoPlanWithClaude && !!claudeApiKey });
+
+  // ── Planning conductor (#…): drive the planner step by step ─────────────────────────────
+  // Instead of front-loading the whole spec, inject ONE prompt at a time — the active stage's
+  // prompt (orientation), then each substep in turn — as the plan progresses. `nextInjection`
+  // (pure) decides what's next from the blueprint sections + confirmed artifacts; this effect
+  // owns the timing: send only when the planner's output has settled (so the text lands at the
+  // prompt, not mid-stream), and once-per-step via `injectedRef`. Resets on project/blueprint
+  // switch and on restart. NOTE: until the CLAUDE.md is slimmed to a bootstrap (a later slice),
+  // these injections supplement the front-loaded spec rather than replace it.
+  // What the conductor treats as "done" per substep: a confirmed discovery section, the
+  // features "propose" step once the list exists, and the per-feature loop items (each done when
+  // the feature is fully defined). Drives loop-by-loop advancement through the Features stage.
+  const conductorState = useMemo(() => {
+    const doneSubsteps = new Set<string>(confirmedSet);
+    if (planFeatures.length > 0) doneSubsteps.add("propose");
+    return {
+      doneSubsteps,
+      loops: { features: planFeatures.map(f => ({ id: f.slug, label: f.name, done: featureDefined(f) })) },
+    };
+  }, [confirmedSet, planFeatures]);
+  // ── Resilient delivery (#…) ─────────────────────────────────────────────────
+  // A step isn't "done" the moment we send it — sends get lost (the user types over it, the
+  // planner wanders). So we track DELIVERY: a step stays pending until the planner acts on it
+  // (its artifact appears, or — for steps with no measurable artifact — output simply grew in
+  // response). If a step isn't delivered within the idle window we re-inject ONCE silently; if it
+  // still doesn't land we stop and surface a "re-send" nudge. A pause toggle + manual re-send
+  // cover anything auto-recovery can't.
+  const deliveredRef = useRef<Set<string>>(new Set());
+  const pendingRef = useRef<{ id: string; prompt: string; atLen: number; quiet: number; retried: boolean } | null>(null);
+  const [nudgeStep, setNudgeStep] = useState<string | null>(null);
+  const [conductorPaused, setConductorPaused] = useState(false);
+  const resetConductor = useCallback(() => {
+    deliveredRef.current = new Set();
+    pendingRef.current = null;
+    setNudgeStep(null);
+  }, []);
+  useEffect(() => { resetConductor(); }, [effectiveProjectId, activeBlueprintId, resetConductor]);
+  // Re-send the current step (the nudge action + manual override): drop it from delivered + clear
+  // pending/nudge so the next tick re-injects it.
+  const resendCurrentStep = useCallback(() => {
+    const id = pendingRef.current?.id ?? nudgeStep;
+    if (id) deliveredRef.current.delete(id);
+    pendingRef.current = null;
+    setNudgeStep(null);
+  }, [nudgeStep]);
+
+  // Send a step's prompt to the planner: flatten to ONE line so the trailing Enter actually
+  // submits it (a multi-line paste just sits in the input). If it's already in the input bar
+  // (pasted but unsent), submit it instead of pasting a duplicate.
+  const sendPrompt = useCallback((prompt: string) => {
+    const line = flattenPrompt(prompt);
+    if (terminalShows(termRef.current, line.slice(0, 40))) {
+      invoke("pty_write", { paneId, data: "\r" }).catch(console.error); // already there → just submit
+    } else {
+      invoke("pty_write", { paneId, data: line + "\r" }).catch(console.error);
+    }
+  }, [paneId]);
+
+  const conductorTickRef = useRef({ len: 0, stable: 0 });
+  useEffect(() => {
+    if (!visible || conductorPaused) return;
+    const tick = () => {
+      const len = autopilotTxRef.current.length;
+      // Hold until the session is live (Claude has produced output) and — for fresh sessions —
+      // the pitch has been sent, so the first inject can't race the kickoff.
+      if (len === 0 || (!isExisting && !initSentRef.current)) return;
+
+      // A step is in flight — has it landed, or is it lost?
+      if (pendingRef.current) {
+        const p = pendingRef.current;
+        const delivered = isStepDelivered(p.id, {
+          outputGrew: len > p.atLen,
+          sectionKeys: new Set(Object.entries(savedSections).filter(([, v]) => !!v?.trim()).map(([k]) => k)),
+          startedFeatures: new Set(planFeatures.filter(f => f.behavior || (f.acceptance?.length ?? 0) > 0).map(f => f.slug)),
+          featuresExist: planFeatures.length > 0,
+        });
+        if (delivered) { deliveredRef.current.add(p.id); pendingRef.current = null; return; }
+        p.quiet += 1;
+        if (p.quiet < 2) return;             // give it a moment before deciding it's lost
+        if (!p.retried) {                    // one silent retry (re-submits if it's still sitting unsent)
+          p.retried = true; p.quiet = 0; p.atLen = len;
+          sendPrompt(p.prompt);
+        } else {                             // still lost → hand off to the user
+          setNudgeStep(p.id); pendingRef.current = null;
+        }
+        return;
+      }
+
+      // Nothing in flight — what's next? Resolve the active blueprint section BY KEY: phases is a
+      // filtered subset of planSecs (disabled / not-applicable sections like `ui` are dropped), so
+      // indexing planSecs with focusActiveIdx (a phases index) injects the WRONG stage's prompt
+      // once any earlier section is dropped (#815).
+      const activeSection = sectionForPhase(planSecs, phases[focusActiveIdx]);
+      const next = nextInjection(activeSection, deliveredRef.current, conductorState);
+      if (!next) { conductorTickRef.current.stable = 0; conductorTickRef.current.len = len; return; }
+      if (nudgeStep === next.id) return;     // blocked on a failed step, awaiting the user's re-send
+      // Idle gate: inject only after ~2 quiet ticks so we land at the prompt, not mid-stream.
+      const grew = len > conductorTickRef.current.len;
+      conductorTickRef.current.len = len;
+      conductorTickRef.current.stable = grew ? 0 : conductorTickRef.current.stable + 1;
+      if (conductorTickRef.current.stable < 2) return;
+      conductorTickRef.current.stable = 0;
+      pendingRef.current = { id: next.id, prompt: next.prompt, atLen: len, quiet: 0, retried: false };
+      sendPrompt(next.prompt);
+    };
+    const id = setInterval(tick, 1500);
+    return () => clearInterval(id);
+  }, [visible, conductorPaused, planSecs, phases, focusActiveIdx, conductorState, paneId, isExisting, nudgeStep, savedSections, planFeatures, sendPrompt]);
 
   // Mount xterm.js and spawn the planning PTY (once per Planning screen lifecycle).
   // pty_kill is called on unmount so navigating away ends the session cleanly.
@@ -931,6 +955,7 @@ export function Planning({ visible }: { visible: boolean }) {
 
         // Parse structured tags out of the stripped output stream.
         bufRef.current += stripAnsi(ev.payload);
+        autopilotTxRef.current += stripAnsi(ev.payload); // un-consumed copy for the autopilot (#746)
 
         // Quote-flexible helper: matches " U+0022, " U+201C, " U+201D so LLM
         // smart-quote output doesn't silently break tag detection.
@@ -946,7 +971,7 @@ export function Planning({ visible }: { visible: boolean }) {
         );
         let foundPlan = false;
         while ((m = planRe.exec(bufRef.current)) !== null) {
-          const key     = m[1];
+          const key     = canonicalSectionKey(m[1]);
           const content = m[2].trim();
           // Any \w+ key is a valid section (dynamic planner). Persist to the
           // store unless the user already confirmed it — confirmed sections are
@@ -986,7 +1011,7 @@ export function Planning({ visible }: { visible: boolean }) {
           setRepoLinkFullNames(prev =>
             prev.includes(fullName) ? prev : [...prev, fullName]
           );
-          // usePlanningRepoClone auto-clones when the repo set grows — no action needed here.
+          // The headless auto-clone effect clones repos as repoLinkFullNames grows — no action needed here.
           foundLink = true;
         }
         if (foundLink) {
@@ -994,36 +1019,6 @@ export function Planning({ visible }: { visible: boolean }) {
             new RegExp(`<repo_link\\s+full_name=${Q}[^\\u0022\\u201c\\u201d]+${Q}\\s*\\/>`, 'g'),
             ""
           );
-        }
-
-        // ── <ui_preview screen="..." mode="2d|3d" /> ─────────────────────────
-        // The render-preview trigger (#533): read the project's .ui-skeleton from
-        // disk and render the named screen live in the third pane. Last tag wins.
-        const previews = parseUiPreviewTags(bufRef.current);
-        if (previews.length > 0) {
-          bufRef.current = stripUiPreviewTags(bufRef.current);
-          const last = previews[previews.length - 1];
-          // Register every declared screen so the UI stage's denominator is complete
-          // even when only the last tag is rendered (#546).
-          for (const p of previews) useAppStore.getState().addUiScreen(projIdSnap, p.screen);
-          // <ui_preview> is an alias for render-preview's `run`: route it through the
-          // command bus so it shares the single command path (the pipeline owns reading
-          // the skeleton + dispatching the render).
-          void dispatchPipelineCommand(RENDER_PREVIEW_ID, "run", {
-            projectKey: projIdSnap, args: { screen: last.screen, mode: last.mode },
-          });
-        }
-
-        // ── <pipeline id="…" cmd="…" …args /> ─────────────────────────────────
-        // The standardized command surface (#…): Claude drives any registered pipeline
-        // through the bus. <ui_preview> above is the render-preview alias; every other
-        // pipeline command flows through here. The pipeline owns what each command does.
-        const pipeTags = parsePipelineTags(bufRef.current);
-        if (pipeTags.length > 0) {
-          bufRef.current = stripPipelineTags(bufRef.current);
-          for (const t of pipeTags) {
-            void dispatchPipelineCommand(t.id, t.cmd, { projectKey: projIdSnap, args: t.args });
-          }
         }
 
         // ── <kb_assign id="block-id" /> ───────────────────────────────────────
@@ -1064,20 +1059,6 @@ export function Planning({ visible }: { visible: boolean }) {
           bufRef.current = bufRef.current.replace(/<automation_assign[^/]*\/>/g, "");
         }
 
-        // ── <mcp_assign name="Postgres" /> (#174) ─────────────────────────────
-        // Assign an MCP server/extension to this project. Reuses the Extensions
-        // subsystem: each assignment adds/enables a catalog-derived ExtensionDef
-        // scoped to this project, so the existing resolveExtensions → paneExtensions
-        // → .mcp.json launch wiring loads it into every build/triage session (no new
-        // store slice). Idempotent — re-emitting the same name just re-scopes it.
-        const mcpNames = parseMcpAssigns(bufRef.current);
-        if (mcpNames.length > 0) {
-          for (const name of mcpNames) {
-            applyMcpAssign(useAppStore.getState(), name, projIdSnap);
-          }
-          bufRef.current = stripMcpAssigns(bufRef.current);
-        }
-
         // ── <startup_script repo="owner/repo" mode="dev|triage" path="..." /> ──
         // Registers a per-repo starting script the planner wrote to prompts/.
         // The path is relative to the project dir; resolve it to a unified-store
@@ -1116,7 +1097,7 @@ export function Planning({ visible }: { visible: boolean }) {
         const fleetMeta = parseFleetPlan(bufRef.current);
         if (fleetMeta) {
           const store = useAppStore.getState();
-          store.setPlanFleetMeta(projIdSnap, fleetMeta.recommended, fleetMeta.reasoning, fleetMeta.strategy);
+          store.setPlanFleetMeta(projIdSnap, fleetMeta.recommended, fleetMeta.reasoning, fleetMeta.strategy); // #C
           store.setPlanDirector(projIdSnap, fleetMeta.director, fleetMeta.directorRole);
           bufRef.current = stripFleetPlan(bufRef.current);
         }
@@ -1128,6 +1109,27 @@ export function Planning({ visible }: { visible: boolean }) {
           const store = useAppStore.getState();
           for (const st of agentStreams) store.addPlanAgentStream(projIdSnap, st);
           bufRef.current = stripAgentAssigns(bufRef.current);
+        }
+
+        // ── <mcp_assign name="…" /> — scope an MCP server/extension to this project (#174).
+        // The template instructs the planner to emit these; the refactor had unwired the parser
+        // so the assignments were silently dropped (never loaded into the fleet). Restored (#754).
+        const mcpNames = parseMcpAssigns(bufRef.current);
+        if (mcpNames.length > 0) {
+          const store = useAppStore.getState();
+          for (const name of mcpNames) {
+            applyMcpAssign(store, name, projIdSnap, store.bscBaseDir);
+            // A first-party server installs from source — clone its repo into
+            // ~/.base-studio-code/mcp/<repo> now so it's present for the build button +
+            // the fleet launch. Best-effort + idempotent (mcp_clone is a no-op/pull when
+            // the dir exists); the build itself is run on demand from the MCP panel.
+            const link = catalogLink(name);
+            if (link) {
+              invoke("mcp_clone", { name: repoNameFromLink(link), url: link })
+                .catch((e) => console.warn(`mcp_clone(${name}) during planning failed:`, e));
+            }
+          }
+          bufRef.current = stripMcpAssigns(bufRef.current);
         }
 
         // Cap buffer to prevent unbounded growth while preserving any partial
@@ -1167,17 +1169,14 @@ export function Planning({ visible }: { visible: boolean }) {
           projectKey:    projIdSnap,
           githubLogin:   ghLoginSnap,
           githubName:    ghNameSnap,
-          enabledStages: stageIdsFor(projIdSnap),
+          enabledStages: stageIdsFor(projIdSnap), // scope the planner CLAUDE.md to the blueprint (#A)
         },
       ).catch((e: unknown) => {
         console.error("workspace setup failed:", e);
         return null;
       });
-      // Record which inputs were used so the "context updated" badge activates when
-      // they later diverge from this baseline (#175).
-      setLastSetupSig(
-        `v1|${[...repoSnapshot].sort().join(",")}|${kbSnapshot.map(b => b.id).sort().join(",")}|${stageIdsFor(projIdSnap).sort().join(",")}`
-      );
+      refreshSetupSig(); // baseline updated (#756)
+      if (paths) setPlanningDir(paths.planning_dir); // for the relay planner-pane mirror (#801)
 
       // Launch claude inside the isolated planning directory.
       // Inject the stored GitHub token so `gh` CLI and direct API calls work
@@ -1190,14 +1189,19 @@ export function Planning({ visible }: { visible: boolean }) {
       // (publishing is an explicit, separately-gated step).
       const plannerCap = roleCapability("planner");
       const plannerWrite = roleWriteRules(plannerCap);
+      // The role gate covers the planner's scoped plan-file writes + git/gh read-only.
+      // WebFetch (docs / version / pricing lookups) and Read are added explicitly here so
+      // this single role-launch path fully sources the planner's tools — replacing the
+      // hardcoded settings.json literal that setup_workspaces used to write (#799).
       await invoke("ensure_session_settings", {
         cwd:             paths?.planning_dir ?? "",
         allowedCommands: [],
         deniedCommands:  roleDeniedCommands(plannerCap),
         mcpServers:      null,
         hooks:           null,
-        allowToolRules:  plannerWrite.allow,
+        allowToolRules:  [...plannerWrite.allow, "Read", "WebFetch"],
         denyToolRules:   plannerWrite.deny,
+        replacePermissions: true,
       }).catch((e: unknown) => console.error("planner session settings failed:", e));
       await invoke("pty_create", {
         paneId:  paneId,
@@ -1224,37 +1228,20 @@ export function Planning({ visible }: { visible: boolean }) {
       }
     });
 
-    // Coalesce rapid size changes (a pipeline screen mounting/unmounting, dragging the
-    // sections divider) into ONE fit after the layout settles — otherwise the observer
-    // fires per intermediate frame and each fit reflows xterm + sends a pty_resize,
-    // making the terminal re-render repeatedly while the neighbouring pane animates in.
-    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastCols = term.cols, lastRows = term.rows;
-    let lastW = 0, lastH = 0;
-    const settleFit = () => {
-      const { clientWidth, clientHeight } = el;
-      // No visibility guard: a hidden panel is display:none → zero client size, skipped
-      // here. (Guarding on a `visible` ref raced with React's commit and dropped the
-      // first fit after un-hiding, leaving the terminal smaller than its container.)
-      if (clientWidth === 0 || clientHeight === 0) return;
-      if (clientWidth === lastW && clientHeight === lastH) return; // size didn't actually change
-      lastW = clientWidth; lastH = clientHeight;
-      fitAddon.fit();
-      // Only round-trip to the PTY when the grid actually changed.
-      if (term.cols !== lastCols || term.rows !== lastRows) {
-        lastCols = term.cols; lastRows = term.rows;
-        invoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }).catch(console.error);
-      }
-    };
     const ro = new ResizeObserver(() => {
-      if (resizeTimer !== null) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(settleFit, 90);
+      // No visibility guard: a hidden panel is display:none → zero client size,
+      // already skipped below. Guarding on a `visible` ref instead raced with
+      // React's commit and dropped the first fit after un-hiding, leaving the
+      // terminal smaller than its container.
+      const { clientWidth, clientHeight } = el;
+      if (clientWidth === 0 || clientHeight === 0) return;
+      fitAddon.fit();
+      invoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }).catch(console.error);
     });
     ro.observe(el);
 
     return () => {
       if (initSendTimer.current !== null) clearTimeout(initSendTimer.current);
-      if (resizeTimer !== null) clearTimeout(resizeTimer);
       unlistenData.current?.();
       unlistenExit.current?.();
       ro.disconnect();
@@ -1305,7 +1292,10 @@ export function Planning({ visible }: { visible: boolean }) {
         const saved = store.planSections[effectiveProjectId] ?? {};
         const confirmed = new Set(store.planConfirmedSections[effectiveProjectId] ?? []);
 
-        for (const [key, content] of entries) {
+        for (const [rawKey, content] of entries) {
+          // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
+          // still satisfies the gate (#…).
+          const key = canonicalSectionKey(rawKey);
           if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
             store.setPlanSection(effectiveProjectId, key, content);
           }
@@ -1320,93 +1310,6 @@ export function Planning({ visible }: { visible: boolean }) {
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, effectiveProjectId]);
-
-  // Live issue-progression overlay (#393 Layer 2). For an already-published
-  // project, fetch each repo's GitHub issues + milestone counts and build a
-  // node-id -> NodeProgress overlay (done checkmarks, milestone/repo/project
-  // rollups) the structure card renders. Polls on a light 30s interval while
-  // visible. Cancellation-safe; failed repos are skipped, never fatal.
-  // The dep signature is derived from the structure (repo names + milestone +
-  // issue node labels) so the effect re-subscribes only when the plan changes,
-  // not on every render (ghStructure is a fresh object each pass).
-  const ghStructSig = JSON.stringify({
-    repos: ghStructure.repos.map(r => [r.node.label, r.issues.map(i => i.label)]),
-    ms: ghStructure.milestones.map(m => m.label),
-  });
-  useEffect(() => {
-    const token = useAppStore.getState().githubToken;
-    // Skip (and leave whatever overlay is already shown) when there is nothing
-    // to fetch for: no linked repos, or no token. NOT gated on isExisting — a
-    // project's issues live on its repos whether or not it was opened as a board
-    // project, so we resync progress on every page-open (the `visible` dep) as
-    // long as there are repos to query. The async refresh below is the only path
-    // that calls setGhProgress, so the effect body never cascades a render.
-    if (ghStructure.repos.length === 0 || !token) return;
-    let cancelled = false;
-
-    const rest = <T,>(path: string) =>
-      invoke<T>("github_request", { token, path }).catch(() => null) as Promise<T | null>;
-
-    type GhIssue = {
-      title: string; state: string; number: number; html_url: string;
-      milestone: { title: string } | null; pull_request?: unknown;
-    };
-    type GhMilestone = { title: string; open_issues: number; closed_issues: number };
-
-    const refresh = async () => {
-      const issuesByRepo: Record<string, IssueState[]> = {};
-      const milestonesByRepo: Record<string, MilestoneState[]> = {};
-      await Promise.all(ghStructure.repos.map(async repo => {
-        const fullName = repo.node.label;
-        const [issues, milestones] = await Promise.all([
-          rest<GhIssue[]>(`repos/${fullName}/issues?state=all&per_page=100`),
-          rest<GhMilestone[]>(`repos/${fullName}/milestones?state=all&per_page=100`),
-        ]);
-        if (Array.isArray(issues)) {
-          issuesByRepo[fullName] = issues
-            // GitHub returns PRs in the issues list; the `pull_request` field
-            // marks them. Skip so only real issues map to structure nodes.
-            .filter(it => !it.pull_request)
-            .map(it => ({
-              title: it.title,
-              state: it.state === "closed" ? "closed" : "open",
-              number: it.number,
-              url: it.html_url,
-              milestone: it.milestone?.title ?? null,
-            }));
-        }
-        if (Array.isArray(milestones)) {
-          milestonesByRepo[fullName] = milestones.map(m => ({
-            title: m.title,
-            open: m.open_issues ?? 0,
-            closed: m.closed_issues ?? 0,
-          }));
-        }
-      }));
-      if (cancelled) return;
-      // Persisted plan-issue -> GitHub-issue links (#393 Layer 1); read fresh so
-      // the overlay matches each node to its exact issue NUMBER (title-drift safe).
-      const links = useAppStore.getState().issueLinks[effectiveProjectId];
-      setGhProgress(buildProgressOverlay(ghStructure, issuesByRepo, milestonesByRepo, links));
-    };
-
-    refresh();
-    const id = setInterval(() => { if (visible) refresh(); }, 30_000);
-    return () => { cancelled = true; clearInterval(id); };
-  // ghStructSig captures the parts of ghStructure the overlay keys off, so the
-  // effect re-runs when the plan changes without depending on the object identity.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, ghStructSig]);
-
-
-  // Seed lastSetupSig from the signature file written by setup_workspaces (#175).
-  // Uses `prev ?? stored` so we don't overwrite a value the mount effect already set.
-  useEffect(() => {
-    if (!effectiveProjectId) return;
-    invoke<string>("get_context_signature", { projectKey: effectiveProjectId })
-      .then(stored => { if (stored) setLastSetupSig(prev => prev ?? stored); })
-      .catch(() => {});
-  }, [effectiveProjectId]);
 
   // Re-sync CLAUDE.md whenever a repo resolves after the initial mount.
   // kbBlocks is captured via ref to avoid including it in deps (it's large and
@@ -1433,19 +1336,17 @@ export function Planning({ visible }: { visible: boolean }) {
       projectKey:    effectiveProjectId,
       githubLogin:   useAppStore.getState().githubUser?.login ?? "",
       githubName:    useAppStore.getState().githubUser?.name  ?? "",
-      enabledStages: stageIdsFor(effectiveProjectId),
-    }).catch(console.error);
+      enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
+    }).then(() => refreshSetupSig()).catch(console.error); // baseline updated (#756)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedRepos]);
 
 
-  async function handleRestart() {
-    const term = termRef.current;
-    if (!term || restarting) return;
-    setRestarting(true);
-    bufRef.current = "";
-    term.clear();
-    await invoke("pty_kill", { paneId: paneId }).catch(console.error);
+  // Regenerate the on-disk workspace (CLAUDE.md + the context baseline) for the CURRENT blueprint
+  // version, WITHOUT touching the plan section files. Shared by the restart flow and the "keep
+  // files" choice of the blueprint-update modal (#827). refreshSetupSig() rebaselines the
+  // signature so the staleness clears.
+  async function regenerateWorkspace(): Promise<{ kb_dir: string; planning_dir: string } | null> {
     const store = useAppStore.getState();
     const currentAutomations = [
       ...store.commands.map(c => ({ id: c.id, name: c.name, command: c.cmd, schedule: null })),
@@ -1464,24 +1365,85 @@ export function Planning({ visible }: { visible: boolean }) {
         projectKey: effectiveProjectId,
         githubLogin: store.githubUser?.login ?? "",
         githubName:  store.githubUser?.name  ?? "",
-        enabledStages: stageIdsFor(effectiveProjectId),
+        enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
       },
-    ).catch((e: unknown) => { console.error("restart setup failed:", e); return null; });
-    // Record the inputs used so the badge resets after restart (#175).
-    setLastSetupSig(
-      `v1|${[...linkedRepos].sort().join(",")}|${kbBlocks.map(b => b.id).sort().join(",")}|${stageIdsFor(effectiveProjectId).sort().join(",")}`
-    );
-    const token = store.githubToken;
+    ).catch((e: unknown) => { console.error("workspace setup failed:", e); return null; });
+    refreshSetupSig(); // baseline updated (#756)
+    return paths;
+  }
+
+  async function handleRestart() {
+    const term = termRef.current;
+    if (!term || restarting) return;
+    setRestarting(true);
+    bufRef.current = "";
+    resetConductor();                        // re-drive the conductor from the top on a fresh session
+    conductorTickRef.current = { len: 0, stable: 0 };
+    term.clear();
+    await invoke("pty_kill", { paneId: paneId }).catch(console.error);
+    const paths = await regenerateWorkspace();
+    const token = useAppStore.getState().githubToken;
     const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
     await invoke("pty_create", {
       paneId: paneId,
       cols: term.cols,
       rows: term.rows,
       cwd: paths?.planning_dir ?? "",
-      initCmd: "claude --continue 2>/dev/null || claude",
+      initCmd: "claude",
       env: ghEnv,
     }).catch(console.error);
     setRestarting(false);
+  }
+
+  // "Keep the previous plan files" (#827): adopt the new blueprint/template version on disk and
+  // clear the staleness, WITHOUT wiping plan files and WITHOUT restarting the planner into a
+  // destructive reconciliation (the prior silent refresh let a fresh planner delete plan files).
+  async function keepPlanFiles() {
+    setShowBlueprintModal(false);
+    await regenerateWorkspace();
+  }
+
+  // Clear/reset the plan (#664/#B) — delete the on-disk plan files FIRST (awaited, so the 2s
+  // file poll can't re-read + re-populate the store), wipe the store, unlink the repos, then
+  // restart the planner with a blank slate. (Restored: the refactor dropped this flow.)
+  // Confirmation is the Dialog below (#…), not a native window.confirm.
+  async function doClearPlan() {
+    setShowClearConfirm(false);
+    const store = useAppStore.getState();
+    await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
+    store.clearPlan(effectiveProjectId);
+    store.setActiveProjectRepos([]);
+    setRepoLinkFullNames([]);
+    store.setPlanningContext(planningPitch, "");
+    void handleRestart();
+  }
+
+  // Publish the plan to GitHub: repositories → project board → milestones →
+  // issues. Every step is idempotent (check-then-create) so re-running acts as a
+  // sync. Status is reported through ghStatus, keyed by the buildGhStructure ids,
+  // so the GitHubStructureCard reflects each object as it is created.
+  // Context Files → push a consolidated PROJECT_PLAN.md into every repo's .github/.
+  async function handleSyncDocs() {
+    if (!githubToken || publishRepos.length === 0) return;
+    const token = githubToken;
+    setDocsSync("running");
+    try {
+      const put = (path: string, body: unknown) => invoke("github_put", { token, path, body });
+      const rest = <T,>(path: string) => invoke<T>("github_request", { token, path });
+      const parts = [`# ${projectTitle} — Project Plan\n`];
+      for (const s of sections) parts.push(`\n## ${s.title || s.k}\n\n${s.content}\n`);
+      const content = btoa(unescape(encodeURIComponent(parts.join("\n"))));
+      for (const repo of publishRepos) {
+        const path = `repos/${repo}/contents/.github/PROJECT_PLAN.md`;
+        let sha: string | undefined;
+        try { const ex = await rest<{ sha?: string }>(path); sha = ex?.sha; } catch { /* file absent */ }
+        await put(path, { message: "docs: sync project plan", content, ...(sha ? { sha } : {}) });
+      }
+      setDocsSync("done");
+    } catch (e) {
+      console.error("sync docs failed:", e);
+      setDocsSync("error");
+    }
   }
 
   // Agents → ensure each fleet stream's `stream:<id>` label exists in every repo.
@@ -1506,22 +1468,12 @@ export function Planning({ visible }: { visible: boolean }) {
     }
   }
 
-  // Locked-Triage feedback: surface exactly what's left. Flags the incomplete sections
-  // (pulse in the N-bar + the right pane) and shows a banner listing each with its gate
-  // reason, plus the top-level lock reason (publish / repos / fleet) as the headline.
-  function revealIncomplete(gate: TriageGateState) {
-    const items = incompleteSections(planSecs, signals);
-    setHighlightSections(new Set(items.map(i => i.key)));
-    setTriageBlock({ headline: triageLockReason(gate) ?? "Not ready to triage", items });
-    if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    highlightTimer.current = setTimeout(() => setHighlightSections(new Set()), 3200);
-  }
-
   // Header button → clone the repos and launch the planned agent fleet (recommended workers + director).
   async function launchTriage() {
     const fleet = planFleet[effectiveProjectId];
-    // Mirror the button's gate (#444) so a programmatic / Enter-key path can't launch
-    // triage against an unpublished project (no board, no issues to triage).
+    // Pre-flight gate (#444/#551) — mirror the button's gate so a programmatic / Enter-key
+    // path can't launch against an unpublished or plan-incomplete project. (Restored: the
+    // refactor had weakened this to a repos/fleet-only check.)
     if (!canLaunchTriage({
       published: !!activeProjectId,
       hasRepos: publishRepos.length > 0,
@@ -1534,7 +1486,7 @@ export function Planning({ visible }: { visible: boolean }) {
     try {
       await Promise.all(publishRepos.map(fullName =>
         invoke<string>("clone_repo", { project: effectiveProjectId, fullName })
-          .then(() => addProjectRepo(effectiveProjectId, fullName))
+          .then(() => addProjectRepo(activeProjectId ?? effectiveProjectId, fullName))
           .catch(e => console.error(`clone ${fullName} failed:`, e)),
       ));
       // Materialize any unassigned / dangling-reference agent profiles before
@@ -1542,29 +1494,30 @@ export function Planning({ visible }: { visible: boolean }) {
       // the fleet back with the now-assigned profile ids.
       useAppStore.getState().generateFleetProfiles(effectiveProjectId);
       const launchPlan = useAppStore.getState().planFleet[effectiveProjectId] ?? fleet;
-      // Create each worker's git worktree (fail closed — #551/#359): if any
-      // worktree can't be created, abort the launch so no agent starts in a
-      // fallback dir.
-      const worktreeResults = await Promise.all(
-        launchPlan.streams.map(st =>
-          invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id })
-            .then(path => ({ id: st.id, path, err: null as string | null }))
-            .catch(e => ({ id: st.id, path: null as string | null, err: String(e) })),
-        ),
-      );
+      // Create each worker's git worktree FAIL-CLOSED (#551/#359): if any can't be created,
+      // abort the launch so no agent starts in a fallback dir. (Restored: the refactor had
+      // weakened this to a non-fatal .catch that let the launch continue.)
+      const worktreeResults = await Promise.all(launchPlan.streams.map(st =>
+        // Seed each worktree's CLAUDE.local.md with the worker's SCOPE (owns/issues/deps),
+        // not the full plan — the worktree lives outside the hub so the planner spec is no
+        // longer an ancestor (#844).
+        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd: buildWorkerScope(st) })
+          .then(path => ({ id: st.id, path, err: null as string | null }))
+          .catch(e => ({ id: st.id, path: null as string | null, err: String(e) })),
+      ));
       const failed = worktreeResults.filter(r => r.err || !r.path);
       if (failed.length > 0) {
-        const first = failed[0];
-        setTriageError(`${first.id}: ${first.err ?? "empty path"}`);
+        setTriageError(`${failed[0].id}: ${failed[0].err ?? "empty path"}`);
         return;
       }
-      // Give the director its standing protocol at the hub (#375) so it answers worker
-      // questions via bsc-answer and merges green PRs.
+      // Give the director its standing protocol at the hub (#375) so it gets the bsc-fleet
+      // roster instruction + answers worker questions (the refactor dropped this call; #734).
       if (launchPlan.director.enabled) {
         await invoke("ensure_director_protocol", { projectKey: effectiveProjectId })
           .catch(e => console.error("director protocol failed:", e));
       }
-      fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
+      const roster = fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
+      publishFleetRoster(effectiveProjectId, roster); // #734: hub fleet.roster.tsv for bsc-fleet
     } catch (e) {
       console.error("fleet launch failed:", e);
     } finally {
@@ -1572,10 +1525,6 @@ export function Planning({ visible }: { visible: boolean }) {
     }
   }
 
-  // Publish the plan to GitHub: repositories → project board → milestones →
-  // issues. Every step is idempotent (check-then-create) so re-running acts as a
-  // sync. Status is reported through ghStatus, keyed by the buildGhStructure ids,
-  // so the GitHubStructureCard reflects each object as it is created.
   async function handlePublish() {
     if (!githubToken || publishRepos.length === 0) return;
     const token = githubToken;
@@ -1599,25 +1548,7 @@ export function Planning({ visible }: { visible: boolean }) {
     });
     (fleet?.streams ?? []).forEach(st => { status[`stream:${st.id}`] = { status: "planned" }; });
     setGhStatus({ ...status });
-
-    // Pre-flight: validate plan issues BEFORE any GitHub mutation (#550).
-    const _preFlight = [
-      ...parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? ""),
-      ...featureSectionsToIssues(sections, repos),
-    ];
-    const _phaseNames = phases.map(p => p.name);
-    if (_preFlight.length > 0 && _phaseNames.length > 0) {
-      const { unknownPhases } = validateIssues(_preFlight, _phaseNames);
-      if (unknownPhases.length > 0) {
-        const detail = unknownPhases.map(u => `${u.ref}: phase "${u.phase}" not matched`).join("; ");
-        setPublishPhase("error");
-        setPublishEarlyError(`Unresolved phase tags: ${detail}`);
-        return;
-      }
-    }
-
     setPublishPhase("running");
-    setPublishEarlyError(null);
 
     let anyError = false;
     const upd = (id: string, patch: Partial<GhItemState>) => {
@@ -1630,6 +1561,7 @@ export function Planning({ visible }: { visible: boolean }) {
       invoke<Record<string, unknown>>("github_graphql", { token, query, variables });
     const rest = <T,>(path: string) => invoke<T>("github_request", { token, path });
     const post = <T,>(path: string, body: unknown) => invoke<T>("github_post", { token, path, body });
+    const put = (path: string, body: unknown) => invoke("github_put", { token, path, body });
 
     try {
       // ── 1. Repositories — verify each exists; create if missing ───────────
@@ -1662,29 +1594,76 @@ export function Planning({ visible }: { visible: boolean }) {
         }
       }
 
-      // ── 2. Project board — link existing, ADOPT a same-title board, or create ──
-      // Routes through ensureGithubProject so a re-sync of an unlinked but already-
-      // published project adopts its board instead of minting a duplicate (#444).
+      // ── 1b. Repo presentation (#848): topics from the stack + a thorough README
+      //        with CI/version badges + the standard community-health files. Files are
+      //        created only when ABSENT (never clobber a hand-written one); a repo with
+      //        no workflows simply omits CI badges; any failure is surfaced, not fatal. ──
+      {
+        const stackText = sections.find(s => s.k === "stack")?.content ?? "";
+        const topics = deriveTopics(stackText);
+        for (const fullName of repos) {
+          const id = `scaffold:${fullName}`;
+          upd(id, { status: "running" });
+          try {
+            if (topics.length) await put(`repos/${fullName}/topics`, { names: topics }).catch(() => {});
+            // CI badges reference the repo's actual workflow files (graceful — none yet ⇒ none).
+            const wfs = await rest<{ name: string }[]>(`repos/${fullName}/contents/.github/workflows`).catch(() => []);
+            const workflows = (Array.isArray(wfs) ? wfs : []).map(w => w.name).filter(n => /\.ya?ml$/i.test(n));
+            const files: ScaffoldFile[] = [
+              { path: "README.md", content: buildReadme({ fullName, description: projectDesc, stackText, workflows }) },
+              ...communityFiles(projectTitle),
+            ];
+            let wrote = 0;
+            for (const f of files) {
+              const path = `repos/${fullName}/contents/${f.path}`;
+              const exists = await rest<{ sha?: string }>(path).then(r => !!r?.sha).catch(() => false);
+              if (exists) continue; // don't clobber an existing file
+              const content = btoa(unescape(encodeURIComponent(f.content)));
+              await put(path, { message: `docs: scaffold ${f.path}`, content }).catch(() => {});
+              wrote++;
+            }
+            upd(id, wrote
+              ? { status: "created", detail: `${topics.length} topics · ${wrote} file${wrote === 1 ? "" : "s"}` }
+              : { status: "exists", detail: topics.length ? `${topics.length} topics · files present` : "already scaffolded" });
+          } catch (e) {
+            upd(id, { status: "error", detail: String(e) });
+          }
+        }
+      }
+
+      // ── 2. Project board — reuse existing or create a Projects v2 board ───
       let projectId = activeProjectId;
       {
         const id = "project";
         upd(id, { status: "running" });
         try {
-          const ownerLogin = repos[0]?.split("/")[0] || viewerLogin;
-          if (!ownerLogin) throw new Error("no owner to create project under");
-          const res = await ensureGithubProject(gql, { activeProjectId, ownerLogin, title: projectTitle });
-          projectId = res.id;
-          if (res.action === "linked") {
+          if (projectId) {
             upd(id, { status: "exists", detail: activeProjectNumber ? `#${activeProjectNumber}` : "linked" });
           } else {
-            // Adopted an existing same-title board, or created a fresh one — reflect in
-            // the store so the projects list + future syncs treat it as existing.
-            useAppStore.getState().setActiveProjectMeta(res.id, projectTitle, repos[0] ?? "", res.number, repos);
-            upd(id, {
-              status: res.action === "adopted" ? "exists" : "created",
-              detail: `#${res.number}`,
-              url: res.url,
-            });
+            const ownerLogin = repos[0]?.split("/")[0] || viewerLogin;
+            if (!ownerLogin) throw new Error("no owner to create project under");
+            const ownerData = await gql(
+              `query($login:String!){ repositoryOwner(login:$login){ id } }`,
+              { login: ownerLogin },
+            ) as { repositoryOwner?: { id?: string } };
+            const ownerId = ownerData.repositoryOwner?.id;
+            if (!ownerId) throw new Error(`could not resolve owner '${ownerLogin}'`);
+            const created = await gql(
+              `mutation($ownerId:ID!,$title:String!){
+                 createProjectV2(input:{ownerId:$ownerId,title:$title}){ projectV2 { id number url } }
+               }`,
+              { ownerId, title: projectTitle },
+            ) as { createProjectV2?: { projectV2?: { id: string; number: number; url: string } } };
+            const pv = created.createProjectV2?.projectV2;
+            if (!pv) throw new Error("project not created");
+            projectId = pv.id;
+            // Reflect in the store so the projects list + future syncs treat it as existing.
+            useAppStore.getState().setActiveProjectMeta(pv.id, projectTitle, repos[0] ?? "", pv.number, repos);
+            // Stable-key bridge (#…): map the new board's node id → this project's folder key, so
+            // opening it from the board later resolves to the SAME on-disk hub instead of keying
+            // fresh state under the node id (the split that scattered repos/plan across two keys).
+            useAppStore.getState().setProjectKeyAlias(pv.id, effectiveProjectId);
+            upd(id, { status: "created", detail: `#${pv.number}`, url: pv.url });
           }
           // Link every repo to the board (idempotent server-side).
           for (const fullName of repos) {
@@ -1767,33 +1746,18 @@ export function Planning({ visible }: { visible: boolean }) {
       // ── 4. Issues — one GitHub issue per granular PlanIssue (#311), pinned to its
       //      milestone and added to the board, with its labels. Falls back to one
       //      tracking issue per phase when the planner defined none. Idempotent. ──
-      // Granular issues authored in issues.json PLUS one synthetic issue per per-repo
-      // feature section (#177) — both publish through the same path below.
-      const planIssues = [
-        ...parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? ""),
-        ...featureSectionsToIssues(sections, repos),
-      ];
+      const planIssues = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
       const phaseNames = phases.map(p => p.name);
-      // Persisted plan-issue -> GitHub-issue linkage (#393 Layer 1): structure
-      // node id -> { number, url }. Accumulated across all repos, saved once below.
-      const linkMap: Record<string, { number: number; url: string }> = {};
       for (const [repoIdx, fullName] of repos.entries()) {
         // Check what already exists BEFORE creating so a re-sync never duplicates.
         // Fail CLOSED: if we can't fetch the repo's issues, skip creating here.
         let existingTitles: string[];
-        // title -> { number, url } for the issues already on this repo, so an
-        // "already exists" issue can still be linked (#393) by its real number.
-        const byTitle = new Map<string, { number: number; url: string }>();
         try {
-          const existing = await rest<{ title: string; number: number; html_url: string }[]>(`repos/${fullName}/issues?state=all&per_page=100`);
+          const existing = await rest<{ title: string }[]>(`repos/${fullName}/issues?state=all&per_page=100`);
           existingTitles = existing.map(i => i.title);
-          for (const i of existing) byTitle.set(i.title, { number: i.number, url: i.html_url });
         } catch {
-          // Fail closed: index every plan issue for THIS repo by its node id so the
-          // error surfaces on the right node (granular nodes use `ref ?? idx`).
           if (planIssues.length) {
-            const mineFail = planIssues.filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0);
-            for (const [idx, iss] of mineFail.entries()) upd(`issue:${fullName}:${iss.ref ?? idx}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
+            for (const iss of planIssues) upd(`issue:${fullName}:${iss.ref}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
           } else {
             for (let pi = 0; pi < phases.length; pi++) upd(`issue:${fullName}:${pi}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
           }
@@ -1804,40 +1768,54 @@ export function Planning({ visible }: { visible: boolean }) {
           // Issues for THIS repo: its declared `repo`, or the default (first) repo.
           const mine = planIssues.filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0);
           // Ensure every label this repo uses exists (422 if present — harmless).
+          // Provenance label first (#738) — every app-created issue carries it.
+          await post(`repos/${fullName}/labels`, { name: BSC_ISSUE_LABEL, color: BSC_ISSUE_LABEL_COLOR }).catch(() => {});
           for (const name of [...new Set(mine.flatMap(iss => iss.labels))]) {
             await post(`repos/${fullName}/labels`, { name, color: "0e8a16" }).catch(() => {});
           }
-          for (const [idx, iss] of mine.entries()) {
-            const nodeId = `issue:${fullName}:${iss.ref ?? idx}`;
-            if (existingTitles.includes(iss.title)) {
-              upd(nodeId, { status: "exists", detail: "already exists" });
-              // Link to the existing issue (matched by title) so the overlay can
-              // track it by number even if the plan title later drifts.
-              const hit = byTitle.get(iss.title);
-              if (hit) linkMap[nodeId] = { number: hit.number, url: hit.url };
-              continue;
-            }
-            upd(nodeId, { status: "running" });
+          // ref → created GitHub node id, so feature parents + their sub-issues can be linked.
+          const nodeByRef: Record<string, string> = {};
+          for (const iss of mine) {
+            const id = `issue:${fullName}:${iss.ref}`;
+            if (existingTitles.includes(iss.title)) { upd(id, { status: "exists", detail: "already exists" }); continue; }
+            upd(id, { status: "running" });
             try {
               const body: Record<string, unknown> = { title: iss.title, body: renderIssueBody(iss) };
               const phIdx = resolvePhaseIndex(iss.phase, phaseNames);
               const msNum = phIdx !== undefined ? msNumbers[fullName]?.[phIdx] : undefined;
               if (msNum !== undefined) body.milestone = msNum;
-              if (iss.labels.length) body.labels = iss.labels;
+              body.labels = withProvenanceLabel(iss.labels); // provenance stamp (#738)
               const issue = await post<{ number: number; node_id: string; html_url: string }>(`repos/${fullName}/issues`, body);
+              if (issue.node_id) nodeByRef[iss.ref] = issue.node_id;
               if (projectId && issue.node_id) {
                 await gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
               }
-              linkMap[nodeId] = { number: issue.number, url: issue.html_url };
-              upd(nodeId, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
+              // Assign the issue to its owning stream's GitHub login (#847), defaulting to the
+              // publishing account. Done as a follow-up POST AFTER the issue exists, so an
+              // invalid / no-access login (a 422) is skipped gracefully and never loses the issue.
+              const assignee = resolveIssueAssignee(iss.stream, fleet?.streams ?? [], viewerLogin);
+              if (assignee) {
+                await post(`repos/${fullName}/issues/${issue.number}/assignees`, { assignees: [assignee] }).catch(() => {});
+              }
+              upd(id, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
             } catch (e) {
-              upd(nodeId, { status: "error", detail: String(e) });
+              upd(id, { status: "error", detail: String(e) });
             }
+          }
+          // Nest each feature's sub-issues under their parent (#…) via GraphQL addSubIssue.
+          // Best-effort + idempotent: only links pairs created in THIS run; an already-linked
+          // pair (or an API that doesn't support sub-issues) errors harmlessly.
+          for (const { parent, child } of subIssueLinks(mine, nodeByRef)) {
+            await gql(
+              `mutation($p:ID!,$c:ID!){ addSubIssue(input:{issueId:$p,subIssueId:$c}){ issue { id } } }`,
+              { p: parent, c: child },
+            ).catch(() => {});
           }
           continue;
         }
 
         // Legacy fallback: one tracking issue per phase.
+        await post(`repos/${fullName}/labels`, { name: BSC_ISSUE_LABEL, color: BSC_ISSUE_LABEL_COLOR }).catch(() => {}); // #738
         for (let pi = 0; pi < phases.length; pi++) {
           const ph    = phases[pi];
           const id    = `issue:${fullName}:${pi}`;
@@ -1857,6 +1835,7 @@ ${ph.description ?? ""}
 
 ---
 _Auto-generated by base-studio-code planner._`,
+              labels: [BSC_ISSUE_LABEL], // provenance stamp (#738)
             };
             const msNum = msNumbers[fullName]?.[pi];
             if (msNum !== undefined) body.milestone = msNum;
@@ -1897,25 +1876,6 @@ _Auto-generated by base-studio-code planner._`,
         }
       }
 
-      // Persist the plan-issue -> GitHub-issue linkage (#393 Layer 1) so the
-      // progress overlay can track each node by its real issue number.
-      //
-      // #393 Layer 3 (plan-edit -> GitHub write-sync) is satisfied today by the
-      // *documented allowed-commands flow*, not an in-app PATCH button: with this
-      // linkage persisted (node id -> {number,url}), a director/Claude session that
-      // has the `gh` write commands permitted reads the plan and pushes edits to the
-      // linked issues -- e.g. `gh issue edit <number> --title/--body/--add-label
-      // --milestone`, or `gh api -X PATCH repos/{repo}/issues/{number}` -- to bring
-      // each GitHub issue back in line with the plan (this is how the board is kept
-      // current). A dedicated in-app "Sync plan -> GitHub" action (confirm + dry-run
-      // diff + conflict handling) is deferred to a post-0.9.4 follow-up, since it
-      // MUTATES live issues and warrants its own scope + review.
-      if (Object.keys(linkMap).length) {
-        useAppStore.getState().setIssueLinks(effectiveProjectId, linkMap);
-      }
-
-      // Published: the draft is now a real GitHub project — promote it out of drafts (#379).
-      if (!anyError) removeDraftProject(effectiveProjectId);
       setPublishPhase(anyError ? "error" : "done");
     } catch (e) {
       console.error("publish failed", e);
@@ -1927,7 +1887,7 @@ _Auto-generated by base-studio-code planner._`,
   return (
     <>
       {/* Header */}
-      <div style={{ padding: "12px 24px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
+      <div style={{ padding: "14px 24px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <button
@@ -1937,7 +1897,7 @@ _Auto-generated by base-studio-code planner._`,
                 fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
                 padding: 0, marginRight: 4,
               }}
-            >{isExisting ? "← board" : "← projects"}</button>
+            >{isExisting ? "← projects" : "← projects"}</button>
             <span style={{ color: "var(--border-soft)" }}>·</span>
             {isExisting
               ? (
@@ -1962,37 +1922,35 @@ _Auto-generated by base-studio-code planner._`,
                 />
               )
             }
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
-              {confirmedCount}/{sections.length} sections confirmed
-            </span>
             <span className="tag amber">● {isExisting ? "expanding" : "drafting"}</span>
-            <RepoPill repos={publishRepos} state={repoClone} />
+            {publishRepos.length === 1 && <span className="tag">{publishRepos[0]}</span>}
+            {publishRepos.length > 1 && (
+              <span className="tag" title={publishRepos.join("\n")}>{publishRepos.length} repos</span>
+            )}
           </div>
+          {autopilot.running && (
+            <div style={{ color: "var(--accent)", fontSize: 12, marginTop: 4 }}>
+              ⚙ auto-planning · {autopilotProgressPct}%
+            </div>
+          )}
         </div>
-        <button
-          className="btn ghost"
-          title="Clear all plan state and files for this project (irreversible)"
-          onClick={() => setConfirmClear(true)}
-        >
-          clear plan
-        </button>
+        {contextStale && (
+          <button
+            className="btn"
+            style={{ borderColor: "var(--accent-dim)", color: "var(--accent)" }}
+            disabled={restarting}
+            onClick={() => setShowBlueprintModal(true)}
+            title="The project's blueprint / planner template changed since this session started — choose how to update (#827)"
+          >{restarting ? "restarting…" : "blueprint updated · review"}</button>
+        )}
         <button className="btn ghost" onClick={() => setProjectsView("list")}>
           save & exit
         </button>
-        <button
-          className="btn ghost"
-          onClick={handlePublish}
-          disabled={publishPhase === "running" || !githubToken || publishRepos.length === 0}
-          title={!githubToken ? "Sign in to GitHub first" : publishRepos.length === 0 ? "Link a repo first"
-            : isExisting ? "Sync this plan to the existing GitHub project (milestones + issues)"
-            : "Create the GitHub project, milestones, and issues from this draft"}
-        >
-          {publishPhase === "running"
-            ? (isExisting ? "syncing…" : "creating…")
-            : (isExisting ? "Sync to GitHub" : "Create project")}
+        <button className="btn ghost danger" onClick={() => setShowClearConfirm(true)} title="Wipe this project's plan and restart the planner (#664)">
+          clear plan
         </button>
         {(() => {
-          // Lock triage until plan is done and the project is published (#444/#551).
+          // Full gate (#444/#551): plan complete + published + repos + fleet, not starting.
           const gate = {
             published: !!activeProjectId,
             hasRepos: publishRepos.length > 0,
@@ -2000,159 +1958,99 @@ _Auto-generated by base-studio-code planner._`,
             busy: triaging,
             planReady,
           };
-          const lock = triageLockReason(gate);
-          const ready = canLaunchTriage(gate);
           return (
             <button
               className="btn primary"
-              // When locked, the button stays clickable and reveals what's incomplete
-              // instead of being inert (#…). Only an in-flight launch disables it.
-              onClick={() => { if (ready) { void launchTriage(); } else { revealIncomplete(gate); } }}
-              disabled={triaging}
-              title={lock ?? "Clone the repos and start a triage session"}
-              style={!ready ? { opacity: 0.55 } : undefined}
+              onClick={launchTriage}
+              disabled={!canLaunchTriage(gate)}
+              title={triageLockReason(gate) ?? "Clone the repos and start a triage session"}
             >
               {triaging ? "starting triage…" : "Triage →"}
             </button>
           );
         })()}
       </div>
-      {triageBlock && (
-        <div style={{
-          padding: "8px 24px", display: "flex", flexDirection: "column", gap: 5,
-          fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg)",
-          background: "color-mix(in oklch, var(--danger), transparent 92%)",
-          borderTop: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ color: "var(--danger)", fontWeight: 600 }}>⚠ {triageBlock.headline}</span>
-            <span style={{ flex: 1 }} />
-            <button
-              onClick={() => { setTriageBlock(null); setHighlightSections(new Set()); }}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 10 }}
-            >✕</button>
-          </div>
-          {triageBlock.items.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 14px" }}>
-              {triageBlock.items.map(it => (
-                <span key={it.key} style={{ color: "var(--fg-muted)" }}>
-                  <span style={{ color: it.status === "locked" ? "var(--fg-dim)" : "var(--fg)" }}>{it.name}</span>
-                  {" — "}{it.status === "locked" ? "blocked · " : ""}{it.reason}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
       {triageError && (
-        <div style={{
-          padding: "4px 24px", display: "flex", alignItems: "center", gap: 8,
-          fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)",
-          background: "color-mix(in oklch, var(--danger), transparent 92%)",
-        }}>
-          <span>worktree failed: {triageError}</span>
-          <button
-            onClick={() => setTriageError(null)}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 10 }}
-          >✕</button>
+        <div style={{ padding: "0 24px 8px", color: "var(--danger)", fontSize: 12, fontFamily: "var(--mono)" }}>
+          ⚠ launch failed — {triageError}
         </div>
       )}
-
-      {/* Planning progress now lives in the focused pane's stepper (#652) — the old
-          full-width N-bar (PlanStageBar) was removed to avoid a duplicate progress strip. */}
 
       {/* Split panel */}
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", borderTop: "1px solid var(--border-soft)" }}>
         {/* Claude CLI terminal */}
-        <section style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRight: "1px solid var(--border-soft)" }}>
+        <section style={{ flex: "1 1 0", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRight: "1px solid var(--border-soft)" }}>
           <div style={{
             padding: "10px 18px", background: "var(--bg-panel)",
             borderBottom: "1px solid var(--border-soft)",
             display: "flex", alignItems: "center", gap: 8,
             fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
           }}>
-            <span style={{ color: "var(--accent)" }}>▸ planning session</span>
+            <span style={{ color: "var(--accent)" }}>▸ claude cli · planning session</span>
             <div style={{ flex: 1 }} />
-            {/* Context-refresh stays (repos/blocks/stages changed → relaunch); the manual
-                preview + restart buttons were removed (#654). */}
-            {contextStale && (
-              <button
-                onClick={() => { void handleRestart(); }}
-                disabled={restarting}
-                title="Repos, knowledge blocks, or enabled stages changed since this session started — click to refresh"
-                style={{
-                  padding: "2px 8px", borderRadius: 3,
-                  cursor: restarting ? "not-allowed" : "pointer",
-                  background: "color-mix(in oklch, var(--accent), transparent 84%)",
-                  border: "1px solid color-mix(in oklch, var(--accent), transparent 50%)",
-                  color: "var(--accent)", fontFamily: "var(--mono)", fontSize: 10,
-                  opacity: restarting ? 0.5 : 1,
-                }}
-              >{restarting ? "restarting…" : "context updated · refresh"}</button>
-            )}
-          </div>
-
-
-          {/* The xterm host is absolutely positioned inside this relative box, so it's
-              OUT of the flex flow: resizing the wrapper (divider drag, a pipeline screen
-              mounting) just clips/repaints the terminal cheaply instead of reflowing it
-              every frame — the session resizes independent of its wrapper, then re-fits
-              once when the size settles (the debounced observer below). */}
-          <div style={{ position: "relative", flex: 1, minWidth: 0, minHeight: 0 }}>
-            <div
-              ref={containerRef}
+            <span style={{ fontSize: 10, color: "var(--fg-dim)" }}>
+              emit{" "}
+              <code style={{ color: "var(--fg)", background: "var(--bg-elev)", padding: "0 4px", borderRadius: 3 }}>
+                &lt;plan_update section="goal"&gt;…&lt;/plan_update&gt;
+              </code>
+              {" "}to populate sections →
+            </span>
+            <button
+              onClick={resendCurrentStep}
+              title={nudgeStep ? "A step didn't land — re-send it to the planner" : "Re-send the current step's prompt to the planner"}
               style={{
-                position: "absolute", inset: 0, overflow: "hidden",
-                background: TERM_THEME.background as string,
-                display: "flex",
-                padding: "6px 4px",
+                padding: "2px 8px", borderRadius: 3, cursor: "pointer",
+                background: nudgeStep ? "color-mix(in oklch, var(--accent), transparent 86%)" : "transparent",
+                border: `1px solid ${nudgeStep ? "var(--accent)" : "var(--border-soft)"}`,
+                color: nudgeStep ? "var(--accent)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
               }}
-            />
+            >{nudgeStep ? "↻ re-send (lost)" : "↻ re-send step"}</button>
+            <button
+              onClick={() => setConductorPaused(p => !p)}
+              title={conductorPaused ? "Resume step-by-step guidance" : "Pause step-by-step guidance to free-form"}
+              style={{
+                padding: "2px 8px", borderRadius: 3, cursor: "pointer",
+                background: "transparent", border: "1px solid var(--border-soft)",
+                color: conductorPaused ? "var(--accent)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
+              }}
+            >{conductorPaused ? "▶ resume" : "⏸ conductor"}</button>
+            <button
+              onClick={handleRestart}
+              disabled={restarting}
+              style={{
+                padding: "2px 8px", borderRadius: 3, cursor: restarting ? "not-allowed" : "pointer",
+                background: "transparent", border: "1px solid var(--border-soft)",
+                color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
+                opacity: restarting ? 0.5 : 1,
+              }}
+            >{restarting ? "restarting…" : "↺ restart"}</button>
           </div>
+
+
+          <div
+            ref={containerRef}
+            style={{
+              flex: 1, minHeight: 0, overflow: "hidden",
+              background: TERM_THEME.background as string,
+              display: "flex",
+              padding: "6px 4px",
+            }}
+          />
         </section>
 
-        {/* Pipeline second screens — only the active stage's pipelines that have actually
-            run (a non-idle run state), so an empty project shows no ghost screen (#654). */}
-        {(() => {
-          const entries: { uid: string; id: string; Screen: PipelineScreenComponent; onClose?: () => void }[] =
-            stageScreens.map(e => ({ uid: e.uid, id: e.id, Screen: e.Screen }));
-          // Section-bound screens (e.g. grading) get the current section's key + content.
-          const secContent = sections.find(s => s.k === currentStageId)?.content ?? "";
-          return entries.map(({ uid, Screen, onClose }) => (
-            <Screen key={uid} projectKey={effectiveProjectId} sectionKey={currentStageId} sectionContent={secContent} onClose={onClose} />
-          ));
-        })()}
-
-        {/* Drag handle between the preview/terminal and the plan-sections panel (#43). */}
+        {/* Drag handle between the terminal and the plan-sections panel (#43). */}
         <div className="resize-x" {...sectionsPanel.handleProps} title="Drag to resize" />
 
         {/* Plan sections / publish progress panel */}
         <aside style={{ flex: `0 0 ${sectionsPanel.size}px`, display: "flex", flexDirection: "column", background: "var(--bg-panel)", minHeight: 0, overflow: "hidden" }}>
-          {/* Feature discovery gate warning (#490): blocked features won't publish. */}
-          {publishPhase === "idle" && incompleteFeatures.length > 0 && (
-            <div style={{
-              margin: "6px 10px 0", borderRadius: 6,
-              padding: "8px 10px",
-              background: "color-mix(in oklch, var(--warning, #e6a817), transparent 88%)",
-              border: "1px solid color-mix(in oklch, var(--warning, #e6a817), transparent 50%)",
-              fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg)",
-            }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                {incompleteFeatures.length} feature{incompleteFeatures.length > 1 ? "s" : ""} blocked from publishing
-              </div>
-              {incompleteFeatures.map(f => (
-                <div key={f.key} style={{ marginTop: 2, color: "var(--fg-muted)" }}>
-                  <span style={{ color: "var(--fg)" }}>{f.title}</span>
-                  {" — "}{f.reasons.join("; ")}
-                </div>
-              ))}
-            </div>
-          )}
           {publishPhase === "idle" ? (
             <ProjectPane
               data={paneData}
               projectName={projectTitle}
               projectId={effectiveProjectId}
+              sections={sections}
+              linkedRepos={publishRepos}
+              fleet={planFleet[effectiveProjectId]}
               onPerm={(id, perm) => setPlanAgentStreamPerm(effectiveProjectId, id, perm)}
               onPreset={(id, preset, perm) => setPlanAgentStreamPreset(effectiveProjectId, id, preset, perm)}
               onFlow={(id, f) => setPlanAgentStreamFlow(effectiveProjectId, id, {
@@ -2160,12 +2058,18 @@ _Auto-generated by base-studio-code planner._`,
                 push: (f.push === "auto-PR" ? "auto-pr" : f.push) as FlowPush,
                 gate: f.gate as FlowGate,
               })}
-              onStrategy={(id, strategy) => setPlanAgentStreamStrategy(effectiveProjectId, id, strategy)}
               onTogglePin={(name) => togglePinnedContext(effectiveProjectId, name)}
-              onDirectorDrive={(drive) => setPlanDirectorDrive(effectiveProjectId, drive)}
+              onSyncStructure={githubToken && publishRepos.length > 0 ? handlePublish : undefined}
+              onSyncDocs={githubToken && publishRepos.length > 0 ? handleSyncDocs : undefined}
               onSyncLabels={githubToken && publishRepos.length > 0 ? handleSyncLabels : undefined}
-              syncState={{ labels: labelsSync }}
-              highlight={highlightSections}
+              syncState={{ structure: "idle", docs: docsSync, labels: labelsSync }}
+              onLinkRepo={(repo) => addProjectRepo(effectiveProjectId, repo)}
+              onApprovePlan={() => confirmPlanSection(effectiveProjectId, "phases")}
+              onGenerateProfiles={() => useAppStore.getState().generateFleetProfiles(effectiveProjectId)}
+              onToggleMcp={onToggleMcp}
+              onBuildMcp={onBuildMcp}
+              onAddMcp={onAddMcp}
+              onRemoveMcp={onRemoveMcp}
               focus={{
                 phases,
                 selectedIdx: focusSelectedIdx,
@@ -2173,10 +2077,21 @@ _Auto-generated by base-studio-code planner._`,
                 onSelect: (i) => setFocusSel(i),
                 pill: focusPill,
                 footer: focusFooter,
+                // Once a board exists, the publish action reads as "Update GitHub" — a re-sync of
+                // the plan, not a first publish (handlePublish sets activeProjectId on create) (#823).
+                published: !!activeProjectId,
                 onBack: () => setFocusSel(clampIndex(focusSelectedIdx - 1, phases.length)),
                 onPrimary: () => {
-                  if (focusFooter.kind === "publish") void handlePublish();
-                  else setFocusSel(null); // re-follow the live phase
+                  if (focusFooter.kind === "publish") { void handlePublish(); return; }
+                  // One-click stage approval: confirm every drafted section the active stage needs,
+                  // then tell the planner in a single message. The gate re-evaluates and the
+                  // selection re-follows to the next live phase (#807-followup).
+                  if (focusFooter.kind === "approve-continue" && pendingConfirm.length > 0) {
+                    for (const k of pendingConfirm) confirmPlanSection(effectiveProjectId, k);
+                    const name = pendingConfirm.map(k => titleForKey(k)).join(", ");
+                    invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
+                  }
+                  setFocusSel(null); // re-follow the live phase
                 },
               }}
             />
@@ -2209,74 +2124,44 @@ _Auto-generated by base-studio-code planner._`,
                   >← back to plan</button>
                 )}
               </div>
-              {publishEarlyError && (
-                <div style={{ padding: "6px 18px", color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11 }}>
-                  {publishEarlyError}
-                </div>
-              )}
 
               {/* Live GitHub structure — each node updates as it is created */}
               <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-                <GitHubStructureCard structure={ghStructure} status={ghStatus} progress={ghProgress} />
+                <GitHubStructureCard structure={ghStructure} status={ghStatus} />
               </div>
             </>
           )}
         </aside>
       </div>
 
-      {/* Clear-plan confirmation (#651): wiping the plan is irreversible, so confirm via a
-          modal — never a double-click — so a stray double-press can't nuke the plan. */}
-      {confirmClear && (
+      {showBlueprintModal && (
+        <BlueprintUpdateModal
+          busy={restarting}
+          onGoBack={() => { setShowBlueprintModal(false); setProjectsView("list"); }}
+          onKeep={() => { void keepPlanFiles(); }}
+          onRestart={() => { setShowBlueprintModal(false); void doClearPlan(); }}
+          onDismiss={() => setShowBlueprintModal(false)}
+        />
+      )}
+
+      {showClearConfirm && (
         <Dialog
           title="Clear this plan?"
           danger
-          onDismiss={() => setConfirmClear(false)}
+          onDismiss={() => setShowClearConfirm(false)}
           actions={
             <>
-              <button className="btn ghost" onClick={() => setConfirmClear(false)}>cancel</button>
+              <button className="btn" onClick={() => setShowClearConfirm(false)}>cancel</button>
               <button
-                className="btn danger"
-                onClick={() => {
-                  setConfirmClear(false);
-                  clearPlan(effectiveProjectId);
-                  void invoke("clear_project_plan_files", { projectKey: effectiveProjectId });
-                  void handleRestart();
-                }}
+                className="btn"
+                style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                onClick={() => void doClearPlan()}
               >clear plan</button>
             </>
           }
         >
-          This wipes the entire plan for this project — sections, stage config, the UI
-          preview, grades, the fleet, and the plan files on disk — then restarts the
-          planner with a blank slate. This can't be undone.
-        </Dialog>
-      )}
-
-      {/* Blueprint mismatch (#647): the selected blueprint differs from the one this
-          project was planned with — choose before opening. */}
-      {blueprintMismatch && (
-        <Dialog
-          title="Different blueprint selected"
-          onDismiss={() => { setActiveBlueprint(projectBpId!); setMismatchAck(true); }}
-          actions={
-            <>
-              <button className="btn ghost" onClick={() => void exportProjectFiles()}>export files…</button>
-              <button
-                className="btn"
-                onClick={() => { setActiveBlueprint(projectBpId!); setMismatchAck(true); }}
-              >keep {projectBpName}</button>
-              <button
-                className="btn danger"
-                onClick={() => { applyBlueprintToProject(effectiveProjectId, activeBlueprintId); setMismatchAck(true); void handleRestart(); }}
-              >use {activeBpName}</button>
-            </>
-          }
-        >
-          This project was planned with <b>{projectBpName}</b>, but <b>{activeBpName}</b> is
-          selected. Using the selected blueprint resets the plan to its stages and clears
-          stage progress (grades, screen approvals) — the planner restarts. Your authored
-          plan files on disk are kept; export them first if you want a backup. Or keep this
-          project on <b>{projectBpName}</b>.
+          This wipes the entire plan for this project — sections, stage config, the fleet, and the
+          on-disk plan files — then restarts the planner with a blank slate. This can't be undone.
         </Dialog>
       )}
     </>

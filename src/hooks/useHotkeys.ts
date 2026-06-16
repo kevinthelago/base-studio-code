@@ -6,7 +6,11 @@ import { adjustFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { nextFullscreen } from "../lib/consoleFocus";
 import { CLEAR_INPUT_BYTES } from "../lib/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/paneSelect";
-import { SCREEN_KEY_MAP } from "../lib/shortcuts";
+import { SCREEN_HOTKEYS } from "../lib/shortcuts";
+import {
+  matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
+  type RebindableId,
+} from "../lib/keybindings";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 export interface ShortcutDef {
@@ -141,9 +145,14 @@ export function useHotkeys() {
       const tag = (e.target as HTMLElement).tagName;
       const inInput = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable;
 
+      // Active custom keybindings (#771) — read fresh so a rebind takes effect
+      // without re-subscribing the listener. Each rebindable action matches its
+      // chord by id (custom override ?? built-in default).
+      const bindings = useAppStore.getState().keybindings;
+
       // ── Ctrl+Shift+C: toggle broadcast mode ───────────────────────────────
       // Must come before the broadcast intercept and the inInput guard.
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "KeyC") {
+      if (matchesBinding(e, bindings, "broadcast-toggle")) {
         if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
@@ -154,7 +163,7 @@ export function useHotkeys() {
       // ── Ctrl+Shift+F: maximize / minimize the focused console pane ──────────
       // Before the broadcast intercept so it works in broadcast mode too, and
       // before the inInput guard so it fires while typing in a pane's terminal.
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "KeyF") {
+      if (matchesBinding(e, bindings, "fullscreen-toggle")) {
         if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
@@ -166,7 +175,7 @@ export function useHotkeys() {
       // ── Ctrl+Shift+N: focus the next waiting pane (maximize-aware) ──────────
       // Steps through agents that finished a turn. If a pane is maximized it
       // swaps the maximized pane to the next one, so you stay full-screen.
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "KeyN") {
+      if (matchesBinding(e, bindings, "focus-next-waiting")) {
         if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
@@ -181,7 +190,7 @@ export function useHotkeys() {
       // the active tab — including the focused one, since we send the bytes
       // directly rather than via xterm.onData, so there's no double-write to
       // worry about (#192).
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code === "Backspace") {
+      if (matchesBinding(e, bindings, "clear-input")) {
         if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
@@ -197,21 +206,31 @@ export function useHotkeys() {
         return;
       }
 
-      // ── Ctrl +/- /0: zoom the console terminal font (global, all panes) ─────
+      // ── Zoom the console terminal font (global, all panes) ─────────────────
       // Before the broadcast intercept so it isn't mirrored as a literal key, and
-      // before the inInput guard so it works while typing in a terminal. "+"/"="
-      // zoom in, "-"/"_" out, "0" resets; Shift state and numpad keys are folded
-      // in via e.key. Off the console screen we let the browser have the event.
-      if (e.ctrlKey && !e.metaKey && !e.altKey &&
-          ["+", "=", "-", "_", "0"].includes(e.key)) {
-        if (activeScreen !== "console") return;
-        e.preventDefault();
-        e.stopPropagation();
-        const cur = useAppStore.getState().terminalFontSize;
-        if (e.key === "0")                      setTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE);
-        else if (e.key === "-" || e.key === "_") setTerminalFontSize(adjustFontSize(cur, -1));
-        else                                     setTerminalFontSize(adjustFontSize(cur, +1));
-        return;
+      // before the inInput guard so it works while typing in a terminal. Rebindable
+      // (#773): once a zoom action is overridden it matches its captured chord;
+      // otherwise it keeps the default key-based match so BOTH Ctrl++ and Ctrl+=
+      // zoom in (the "+" key is Shift+= on most layouts), and numpad +/-/0 fold in
+      // via e.key. Off the console screen we let the browser have the event.
+      {
+        const ctrlOnly = e.ctrlKey && !e.metaKey && !e.altKey;
+        // Default zoom matches by e.key; an override matches its captured chord.
+        const zoom = (id: RebindableId, dflt: boolean): boolean =>
+          bindings[id] ? matchesChord(e, bindings[id]) : dflt;
+        const zoomReset = zoom("zoom-reset", ctrlOnly && e.key === "0");
+        const zoomOut   = zoom("zoom-out",   ctrlOnly && (e.key === "-" || e.key === "_"));
+        const zoomIn    = zoom("zoom-in",    ctrlOnly && (e.key === "+" || e.key === "="));
+        if (zoomReset || zoomOut || zoomIn) {
+          if (activeScreen !== "console") return;
+          e.preventDefault();
+          e.stopPropagation();
+          const cur = useAppStore.getState().terminalFontSize;
+          if (zoomReset)     setTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE);
+          else if (zoomOut)  setTerminalFontSize(adjustFontSize(cur, -1));
+          else               setTerminalFontSize(adjustFontSize(cur, +1));
+          return;
+        }
       }
 
       // ── Broadcast intercept ────────────────────────────────────────────────
@@ -225,9 +244,14 @@ export function useHotkeys() {
         // Navigation hotkeys (switch tab / pane / view by number) must NOT be
         // broadcast as text — skip them here so they fall through to their handlers
         // below and keep working in broadcast mode (e.g. while driving a fleet).
+        const lead = eventToLeader(e);
         const isNavHotkey =
-          (e.ctrlKey && !e.altKey && !e.metaKey && /^Digit[0-9]$/.test(e.code)) ||
-          (e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-5]$/.test(e.code));
+          (/^Digit[0-9]$/.test(e.code) &&
+            (lead === effectiveLeader(bindings, "tab-switch") ||
+             lead === effectiveLeader(bindings, "pane-select"))) ||
+          (/^Digit[1-5]$/.test(e.code) &&
+            (lead === effectiveLeader(bindings, "view-switch") ||
+             lead === effectiveLeader(bindings, "view-switch-all")));
         const bytes = isNavHotkey ? null : keyToTermBytes(e);
         if (bytes !== null) {
           const activeTab = tabs[activeTabIdx];
@@ -250,20 +274,22 @@ export function useHotkeys() {
       // Plain typing in inputs is fine; modifier combos still fire
       if (inInput && !e.ctrlKey && !e.metaKey && !e.altKey) return;
 
-      // F1–F6: navigate screens
-      if (SCREEN_KEY_MAP[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-        e.preventDefault();
-        setScreen(SCREEN_KEY_MAP[e.key]);
-        return;
+      // Screen navigation (F1–F6 by default, rebindable per screen #773).
+      for (const h of SCREEN_HOTKEYS) {
+        if (matchesBinding(e, bindings, `screen-${h.screen}` as RebindableId)) {
+          e.preventDefault();
+          setScreen(h.screen);
+          return;
+        }
       }
 
       // ── CTRL = SELECT ─────────────────────────────────────────────────────
 
-      // Ctrl+1–9: switch to workspace tab by index
-      const ctrlTab = e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code.match(/^Digit([1-9])$/);
-      if (ctrlTab) {
+      // Tab switch by index — Ctrl+1–9 by default; the leader is rebindable (#773).
+      const tabDigit = e.code.match(/^Digit([1-9])$/);
+      if (tabDigit && matchesLeader(e, bindings, "tab-switch")) {
         e.preventDefault();
-        const targetIdx = parseInt(ctrlTab[1], 10) - 1;
+        const targetIdx = parseInt(tabDigit[1], 10) - 1;
         if (targetIdx < tabs.length) setActiveTab(targetIdx);
         return;
       }
@@ -274,12 +300,12 @@ export function useHotkeys() {
       //   short pause or when Ctrl/Shift is released (see onKeyUp), so a single
       //   digit still feels instant. On the resolved pane the selection cycles
       //   focus → fullscreen → restore, exactly as a direct press did before.
-      const ctrlShiftDigit = e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && e.code.match(/^Digit(\d)$/);
-      if (ctrlShiftDigit) {
+      const paneDigit = e.code.match(/^Digit(\d)$/);
+      if (paneDigit && matchesLeader(e, bindings, "pane-select")) {
         if (activeScreen !== "console") return;
         e.stopPropagation();
         e.preventDefault();
-        digitBufferRef.current += ctrlShiftDigit[1];
+        digitBufferRef.current += paneDigit[1];
         if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
         commitTimerRef.current = setTimeout(commitDigitBuffer, PANE_SELECT_COMMIT_MS);
         return;
@@ -288,7 +314,7 @@ export function useHotkeys() {
       // ── ALT = MODIFY ──────────────────────────────────────────────────────
 
       // Alt+Shift+Enter: broadcast Enter to every pane (one-shot, regardless of broadcast mode)
-      if (e.altKey && !e.ctrlKey && !e.metaKey && e.shiftKey && e.key === "Enter") {
+      if (matchesBinding(e, bindings, "send-all-enter")) {
         if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
@@ -301,26 +327,32 @@ export function useHotkeys() {
         return;
       }
 
-      // Alt+1–5: switch focused pane's view
-      // Alt+Shift+1–5: switch ALL panes' view
-      const altDigit = e.altKey && !e.ctrlKey && !e.metaKey && e.code.match(/^Digit([1-5])$/);
-      if (altDigit) {
-        if (activeScreen !== "console") return;
-        e.preventDefault();
-        const view = VIEWS_ORDER[parseInt(altDigit[1], 10) - 1];
-        if (e.shiftKey) {
-          setAllPanesView(view);
-        } else if (focusedPaneIdx >= 0) {
-          setPaneView(focusedPaneIdx, view);
+      // Switch pane view by index — Alt+1–5 (focused) / Alt+Shift+1–5 (all) by
+      // default; both leaders are rebindable (#773). The all-panes leader is
+      // checked first so it wins when it's the more specific combo.
+      const viewDigit = e.code.match(/^Digit([1-5])$/);
+      if (viewDigit) {
+        const allMatch = matchesLeader(e, bindings, "view-switch-all");
+        const oneMatch = matchesLeader(e, bindings, "view-switch");
+        if (allMatch || oneMatch) {
+          if (activeScreen !== "console") return;
+          e.preventDefault();
+          const view = VIEWS_ORDER[parseInt(viewDigit[1], 10) - 1];
+          if (allMatch) {
+            setAllPanesView(view);
+          } else if (focusedPaneIdx >= 0) {
+            setPaneView(focusedPaneIdx, view);
+          }
+          return;
         }
-        return;
       }
     }
 
-    // Releasing Ctrl/Shift commits a pending pane-number buffer immediately, so
-    // single-digit selections don't wait out the timeout.
+    // Releasing any modifier commits a pending pane-number buffer immediately, so
+    // single-digit selections don't wait out the timeout — regardless of which
+    // modifier leader pane-select is bound to (#773).
     function onKeyUp(e: KeyboardEvent) {
-      if ((e.key === "Control" || e.key === "Shift") && digitBufferRef.current) {
+      if (["Control", "Shift", "Alt", "Meta"].includes(e.key) && digitBufferRef.current) {
         commitDigitBuffer();
       }
     }

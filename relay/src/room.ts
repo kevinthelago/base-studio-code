@@ -8,6 +8,8 @@ import { nextAlarmAt, roleFor, roomLifetimeExceeded, tooLarge, type Role } from 
 
 export interface Env {
   ROOMS: DurableObjectNamespace<RelayRoom>;
+  /** Optional KV namespace for per-IP rate-limiting. Absent in the default BYO deploy. */
+  RATE_LIMIT_KV?: KVNamespace;
 }
 
 /** Per-socket metadata stored via the hibernatable attachment (survives eviction). */

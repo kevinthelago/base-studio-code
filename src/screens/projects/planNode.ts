@@ -9,6 +9,10 @@
 //
 // Free of React / xterm / Tauri imports so the logic is unit-testable in isolation
 // (matches planSections.ts / featureContract.ts).
+//
+// Stable ids (#588 PS-ids): `mintNodeId` generates deterministic "{kind}-{hex}" ids
+// for PlanNodes so the planner-sync merge engine can key tree nodes stably.
+// Delegates to plannerCore/ids.ts for the canonical id derivation.
 
 /**
  * Node kinds. **Extensible** — any string is valid so a project can name a kind it
@@ -124,3 +128,7 @@ export function progress(root: PlanNode): { ready: number; total: number; percen
   const total = all.length;
   return { ready, total, percent: total === 0 ? 0 : Math.round((ready / total) * 100) };
 }
+
+// ── Stable ids (#588 PS-ids) ──────────────────────────────────────────────────
+
+export { nodeId as mintNodeId } from "../../lib/plannerCore/ids";
