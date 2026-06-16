@@ -894,6 +894,53 @@ async fn clone_repo(project: String, full_name: String) -> Result<String, String
     Ok(dest.to_string_lossy().into_owned())
 }
 
+/// Download (or update) a catalog MCP server repo into the app-managed
+/// `~/.base-studio-code/mcp/<name>` and return its local path (#859 follow-up). The
+/// Extensions catalog's "download" button calls this so a first-party server lands at a
+/// known location ready to build + run, instead of just opening the browser. Idempotent:
+/// an existing clone is fast-forwarded; a fresh one is a shallow clone of the default
+/// branch (`main`). `name` is slugified so it can never escape the `mcp/` root.
+/// Resolve a catalog MCP server's download directory under `~/.base-studio-code/mcp/`,
+/// slugifying `name` (`[A-Za-z0-9._-]`, else `_`) so it can never escape the `mcp/` root.
+/// `Err` for an empty / `.` / `..` name. Pure over the base dir — unit-tested.
+fn mcp_install_dir(name: &str) -> Result<std::path::PathBuf, String> {
+    let safe: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
+        .collect();
+    if safe.is_empty() || safe == "." || safe == ".." {
+        return Err("mcp_clone: invalid name".into());
+    }
+    Ok(bsc_base_dir().join("mcp").join(safe))
+}
+
+#[tauri::command]
+async fn mcp_clone(name: String, url: String) -> Result<String, String> {
+    let _perf = PerfSpan::new("mcp_clone");
+    let dir = mcp_install_dir(&name)?;
+    let dir_str = dir.to_string_lossy().into_owned();
+    if dir.join(".git").exists() {
+        // Already downloaded — fast-forward to the latest default branch (best-effort).
+        let mut pull = std::process::Command::new("git");
+        pull.args(["-C", &dir_str, "pull", "--ff-only"]);
+        let _ = no_window(&mut pull).status();
+        log::info!("mcp_clone: updated {name} at {dir_str}");
+        return Ok(dir_str);
+    }
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["clone", "--depth", "1", &url, &dir_str]);
+    let status = no_window(&mut cmd).status().map_err(|e| e.to_string())?;
+    if !status.success() {
+        log::warn!("mcp_clone: git clone failed for {url}");
+        return Err(format!("git clone failed for {url}"));
+    }
+    log::info!("mcp_clone: downloaded {url} → {dir_str}");
+    Ok(dir_str)
+}
+
 /// Branch/dir slug for a fleet agent — keeps only `[A-Za-z0-9._-]`, every other
 /// char becomes `-`. Must match the frontend `worktreeSlug` so the computed
 /// worktree cwd and the on-disk worktree path agree.
@@ -1756,6 +1803,7 @@ pub fn run() {
             planner::setup_workspaces,
             setup_kb_workspace,
             clone_repo,
+            mcp_clone,
             ensure_worktree,
             ensure_director_protocol,
             docstore::get_base_dir,
@@ -2544,6 +2592,27 @@ mod tests {
         super::inject_skills(&hub, &wt_local);
         assert_eq!(after, std::fs::read_to_string(&wt_local).unwrap());
 
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn mcp_install_dir_slugifies_and_stays_under_mcp_root() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("mcpdir");
+        let root = super::bsc_base_dir().join("mcp");
+        // A normal repo name lands directly under mcp/.
+        assert_eq!(super::mcp_install_dir("compliance-mcp-server").unwrap(), root.join("compliance-mcp-server"));
+        // Path separators are slugified to `_`, so a traversal attempt collapses to a single
+        // literal dir name DIRECTLY under mcp/ — it can't escape (the `..` substring that
+        // survives is just part of a leaf filename, not a real parent ref).
+        let evil = super::mcp_install_dir("../../etc/passwd").unwrap();
+        assert_eq!(evil.parent(), Some(root.as_path()), "must be a direct child of mcp/: {evil:?}");
+        let leaf = evil.file_name().unwrap().to_string_lossy();
+        assert!(!leaf.contains('/') && !leaf.contains('\\'), "no separators survive the slug: {leaf}");
+        // Empty / dot names are rejected.
+        assert!(super::mcp_install_dir("").is_err());
+        assert!(super::mcp_install_dir(".").is_err());
+        assert!(super::mcp_install_dir("..").is_err());
         std::fs::remove_dir_all(&home).ok();
     }
 

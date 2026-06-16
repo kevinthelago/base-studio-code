@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { mcpInstallDir } from "../../lib/projectPaths";
 import { useAppStore } from "../../store";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { usePageTabs } from "../../hooks/usePageTabs";
@@ -60,10 +60,15 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
   const setExtensionProjects = useAppStore(s => s.setExtensionProjects);
   const githubToken      = useAppStore(s => s.githubToken);
 
+  const bscBaseDir       = useAppStore(s => s.bscBaseDir);
+
   const [scope, setScope] = useState<Scope>("global");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  // Per-catalog-item download state (#859 follow-up): the "download" button clones the repo
+  // into ~/.base-studio-code/mcp/<repo> via the mcp_clone command.
+  const [dl, setDl] = useState<Record<string, "downloading" | "done" | "error">>({});
 
   // The user's GitHub Projects, fetched once on mount when a token exists. No
   // token / empty / failure all collapse to "global only" — never a crash.
@@ -104,8 +109,32 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
     setExtensionProjects(e.id, next);
   }
 
+  /** The repo's short name from its catalog link (the on-disk download dir name). */
+  function repoNameFromLink(link: string): string {
+    return link.replace(/\/+$/, "").split("/").pop() ?? "";
+  }
+
+  /** Download a catalog server's repo into ~/.base-studio-code/mcp/<repo> (clone via git). */
+  async function downloadFromCatalog(item: CatalogItem) {
+    if (!item.link) return;
+    const name = repoNameFromLink(item.link);
+    setDl(s => ({ ...s, [item.name]: "downloading" }));
+    try {
+      await invoke<string>("mcp_clone", { name, url: item.link });
+      setDl(s => ({ ...s, [item.name]: "done" }));
+    } catch {
+      setDl(s => ({ ...s, [item.name]: "error" }));
+    }
+  }
+
   function addFromCatalog(item: CatalogItem) {
-    addExtension(defFromCatalog(item.name));
+    const def = defFromCatalog(item.name);
+    // Point the run config at the on-disk download location (#859 follow-up): substitute the
+    // `{dir}` placeholder with the resolved ~/.base-studio-code/mcp/<repo> path.
+    if (item.link && def.args?.includes("{dir}")) {
+      def.args = def.args.replace("{dir}", mcpInstallDir(bscBaseDir, repoNameFromLink(item.link)));
+    }
+    addExtension(def);
     // The new def is appended with a store-assigned id; select it for editing.
     const created = useAppStore.getState().extensions;
     const last = created[created.length - 1];
@@ -262,7 +291,17 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
                 <span className="hint">{c.by.startsWith("@modelcontextprotocol") ? "official MCP" : (c.by === "first-party" || c.link) ? "first-party" : "third-party"}</span>
                 <div className="spacer" />
                 {c.link && (
-                  <button className="btn ghost" style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => openUrl(c.link!)}>download ↗</button>
+                  <button
+                    className="btn ghost"
+                    style={{ height: 22, fontSize: 10, padding: "0 10px" }}
+                    disabled={dl[c.name] === "downloading"}
+                    onClick={() => downloadFromCatalog(c)}
+                  >
+                    {dl[c.name] === "downloading" ? "downloading…"
+                      : dl[c.name] === "done" ? "downloaded ✓"
+                      : dl[c.name] === "error" ? "retry ↻"
+                      : "download"}
+                  </button>
                 )}
                 <button className="btn" style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => addFromCatalog(c)}>add</button>
               </div>

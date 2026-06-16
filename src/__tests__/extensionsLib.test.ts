@@ -74,10 +74,11 @@ describe("catalog templates + blanks", () => {
       expect(item!.link).toMatch(/^https:\/\/github\.com\/kevinthelago\//);
       expect(item!.install).toBeTruthy();
     }
-    // "add" produces a runnable stdio MCP config (run from the cloned repo).
-    expect(defFromCatalog("Compliance")).toMatchObject({ kind: "mcp", transport: "stdio", command: "uv", args: "run compliance-mcp" });
-    expect(defFromCatalog("Complexity Analyzer")).toMatchObject({ command: "node", args: "dist/mcp/index.js" });
-    expect(defFromCatalog("Dependency Graph")).toMatchObject({ command: "node", args: "dist/index.js" });
+    // "add" produces a stdio MCP config whose args carry the {dir} placeholder, substituted
+    // with the on-disk download path (~/.base-studio-code/mcp/<repo>) when added.
+    expect(defFromCatalog("Compliance")).toMatchObject({ kind: "mcp", transport: "stdio", command: "uv", args: "run --directory {dir} compliance-mcp" });
+    expect(defFromCatalog("Complexity Analyzer")).toMatchObject({ command: "node", args: "{dir}/dist/mcp/index.js" });
+    expect(defFromCatalog("Dependency Graph")).toMatchObject({ command: "node", args: "{dir}/dist/index.js" });
   });
 
   it("blankExtension produces empty mcp/hook shapes", () => {

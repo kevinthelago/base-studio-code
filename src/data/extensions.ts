@@ -182,11 +182,11 @@ export const EXTENSIONS: Extension[] = [
 export const EXT_CATALOG: CatalogItem[] = [
   // First-party MCP servers (#858) — install from source via the download link.
   { name: "Compliance",          by: "kevinthelago", icon: "✓", desc: "Surface compliance findings — GDPR, SOC 2, ISO 27001, HIPAA, PCI DSS — by scanning a project or a git diff, and gate CI on severity thresholds.",
-    link: "https://github.com/kevinthelago/compliance-mcp-server",      install: "Clone, `uv sync`, then run `uv run compliance-mcp`." },
+    link: "https://github.com/kevinthelago/compliance-mcp-server",      install: "Downloads to ~/.base-studio-code/mcp/compliance-mcp-server. Run `uv sync` there, then Add." },
   { name: "Complexity Analyzer", by: "kevinthelago", icon: "∿", desc: "Analyze code complexity (cyclomatic, cognitive, hotspots) across a codebase to target refactors.",
-    link: "https://github.com/kevinthelago/complexity-analyzer-mcp",     install: "Clone, `pnpm install && pnpm build`, then run `node dist/mcp/index.js`." },
+    link: "https://github.com/kevinthelago/complexity-analyzer-mcp",     install: "Downloads to ~/.base-studio-code/mcp/complexity-analyzer-mcp. Run `pnpm install && pnpm build` there, then Add." },
   { name: "Dependency Graph",    by: "kevinthelago", icon: "⌥", desc: "Explore a project's dependency graph — query nodes, neighbors, cycles, and stats.",
-    link: "https://github.com/kevinthelago/dependency-graph-mcp-server", install: "Clone, `pnpm install && pnpm build`, then run `node dist/index.js`." },
+    link: "https://github.com/kevinthelago/dependency-graph-mcp-server", install: "Downloads to ~/.base-studio-code/mcp/dependency-graph-mcp-server. Run `pnpm install && pnpm build` there, then Add." },
   { name: "Sentry",       by: "sentry",                  icon: "S",  desc: "Fetch unresolved issues, drill into event payloads, suggest fixes." },
   { name: "Linear",       by: "linear",                  icon: "L",  desc: "Search, create, and update Linear issues from any pane." },
   { name: "Postgres",     by: "@modelcontextprotocol",   icon: "pg", desc: "Read-only SELECT and schema introspection on a database connection." },
