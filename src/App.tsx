@@ -16,6 +16,7 @@ import { ConsoleScreen } from "./screens/Console";
 import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
 import { AutomationsScreen } from "./screens/automations";
+import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
 import { ExtensionsScreen } from "./screens/extensions";
 import { SettingsScreen } from "./screens/settings";
 import { ProjectsScreen } from "./screens/projects";
@@ -425,7 +426,7 @@ export default function App() {
           </div>
           <StatusBar extra={
             activeScreen === "automation"
-              ? <span className="s"><i className="warn" /> 4 schedules armed · next at 02:00</span>
+              ? <AutomationsStatus />
             : activeScreen === "skills"
               ? <>
                   <span className="s"><i /> {SKILL_KPIS.total} skills loaded</span>

@@ -19,3 +19,21 @@ export function fmtStamp(ms: number | null): string {
   if (day === today - 86_400_000) return `yesterday ${t}`;
   return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${t}`;
 }
+
+/**
+ * The status-bar summary of armed schedules: how many are armed and the soonest next run
+ * across them (`null` when none are armed or none have a next run). Pure; drives the live
+ * Automations status-bar slot (replacing the old hardcoded "4 schedules armed").
+ */
+export function armedSummary(
+  automations: ReadonlyArray<{ armed: boolean; nextRunAt: number | null }>,
+): { count: number; nextAt: number | null } {
+  let count = 0;
+  let nextAt: number | null = null;
+  for (const a of automations) {
+    if (!a.armed) continue;
+    count++;
+    if (a.nextRunAt != null && (nextAt == null || a.nextRunAt < nextAt)) nextAt = a.nextRunAt;
+  }
+  return { count, nextAt };
+}
