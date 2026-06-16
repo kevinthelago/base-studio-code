@@ -5,6 +5,7 @@
 
 import { type Blueprint, type BlueprintSection, type Pipeline, uid } from "./blueprints";
 import { wrapExtension, type ExtensionManifest } from "../../lib/extensions/manifest";
+import { type SkillPayload } from "./blueprintSkills";
 
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
 const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -85,9 +86,36 @@ export function coerceBlueprint(payload: unknown): Blueprint | null {
   };
 }
 
-/** Wrap a blueprint in the extension envelope for export / share / publish. */
-export function blueprintToManifest(bp: Blueprint): ExtensionManifest<Blueprint> {
-  return wrapExtension("blueprint", bp.id, bp.name, "1.0.0", bp, { description: bp.desc });
+/** Wrap a blueprint in the extension envelope for export / share / publish. When `bundledSkills`
+ *  is given (#897 Phase 5b), the attached skills' CONTENT travels in the payload so the share is
+ *  self-contained for knowledge; the recipient reconstitutes them into their library on import.
+ *  (MCP servers stay by reference — they download from their catalog link, not the gist.) */
+export function blueprintToManifest(bp: Blueprint, bundledSkills: SkillPayload[] = []): ExtensionManifest<Blueprint> {
+  const payload = bundledSkills.length ? { ...bp, bundledSkills } : bp;
+  return wrapExtension("blueprint", bp.id, bp.name, "1.0.0", payload, { description: bp.desc });
+}
+
+/** Coerce embedded skill content out of a shared manifest's payload (#897 Phase 5b). Tolerant of
+ *  an absent/old payload (returns []). Each item keeps its id so the blueprint's refs resolve. */
+export function bundledSkillsFromManifest(m: ExtensionManifest): SkillPayload[] {
+  const raw = (m?.payload as { bundledSkills?: unknown } | undefined)?.bundledSkills;
+  if (!Array.isArray(raw)) return [];
+  const out: SkillPayload[] = [];
+  for (const v of raw) {
+    if (!v || typeof v !== "object") continue;
+    const o = v as Record<string, unknown>;
+    const id = str(o.id);
+    const name = str(o.name);
+    if (!id || !name) continue;
+    const kind = o.kind === "kb" ? "kb" : "skill";
+    out.push({
+      id, name, kind, content: str(o.content), desc: str(o.desc) || undefined,
+      ...(Array.isArray(o.tags) ? { tags: strArr(o.tags) } : {}),
+      ...(str(o.skillKind) ? { skillKind: str(o.skillKind) as SkillPayload["skillKind"] } : {}),
+      ...(Array.isArray(o.tools) ? { tools: strArr(o.tools) } : {}),
+    });
+  }
+  return out;
 }
 
 /** Reconstruct a blueprint from a validated manifest. The store assigns a fresh
