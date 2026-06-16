@@ -1,5 +1,28 @@
 import { describe, it, expect } from "vitest";
-import { parseSkillLog, aggregateSkillTelemetry } from "../lib/skillTelemetry";
+import { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from "../lib/skillTelemetry";
+
+const _stat = (over: Partial<SkillStats>): SkillStats =>
+  ({ invocations: 0, success: 0, successRate: 0, today: 0, trend: [], ...over });
+
+describe("skillStatusKpis (status-bar live data)", () => {
+  it("reports library size, sums today's invocations, and flags the worst invoked skill", () => {
+    const stats = {
+      "bump-dep-safely": _stat({ invocations: 50, successRate: 78, today: 12 }),
+      "write-tests":     _stat({ invocations: 30, successRate: 95, today: 6 }),
+      "never-run":       _stat({ invocations: 0,  successRate: 0,  today: 0 }), // not invoked → ignored for worst
+    };
+    expect(skillStatusKpis(9, stats)).toEqual({
+      loaded: 9,
+      invToday: 18,
+      worst: { skill: "bump-dep-safely", rate: 78 },
+    });
+  });
+
+  it("has no worst skill when nothing has been invoked", () => {
+    expect(skillStatusKpis(3, { idle: _stat({ invocations: 0 }) })).toEqual({ loaded: 3, invToday: 0, worst: null });
+    expect(skillStatusKpis(0, {})).toEqual({ loaded: 0, invToday: 0, worst: null });
+  });
+});
 
 const NOW = new Date("2026-06-02T12:00:00Z"); // today = 2026-06-02; window 05-27..06-02
 
