@@ -55,7 +55,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          files=$(find src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*.exe' \))
+          # The Cargo workspace puts the target dir at the REPO ROOT (target/release/bundle),
+          # not src-tauri/target — search anywhere under a release/bundle dir to be robust.
+          files=$(find . -type f -path '*release/bundle*' \( -name '*.msi' -o -name '*.exe' \))
           echo "Found installers:"; echo "$files"
           [ -n "$files" ] || { echo "::error::no .msi/.exe bundle produced"; exit 1; }
           # --clobber so a re-run replaces (not duplicates) the asset; leaves macOS/Linux untouched.
