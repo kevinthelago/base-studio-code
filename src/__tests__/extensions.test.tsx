@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { ExtensionsScreen } from "../screens/extensions";
 import { EXT_CATALOG } from "../data/extensions";
 import { useAppStore } from "../store";
@@ -72,19 +72,37 @@ describe("ExtensionsScreen", () => {
     expect(screen.queryByText("Dependency Graph")).toBeNull();
   });
 
-  it("adds a catalog item to the store and opens it in the drawer", () => {
-    const { container } = render(<ExtensionsScreen />);
-    const before = useAppStore.getState().extensions.length;
-    fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]);
-    // Click the "add" button on a catalog card.
-    const addBtn = within(screen.getByText("Compliance").closest(".cat-card") as HTMLElement).getByText("add");
-    fireEvent.click(addBtn);
-    expect(useAppStore.getState().extensions.length).toBe(before + 1);
-    expect(useAppStore.getState().extensions.some(e => e.name === "Compliance")).toBe(true);
-    // The new extension opens in the drawer for editing.
-    const drawer = container.querySelector(".drawer") as HTMLElement;
-    expect(drawer.className).toContain("on");
-    expect(within(drawer).getByText("Compliance")).toBeTruthy();
+  it("downloads a catalog server: one 'download' action (no 'add'), clones + adds to Installed silently (#885)", async () => {
+    const { container } = render(<ExtensionsScreen kind="mcp" />);
+    fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]); // catalog
+    const card = screen.getByText("Compliance").closest(".cat-card") as HTMLElement;
+    // A downloadable first-party server shows only "download" — the "add" button is gone.
+    expect(within(card).queryByText("add")).toBeNull();
+    fireEvent.click(within(card).getByText("download"));
+    // Clone (mock resolves) → added to Installed; build runs after. No drawer opens.
+    await waitFor(() => expect(useAppStore.getState().extensions.some(e => e.name === "Compliance")).toBe(true));
+    expect((container.querySelector(".drawer") as HTMLElement).className).not.toContain("on");
+  });
+
+  it("hides catalog entries that are already installed (#885)", () => {
+    useAppStore.setState({
+      extensions: [{ id: "c", kind: "mcp", name: "Compliance", enabled: true, projects: [], transport: "stdio", command: "uv", args: "x", env: [] }],
+      githubToken: "",
+    });
+    const { container } = render(<ExtensionsScreen kind="mcp" />);
+    fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]); // catalog
+    expect(screen.queryByText("Compliance")).toBeNull();          // installed → not in the catalog
+    expect(screen.getByText("Complexity Analyzer")).toBeTruthy(); // not installed → still listed
+  });
+
+  it("shows a version/update control on an installed downloadable server (#885)", async () => {
+    useAppStore.setState({
+      extensions: [{ id: "c", kind: "mcp", name: "Compliance", enabled: true, projects: [], transport: "stdio", command: "uv", args: "x", env: [] }],
+      githubToken: "",
+    });
+    render(<ExtensionsScreen kind="mcp" />); // opens on the Installed tab
+    // The control runs the version check on open; with the invoke mock it stays in "checking…".
+    expect(await screen.findByText("checking…")).toBeTruthy();
   });
 
   it("opens the config drawer when a row is clicked and closes via the scrim", () => {

@@ -1058,6 +1058,53 @@ async fn mcp_status(name: String) -> Result<McpStatusResult, String> {
     Ok(McpStatusResult { downloaded, built })
 }
 
+/// An update can be pulled when the remote HEAD differs from the local HEAD (both known).
+/// Pure over the two sha strings — unit-tested.
+fn mcp_update_available(local: &str, remote: &str) -> bool {
+    let (l, r) = (local.trim(), remote.trim());
+    !l.is_empty() && !r.is_empty() && l != r
+}
+
+/// Run a git command, returning its trimmed stdout on success, else "".
+fn git_output(args: &[&str]) -> String {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(args);
+    match no_window(&mut cmd).output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        _ => String::new(),
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")] // return values aren't auto-renamed (#789): expose `updateAvailable`
+struct McpUpdateStatus {
+    downloaded: bool,
+    built: bool,
+    update_available: bool,
+}
+
+/// Check whether a downloaded MCP server has an update available — the MCP page runs this for
+/// every installed first-party server on open, so each card shows an "up to date" pill or an
+/// "update" button. Compares the local HEAD with the remote's (`git ls-remote origin HEAD`, refs
+/// only — no object download). Also reports downloaded/built so an un-built clone surfaces a
+/// "build" action. `update_available` is false for a non-git / not-downloaded server.
+#[tauri::command]
+async fn mcp_check_update(name: String) -> Result<McpUpdateStatus, String> {
+    let _perf = PerfSpan::new("mcp_check_update");
+    let dir = mcp_install_dir(&name)?;
+    let (downloaded, built) = mcp_status_of(&dir);
+    let mut update_available = false;
+    if downloaded {
+        let dir_str = dir.to_string_lossy().into_owned();
+        let local = git_output(&["-C", &dir_str, "rev-parse", "HEAD"]);
+        // `<sha>\tHEAD` — take the leading sha.
+        let remote_line = git_output(&["-C", &dir_str, "ls-remote", "origin", "HEAD"]);
+        let remote = remote_line.split_whitespace().next().unwrap_or("");
+        update_available = mcp_update_available(&local, remote);
+    }
+    Ok(McpUpdateStatus { downloaded, built, update_available })
+}
+
 /// Branch/dir slug for a fleet agent — keeps only `[A-Za-z0-9._-]`, every other
 /// char becomes `-`. Must match the frontend `worktreeSlug` so the computed
 /// worktree cwd and the on-disk worktree path agree.
@@ -1923,6 +1970,7 @@ pub fn run() {
             mcp_clone,
             mcp_build,
             mcp_status,
+            mcp_check_update,
             ensure_worktree,
             ensure_director_protocol,
             docstore::get_base_dir,
@@ -2777,6 +2825,17 @@ mod tests {
         std::fs::create_dir_all(dir.join("node_modules")).unwrap();
         assert_eq!(super::mcp_status_of(&dir), (true, true));
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn mcp_update_available_compares_heads() {
+        // Differing non-empty shas → update available; equal → none; empty (unknown) → none.
+        assert!(super::mcp_update_available("aaaa", "bbbb"));
+        assert!(!super::mcp_update_available("aaaa", "aaaa"));
+        assert!(!super::mcp_update_available("aaaa", ""));
+        assert!(!super::mcp_update_available("", "bbbb"));
+        // Trims surrounding whitespace before comparing.
+        assert!(!super::mcp_update_available(" aaaa\n", "aaaa"));
     }
 
     #[test]
