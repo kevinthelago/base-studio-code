@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveSkillContent, buildSkillContext } from "../screens/projects/blueprintSkills";
+import { resolveSkillContent, buildSkillContext, collectBlueprintSkillIds } from "../screens/projects/blueprintSkills";
 import { mkStageSection } from "../screens/projects/blueprintEdit";
 import type { SkillDef } from "../lib/skills";
 import type { KbBlock } from "../data/mock";
@@ -21,6 +21,16 @@ describe("resolveSkillContent (#636 slice b)", () => {
       { name: "API design", kind: "skill", content: "Prefer REST; version every endpoint." },
       { name: "House style", kind: "kb", content: "2-space indent; no default exports." },
     ]);
+  });
+});
+
+describe("collectBlueprintSkillIds", () => {
+  it("unions blueprint-wide + every section's skills, deduped + order-preserving", () => {
+    const b = {
+      skills: ["s1"],
+      sections: [{ skills: ["k1", "s1"] }, { skills: ["s2"] }, {}],
+    } as unknown as Blueprint;
+    expect(collectBlueprintSkillIds(b)).toEqual(["s1", "k1", "s2"]);
   });
 });
 

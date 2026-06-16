@@ -39,6 +39,7 @@ import { effectiveProjectRepos, localReposFor } from "./projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
 import { applyBlueprintMcp, collectBlueprintMcp } from "./blueprintMcp";
+import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "./blueprintSkills";
 import { catalogLink, repoNameFromLink, mcpRepoName } from "../../lib/mcpInstall";
 import { type McpInstallState } from "./mcpPaneData";
 import { EXT_CATALOG } from "../../data/extensions";
@@ -544,6 +545,23 @@ export function Planning({ visible }: { visible: boolean }) {
       if (link) invoke("mcp_clone", { name: repoNameFromLink(link), url: link }).catch(() => {});
     }
   }, [bpMcpKey, effectiveProjectId, activeBlueprintId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Write the active blueprint's attached SKILLS to the project hub's skills.md (#636 — the write
+  // that was built but never wired). inject_skills (Rust) inlines that file into each worker's
+  // CLAUDE.local.md and the planner reads it, so this is the skills counterpart to the MCP launch
+  // wiring above. No-op when nothing is attached. Re-runs on project / attached-skill-set change.
+  const bpSkillKey = useMemo(() => {
+    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    return bp ? collectBlueprintSkillIds(bp).join("\n") : "";
+  }, [blueprints, activeBlueprintId]);
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    const store = useAppStore.getState();
+    const bp = store.blueprints.find(b => b.id === activeBlueprintId);
+    if (!bp) return;
+    void writeBlueprintSkillContext({ projectKey: effectiveProjectId, blueprint: bp, skills: store.skills, kb: store.kbBlocks })
+      .catch((e) => console.warn("writeBlueprintSkillContext failed:", e));
+  }, [bpSkillKey, effectiveProjectId, activeBlueprintId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── MCP stage handlers (#878) ──────────────────────────────────────────────
   const onToggleMcp = useCallback((id: string) => useAppStore.getState().toggleExtension(id), []);
