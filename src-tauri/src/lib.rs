@@ -731,6 +731,19 @@ fn read_hook_log(limit: usize) -> Vec<String> {
     lines
 }
 
+/// Read the MCP-call log (#879): the newest `limit` TSV lines, newest first. Each line is
+/// `ts \t server \t tool \t outcome \t ms [\t detail]` (written by the bsc-mcp hook pair;
+/// absent until that lands, in which case this returns an empty list). Mirrors `read_hook_log`.
+#[tauri::command]
+fn read_mcp_log(limit: usize) -> Vec<String> {
+    let path = bsc_base_dir().join("mcp.log");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
+    lines.reverse();
+    lines.truncate(limit);
+    lines
+}
+
 /// Collect a UI-skeleton directory as (relpath, contents) pairs — source files only,
 /// size-capped, recursive. Pure over a path so it's unit-testable (#533).
 fn read_skeleton_dir(root: &std::path::Path) -> Vec<(String, String)> {
@@ -1947,6 +1960,7 @@ pub fn run() {
             read_audit_log,
             read_skill_log,
             read_hook_log,
+            read_mcp_log,
             tokens::read_token_usage,
             read_coord_log,
             read_ui_skeleton,
