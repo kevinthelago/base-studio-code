@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { resolveMcpInstallDir, repoNameFromLink } from "../../lib/mcpInstall";
+import { resolveMcpInstallDir, repoNameFromLink, catalogLink, mcpRepoName } from "../../lib/mcpInstall";
 import { useAppStore } from "../../store";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { McpAnalyticsTab } from "./McpAnalytics";
@@ -13,6 +13,8 @@ import {
 import "./extensions.css";
 
 type Scope = "global" | "project";
+/** Install/version status of a downloadable MCP server on the MCP page (#885). */
+type McpStat = "checking" | "current" | "outdated" | "needs-build" | "downloading" | "building" | "updating" | "error";
 
 /** A GitHub Project (subset of the GraphQL `projectsV2` node). */
 interface GhProject {
@@ -74,9 +76,12 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  // Per-catalog-item download state (#859 follow-up): the "download" button clones the repo
-  // into ~/.base-studio-code/mcp/<repo> via the mcp_clone command.
-  const [dl, setDl] = useState<Record<string, "downloading" | "done" | "error">>({});
+  // Per-server install/version status for the MCP page (#885), keyed by server NAME. Refreshed
+  // on page open via mcp_check_update (the version check); advanced by the download (catalog) and
+  // update (installed) actions. "current" = built + at the latest commit → an "up to date" pill;
+  // "outdated"/"needs-build" → an update/build button; the rest are transient action states.
+  const [mcpStatus, setMcpStatus] = useState<Record<string, McpStat>>({});
+  const setStat = (name: string, s: McpStat) => setMcpStatus(m => ({ ...m, [name]: s }));
 
   // The user's GitHub Projects, fetched once on mount when a token exists. No
   // token / empty / failure all collapse to "global only" — never a crash.
@@ -93,6 +98,29 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
       .catch(() => { if (!cancelled) setProjects([]); });
     return () => { cancelled = true; };
   }, [githubToken]);
+
+  // Version check on every MCP-page open (#885): for each installed downloadable server, ask the
+  // backend whether its clone is behind its remote (and whether it's built), so the installed
+  // card shows an "up to date" pill or an "update"/"build" button. Best-effort + async; an
+  // in-flight download/update is left alone. MCP page only (hooks aren't downloadable).
+  useEffect(() => {
+    if (kind !== "mcp") return;
+    const servers = extensions.filter(e => e.kind === "mcp" && catalogLink(e.name)).map(e => e.name);
+    if (servers.length === 0) return;
+    let cancelled = false;
+    for (const name of servers) {
+      setMcpStatus(m => (m[name] ? m : { ...m, [name]: "checking" }));
+      invoke<{ downloaded: boolean; built: boolean; updateAvailable: boolean }>("mcp_check_update", { name: mcpRepoName(name) })
+        .then(r => {
+          if (cancelled) return;
+          const next: McpStat = !r.downloaded ? "needs-build" : r.updateAvailable ? "outdated" : !r.built ? "needs-build" : "current";
+          setMcpStatus(m => (m[name] === "downloading" || m[name] === "building" || m[name] === "updating" ? m : { ...m, [name]: next }));
+        })
+        .catch(() => {});
+    }
+    return () => { cancelled = true; };
+    // Re-check when the set of installed downloadable servers changes (and on mount).
+  }, [kind, extensions.filter(e => e.kind === "mcp" && catalogLink(e.name)).map(e => e.name).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Everything is scoped to this screen's `kind` (#865): the MCP page shows only MCP servers;
   // the Hooks view only hooks. The shared `extensions` store + config-writer are unchanged.
@@ -123,29 +151,58 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
     setExtensionProjects(e.id, next);
   }
 
-  /** The repo's short name from its catalog link (the on-disk download dir name). */
-  /** Download a catalog server's repo into ~/.base-studio-code/mcp/<repo> (clone via git). */
-  async function downloadFromCatalog(item: CatalogItem) {
-    if (!item.link) return;
-    const name = repoNameFromLink(item.link);
-    setDl(s => ({ ...s, [item.name]: "downloading" }));
-    try {
-      await invoke<string>("mcp_clone", { name, url: item.link });
-      setDl(s => ({ ...s, [item.name]: "done" }));
-    } catch {
-      setDl(s => ({ ...s, [item.name]: "error" }));
+  /** Add a catalog item as an installed extension, with its `{dir}` placeholder resolved to the
+   *  on-disk download path (#859). `select` opens it in the drawer (the manual "add" flow); the
+   *  download flow adds silently so the server just lands in the Installed list (#885). */
+  function addFromCatalog(item: CatalogItem, select = true) {
+    const def = resolveMcpInstallDir(defFromCatalog(item.name), item.name, bscBaseDir);
+    addExtension(def);
+    if (select) {
+      const created = useAppStore.getState().extensions;
+      const last = created[created.length - 1];
+      if (last) setSelectedId(last.id);
     }
   }
 
-  function addFromCatalog(item: CatalogItem) {
-    // Point the run config at the on-disk download location (#859): substitute the `{dir}`
-    // placeholder with the resolved ~/.base-studio-code/mcp/<repo> path (shared resolver).
-    const def = resolveMcpInstallDir(defFromCatalog(item.name), item.name, bscBaseDir);
-    addExtension(def);
-    // The new def is appended with a store-assigned id; select it for editing.
-    const created = useAppStore.getState().extensions;
-    const last = created[created.length - 1];
-    if (last) setSelectedId(last.id);
+  /** One-click install (#885): the catalog's only action. Clone → add to Installed (silently) →
+   *  build. The card then disappears from the catalog (it's installed), and the Installed card
+   *  shows its version status. Best-effort build — a toolchain failure leaves it installed with
+   *  a "build" action on the Installed card. */
+  async function downloadFromCatalog(item: CatalogItem) {
+    if (!item.link) return;
+    const repo = repoNameFromLink(item.link);
+    setStat(item.name, "downloading");
+    try {
+      await invoke<string>("mcp_clone", { name: repo, url: item.link });
+    } catch {
+      setStat(item.name, "error");
+      return;
+    }
+    addFromCatalog(item, false); // moves the card into the Installed list
+    setStat(item.name, "building");
+    try {
+      const r = await invoke<{ ok: boolean }>("mcp_build", { name: repo });
+      setStat(item.name, r.ok ? "current" : "needs-build");
+    } catch {
+      setStat(item.name, "needs-build");
+    }
+  }
+
+  /** Update (or finish building) an installed downloadable server (#885): pull the latest commit
+   *  then rebuild. Drives the Installed card's update/build button. */
+  async function updateInstalled(e: ExtensionDef) {
+    const link = catalogLink(e.name);
+    if (!link) return;
+    const repo = repoNameFromLink(link);
+    setStat(e.name, "updating");
+    try {
+      await invoke("mcp_clone", { name: repo, url: link }); // fast-forwards an existing clone
+      setStat(e.name, "building");
+      const r = await invoke<{ ok: boolean }>("mcp_build", { name: repo });
+      setStat(e.name, r.ok ? "current" : "needs-build");
+    } catch {
+      setStat(e.name, "error");
+    }
   }
 
   function addCustom(kind: ExtKind) {
@@ -184,6 +241,28 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
         ))}
         {named.length > 2 && <span className="ptag muted">+{named.length - 2}</span>}
       </>
+    );
+  }
+
+  // The version/update control on an installed downloadable server's row (#885): an "up to date"
+  // pill when built + at the latest commit, else an update/build button (drives pull + rebuild).
+  // Non-downloadable servers (remote/custom) and hooks have nothing to update → null.
+  function mcpUpdateControl(e: ExtensionDef) {
+    if (kind !== "mcp" || !catalogLink(e.name)) return null;
+    const s = mcpStatus[e.name];
+    if (s === "current") return <span className="tag green" title="at the latest release">up to date</span>;
+    if (s === "updating" || s === "building")
+      return <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>{s === "building" ? "building…" : "updating…"}</span>;
+    if (s === undefined || s === "checking" || s === "downloading")
+      return <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>checking…</span>;
+    // outdated / needs-build / error → an action button (pull + rebuild).
+    const label = s === "needs-build" ? "build" : s === "error" ? "retry ↻" : "update";
+    return (
+      <button
+        className="btn ghost"
+        style={{ height: 20, fontSize: 10, padding: "0 9px" }}
+        onClick={ev => { ev.stopPropagation(); updateInstalled(e); }}
+      >{label}</button>
     );
   }
 
@@ -247,6 +326,7 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
                         <div className="row-chips">{scopeChips(e)}</div>
                         <div>—</div>
                       </div>
+                      {mcpUpdateControl(e)}
                       {toggleEl(e)}
                     </div>
                   </div>
@@ -270,9 +350,13 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
   // ── catalog view ───────────────────────────────────────────────────────────
   function catalogView() {
     const q = search.trim().toLowerCase();
+    // Hide already-installed entries (#885): download auto-adds to Installed, so the catalog only
+    // ever lists what you can still add — and the stale "download" label problem goes away.
+    const installedNames = new Set(kindExtensions.map(e => e.name.toLowerCase()));
+    const available = kindCatalog.filter(c => !installedNames.has(c.name.toLowerCase()));
     const items = q
-      ? kindCatalog.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q))
-      : kindCatalog;
+      ? available.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q))
+      : available;
     return (
       <>
         <div className="sec-head">
@@ -302,20 +386,24 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
               <div className="cat-foot">
                 <span className="hint">{c.by.startsWith("@modelcontextprotocol") ? "official MCP" : (c.by === "first-party" || c.link) ? "first-party" : "third-party"}</span>
                 <div className="spacer" />
-                {c.link && (
+                {c.link ? (
+                  // Downloadable (first-party): a single "download" action — clone + add + build,
+                  // then the card moves to Installed. No separate "add" button (#885).
                   <button
-                    className="btn ghost"
+                    className="btn primary"
                     style={{ height: 22, fontSize: 10, padding: "0 10px" }}
-                    disabled={dl[c.name] === "downloading"}
+                    disabled={mcpStatus[c.name] === "downloading" || mcpStatus[c.name] === "building"}
                     onClick={() => downloadFromCatalog(c)}
                   >
-                    {dl[c.name] === "downloading" ? "downloading…"
-                      : dl[c.name] === "done" ? "downloaded ✓"
-                      : dl[c.name] === "error" ? "retry ↻"
+                    {mcpStatus[c.name] === "downloading" ? "downloading…"
+                      : mcpStatus[c.name] === "building" ? "building…"
+                      : mcpStatus[c.name] === "error" ? "retry ↻"
                       : "download"}
                   </button>
+                ) : (
+                  // Non-downloadable (hooks, remote servers): nothing to fetch — add directly.
+                  <button className="btn" style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => addFromCatalog(c)}>add</button>
                 )}
-                <button className="btn" style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => addFromCatalog(c)}>add</button>
               </div>
             </div>
           ))}
