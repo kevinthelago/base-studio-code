@@ -3,6 +3,7 @@ import {
   resolveExtensions, toMcpPayload, toHookPayload, toSessionPayloads,
   defFromCatalog, blankExtension, type ExtensionDef,
 } from "../lib/extensions";
+import { EXT_CATALOG } from "../data/extensions";
 
 // Helper: a minimal enabled MCP def; `name` defaults to the id for readable asserts.
 const mk = (over: Partial<ExtensionDef>): ExtensionDef => ({
@@ -62,6 +63,21 @@ describe("catalog templates + blanks", () => {
   it("maps a hook catalog item, and falls back to a blank stdio mcp for unknowns", () => {
     expect(defFromCatalog("Block PII")).toMatchObject({ kind: "hook", event: "PreToolUse" });
     expect(defFromCatalog("Nope")).toMatchObject({ kind: "mcp", transport: "stdio", command: "", name: "Nope" });
+  });
+
+  it("includes the first-party MCP servers with download links + run configs (#858)", () => {
+    const firstParty = ["Compliance", "Complexity Analyzer", "Dependency Graph"];
+    for (const name of firstParty) {
+      const item = EXT_CATALOG.find((c) => c.name === name);
+      expect(item, `${name} in catalog`).toBeDefined();
+      // Each carries a GitHub download link + a setup hint (they install from source, not npm).
+      expect(item!.link).toMatch(/^https:\/\/github\.com\/kevinthelago\//);
+      expect(item!.install).toBeTruthy();
+    }
+    // "add" produces a runnable stdio MCP config (run from the cloned repo).
+    expect(defFromCatalog("Compliance")).toMatchObject({ kind: "mcp", transport: "stdio", command: "uv", args: "run compliance-mcp" });
+    expect(defFromCatalog("Complexity Analyzer")).toMatchObject({ command: "node", args: "dist/mcp/index.js" });
+    expect(defFromCatalog("Dependency Graph")).toMatchObject({ command: "node", args: "dist/index.js" });
   });
 
   it("blankExtension produces empty mcp/hook shapes", () => {
