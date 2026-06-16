@@ -134,7 +134,7 @@ function renderDetachedSection(page: string, section: string): React.ReactNode {
   switch (page) {
     case "automations": return <AutomationsScreen sectionOverride={section} />;
     case "skills":      return <SkillsScreen sectionOverride={section} />;
-    case "extensions":  return <ExtensionsScreen sectionOverride={section} />;
+    case "extensions":  return <ExtensionsScreen kind="mcp" sectionOverride={section} />;
     case "agents":      return <AgentsScreen sectionOverride={section} />;
     case "github":      return <GitHubScreen sectionOverride={section} />;
     case "projects":    return <ProjectsScreen sectionOverride={section} />;
@@ -235,7 +235,7 @@ export default function App() {
         parts.push(automationsTab);
         break;
       case "extensions":
-        parts.push("Extensions");
+        parts.push("MCP");
         break;
       case "projects":
         parts.push("Projects");
@@ -419,7 +419,7 @@ export default function App() {
           </div>
           {activeScreen === "github"     && <GitHubScreen />}
           {activeScreen === "automation" && <AutomationsScreen />}
-          {activeScreen === "extensions" && <ExtensionsScreen />}
+          {activeScreen === "extensions" && <ExtensionsScreen kind="mcp" />}
           {activeScreen === "skills"     && <SkillsScreen />}
           {activeScreen === "agents"     && <AgentsScreen />}
           {activeScreen === "settings"   && <SettingsScreen />}
