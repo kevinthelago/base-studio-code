@@ -109,6 +109,8 @@ const CATALOG_TEMPLATES: Record<string, Partial<ExtensionDef>> = {
   "Compliance":          { kind: "mcp", transport: "stdio", command: "uv",   args: "run --directory {dir} compliance-mcp" },
   "Complexity Analyzer": { kind: "mcp", transport: "stdio", command: "node", args: "{dir}/dist/mcp/index.js" },
   "Dependency Graph":    { kind: "mcp", transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
+  // Well-known third-party servers — pruned from the browse catalog (#870) but kept here so the
+  // planner's `<mcp_assign name="…" />` (planExtensions.ts) still resolves them to a working config.
   "Postgres":     { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres", env: [["POSTGRES_CONNECTION_STRING", ""]] },
   "SQLite":       { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-sqlite --db-path ./data.db" },
   "Slack":        { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-slack", env: [["SLACK_BOT_TOKEN", ""], ["SLACK_TEAM_ID", ""]] },
