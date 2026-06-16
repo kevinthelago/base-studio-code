@@ -5,6 +5,7 @@
 // attached + warn about anything missing). Pure.
 
 import { type SkillDef } from "../../lib/skills";
+import { type SkillKind } from "../../data/skills";
 import { type KbBlock } from "../../data/mock";
 import { writeProjectFile } from "../../lib/projectFiles";
 import { type Blueprint } from "./blueprints";
@@ -56,6 +57,52 @@ export function resolveSkillContent(ids: string[], skills: SkillDef[], kb: KbBlo
     if (s) { out.push({ name: s.name, kind: "skill", content: s.prompt }); continue; }
     const b = kbById.get(id);
     if (b) out.push({ name: b.title, kind: "kb", content: b.content ?? "" });
+  }
+  return out;
+}
+
+// ── content embedding for share (#897 Phase 5b) ─────────────────────────────
+// A shared blueprint references skills by id. To make it self-contained for KNOWLEDGE, the
+// share bundles each attached item's full CONTENT (a SkillPayload), and the recipient
+// reconstitutes them into their library so the id refs resolve. (MCP servers stay by reference
+// — code, not content; they download from their catalog link on use.)
+
+/** An attached skill/KB item, with enough content to faithfully reconstitute it on import. */
+export interface SkillPayload {
+  /** The library id — kept so the blueprint's refs resolve after reconstitution. */
+  id: string;
+  name: string;
+  kind: "skill" | "kb";
+  /** SkillDef.prompt / KbBlock.content. */
+  content: string;
+  desc?: string;
+  tags?: string[];
+  /** For a skill: its SkillDef.kind + tools, carried so reconstitution is faithful. */
+  skillKind?: SkillKind;
+  tools?: string[];
+}
+
+/** Every distinct skill/KB id a blueprint attaches (project-wide + every stage), order-preserving. */
+export function collectBlueprintSkillIds(bp: Blueprint): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (id: string) => { if (!seen.has(id)) { seen.add(id); out.push(id); } };
+  for (const id of bp.skills ?? []) add(id);
+  for (const s of bp.sections) for (const id of s.skills ?? []) add(id);
+  return out;
+}
+
+/** Resolve a blueprint's attached skill/KB ids to full {@link SkillPayload}s for embedding in a
+ *  share. Missing ids (not in the library) are skipped. */
+export function resolveBlueprintSkillPayloads(bp: Blueprint, skills: SkillDef[], kb: KbBlock[]): SkillPayload[] {
+  const skillById = new Map(skills.map((s) => [s.id, s]));
+  const kbById = new Map(kb.map((b) => [b.id, b]));
+  const out: SkillPayload[] = [];
+  for (const id of collectBlueprintSkillIds(bp)) {
+    const s = skillById.get(id);
+    if (s) { out.push({ id: s.id, name: s.name, kind: "skill", content: s.prompt, desc: s.desc, skillKind: s.kind, tools: s.tools }); continue; }
+    const b = kbById.get(id);
+    if (b) out.push({ id: b.id, name: b.title, kind: "kb", content: b.content ?? "", tags: b.tags });
   }
   return out;
 }

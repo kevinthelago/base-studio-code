@@ -9,10 +9,16 @@ import { stageKind, tint, hue, type CatalogEntry, CATALOG_FLOW_KINDS } from "./b
 import { mkStageSection } from "./blueprintEdit";
 import { type DiffLine } from "./blueprintDiff";
 import { type Blueprint, type BlueprintSection } from "./blueprints";
+import { type SkillPayload } from "./blueprintSkills";
 
 /** A resolved import/preview blueprint (subset enough to preview + import). */
 export interface PreviewBlueprint {
   name: string; icon: string; h: number; author?: string; rev?: string; sections: BlueprintSection[];
+  /** The fully-coerced blueprint (#897) — carried so import preserves blueprint-wide
+   *  skills/mcp/category/mode instead of reconstructing from the lossy preview subset. */
+  blueprint?: Blueprint;
+  /** Skill content embedded in the share (#897 Phase 5b) — reconstituted into the library on import. */
+  bundled?: SkillPayload[];
 }
 
 function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, lg }: {

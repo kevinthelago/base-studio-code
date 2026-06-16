@@ -43,7 +43,8 @@ import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategy
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
-import { resolveSkills, seedSkills, type SkillDef } from "../lib/skills";
+import { resolveSkills, seedSkills, skillFromPayload, type SkillDef } from "../lib/skills";
+import { type SkillPayload } from "../screens/projects/blueprintSkills";
 import { invoke } from "@tauri-apps/api/core";
 
 /** Mint a stable tab id (#463). Prefers crypto.randomUUID; falls back for older
@@ -786,6 +787,9 @@ interface AppStore {
   // Written into a launched session's .claude/skills/<slug>/SKILL.md so agents
   // actually get them. Seeded from the sample library; persisted. (#404)
   skills: SkillDef[];
+  /** Reconstitute a shared blueprint's embedded skills/KB into the libraries (#897 Phase 5b),
+   *  upserting by id (skip an id already present) so the blueprint's refs resolve. */
+  installBundledSkills: (payloads: SkillPayload[]) => void;
   addSkill:        (def: Omit<SkillDef, "id">) => string;
   updateSkill:     (id: string, patch: Partial<SkillDef>) => void;
   removeSkill:     (id: string) => void;
@@ -2401,6 +2405,26 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ skills: [...s.skills, { ...def, id }] }));
         return id;
       },
+      installBundledSkills: (payloads) =>
+        set((s) => {
+          const haveSkill = new Set(s.skills.map((x) => x.id));
+          const haveKb = new Set(s.kbBlocks.map((x) => x.id));
+          const newSkills: SkillDef[] = [];
+          const newKb: KbBlock[] = [];
+          for (const p of payloads) {
+            if (p.kind === "kb") {
+              if (haveKb.has(p.id) || !p.id) continue;
+              haveKb.add(p.id);
+              newKb.push({ id: p.id, title: p.name, tags: p.tags ?? [], updated: "imported", lines: (p.content ?? "").split("\n").length, content: p.content });
+            } else {
+              if (haveSkill.has(p.id) || !p.id) continue;
+              haveSkill.add(p.id);
+              newSkills.push(skillFromPayload(p));
+            }
+          }
+          if (newSkills.length === 0 && newKb.length === 0) return {};
+          return { skills: [...s.skills, ...newSkills], kbBlocks: [...s.kbBlocks, ...newKb] };
+        }),
       updateSkill: (id, patch) =>
         set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, ...patch } : sk)) })),
       removeSkill: (id) =>
