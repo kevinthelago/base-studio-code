@@ -1,0 +1,61 @@
+name: Windows release asset
+
+# One-off / on-demand: build ONLY the Windows installers for an existing release tag and attach
+# them to that GitHub Release, without re-running (or disturbing) the macOS/Linux assets already
+# published by release.yml. Added because the v1.0.1 release shipped macOS+Linux but its Windows
+# leg failed on `windows-latest` (VS 2026 preview MSVC dropped a symbol DuckDB's fmt needs, #890).
+# Runs on windows-2022 (VS 2022 / MSVC 17.x), builds the bundle, and uploads via `gh release
+# upload`. Also reusable for any future tag whose Windows artifact needs a rebuild.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build Windows for + attach the artifacts to"
+        required: true
+        default: "v1.0.1"
+
+jobs:
+  windows:
+    # NOT windows-latest — see release.yml (#890): the latter floated to a VS 2026 preview whose
+    # STL removed `stdext::checked_array_iterator`, which DuckDB's bundled fmt still references.
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # Builds the frontend (tauri.conf beforeBuildCommand → `npm run build`) then the Windows
+      # bundle (targets: "all" → NSIS `.exe` + WiX `.msi`).
+      - name: Build Windows bundle
+        run: npm run tauri -- build
+
+      - name: Upload Windows installers to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          files=$(find src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*.exe' \))
+          echo "Found installers:"; echo "$files"
+          [ -n "$files" ] || { echo "::error::no .msi/.exe bundle produced"; exit 1; }
+          # --clobber so a re-run replaces (not duplicates) the asset; leaves macOS/Linux untouched.
+          gh release upload "${{ inputs.tag }}" $files --clobber
