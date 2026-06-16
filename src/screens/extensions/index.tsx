@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { resolveMcpInstallDir, repoNameFromLink } from "../../lib/mcpInstall";
 import { useAppStore } from "../../store";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
+import { McpAnalyticsTab } from "./McpAnalytics";
 import { usePageTabs } from "../../hooks/usePageTabs";
 import { EXT_CATALOG, SCOPE_COPY, type CatalogItem } from "../../data/extensions";
 import {
@@ -101,7 +102,9 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
   const extDefs: TabItem[] = useMemo(() => [
     { id: "installed", label: "Installed", count: enabledCount, hint: "· active capabilities" },
     { id: "catalog", label: "Catalog", count: kindCatalog.length },
-  ], [enabledCount, kindCatalog.length]);
+    // MCP call telemetry (#879) — only on the MCP page, not the embedded Hooks view.
+    ...(kind === "mcp" ? [{ id: "analytics", label: "Analytics" } as TabItem] : []),
+  ], [enabledCount, kindCatalog.length, kind]);
   const { tabs: extTabs, activeId, select, reorder, tearOff } = usePageTabs(`extensions-${kind}`, extDefs);
   const tab = embedded ? "all" : (sectionOverride ?? activeId); // active section ("all" = stacked embedded)
   const selected = selectedId ? extensions.find(e => e.id === selectedId) ?? null : null;
@@ -462,7 +465,9 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
   }
 
   // ── body dispatch ──────────────────────────────────────────────────────────
-  const body = tab === "catalog" ? catalogView() : installedView();
+  const body = tab === "analytics" ? <McpAnalyticsTab />
+    : tab === "catalog" ? catalogView()
+    : installedView();
 
   const summary = useMemo<React.ReactNode>(() => (
     <>showing {NOUN} <b style={{ color: "var(--fg-muted)" }}>{SCOPE_COPY[scope]}</b></>
@@ -516,6 +521,9 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
             onReorder={reorder}
             onTearOff={tearOff}
             right={
+              tab === "analytics" ? (
+                <span className="hint" style={{ fontFamily: "var(--mono)" }}>window · last 14 days</span>
+              ) : (
               <>
                 <span className="hint" style={{ fontFamily: "var(--mono)" }}>{summary}</span>
                 <span className="scope-label">scope</span>
@@ -543,6 +551,7 @@ export function ExtensionsScreen({ sectionOverride, kind = "mcp", embedded = fal
                   )}
                 </div>
               </>
+              )
             }
           />
         )}
