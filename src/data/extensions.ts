@@ -187,14 +187,10 @@ export const EXT_CATALOG: CatalogItem[] = [
     link: "https://github.com/kevinthelago/complexity-analyzer-mcp",     install: "Downloads to ~/.base-studio-code/mcp/complexity-analyzer-mcp. Run `pnpm install && pnpm build` there, then Add." },
   { name: "Dependency Graph",    by: "kevinthelago", icon: "⌥", desc: "Explore a project's dependency graph — query nodes, neighbors, cycles, and stats.",
     link: "https://github.com/kevinthelago/dependency-graph-mcp-server", install: "Downloads to ~/.base-studio-code/mcp/dependency-graph-mcp-server. Run `pnpm install && pnpm build` there, then Add." },
-  { name: "Sentry",       by: "sentry",                  icon: "S",  desc: "Fetch unresolved issues, drill into event payloads, suggest fixes." },
-  { name: "Linear",       by: "linear",                  icon: "L",  desc: "Search, create, and update Linear issues from any pane." },
-  { name: "Postgres",     by: "@modelcontextprotocol",   icon: "pg", desc: "Read-only SELECT and schema introspection on a database connection." },
-  { name: "Slack",        by: "@modelcontextprotocol",   icon: "#",  desc: "Read channels, post messages, look up users." },
-  { name: "Stripe",       by: "stripe",                  icon: "$",  desc: "Inspect charges, refunds, customers — test mode by default." },
-  { name: "Brave Search", by: "@modelcontextprotocol",   icon: "B",  desc: "Web search via the Brave API." },
-  { name: "SQLite",       by: "@modelcontextprotocol",   icon: "sq", desc: "Local SQLite query and schema browser." },
-  { name: "Notion",       by: "community",               icon: "N",  desc: "Read and append to a Notion workspace." },
+  // Generic third-party servers (Sentry/Linear/Postgres/Slack/Stripe/Brave/SQLite/Notion) were
+  // pruned from the browse list (#870) so the catalog features our first-party servers. Their
+  // CATALOG_TEMPLATES (lib/extensions.ts) stay — the planner's `<mcp_assign name="…" />` path
+  // still wires a working config for well-known names even though they're no longer browseable.
   { name: "Block PII",    by: "first-party",             icon: "⊘",  desc: "Hook · PreToolUse — scans outbound tool inputs for PII patterns." },
   { name: "Auto-format",  by: "first-party",             icon: "§",  desc: "Hook · PostToolUse — runs project formatter on every Write." },
 ];

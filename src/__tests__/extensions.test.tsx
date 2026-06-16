@@ -60,31 +60,31 @@ describe("ExtensionsScreen", () => {
     const { container } = render(<ExtensionsScreen />);
     fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]);
     expect(screen.getByText("Browse")).toBeTruthy();
-    expect(screen.getByText(EXT_CATALOG[0].name)).toBeTruthy(); // Sentry
+    expect(screen.getByText(EXT_CATALOG[0].name)).toBeTruthy(); // Compliance (first-party)
   });
 
   it("filters the catalog by the search input", () => {
     const { container } = render(<ExtensionsScreen />);
     fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]);
     const searchBox = container.querySelector(".ext-body input") as HTMLInputElement;
-    fireEvent.change(searchBox, { target: { value: "linear" } });
-    expect(screen.getByText("Linear")).toBeTruthy();
-    expect(screen.queryByText("Sentry")).toBeNull();
+    fireEvent.change(searchBox, { target: { value: "complexity" } });
+    expect(screen.getByText("Complexity Analyzer")).toBeTruthy();
+    expect(screen.queryByText("Dependency Graph")).toBeNull();
   });
 
   it("adds a catalog item to the store and opens it in the drawer", () => {
     const { container } = render(<ExtensionsScreen />);
     const before = useAppStore.getState().extensions.length;
     fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]);
-    // Click the first "add" button in the catalog.
-    const addBtn = within(screen.getByText("Sentry").closest(".cat-card") as HTMLElement).getByText("add");
+    // Click the "add" button on a catalog card.
+    const addBtn = within(screen.getByText("Compliance").closest(".cat-card") as HTMLElement).getByText("add");
     fireEvent.click(addBtn);
     expect(useAppStore.getState().extensions.length).toBe(before + 1);
-    expect(useAppStore.getState().extensions.some(e => e.name === "Sentry")).toBe(true);
+    expect(useAppStore.getState().extensions.some(e => e.name === "Compliance")).toBe(true);
     // The new extension opens in the drawer for editing.
     const drawer = container.querySelector(".drawer") as HTMLElement;
     expect(drawer.className).toContain("on");
-    expect(within(drawer).getByText("Sentry")).toBeTruthy();
+    expect(within(drawer).getByText("Compliance")).toBeTruthy();
   });
 
   it("opens the config drawer when a row is clicked and closes via the scrim", () => {
