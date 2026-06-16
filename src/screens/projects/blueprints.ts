@@ -265,6 +265,19 @@ write-path globs, network access, and a git/gh push policy. Map each to a role
 
 Gate: every stream has a scoped profile and a role.`,
   },
+  mcp: {
+    name: "MCP Servers", glyph: "⊕", gate: "tools connected", deps: ["structure"],
+    optional: true,
+    blurb: "External tools + data the fleet's agents can call.",
+    prompt:
+`Connect the external tools and data sources the fleet's agents need via MCP servers.
+Assign one with <mcp_assign name="…" />: a first-party server (Compliance, Complexity
+Analyzer, Dependency Graph) downloads automatically — the user builds it once in the MCP
+panel and it's scoped to every session this plan launches (the director AND every worker).
+Assign only the servers the agents actually need.
+
+Gate: the project's agents have the MCP servers they need (optional).`,
+  },
   automations: {
     name: "Automations", glyph: "⚡", gate: "≥1 automation armed", deps: ["structure"],
     gateRule: { require: [{ signal: "automationsAck", target: true, label: "review automations for this project" }] },
@@ -596,6 +609,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("ui",          { optional: true, pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", false]] }),
         mkSection("permissions", { pipelines: [] }),
+        mkSection("mcp",         { optional: true }),
         mkSection("automations", { optional: true, pipelines: [["arm-schedule", "on completion", true]] }),
         mkSection("skills",      { optional: true, pipelines: [["sync-skills", "manual", true]] }),
       ],
@@ -608,6 +622,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
         mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("mcp", { optional: true }),
         mkSection("automations"), mkSection("skills"),
       ],
     },
@@ -618,7 +633,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("features"),
         mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
-        mkSection("permissions"), mkSection("skills"),
+        mkSection("permissions"), mkSection("mcp", { optional: true }), mkSection("skills"),
       ],
     },
     {
@@ -628,6 +643,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("features"),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", true]] }),
         mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("mcp", { optional: true }),
         mkSection("automations"),
       ],
     },
