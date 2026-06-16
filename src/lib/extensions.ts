@@ -79,10 +79,25 @@ export function toMcpPayload(e: ExtensionDef): McpServerPayload | null {
   };
 }
 
-/** A hook `ExtensionDef` → its settings.json payload, or null if incomplete. */
+/** POSIX single-quote escape: wrap in '…', and turn any embedded ' into '\''. Robust +
+ *  portable (no base64) so the wrapper command can't be broken or injected by the name/cmd. */
+function shQuote(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * A hook `ExtensionDef` → its settings.json payload, or null if incomplete.
+ *
+ * The user's command is wrapped with `bsc-hook '<name>' '<command>'` (#867 follow-up) so each
+ * fire is logged to `~/.base-studio-code/hooks.log` for the Hook Analytics tab — `bsc-hook`
+ * runs the command, records the outcome (PreToolUse block/allow), and propagates the exit
+ * code. Only USER hooks pass through here; the security hooks are injected backend-side and
+ * are never wrapped.
+ */
 export function toHookPayload(e: ExtensionDef): HookPayload | null {
   if (e.kind !== "hook" || !e.event || !e.hookCommand) return null;
-  return { event: e.event, matcher: e.matcher ?? "", command: e.hookCommand };
+  const command = `bsc-hook ${shQuote(e.name || "hook")} ${shQuote(e.hookCommand)}`;
+  return { event: e.event, matcher: e.matcher ?? "", command };
 }
 
 /** Split a resolved extension list into the two backend payload lists. */

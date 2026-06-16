@@ -57,6 +57,21 @@ pub(crate) const BSC_SKILL_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-hook` wrapper (#867 follow-up — hook-fire logging): a USER hook (configured in
+/// the Hooks UI) is written to settings.json wrapped as `bsc-hook '<name>' '<command>'` (the
+/// frontend `toHookPayload` does the single-quote escaping). It reads Claude Code's hook JSON
+/// from stdin, RUNS the user's command (re-piping that JSON to it), captures its exit code,
+/// and appends one TAB line — `ts \t event \t name \t outcome` — to `$BSC_HOOK_LOG` for the
+/// Hook Analytics tab. `ts` is epoch ms (matches `hookTelemetry.parseHookLog`). `outcome` is
+/// "block" when a PreToolUse command exits 2 (Claude Code's deny convention), "allow"
+/// otherwise for PreToolUse, "ok" for other events. The user's exit code is PROPAGATED so a
+/// block still takes effect. Only USER hooks are wrapped; the security hooks (bsc-confine /
+/// bsc-audit) are never routed through here. A raw string keeps the embedded quotes readable.
+pub(crate) const BSC_HOOK_RC: &str = concat!(
+    r#"bsc-hook() { nm="$1"; cmd="$2"; j="$(cat)"; printf '%s' "$j" | sh -c "$cmd"; code=$?; l="${BSC_HOOK_LOG:-}"; if [ -n "$l" ]; then ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-60)"; [ -z "$ev" ] && ev="?"; oc="ok"; if [ "$ev" = "PreToolUse" ]; then if [ "$code" -eq 2 ]; then oc="block"; else oc="allow"; fi; fi; nm="$(printf '%s' "$nm" | tr '\t\n' '  ' | cut -c1-80)"; ts="$(date -u +%s)000"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "$ev" "$nm" "$oc" >> "$l"; fi; exit "$code"; }"#,
+    "\n",
+);
+
 /// The `bsc-tokens` helper (#416): a Stop / SubagentStop hook on a gated pane pipes
 /// Claude Code's hook JSON into this; it extracts the `session_id` and `transcript_path`
 /// (Claude Code's hooks carry these but NOT token usage, so the transcript is the only
@@ -343,11 +358,12 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
             super::BSC_SKILL_RC,
+            super::BSC_HOOK_RC,
             super::BSC_TOKENS_RC,
             super::BSC_CONFINE_RC,
             super::BSC_COORD_EMIT_RC,
@@ -463,6 +479,63 @@ mod tests {
         assert_eq!(fields[1], "t0p1", "pane field should be the BSC_AUDIT_PANE tag");
         assert_eq!(fields[2], "PreToolUse", "event field should be hook_event_name");
         assert_eq!(fields[3], "open-a-clean-pr", "skill field should be skill_name");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bsc_hook_runs_the_command_logs_outcome_and_propagates_exit() {
+        // bsc-hook wraps a USER hook: it runs the command, logs `ts \t event \t name \t
+        // outcome` to $BSC_HOOK_LOG, and propagates the command's exit code so a PreToolUse
+        // block (exit 2) still takes effect. Skips where bash isn't on PATH.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = crate::shell::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_hook subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-hook-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_HOOK_RC).unwrap();
+        let log = dir.join("nested").join("hooks.log");
+        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
+        let log_bash = crate::to_bash_path(&log.to_string_lossy());
+
+        // Run a helper: a PreToolUse hook whose command exits with `code`, fed JSON on stdin.
+        let run = |code: i32, event: &str| -> std::process::ExitStatus {
+            let mut child = Command::new(&shell)
+                .arg("-c").arg(format!("bsc-hook 'Block PII' 'exit {code}'"))
+                .env("BASH_ENV", &rc_bash)
+                .env("BSC_HOOK_LOG", &log_bash)
+                .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+                .spawn().unwrap();
+            child.stdin.take().unwrap()
+                .write_all(format!(r#"{{"hook_event_name":"{event}","tool_name":"Write"}}"#).as_bytes())
+                .unwrap();
+            child.wait().unwrap()
+        };
+
+        // PreToolUse + exit 2 → propagated exit 2, outcome "block".
+        let st = run(2, "PreToolUse");
+        assert_eq!(st.code(), Some(2), "exit code must propagate so the block takes effect");
+        // PreToolUse + exit 0 → outcome "allow".
+        assert!(run(0, "PreToolUse").success());
+        // PostToolUse → outcome "ok" regardless of code semantics.
+        assert!(run(0, "PostToolUse").success());
+
+        let body = std::fs::read_to_string(&log).unwrap();
+        let lines: Vec<Vec<&str>> = body.lines().map(|l| l.split('\t').collect()).collect();
+        assert_eq!(lines.len(), 3, "one line per fire: {body:?}");
+        // Each line: ts(epoch-ms) \t event \t name \t outcome.
+        assert!(lines[0][0].chars().all(|c| c.is_ascii_digit()), "ts is epoch ms: {:?}", lines[0][0]);
+        assert_eq!((lines[0][1], lines[0][2], lines[0][3]), ("PreToolUse", "Block PII", "block"));
+        assert_eq!(lines[1][3], "allow");
+        assert_eq!(lines[2][3], "ok");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
