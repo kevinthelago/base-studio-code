@@ -11,6 +11,8 @@ const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is 
 
 const PIPE_KINDS = ["builtin", "external", "custom"] as const;
 const PIPE_TRIGGERS = ["on section enter", "on artifact change", "on completion", "manual"] as const;
+const BP_CATEGORIES = ["greenfield", "transform", "harden", "maintain", "data"] as const;
+const BP_MODES = ["create", "operate"] as const;
 
 function coercePipeline(v: unknown): Pipeline | null {
   if (!v || typeof v !== "object") return null;
@@ -47,6 +49,13 @@ function coerceSection(v: unknown): BlueprintSection | null {
     pipelines: Array.isArray(o.pipelines)
       ? (o.pipelines.map(coercePipeline).filter(Boolean) as Pipeline[])
       : [],
+    // Attached capabilities (#897) — preserve the section's skill ids + MCP server names so a
+    // shared blueprint carries its tools/knowledge instead of silently dropping them on import.
+    skills: strArr(o.skills),
+    mcp: strArr(o.mcp),
+    // Carry the optional flag + output disposition so the stage's shape/behavior survives a share.
+    ...(typeof o.optional === "boolean" ? { optional: o.optional } : {}),
+    ...(str(o.output) ? { output: str(o.output) } : {}),
   };
 }
 
@@ -62,7 +71,18 @@ export function coerceBlueprint(payload: unknown): Blueprint | null {
     ? (o.sections.map(coerceSection).filter(Boolean) as BlueprintSection[])
     : [];
   if (sections.length === 0) return null;
-  return { id, name, desc: str(o.desc), sections };
+  const category = (BP_CATEGORIES as readonly string[]).includes(str(o.category))
+    ? (str(o.category) as Blueprint["category"]) : undefined;
+  const mode = (BP_MODES as readonly string[]).includes(str(o.mode))
+    ? (str(o.mode) as Blueprint["mode"]) : undefined;
+  return {
+    id, name, desc: str(o.desc), sections,
+    // Blueprint-wide attached capabilities (#897) + lifecycle metadata, preserved on import.
+    skills: strArr(o.skills),
+    mcp: strArr(o.mcp),
+    ...(category ? { category } : {}),
+    ...(mode ? { mode } : {}),
+  };
 }
 
 /** Wrap a blueprint in the extension envelope for export / share / publish. */
