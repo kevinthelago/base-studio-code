@@ -13,6 +13,7 @@ import { LibraryView, type CardMenuAction } from "./BlueprintLibrary";
 import { CatalogView } from "./BlueprintCatalogView";
 import { BlueprintEditorView } from "./BlueprintEditor";
 import { buildSkillLibrary } from "./blueprintSkills";
+import { buildMcpLibrary } from "./blueprintMcp";
 import { blankSkill } from "../../lib/skills";
 import { BlueprintAssistant } from "./BlueprintAssistant";
 import {
@@ -90,6 +91,8 @@ export function BlueprintsPage() {
   const kbBlocks = useAppStore((s) => s.kbBlocks);
   const addSkill = useAppStore((s) => s.addSkill);
   const skillLibrary = useMemo(() => buildSkillLibrary(skillDefs, kbBlocks), [skillDefs, kbBlocks]);
+  const extensions = useAppStore((s) => s.extensions);
+  const mcpLibrary = useMemo(() => buildMcpLibrary(extensions), [extensions]);
 
   const [view, setView] = useState<View>("library");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -270,7 +273,7 @@ export function BlueprintsPage() {
             onRedesc={(v) => updateBlueprintMeta(active.id, { desc: v })}
             onUse={() => selectBlueprint(active.id)}
             onPublish={() => setModal({ type: "publish" })} onAssistant={() => setDrawer({})} onMenu={headerMenu} />
-          <BlueprintEditorView sections={active.sections} selectedUid={selStage} onSelect={setSelStage} onChange={onSectionsChange} skillLibrary={skillLibrary} />
+          <BlueprintEditorView sections={active.sections} selectedUid={selStage} onSelect={setSelStage} onChange={onSectionsChange} skillLibrary={skillLibrary} mcpLibrary={mcpLibrary} />
         </>
       ) : view === "catalog" ? (
         <div className="scroll">
