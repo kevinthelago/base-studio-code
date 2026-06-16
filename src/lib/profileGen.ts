@@ -56,3 +56,16 @@ export function generateAgentProfile(
     net: { allow: [] },
   };
 }
+
+/**
+ * Whether every fleet stream has a least-privilege profile ASSIGNED that actually exists —
+ * the permissions-stage gate (#696). Keyed off `stream.profile` (the assigned profile id,
+ * e.g. `gen_<stream>`), NOT the stream id: an earlier bug compared `profile.id === stream.id`,
+ * which the real generation flow never produces, so the gate could never pass.
+ */
+export function fleetProfilesComplete(
+  streams: AgentStream[], profiles: { id: string }[],
+): boolean {
+  return streams.length > 0
+    && streams.every((st) => !!st.profile && profiles.some((p) => p.id === st.profile));
+}

@@ -15,6 +15,25 @@ class_name = "RelayRoom"
 tag = "v1"
 new_sqlite_classes = ["RelayRoom"]
 
+# OPTIONAL: Per-IP connection rate-limiting for shared / multi-tenant relays (#473).
+#
+# The relay works with zero additional bindings for the standard single-user BYO
+# deploy — leave this block commented out. The existing controls (high-entropy room
+# ids, capacity cap, idle + absolute TTL teardown, frame-size cap) already cover
+# that case. Enable when running a public-facing relay for many users.
+#
+# To enable:
+#   1. wrangler kv namespace create RATE_LIMIT_KV
+#   2. Replace <your-kv-namespace-id> with the id printed by that command.
+#   3. Uncomment the [[kv_namespaces]] block below and redeploy.
+#
+# Default limits: 20 connection attempts per IP per 60-second window.
+# To change them, edit DEFAULT_RATE_LIMIT in src/rateLimit.ts.
+#
+# [[kv_namespaces]]
+# binding = "RATE_LIMIT_KV"
+# id = "<your-kv-namespace-id>"
+
 # Metadata-only observability. The relay never logs frame contents (it can't read
 # them), only connection/room counters.
 [observability]

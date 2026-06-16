@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore, TRIAGE_PROMPT } from "../store";
+import { fleetProfilesComplete } from "../lib/profileGen";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { QueuedPane } from "../lib/focusQueue";
 import type { FleetPlan } from "../screens/projects/planSections";
@@ -80,6 +81,16 @@ describe("hydration", () => {
 });
 
 // ── Terminal font zoom ──────────────────────────────────────────────────────────
+
+describe("autoPlanWithClaude setting (#682)", () => {
+  it("is off by default and toggles via the setter", () => {
+    expect(useAppStore.getState().autoPlanWithClaude).toBe(false);
+    useAppStore.getState().setAutoPlanWithClaude(true);
+    expect(useAppStore.getState().autoPlanWithClaude).toBe(true);
+    useAppStore.getState().setAutoPlanWithClaude(false);
+    expect(useAppStore.getState().autoPlanWithClaude).toBe(false);
+  });
+});
 
 describe("terminal font zoom", () => {
   it("defaults to the baseline font size", () => {
@@ -1094,13 +1105,13 @@ describe("agent fleet store", () => {
     expect(st.paneStartupPromptDocs["t3p0"]).toBe("projects/proj-key/prompts/director-kickoff.md");
     expect(st.paneNames[idx][0]).toBe("director");
 
-    // pane 1 = first worker in its OWN git worktree, planner-authored kickoff doc
-    expect(st.paneCwds["t3p1"]).toBe("/base/projects/proj-key/.worktrees/web--auth-ui");
+    // pane 1 = first worker in its OWN git worktree (outside the hub, #844), planner-authored kickoff doc
+    expect(st.paneCwds["t3p1"]).toBe("/base/worktrees/proj-key/web--auth-ui");
     expect(st.paneStartupPromptDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-kickoff.md");
     expect(st.paneNames[idx][1]).toBe("Auth UI");
 
     // pane 2 = second worker (own worktree) with no kickoff doc → generated text
-    expect(st.paneCwds["t3p2"]).toBe("/base/projects/proj-key/.worktrees/api--api");
+    expect(st.paneCwds["t3p2"]).toBe("/base/worktrees/proj-key/api--api");
     expect(st.paneStartupPromptText["t3p2"]).toContain("API");
 
     // worker write boundary (#354): the stream's owned globs feed the role gate so
@@ -1135,6 +1146,25 @@ describe("agent fleet store", () => {
     expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
   });
 
+  it("gives the director AND every worker the project's MCP extensions (#876)", () => {
+    useAppStore.setState({
+      bscBaseDir: "/base",
+      // An MCP server scoped to this project (as a planner <mcp_assign> would create it),
+      // with {dir} already resolved to its install path.
+      extensions: [{
+        id: "mcp_comp", kind: "mcp", name: "Compliance", enabled: true, projects: ["mcp-proj"],
+        transport: "stdio", command: "uv", args: "run --directory /base/mcp/compliance-mcp-server compliance-mcp", env: [],
+      }],
+    });
+    useAppStore.getState().fleetStartProject("McpProj", fleet, "mcp-proj");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("mcp-proj");
+    const names = (p: number) => (st.paneExtensions[`t${idx}p${p}`] ?? []).map((e) => e.name);
+    expect(names(0)).toContain("Compliance"); // director (pane 0)
+    expect(names(1)).toContain("Compliance"); // worker 1
+    expect(names(2)).toContain("Compliance"); // worker 2
+  });
+
   it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
     useAppStore.setState({ bscBaseDir: "/base" });
     const dirFleet: FleetPlan = {
@@ -1166,6 +1196,8 @@ describe("agent fleet store", () => {
     // dangling reference -> materialized, keeping the planner-assigned id stable
     expect(streams[1].profile).toBe("b-dev");
     expect(st.agentProfiles.find((p) => p.id === "b-dev")!.paths.allow).toEqual(["src/b/**"]);
+    // and the permissions gate now passes: every stream has an assigned, existing profile (#696)
+    expect(fleetProfilesComplete(streams, st.agentProfiles)).toBe(true);
   });
 
   it("isolates co-located agents in separate worktrees with distinct checkpoint docs", () => {
@@ -1182,9 +1214,9 @@ describe("agent fleet store", () => {
     const idx = useAppStore.getState().findFleetTabIdx("k");
     const st1 = useAppStore.getState();
     // Two agents in own/web get separate worktree cwds — no shared working tree.
-    expect(st1.paneCwds[`t${idx}p0`]).toBe("/base/projects/k/.worktrees/web--web-a");
-    expect(st1.paneCwds[`t${idx}p1`]).toBe("/base/projects/k/.worktrees/web--web-b");
-    expect(st1.paneCwds[`t${idx}p2`]).toBe("/base/projects/k/.worktrees/api--api");
+    expect(st1.paneCwds[`t${idx}p0`]).toBe("/base/worktrees/k/web--web-a");
+    expect(st1.paneCwds[`t${idx}p1`]).toBe("/base/worktrees/k/web--web-b");
+    expect(st1.paneCwds[`t${idx}p2`]).toBe("/base/worktrees/k/api--api");
     // …and distinct per-agent checkpoint docs.
     expect(st1.paneCheckpointDocs[`t${idx}p0`]).toBe("projects/k/prompts/web-a-checkpoint.md");
     expect(st1.paneCheckpointDocs[`t${idx}p1`]).toBe("projects/k/prompts/web-b-checkpoint.md");
@@ -1215,7 +1247,7 @@ describe("agent fleet store", () => {
     expect(st.tabs[idx + 1].layout).toBe("2×2");
     // tab 2's first pane is the 17th worker (s16), in its own worktree.
     expect(st.paneNames[idx + 1][0]).toBe("S16");
-    expect(st.paneCwds[`t${idx + 1}p0`]).toBe("/base/projects/big/.worktrees/web--s16");
+    expect(st.paneCwds[`t${idx + 1}p0`]).toBe("/base/worktrees/big/web--s16");
   });
 
   // #479 — no silent drop: ALL workers launch regardless of the recommended count.
@@ -1240,6 +1272,21 @@ describe("agent fleet store", () => {
     useAppStore.setState({ bscBaseDir: "/base", focusTarget: "everything" });
     useAppStore.getState().fleetStartProject("FTno", { ...fleet, director: { ...fleet.director, enabled: false } }, "ft-nd-key");
     expect(useAppStore.getState().focusTarget).toBe("fleet");
+  });
+
+  it("fleetStartProject returns a roster row per session — director + workers (#734)", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    const roster = useAppStore.getState().fleetStartProject("Roster", fleet, "roster-key");
+    const rows = roster.map((r) => r.split("\t"));
+    // every row: paneId, stream, repo, branch, role
+    expect(rows.every((c) => c.length === 5)).toBe(true);
+    const dir = rows.find((c) => c[4] === "director");
+    expect(dir).toBeTruthy();
+    expect(dir![1]).toBe("director");
+    const workers = rows.filter((c) => c[4] === "worker");
+    expect(workers.length).toBe(fleet.streams.length);
+    expect(workers[0][2]).toContain("/"); // repo "owner/name"
+    expect(workers[0][0]).toMatch(/^t\d+p\d+$/); // a console/pane id
   });
 
   // #457 — the "two directors" bug: a project rename froze tab.name, so the
@@ -1668,6 +1715,7 @@ describe("clearPlan (#505)", () => {
       stagePreview: { myproj: { srcDoc: "<html>", mode: "2d" } },
       stagePipelineRuns: { myproj: { p1: { status: "ok" } as never } },
       pinnedContext: { myproj: ["x"] },
+      projectLocalRepos: { myproj: ["o/r"], other: ["o/keep"] },
     })
   );
 
@@ -1687,13 +1735,76 @@ describe("clearPlan (#505)", () => {
     expect(s.stagePreview["myproj"]).toBeUndefined();
     expect(s.stagePipelineRuns["myproj"]).toBeUndefined();
     expect(s.pinnedContext["myproj"]).toBeUndefined();
+    expect(s.projectLocalRepos["myproj"]).toBeUndefined(); // repos unlinked (#664)
     // other project untouched
     expect(s.planSections["other"]).toEqual({ scope: "# Scope" });
+    expect(s.projectLocalRepos["other"]).toEqual(["o/keep"]);
   });
 
   it("is a no-op for a key that has no plan data", () => {
     useAppStore.getState().clearPlan("nonexistent");
     const s = useAppStore.getState();
     expect(s.planSections["myproj"]).toEqual({ goal: "# Goal" });
+  });
+});
+
+describe("deleteLocalProject — resilient to a missing projects scope (#791)", () => {
+  type Skill = ReturnType<typeof useAppStore.getState>["skills"][number];
+
+  it("does not throw when an extension/skill has no `projects` field, and normalizes it to []", () => {
+    // Mimic a def added without `projects`, or persisted data predating the field.
+    useAppStore.setState({
+      extensions: [{ id: "ext_x", name: "X", enabled: true } as unknown as ExtensionDef],
+      skills: [{ id: "sk_x", name: "Y" } as unknown as Skill],
+    });
+
+    expect(() => useAppStore.getState().deleteLocalProject(["some-project"])).not.toThrow();
+    expect(useAppStore.getState().extensions[0].projects).toEqual([]);
+    expect(useAppStore.getState().skills[0].projects).toEqual([]);
+  });
+});
+
+describe("updateAgentProfile marks assigned consoles stale (#799)", () => {
+  it("flags panes using the edited profile and clearPanePermsStale removes the flag", () => {
+    useAppStore.setState({
+      paneProfiles: { t0p1: "prof-a", t0p2: "prof-b" },
+      panePermsStale: {},
+    });
+    useAppStore.getState().updateAgentProfile("prof-a", {}); // edit prof-a
+    expect(useAppStore.getState().panePermsStale.t0p1).toBe(true);   // uses prof-a → stale
+    expect(useAppStore.getState().panePermsStale.t0p2).toBeUndefined(); // uses prof-b → untouched
+
+    useAppStore.getState().clearPanePermsStale("t0p1");
+    expect(useAppStore.getState().panePermsStale.t0p1).toBeUndefined();
+  });
+});
+
+describe("canonicalizePlanSections collapses stale title-named sections (#803)", () => {
+  it("maps 'Tech stack' → 'stack' in sections + confirmed, preserving content", () => {
+    useAppStore.setState({
+      planSections: { proj: { goal: "g", "Tech stack": "the stack", scope: "s" } },
+      planConfirmedSections: { proj: ["goal", "Tech stack"] },
+    });
+    useAppStore.getState().canonicalizePlanSections("proj");
+    const sec = useAppStore.getState().planSections.proj;
+    expect(Object.keys(sec).sort()).toEqual(["goal", "scope", "stack"]);
+    expect(sec.stack).toBe("the stack");
+    expect(useAppStore.getState().planConfirmedSections.proj).toEqual(["goal", "stack"]);
+  });
+
+  it("prefers the canonical key's own content when both exist", () => {
+    useAppStore.setState({
+      planSections: { proj: { "Tech stack": "alias", stack: "canonical" } },
+      planConfirmedSections: {},
+    });
+    useAppStore.getState().canonicalizePlanSections("proj");
+    expect(useAppStore.getState().planSections.proj).toEqual({ stack: "canonical" });
+  });
+
+  it("is a no-op when all keys are already canonical", () => {
+    useAppStore.setState({ planSections: { proj: { goal: "g", stack: "s" } }, planConfirmedSections: { proj: ["goal"] } });
+    const before = useAppStore.getState().planSections.proj;
+    useAppStore.getState().canonicalizePlanSections("proj");
+    expect(useAppStore.getState().planSections.proj).toBe(before); // same ref → no churn
   });
 });

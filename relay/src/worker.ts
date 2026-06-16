@@ -7,6 +7,7 @@
 
 import { parseConnect } from "./protocol";
 import { RelayRoom, type Env } from "./room";
+import { checkRateLimit, DEFAULT_RATE_LIMIT } from "./rateLimit";
 
 export { RelayRoom };
 
@@ -31,11 +32,30 @@ export default {
       if (req.headers.get("Upgrade") !== "websocket") {
         return new Response("expected websocket upgrade", { status: 426 });
       }
+
+      // Per-IP rate limit — only active when RATE_LIMIT_KV is bound (opt-in for
+      // multi-tenant / public relays). The default zero-binding BYO deploy is always
+      // open; checkRateLimit no-ops immediately when the binding is absent.
+      const ip = req.headers.get("CF-Connecting-IP") ?? "unknown";
+      const rl = await checkRateLimit(env.RATE_LIMIT_KV, ip);
+      if (!rl.allowed) {
+        const retryAfter = Math.max(0, rl.resetAt - Math.floor(Date.now() / 1000));
+        return new Response("rate limit exceeded", {
+          status: 429,
+          headers: {
+            "Retry-After": String(retryAfter),
+            "X-RateLimit-Limit": String(DEFAULT_RATE_LIMIT.maxConnections),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": String(rl.resetAt),
+          },
+        });
+      }
+
+      // Both peers with the same room id resolve to the SAME Durable Object.
       const parsed = parseConnect(url);
       if (!parsed.ok) {
         return new Response(parsed.error, { status: 400 });
       }
-      // Both peers with the same room id resolve to the SAME Durable Object.
       const stub = env.ROOMS.get(env.ROOMS.idFromName(parsed.target.room));
       return stub.fetch(req);
     }

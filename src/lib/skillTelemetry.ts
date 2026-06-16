@@ -105,3 +105,24 @@ export function aggregateSkillTelemetry(
   }
   return out;
 }
+
+/**
+ * Status-bar KPIs for the Skills page, from the real telemetry (replaces the mock
+ * `SKILL_KPIS`). `loaded` is the library size; `invToday` sums today's invocations across
+ * skills; `worst` is the lowest-success-rate skill among those actually invoked (the quality
+ * flag shown with a warning), or `null` when nothing has been invoked. Pure + unit-tested.
+ */
+export function skillStatusKpis(
+  skillCount: number,
+  stats: Record<string, SkillStats>,
+): { loaded: number; invToday: number; worst: { skill: string; rate: number } | null } {
+  let invToday = 0;
+  let worst: { skill: string; rate: number } | null = null;
+  for (const [skill, s] of Object.entries(stats)) {
+    invToday += s.today;
+    if (s.invocations > 0 && (worst == null || s.successRate < worst.rate)) {
+      worst = { skill, rate: s.successRate };
+    }
+  }
+  return { loaded: skillCount, invToday, worst };
+}

@@ -4,6 +4,7 @@ import {
   stripMcpAssigns,
   mcpAssignToExtension,
   applyMcpAssign,
+  isDownloadableMcp,
   type ExtensionStoreLike,
 } from "../screens/projects/planExtensions";
 import type { ExtensionDef } from "../lib/extensions";
@@ -41,6 +42,29 @@ describe("mcpAssignToExtension", () => {
 
   it("an empty projectId yields a global (unscoped) extension", () => {
     expect(mcpAssignToExtension("Sentry", "").projects).toEqual([]);
+  });
+
+  it("resolves {dir} to the on-disk install path for a downloadable first-party server", () => {
+    const def = mcpAssignToExtension("Compliance", "p1", "/home/u/.base-studio-code");
+    expect(def.command).toBe("python"); // `python -m uv …` — no PATH dependency (#887)
+    // The literal {dir} placeholder must NOT survive into a launched config (#876).
+    expect(def.args).not.toContain("{dir}");
+    expect(def.args).toContain("/home/u/.base-studio-code/mcp/compliance-mcp-server");
+    expect(def).toMatchObject({ enabled: true, projects: ["p1"] });
+  });
+
+  it("keeps {dir} when no baseDir is supplied (resolved later, never throws)", () => {
+    expect(mcpAssignToExtension("Compliance", "p1").args).toContain("{dir}");
+  });
+});
+
+describe("isDownloadableMcp", () => {
+  it("is true for the first-party catalog servers, false for others", () => {
+    expect(isDownloadableMcp("Compliance")).toBe(true);
+    expect(isDownloadableMcp("Complexity Analyzer")).toBe(true);
+    expect(isDownloadableMcp("Dependency Graph")).toBe(true);
+    expect(isDownloadableMcp("Postgres")).toBe(false); // pruned from the browse catalog
+    expect(isDownloadableMcp("Nope")).toBe(false);
   });
 });
 

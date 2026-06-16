@@ -113,3 +113,40 @@ export function evalGate(gate: StageGate | undefined, signals: PlanSignals): { d
 export function gateApplies(rule: Requirement | undefined, signals: PlanSignals): boolean {
   return rule ? evalRequirement(rule, signals).pass : true;
 }
+
+/** Per-requirement reason for "why is this gate blocked" feedback: the human label,
+ *  whether it passed, and a progress detail ("3 of 5") for ratio/numeric requirements. */
+export interface GateReason {
+  label: string;
+  pass: boolean;
+  detail?: string;
+}
+
+/** Humanize a signal name as a fallback label ("topicsResolved" → "topics resolved"). */
+function humanizeSignal(signal: string): string {
+  return signal
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * Per-requirement breakdown for gate feedback — same pass logic as {@link evalGate}, but
+ * keeps each requirement's human label (falling back to a humanized signal name) and a
+ * progress detail. Filter to `!pass` for "what's still needed".
+ */
+export function gateReasons(gate: StageGate | undefined, signals: PlanSignals): GateReason[] {
+  return (gate?.require ?? []).map((r) => {
+    const { pass } = evalRequirement(r, signals);
+    const label = r.label ?? humanizeSignal(r.signal);
+    let detail: string | undefined;
+    if (r.of) {
+      detail = `${asNumber(signals[r.signal])} of ${asNumber(signals[r.of])}`;
+    } else if (typeof (r.target ?? true) === "number") {
+      detail = `${asNumber(signals[r.signal])} / ${asNumber(r.target)}`;
+    }
+    return { label, pass, detail };
+  });
+}

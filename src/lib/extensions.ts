@@ -79,10 +79,25 @@ export function toMcpPayload(e: ExtensionDef): McpServerPayload | null {
   };
 }
 
-/** A hook `ExtensionDef` → its settings.json payload, or null if incomplete. */
+/** POSIX single-quote escape: wrap in '…', and turn any embedded ' into '\''. Robust +
+ *  portable (no base64) so the wrapper command can't be broken or injected by the name/cmd. */
+function shQuote(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * A hook `ExtensionDef` → its settings.json payload, or null if incomplete.
+ *
+ * The user's command is wrapped with `bsc-hook '<name>' '<command>'` (#867 follow-up) so each
+ * fire is logged to `~/.base-studio-code/hooks.log` for the Hook Analytics tab — `bsc-hook`
+ * runs the command, records the outcome (PreToolUse block/allow), and propagates the exit
+ * code. Only USER hooks pass through here; the security hooks are injected backend-side and
+ * are never wrapped.
+ */
 export function toHookPayload(e: ExtensionDef): HookPayload | null {
   if (e.kind !== "hook" || !e.event || !e.hookCommand) return null;
-  return { event: e.event, matcher: e.matcher ?? "", command: e.hookCommand };
+  const command = `bsc-hook ${shQuote(e.name || "hook")} ${shQuote(e.hookCommand)}`;
+  return { event: e.event, matcher: e.matcher ?? "", command };
 }
 
 /** Split a resolved extension list into the two backend payload lists. */
@@ -103,6 +118,16 @@ export function toSessionPayloads(defs: ExtensionDef[]): { mcp: McpServerPayload
 // Unknown names fall back to a blank stdio MCP the user completes.
 
 const CATALOG_TEMPLATES: Record<string, Partial<ExtensionDef>> = {
+  // First-party servers (#858) — downloaded to ~/.base-studio-code/mcp/<repo>, so the command
+  // runs the built entrypoint from there. `{dir}` is replaced with the resolved clone path
+  // when the entry is added (addFromCatalog); the user downloads + builds via the card.
+  // `python -m uv` (not a bare `uv`): uv is installed as a Python module and its console-script
+  // shim often isn't on PATH on a fresh machine — `python -m uv` runs without any PATH setup (#887).
+  "Compliance":          { kind: "mcp", transport: "stdio", command: "python", args: "-m uv run --directory {dir} compliance-mcp" },
+  "Complexity Analyzer": { kind: "mcp", transport: "stdio", command: "node", args: "{dir}/dist/mcp/index.js" },
+  "Dependency Graph":    { kind: "mcp", transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
+  // Well-known third-party servers — pruned from the browse catalog (#870) but kept here so the
+  // planner's `<mcp_assign name="…" />` (planExtensions.ts) still resolves them to a working config.
   "Postgres":     { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres", env: [["POSTGRES_CONNECTION_STRING", ""]] },
   "SQLite":       { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-sqlite --db-path ./data.db" },
   "Slack":        { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-slack", env: [["SLACK_BOT_TOKEN", ""], ["SLACK_TEAM_ID", ""]] },

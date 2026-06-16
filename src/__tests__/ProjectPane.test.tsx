@@ -1,62 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ProjectPane } from "../screens/projects/ProjectPane";
-import type {
-  ProjectPaneData, Agent, Perm, Milestone, PhaseGroup, ContextFile,
-} from "../screens/projects/projectPane.types";
+import type { Section } from "../screens/projects/ghStructure";
 
-// ── fixtures for the real-data (hasData) path ────────────────────────────────
-const PERM: Perm = {
-  read: "allow", edit: "ask", create: "ask", run: "ask", net: "deny", push: "ask", pkg: "deny",
-};
-function agent(over: Partial<Agent> = {}): Agent {
-  return {
-    id: "auth", name: "@auth", role: "worker", status: "run", repo: "o/api",
-    color: "oklch(0.74 0.13 70)", initial: "A", owns: ["src/auth/**"], issues: ["#12"],
-    preset: "Build", perm: { ...PERM }, flow: { autonomy: "continuous", push: "auto-PR", gate: "hard" },
-    ctx: 1, ...over,
-  };
-}
-function data(over: Partial<ProjectPaneData> = {}): ProjectPaneData {
-  return {
-    agents: [agent({ focus: true })],
-    repos: [{ id: "o/api", branch: "main", ahead: 0, behind: 0, agents: ["auth"], primary: true, branches: [] }],
-    structure: [],
-    phaseStructure: [],
-    context: [],
-    director: { enabled: false, drive: "event" },
-    ...over,
-  };
-}
-
-describe("ProjectPane (v2)", () => {
-  it("renders the pane header and the section shells (sample fallback)", () => {
+// ----------------------------------------------------------------
+// Legacy flat-layout (no sections prop) — must keep working
+// ----------------------------------------------------------------
+describe("ProjectPane (v4) — legacy flat layout", () => {
+  it("renders the pane header and the section shells", () => {
     render(<ProjectPane />);
     expect(screen.getByText("Settlement webhooks v2")).toBeTruthy();
     expect(screen.getByText("Context Files")).toBeTruthy();
   });
 
-  it("renders a generic card for every blueprint section (#609): dedicated + non-dedicated, in order", () => {
-    render(<ProjectPane data={data()} projectName="P" projectId="p" sections={[
-      { key: "context", name: "Context Files" },
-      { key: "stack", name: "Tech stack", blurb: "Languages & frameworks." },
-      { key: "structure", name: "Milestones · Structure" },
-      { key: "api", name: "API & contracts", blurb: "Endpoints & contracts." },
-    ]} />);
-    // dedicated sections still render their rich panels
-    expect(screen.getByText("Context Files")).toBeTruthy();
-    expect(screen.getByText("Milestones · Structure")).toBeTruthy();
-    // non-dedicated sections now appear as generic cards (previously invisible)
-    expect(screen.getByText("Tech stack")).toBeTruthy();
-    expect(screen.getByText("API & contracts")).toBeTruthy();
-    // expanding a generic card reveals its blurb
-    fireEvent.click(screen.getByText("Tech stack"));
-    expect(screen.getByText("Languages & frameworks.")).toBeTruthy();
-  });
-
   it("renders the repo-first structure (repo cards; first repo open shows its milestones)", () => {
     render(<ProjectPane />);
-    fireEvent.click(screen.getByText("repo")); // repo-first is the secondary lens (#497)
     // both repository cards are present as collapsible headers
     expect(screen.getByText("acme/payments")).toBeTruthy();
     expect(screen.getByText("acme/web-dashboard")).toBeTruthy();
@@ -73,153 +31,176 @@ describe("ProjectPane (v2)", () => {
     expect(screen.getByText("read files")).toBeTruthy();
     expect(screen.getAllByText("allow").length).toBeGreaterThan(0);
   });
+});
 
-  // ── #345: header reflects the real project, gated on hasData ────────────────
-  it("shows the real project name + key when real data is present (#345)", () => {
-    render(<ProjectPane data={data()} projectName="Studio Code" projectId="studio-code" />);
-    expect(screen.getByText("Studio Code")).toBeTruthy();
-    expect(screen.getByText("studio-code")).toBeTruthy();
-    // never the sample identity when real section data is present
-    expect(screen.queryByText("Settlement webhooks v2")).toBeNull();
-    expect(screen.queryByText("prj_2fa")).toBeNull();
+// ----------------------------------------------------------------
+// Staged layout (#652) — activated when sections prop is provided
+// ----------------------------------------------------------------
+
+const NO_SECTIONS: Section[] = [];
+
+const CONTEXT_SECTIONS: Section[] = [
+  { k: "goal",         title: "Goal",         state: "confirmed", content: "Build a thing" },
+  { k: "scope",        title: "Scope",        state: "confirmed", content: "In scope: x" },
+  { k: "stack",        title: "Stack",        state: "confirmed", content: "React + TS" },
+  { k: "architecture", title: "Architecture", state: "confirmed", content: "Monolith" },
+];
+
+describe("ProjectPane (v5) — staged layout", () => {
+  it("renders the stepper when sections are provided", () => {
+    render(<ProjectPane sections={NO_SECTIONS} linkedRepos={[]} />);
+    // All 7 stage short-labels should be in the stepper
+    const labels = ["Ctx", "Repos", "UI", "Str", "Perm", "Auto", "Skills"];
+    for (const label of labels) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    }
   });
 
-  it("falls back to the sample header when there is no real data (#345)", () => {
-    // Empty data (no agents/structure/context) -> hasData false -> sample identity.
-    render(<ProjectPane data={data({ agents: [], repos: [] })} projectName="Studio Code" projectId="studio-code" />);
-    expect(screen.getByText("Settlement webhooks v2")).toBeTruthy();
-    expect(screen.queryByText("Studio Code")).toBeNull();
+  it("shows the active stage header (Context first)", () => {
+    render(<ProjectPane sections={NO_SECTIONS} linkedRepos={[]} />);
+    // "Context" appears in both the stage-header and the advance-bar; use the subtitle to
+    // confirm it's the header that's showing, not just any element
+    expect(screen.getByText(/Goal · scope · stack/)).toBeTruthy();
   });
 
-  // ── #349: empty-milestone placeholder; one cohesive agent card ──────────────
-  it("shows a placeholder for a repo with no milestones decomposed (#349)", () => {
-    // A repo present but no structure for it -> the open repo card shows the
-    // muted placeholder rather than an empty epic.
-    render(<ProjectPane data={data({ structure: [] })} projectName="P" projectId="p" />);
-    fireEvent.click(screen.getByText("repo"));
-    expect(screen.getByText("no milestones decomposed yet")).toBeTruthy();
+  it("shows gate-met pill when all 4 context sections are confirmed", () => {
+    render(<ProjectPane sections={CONTEXT_SECTIONS} linkedRepos={[]} />);
+    expect(screen.getByText(/4\/4 confirmed/)).toBeTruthy();
+    // Gate-met pill should have class "met"
+    const pill = screen.getByText(/4\/4 confirmed/);
+    expect(pill.className).toContain("met");
   });
 
-  it("expands an agent into one cohesive card (no duplicate header) (#349)", () => {
-    render(<ProjectPane data={data()} projectName="P" projectId="p" />);
-    // The focused agent is open: its repo + owned issue appear in the expanded
-    // detail meta (the "⎇ o/api" repo line is rendered only when expanded), and
-    // the agent name appears exactly once — the roster row is the single header,
-    // so the editor adds no second header.
-    expect(screen.getByText("⎇ o/api")).toBeTruthy();
-    expect(screen.getByText("#12")).toBeTruthy();
-    expect(screen.getAllByText("@auth")).toHaveLength(1);
-  });
-
-  // ── #352: click a context file to open the viewer modal ─────────────────────
-  it("opens a context file's content in a viewer when its row is clicked (#352)", () => {
-    const context: ContextFile[] = [
-      { name: "spec.md", kind: "spec", tok: "1.0k", pinned: true, scope: "project", content: "HELLO-FROM-SPEC" },
+  it("shows gate-unmet pill when context sections are incomplete", () => {
+    const partial: Section[] = [
+      { k: "goal", title: "Goal", state: "confirmed", content: "ok" },
     ];
-    render(<ProjectPane data={data({ context })} projectName="P" projectId="p" />);
-    // The Context Files section is collapsed by default — expand it first.
-    fireEvent.click(screen.getByText("Context Files"));
-    // content not shown until the row is clicked
-    expect(screen.queryByText("HELLO-FROM-SPEC")).toBeNull();
-    fireEvent.click(screen.getByText("spec.md"));
-    expect(screen.getByText("HELLO-FROM-SPEC")).toBeTruthy();
+    render(<ProjectPane sections={partial} linkedRepos={[]} />);
+    expect(screen.getByText(/1\/4 confirmed/)).toBeTruthy();
+    const pill = screen.getByText(/1\/4 confirmed/);
+    expect(pill.className).toContain("unmet");
   });
 
-  // ── #337: GitHub Structure section renders milestones -> issues + progress ───
-  it("renders the GitHub Structure section with milestones, issues and progress (#337)", () => {
-    const structure: Milestone[] = [
-      {
-        id: "o/api#M1", title: "Phase 1", repo: "o/api", pct: 0.5, state: "doing",
-        epics: [{
-          id: "o/api#E1", title: "Issues", pct: 0.5, issues: [
-            { n: "F1", t: "Build the thing", state: "done", owner: "auth", ac: 2, branch: "F1", deps: [], sub: [] },
-            { n: "F2", t: "Wire the other thing", state: "backlog", owner: "auth", ac: 1, branch: "F2", deps: ["F1"], sub: [] },
-          ],
-        }],
-      },
-    ];
-    render(<ProjectPane data={data({ structure })} projectName="P" projectId="p" />);
-    fireEvent.click(screen.getByText("repo"));
-    expect(screen.getByText("Phase 1")).toBeTruthy();
-    expect(screen.getByText("Build the thing")).toBeTruthy();
-    expect(screen.getByText("Wire the other thing")).toBeTruthy();
-    // per-milestone progress percentage rendered (0.5 -> 50%)
-    expect(screen.getByText("50%")).toBeTruthy();
+  it("shows repos stage body after clicking Repos stepper node", () => {
+    render(<ProjectPane sections={NO_SECTIONS} linkedRepos={["acme/payments"]} />);
+    // Click the Repos stepper node (index 1) directly — stepper nodes are never disabled
+    const nodes = document.querySelectorAll(".stepper-node");
+    fireEvent.click(nodes[1]);
+    // Repos stage body should appear
+    expect(screen.getByText(/Repositories/)).toBeTruthy();
   });
 
-  // ── #497: phase-first structure is the default view ─────────────────────────
-  it("renders the phase-first structure by default — one phase spanning repos", () => {
-    const phaseStructure: PhaseGroup[] = [
-      {
-        id: "phase-mvp", name: "MVP", doneWhen: "ships end to end", order: 0,
-        closed: 1, total: 2, pct: 0.5,
-        issues: [
-          { n: "F1", t: "Build the thing", state: "done", owner: "auth", ac: 2, branch: "F1", deps: [], sub: [], repo: "o/api" },
-          { n: "W1", t: "Wire the UI", state: "backlog", owner: "auth", ac: 1, branch: "W1", deps: ["F1"], sub: [], repo: "o/web" },
-        ],
-      },
-    ];
-    render(<ProjectPane data={data({ phaseStructure })} projectName="P" projectId="p" />);
-    // phase header + "done when" + project-wide rollup, no per-repo milestone dup
-    expect(screen.getByText("MVP")).toBeTruthy();
-    expect(screen.getByText("ships end to end")).toBeTruthy();
-    expect(screen.getByText("50%")).toBeTruthy();
-    // issues from BOTH repos appear under the one phase
-    expect(screen.getByText("Build the thing")).toBeTruthy();
-    expect(screen.getByText("Wire the UI")).toBeTruthy();
+  it("shows empty-state in repos body when no repos linked", () => {
+    render(<ProjectPane sections={NO_SECTIONS} linkedRepos={[]} />);
+    // Click the Repos stepper node directly (index 1)
+    const nodes = document.querySelectorAll(".stepper-node");
+    fireEvent.click(nodes[1]);
+    expect(screen.getByText(/No repositories linked yet/)).toBeTruthy();
   });
 
-  // ── #506: redundant per-section sync buttons removed ────────────────────────
-  it("no longer renders the 'Sync to GitHub →' or 'Push docs →' buttons (#506)", () => {
-    // Even with the label-sync affordance wired, the structure/docs publish
-    // buttons are gone — publish is owned by the header button + the app's
-    // Publish flow. Only 'Apply labels →' remains pane-local.
-    render(
-      <ProjectPane
-        data={data()}
-        projectName="P"
-        projectId="p"
-        onSyncLabels={() => {}}
-        syncState={{ labels: "idle" }}
-      />,
-    );
-    expect(screen.queryByText("Sync to GitHub →")).toBeNull();
-    expect(screen.queryByText("Push docs →")).toBeNull();
-    expect(screen.getByText("Apply labels →")).toBeTruthy();
+  it("shows linked repo names in repos body", () => {
+    render(<ProjectPane sections={CONTEXT_SECTIONS} linkedRepos={["acme/payments", "acme/web"]} />);
+    // Navigate to Repos stage (Context gate is met)
+    const fwdBtn = screen.getByText(/Repos →/);
+    fireEvent.click(fwdBtn);
+    expect(screen.getByText("payments")).toBeTruthy();
+    expect(screen.getByText("web")).toBeTruthy();
   });
 
-  // ── #548: the whole fleet pulse strip (counters + fake github) is removed ─────
-  it("no longer renders the fleet pulse strip (on/idle counters + fake github) (#548)", () => {
-    render(<ProjectPane data={data()} projectName="P" projectId="p" />);
-    // The on/idle counters and the hardcoded "● github 4m" glance line are gone.
-    expect(screen.queryByText(/\bon\b ·/)).toBeNull();
-    expect(screen.queryByText(/\d+ idle/)).toBeNull();
-    expect(screen.queryByText(/github 4m/)).toBeNull();
-    // The legitimate running count survives only inside the Agents section header.
-    expect(screen.getByText(/agents · \d+ running/i)).toBeTruthy();
+  it("shows done banners for completed stages above active", () => {
+    render(<ProjectPane sections={CONTEXT_SECTIONS} linkedRepos={["acme/payments"]} />);
+    // Move to Repos stage (Context gate met so it becomes done when we advance)
+    const fwdBtn = screen.getByText(/Repos →/);
+    fireEvent.click(fwdBtn);
+    // Context should now show as a done banner (it's above the active stage)
+    const doneBanners = document.querySelectorAll(".stage-banner.done");
+    expect(doneBanners.length).toBeGreaterThan(0);
+  });
+
+  it("shows locked banners for future stages below active", () => {
+    render(<ProjectPane sections={NO_SECTIONS} linkedRepos={[]} />);
+    // On first stage — future stages are locked
+    const lockedBanners = document.querySelectorAll(".stage-banner.locked");
+    expect(lockedBanners.length).toBeGreaterThan(0);
+  });
+
+  it("back button is disabled on first stage", () => {
+    render(<ProjectPane sections={NO_SECTIONS} linkedRepos={[]} />);
+    // Find via the CSS class that uniquely identifies the back button
+    const backBtn = document.querySelector(".advance-btn.back") as HTMLButtonElement;
+    expect(backBtn).not.toBeNull();
+    expect(backBtn.disabled).toBe(true);
+  });
+
+  it("advance button is disabled when gate is not met", () => {
+    render(<ProjectPane sections={NO_SECTIONS} linkedRepos={[]} />);
+    const fwdBtn = screen.getByText(/Repos →/);
+    expect((fwdBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("advance button is enabled when gate is met", () => {
+    render(<ProjectPane sections={CONTEXT_SECTIONS} linkedRepos={[]} />);
+    const fwdBtn = screen.getByText(/Repos →/);
+    expect((fwdBtn as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("does not render sample data repos in staged mode", () => {
+    render(<ProjectPane sections={NO_SECTIONS} linkedRepos={[]} />);
+    // acme/payments is sample data — should NOT appear in staged mode
+    expect(screen.queryByText("acme/payments")).toBeNull();
+  });
+
+  it("legacy flat layout still shows sample data repos without sections prop", () => {
+    render(<ProjectPane />);
+    expect(screen.getByText("acme/payments")).toBeTruthy();
   });
 });
 
-describe("ProjectPane — blueprint-gated sections", () => {
-  it("hides the fleet sections when the permissions stage is disabled", () => {
-    render(<ProjectPane data={data()} projectId="p" sectionKeys={["context", "structure"]} />);
-    expect(screen.getByText("Context Files")).toBeTruthy();
-    expect(screen.getByText("Milestones · Structure")).toBeTruthy();
-    expect(screen.queryByText("Agents · Permissions")).toBeNull();
-    expect(screen.queryByText("Director · Coordination")).toBeNull();
+// ----------------------------------------------------------------
+// Optional stage support (#676)
+// ----------------------------------------------------------------
+describe("ProjectPane (v5) — optional stages (#676)", () => {
+  it("shows 'optional' tag in stage header when active stage is optional", () => {
+    render(<ProjectPane sections={CONTEXT_SECTIONS} linkedRepos={["acme/payments"]} />);
+    // Advance to UI stage (index 2) which is optional
+    const fwdBtn = screen.getByText(/Repos →/);
+    fireEvent.click(fwdBtn); // advance to Repos (gate met via linked repo)
+    // Now advance to UI (repos gate is met because we passed a linked repo)
+    // But we need gate met for repos first — skip by forcing stepper click
+    const nodes = document.querySelectorAll(".stepper-node");
+    fireEvent.click(nodes[2]); // UI stage (index 2)
+    // "optional" tag appears in the stage header (and locked banners for future optional stages)
+    expect(screen.getAllByText("optional").length).toBeGreaterThan(0);
   });
 
-  it("orders sections by the blueprint's stage order", () => {
-    render(<ProjectPane data={data()} projectId="p" sectionKeys={["permissions", "context", "structure"]} />);
-    const agents = screen.getByText("Agents · Permissions");
-    const context = screen.getByText("Context Files");
-    // permissions first → the Agents panel precedes the Context panel in the DOM.
-    expect(agents.compareDocumentPosition(context) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  it("advance button is enabled on an optional stage even when gate is not met", () => {
+    render(<ProjectPane sections={CONTEXT_SECTIONS} linkedRepos={["acme/payments"]} />);
+    // Jump directly to UI stage (optional, gate unmet unless ux section exists)
+    const nodes = document.querySelectorAll(".stepper-node");
+    fireEvent.click(nodes[2]); // UI stage (index 2)
+    // ux section not in CONTEXT_SECTIONS → gate not met, but optional → advance should be enabled
+    const fwdBtn = document.querySelector(".advance-btn.fwd") as HTMLButtonElement;
+    expect(fwdBtn).not.toBeNull();
+    expect(fwdBtn.disabled).toBe(false);
   });
 
-  it("shows all sections when no sectionKeys are provided (back-compat)", () => {
-    render(<ProjectPane data={data()} projectId="p" />);
-    expect(screen.getByText("Agents · Permissions")).toBeTruthy();
-    expect(screen.getByText("Director · Coordination")).toBeTruthy();
+  it("shows 'optional' tag in locked banner for future optional stages", () => {
+    render(<ProjectPane sections={NO_SECTIONS} linkedRepos={[]} />);
+    // UI, Automations, Skills are optional and appear as locked banners
+    const optionalTags = Array.from(document.querySelectorAll(".stage-banner.locked"))
+      .filter(el => el.textContent?.includes("optional"));
+    expect(optionalTags.length).toBeGreaterThan(0);
+  });
+
+  it("forward navigation skips empty optional stages", () => {
+    // Start at repos stage (index 1) and advance — UI (optional, no ux section) should be skipped
+    render(<ProjectPane sections={CONTEXT_SECTIONS} linkedRepos={["acme/payments"]} />);
+    // Move from Context to Repos
+    const fwdBtn1 = screen.getByText(/Repos →/);
+    fireEvent.click(fwdBtn1);
+    // Now at Repos stage. Advancing should skip UI (optional, no ux) to Structure
+    // The fwd button label reflects the skip target
+    const fwdBtn2 = screen.getByText(/Str →|Structure →/);
+    expect(fwdBtn2).toBeTruthy();
   });
 });

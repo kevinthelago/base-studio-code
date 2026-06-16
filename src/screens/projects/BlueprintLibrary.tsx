@@ -35,11 +35,14 @@ export function gistBadge(g: BlueprintGist): { dot: string; label: string } {
 
 const isGate = (s: BlueprintSection) => s.pipelines.some((p) => p.gate);
 
-/** The card's stage ribbon: a monochrome glyph sequence; gated stages carry the accent. */
+/** The card's stage ribbon: a monochrome glyph sequence; gated stages carry the accent.
+ *  Only ENABLED sections show — the card mirrors what the plan actually runs, so a
+ *  disabled section never appears as a stage (#672). */
 function StageSeq({ sections }: { sections: BlueprintSection[] }) {
+  const enabled = sections.filter((s) => s.enabled);
   const cap = 9;
-  const shown = sections.slice(0, cap);
-  const title = sections.map((s) => s.name).join(" → ");
+  const shown = enabled.slice(0, cap);
+  const title = enabled.map((s) => s.name).join(" → ");
   return (
     <div className="seq" title={title}>
       {shown.map((s, i) => {
@@ -51,25 +54,28 @@ function StageSeq({ sections }: { sections: BlueprintSection[] }) {
           </span>
         );
       })}
-      {sections.length > cap && <span className="more">+{sections.length - cap}</span>}
+      {enabled.length > cap && <span className="more">+{enabled.length - cap}</span>}
     </div>
   );
 }
 
 export type CardMenuAction = "duplicate" | "open-menu";
 
-function BlueprintCard({ bp, index, onOpen, onMenu }: {
-  bp: Blueprint; index: number;
+function BlueprintCard({ bp, index, active, onOpen, onUse, onMenu }: {
+  bp: Blueprint; index: number; active?: boolean;
   onOpen: (id: string) => void;
+  onUse?: (id: string) => void;
   onMenu: (action: CardMenuAction, bp: Blueprint, e: React.MouseEvent) => void;
 }) {
-  const pipes = bp.sections.reduce((n, s) => n + s.pipelines.length, 0);
-  const gates = bp.sections.reduce((n, s) => n + s.pipelines.filter((p) => p.gate).length, 0);
+  // Counts reflect only enabled sections — the card mirrors what the plan runs (#672).
+  const enabledSecs = bp.sections.filter((s) => s.enabled);
+  const pipes = enabledSecs.reduce((n, s) => n + s.pipelines.length, 0);
+  const gates = enabledSecs.reduce((n, s) => n + s.pipelines.filter((p) => p.gate).length, 0);
   const gb = gistBadge(bpGist(bp));
   const h = bpHue(bp);
   const origin = bpOrigin(bp);
   return (
-    <div className="bp-card" style={{ animationDelay: index * 0.03 + "s" }} onClick={() => onOpen(bp.id)}>
+    <div className={"bp-card" + (active ? " is-active" : "")} style={{ animationDelay: index * 0.03 + "s" }} onClick={() => onOpen(bp.id)}>
       <div className="bp-actions">
         <button className="iconbtn" title="Duplicate" onClick={(e) => { e.stopPropagation(); onMenu("duplicate", bp, e); }}>⧉</button>
         <button className="iconbtn" title="More" onClick={(e) => { e.stopPropagation(); onMenu("open-menu", bp, e); }}>⋯</button>
@@ -83,6 +89,7 @@ function BlueprintCard({ bp, index, onOpen, onMenu }: {
             {origin === "built-in" && <span className="tag">built-in</span>}
             {origin === "forked" && <span className="tag violet">forked</span>}
             {origin === "imported" && <span className="tag info">imported</span>}
+            {active && <span className="tag" style={{ color: "var(--success)", borderColor: "color-mix(in oklch, var(--success), transparent 55%)" }}>✓ selected</span>}
           </h3>
           <p className="bp-desc">{bp.desc}</p>
         </div>
@@ -91,11 +98,18 @@ function BlueprintCard({ bp, index, onOpen, onMenu }: {
       <StageSeq sections={bp.sections} />
 
       <div className="bp-foot">
-        <span>{bp.sections.length} stages</span>
+        <span>{enabledSecs.length} stages</span>
         {pipes > 0 && <span>· {pipes} pipelines</span>}
         {gates > 0 && <span style={{ color: "var(--accent)" }}>· {gates} gates</span>}
-        <span className="sp" />
         <span className="gsync"><i style={{ background: gb.dot }} />{gb.label}</span>
+        <span className="sp" />
+        {/* Select this blueprint for new projects (without opening the editor). */}
+        <button
+          className={"btn sm" + (active ? "" : " ghost")}
+          title={active ? "This blueprint seeds new projects" : "Use this blueprint for new projects"}
+          onClick={(e) => { e.stopPropagation(); onUse?.(bp.id); }}
+          style={active ? { color: "var(--success)", borderColor: "var(--success)" } : undefined}
+        >{active ? "✓ in use" : "use"}</button>
       </div>
     </div>
   );
@@ -107,11 +121,15 @@ export interface LibraryViewProps {
   onMenu: (action: CardMenuAction, bp: Blueprint, e: React.MouseEvent) => void;
   onNew: () => void;
   onImport: () => void;
+  /** The currently-selected blueprint id (seeds new projects) — flagged on its card. */
+  activeId?: string;
+  /** Select a blueprint for new projects without opening its editor. */
+  onUse?: (id: string) => void;
   /** All-time count of projects seeded from blueprints (a stat). */
   seeded?: number;
 }
 
-export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, seeded = 0 }: LibraryViewProps) {
+export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, activeId, onUse, seeded = 0 }: LibraryViewProps) {
   const totalStages = blueprints.reduce((n, b) => n + b.sections.length, 0);
   const published = blueprints.filter((b) => bpGist(b).state !== "local").length;
   const gates = blueprints.reduce((n, b) => n + b.sections.reduce((m, s) => m + s.pipelines.filter((p) => p.gate).length, 0), 0);
@@ -191,7 +209,7 @@ export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, seede
 
       <div className="bp-grid">
         {shown.map((bp, i) => (
-          <BlueprintCard key={bp.id} bp={bp} index={i} onOpen={onOpen} onMenu={onMenu} />
+          <BlueprintCard key={bp.id} bp={bp} index={i} active={bp.id === activeId} onOpen={onOpen} onUse={onUse} onMenu={onMenu} />
         ))}
         {shown.length === 0 && (
           <div className="hint" style={{ gridColumn: "1 / -1", padding: "24px 0", textAlign: "center" }}>

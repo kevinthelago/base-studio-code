@@ -1,60 +1,200 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
-import { LibraryView, gistBadge } from "../screens/projects/BlueprintLibrary";
-import { makeBlueprints, type Blueprint } from "../screens/projects/blueprints";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { BlueprintLibrary, BlueprintResetModal } from "../screens/projects/blueprints/BlueprintLibrary";
+import { BUILTIN_ARCHETYPES } from "../screens/projects/shape";
 
-const noop = () => {};
+const ARCHETYPE_IDS = Object.keys(BUILTIN_ARCHETYPES);
+const FIRST_ID = ARCHETYPE_IDS[0];
+const SECOND_ID = ARCHETYPE_IDS[1];
 
-describe("gistBadge (#609)", () => {
-  it("maps each state to a label", () => {
-    expect(gistBadge({ state: "local" }).label).toMatch(/local only/);
-    expect(gistBadge({ state: "dirty" }).label).toMatch(/unpublished/);
-    expect(gistBadge({ state: "forked" }).label).toMatch(/forked/);
-    expect(gistBadge({ state: "synced", rev: "r3" }).label).toBe("synced · r3");
+// ----------------------------------------------------------------
+// BlueprintLibrary — main component
+// ----------------------------------------------------------------
+describe("BlueprintLibrary", () => {
+  it("renders a card for every built-in archetype", () => {
+    render(<BlueprintLibrary activeBlueprintId={null} onUse={vi.fn()} />);
+    for (const id of ARCHETYPE_IDS) {
+      expect(screen.getByTestId(`blueprint-card-${id}`)).toBeTruthy();
+    }
+  });
+
+  it("renders a 'Use' button on every card", () => {
+    render(<BlueprintLibrary activeBlueprintId={null} onUse={vi.fn()} />);
+    for (const id of ARCHETYPE_IDS) {
+      expect(screen.getByTestId(`blueprint-use-${id}`)).toBeTruthy();
+    }
+  });
+
+  it("shows '✓ in use' badge on the active blueprint card", () => {
+    render(<BlueprintLibrary activeBlueprintId={FIRST_ID} onUse={vi.fn()} />);
+    expect(screen.getByTestId(`blueprint-badge-inuse-${FIRST_ID}`)).toBeTruthy();
+    // No badge on other cards
+    expect(screen.queryByTestId(`blueprint-badge-inuse-${SECOND_ID}`)).toBeNull();
+  });
+
+  it("does not show badge when no blueprint is active", () => {
+    render(<BlueprintLibrary activeBlueprintId={null} onUse={vi.fn()} />);
+    for (const id of ARCHETYPE_IDS) {
+      expect(screen.queryByTestId(`blueprint-badge-inuse-${id}`)).toBeNull();
+    }
+  });
+
+  it("calls onUse immediately when activeBlueprintId is null (first-time use)", () => {
+    const onUse = vi.fn();
+    render(<BlueprintLibrary activeBlueprintId={null} onUse={onUse} />);
+    fireEvent.click(screen.getByTestId(`blueprint-use-${FIRST_ID}`));
+    expect(onUse).toHaveBeenCalledWith(FIRST_ID);
+  });
+
+  it("does NOT call onUse immediately when activeBlueprintId is set (shows reset modal)", () => {
+    const onUse = vi.fn();
+    render(<BlueprintLibrary activeBlueprintId={FIRST_ID} onUse={onUse} />);
+    // Click "Use" on a DIFFERENT blueprint
+    fireEvent.click(screen.getByTestId(`blueprint-use-${SECOND_ID}`));
+    // onUse should NOT have been called yet
+    expect(onUse).not.toHaveBeenCalled();
+    // Reset modal should be visible
+    expect(screen.getByTestId("blueprint-reset-modal")).toBeTruthy();
+  });
+
+  it("does NOT call onUse when clicking 'Use' on the already-active blueprint", () => {
+    const onUse = vi.fn();
+    render(<BlueprintLibrary activeBlueprintId={FIRST_ID} onUse={onUse} />);
+    // The Use button on the active card is disabled — click should not fire
+    const useBtn = screen.getByTestId(`blueprint-use-${FIRST_ID}`) as HTMLButtonElement;
+    expect(useBtn.disabled).toBe(true);
+    fireEvent.click(useBtn);
+    expect(onUse).not.toHaveBeenCalled();
+  });
+
+  it("opens the editor when a card is clicked", () => {
+    render(<BlueprintLibrary activeBlueprintId={null} onUse={vi.fn()} />);
+    fireEvent.click(screen.getByTestId(`blueprint-card-${FIRST_ID}`));
+    expect(screen.getByTestId("blueprint-editor")).toBeTruthy();
+    expect(screen.getByTestId(`blueprint-editor-use-${FIRST_ID}`)).toBeTruthy();
+  });
+
+  it("closes the editor when clicking the same card again", () => {
+    render(<BlueprintLibrary activeBlueprintId={null} onUse={vi.fn()} />);
+    fireEvent.click(screen.getByTestId(`blueprint-card-${FIRST_ID}`));
+    expect(screen.getByTestId("blueprint-editor")).toBeTruthy();
+    fireEvent.click(screen.getByTestId(`blueprint-card-${FIRST_ID}`));
+    expect(screen.queryByTestId("blueprint-editor")).toBeNull();
+  });
+
+  it("renders 'publish to gist' as a secondary button in the editor (#670)", () => {
+    render(<BlueprintLibrary activeBlueprintId={null} onUse={vi.fn()} />);
+    fireEvent.click(screen.getByTestId(`blueprint-card-${FIRST_ID}`));
+    // 'publish to gist' button should be present and NOT be the primary CTA
+    const gistBtn = screen.getByTestId(`blueprint-editor-gist-${FIRST_ID}`);
+    expect(gistBtn).toBeTruthy();
+    // The primary/use button should be a separate element
+    const useBtn = screen.getByTestId(`blueprint-editor-use-${FIRST_ID}`);
+    expect(useBtn).toBeTruthy();
+    expect(useBtn).not.toBe(gistBtn);
+  });
+
+  it("shows a close button when onClose is provided", () => {
+    const onClose = vi.fn();
+    render(<BlueprintLibrary activeBlueprintId={null} onUse={vi.fn()} onClose={onClose} />);
+    fireEvent.click(screen.getByTestId("blueprint-library-close"));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("calls onUse on confirm in reset modal and closes modal", () => {
+    const onUse = vi.fn();
+    render(<BlueprintLibrary activeBlueprintId={FIRST_ID} onUse={onUse} />);
+    fireEvent.click(screen.getByTestId(`blueprint-use-${SECOND_ID}`));
+    expect(screen.getByTestId("blueprint-reset-modal")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("reset-modal-confirm"));
+    expect(onUse).toHaveBeenCalledWith(SECOND_ID);
+    expect(screen.queryByTestId("blueprint-reset-modal")).toBeNull();
+  });
+
+  it("closes reset modal on cancel without calling onUse", () => {
+    const onUse = vi.fn();
+    render(<BlueprintLibrary activeBlueprintId={FIRST_ID} onUse={onUse} />);
+    fireEvent.click(screen.getByTestId(`blueprint-use-${SECOND_ID}`));
+    fireEvent.click(screen.getByTestId("reset-modal-cancel"));
+    expect(onUse).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("blueprint-reset-modal")).toBeNull();
+  });
+
+  it("closes reset modal on export without calling onUse", () => {
+    const onUse = vi.fn();
+    render(<BlueprintLibrary activeBlueprintId={FIRST_ID} onUse={onUse} />);
+    fireEvent.click(screen.getByTestId(`blueprint-use-${SECOND_ID}`));
+    fireEvent.click(screen.getByTestId("reset-modal-export"));
+    expect(onUse).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("blueprint-reset-modal")).toBeNull();
+  });
+
+  it("shows reset modal for pre-tracking projects (activeBlueprintId = 'default')", () => {
+    const onUse = vi.fn();
+    render(<BlueprintLibrary activeBlueprintId="default" onUse={onUse} />);
+    fireEvent.click(screen.getByTestId(`blueprint-use-${FIRST_ID}`));
+    expect(onUse).not.toHaveBeenCalled();
+    expect(screen.getByTestId("blueprint-reset-modal")).toBeTruthy();
   });
 });
 
-describe("LibraryView (#609 slice 4)", () => {
-  const bps = (): Blueprint[] => makeBlueprints();
-
-  it("renders a card per blueprint + the New card, with header actions", () => {
-    render(<LibraryView blueprints={bps()} onOpen={noop} onMenu={noop} onNew={noop} onImport={noop} />);
-    expect(screen.getByRole("heading", { name: "Blueprints", level: 1 })).toBeInTheDocument();
-    for (const b of bps()) expect(screen.getByRole("heading", { name: new RegExp(b.name), level: 3 })).toBeInTheDocument();
-    // both the header button and the New card match
-    expect(screen.getAllByRole("button", { name: /New blueprint/i }).length).toBe(2);
-    expect(screen.getByRole("button", { name: /Import from gist/i })).toBeInTheDocument();
+// ----------------------------------------------------------------
+// BlueprintResetModal — standalone tests
+// ----------------------------------------------------------------
+describe("BlueprintResetModal", () => {
+  it("displays the blueprint name in the header", () => {
+    render(
+      <BlueprintResetModal
+        blueprintName="API service"
+        onCancel={vi.fn()} onExport={vi.fn()} onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/API service/)).toBeTruthy();
   });
 
-  it("opens a blueprint when its card is clicked", () => {
-    const onOpen = vi.fn();
-    const list = bps();
-    render(<LibraryView blueprints={list} onOpen={onOpen} onMenu={noop} onNew={noop} onImport={noop} />);
-    fireEvent.click(screen.getByRole("heading", { name: new RegExp(list[0].name), level: 3 }).closest(".bp-card")!);
-    expect(onOpen).toHaveBeenCalledWith(list[0].id);
+  it("contains 'resets to a fresh state' warning (#664)", () => {
+    render(
+      <BlueprintResetModal
+        blueprintName="CLI tool"
+        onCancel={vi.fn()} onExport={vi.fn()} onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/resets to a fresh state/)).toBeTruthy();
   });
 
-  it("fires onMenu for the card's duplicate/more buttons", () => {
-    const onMenu = vi.fn();
-    const list = bps();
-    render(<LibraryView blueprints={list} onOpen={noop} onMenu={onMenu} onNew={noop} onImport={noop} />);
-    const card = screen.getByRole("heading", { name: new RegExp(list[0].name), level: 3 }).closest(".bp-card")!;
-    fireEvent.click(within(card as HTMLElement).getByTitle("Duplicate"));
-    expect(onMenu).toHaveBeenCalledWith("duplicate", expect.objectContaining({ id: list[0].id }), expect.anything());
+  it("fires onCancel when cancel button is clicked", () => {
+    const onCancel = vi.fn();
+    render(
+      <BlueprintResetModal
+        blueprintName="CLI"
+        onCancel={onCancel} onExport={vi.fn()} onConfirm={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("reset-modal-cancel"));
+    expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("New card + header New button call onNew", () => {
-    const onNew = vi.fn();
-    render(<LibraryView blueprints={bps()} onOpen={noop} onMenu={noop} onNew={onNew} onImport={noop} />);
-    fireEvent.click(screen.getAllByRole("button", { name: /New blueprint/i })[0]); // header button
-    expect(onNew).toHaveBeenCalled();
+  it("fires onExport when 'export files' button is clicked", () => {
+    const onExport = vi.fn();
+    render(
+      <BlueprintResetModal
+        blueprintName="CLI"
+        onCancel={vi.fn()} onExport={onExport} onConfirm={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("reset-modal-export"));
+    expect(onExport).toHaveBeenCalledOnce();
   });
 
-  it("derives display safely for a bare blueprint (no icon/hue/gist)", () => {
-    const bare: Blueprint = { id: "x", name: "zeta", desc: "d", sections: [] };
-    render(<LibraryView blueprints={[bare]} onOpen={noop} onMenu={noop} onNew={noop} onImport={noop} />);
-    expect(screen.getByRole("heading", { name: /zeta/, level: 3 })).toBeInTheDocument();
-    // bare ⇒ local-only badge
-    expect(screen.getByText(/local only/)).toBeInTheDocument();
+  it("fires onConfirm when 'confirm & restart' button is clicked", () => {
+    const onConfirm = vi.fn();
+    render(
+      <BlueprintResetModal
+        blueprintName="CLI"
+        onCancel={vi.fn()} onExport={vi.fn()} onConfirm={onConfirm}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("reset-modal-confirm"));
+    expect(onConfirm).toHaveBeenCalledOnce();
   });
 });

@@ -1,6 +1,28 @@
 import { describe, it, expect } from "vitest";
-import { generateAgentProfile } from "../lib/profileGen";
+import { generateAgentProfile, fleetProfilesComplete } from "../lib/profileGen";
 import type { AgentStream } from "../screens/projects/planSections";
+
+describe("fleetProfilesComplete — the permissions gate (#696)", () => {
+  const s = (id: string, profile?: string): AgentStream =>
+    ({ id, name: id, repo: "o/r", owns: [], issues: [], dependsOn: [], profile });
+
+  it("false with no streams", () => {
+    expect(fleetProfilesComplete([], [{ id: "gen_a" }])).toBe(false);
+  });
+
+  it("false when a stream has no assigned profile (the studio-code case)", () => {
+    expect(fleetProfilesComplete([s("a"), s("b")], [{ id: "gen_a" }])).toBe(false);
+  });
+
+  it("false for a dangling reference (profile id doesn't exist)", () => {
+    expect(fleetProfilesComplete([s("a", "gen_a")], [{ id: "other" }])).toBe(false);
+  });
+
+  it("true when every stream's assigned profile exists — keyed on st.profile, not st.id", () => {
+    // the previous bug compared profile.id === stream.id ("a"), which never matches gen_a
+    expect(fleetProfilesComplete([s("a", "gen_a"), s("b", "pf_build")], [{ id: "gen_a" }, { id: "pf_build" }])).toBe(true);
+  });
+});
 
 const stream: AgentStream = {
   id: "be", name: "API backend", repo: "o/api",

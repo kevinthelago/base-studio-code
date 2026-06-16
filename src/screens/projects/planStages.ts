@@ -12,6 +12,7 @@ export type StageId =
   | "context"
   | "repos"
   | "ui"
+  | "features"
   | "structure"
   | "permissions"
   | "automations"
@@ -31,9 +32,14 @@ export interface PlanStageState {
   repoCount: number;
   /** Whether the project needs a UI at all — drives the UI stage's applicability. */
   requiresUi: boolean;
-  /** Required screens approved vs total (only meaningful when requiresUi). */
-  ui: { approved: number; total: number };
-  /** Structure: the roadmap is confirmed and granular issues exist. */
+  /** Required screens approved vs total (only meaningful when requiresUi). `routed` is set
+   *  when the user routes dropped design files to the project — an alternative completion to
+   *  approving screen previews (#837). */
+  ui: { approved: number; total: number; routed?: boolean };
+  /** Features: how many user-facing capabilities are defined, and whether all are
+   *  confirmed. Each feature becomes a fleet stream; the Plan stage reads them. */
+  features: { count: number; allConfirmed: boolean };
+  /** Structure/Plan: the roadmap is confirmed and granular issues exist. */
   phasesConfirmed: boolean;
   issueCount: number;
   /** Fleet: streams defined, and each has a profile/flow set. */
@@ -54,7 +60,9 @@ export interface Stage {
   /** One-line description of what this stage produces (shown in Blueprint editor). */
   description: string;
   /** Whether the stage can be toggled off in a Blueprint.
-   *  Required stages (context, structure) are always included. */
+   *  Only `context` is required (optional: false). All other stages — including
+   *  `structure` — can be omitted by blueprints that don't need them (e.g. a
+   *  refactor/cleanup blueprint skips the feature workshop). */
   optional: boolean;
   /** Whether this stage produces a visible output file the app polls for
    *  (e.g. phases.json, fleet.json). Informational only — drives tooltip copy. */
@@ -104,26 +112,44 @@ export const PLAN_STAGES: Stage[] = [
     gate: (s) => ({ done: s.repoCount > 0, fraction: s.repoCount > 0 ? 1 : 0 }),
   },
   {
+    id: "features",
+    label: "Features",
+    description: "Define the user-facing capabilities, one at a time — each becomes a stream",
+    optional: true,
+    hasOutputFile: true,  // features.json
+    dependsOn: ["context"],
+    defaultEnabled: true,
+    gate: (s) => ({
+      done: s.features.count > 0 && s.features.allConfirmed,
+      fraction: s.features.count > 0 ? (s.features.allConfirmed ? 1 : 0.5) : 0,
+    }),
+  },
+  {
     id: "ui",
     label: "UI",
     description: "Screen skeletons and live preview via <ui_preview> tags",
     optional: true,
     hasOutputFile: false,
-    dependsOn: ["context"],
+    // Features come FIRST so the UI stage designs screens for the defined capabilities
+    // (and can author a Claude Design kickoff from them) (#825).
+    dependsOn: ["context", "features"],
     defaultEnabled: true,
     applies: (s) => s.requiresUi,
+    // Done when the design is routed to the project OR every screen preview is approved (#837).
     gate: (s) => ({
-      done: s.ui.total > 0 && s.ui.approved >= s.ui.total,
-      fraction: s.ui.total > 0 ? s.ui.approved / s.ui.total : 0,
+      done: s.ui.routed || (s.ui.total > 0 && s.ui.approved >= s.ui.total),
+      fraction: s.ui.routed ? 1 : (s.ui.total > 0 ? s.ui.approved / s.ui.total : 0),
     }),
   },
   {
     id: "structure",
-    label: "Structure",
-    description: "Feature workshop: phases.json + agent-ready issues.json",
-    optional: false,
+    label: "Plan",
+    description: "Autonomous: contracts/ + phases.json + the agent-ready sub-issue tree",
+    // optional: true so refactor/cleanup blueprints can legitimately omit the
+    // plan synthesis (they produce targeted issues only, not a roadmap) (#666).
+    optional: true,
     hasOutputFile: true,  // phases.json + issues.json
-    dependsOn: ["context", "repos", "ui"],
+    dependsOn: ["context", "repos", "features"],
     defaultEnabled: true,
     gate: (s) => ({
       done: s.phasesConfirmed && s.issueCount > 0,
@@ -183,7 +209,8 @@ export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageS
     context: p.context ?? { resolved: 0, total: 0, coreConfirmed: false },
     repoCount: p.repoCount ?? 0,
     requiresUi: p.requiresUi ?? false,
-    ui: p.ui ?? { approved: 0, total: 0 },
+    ui: p.ui ?? { approved: 0, total: 0, routed: false },
+    features: p.features ?? { count: 0, allConfirmed: false },
     phasesConfirmed: p.phasesConfirmed ?? false,
     issueCount: p.issueCount ?? 0,
     fleet: p.fleet ?? { streams: 0, profilesComplete: false },
@@ -320,14 +347,15 @@ export const BUILT_IN_BLUEPRINTS: Blueprint[] = [
     id: "quick-context",
     name: "Quick context",
     description: "Context and structure only — fastest path to agent-ready issues",
-    enabledStages: ["context", "repos", "structure"],
+    // Structure depends on `features`, so the features stage rides along (#815).
+    enabledStages: ["context", "repos", "features", "structure"],
     custom: false,
   },
   {
     id: "existing-project",
     name: "Existing project",
     description: "Section-by-section migration of an existing codebase into the plan",
-    enabledStages: ["context", "repos", "structure", "permissions"],
+    enabledStages: ["context", "repos", "features", "structure", "permissions"],
     stageOptions: {
       structure: { workshopMode: "section" },
     },
@@ -337,7 +365,16 @@ export const BUILT_IN_BLUEPRINTS: Blueprint[] = [
     id: "ui-first",
     name: "UI first",
     description: "Context → screen skeletons → structure → fleet",
-    enabledStages: ["context", "repos", "ui", "structure", "permissions"],
+    enabledStages: ["context", "repos", "ui", "features", "structure", "permissions"],
+    custom: false,
+  },
+  {
+    // No "structure" stage — a refactor pass produces targeted cleanup issues only,
+    // not a new phases/issues.json roadmap (#666/#458).
+    id: "refactor",
+    name: "Refactor / cleanup",
+    description: "Identify improvement opportunities and write targeted cleanup issues — no new feature roadmap",
+    enabledStages: ["context", "repos", "permissions"],
     custom: false,
   },
 ];
@@ -359,7 +396,8 @@ export function parseBlueprintsFile(raw: string): Blueprint[] {
 }
 
 /** Merge a Blueprint's enabledStages with the required stages so required stages
- *  can never be dropped. Returns a deduped, ordered list. */
+ *  can never be dropped. Only `context` is required; `structure` is optional so
+ *  refactor/cleanup blueprints can legitimately omit it (#666). */
 export function resolveEnabledStages(blueprint: Blueprint): StageId[] {
   const required = PLAN_STAGES.filter(s => !s.optional).map(s => s.id);
   const merged = new Set([...required, ...blueprint.enabledStages]);

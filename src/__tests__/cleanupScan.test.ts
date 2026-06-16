@@ -29,8 +29,9 @@ describe("runCleanupScan (#626 slice c)", () => {
     const out = await runCleanupScan({ projectKey: "p", sectionKey: "cleanup", repoPath: "/r", stack: "js" });
     expect(out.scanned).toBe(2); // lodash + Foo
     expect(out.grade.graderId).toBe("cleanup");
-    // no key ⇒ nothing confirmed ⇒ clean score, both items shown for review
-    expect(out.grade.score).toBe(100);
+    // no key ⇒ candidates stay uncertain ⇒ score is dinged for review, not a clean A (#688);
+    // two kinds each with one uncertain candidate → 95
+    expect(out.grade.score).toBe(95);
     expect(out.grade.findings.every((f) => f.fix !== "safe to remove")).toBe(true);
     expect(useAppStore.getState().sectionGrades["p"]["cleanup"][0].graderId).toBe("cleanup");
   });

@@ -1,4 +1,5 @@
 import { useAppStore } from "../../store";
+import { ToggleRow } from "./General";
 
 const TOOLS: [string, string, boolean][] = [
   ["read",    "Read files inside cwd",                  true  ],
@@ -12,7 +13,7 @@ const TOOLS: [string, string, boolean][] = [
 ];
 
 export function IntegrationsSettings() {
-  const { claudeApiKey, setClaudeApiKey } = useAppStore();
+  const { claudeApiKey, setClaudeApiKey, autoPlanWithClaude, setAutoPlanWithClaude } = useAppStore();
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Integrations</h2>
@@ -66,6 +67,17 @@ export function IntegrationsSettings() {
             <div className="hint">Off for haiku regardless of this setting.</div>
           </div>
         </div>
+        <div style={{ height: 14 }} />
+        <ToggleRow
+          on={autoPlanWithClaude}
+          onToggle={() => setAutoPlanWithClaude(!autoPlanWithClaude)}
+          title="Automate planning with Claude"
+        >
+          Adds an <b>Auto-plan</b> control to the project planner: from your pitch, Claude
+          answers its own discovery questions and drives the plan to a publishable state for
+          your review — it never auto-publishes to GitHub. Runs under the least-privilege
+          "Planning Autopilot" agent role. Requires a Claude API key (above).
+        </ToggleRow>
       </div>
 
       <div style={{ height: 18 }} />

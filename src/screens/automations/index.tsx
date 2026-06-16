@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useAppStore } from "../../store";
 import { SchedulesTab } from "./Schedules";
 import { HistoryTab } from "./History";
+import { ExtensionsScreen } from "../extensions";
+import { HookAnalyticsTab } from "./HookAnalytics";
 import { fmtClock } from "./format";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { usePageTabs } from "../../hooks/usePageTabs";
@@ -16,6 +18,9 @@ import "./automations.css";
  */
 export function AutomationsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   const { automations, addAutomation, tabs } = useAppStore();
+  // Hooks moved here from the (now MCP-only) Extensions page (#865) — event-triggered
+  // automations live alongside the time-triggered Schedules.
+  const hookCount = useAppStore(s => s.extensions.filter(e => e.kind === "hook").length);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [histStatus, setHistStatus] = useState<"all" | RunStatus>("all");
@@ -30,7 +35,9 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
   const defs: TabItem[] = useMemo(() => [
     { id: "schedules", label: "Schedules", count: automations.length, hint: `· ${armed} armed` },
     { id: "history", label: "History", count: totalRuns },
-  ], [automations.length, armed, totalRuns]);
+    { id: "hooks", label: "Hooks", count: hookCount },
+    { id: "analytics", label: "Hook Analytics" },
+  ], [automations.length, armed, totalRuns, hookCount]);
 
   const { tabs: tabItems, activeId, select, reorder, tearOff } = usePageTabs("automations", defs);
   const active = sectionOverride ?? activeId;
@@ -54,7 +61,11 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
     select("history");
   }
 
-  const body = active === "history"
+  const body = active === "analytics"
+    ? <HookAnalyticsTab />
+    : active === "hooks"
+    ? <ExtensionsScreen kind="hook" embedded />
+    : active === "history"
     ? <HistoryTab status={histStatus} setStatus={setHistStatus} sched={histSched} setSched={setHistSched} />
     : <SchedulesTab selectedId={selectedId} setSelectedId={setSelectedId} onNew={createAndSelect} onViewAllHistory={viewAllHistory} />;
 
@@ -69,12 +80,14 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
             onReorder={reorder}
             onTearOff={tearOff}
             right={
-              <>
-                <span className="quick-stat">
-                  <i style={{ background: armed > 0 ? "var(--success)" : "var(--fg-dim)" }} /> next run <b>{fmtClock(nextAt)}</b>
-                </span>
-                <button className="btn primary" onClick={createAndSelect}>+ New schedule</button>
-              </>
+              active === "schedules" ? (
+                <>
+                  <span className="quick-stat">
+                    <i style={{ background: armed > 0 ? "var(--success)" : "var(--fg-dim)" }} /> next run <b>{fmtClock(nextAt)}</b>
+                  </span>
+                  <button className="btn primary" onClick={createAndSelect}>+ New schedule</button>
+                </>
+              ) : undefined
             }
           />
         )}

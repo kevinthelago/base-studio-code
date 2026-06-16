@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import {
-  blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints,
+  blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
   type Blueprint,
 } from "../screens/projects/blueprints";
 import { LibraryView } from "../screens/projects/BlueprintLibrary";
@@ -27,6 +27,35 @@ describe("blueprint categories (#645)", () => {
   it("every category has display metadata", () => {
     expect(CATEGORY_META.greenfield.label).toBe("Greenfield");
     expect(CATEGORY_META.transform.label).toBe("Transform");
+  });
+
+  it("the default blueprint's repos stage is enabled so it shows in the plan (#672)", () => {
+    const def = makeBlueprints().find((b) => b.id === "default")!;
+    const repos = def.sections.find((s) => s.key === "repos")!;
+    expect(repos.enabled).toBe(true);
+  });
+
+  it("the default blueprint's UI + automations + skills stages are optional (#676/#698/#700)", () => {
+    const def = makeBlueprints().find((b) => b.id === "default")!;
+    expect(def.sections.find((s) => s.key === "ui")!.optional).toBe(true);
+    expect(def.sections.find((s) => s.key === "automations")!.optional).toBe(true);
+    expect(def.sections.find((s) => s.key === "skills")!.optional).toBe(true);
+    // other blueprints' UI stays required
+    expect(makeBlueprints().find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "ui")!.optional).toBeFalsy();
+  });
+
+  it("refreshBuiltIns updates stale persisted built-ins but keeps user blueprints (#677)", () => {
+    // a stale persisted built-in (UI not yet optional) + a user blueprint
+    const stale: Blueprint = { id: "default", name: "Default", desc: "old", origin: "built-in",
+      sections: [{ uid: "x", key: "ui", name: "UI", glyph: "▣", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, pipelines: [] }] };
+    const mine: Blueprint = { id: "mine", name: "Mine", desc: "", origin: "local", sections: [] };
+    const out = refreshBuiltIns([stale, mine]);
+    // the built-in is refreshed from code → UI optional again
+    expect(out.find((b) => b.id === "default")!.sections.find((s) => s.key === "ui")!.optional).toBe(true);
+    // the user blueprint is untouched
+    expect(out.find((b) => b.id === "mine")).toBe(mine);
+    // new built-ins (not in the stale set) are added
+    expect(out.some((b) => b.id === "fullstack")).toBe(true);
   });
 
   it("tags every built-in blueprint origin=built-in, incl. the greenfield four (#658)", () => {
@@ -62,10 +91,73 @@ describe("transform blueprints (#645 slice 2)", () => {
     expect(split.sections.find((s) => s.key === "boundaries")!.glyph).not.toBe("✚");
   });
 
+  it("the refactor blueprint has no structure stage (no issues.json) but keeps cleanup + testing (#666)", () => {
+    const refactor = makeBlueprints().find((b) => b.id === "refactor")!;
+    const keys = refactor.sections.map((s) => s.key);
+    expect(keys).not.toContain("structure");
+    expect(keys).toEqual(expect.arrayContaining(["cleanup", "testing"]));
+  });
+
   it("are surfaced by the category filter", () => {
     const transforms = filterBlueprints(all, { category: "transform" }).map((b) => b.id);
     expect(transforms).toEqual(expect.arrayContaining(["refactor", "split-services", "combine-services", "migrate"]));
     expect(filterBlueprints(all, { category: "harden" }).map((b) => b.id)).toContain("harden");
+  });
+});
+
+describe("data blueprints (#779/#782/#783)", () => {
+  const all = makeBlueprints();
+  const byId = (id: string) => all.find((b) => b.id === id)!;
+
+  it("the data category has display metadata and a chip", () => {
+    expect(CATEGORY_META.data.label).toBe("Data");
+    expect(filterBlueprints(all, { category: "data" }).map((b) => b.id))
+      .toEqual(expect.arrayContaining(["data-migration", "data-collection"]));
+  });
+
+  it("packages the two data blueprints with the right category/mode", () => {
+    expect(byId("data-migration").category).toBe("data");
+    expect(byId("data-migration").mode).toBe("operate"); // against an existing system
+    expect(byId("data-collection").category).toBe("data");
+    expect(byId("data-collection").mode).toBe("create"); // net-new acquisition
+  });
+
+  it("both pipelines converge on the shared Data Model + clean + load stages", () => {
+    for (const id of ["data-migration", "data-collection"]) {
+      const keys = byId(id).sections.map((s) => s.key);
+      expect(keys, id).toEqual(expect.arrayContaining(["dataModel", "dataClean", "dataLoad"]));
+    }
+  });
+
+  it("migration maps a source; collection acquires net-new under a licensing gate", () => {
+    const mig = byId("data-migration").sections.map((s) => s.key);
+    expect(mig).toEqual(expect.arrayContaining(["dataSource", "dataMap"]));
+    const col = byId("data-collection").sections.map((s) => s.key);
+    expect(col).toEqual(expect.arrayContaining(["collectTargets", "sourceLicensing", "dataAcquire", "dataExtract"]));
+  });
+
+  it("migration is strictly read-only — no write-back stage (#782)", () => {
+    const keys = byId("data-migration").sections.map((s) => s.key);
+    expect(keys).not.toContain("dataWriteback");
+  });
+
+  it("the shared cleaning stage gates on whichever front half a blueprint includes (omitted dep treated as met)", () => {
+    // dataClean's def depends on BOTH dataMap (migration) and dataExtract (collection);
+    // each blueprint omits the other, which the lock resolver treats as met.
+    const clean = byId("data-migration").sections.find((s) => s.key === "dataClean")!;
+    expect(clean.deps).toEqual(expect.arrayContaining(["dataMap", "dataExtract"]));
+  });
+});
+
+describe("resolveProjectSeed — blueprint tracking for the reset prompt (#647 fix)", () => {
+  it("a brand-new project (no config) seeds + records the active blueprint", () => {
+    expect(resolveProjectSeed(false, undefined, "fullstack")).toEqual({ seedConfig: true, setBlueprintId: "fullstack" });
+  });
+  it("an existing project with NO recorded blueprint backfills to default (so a switch prompts)", () => {
+    expect(resolveProjectSeed(true, undefined, "fullstack")).toEqual({ seedConfig: false, setBlueprintId: "default" });
+  });
+  it("an existing project that already knows its blueprint changes nothing", () => {
+    expect(resolveProjectSeed(true, "refactor", "fullstack")).toEqual({ seedConfig: false });
   });
 });
 

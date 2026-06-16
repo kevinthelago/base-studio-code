@@ -36,6 +36,11 @@ export interface PipelineDef {
 export interface Pipeline extends PipelineDef {
   uid: string;
   trigger: PipelineTrigger;
+  /** Scopes the trigger to one substep/artifact WITHIN the stage (its `key`), or a loop item
+   *  (e.g. "features" → run for each feature). Absent / "*" ⇒ the whole stage (the default).
+   *  This is what lets a pipeline fire "right after schema.md" or "for each feature" rather
+   *  than only on stage enter/completion. */
+  triggerTarget?: string;
   enabled: boolean;
   /** A gate pipeline blocks its stage from completing until it passes (#532). */
   gate?: boolean;
@@ -61,6 +66,25 @@ export const PIPELINE_LIB: PipelineDef[] = [
   { id: "contract-test",   name: "Contract test",       desc: "Run contract tests against the declared API surface",               suits: ["api"],    kind: "builtin" },
 ];
 
+// ── Substeps ─────────────────────────────────────────────────────────────────
+// A discrete step WITHIN a stage. The conductor injects ONE substep's prompt at a time and
+// advances when its artifact is written + confirmed — incremental, instead of front-loading
+// the whole stage's instructions. A `loop` substep repeats once per dynamic item discovered
+// during the stage (the feature workshop), so the conductor drives "one feature at a time".
+export type SubStepLoop = "features" | "repos" | "topics";
+export interface SubStep {
+  /** Canonical key / artifact stem (e.g. "goal" → goal.md). For a loop, the loop's id. */
+  key: string;
+  label: string;
+  /** Injected into the session when this substep becomes active. Plan-only — never describes
+   *  publishing (the user owns that). */
+  prompt: string;
+  /** Human "done when…"; absent ⇒ informational (no gate of its own). */
+  gate?: string;
+  /** Repeat once per dynamic item (a feature, a repo). Absent ⇒ a single static substep. */
+  loop?: SubStepLoop;
+}
+
 // ── Sections (the canonical planning stages) ─────────────────────────────────
 export interface SectionDef {
   name: string;
@@ -78,6 +102,10 @@ export interface SectionDef {
   /** Optional applicability rule (e.g. UI only when the project needs a UI). Absent ⇒
    *  the section always applies. */
   appliesWhen?: Requirement;
+  /** An OPTIONAL section is shown but never required: it doesn't block plan completion or
+   *  downstream dependents, and it's off the critical path (currentSection skips it) — the
+   *  user can fill it or skip it (#676). */
+  optional?: boolean;
   /** Output disposition (#609) — what happens to this stage's artifact (a key into
    *  DISPOSITIONS: plan-file / issues / milestones / skill-index / knowledge / scratch).
    *  Editor metadata; the runtime doesn't read it. Absent ⇒ defaultDisposition(key). */
@@ -86,6 +114,9 @@ export interface SectionDef {
    *  into the agent's context for this stage. Resolved at planning + fleet launch
    *  (slice b). Reference-by-id; unresolved ids surface a warning. */
   skills?: string[];
+  /** Ordered substeps the conductor injects one at a time (#…). Absent ⇒ the stage is driven
+   *  by a single prompt (its `prompt`). Pipeline `triggerTarget`s reference these by `key`. */
+  substeps?: SubStep[];
 }
 
 export const SECTION_DEFS: Record<string, SectionDef> = {
@@ -93,17 +124,38 @@ export const SECTION_DEFS: Record<string, SectionDef> = {
     name: "Context", glyph: "◆", gate: "all topics resolved", deps: [],
     // core four confirmed (must-pass, no fill) + every surfaced topic resolved.
     gateRule: { require: [
-      { signal: "coreConfirmed", target: true, weight: 0 },
+      { signal: "coreConfirmed", target: true, weight: 0, label: "confirm goal, scope, stack & architecture" },
       { signal: "topicsResolved", of: "topicsTotal", label: "resolve the discovery topics" },
     ] },
-    blurb: "Discovery — goal, users, scope, UX, stack, architecture.",
+    blurb: "Discovery — goal, scope, stack, architecture (+ applicable dimensions).",
     prompt:
-`Walk the discovery checklist one topic at a time — goal, users, scope, UX,
-stack, architecture, data model, API, security, testing. Propose first, then
-interrogate; confirm each topic before moving on. Write one section file per
-resolved topic and emit a <plan_update> so the panel reveals it live.
+`Walk the discovery checklist one topic at a time, using the canonical key as each
+file's stem. The gate REQUIRES these four written and confirmed: goal, scope, stack,
+architecture. Cover other dimensions ONLY where they genuinely apply (canonical keys:
+users, ux, schema, api, auth, security, testing, …) and record the rest in _skipped.md.
+Each file you create is a gate item the user confirms — don't create tangential files.
 
-Gate: every applicable topic is resolved or explicitly skipped (with a reason).`,
+Gate: goal/scope/stack/architecture confirmed, and every documented topic confirmed
+(skipped dimensions don't count).`,
+    substeps: [
+      { key: "goal", label: "Goal", gate: "goal.md written and confirmed", prompt:
+`Establish the goal: the single outcome this project must achieve, and who it's for. Propose
+it, interrogate it with the user, then write goal.md. Stop and confirm before moving on.` },
+      { key: "scope", label: "Scope", gate: "scope.md written and confirmed", prompt:
+`Define what's in scope and — just as important — what's explicitly out of scope. Write
+scope.md, then confirm.` },
+      { key: "stack", label: "Stack", gate: "stack.md written and confirmed", prompt:
+`Decide the technology stack — languages, frameworks, datastores — and the reasoning behind
+each choice. Write it to the file named exactly \`stack.md\` (not "tech stack.md" or a titled
+variant — the gate looks for \`stack.md\`), then confirm.` },
+      { key: "architecture", label: "Architecture", gate: "architecture.md written and confirmed", prompt:
+`Describe the high-level architecture: the major components and how they interact. Write
+architecture.md, then confirm.` },
+      { key: "dimensions", label: "Applicable dimensions", loop: "topics", prompt:
+`Now cover any remaining dimension that genuinely applies — one at a time — using the canonical
+key as the file stem (users, ux, schema, api, auth, security, testing, …). Record every
+dimension you don't document in _skipped.md. Don't create files for tangential topics.` },
+    ],
   },
   repos: {
     name: "Repos", glyph: "⑂", gate: "≥1 repo linked", deps: [],
@@ -116,32 +168,88 @@ branch, and its role in the system. Write repos.json.
 Gate: at least one repository is linked.`,
   },
   ui: {
-    name: "UI", glyph: "▣", gate: "screens & flows defined", deps: ["context"],
-    // applies only when the project needs a UI; complete when every screen is approved.
+    // UI runs AFTER Features (#825) so the screens are designed for the defined capabilities —
+    // and so the stage can author a kickoff the user hands to Claude Design.
+    name: "UI", glyph: "▣", gate: "design routed", deps: ["context", "features"],
+    // applies only when the project needs a UI; complete when the design is routed to the
+    // project (drop + Route) OR every screen preview is approved — `uiDone` combines both (#837).
     appliesWhen: { signal: "requiresUi", target: true },
-    gateRule: { require: [{ signal: "screensApproved", of: "screensTotal", label: "approve the screen previews" }] },
-    blurb: "Screens, states, and primary flows.",
+    gateRule: { require: [{ signal: "uiDone", target: true, label: "route the design to the project" }] },
+    blurb: "Screens, states, and primary flows — designed from the features.",
     prompt:
-`Define the screens and primary flows. For each screen: its purpose, key states,
-and the components it needs from the design system. Produce ui.md plus a screen
-inventory the Render preview pipeline can visualize.
+`With the features defined, design the UI that delivers them. Walk the features and, for each
+screen a feature needs, capture its purpose, key states, and the components it needs from the
+design system. Produce ui.md plus a screen inventory the Render preview pipeline can visualize.
+
+Then author a **Claude Design kickoff** at \`prompts/ui-kickoff.md\` — a self-contained brief the
+user can paste into a Claude Design session: the product goal, the feature → screen map, each
+screen's states and flows, and the design-system constraints. This is the handoff that turns the
+plan's features into visual designs.
 
 Gate: every primary flow has its screens and states defined.`,
   },
-  structure: {
-    name: "Structure", glyph: "⊞", gate: "phases + issues", deps: ["context", "repos", "ui"],
+  // Features (#…): the INTERACTIVE heart — define the user-facing capabilities, one at a time.
+  // Each feature is a fleet stream. Claude proposes the COMPLETE set a production-grade solution
+  // needs (#850 — not a truncated "starter" cut); the user curates + phases it, then drills into
+  // each. Integration seams are NOT defined here — the Plan stage owns them.
+  features: {
+    name: "Features", glyph: "◇", gate: "every feature defined", deps: ["context"],
     gateRule: { require: [
-      { signal: "phasesConfirmed", target: true, label: "confirm the roadmap" },
-      { signal: "issueCount", target: 1, label: "add agent-ready issues" },
+      { signal: "featuresConfirmed", target: true, weight: 0, label: "confirm the feature set" },
+      { signal: "featuresDefined", target: 1, label: "define at least one feature" },
     ] },
-    blurb: "Phases (milestones) and agent-ready issues.",
+    blurb: "The user-facing capabilities — each one a stream.",
     prompt:
-`Map features into phases (milestones) and granular, agent-ready issues. Each
-issue carries acceptance criteria, owned files/globs, dependencies, labels, and
-its owning stream — enough that an agent finishes without asking. Write
-phases.json and issues.json.
+`Define the app's user-facing capabilities — the things a user DOES ("invite teammates", "export
+to CSV"), never infrastructure (auth, queues, storage are implementation detail under a feature).
+Each capability becomes its own fleet stream. Propose the COMPLETE set a production-grade solution
+to the goal needs — not a minimal cut — then let the user curate and phase it, and take each in turn.`,
+    substeps: [
+      { key: "propose", label: "Propose the feature set", gate: "the feature list is confirmed", prompt:
+`From the goal, scope, and what you've discussed, propose the COMPLETE set of user-facing
+capabilities a production-grade solution to this goal needs — aim for the best, most complete
+product, not a minimal first-pass cut. (Completeness is about capabilities, not
+phasing — the user sequences them into phases next; don't pre-trim to a phase-1 slice.) Write them
+to features.json: a JSON array of \`{"slug","name"}\` objects (e.g.
+\`{"slug":"invite-teammates","name":"Invite teammates"}\`). They appear in the Features board for the
+user to curate — add, remove, merge, rename. Confirm the SET with the user before drilling into any
+single feature.` },
+      { key: "features", label: "Define each feature", loop: "features", prompt:
+`Now take ONE feature at a time. For THIS feature, fill in its features.json entry before moving on:
+• \`behavior\` + \`acceptance\` (a string array) — what it does, and the done-when checklist.
+• \`approach\` — the concrete shape of the solution.
+• \`tools\` (a string array) — the specific libraries/services/frameworks (name them).
+• \`data\` — what it stores/reads and which other features it relies on.
+This feature is its own fleet STREAM (its slug). Propose, then interrogate with the user; confirm
+it before the next. Do NOT design the integration contracts between features here — the Plan stage
+owns the seams.` },
+    ],
+  },
+  // Plan (#…): the AUTONOMOUS synthesis — Claude turns the defined features into the GitHub
+  // structure on its own, then presents it for approval. Seams live in contracts/, owned by the
+  // director. (Key kept as `structure` so everything downstream stays wired.)
+  structure: {
+    name: "Plan", glyph: "⊞", gate: "phases + issues", deps: ["context", "repos", "features"],
+    gateRule: { require: [
+      { signal: "phasesConfirmed", target: true, label: "approve the roadmap" },
+      { signal: "issueCount", target: 1, label: "generate agent-ready issues" },
+    ] },
+    blurb: "Autonomous: contracts, phases, and the sub-issue tree.",
+    prompt:
+`With the features defined, synthesize the plan on your own — then present it for approval.
+1. Infer the SEAMS between features (where one consumes another's output) and write each as a
+   contract doc under contracts/<name>.md. The DIRECTOR owns these — it authors/maintains them,
+   tests the integration, and answers worker questions; workers read contracts/ as the source of
+   truth and never negotiate interfaces directly.
+2. Sequence the features into ordered phases (the roadmap) — write phases.json, each phase a crisp
+   "done when". Contract work lands EARLY, before its consumers.
+3. Generate the agent-ready issue tree — write issues.json: each FEATURE is a parent owned by its
+   stream, decomposed into granular sub-issues (acceptance criteria, owned files/globs,
+   dependencies, labels).
+Then STOP and ask the user to APPROVE the phases + the seam/dependency graph before treating any
+of it as final.
 
-Gate: every phase has issues; every issue is agent-ready.`,
+Gate: phases approved, and every feature decomposed into agent-ready issues.`,
   },
   permissions: {
     name: "Permissions", glyph: "⛉", gate: "every stream scoped", deps: ["structure"],
@@ -156,6 +264,19 @@ write-path globs, network access, and a git/gh push policy. Map each to a role
 (worker / director / triage). Write the per-stream permission set.
 
 Gate: every stream has a scoped profile and a role.`,
+  },
+  mcp: {
+    name: "MCP Servers", glyph: "⊕", gate: "tools connected", deps: ["structure"],
+    optional: true,
+    blurb: "External tools + data the fleet's agents can call.",
+    prompt:
+`Connect the external tools and data sources the fleet's agents need via MCP servers.
+Assign one with <mcp_assign name="…" />: a first-party server (Compliance, Complexity
+Analyzer, Dependency Graph) downloads automatically — the user builds it once in the MCP
+panel and it's scoped to every session this plan launches (the director AND every worker).
+Assign only the servers the agents actually need.
+
+Gate: the project's agents have the MCP servers they need (optional).`,
   },
   automations: {
     name: "Automations", glyph: "⚡", gate: "≥1 automation armed", deps: ["structure"],
@@ -241,6 +362,115 @@ compatibility shims that bridge them.`,
 gaps, secret handling, input validation, dependency CVEs, and transport/storage crypto.
 Rank findings by severity and produce concrete, testable fixes — not just observations.`,
   },
+
+  // ── data-platform stages (#782/#783): acquire → model → clean → load into a canonical
+  // Data Model. Informational (no signal gate yet — declarative licensing/quality gates are
+  // #783) and plan/data-only: the planner designs the pipeline + writes datamodel.json, it
+  // never runs the load itself. Shared stages (dataModel/dataClean/dataLoad) declare deps
+  // spanning BOTH pipelines; a blueprint that omits a dep has it "treated as met" (see the
+  // lock resolution below), so dataClean gates on dataMap in migration and dataExtract in
+  // collection without separate defs.
+  dataModel: {
+    name: "Data Model", glyph: "▤", gate: "canonical schema defined", deps: ["context"],
+    blurb: "The canonical schema everything maps into — entities, fields, identity keys.",
+    prompt:
+`Define the canonical DATA MODEL this project loads into — the single source of truth that
+later powers any app built over it. For each entity: its fields (with types + which are
+required), the relationships between entities, and the IDENTITY key (the fields that decide
+when two records describe the same real-world thing — used later to merge across sources).
+Propose it, interrogate it with the user, then write datamodel.json. This is the TARGET the
+mapping/extraction stages aim at — get it right before moving data.`,
+  },
+
+  // Migration front half — a system the user controls; it already has a schema.
+  dataSource: {
+    name: "Source", glyph: "⇲", gate: "source reachable + inventoried", deps: ["context"],
+    blurb: "Connect the system of record and inventory what's there.",
+    prompt:
+`Identify the source system to migrate from (database, SaaS export, API — e.g. SAP via OData,
+Salesforce Bulk API, a SQL dump). Record how it's reached and an INVENTORY of its objects and
+their schemas, and pull a small representative sample of rows for the mapping stage. Don't move
+anything yet — this stage just establishes what exists.`,
+  },
+  dataMap: {
+    name: "Mapping", glyph: "↦", gate: "every in-scope field mapped or dropped", deps: ["dataSource", "dataModel"],
+    blurb: "Field-by-field: source object → Data Model entity.",
+    prompt:
+`Map the source onto the Data Model, one object at a time. For each source object, bind it to a
+Data Model entity and map every field — or explicitly mark it DROPPED, with a reason. Note the
+transforms each field needs (type coercion, unit/format normalization, lookups). The output is a
+complete mapping spec; nothing is left ambiguous for the load stage.`,
+    substeps: [
+      { key: "map-objects", label: "Bind objects to entities", gate: "each source object bound to an entity", prompt:
+`Bind each source object to a Data Model entity (or mark it out of scope). Confirm the set of
+object→entity bindings with the user before mapping individual fields.` },
+      { key: "map-fields", label: "Map the fields", gate: "every in-scope field mapped or dropped", prompt:
+`Now, per bound object, map every field to a Data Model field or mark it DROPPED with a reason,
+recording the transform each needs. Write the mapping spec, then confirm.` },
+    ],
+  },
+  // NOTE: migration is strictly READ-ONLY from the source (decided #782) — there is no
+  // write-back stage. base-studio-code never writes back into a system of record; it only
+  // reads, maps, and loads into the canonical Data Model.
+
+  // Collection front half — net-new external data, usually schema-less.
+  collectTargets: {
+    name: "Targets", glyph: "◎", gate: "sources + Data Model bound", deps: ["context"],
+    blurb: "Declare the external sources and the Data Model they feed.",
+    prompt:
+`Declare the external data sources to collect from — websites to scrape, or datasets/APIs to fetch
+(name them: the URLs, dataset identifiers, or endpoints). For each, note the mode (scrape vs fetch)
+and what entities of the Data Model it's expected to populate. Confirm the target list with the
+user before checking legitimacy.`,
+  },
+  sourceLicensing: {
+    name: "Source legitimacy", glyph: "⚖", gate: "every source cleared for use", deps: ["collectTargets"],
+    blurb: "ToS / robots / license clearance — blocks acquisition.",
+    prompt:
+`Before acquiring anything, clear each source for the intended use: site Terms of Service and
+robots.txt for scraping, and the license for any dataset (can it be used commercially? does it
+require attribution?). Record a per-source verdict — cleared / restricted / blocked — with the
+reason. A source that isn't cleared must NOT be acquired. Surface anything ambiguous to the user.`,
+  },
+  dataAcquire: {
+    name: "Acquire", glyph: "⤓", gate: "raw artifacts captured", deps: ["sourceLicensing"],
+    blurb: "Scrape (rate-limited, robots-aware) or fetch the raw data.",
+    prompt:
+`Design the acquisition for each cleared source. SCRAPE mode: a crawl that respects robots.txt and
+rate limits, with retry/backoff, capturing raw HTML/responses. FETCH mode: download the file or
+page the API, capturing the raw artifacts. Record provenance for every artifact (source, when,
+under which license) — this seeds the lineage the load stage records.`,
+  },
+  dataExtract: {
+    name: "Extract", glyph: "⛏", gate: "structured rows produced", deps: ["dataAcquire"],
+    blurb: "Parse raw artifacts into structured rows.",
+    prompt:
+`Turn the raw artifacts into structured rows: parse HTML/DOM, or ingest the fetched CSV/JSON/Parquet.
+Define the parse rules and the row shape produced, keeping each row tied to its provenance. The
+output is structured-but-uncleaned rows for the shared cleaning stage.`,
+  },
+
+  // Shared back half — both pipelines converge here.
+  dataClean: {
+    name: "Cleaning", glyph: "✦", gate: "rows pass the quality bar", deps: ["dataMap", "dataExtract"],
+    blurb: "Coerce, standardize, validate against the Data Model's rules.",
+    prompt:
+`Clean the rows against the Data Model: coerce types, standardize formats (dates, currency,
+addresses, casing), and validate against each field's rules. Decide the QUALITY BAR — the
+confidence threshold a row must clear to be allowed into the Data Model — and how failures are
+quarantined for review. External (collected) data is dirtier than a system of record, so set the
+bar higher for collection.`,
+  },
+  dataLoad: {
+    name: "Load & reconcile", glyph: "⤧", gate: "load verified + lineage complete", deps: ["dataClean"],
+    blurb: "Director merges into the Data Model by identity key, with lineage.",
+    prompt:
+`Plan the load + reconciliation the DIRECTOR runs. When several sources feed the same entity,
+records are MERGED by the entity's identity key; conflicts resolve by a declared source-PRECEDENCE
+rule (state it). Every loaded value records LINEAGE — which source, when, under what license — so
+the result is auditable. Define the verification that confirms the load matched expectations before
+it's treated as done.`,
+  },
 };
 
 export interface BlueprintSection extends SectionDef {
@@ -257,8 +487,8 @@ export type BlueprintOrigin = "built-in" | "local" | "forked" | "imported";
 /** Lifecycle intent of a blueprint (#645) — what part of a project's life it serves.
  *  Greenfield = create from a pitch; transform = restructure existing repos; harden =
  *  improve quality in place; maintain = ongoing upkeep. Drives library grouping/labels. */
-export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain";
-export const BLUEPRINT_CATEGORIES: BlueprintCategory[] = ["greenfield", "transform", "harden", "maintain"];
+export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain" | "data";
+export const BLUEPRINT_CATEGORIES: BlueprintCategory[] = ["greenfield", "transform", "harden", "maintain", "data"];
 
 /** Whether a blueprint starts from a pitch (create) or runs against existing repos
  *  (operate) — selects the planner intro at launch. */
@@ -270,6 +500,9 @@ export const CATEGORY_META: Record<BlueprintCategory, { label: string; h: number
   transform:  { label: "Transform",  h: 230 },
   harden:     { label: "Harden",     h: 25 },
   maintain:   { label: "Maintain",   h: 70 },
+  // Data-acquisition blueprints (#779) — distinct from the software-lifecycle
+  // categories above. They write into a canonical Data Model rather than code.
+  data:       { label: "Data",       h: 280 },
 };
 
 /** Gist link state for a blueprint (#609) — the publish/sync state-machine. Slice 5
@@ -333,11 +566,14 @@ export const DEFAULT_BLUEPRINT_ID = "default";
 /** Build a section instance from a def key + per-blueprint overrides. */
 export function mkSection(
   key: string,
-  { enabled = true, expanded = false, pipelines = [] as [string, PipelineTrigger?, boolean?][] } = {},
+  { enabled = true, expanded = false, optional, pipelines = [] as [string, PipelineTrigger?, boolean?][] }:
+    { enabled?: boolean; expanded?: boolean; optional?: boolean; pipelines?: [string, PipelineTrigger?, boolean?][] } = {},
 ): BlueprintSection {
   const def = SECTION_DEFS[key];
   return {
     uid: uid("sec"), key, ...def, enabled, expanded,
+    // explicit `optional` overrides the def's; otherwise inherit it
+    optional: optional ?? def.optional,
     pipelines: pipelines.map(([libId, trigger, on]) => {
       const lib = PIPELINE_LIB.find((p) => p.id === libId)!;
       return { uid: uid("pl"), ...lib, trigger: trigger ?? "on completion", enabled: on !== false };
@@ -346,44 +582,82 @@ export function mkSection(
 }
 
 /** Seed blueprints — the starter library, depicting every section/pipeline state. */
+/**
+ * Replace persisted built-in blueprints with their current code definitions (by id) and
+ * append any new built-ins, leaving user-created / forked / imported blueprints untouched.
+ * Built-ins are code-owned templates, but `blueprints` is persisted — this lets improvements
+ * (the optional UI stage, enabled repos, updated prompts, …) reach an already-seeded store
+ * instead of being pinned to the version a user first ran (#677).
+ */
+export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
+  const fresh = makeBlueprints();
+  const byId = new Map(fresh.map((b) => [b.id, b]));
+  const merged = persisted.map((b) => (b.origin === "built-in" && byId.has(b.id) ? byId.get(b.id)! : b));
+  for (const b of fresh) if (!merged.some((x) => x.id === b.id)) merged.push(b);
+  return merged;
+}
+
 export function makeBlueprints(): Blueprint[] {
   return [
     {
       id: "default", name: "Default", desc: "Balanced starting point", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
         mkSection("context",     { pipelines: [["lint-plan", "on completion", true]] }),
-        mkSection("repos",       { enabled: false, pipelines: [["index-repos", "on section enter", true]] }),
-        mkSection("ui",          { pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
+        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
+        // Features before UI (#825): design the screens from the defined capabilities + author the Claude Design kickoff.
+        mkSection("features"),
+        mkSection("ui",          { optional: true, pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", false]] }),
         mkSection("permissions", { pipelines: [] }),
-        mkSection("automations", { pipelines: [["arm-schedule", "on completion", true]] }),
-        mkSection("skills",      { pipelines: [["sync-skills", "manual", true]] }),
+        mkSection("mcp",         { optional: true }),
+        mkSection("automations", { optional: true, pipelines: [["arm-schedule", "on completion", true]] }),
+        mkSection("skills",      { optional: true, pipelines: [["sync-skills", "manual", true]] }),
       ],
     },
     {
       id: "fullstack", name: "Full-stack web app", desc: "Web client + API + DB", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
-        mkSection("context"), mkSection("repos"), mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
+        mkSection("context"), mkSection("repos"),
+        mkSection("features"),
+        mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
         mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("mcp", { optional: true }),
         mkSection("automations"), mkSection("skills"),
       ],
     },
     {
       id: "mobile", name: "Mobile MVP", desc: "Single app, ship fast", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
-        mkSection("context"), mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
+        mkSection("context"),
+        mkSection("features"),
+        mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
-        mkSection("permissions"), mkSection("skills"),
+        mkSection("permissions"), mkSection("mcp", { optional: true }), mkSection("skills"),
       ],
     },
     {
       id: "api", name: "API microservice", desc: "Headless service, no UI", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
         mkSection("context"), mkSection("repos"),
+        mkSection("features"),
         mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", true]] }),
         mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("mcp", { optional: true }),
         mkSection("automations"),
+      ],
+    },
+    {
+      id: "mcp-server", name: "MCP server", desc: "Headless Model Context Protocol server — tools/resources, no UI",
+      origin: "built-in", icon: "⚇", category: "greenfield", mode: "create",
+      sections: [
+        mkSection("context"), mkSection("repos"),
+        // No UI stage: an MCP server is headless (tools/resources over stdio/HTTP), so the plan
+        // goes straight from features to structure (#825).
+        mkSection("features"),
+        mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", true]] }),
+        mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("automations"), mkSection("skills"),
       ],
     },
     {
@@ -394,7 +668,8 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
         mkSection("cleanup",     { pipelines: [["scan-dead-code", "manual", false], ["grade-rubric", "on completion", false]] }),
         mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
-        mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
+        // No `structure` stage: a refactor pass tracks work as cleanup/refactor units that
+        // drive the fleet directly — it doesn't need a GitHub issues.json (#666).
         mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
       ],
     },
@@ -445,6 +720,33 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
         mkSection("structure",   { pipelines: [["generate-issues", "on completion", true]] }),
         mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+      ],
+    },
+    // ── data blueprints (#782/#783): acquire data into a canonical Data Model ──
+    {
+      id: "data-migration", name: "Data migration", desc: "Move data from an existing system into a canonical Data Model",
+      origin: "built-in", icon: "⇲", h: 280, category: "data", mode: "operate",
+      sections: [
+        mkSection("context"),
+        mkSection("dataSource"),
+        mkSection("dataModel"),
+        mkSection("dataMap"),
+        mkSection("dataClean"),
+        mkSection("dataLoad"),
+      ],
+    },
+    {
+      id: "data-collection", name: "Data collection", desc: "Scrape the web or fetch datasets into a canonical Data Model",
+      origin: "built-in", icon: "⇱", h: 300, category: "data", mode: "create",
+      sections: [
+        mkSection("context"),
+        mkSection("collectTargets"),
+        mkSection("dataModel"),
+        mkSection("sourceLicensing"),
+        mkSection("dataAcquire"),
+        mkSection("dataExtract"),
+        mkSection("dataClean"),
+        mkSection("dataLoad"),
       ],
     },
   ];
@@ -503,6 +805,21 @@ export function cloneSections(sections: BlueprintSection[]): BlueprintSection[] 
  * non-registry sections (e.g. testing) are omitted — they configure planning but
  * don't have a registry gate yet.
  */
+/**
+ * What to record when a project's planning opens (#647). A brand-new project (no stage
+ * config) seeds from + records the active blueprint. An existing project with NO recorded
+ * blueprint (planned before blueprint tracking) backfills to the default — so selecting a
+ * different blueprint still triggers the reset prompt instead of silently doing nothing.
+ * Otherwise the project already knows its blueprint, so nothing changes here.
+ */
+export function resolveProjectSeed(
+  hasConfig: boolean, recordedBlueprintId: string | undefined, activeBlueprintId: string,
+): { seedConfig: boolean; setBlueprintId?: string } {
+  if (!hasConfig) return { seedConfig: true, setBlueprintId: activeBlueprintId };
+  if (!recordedBlueprintId) return { seedConfig: false, setBlueprintId: DEFAULT_BLUEPRINT_ID };
+  return { seedConfig: false };
+}
+
 export function blueprintToStageConfig(bp: Blueprint): StageConfig {
   const known = new Set<string>(PLAN_STAGES.map((s) => s.id));
   const enabled = Object.fromEntries(PLAN_STAGES.map((s) => [s.id, false])) as Record<StageId, boolean>;
@@ -527,14 +844,28 @@ export function blueprintToStageConfig(bp: Blueprint): StageConfig {
 /** Render status of a blueprint section. `na` = not applicable to this project. */
 export type SectionRenderStatus = "locked" | "in-progress" | "complete" | "na";
 
+/** The signal that marks an informational (gateless) section confirmed/complete (#664). */
+export const confirmedSignal = (key: string) => `confirmed:${key}`;
+
+/** Whether a section is done. A section WITH a declarative gate uses {@link evalGate}. A
+ *  gateless ("informational") section is NOT vacuously complete — it's done only when the
+ *  planner confirms it (a `confirmed:<key>` signal), so a fresh/cleared plan shows it as
+ *  in-progress rather than ✓ (#664). */
+export function sectionDone(section: BlueprintSection, signals: PlanSignals): { done: boolean; fraction: number } {
+  if (section.gateRule) return evalGate(section.gateRule, signals);
+  const ok = signals[confirmedSignal(section.key)] === true;
+  return { done: ok, fraction: ok ? 1 : 0 };
+}
+
 /** A dependency is satisfied when the blueprint omits it, it's disabled, it's N/A, or
  *  its own gate is complete. Mirrors the registry's dep rule, but over blueprint data. */
 function depSatisfied(depKey: string, byKey: Record<string, BlueprintSection>, signals: PlanSignals): boolean {
   const dep = byKey[depKey];
   if (!dep) return true;        // this blueprint doesn't include the dep
   if (!dep.enabled) return true;
+  if (dep.optional) return true;        // optional deps never block dependents (#676)
   if (!gateApplies(dep.appliesWhen, signals)) return true;
-  return evalGate(dep.gateRule, signals).done;
+  return sectionDone(dep, signals).done;
 }
 
 /**
@@ -546,8 +877,10 @@ export function sectionStatus(
   sections: BlueprintSection[],
   signals: PlanSignals,
 ): { status: SectionRenderStatus; fraction: number } {
-  if (!gateApplies(section.appliesWhen, signals)) return { status: "na", fraction: 0 };
-  const g = evalGate(section.gateRule, signals);
+  // An optional section is always shown (it bypasses appliesWhen) — it's just never
+  // required; non-optional sections still go N/A when their applicability rule fails (#676).
+  if (!section.optional && !gateApplies(section.appliesWhen, signals)) return { status: "na", fraction: 0 };
+  const g = sectionDone(section, signals);
   if (g.done) return { status: "complete", fraction: 1 };
   const byKey: Record<string, BlueprintSection> = Object.fromEntries(sections.map((s) => [s.key, s]));
   const locked = (section.deps || []).some((d) => !depSatisfied(d, byKey, signals));
@@ -562,6 +895,7 @@ export function enabledSections(sections: BlueprintSection[]): BlueprintSection[
 /** Whether every enabled, applicable section is complete — the triage readiness gate. */
 export function planSectionsComplete(sections: BlueprintSection[], signals: PlanSignals): boolean {
   return enabledSections(sections).every((s) => {
+    if (s.optional) return true;        // optional sections never block completion (#676)
     const { status } = sectionStatus(s, sections, signals);
     return status === "complete" || status === "na";
   });
@@ -573,7 +907,9 @@ export function planSectionsComplete(sections: BlueprintSection[], signals: Plan
  * one. Drives which pipelines' second screens render.
  */
 export function currentSection(sections: BlueprintSection[], signals: PlanSignals): BlueprintSection | undefined {
-  const applicable = enabledSections(sections).filter((s) => gateApplies(s.appliesWhen, signals));
+  // Optional sections are off the critical path — they never become the "current" stage,
+  // so an unfinished optional section (e.g. UI) doesn't stall the flow (#676).
+  const applicable = enabledSections(sections).filter((s) => !s.optional && gateApplies(s.appliesWhen, signals));
   const active = applicable.find((s) => sectionStatus(s, sections, signals).status === "in-progress");
   return active ?? applicable[applicable.length - 1];
 }

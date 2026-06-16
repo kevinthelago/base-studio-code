@@ -170,11 +170,6 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
   function toggleAssign(_consoleId: string, paneId: string) {
     setPaneProfile(paneId, paneProfiles[paneId] === selectedId ? null : selectedId);
   }
-  function cycleProfile(_consoleId: string, paneId: string) {
-    const cur = paneProfiles[paneId] ?? "pf_sandbox";
-    const idx = profiles.findIndex((p) => p.id === cur);
-    setPaneProfile(paneId, profiles[(idx + 1) % profiles.length].id);
-  }
   function openProfile(id: string) { select("profiles"); setSelectedId(id); }
 
   // Create a new user profile (#259): sensible defaults, persisted, then selected.
@@ -260,7 +255,8 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
         {tab === "assignments" && (
           <AssignmentsTab
             roles={roles} consoles={consoles} paneTotal={paneTotal}
-            onCycle={cycleProfile} onOpen={openProfile} find={find}
+            profiles={profiles} onAssign={(_c, paneId, profileId) => setPaneProfile(paneId, profileId)}
+            onOpen={openProfile} find={find}
           />
         )}
         {tab === "activity" && (
@@ -366,7 +362,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
             <div className="ds">{p.desc}</div>
           </div>
           {isApp
-            ? <><button className="btn ghost" style={{ height: 26, fontSize: 10.5 }}>open {p.surfaceGlyph === "P" ? "planner" : "library"} →</button><button className="btn" style={{ height: 26, fontSize: 10.5 }}>save</button></>
+            ? <><button className="btn ghost" style={{ height: 26, fontSize: 10.5 }}>open {appSessionOpenLabel(p)} →</button><button className="btn" style={{ height: 26, fontSize: 10.5 }}>save</button></>
             : <><button className="btn ghost" style={{ height: 26, fontSize: 10.5 }}>duplicate</button><button className="btn" style={{ height: 26, fontSize: 10.5 }}>save</button></>}
         </div>
         {isApp && (
@@ -505,7 +501,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
           </div>
           <div className="inherit-note" style={{ marginTop: 8 }}>
             <span style={{ color: "var(--info)" }}>ℹ</span>
-            <span>Other agents reach {p.name.split(" ")[0]} through {p.surfaceGlyph === "P" ? "the Plan surface and commands.json" : "pinned Knowledge blocks"} — not by being assigned this role.</span>
+            <span>{appReachNote(p)}</span>
           </div>
         </div>
       ) : (
@@ -542,12 +538,54 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
 
 interface AssignmentsTabProps {
   roles: AgentProfile[]; consoles: ConsoleSession[]; paneTotal: number;
-  onCycle: (consoleId: string, paneId: string) => void;
+  /** Assignable profiles (the user/custom profiles a pane can run under). */
+  profiles: AgentProfile[];
+  /** Assign a specific profile to a pane (#681 — replaces the old cycle-to-next). */
+  onAssign: (consoleId: string, paneId: string, profileId: string) => void;
   onOpen: (id: string) => void;
   find: (id: string) => AgentProfile | undefined;
 }
 
-function AssignmentsTab({ roles, consoles, paneTotal, onCycle, onOpen, find }: AssignmentsTabProps) {
+/** A click-to-open dropdown for picking a pane's profile (#681). */
+export function ProfileSelect({ current, profiles, onPick }: {
+  current?: AgentProfile; profiles: AgentProfile[]; onPick: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+  return (
+    <div className="prof-select" style={{ position: "relative" }} onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>
+      <span className="sw" style={{ background: current?.color }} />
+      <span className="nm">{current?.name ?? "—"}</span>
+      {current && <span className={`mode-badge ${current.mode}`} style={{ marginLeft: 2 }}>{current.mode}</span>}
+      <span className="cv">▾</span>
+      {open && (
+        <div className="prof-menu" role="listbox" onClick={(e) => e.stopPropagation()}>
+          {profiles.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="option"
+              aria-selected={p.id === current?.id}
+              className={"prof-opt" + (p.id === current?.id ? " on" : "")}
+              onClick={() => { onPick(p.id); setOpen(false); }}
+            >
+              <span className="sw" style={{ background: p.color }} />
+              <span className="nm">{p.name}</span>
+              <span className={`mode-badge ${p.mode}`}>{p.mode}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign, onOpen, find }: AssignmentsTabProps) {
   return (
     <>
       <div className="sec-head">
@@ -598,12 +636,7 @@ function AssignmentsTab({ roles, consoles, paneTotal, onCycle, onOpen, find }: A
                       <span className="pa">{pane.agent}</span>
                       <span className="pstat">{pane.id}</span>
                     </div>
-                    <div className="prof-select" onClick={() => onCycle(c.id, pane.id)}>
-                      <span className="sw" style={{ background: p?.color }} />
-                      <span className="nm">{p?.name}</span>
-                      {p && <span className={`mode-badge ${p.mode}`} style={{ marginLeft: 2 }}>{p.mode}</span>}
-                      <span className="cv">▾</span>
-                    </div>
+                    <ProfileSelect current={p} profiles={profiles} onPick={(id) => onAssign(c.id, pane.id, id)} />
                     <div className="resolved">
                       <span className="lbl">runs:</span>
                       {resolved.map((r) => (
@@ -625,6 +658,42 @@ function AssignmentsTab({ roles, consoles, paneTotal, onCycle, onOpen, find }: A
   );
 }
 
+// Short type chip for an app-session row, distinct per role. Was a planner-or-else-librarian
+// binary (#236, two roles only) that collapsed every non-planner app role to "librarian" once
+// Blueprint Assistant (#680) + Planning Autopilot (#693) were added (#740). Data-driven now:
+// known roles get a tailored icon+label; any future role derives one from its own fields.
+export function appSessionTag(p: AgentProfile): string {
+  switch (p.id) {
+    case "sys_planner":             return "⌨ planner";
+    case "sys_librarian":           return "⌬ librarian";
+    case "sys_blueprint_assistant": return "✦ blueprint";
+    case "sys_planning_autopilot":  return "◇ autopilot";
+    default:                        return `${p.surfaceGlyph ?? "◆"} ${(p.name.split(" ")[0] ?? "role").toLowerCase()}`;
+  }
+}
+
+/** The surface the app-role's "open … →" button points at — distinct per role (#740). */
+export function appSessionOpenLabel(p: AgentProfile): string {
+  switch (p.id) {
+    case "sys_planner":             return "planner";
+    case "sys_librarian":           return "library";
+    case "sys_blueprint_assistant": return "blueprints";
+    case "sys_planning_autopilot":  return "settings";
+    default:                        return (p.surface ?? "surface").toLowerCase();
+  }
+}
+
+/** How other sessions interact with an app role — role-correct (the one-shot helpers aren't
+ *  reached by other agents at all, so they don't get the planner/librarian reach note) (#740). */
+export function appReachNote(p: AgentProfile): string {
+  const first = p.name.split(" ")[0];
+  switch (p.id) {
+    case "sys_planner":   return `Other agents reach ${first} through the Plan surface and commands.json — not by being assigned this role.`;
+    case "sys_librarian": return `Other agents reach ${first} through pinned Knowledge blocks — not by being assigned this role.`;
+    default:              return `${first} runs on demand as a one-shot helper — it isn't reached by other agents, and can't be assigned to a pane.`;
+  }
+}
+
 function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) => void }) {
   const all = [
     ...GUARANTEED.map((c) => ({ cmd: c, origin: "guaranteed" as const })),
@@ -634,8 +703,11 @@ function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) =>
     <div className="pane-row">
       <div className="pident">
         <span className="pdot running" />
-        <span className="pa">{p.surfaceGlyph === "P" ? "⌨ planner" : "⌬ librarian"}</span>
-        <span className="pstat">{p.session}</span>
+        {/* Title (type) over subtitle (session) so longer names don't clip (#740). */}
+        <div className="psess">
+          <span className="pa">{appSessionTag(p)}</span>
+          <span className="pstat">{p.session}</span>
+        </div>
       </div>
       <div className="prof-select" onClick={() => onOpen(p.id)}>
         <span className="sw" style={{ background: p.color }} />

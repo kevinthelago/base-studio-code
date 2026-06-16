@@ -6,21 +6,24 @@ import { Rail } from "./components/chrome/Rail";
 import { Tabstrip } from "./components/chrome/Tabstrip";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { Dialog } from "./components/Dialog";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useAppStore } from "./store";
 import { useHotkeys } from "./hooks/useHotkeys";
 import { useScheduler } from "./hooks/useScheduler";
+import { useTunnelSync } from "./hooks/useTunnelSync";
 import { startPerfMonitor, recordStoreWrite } from "./lib/perf";
 import { log } from "./lib/log";
 import { ConsoleScreen } from "./screens/Console";
 import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
 import { AutomationsScreen } from "./screens/automations";
+import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
 import { ExtensionsScreen } from "./screens/extensions";
 import { SettingsScreen } from "./screens/settings";
 import { ProjectsScreen } from "./screens/projects";
 import { SkillsScreen } from "./screens/skills";
 import { AgentsScreen } from "./screens/agents";
-import { SKILL_KPIS } from "./data/skills";
+import { SkillsStatus } from "./screens/skills/SkillsStatus";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/detachWindow";
@@ -132,7 +135,7 @@ function renderDetachedSection(page: string, section: string): React.ReactNode {
   switch (page) {
     case "automations": return <AutomationsScreen sectionOverride={section} />;
     case "skills":      return <SkillsScreen sectionOverride={section} />;
-    case "extensions":  return <ExtensionsScreen sectionOverride={section} />;
+    case "extensions":  return <ExtensionsScreen kind="mcp" sectionOverride={section} />;
     case "agents":      return <AgentsScreen sectionOverride={section} />;
     case "github":      return <GitHubScreen sectionOverride={section} />;
     case "projects":    return <ProjectsScreen sectionOverride={section} />;
@@ -150,6 +153,7 @@ function renderDetachedSection(page: string, section: string): React.ReactNode {
 export default function App() {
   useHotkeys();
   useScheduler();
+  useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
 
   const {
     activeScreen, setScreen,
@@ -232,7 +236,7 @@ export default function App() {
         parts.push(automationsTab);
         break;
       case "extensions":
-        parts.push("Extensions");
+        parts.push("MCP");
         break;
       case "projects":
         parts.push("Projects");
@@ -242,7 +246,7 @@ export default function App() {
         parts.push("Skills");
         break;
       case "agents":
-        parts.push("Agents");
+        parts.push("Permissions");
         break;
       case "settings":
         parts.push("Settings");
@@ -391,6 +395,7 @@ export default function App() {
               instances and PTY sessions are never torn down unnecessarily. CSS
               hides it when another screen is active. */}
           <div className="page">
+          <ErrorBoundary label="this view" resetKeys={[activeScreen]}>
           {tabs.length > 0 && (
             <div style={{
               display: activeScreen === "console" ? "flex" : "none",
@@ -416,20 +421,17 @@ export default function App() {
           </div>
           {activeScreen === "github"     && <GitHubScreen />}
           {activeScreen === "automation" && <AutomationsScreen />}
-          {activeScreen === "extensions" && <ExtensionsScreen />}
+          {activeScreen === "extensions" && <ExtensionsScreen kind="mcp" />}
           {activeScreen === "skills"     && <SkillsScreen />}
           {activeScreen === "agents"     && <AgentsScreen />}
           {activeScreen === "settings"   && <SettingsScreen />}
+          </ErrorBoundary>
           </div>
           <StatusBar extra={
             activeScreen === "automation"
-              ? <span className="s"><i className="warn" /> 4 schedules armed · next at 02:00</span>
+              ? <AutomationsStatus />
             : activeScreen === "skills"
-              ? <>
-                  <span className="s"><i /> {SKILL_KPIS.total} skills loaded</span>
-                  <span className="s"><i /> {SKILL_KPIS.invToday} invocations today</span>
-                  <span className="s"><i className="warn" /> bump-dep-safely 78%</span>
-                </>
+              ? <SkillsStatus />
               : undefined
           } />
         </div>

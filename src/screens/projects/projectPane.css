@@ -152,7 +152,334 @@
   display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
 }
 
+/* ----------------------------------------------------------------
+   Repos pane (#811) — mirrors the design's ReposView / planner.css.
+   All classes scoped under .repos-view so the generic names
+   (.tiles/.tile/.chip/.dropzone) never leak to the rest of the app.
+   ---------------------------------------------------------------- */
+.repos-view { display: flex; flex-direction: column; gap: 12px; }
+
+.repos-view .tiles, .features-view .tiles {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px;
+}
+.repos-view .tile, .features-view .tile {
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--bg-canvas); border: 1px solid var(--border-soft);
+}
+.repos-view .tile .v, .features-view .tile .v { font-family: var(--mono); font-size: 19px; color: var(--fg); line-height: 1.1; }
+.repos-view .tile .k, .features-view .tile .k {
+  font-family: var(--mono); font-size: 9px; color: var(--fg-dim);
+  text-transform: uppercase; letter-spacing: .06em; margin-top: 3px;
+}
+
+.repos-view .repo-card {
+  padding: 12px 13px; border-radius: 9px;
+  background: var(--bg-canvas); border: 1px solid var(--border-soft);
+}
+.repos-view .repo-card.primary { border-color: color-mix(in oklch, var(--accent), transparent 65%); }
+.repos-view .repo-name { font-family: var(--mono); font-size: 12.5px; color: var(--fg); }
+.repos-view .repo-row { display: flex; align-items: center; gap: 8px; }
+.repos-view .repo-branchline { margin-top: 9px; }
+.repos-view .repo-desc { font-family: var(--mono); font-size: 10px; color: var(--fg-muted); margin: 7px 0 0; }
+.repos-view .repo-stat { font-family: var(--mono); font-size: 9px; white-space: nowrap; }
+.repos-view .repo-agents { display: inline-flex; align-items: center; }
+.repos-view .repo-branches { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+
+.repos-view .chip, .features-view .chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: 99px;
+  font-family: var(--mono); font-size: 9px;
+  background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted);
+}
+.repos-view .chip.accent { color: var(--accent); border-color: var(--accent-dim); }
+
+.repos-view .dropzone {
+  width: 100%; border: 1px dashed var(--border); border-radius: 8px; padding: 14px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: var(--mono); font-size: 10px; color: var(--fg-dim);
+  background: repeating-linear-gradient(135deg, transparent 0 8px,
+    color-mix(in oklch, var(--fg), transparent 95%) 8px 9px);
+  cursor: pointer; transition: border-color .12s, color .12s;
+}
+.repos-view .dropzone:hover { border-color: var(--accent-dim); color: var(--fg-muted); }
+
+.repos-view .repo-linkrow { display: flex; gap: 6px; align-items: center; }
+.repos-view .repo-linkrow input {
+  flex: 1; height: 26px; padding: 0 8px; border-radius: 6px;
+  background: var(--bg-canvas); border: 1px solid var(--border-soft); color: var(--fg);
+  font-family: var(--mono); font-size: 10px; outline: none;
+}
+.repos-view .repo-linkrow input:focus { border-color: var(--accent-dim); }
+
+/* ----------------------------------------------------------------
+   Features workshop board (#811-followup) — expandable capability
+   cards surfacing the full workshop spec (behavior, approach, tools,
+   data + deps, acceptance checklist). Scoped under .features-view.
+   ---------------------------------------------------------------- */
+.features-view { display: flex; flex-direction: column; gap: 8px; }
+.features-view .tiles { margin-bottom: 2px; }
+
+.features-view .feature-card {
+  padding: 9px 11px; border-radius: 9px;
+  background: var(--bg-canvas); border: 1px solid var(--border-soft);
+}
+.features-view .feature-card.done { border-color: color-mix(in oklch, var(--success), transparent 78%); }
+
+.features-view .feature-head { display: flex; align-items: center; gap: 7px; }
+.features-view .feature-caret {
+  flex: 0 0 9px; width: 9px; text-align: center;
+  font-size: 8px; color: var(--fg-dim);
+}
+.features-view .feature-name { font-family: var(--mono); font-size: 11.5px; color: var(--fg); }
+.features-view .feature-badge {
+  font-family: var(--mono); font-size: 8.5px; padding: 1px 6px; border-radius: 99px;
+  background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-dim);
+}
+.features-view .feature-badge.done {
+  color: var(--success);
+  background: color-mix(in oklch, var(--success), transparent 86%);
+  border-color: color-mix(in oklch, var(--success), transparent 55%);
+}
+.features-view .feature-stream { font-family: var(--mono); font-size: 8.5px; color: var(--fg-dim); white-space: nowrap; }
+
+.features-view .feature-behavior {
+  font-family: var(--mono); font-size: 9.5px; color: var(--fg-muted);
+  line-height: 1.5; margin: 6px 0 0; padding-left: 16px;
+}
+.features-view .feature-acc-count {
+  font-family: var(--mono); font-size: 9px; color: var(--fg-dim);
+  margin-top: 3px; padding-left: 16px;
+}
+
+.features-view .feature-detail {
+  margin-top: 8px; padding: 8px 0 1px 16px;
+  display: flex; flex-direction: column; gap: 7px;
+  border-top: 1px solid var(--border-soft);
+}
+.features-view .feature-field { display: flex; gap: 8px; align-items: baseline; }
+.features-view .feature-field.col { flex-direction: column; gap: 5px; }
+.features-view .feature-flabel {
+  flex: 0 0 78px; font-family: var(--mono); font-size: 8.5px; color: var(--fg-dim);
+  text-transform: uppercase; letter-spacing: .06em; padding-top: 1px;
+}
+.features-view .feature-ftext { font-family: var(--mono); font-size: 9.5px; color: var(--fg-muted); line-height: 1.55; }
+.features-view .feature-tools { display: flex; gap: 5px; flex-wrap: wrap; }
+
+.features-view .feature-acc { display: flex; flex-direction: column; gap: 4px; }
+.features-view .feature-acc-item {
+  display: flex; align-items: baseline; gap: 7px;
+  font-family: var(--mono); font-size: 9.5px; color: var(--fg-muted); line-height: 1.5;
+}
+.features-view .feature-acc-box {
+  flex: 0 0 10px; width: 10px; height: 10px; border-radius: 3px;
+  border: 1px solid var(--border); transform: translateY(1px);
+}
+
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ----------------------------------------------------------------
+   Stage stepper (#652)
+   ---------------------------------------------------------------- */
+.stepper {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 10px 14px 6px;
+  gap: 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-panel);
+}
+
+.stepper-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  flex: 1;
+}
+
+/* horizontal connector sits between items */
+.stepper-item:not(:last-child) {
+  flex-direction: row;
+  align-items: center;
+}
+
+.stepper-conn {
+  flex: 1;
+  height: 1px;
+  margin: 0 3px;
+  align-self: flex-start;
+  margin-top: 8px;
+}
+.stepper-conn.solid  { background: var(--success); }
+.stepper-conn.dashed { border-top: 1px dashed var(--border); }
+
+.stepper-node {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--bg-elev);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 8px;
+  color: var(--fg-dim);
+  flex: 0 0 16px;
+  transition: border-color .15s, background .15s;
+}
+.stepper-node:hover { border-color: var(--fg-muted); }
+.stepper-node.done {
+  border-color: var(--success);
+  background: color-mix(in oklch, var(--success), transparent 72%);
+  color: var(--success);
+}
+.stepper-node.active {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent), transparent 76%);
+  color: var(--accent);
+  animation: pulse-ring 2s ease-in-out infinite;
+}
+.stepper-node.banked {
+  border-color: var(--success);
+  border-style: dashed;
+  background: color-mix(in oklch, var(--success), transparent 86%);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--success), transparent 70%);
+}
+.stepper-node.locked {
+  border-color: var(--border-soft);
+  background: var(--bg-panel);
+  opacity: 0.45;
+}
+
+.stepper-check { color: var(--success); font-size: 9px; }
+
+/* label row sits below the item row */
+.stepper-item { flex-direction: column; align-items: flex-start; gap: 0; }
+.stepper-item:not(:last-child) { flex-direction: row; align-items: center; }
+
+.stepper-label {
+  font-family: var(--mono); font-size: 7.5px;
+  color: var(--fg-dim); white-space: nowrap;
+  margin-top: 3px;
+  /* when item is row-oriented label floats below the node */
+  position: absolute;
+  top: 16px;
+  left: 0;
+}
+.stepper-label.active { color: var(--accent); }
+
+@keyframes pulse-ring {
+  0%,100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent), transparent 60%); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent), transparent 90%); }
+}
+
+/* ----------------------------------------------------------------
+   Stage header (#652)
+   ---------------------------------------------------------------- */
+.stage-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-canvas);
+}
+
+.gate-pill {
+  font-family: var(--mono); font-size: 9px;
+  padding: 2px 8px; border-radius: 99px;
+  white-space: nowrap;
+}
+.gate-pill.met {
+  background: color-mix(in oklch, var(--success), transparent 84%);
+  border: 1px solid color-mix(in oklch, var(--success), transparent 60%);
+  color: var(--success);
+}
+.gate-pill.unmet {
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-dim);
+}
+
+/* ----------------------------------------------------------------
+   Stage banners (#652)
+   ---------------------------------------------------------------- */
+.stage-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  font-family: var(--mono); font-size: 10px;
+  user-select: none;
+}
+.stage-banner.done {
+  background: color-mix(in oklch, var(--success), transparent 93%);
+  color: var(--fg-muted);
+}
+.stage-banner.locked {
+  background: var(--bg-panel);
+  color: var(--fg-dim);
+  opacity: 0.7;
+}
+.stage-banner.banked {
+  background: color-mix(in oklch, var(--success), transparent 90%);
+  border-left: 2px solid color-mix(in oklch, var(--success), transparent 40%);
+  color: var(--fg-muted);
+}
+.banner-icon {
+  width: 14px; text-align: center; font-size: 10px; flex: 0 0 14px;
+}
+.stage-banner.done   .banner-icon { color: var(--success); }
+.stage-banner.locked .banner-icon { color: var(--border); }
+.stage-banner.banked .banner-icon { color: var(--success); }
+
+.banked-pill {
+  font-family: var(--mono); font-size: 8.5px; padding: 1px 6px; border-radius: 4px;
+  background: color-mix(in oklch, var(--success), transparent 80%);
+  border: 1px solid color-mix(in oklch, var(--success), transparent 55%);
+  color: var(--success);
+}
+
+/* ----------------------------------------------------------------
+   Footer advance bar (#652)
+   ---------------------------------------------------------------- */
+.advance-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-panel);
+}
+
+.advance-btn {
+  padding: 4px 12px; border-radius: 5px;
+  font-family: var(--mono); font-size: 10px;
+  cursor: pointer; border: 1px solid var(--border-soft);
+  background: var(--bg-elev); color: var(--fg-dim);
+  white-space: nowrap;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.advance-btn:disabled { cursor: default; }
+.advance-btn.back:not(:disabled):hover { background: var(--bg-elev2); color: var(--fg-muted); }
+.advance-btn.fwd.enabled {
+  background: color-mix(in oklch, var(--accent), transparent 82%);
+  border-color: var(--accent-dim); color: var(--accent);
+}
+.advance-btn.fwd.enabled:hover {
+  background: color-mix(in oklch, var(--accent), transparent 72%);
+}
+
+/* ----------------------------------------------------------------
+   Empty state helper
+   ---------------------------------------------------------------- */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 24px 12px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+  text-align: center;
+}
+.empty-icon { font-size: 22px; opacity: 0.35; margin-bottom: 4px; }
 
 /* =====================================================================
    focused planner pane (#652) — one phase at a time. Scoped under .fp.
@@ -171,34 +498,61 @@
 .fp .fp-top .pulse { display: inline-flex; align-items: center; gap: 5px;
   font-family: var(--mono); font-size: 9px; color: var(--fg-muted); }
 
-/* stepper */
-.fp .stepper { flex: 0 0 auto; padding: 13px 14px 9px; border-bottom: 1px solid var(--border-soft); background: var(--bg-panel); }
-.fp .stepper-track { display: flex; align-items: center; gap: 0; }
-.fp .step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
-  flex: 0 0 auto; cursor: pointer; background: none; border: none; padding: 0; }
-.fp .step-node { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center;
-  justify-content: center; font-family: var(--mono); font-size: 10px; font-weight: 600;
-  border: 1.5px solid var(--border); background: var(--bg-elev); color: var(--fg-dim);
-  transition: all .16s; z-index: 1; position: relative; }
-.fp .step.complete .step-node { background: color-mix(in oklch, var(--success), transparent 80%); border-color: var(--success); color: var(--success); }
-.fp .step.active .step-node { background: var(--accent); border-color: var(--accent); color: #1a120a;
-  box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); }
-.fp .step.locked .step-node { border-style: dashed; color: var(--fg-dim); }
-.fp .step.upcoming .step-node { color: var(--fg-dim); }
-.fp .step.selected .step-node { outline: 2px solid var(--accent); outline-offset: 2px; }
-.fp .step.attn .step-node { border-color: var(--danger); color: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger), transparent 75%); animation: pulse 1.1s ease-in-out infinite; }
-.fp .step.attn .step-label { color: var(--danger); }
-.fp .step-label { font-family: var(--mono); font-size: 8.5px; letter-spacing: .02em;
-  color: var(--fg-dim); white-space: nowrap; max-width: 58px; overflow: hidden; text-overflow: ellipsis; }
-.fp .step.active .step-label, .fp .step.selected .step-label { color: var(--fg); }
-.fp .step.complete .step-label { color: var(--fg-muted); }
-.fp .step-conn { flex: 1 1 0; height: 2px; background: var(--border); position: relative; top: -10px;
-  margin: 0 -2px; border-radius: 2px; min-width: 8px; }
-.fp .step-conn.fill { background: var(--success); }
-.fp .step .live-ring { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 24px; height: 24px;
-  border-radius: 50%; border: 1.5px solid var(--accent); animation: fp-ring 1.6s ease-out infinite; opacity: 0; pointer-events: none; }
-@keyframes fp-ring { 0% { transform: translateX(-50%) scale(1); opacity: .7; } 100% { transform: translateX(-50%) scale(1.7); opacity: 0; } }
+/* sequenced rail (#668) — ported from the V4 design (bsc-project-planner-progress-bar) */
+.fp .seqrail-wrap { flex: 0 0 auto; padding: 18px 16px; border-bottom: 1px solid var(--border-soft); background: var(--bg-panel); }
+/* Each seg is a FIXED-HEIGHT box that vertically centers the node; the marker (top) and
+   label (bottom) are absolutely positioned so they never affect the node's position. The
+   node therefore sits at the same y on every seg regardless of state/marker (#668). */
+.fp .seqrail { display: flex; flex-direction: row; align-items: center; }
+.fp .seqrail-seg { flex: 1; height: 50px; position: relative; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; background: none; border: none; padding: 0; min-width: 0; }
+/* marker row pinned to the top — out of flow, so an empty (upcoming) marker can't shift the node */
+.fp .seqrail-marker { position: absolute; top: 0; left: 0; right: 0; height: 14px; display: flex; align-items: center; justify-content: center; }
+.fp .seqrail-marker .m-now { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .08em; color: var(--accent); white-space: nowrap; }
+.fp .seqrail-marker .m-banked { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--success); background: color-mix(in oklch, var(--success), transparent 88%);
+  border: 1px solid color-mix(in oklch, var(--success), transparent 65%); border-radius: 999px; padding: 0 5px; white-space: nowrap; }
+.fp .seqrail-marker .m-skipped { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--info); white-space: nowrap; }
+.fp .seqrail-node { width: 18px; height: 18px; flex: 0 0 auto; aspect-ratio: 1; border-radius: 999px;
+  display: grid; place-items: center; font-family: var(--mono); font-size: 9px; font-weight: 700;
+  position: relative; z-index: 2;
+  background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border); color: var(--fg-dim); transition: background .16s, color .16s; }
+.fp .seqrail-seg.complete .seqrail-node { background: var(--success); box-shadow: none; color: oklch(0.20 0.04 145); }
+/* current/unfinished: the BUBBLE stays grey (not done) while the track around it goes green;
+   a pulsing accent ring + the "◆ now" marker still mark "you are here" (#668). */
+.fp .seqrail-seg.active .seqrail-node { background: var(--bg-elev2); color: var(--fg-dim);
+  box-shadow: inset 0 0 0 1.5px var(--border), 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%);
+  animation: rail-ring 2s ease-in-out infinite; }
+.fp .seqrail-seg.locked .seqrail-node, .fp .seqrail-seg.upcoming .seqrail-node { background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border); color: var(--fg-dim); }
+/* skipped: an optional stage passed over — a vibrant neutral (info) so it reads as
+   "intentionally skipped", clearly apart from the dim grey of an unreached stage (#678). */
+.fp .seqrail-seg.skipped .seqrail-node { background: color-mix(in oklch, var(--info), transparent 86%);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--info), transparent 35%); color: var(--info); }
+.fp .seqrail-seg.ahead .seqrail-node { background: color-mix(in oklch, var(--success), transparent 12%);
+  box-shadow: inset 0 0 0 1.5px var(--success); color: oklch(0.20 0.04 145); }
+.fp .seqrail-seg.sel .seqrail-node { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fp .seqrail-seg.attn .seqrail-node { box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger), transparent 70%); animation: pulse 1.1s ease-in-out infinite; }
+/* label pinned to the bottom — out of flow, like the marker, so the node stays centered */
+.fp .seqrail-label { position: absolute; bottom: 0; left: 0; right: 0; font-family: var(--mono); font-size: 9px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; color: var(--fg-dim); padding: 0 2px; }
+.fp .seqrail-seg.complete .seqrail-label { color: var(--fg-muted); }
+.fp .seqrail-seg.active .seqrail-label, .fp .seqrail-seg.sel .seqrail-label { color: var(--accent); font-weight: 600; }
+.fp .seqrail-seg.ahead .seqrail-label { color: var(--success); }
+.fp .seqrail-seg.skipped .seqrail-label { color: var(--info); }
+.fp .seqrail-seg.attn .seqrail-label { color: var(--danger); }
+/* connectors auto-align to the node center: the rail centers items and every seg is the
+   same fixed height, so a centered 2px connector lines up with the centered node (no offset). */
+.fp .seqrail-conn { flex: 1 1 0; height: 2px; min-width: 8px; margin: 0 -2px; border-radius: 2px; }
+.fp .seqrail-conn.solid { background: var(--success); }
+.fp .seqrail-conn.partial { background: linear-gradient(90deg, var(--accent) 0%, var(--border) 100%); }
+.fp .seqrail-conn.dim { background: var(--border-soft); }
+.fp .seqrail-conn.dashed { background-color: transparent; background-image: repeating-linear-gradient(90deg, var(--fg-dim) 0 4px, transparent 4px 9px); }
+/* keep the grey border ring through the pulse so the greyed-out active bubble keeps its edge */
+@keyframes rail-ring {
+  0%,100% { box-shadow: inset 0 0 0 1.5px var(--border), 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); }
+  50%     { box-shadow: inset 0 0 0 1.5px var(--border), 0 0 0 6px color-mix(in oklch, var(--accent), transparent 88%); }
+}
 
 /* phase header */
 .fp .ph-head { flex: 0 0 auto; padding: 14px 16px 13px; border-bottom: 1px solid var(--border-soft);
@@ -227,8 +581,9 @@
   border: 1px solid color-mix(in oklch, var(--info), transparent 70%); }
 .fp .lock-banner b { color: var(--info); }
 
-/* scrolling body + footer */
-.fp .ph-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 14px 16px 18px; }
+/* scrolling body + footer — the focused render wraps the body in .pp-scroll (not .ph-body),
+   so the design's body padding goes here; scoped to .fp to leave the staged pane untouched. */
+.fp .pp-scroll { overflow-x: hidden; padding: 14px 16px 18px; }
 .fp .ph-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; border-top: 1px solid var(--border-soft); background: var(--bg-elev); }
 .fp .ph-foot .prog { font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); }

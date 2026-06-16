@@ -1,7 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
+  INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT,
 } from "../screens/projects/fileIntake";
+
+describe("fileIntake — staging directory (#829)", () => {
+  it("stages dropped files into a visible project-folder design/ directory", () => {
+    expect(INTAKE_DIR).toBe("design");
+    expect(INTAKE_MANIFEST).toBe("design/intake.json");
+    // the route prompt points the planner at the same visible directory
+    expect(ROUTE_PROMPT).toContain("design/");
+    expect(ROUTE_PROMPT).not.toContain(".intake");
+  });
+});
 
 describe("fileIntake — classify (#604)", () => {
   it("classifies by extension", () => {

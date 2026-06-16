@@ -23,6 +23,10 @@ time = { version = "0.3", features = ["formatting", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json"] }
+# FCM push to the paired mobile app (#846): service-account OAuth2 needs an RS256-signed
+# JWT assertion. `jsonwebtoken` reads the service-account PEM private key directly and
+# signs the assertion; the access-token exchange + the FCM v1 POST reuse `reqwest`.
+jsonwebtoken = "9"
 portable-pty = "0.8"
 rfd = "0.14"
 
@@ -42,6 +46,16 @@ futures-util = { version = "0.3", default-features = false, features = ["std", "
 # feature is pinned, so the relay dial's first TLS handshake panics the tunnel
 # thread. Pin `ring` and install it as the process default at startup (lib.rs `run`).
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
+# Performance monitoring (#569): sysinfo samples per-agent process RSS/CPU cheaply
+# (only tracked PIDs, no full system walk); rusqlite persists the time-series.
+# `bundled` compiles SQLite from source for cross-platform reliability.
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+# Data platform (#781/#784): the canonical Data Model store (DuckDB) + connector
+# framework. Pulling this in compiles bundled DuckDB into the desktop build.
+bsc-data = { path = "../crates/data" }
 
 # Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any
 # grandchildren) dies with the session on pty_kill / app exit. portable-pty calls

@@ -6,6 +6,7 @@ import {
   groupSections,
   parseSkipped,
   parseFleetFile,
+  canonicalSectionKey,
   KNOWN_DIMENSIONS,
   SKIPPED_KEY,
   FLEET_KEY,
@@ -135,6 +136,26 @@ describe("KNOWN_DIMENSIONS", () => {
   it("has unique keys", () => {
     const keys = KNOWN_DIMENSIONS.map(d => d.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("canonicalSectionKey", () => {
+  it("maps the display title (and casing/separator variants) back to the key — the stack.md fix", () => {
+    expect(canonicalSectionKey("Tech stack")).toBe("stack");
+    expect(canonicalSectionKey("Tech_stack")).toBe("stack");
+    expect(canonicalSectionKey("tech-stack")).toBe("stack");
+    expect(canonicalSectionKey("technology stack")).toBe("stack");
+    expect(canonicalSectionKey("techstack")).toBe("stack");
+  });
+  it("canonicalizes other core titles too", () => {
+    expect(canonicalSectionKey("Architecture")).toBe("architecture");
+    expect(canonicalSectionKey("Data model")).toBe("schema");
+    expect(canonicalSectionKey("Users & personas")).toBe("users");
+  });
+  it("passes canonical keys and unknown custom topics through unchanged", () => {
+    expect(canonicalSectionKey("stack")).toBe("stack");
+    expect(canonicalSectionKey("goal")).toBe("goal");
+    expect(canonicalSectionKey("offline_sync")).toBe("offline_sync");
   });
 });
 

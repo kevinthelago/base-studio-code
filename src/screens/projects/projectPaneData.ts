@@ -20,11 +20,16 @@ export type { PlanGrade, IssueGrade, MilestoneGrade, RepoGrade, Letter } from ".
 // import sites that reach for them via "./projectPaneData" keep working.
 import type {
   Posture, Perm, Agent, Repo, Issue, Milestone, PhaseGroup, ContextFile, ProjectPaneData,
+  PaneAutomation, PaneSkill,
 } from "./projectPane.types";
+import type { PlanFeature } from "./featureList";
+import { buildSeamGraph as buildPlanSeamGraph } from "../../lib/planSeamGraph";
+import { buildMcpServers, type McpInstallState } from "./mcpPaneData";
+import type { ExtensionDef } from "../../lib/extensions";
 
 export type {
   Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone, PhaseGroup,
-  ContextFile, ProjectPaneData,
+  ContextFile, ProjectPaneData, PaneAutomation, PaneSkill, McpServer,
 } from "./projectPane.types";
 
 export interface BuildProjectPaneInput {
@@ -33,6 +38,19 @@ export interface BuildProjectPaneInput {
   issues: PlanIssue[];
   phases: { name: string; description?: string }[];
   repos: string[];
+  /** Full_names cloned into the project hub (clone state) — drives each repo's `cloned`. */
+  clonedNames?: string[];
+  /** Cron automations proposed for the project (#674). */
+  automations?: PaneAutomation[];
+  /** Skills/knowledge attached to the project's blueprint, pre-resolved (#674). */
+  skills?: PaneSkill[];
+  /** The full extensions store + the project key, to build the MCP pane (#878). */
+  extensions?: ExtensionDef[];
+  projectKey?: string;
+  /** Per-server install lifecycle (probe + build button), keyed by extension id (#878). */
+  mcpInstallState?: McpInstallState;
+  /** Features defined in the Features stage (parsed from features.json) (#…). */
+  features?: PlanFeature[];
   sections: Section[];
   /** Context-file names the project has explicitly pinned in the pane (from the
    *  store). When present it drives each context file's `pinned` instead of the
@@ -115,6 +133,11 @@ function buildAgents(input: BuildProjectPaneInput): Agent[] {
 
 function buildRepos(input: BuildProjectPaneInput): Repo[] {
   const streams = input.fleet?.streams ?? [];
+  const cloned = new Set(input.clonedNames ?? []);
+  const firstIssueNum = (refs: string[]): number => {
+    for (const r of refs) { const n = parseInt(String(r).replace(/^#/, ""), 10); if (Number.isFinite(n)) return n; }
+    return 0;
+  };
   return input.repos.map((fullName, i) => ({
     id: fullName,
     branch: "main",
@@ -122,7 +145,13 @@ function buildRepos(input: BuildProjectPaneInput): Repo[] {
     behind: 0,
     agents: streams.filter(s => s.repo === fullName).map(s => s.id),
     primary: i === 0,
-    branches: [],
+    cloned: cloned.has(fullName),
+    // The planned work for this repo: one branch per stream that owns it (branch = stream
+    // id; the issues it owns ride along). Pre-launch these are PLANNED branches; once the
+    // fleet runs the live git state replaces them.
+    branches: streams.filter(s => s.repo === fullName).map(s => ({
+      n: s.id, issue: firstIssueNum(s.issues ?? []), state: "draft", ahead: 0, behind: 0,
+    })),
   }));
 }
 
@@ -272,7 +301,10 @@ function buildContext(input: BuildProjectPaneInput): ContextFile[] {
       : s.k.includes("spec") ? "spec"
       : "doc";
     const tok = (s.content.length / 1000).toFixed(1) + "k";
-    const name = (s.title || s.k) + ".md";
+    // The displayed filename is the canonical KEY (+ .md) so it matches the on-disk file
+    // (`stack.md`), not the human title ("Tech stack.md") which would mislead (#803). The
+    // global project guidance file is the uppercase `CLAUDE.md` on disk.
+    const name = s.k === "claude" ? "CLAUDE.md" : s.k + ".md";
     return {
       name,
       kind,
@@ -303,5 +335,10 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
       drive: resolveDirectorDrive(input.fleet?.director.drive),
     },
     fleetStrategy: input.fleet?.strategy,
+    automations: (input.automations ?? []).map(a => ({ name: a.name, command: a.command, schedule: a.schedule })),
+    skills: input.skills ?? [],
+    mcpServers: buildMcpServers(input.extensions ?? [], input.projectKey ?? "", input.fleet, input.mcpInstallState),
+    features: input.features ?? [],
+    seamGraph: buildPlanSeamGraph(input.issues),
   };
 }

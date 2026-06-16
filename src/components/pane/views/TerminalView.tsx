@@ -18,8 +18,11 @@ import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
 import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/projects/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
-import { interpretGithubReadiness, type GithubProbe } from "../../../lib/githubReadiness";
+import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus, type SessionVerdict } from "../../../lib/diagnostics";
+import { SessionReadinessBanner } from "../../SessionReadinessBanner";
+import { SessionFailure } from "../../SessionFailure";
 import { tokenForRepo } from "../../../lib/repoCredentials";
+import { getProvider } from "../../../lib/consoleProviders";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -58,8 +61,13 @@ interface TerminalViewProps {
 
 export function TerminalView({ paneId, visible = true, focused, initialCwd, initCmd, onCwdChange, onStatusChange, onFocus }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // GitHub-readiness warning for this pane (#297); null = ready or not probed.
-  const [ghWarn, setGhWarn] = useState<string | null>(null);
+  // Session readiness verdict (#564). Set after the preflight probe runs in the
+  // mount effect (after the GH token is resolved so gh-auth uses the right env).
+  const [readinessVerdict, setReadinessVerdict] = useState<SessionVerdict | null>(null);
+  const [warnDismissed, setWarnDismissed] = useState(false);
+  // #799 — true when this console's assigned profile was edited while it's running, so it
+  // shows a "relaunch to apply" nudge (settings.json is read at session start).
+  const permsStale = useAppStore((s) => !!s.panePermsStale[paneId]);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
@@ -331,12 +339,21 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       }
       if (destroyed) return;
 
+      // Resolve which provider this pane is running (default: Claude).
+      const providerId = useAppStore.getState().paneProviders[paneId] ?? "claude";
+      const provider = getProvider(providerId) ?? getProvider("claude")!;
+      const isClaudeProvider = provider.isClaude === true;
+
+      // Non-Claude providers launch as plain shell commands; don't bake a startup
+      // prompt into them (pty_create's prompt-baking path calls `claude --initial-message`).
+      if (!isClaudeProvider) startupPrompt = undefined;
+
       // Serialize `claude` cold-starts so simultaneously-mounted panes don't
       // stampede the shared OAuth credential store and log every session out. A
-      // pane launches claude if its initCmd says so or it has a startup prompt
-      // (which the backend turns into a claude launch). Non-claude shells and
-      // tab-switch reconnects pass through instantly.
-      const launchesClaude = (initCmd ?? "").includes("claude") || startupPrompt !== undefined;
+      // pane launches claude if its initCmd says so, or it has a startup prompt
+      // (which the backend turns into a claude launch), or the provider is Claude.
+      // Non-claude shells and tab-switch reconnects pass through instantly.
+      const launchesClaude = isClaudeProvider && ((initCmd ?? "").includes("claude") || startupPrompt !== undefined);
       if (launchesClaude) {
         await gateClaudeLaunch(paneId);
         if (destroyed) return;
@@ -422,6 +439,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
              // PostToolUse line per success → the skills.log the Skills screen reads.
              { event: "PreToolUse", matcher: "Skill", command: "bsc-skill" },
              { event: "PostToolUse", matcher: "Skill", command: "bsc-skill" },
+             // MCP-call telemetry (#879 PR 2): time each MCP tool call (Pre stamps start,
+             // Post logs round-trip ms + outcome) → mcp.log for the MCP Analytics tab.
+             { event: "PreToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
+             { event: "PostToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
              { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
              // Worker-only Stop hook (#369): when a worker tries to end its turn, bounce it
              // once toward continuing / deferring to the director via bsc-ask instead of
@@ -433,35 +454,42 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           mcpServers: mcp, hooks: gatedHooks,
           allowToolRules, denyToolRules, askToolRules,
           skills,
+          // Replace (not merge) the permission block so a relaunch reflects the CURRENT
+          // role+profile exactly — incl. permissions the user removed from the profile (#799).
+          replacePermissions: true,
         }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
+        // Launch (re)wrote the current role+profile permissions — clear any "stale" nudge (#799).
+        useAppStore.getState().clearPanePermsStale(paneId);
         if (destroyed) return;
-        // GitHub-readiness probe (#297): fleet/triage agents are told to push and
-        // open PRs; warn in-pane up front if the spawned shell can't (gh/git off
-        // PATH or gh unauthenticated) rather than the agent hitting it mid-task.
+        // Preflight probe (#564): check all host prerequisites (Git Bash, claude,
+        // git, gh, gh-auth) using the same env (GH_TOKEN) the session will have.
+        // Runs AFTER agentEnv is resolved so gh-auth uses the real token.
         try {
-          const probe = await invoke<GithubProbe>("github_readiness", { cwd: initialCwd, env: agentEnv });
-          const readiness = interpretGithubReadiness(probe);
-          if (!destroyed) setGhWarn(readiness.ok ? null : readiness.message);
-          if (!readiness.ok) log.warn(`console[${paneId}] github not ready (${readiness.status}): ${readiness.message}`);
+          const prereqs = await invoke<PrereqStatus[]>("preflight", {
+            cwd: initialCwd, env: agentEnv ?? null,
+          });
+          if (!destroyed) setReadinessVerdict(sessionVerdictFromReport(interpretDiagnostics(prereqs)));
         } catch (e) {
-          log.error(`console[${paneId}] github_readiness probe failed: ${e}`);
+          log.error(`console[${paneId}] preflight probe failed: ${e}`);
         }
         if (destroyed) return;
       }
 
-      // Resolve the effective init_cmd: an explicit `initCmd` prop wins,
-      // then a triage/fleet `startupPrompt` (handled by pty_create's
-      // prompt-baking path — must NOT also inject a parallel init_cmd),
-      // then the ad-hoc resume (#36): if this pane had claude running at
-      // last shutdown and auto-resume is on, mount straight into
-      // `claude --continue`.
+      // Resolve the effective init_cmd.
+      // For Claude panes: explicit initCmd wins, then the startup-prompt baking
+      // path (pty_create handles it — don't also inject an init_cmd), then ad-hoc
+      // auto-resume (`claude --continue` when the pane previously ran Claude).
+      // For non-Claude providers: explicit initCmd wins; otherwise fall back to the
+      // provider's own launch command so the CLI auto-starts on mount.
       const st = useAppStore.getState();
-      const effectiveInitCmd = resolveInitCmd({
-        explicit: initCmd,
-        startupPrompt,
-        paneWasClaude: !!st.paneWasClaude[paneId],
-        autoResumeClaude: st.autoResumeClaude,
-      });
+      const effectiveInitCmd = isClaudeProvider
+        ? resolveInitCmd({
+            explicit: initCmd,
+            startupPrompt,
+            paneWasClaude: !!st.paneWasClaude[paneId],
+            autoResumeClaude: st.autoResumeClaude,
+          })
+        : (initCmd && initCmd.length > 0 ? initCmd : provider.buildLaunchCmd());
       // The model new claude launches use (per-pane override, else the global
       // default). The backend maps it to `claude --model <alias>`; an unknown id
       // is a no-op (Claude Code's own default). Only meaningful when this pane
@@ -473,13 +501,16 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         rows: term.rows,
         cwd:     initialCwd ?? "",
         initCmd: effectiveInitCmd,
-        startupPrompt,
+        // Only pass startupPrompt for Claude panes — the backend bakes it as
+        // `claude --initial-message`, which would be wrong for other providers.
+        startupPrompt: isClaudeProvider ? startupPrompt : undefined,
         model:   paneModel,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
         // Per-repo triage checkpoint doc, so the bsc-checkpoint helper can write it.
         checkpointDoc,
         env: agentEnv,
+        providerId,
       }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
 
       if (!isNew) {
@@ -603,6 +634,24 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     });
   }, [terminalFontSize, paneId]);
 
+  // Derive critical + warning lists from the verdict for rendering.
+  const criticalChecks = readinessVerdict?.failed.filter((c) => c.severity === "critical") ?? [];
+  const warningChecks  = readinessVerdict?.failed.filter((c) => c.severity === "warning")  ?? [];
+
+  function retryReadiness() {
+    const cwd = initialCwd ?? "";
+    if (!cwd) return;
+    const ghToken = tokenForRepo(
+      useAppStore.getState().paneRepos[paneId],
+      useAppStore.getState().repoGithubTokens,
+      useAppStore.getState().githubToken,
+    );
+    const env = ghToken ? { GH_TOKEN: ghToken } : null;
+    invoke<PrereqStatus[]>("preflight", { cwd, env })
+      .then((prereqs) => setReadinessVerdict(sessionVerdictFromReport(interpretDiagnostics(prereqs))))
+      .catch((e) => log.error(`console[${paneId}] preflight retry failed: ${e}`));
+  }
+
   return (
     <div
       style={{
@@ -612,27 +661,44 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         flexDirection: "column",
       }}
     >
-      {ghWarn && (
-        <div
-          role="alert"
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "6px 10px", fontSize: 12, lineHeight: 1.4,
-            color: "#e5c07b", background: "#3a2f1a", borderBottom: "1px solid #5a4a28",
-          }}
-        >
-          <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>⚠ GitHub</span>
-          <span style={{ flex: 1 }}>{ghWarn}</span>
-          <button
-            onClick={() => setGhWarn(null)}
-            style={{ background: "transparent", border: "none", color: "#e5c07b", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}
-            aria-label="Dismiss GitHub warning"
-          >×</button>
+      {criticalChecks.length > 0 && (
+        <SessionFailure critical={criticalChecks} onRetry={retryReadiness} />
+      )}
+      {criticalChecks.length === 0 && !warnDismissed && warningChecks.length > 0 && (
+        <SessionReadinessBanner
+          warnings={warningChecks}
+          onDismiss={() => setWarnDismissed(true)}
+          onSignInGitHub={
+            warningChecks.some((c) => c.id === "gh-auth")
+              ? () => { useAppStore.getState().setScreen("settings"); }
+              : undefined
+          }
+        />
+      )}
+      {permsStale && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
+          fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)",
+          background: "color-mix(in oklch, var(--accent), transparent 90%)",
+          borderBottom: "1px solid color-mix(in oklch, var(--accent), transparent 70%)",
+        }}>
+          <span>⟳</span>
+          <span style={{ flex: 1, color: "var(--fg-muted)" }}>
+            Permissions changed on the Agents page — <b style={{ color: "var(--fg)" }}>relaunch this console</b> to apply.
+          </span>
+          <span
+            onClick={() => useAppStore.getState().clearPanePermsStale(paneId)}
+            style={{ cursor: "pointer", color: "var(--fg-dim)" }}
+            title="Dismiss"
+          >✕</span>
         </div>
       )}
       <div
         ref={containerRef}
-        style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px" }}
+        style={{
+          flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px",
+          display: criticalChecks.length > 0 ? "none" : undefined,
+        }}
       />
     </div>
   );
