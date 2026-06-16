@@ -22,7 +22,7 @@ import { SettingsScreen } from "./screens/settings";
 import { ProjectsScreen } from "./screens/projects";
 import { SkillsScreen } from "./screens/skills";
 import { AgentsScreen } from "./screens/agents";
-import { SKILL_KPIS } from "./data/skills";
+import { SkillsStatus } from "./screens/skills/SkillsStatus";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/detachWindow";
@@ -428,11 +428,7 @@ export default function App() {
             activeScreen === "automation"
               ? <AutomationsStatus />
             : activeScreen === "skills"
-              ? <>
-                  <span className="s"><i /> {SKILL_KPIS.total} skills loaded</span>
-                  <span className="s"><i /> {SKILL_KPIS.invToday} invocations today</span>
-                  <span className="s"><i className="warn" /> bump-dep-safely 78%</span>
-                </>
+              ? <SkillsStatus />
               : undefined
           } />
         </div>
