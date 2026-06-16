@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppStore } from "../../store";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { usePageTabs } from "../../hooks/usePageTabs";
@@ -256,9 +257,13 @@ export function ExtensionsScreen({ sectionOverride }: { sectionOverride?: string
                 </div>
               </div>
               <div className="cat-desc">{c.desc}</div>
+              {c.install && <div className="hint" style={{ marginTop: 6, fontSize: 10 }}>{c.install}</div>}
               <div className="cat-foot">
-                <span className="hint">{c.by.startsWith("@modelcontextprotocol") ? "official MCP" : c.by === "first-party" ? "first-party" : "third-party"}</span>
+                <span className="hint">{c.by.startsWith("@modelcontextprotocol") ? "official MCP" : (c.by === "first-party" || c.link) ? "first-party" : "third-party"}</span>
                 <div className="spacer" />
+                {c.link && (
+                  <button className="btn ghost" style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => openUrl(c.link!)}>download ↗</button>
+                )}
                 <button className="btn" style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => addFromCatalog(c)}>add</button>
               </div>
             </div>
