@@ -9,6 +9,7 @@
 import { defFromCatalog, type ExtensionDef } from "../../lib/extensions";
 import { EXT_CATALOG } from "../../data/extensions";
 import { catalogLink } from "../../lib/mcpInstall";
+import { applyMcpAssign, type ExtensionStoreLike } from "./planExtensions";
 import { type Blueprint } from "./blueprints";
 
 /** One pickable MCP server. `id` is the server NAME (the portable ref stored in a blueprint). */
@@ -79,4 +80,26 @@ export function collectBlueprintMcp(bp: Blueprint): string[] {
   for (const n of bp.mcp ?? []) add(n);
   for (const s of bp.sections) for (const n of s.mcp ?? []) add(n);
   return out;
+}
+
+/**
+ * Scope a blueprint's attached MCP servers to a project (#897 Phase 2). Idempotently applies
+ * each `collectBlueprintMcp` name via `applyMcpAssign` (enables + scopes an existing extension, or
+ * adds a catalog-derived one), so the project's planner + fleet sessions get the tools the
+ * blueprint declares. Returns the **downloadable** server names (those with a catalog git link) so
+ * the caller can clone them (a Tauri side-effect kept out of this pure function). `baseDir`
+ * resolves the `{dir}` placeholder for first-party servers.
+ */
+export function applyBlueprintMcp(
+  store: ExtensionStoreLike,
+  bp: Blueprint,
+  projectId: string,
+  baseDir = "",
+): string[] {
+  const downloadable: string[] = [];
+  for (const name of collectBlueprintMcp(bp)) {
+    applyMcpAssign(store, name, projectId, baseDir);
+    if (catalogLink(name)) downloadable.push(name);
+  }
+  return downloadable;
 }
