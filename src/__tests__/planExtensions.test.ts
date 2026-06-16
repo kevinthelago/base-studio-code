@@ -46,7 +46,7 @@ describe("mcpAssignToExtension", () => {
 
   it("resolves {dir} to the on-disk install path for a downloadable first-party server", () => {
     const def = mcpAssignToExtension("Compliance", "p1", "/home/u/.base-studio-code");
-    expect(def.command).toBe("uv");
+    expect(def.command).toBe("python"); // `python -m uv …` — no PATH dependency (#887)
     // The literal {dir} placeholder must NOT survive into a launched config (#876).
     expect(def.args).not.toContain("{dir}");
     expect(def.args).toContain("/home/u/.base-studio-code/mcp/compliance-mcp-server");
