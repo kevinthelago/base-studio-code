@@ -109,6 +109,15 @@ export function addSkill(sections: BlueprintSection[], secUid: string, skillId: 
 export function removeSkill(sections: BlueprintSection[], secUid: string, skillId: string): BlueprintSection[] {
   return mapSec(sections, secUid, (s) => ({ ...s, skills: (s.skills ?? []).filter((x) => x !== skillId) }));
 }
+
+/** Attach an MCP server (by name) to a section (no-op if already attached). (#897) */
+export function addMcpServer(sections: BlueprintSection[], secUid: string, name: string): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ((s.mcp ?? []).includes(name) ? s : { ...s, mcp: [...(s.mcp ?? []), name] }));
+}
+/** Detach an MCP server (by name) from a section. (#897) */
+export function removeMcpServer(sections: BlueprintSection[], secUid: string, name: string): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ({ ...s, mcp: (s.mcp ?? []).filter((x) => x !== name) }));
+}
 export function setStageField(
   sections: BlueprintSection[], secUid: string, patch: Partial<Pick<BlueprintSection, "name" | "prompt">>,
 ): BlueprintSection[] {

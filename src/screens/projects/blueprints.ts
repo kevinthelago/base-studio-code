@@ -114,6 +114,11 @@ export interface SectionDef {
    *  into the agent's context for this stage. Resolved at planning + fleet launch
    *  (slice b). Reference-by-id; unresolved ids surface a warning. */
   skills?: string[];
+  /** Attached MCP servers (#897) — server NAMES (the portable ref, matching the catalog +
+   *  `<mcp_assign>`), scoped to the project at launch so the planner/fleet can call them.
+   *  Kept SEPARATE from `skills`: MCP servers are tools (research/analysis/grading), skills are
+   *  knowledge. Reference-by-name; an unresolved name surfaces a warning in the editor. */
+  mcp?: string[];
   /** Ordered substeps the conductor injects one at a time (#…). Absent ⇒ the stage is driven
    *  by a single prompt (its `prompt`). Pipeline `triggerTarget`s reference these by `key`. */
   substeps?: SubStep[];
@@ -537,6 +542,9 @@ export interface Blueprint {
   /** Blueprint-wide attached skills/knowledge (#636) — applied across every stage,
    *  in addition to each section's own `skills`. Library item ids. */
   skills?: string[];
+  /** Blueprint-wide attached MCP servers (#897) — applied across every stage, in addition to
+   *  each section's own `mcp`. Server NAMES (the portable ref). */
+  mcp?: string[];
   /** Lifecycle intent (#645). Absent ⇒ greenfield (the create-a-project default). */
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
