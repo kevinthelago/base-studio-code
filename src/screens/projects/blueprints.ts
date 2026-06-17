@@ -268,6 +268,65 @@ stack, and propose any new ones worth saving for reuse. Write skills.json.
 
 Gate: the applicable skills are selected.`,
   },
+  // ── Blueprint-authoring lifecycle (#923) ───────────────────────────────────
+  // The planner DESIGNS a reusable blueprint (the deliverable) and publishes it to a gist — no
+  // code, so no fleet/triage. The evolving blueprint accumulates via the <blueprint> tag; these
+  // stages' gates read signals derived from it (bpName / bpStageCount / bpValid in Planning.tsx).
+  purpose: {
+    name: "Purpose", glyph: "◆", gate: "purpose confirmed", deps: [],
+    gateRule: { require: [
+      { signal: "bpName", target: true, weight: 0, label: "name the blueprint + pick its lifecycle category" },
+    ] },
+    blurb: "What this blueprint is for: lifecycle category, the projects it seeds, name + description.",
+    prompt:
+`You are designing a NEW, reusable BLUEPRINT — a planning template others seed projects from (NOT a
+software project). Establish its PURPOSE: the lifecycle category (greenfield = create from a pitch,
+transform = restructure existing repos, harden, maintain, data), the kind of project it should seed,
+and its name + one-line description. Propose, interrogate with the user, then record it by emitting a
+<blueprint> tag (see "App integration tags") carrying at least id, name, desc, category, mode.
+
+Gate: the blueprint has a name and a lifecycle category.`,
+  },
+  bp_stages: {
+    name: "Stages", glyph: "❑", gate: "stages designed", deps: ["purpose"],
+    gateRule: { require: [
+      { signal: "bpStageCount", target: 1, label: "design the blueprint's stages" },
+    ] },
+    blurb: "The ordered stages the blueprint will drive — each with intent, prompt, gate, deps.",
+    prompt:
+`Design the STAGES the authored blueprint will drive, one at a time (propose → interrogate → record).
+For each stage define: a short key + name, its intent (blurb), the discovery PROMPT the planner runs
+when that stage is active, its order + dependencies on earlier stages, and whether it's optional.
+Give each a simple completion gate — default to "the planner confirms this stage is done" unless a
+concrete signal is obvious. Re-emit the FULL <blueprint> tag (with the growing sections array) as the
+stage set firms up.
+
+Gate: at least one stage is designed, each confirmed with the user.`,
+  },
+  bp_capabilities: {
+    name: "Capabilities", glyph: "✦", gate: "skills + MCP attached", deps: ["bp_stages"], optional: true,
+    blurb: "Reusable skills/knowledge + MCP servers the blueprint attaches to projects it seeds.",
+    prompt:
+`OPTIONAL. Decide the reusable SKILLS / knowledge and MCP servers this blueprint should attach so every
+project seeded from it inherits them. Attach them blueprint-wide or to a specific stage and fold them
+into the <blueprint> tag (a section's skills/mcp arrays, or the blueprint-level skills/mcp). Skip this
+stage if the blueprint needs no bundled capabilities.
+
+Gate: the applicable skills + MCP servers are attached (optional).`,
+  },
+  bp_review: {
+    name: "Review & publish", glyph: "⎙", gate: "blueprint valid", deps: ["bp_stages"],
+    gateRule: { require: [
+      { signal: "bpValid", target: true, label: "the assembled blueprint validates" },
+    ] },
+    blurb: "Review the assembled blueprint end-to-end, then publish it to a gist.",
+    prompt:
+`Review the assembled blueprint with the user: purpose, every stage (intent, prompt, gate, deps,
+optional), and attached capabilities. Emit the FINAL, complete <blueprint> tag. When the user
+approves, THEY publish it to a gist from the footer — you do not publish it yourself.
+
+Gate: the assembled blueprint is complete and valid.`,
+  },
   testing: {
     name: "Testing", glyph: "✓", gate: "coverage strategy set", deps: ["structure"],
     blurb: "Test strategy, fixtures, and CI gates.",
@@ -512,6 +571,31 @@ export interface Blueprint {
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
   mode?: BlueprintMode;
+  /** Deliverable / output lifecycle (#923). Absent ⇒ the normal software deliverable: the planner
+   *  publishes repos + a project board + milestones + issues, then a fleet builds them. `"blueprint"`
+   *  marks an AUTHORING lifecycle — the planner designs a reusable blueprint and "publish" ships it
+   *  to a gist; there is no code, so no fleet and no triage (see `isAuthoringBlueprint`). */
+  deliverable?: "blueprint";
+}
+
+/** Whether a blueprint's deliverable is a blueprint itself (#923) — the authoring lifecycle:
+ *  publish → gist, and no fleet / triage. */
+export function isAuthoringBlueprint(bp: Blueprint | undefined): boolean {
+  return bp?.deliverable === "blueprint";
+}
+
+/** The gate signals the blueprint-authoring stages read, derived from the in-progress blueprint the
+ *  planner is designing (#923): it has a name + category (`bpName`), how many stages it has
+ *  (`bpStageCount`), and whether it's structurally publishable (`bpValid` — id, name, ≥1 section that
+ *  has a key + name; mirrors {@link coerceBlueprint}'s requirements without importing it, to avoid a
+ *  module cycle). Pure. */
+export function authoringSignals(bp: Blueprint | undefined): Record<string, number | boolean> {
+  const validSections = (bp?.sections ?? []).filter((s) => !!s.key && !!s.name);
+  return {
+    bpName: !!bp?.name?.trim() && !!bp?.category,
+    bpStageCount: bp?.sections?.length ?? 0,
+    bpValid: !!bp?.id && !!bp?.name?.trim() && validSections.length > 0,
+  };
 }
 
 /** A blueprint's category, defaulting to greenfield. */
@@ -714,6 +798,19 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("dataExtract"),
         mkSection("dataClean"),
         mkSection("dataLoad"),
+      ],
+    },
+    // ── meta: author a reusable blueprint, publish to a gist (#923) ──
+    {
+      id: "blueprint-author", name: "Blueprint Author",
+      desc: "Design a reusable blueprint and publish it to a gist",
+      origin: "built-in", icon: "⎙", h: 160, category: "greenfield", mode: "create",
+      deliverable: "blueprint",
+      sections: [
+        mkSection("purpose"),
+        mkSection("bp_stages"),
+        mkSection("bp_capabilities", { optional: true }),
+        mkSection("bp_review"),
       ],
     },
   ];

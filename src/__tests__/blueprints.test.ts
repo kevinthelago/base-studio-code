@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkSection, computeStatus, reorder, cloneSections, blueprintToStageConfig,
   sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal,
-  SECTION_DEFS, type BlueprintSection,
+  isAuthoringBlueprint, authoringSignals,
+  SECTION_DEFS, type BlueprintSection, type Blueprint,
 } from "../screens/projects/blueprints";
 import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
 import { planStateToSignals } from "../screens/projects/planStageDerive";
@@ -48,6 +49,35 @@ describe("blueprints — seed library", () => {
       expect(keys, `${id} has an mcp stage`).toContain("mcp");
       expect(keys.indexOf("mcp"), `${id}: mcp after permissions`).toBeGreaterThan(keys.indexOf("permissions"));
     }
+  });
+
+  it("includes a 'blueprint-author' authoring blueprint: deliverable=blueprint, 4 stages, no fleet/triage (#923)", () => {
+    const bp = makeBlueprints().find((b) => b.id === "blueprint-author");
+    expect(bp).toBeTruthy();
+    expect(isAuthoringBlueprint(bp)).toBe(true);
+    expect(bp!.deliverable).toBe("blueprint");
+    const keys = bp!.sections.map((s) => s.key);
+    expect(keys).toEqual(["purpose", "bp_stages", "bp_capabilities", "bp_review"]);
+    // capabilities is the only optional stage; it has no repos/structure/permissions (no execution).
+    expect(bp!.sections.find((s) => s.key === "bp_capabilities")!.optional).toBe(true);
+    expect(keys).not.toContain("structure");
+    expect(keys).not.toContain("permissions");
+    // a normal blueprint is NOT an authoring one
+    expect(isAuthoringBlueprint(makeBlueprints().find((b) => b.id === "default"))).toBe(false);
+  });
+
+  it("authoringSignals reflect name+category, stage count, and structural validity (#923)", () => {
+    expect(authoringSignals(undefined)).toEqual({ bpName: false, bpStageCount: 0, bpValid: false });
+    const empty = { id: "x", name: "", desc: "", sections: [] } as Blueprint;
+    expect(authoringSignals(empty)).toMatchObject({ bpName: false, bpStageCount: 0, bpValid: false });
+    const partial = { id: "x", name: "My BP", desc: "", category: "greenfield", sections: [] } as Blueprint;
+    // named + category, but no stages → bpName true, but not yet valid/publishable.
+    expect(authoringSignals(partial)).toMatchObject({ bpName: true, bpStageCount: 0, bpValid: false });
+    const full = {
+      id: "x", name: "My BP", desc: "", category: "greenfield",
+      sections: [mkSection("purpose"), mkSection("bp_stages")],
+    } as Blueprint;
+    expect(authoringSignals(full)).toMatchObject({ bpName: true, bpStageCount: 2, bpValid: true });
   });
 
   it("includes a headless 'mcp-server' greenfield blueprint with no UI stage (#825)", () => {

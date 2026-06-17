@@ -75,6 +75,13 @@ fn stage_directive(id: &str) -> String {
         "consolidation" => "**Consolidation** — plan merging the services, unifying data stores and contracts.",
         "migration"    => "**Migration plan** — the from→to mapping and an incremental, reversible cutover.",
         "hardening"    => "**Security hardening** — threat-model, audit (authz / secrets / deps), and plan concrete fixes.",
+        // Blueprint-authoring lifecycle (#923) — the DELIVERABLE is a reusable blueprint published
+        // to a gist; there is NO code, no fleet, no triage. Build the blueprint with the <blueprint>
+        // tag and re-emit the whole tag as it grows.
+        "purpose"         => "**Purpose** — you are designing a reusable BLUEPRINT (a planning template), not a software project. Establish its lifecycle category, the projects it seeds, and its name + description; emit a `<blueprint>` tag with id/name/desc/category/mode.",
+        "bp_stages"       => "**Stages** — design the blueprint's ordered stages, one at a time: each stage's key+name, intent, the discovery prompt it runs, its deps/order, and whether it's optional. Re-emit the full `<blueprint>` tag as the sections array grows.",
+        "bp_capabilities" => "**Capabilities** (optional) — attach reusable skills/knowledge + MCP servers the blueprint should bundle into projects it seeds; fold them into the `<blueprint>` tag's section or blueprint-level skills/mcp arrays.",
+        "bp_review"       => "**Review & publish** — review the assembled blueprint with the user, emit the FINAL `<blueprint>` tag, and let the user publish it to a gist from the footer. Do NOT publish it yourself.",
         other         => return format!("**{other}** — configured stage."),
     };
     line.to_string()

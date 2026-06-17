@@ -658,6 +658,33 @@ copies every pinned skill scoped to this project into each worker's worktree
 agent the means to solve a hard unit," write the skill into `skills.json` with this
 project's key in `projects` and leave it pinned.
 
+**Author a blueprint** (ONLY in a blueprint-authoring lifecycle — its stages are Purpose →
+Stages → Capabilities → Review & publish). Here the DELIVERABLE is a reusable blueprint that
+gets published to a gist; there is no code, no fleet, no triage. As you design it, emit the
+WHOLE blueprint as JSON in a `<blueprint>` tag and re-emit the full tag every time it grows
+(the latest complete tag wins). The app validates it, renders it in the focused pane, and the
+user publishes it to a gist from the Review stage's footer — you never publish it yourself.
+```
+<blueprint>
+{
+  "id": "my-blueprint",
+  "name": "My Blueprint",
+  "desc": "one line",
+  "category": "greenfield",          // greenfield | transform | harden | maintain | data
+  "mode": "create",                   // create | operate
+  "skills": [], "mcp": [],            // blueprint-wide attached skills / MCP server names
+  "sections": [
+    { "key": "context", "name": "Context", "glyph": "◆", "blurb": "...", "gate": "all topics resolved",
+      "prompt": "what the planner does at this stage", "deps": [], "optional": false,
+      "skills": [], "mcp": [] }
+  ]
+}
+</blueprint>
+```
+Each section needs at least `key` + `name`; everything else has sensible defaults. Order the
+`sections` array as the stages should run; use `deps` (earlier section keys) for ordering
+constraints and `optional: true` for stages the user may skip.
+
 ## GitHub tools — read-only orientation
 
 `GH_TOKEN` is pre-loaded for **reading** GitHub to ground the plan. You are

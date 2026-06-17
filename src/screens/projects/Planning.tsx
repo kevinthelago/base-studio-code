@@ -49,7 +49,10 @@ import { buildProjectPaneData } from "./projectPaneData";
 // not a hardcoded stage list.
 import { derivePlanStageState, planStateToSignals, pendingStageConfirms } from "./planStageDerive";
 import { findPlanGaps } from "./lintPlan";
-import { mkSection, planSectionsComplete, type BlueprintSection } from "./blueprints";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, type BlueprintSection } from "./blueprints";
+import { coerceBlueprint, blueprintToManifest } from "./blueprintShare";
+import { resolveBlueprintSkillPayloads } from "./blueprintSkills";
+import { publishGist } from "../../lib/extensions/gist";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, sectionForPhase } from "./focusedPlan";
 import { featureSectionsToIssues } from "./planFeatures";
 import { nextInjection, isStepDelivered, flattenPrompt } from "./plannerConductor";
@@ -269,6 +272,7 @@ export function Planning({ visible }: { visible: boolean }) {
     activeProjectRepos,
     projectLocalRepos,
     planSections, planConfirmedSections,
+    planAuthoredBlueprint, importBlueprint,
     planFleet,
     projectKeyAlias,
     pinnedContext,
@@ -664,7 +668,16 @@ export function Planning({ visible }: { visible: boolean }) {
     for (const s of sections) if (s.state !== "pending" && enabled.has(s.k)) written[`${s.k}.md`] = s.content ?? "";
     return findPlanGaps(written).some((g) => g.endsWith("unresolved placeholder"));
   }, [sections, planSecs]);
-  const signals = useMemo(() => ({ ...planStateToSignals(stageState), hasPlanGaps }), [stageState, hasPlanGaps]);
+  // Blueprint-authoring lifecycle (#923): this project DESIGNS a blueprint (the deliverable) rather
+  // than building software. The in-progress blueprint arrives via the planner's <blueprint> tag.
+  const activeBlueprint = useMemo(() => blueprints.find(b => b.id === activeBlueprintId), [blueprints, activeBlueprintId]);
+  const isAuthoring = isAuthoringBlueprint(activeBlueprint);
+  const authoredBp = planAuthoredBlueprint[effectiveProjectId];
+  // Signals the authoring stages' gates read (name+category, stage count, validity).
+  const authoringSig = useMemo(() => authoringSignals(authoredBp), [authoredBp]);
+  const signals = useMemo(
+    () => ({ ...planStateToSignals(stageState), hasPlanGaps, ...(isAuthoring ? authoringSig : {}) }),
+    [stageState, hasPlanGaps, isAuthoring, authoringSig]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
   // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user
@@ -1175,6 +1188,22 @@ export function Planning({ visible }: { visible: boolean }) {
           bufRef.current = stripMcpAssigns(bufRef.current);
         }
 
+        // ── <blueprint>{…JSON…}</blueprint> — the blueprint an AUTHORING project is designing (#923).
+        // The planner re-emits the full JSON as the design firms up; we validate with the same
+        // coerceBlueprint the import path uses (fresh uids, defensive coercion) and store it. The
+        // focused pane renders it and the Review stage publishes it to a gist. Take the LAST complete
+        // tag in the buffer (the most recent emission wins).
+        const bpRe = /<blueprint\s*>([\s\S]*?)<\/blueprint>/g;
+        let lastBpBody: string | null = null;
+        while ((m = bpRe.exec(bufRef.current)) !== null) lastBpBody = m[1];
+        if (lastBpBody !== null) {
+          try {
+            const parsed = coerceBlueprint(JSON.parse(lastBpBody.trim()));
+            if (parsed) useAppStore.getState().setAuthoredBlueprint(projIdSnap, parsed);
+          } catch { /* incomplete/invalid JSON — ignore; the planner re-emits */ }
+          bufRef.current = bufRef.current.replace(/<blueprint\s*>[\s\S]*?<\/blueprint>/g, "");
+        }
+
         // Cap buffer to prevent unbounded growth while preserving any partial
         // in-progress tag that hasn't received its closing counterpart yet.
         const MAX_BUF = 120_000;
@@ -1575,7 +1604,35 @@ export function Planning({ visible }: { visible: boolean }) {
     }
   }
 
+  // Publish an AUTHORING project's deliverable (#923): the designed blueprint → a secret gist, via
+  // the same manifest path the Blueprints page uses. No repos/board/milestones/issues/fleet.
+  async function publishAuthoredBlueprint() {
+    const bp = planAuthoredBlueprint[effectiveProjectId];
+    const valid = bp ? coerceBlueprint(bp) : null;
+    if (!githubToken || !valid) { setPublishPhase("error"); return; }
+    setGhStatus({ blueprint: { status: "running" } });
+    setPublishPhase("running");
+    try {
+      const store = useAppStore.getState();
+      // Land it in the local library so it's editable + re-publishable, and record which blueprint
+      // seeded this project so re-opening resolves to it.
+      const newId = importBlueprint(valid);
+      store.setProjectBlueprintId(effectiveProjectId, newId);
+      // Bundle attached skill/KB content so the share is self-contained; MCP stays by reference.
+      const bundled = resolveBlueprintSkillPayloads(valid, store.skills, kbBlocks);
+      const res = await publishGist(githubToken, blueprintToManifest(valid, bundled), { public: false });
+      setGhStatus({ blueprint: { status: "created", detail: valid.name, url: res.htmlUrl } });
+      setPublishPhase("done");
+      // Report the gist URL back to the planner so it can hand it to the user.
+      invoke("pty_write", { paneId, data: `[Blueprint published to a secret gist: ${res.htmlUrl}]\r` }).catch(console.error);
+    } catch (e) {
+      setGhStatus({ blueprint: { status: "error", detail: String(e) } });
+      setPublishPhase("error");
+    }
+  }
+
   async function handlePublish() {
+    if (isAuthoring) { await publishAuthoredBlueprint(); return; }
     if (!githubToken || publishRepos.length === 0) return;
     const token = githubToken;
 
@@ -2007,7 +2064,9 @@ _Auto-generated by base-studio-code planner._`,
         <button className="btn ghost danger" onClick={() => setShowClearConfirm(true)} title="Wipe this project's plan and restart the planner (#664)">
           clear plan
         </button>
-        {(() => {
+        {/* No execution side for an authoring blueprint (#923) — its deliverable is the published
+            blueprint gist, so there are no repos to triage / no fleet to launch. */}
+        {!isAuthoring && (() => {
           // Full gate (#444/#551): plan complete + published + repos + fleet, not starting.
           const gate = {
             published: !!activeProjectId,

@@ -121,6 +121,9 @@ export interface LibraryViewProps {
   onMenu: (action: CardMenuAction, bp: Blueprint, e: React.MouseEvent) => void;
   onNew: () => void;
   onImport: () => void;
+  /** Author a new blueprint in the project planner (#923) — opens the planner seeded with the
+   *  "Blueprint Author" lifecycle, which designs a blueprint and publishes it to a gist. */
+  onAuthor?: () => void;
   /** The currently-selected blueprint id (seeds new projects) — flagged on its card. */
   activeId?: string;
   /** Select a blueprint for new projects without opening its editor. */
@@ -129,7 +132,7 @@ export interface LibraryViewProps {
   seeded?: number;
 }
 
-export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, activeId, onUse, seeded = 0 }: LibraryViewProps) {
+export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, onAuthor, activeId, onUse, seeded = 0 }: LibraryViewProps) {
   const totalStages = blueprints.reduce((n, b) => n + b.sections.length, 0);
   const published = blueprints.filter((b) => bpGist(b).state !== "local").length;
   const gates = blueprints.reduce((n, b) => n + b.sections.filter((s) => s.gateRule).length, 0);
@@ -150,7 +153,8 @@ export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, activ
         <div className="pacts">
           <span className="sync-dot" style={{ marginRight: 4 }}><i />gist sync on</span>
           <button className="btn" onClick={onImport}><Ic n="cloud_download" size={14} /> Import from gist</button>
-          <button className="btn primary" onClick={onNew}><Ic n="add" size={14} /> New blueprint</button>
+          <button className="btn" onClick={onNew}><Ic n="add" size={14} /> New blueprint</button>
+          {onAuthor && <button className="btn primary" onClick={onAuthor}><Ic n="auto_awesome" size={14} /> Create with planner</button>}
         </div>
       </div>
 
