@@ -1705,6 +1705,9 @@ export function Planning({ visible }: { visible: boolean }) {
             // the Projects-page reconciliation retries when it's free, and project_dir resolves
             // either location meanwhile, so nothing breaks.
             invoke("promote_project", { projectKey: effectiveProjectId }).catch((e) => console.warn("promote_project failed (will retry on Projects page):", e));
+            // Drop the store's draft entry so the project can't linger as a ghost draft card now
+            // that it's published (the key-based dedup also excludes it, this keeps the map clean).
+            useAppStore.getState().removeDraftProject(effectiveProjectId);
             upd(id, { status: "created", detail: `#${pv.number}`, url: pv.url });
           }
           // Link every repo to the board (idempotent server-side).
