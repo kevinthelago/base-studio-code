@@ -653,15 +653,17 @@ export function Planning({ visible }: { visible: boolean }) {
     return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
   }, [blueprints, activeBlueprintId, stageConfig]);
   // lint-as-gate (#897 Phase 4b — lint-plan folded into the declarative gate). A WRITTEN section
-  // (drafted/confirmed; pending ones aren't authored yet) must not carry an unresolved placeholder
-  // (TODO / TBD / FIXME / … / "…"). Placeholder-only — empty-file gaps are excluded so brief ack
-  // sections don't false-positive. Surfaced as `hasPlanGaps` (true ⇒ blocks); the gate requires it
-  // be false, and the signal is absent-safe (a missing signal reads false ⇒ passes).
+  // (drafted/confirmed; pending ones aren't authored yet) must not carry a deliberate "fill this
+  // in later" marker (TODO / TBD / FIXME / XXX / TKTK). Scanned ONLY over sections that belong to
+  // the ACTIVE blueprint (so stale files from a prior blueprint can't block), and only those
+  // markers — NOT ellipsis or the word "placeholder", which are normal prose and were
+  // false-positiving (#918). Surfaced as `hasPlanGaps`; the gate requires it false, absent-safe.
   const hasPlanGaps = useMemo(() => {
+    const enabled = new Set(planSecs.map((s) => s.key));
     const written: Record<string, string> = {};
-    for (const s of sections) if (s.state !== "pending") written[`${s.k}.md`] = s.content ?? "";
+    for (const s of sections) if (s.state !== "pending" && enabled.has(s.k)) written[`${s.k}.md`] = s.content ?? "";
     return findPlanGaps(written).some((g) => g.endsWith("unresolved placeholder"));
-  }, [sections]);
+  }, [sections, planSecs]);
   const signals = useMemo(() => ({ ...planStateToSignals(stageState), hasPlanGaps }), [stageState, hasPlanGaps]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
