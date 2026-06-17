@@ -107,12 +107,11 @@ export function clampIndex(i: number, count: number): number {
   return Math.min(Math.max(0, i), count - 1);
 }
 
-export type GatePill = "pass" | "blocked" | "wait";
+export type GatePill = "pass" | "wait";
 
-/** Gate pill for a phase: pass (gate satisfied), blocked (a gate-pipeline is blocking it),
- *  or wait (still in progress). */
-export function gatePill(phase: Phase, blocked: boolean): GatePill {
-  if (blocked) return "blocked";
+/** Gate pill for a phase, from the declarative gate (#897 Phase 4c removed the legacy
+ *  pipeline gate): "pass" once the phase's gateRule is satisfied, else "wait". */
+export function gatePill(phase: Phase): GatePill {
   return phase.status === "complete" || phase.status === "ahead" ? "pass" : "wait";
 }
 

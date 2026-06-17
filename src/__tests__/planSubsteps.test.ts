@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { activeSubstep, substepDone, pipelinesFor, triggerTargets } from "../screens/projects/planSubsteps";
-import { SECTION_DEFS, mkSection, makeBlueprints, type SubStep, type Pipeline } from "../screens/projects/blueprints";
+import { activeSubstep, substepDone } from "../screens/projects/planSubsteps";
+import { SECTION_DEFS, mkSection, makeBlueprints, type SubStep } from "../screens/projects/blueprints";
 import { derivePlanStageState, planStateToSignals } from "../screens/projects/planStageDerive";
 
 const STATIC: SubStep[] = [
@@ -35,44 +35,6 @@ describe("activeSubstep", () => {
   });
   it("handles a missing substeps list", () => {
     expect(activeSubstep(undefined, new Set())).toBeUndefined();
-  });
-});
-
-describe("pipelinesFor (trigger + target scoping)", () => {
-  const mk = (over: Partial<Pipeline>): Pipeline => ({
-    uid: "u", id: "lint-plan", name: "Lint", desc: "", suits: ["*"], kind: "builtin",
-    trigger: "on artifact change", enabled: true, ...over,
-  });
-  it("whole-stage pipeline (no target) fires for any artifact of its trigger", () => {
-    const section = { pipelines: [mk({})] };
-    expect(pipelinesFor(section, "on artifact change", "schema")).toHaveLength(1);
-    expect(pipelinesFor(section, "on completion", "schema")).toHaveLength(0);
-  });
-  it("targeted pipeline fires only for its artifact", () => {
-    const section = { pipelines: [mk({ triggerTarget: "schema" })] };
-    expect(pipelinesFor(section, "on artifact change", "schema")).toHaveLength(1);
-    expect(pipelinesFor(section, "on artifact change", "api")).toHaveLength(0);
-  });
-  it("disabled pipelines never fire", () => {
-    const section = { pipelines: [mk({ enabled: false })] };
-    expect(pipelinesFor(section, "on artifact change", "schema")).toHaveLength(0);
-  });
-});
-
-describe("triggerTargets (editor options)", () => {
-  it("lists whole-stage + each substep, labeling loops distinctly", () => {
-    const opts = triggerTargets({ substeps: [
-      { key: "goal", label: "Goal", prompt: "" },
-      { key: "features", label: "Feature workshop", loop: "features", prompt: "" },
-    ] });
-    expect(opts).toEqual([
-      { value: "*", label: "Whole stage" },
-      { value: "goal", label: "After Goal" },
-      { value: "features", label: "For each feature" },
-    ]);
-  });
-  it("a section with no substeps offers only the whole stage", () => {
-    expect(triggerTargets({ substeps: undefined })).toEqual([{ value: "*", label: "Whole stage" }]);
   });
 });
 

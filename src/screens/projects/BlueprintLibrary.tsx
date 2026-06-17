@@ -33,7 +33,7 @@ export function gistBadge(g: BlueprintGist): { dot: string; label: string } {
   return { dot: "var(--success)", label: "synced · " + (g.rev ?? "r1") };
 }
 
-const isGate = (s: BlueprintSection) => s.pipelines.some((p) => p.gate);
+const isGate = (s: BlueprintSection) => !!s.gateRule;
 
 /** The card's stage ribbon: a monochrome glyph sequence; gated stages carry the accent.
  *  Only ENABLED sections show — the card mirrors what the plan actually runs, so a
@@ -69,8 +69,8 @@ function BlueprintCard({ bp, index, active, onOpen, onUse, onMenu }: {
 }) {
   // Counts reflect only enabled sections — the card mirrors what the plan runs (#672).
   const enabledSecs = bp.sections.filter((s) => s.enabled);
-  const pipes = enabledSecs.reduce((n, s) => n + s.pipelines.length, 0);
-  const gates = enabledSecs.reduce((n, s) => n + s.pipelines.filter((p) => p.gate).length, 0);
+  const caps = enabledSecs.reduce((n, s) => n + (s.skills?.length ?? 0) + (s.mcp?.length ?? 0), 0);
+  const gates = enabledSecs.filter((s) => s.gateRule).length;
   const gb = gistBadge(bpGist(bp));
   const h = bpHue(bp);
   const origin = bpOrigin(bp);
@@ -99,7 +99,7 @@ function BlueprintCard({ bp, index, active, onOpen, onUse, onMenu }: {
 
       <div className="bp-foot">
         <span>{enabledSecs.length} stages</span>
-        {pipes > 0 && <span>· {pipes} pipelines</span>}
+        {caps > 0 && <span>· {caps} attached</span>}
         {gates > 0 && <span style={{ color: "var(--accent)" }}>· {gates} gates</span>}
         <span className="gsync"><i style={{ background: gb.dot }} />{gb.label}</span>
         <span className="sp" />
@@ -132,7 +132,7 @@ export interface LibraryViewProps {
 export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, activeId, onUse, seeded = 0 }: LibraryViewProps) {
   const totalStages = blueprints.reduce((n, b) => n + b.sections.length, 0);
   const published = blueprints.filter((b) => bpGist(b).state !== "local").length;
-  const gates = blueprints.reduce((n, b) => n + b.sections.reduce((m, s) => m + s.pipelines.filter((p) => p.gate).length, 0), 0);
+  const gates = blueprints.reduce((n, b) => n + b.sections.filter((s) => s.gateRule).length, 0);
   const top = [...blueprints].sort((a, b) => (b.uses ?? 0) - (a.uses ?? 0))[0];
 
   // Search + category filter (#645).
@@ -170,7 +170,7 @@ export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, activ
       <div className="stats">
         <div className="stat"><div className="sk">Blueprints</div><div className="sv">{blueprints.length}</div><div className="sm">in library</div></div>
         <div className="stat"><div className="sk">Stages · total</div><div className="sv">{totalStages}</div><div className="sm">across all blueprints</div></div>
-        <div className="stat"><div className="sk">Gate pipelines</div><div className="sv am">{gates}</div><div className="sm">block until they pass</div></div>
+        <div className="stat"><div className="sk">Gates</div><div className="sv am">{gates}</div><div className="sm">block until they pass</div></div>
         <div className="stat"><div className="sk">Published</div><div className="sv ok">{published}</div><div className="sm">shared via gist</div></div>
         <div className="stat"><div className="sk">Projects seeded</div><div className="sv">{seeded}</div><div className="sm">all-time</div></div>
       </div>

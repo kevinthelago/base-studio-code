@@ -17,49 +17,11 @@ let _id = 0;
 /** Ephemeral handle for a section/pipeline instance (stable within a session). */
 export const uid = (p: string) => `${p}-${++_id}`;
 
-// ── Pipelines ────────────────────────────────────────────────────────────────
-// kind: "builtin" (ships with the app) · "external" (third-party integration) ·
-//       "custom" (user wires their own command/webhook).
-export type PipelineKind = "builtin" | "external" | "custom";
-export type PipelineTrigger = "on section enter" | "on artifact change" | "on completion" | "manual";
-export const TRIGGERS: PipelineTrigger[] = ["on section enter", "on artifact change", "on completion", "manual"];
-
-export interface PipelineDef {
-  id: string;
-  name: string;
-  desc: string;
-  /** Section keys this pipeline suits; "*" = any stage. */
-  suits: string[];
-  kind: PipelineKind;
-}
-
-export interface Pipeline extends PipelineDef {
-  uid: string;
-  trigger: PipelineTrigger;
-  /** Scopes the trigger to one substep/artifact WITHIN the stage (its `key`), or a loop item
-   *  (e.g. "features" → run for each feature). Absent / "*" ⇒ the whole stage (the default).
-   *  This is what lets a pipeline fire "right after schema.md" or "for each feature" rather
-   *  than only on stage enter/completion. */
-  triggerTarget?: string;
-  enabled: boolean;
-  /** A gate pipeline blocks its stage from completing until it passes (#532). */
-  gate?: boolean;
-}
-
-// Only the pipelines with a real registered handler remain (#897 Phase 4a). The former
-// catalog also listed 14 no-op entries (generate-issues, sync-milestones, sync-skills,
-// scope-streams, index-repos, arm-schedule, file-intake, push-figma, export-notion,
-// scan-dead-code, schema-check, contract-test, grade-rubric, grade-llm) — they had no
-// handler and failed at runtime. Their intent now lives elsewhere: app-actions via
-// handlePublish + the section `output` disposition (issues/milestones/skill-index), fleet
-// profile gen, repo clone, the UI drag-drop, or — for the external tools — an attached MCP
-// server (the blueprint `mcp` field). grade-plan + lint-plan are retired next (Phase 4b:
-// grade → the plan-grader MCP server, lint → the stage gate); render-preview in 4c.
-export const PIPELINE_LIB: PipelineDef[] = [
-  { id: "render-preview",  name: "Render preview",      desc: "Visualize screens as a 2D / 3D walkthrough", suits: ["ui"],          kind: "builtin"  },
-  { id: "grade-plan",      name: "Grade plan",          desc: "Score agent-readiness and suggest fixes",    suits: ["structure"],   kind: "builtin"  },
-  { id: "lint-plan",       name: "Lint plan",           desc: "Validate this stage's output for gaps",      suits: ["*"],           kind: "builtin"  },
-];
+// The blueprint-stage "pipeline" abstraction was removed in #897 Phase 4c: there was no
+// production trigger engine, and the three surviving behaviors — render-preview, grade-plan,
+// lint-plan — run by direct dispatch from their own modules. Capability now attaches to a
+// blueprint as skills (#636) + MCP servers (#897); app-actions are the section `output`
+// disposition + handlePublish.
 
 // ── Substeps ─────────────────────────────────────────────────────────────────
 // A discrete step WITHIN a stage. The conductor injects ONE substep's prompt at a time and
@@ -478,7 +440,6 @@ export interface BlueprintSection extends SectionDef {
   key: string;
   enabled: boolean;
   expanded: boolean;
-  pipelines: Pipeline[];
 }
 
 /** Where a blueprint came from (#609) — drives the card's origin tag. */
@@ -569,18 +530,14 @@ export const DEFAULT_BLUEPRINT_ID = "default";
 /** Build a section instance from a def key + per-blueprint overrides. */
 export function mkSection(
   key: string,
-  { enabled = true, expanded = false, optional, pipelines = [] as [string, PipelineTrigger?, boolean?][] }:
-    { enabled?: boolean; expanded?: boolean; optional?: boolean; pipelines?: [string, PipelineTrigger?, boolean?][] } = {},
+  { enabled = true, expanded = false, optional }:
+    { enabled?: boolean; expanded?: boolean; optional?: boolean } = {},
 ): BlueprintSection {
   const def = SECTION_DEFS[key];
   return {
     uid: uid("sec"), key, ...def, enabled, expanded,
     // explicit `optional` overrides the def's; otherwise inherit it
     optional: optional ?? def.optional,
-    pipelines: pipelines.map(([libId, trigger, on]) => {
-      const lib = PIPELINE_LIB.find((p) => p.id === libId)!;
-      return { uid: uid("pl"), ...lib, trigger: trigger ?? "on completion", enabled: on !== false };
-    }),
   };
 }
 
@@ -605,12 +562,12 @@ export function makeBlueprints(): Blueprint[] {
     {
       id: "default", name: "Default", desc: "Balanced starting point", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
-        mkSection("context",     { pipelines: [["lint-plan", "on completion", true]] }),
+        mkSection("context"),
         mkSection("repos"),
         // Features before UI (#825): design the screens from the defined capabilities + author the Claude Design kickoff.
         mkSection("features"),
-        mkSection("ui",          { optional: true, pipelines: [["render-preview", "on artifact change", true]] }),
-        mkSection("structure",   { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("ui",          { optional: true }),
+        mkSection("structure"),
         mkSection("permissions"),
         mkSection("mcp",         { optional: true }),
         mkSection("automations", { optional: true }),
@@ -622,8 +579,8 @@ export function makeBlueprints(): Blueprint[] {
       sections: [
         mkSection("context"), mkSection("repos"),
         mkSection("features"),
-        mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
-        mkSection("structure", { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("ui"),
+        mkSection("structure"),
         mkSection("testing"), mkSection("permissions"),
         mkSection("mcp", { optional: true }),
         mkSection("automations"), mkSection("skills"),
@@ -634,8 +591,8 @@ export function makeBlueprints(): Blueprint[] {
       sections: [
         mkSection("context"),
         mkSection("features"),
-        mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
-        mkSection("structure", { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("ui"),
+        mkSection("structure"),
         mkSection("permissions"), mkSection("mcp", { optional: true }), mkSection("skills"),
       ],
     },
@@ -644,7 +601,7 @@ export function makeBlueprints(): Blueprint[] {
       sections: [
         mkSection("context"), mkSection("repos"),
         mkSection("features"),
-        mkSection("structure", { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("structure"),
         mkSection("testing"), mkSection("permissions"),
         mkSection("mcp", { optional: true }),
         mkSection("automations"),
@@ -658,7 +615,7 @@ export function makeBlueprints(): Blueprint[] {
         // No UI stage: an MCP server is headless (tools/resources over stdio/HTTP), so the plan
         // goes straight from features to structure (#825).
         mkSection("features"),
-        mkSection("structure", { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("structure"),
         mkSection("testing"), mkSection("permissions"),
         mkSection("automations"), mkSection("skills"),
       ],
@@ -670,7 +627,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("context"),
         mkSection("repos"),
         mkSection("cleanup"),
-        mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
+        mkSection("testing"),
         // No `structure` stage: a refactor pass tracks work as cleanup/refactor units that
         // drive the fleet directly — it doesn't need a GitHub issues.json (#666).
         mkSection("permissions"),
@@ -685,7 +642,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("repos"),
         mkSection("boundaries"),
         mkSection("extraction"),
-        mkSection("structure",   { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("structure"),
         mkSection("permissions"),
       ],
     },
@@ -696,7 +653,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("context"),
         mkSection("repos"),
         mkSection("consolidation"),
-        mkSection("testing",       { pipelines: [["lint-plan", "on completion", true]] }),
+        mkSection("testing"),
         mkSection("structure"),
         mkSection("permissions"),
       ],
@@ -708,7 +665,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("context"),
         mkSection("repos"),
         mkSection("migration"),
-        mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
+        mkSection("testing"),
         mkSection("structure"),
         mkSection("permissions"),
       ],
@@ -720,7 +677,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("context"),
         mkSection("repos"),
         mkSection("hardening"),
-        mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
+        mkSection("testing"),
         mkSection("structure"),
         mkSection("permissions"),
       ],
@@ -799,7 +756,7 @@ export function reorder<T extends { uid: string }>(arr: T[], fromUid: string, to
 
 /** Deep-copy sections with fresh uids (for duplicate). */
 export function cloneSections(sections: BlueprintSection[]): BlueprintSection[] {
-  return sections.map((s) => ({ ...s, uid: uid("sec"), pipelines: s.pipelines.map((p) => ({ ...p, uid: uid("pl") })) }));
+  return sections.map((s) => ({ ...s, uid: uid("sec") }));
 }
 
 /**

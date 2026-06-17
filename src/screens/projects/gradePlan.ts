@@ -10,11 +10,7 @@
 import { useAppStore } from "../../store";
 import { gradePlan, type PlanGrade } from "../../lib/planGrade";
 import type { PlanIssue } from "./planIssues";
-import {
-  registerPipelineHandler, runPipeline,
-  type PipelineHandler, type StageContext, type PipelineRunResult,
-} from "./pipelineRuntime";
-import type { Pipeline } from "./blueprints";
+import { type StageContext, type PipelineRunResult } from "./pipelineRuntime";
 import { planGradeToResult } from "./gradeDispatch";
 
 export const GRADE_PLAN_ID = "grade-plan";
@@ -25,7 +21,10 @@ function parseArtifact<T>(raw: string | undefined, fallback: T): T {
   try { return JSON.parse(raw) as T; } catch { return fallback; }
 }
 
-export const gradePlanHandler: PipelineHandler = (ctx: StageContext): PipelineRunResult => {
+/** The grade-plan stage helper: score the plan's agent-readiness (advisory — always `ok`).
+ *  Runs by direct dispatch (#897 Phase 4c removed the generic engine). Will be replaced by
+ *  the plan-grader MCP server in Phase 4b — a localized swap of this one function. */
+export function gradePlanHandler(ctx: StageContext): PipelineRunResult {
   const issues = parseArtifact<PlanIssue[]>(ctx.artifacts["issues.json"], []);
   const phases = parseArtifact<{ name: string }[]>(ctx.artifacts["phases.json"], []);
   const repos  = parseArtifact<string[]>(ctx.artifacts["repos.json"], []);
@@ -33,24 +32,11 @@ export const gradePlanHandler: PipelineHandler = (ctx: StageContext): PipelineRu
   const pct    = Math.round(grade.score * 100);
   // Always `ok`: grading is advisory, so a low grade reports rather than blocks.
   return { status: "ok", message: `Grade ${grade.letter} (${pct}%)`, output: grade };
-};
-
-/** Register the builtin (idempotent). Called at module load + safe to call in tests. */
-export function registerGradePlan(): void {
-  registerPipelineHandler(GRADE_PLAN_ID, gradePlanHandler);
 }
-registerGradePlan();
-
-const GRADE_PLAN_PIPELINE: Pipeline = {
-  uid: GRADE_PLAN_ID, id: GRADE_PLAN_ID, name: "Grade plan",
-  desc: "Score agent-readiness of the issues and suggest fixes", suits: ["structure"], kind: "builtin",
-  trigger: "on completion", enabled: true, gate: false,
-};
 
 /**
  * Run grade-plan for a project and reflect the result in the store: the rich PlanGrade
- * (→ ProjectPane's report) and the run status (→ Blueprints rows). The structure inputs
- * are passed as JSON artifacts so the run flows through the real engine.
+ * (→ ProjectPane's report) and the run status. Calls the handler directly.
  */
 export async function dispatchGradePlan(args: {
   projectKey: string; issues: PlanIssue[]; phases: { name: string }[]; repos: string[];
@@ -58,14 +44,16 @@ export async function dispatchGradePlan(args: {
   const store = useAppStore.getState();
   store.setStagePipelineRun(args.projectKey, GRADE_PLAN_ID, { status: "running", lastRun: null });
   const ctx: StageContext = {
-    projectKey: args.projectKey, stageId: "structure", trigger: "manual",
+    projectKey: args.projectKey, stageId: "structure",
     artifacts: {
       "issues.json": JSON.stringify(args.issues),
       "phases.json": JSON.stringify(args.phases),
       "repos.json":  JSON.stringify(args.repos),
     },
   };
-  const result = await runPipeline(GRADE_PLAN_PIPELINE, ctx);
+  let result: PipelineRunResult;
+  try { result = gradePlanHandler(ctx); }
+  catch (e) { result = { status: "fail", message: String(e) }; }
   if (result.status === "ok" && result.output) {
     // Single source of truth (#615): the agent-readiness grade is stored as a section
     // grader result; its full PlanGrade rides along as `detail` for the rich report.

@@ -7,7 +7,7 @@ import type { Blueprint, BlueprintSection } from "../screens/projects/blueprints
 
 const sec = (over: Partial<BlueprintSection>): BlueprintSection => ({
   uid: over.uid ?? "u", key: over.key ?? "context", name: "S", glyph: "◆", gate: "", deps: [],
-  blurb: "", prompt: "", enabled: true, expanded: false, pipelines: [], ...over,
+  blurb: "", prompt: "", enabled: true, expanded: false, ...over,
 });
 
 describe("buildMcpLibrary", () => {

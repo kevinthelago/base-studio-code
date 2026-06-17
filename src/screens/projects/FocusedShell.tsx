@@ -78,13 +78,13 @@ export function PhaseHeader({ phase, pill }: { phase: Phase; pill: GatePill }) {
       <div className="ph-title"><h2>{phase.name}</h2></div>
       <p className="ph-blurb">{phase.blurb}</p>
       <span
-        className={"ph-gate " + (pill === "blocked" ? "fail" : pill)}
+        className={"ph-gate " + pill}
         title={tip}
         onClick={hasReasons ? () => setShowReasons((v) => !v) : undefined}
         style={{ cursor: hasReasons ? "pointer" : undefined }}
       >
         <span className="gd" />
-        gate · {phase.gate} — {pill === "pass" ? "passing" : pill === "blocked" ? "blocked" : "waiting"}
+        gate · {phase.gate} — {pill === "pass" ? "passing" : "waiting"}
         {hasReasons && <span style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</span>}
       </span>
       {hasReasons && showReasons && (
