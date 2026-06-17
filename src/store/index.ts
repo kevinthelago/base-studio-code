@@ -673,6 +673,11 @@ interface AppStore {
    *  <blueprint> tag, rendered in the focused pane, and published to a gist at the Review stage. */
   planAuthoredBlueprint: Record<string, Blueprint>;
   setAuthoredBlueprint: (projectId: string, bp: Blueprint) => void;
+  /** Optional stages the user deliberately SKIPPED (#921). The flow stops on every optional stage;
+   *  skipping marks it resolved (frontier advances, never blocks completion) but renders distinctly. */
+  planSkippedSections:  Record<string, string[]>;
+  skipPlanSection:      (projectId: string, key: string) => void;
+  unskipPlanSection:    (projectId: string, key: string) => void;
   /** Collapse non-canonical section keys (e.g. "Tech stack" → "stack") for a project,
    *  merging content into the canonical key (and deduping confirmed keys) — repairs a gate
    *  stuck on a stale title-named section (#803). */
@@ -1508,6 +1513,7 @@ export const useAppStore = create<AppStore>()(
             planSections:           byKey(s.planSections),
             planConfirmedSections:  byKey(s.planConfirmedSections),
             planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
+            planSkippedSections:    byKey(s.planSkippedSections),
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
@@ -1540,7 +1546,7 @@ export const useAppStore = create<AppStore>()(
         }),
       resetProjectData: () =>
         set({
-          planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planKbAssignments: {},
+          planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planSkippedSections: {}, planKbAssignments: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
@@ -2066,6 +2072,20 @@ export const useAppStore = create<AppStore>()(
       planAuthoredBlueprint: {},
       setAuthoredBlueprint: (projectId, bp) =>
         set((s) => ({ planAuthoredBlueprint: { ...s.planAuthoredBlueprint, [projectId]: bp } })),
+      planSkippedSections: {},
+      skipPlanSection: (projectId, key) =>
+        set((s) => {
+          const existing = s.planSkippedSections[projectId] ?? [];
+          if (existing.includes(key)) return {};
+          return { planSkippedSections: { ...s.planSkippedSections, [projectId]: [...existing, key] } };
+        }),
+      unskipPlanSection: (projectId, key) =>
+        set((s) => ({
+          planSkippedSections: {
+            ...s.planSkippedSections,
+            [projectId]: (s.planSkippedSections[projectId] ?? []).filter((k) => k !== key),
+          },
+        })),
       canonicalizePlanSections: (projectId) =>
         set((s) => {
           const sections = s.planSections[projectId];
@@ -2181,6 +2201,7 @@ export const useAppStore = create<AppStore>()(
             planSections:          drop(s.planSections),
             planConfirmedSections: drop(s.planConfirmedSections),
             planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
+            planSkippedSections:   drop(s.planSkippedSections),
             planKbAssignments:     drop(s.planKbAssignments),
             planAutomations:       drop(s.planAutomations),
             planFleet:             drop(s.planFleet),
@@ -2394,6 +2415,7 @@ export const useAppStore = create<AppStore>()(
           planSections:          omitKey(s.planSections),
           planConfirmedSections: omitKey(s.planConfirmedSections),
           planAuthoredBlueprint: omitKey(s.planAuthoredBlueprint),
+          planSkippedSections:   omitKey(s.planSkippedSections),
           planKbAssignments:     omitKey(s.planKbAssignments),
           planAutomations:       omitKey(s.planAutomations),
           planStageConfig:       omitKey(s.planStageConfig),
@@ -2641,6 +2663,7 @@ export const useAppStore = create<AppStore>()(
         planSections:          s.planSections,
         planConfirmedSections: s.planConfirmedSections,
         planAuthoredBlueprint: s.planAuthoredBlueprint,
+        planSkippedSections:   s.planSkippedSections,
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,

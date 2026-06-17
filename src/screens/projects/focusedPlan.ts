@@ -5,16 +5,17 @@
 // Pure + serializable so it's fully unit-testable; no React/Tauri.
 
 import {
-  enabledSections, currentSection, sectionStatus,
+  enabledSections, currentSection, sectionStatus, sectionSkipped,
   type BlueprintSection,
 } from "./blueprints";
 import { evalGate, gateReasons, type PlanSignals } from "./stageGate";
 
 // "complete" = done IN sequence (at/behind the current position); "ahead" = done OUT of
 // sequence (gate met past the current position — "banked"); "skipped" = an OPTIONAL section
-// the user has moved past without completing (#678). The rail renders each distinctly so a
-// future stage finishing early / a passed-over optional stage don't read as in-order
-// progress or as a not-yet-reached stage (#668).
+// the USER deliberately skipped (#921 — the flow now STOPS on every optional stage; the only way
+// past one without completing it is a user skip). The rail renders each distinctly so a future
+// stage finishing early / a deliberately skipped stage don't read as in-order progress or as a
+// not-yet-reached stage (#668).
 export type PhaseStatus = "complete" | "ahead" | "active" | "skipped" | "locked" | "upcoming";
 
 export interface Phase {
@@ -50,10 +51,11 @@ export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): 
   const activeIdx = current ? visible.findIndex(({ s }) => s.key === current.key) : visible.length;
   return visible.map(({ s, st }, i) => {
     let status: PhaseStatus;
-    if (st.status === "complete") status = i > activeIdx ? "ahead" : "complete";
+    // A deliberately user-skipped optional stage reads as "skipped", not "complete" — even though
+    // it counts as resolved for the frontier/gate (`sectionDone`). Check this first (#921).
+    if (sectionSkipped(s, signals)) status = "skipped";
+    else if (st.status === "complete") status = i > activeIdx ? "ahead" : "complete";
     else if (st.status === "locked") status = "locked";
-    // an optional section the current position has already moved past, left unfinished
-    else if (s.optional && i < activeIdx) status = "skipped";
     else status = current && s.key === current.key ? "active" : "upcoming";
     const unmet = gateReasons(s.gateRule, signals)
       .filter((r) => !r.pass)
@@ -117,19 +119,32 @@ export function gatePill(phase: Phase): GatePill {
 
 export type FooterKind = "back-to-current" | "jump-to-current" | "approve-continue" | "publish";
 
+export interface FooterAction {
+  kind: FooterKind;
+  enabled: boolean;
+  /** The active phase is an OPTIONAL stage the user can deliberately skip past — the advance bar
+   *  shows a secondary "Skip stage" control alongside the primary action (#921). */
+  canSkip?: boolean;
+}
+
 /**
  * The advance-bar's primary action, by where the selection sits relative to the active
  * phase. Browsing a future (locked) phase → back to current; a past phase → jump to
  * current; on the active phase → approve & continue (enabled when its gate is ready), or
  * publish when the whole plan is complete.
+ *
+ * `activeSkippable` (#921): the active phase is an enabled OPTIONAL stage that hasn't been decided
+ * yet — so the user can either complete it (approve & continue) OR skip it. The flow stops on every
+ * optional stage; skipping is how the USER, not the app, decides to move past one.
  */
 export function footerAction(
   selectedIdx: number, activeIdx: number, planComplete: boolean, currentGateReady: boolean,
-): { kind: FooterKind; enabled: boolean } {
+  activeSkippable = false,
+): FooterAction {
   if (selectedIdx > activeIdx) return { kind: "back-to-current", enabled: true };
   if (selectedIdx < activeIdx) return { kind: "jump-to-current", enabled: true };
   if (planComplete) return { kind: "publish", enabled: true };
-  return { kind: "approve-continue", enabled: currentGateReady };
+  return { kind: "approve-continue", enabled: currentGateReady, canSkip: activeSkippable };
 }
 
 /** Whether the active phase's gate is satisfied — enables "approve & continue". */

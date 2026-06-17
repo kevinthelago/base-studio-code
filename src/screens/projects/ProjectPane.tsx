@@ -1778,9 +1778,11 @@ export function ProjectPane({
     activeIdx: number;
     onSelect: (i: number) => void;
     pill: GatePill;
-    footer: { kind: FooterKind; enabled: boolean };
+    footer: { kind: FooterKind; enabled: boolean; canSkip?: boolean };
     onBack: () => void;
     onPrimary: () => void;
+    /** Skip the active OPTIONAL stage (#921) — rendered when `footer.canSkip`. */
+    onSkip?: () => void;
     /** The project already has a GitHub board — the publish action reads as "Update GitHub" (#823). */
     published?: boolean;
     /** Override the footer publish label (#923) — "Publish blueprint" for an authoring project. */
@@ -1893,7 +1895,7 @@ export function ProjectPane({
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} />
         </div>
-        <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} />
+        <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
         {viewerModal}
       </div>
     );

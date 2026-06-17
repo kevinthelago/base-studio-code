@@ -1736,6 +1736,7 @@ describe("clearPlan (#505)", () => {
       planSections: { myproj: { goal: "# Goal" }, other: { scope: "# Scope" } },
       planConfirmedSections: { myproj: ["goal"], other: [] },
       planAuthoredBlueprint: { myproj: { id: "bp", name: "BP", desc: "", sections: [] } },
+      planSkippedSections: { myproj: ["ui"], other: [] },
       planKbAssignments: { myproj: ["kb-1"] },
       planAutomations: { myproj: [] },
       planStageConfig: {},
@@ -1758,6 +1759,7 @@ describe("clearPlan (#505)", () => {
     expect(s.planSections["myproj"]).toBeUndefined();
     expect(s.planConfirmedSections["myproj"]).toBeUndefined();
     expect(s.planAuthoredBlueprint["myproj"]).toBeUndefined();
+    expect(s.planSkippedSections["myproj"]).toBeUndefined();
     expect(s.planKbAssignments["myproj"]).toBeUndefined();
     expect(s.planAutomations["myproj"]).toBeUndefined();
     expect(s.uiScreens["myproj"]).toBeUndefined();
@@ -1790,6 +1792,24 @@ describe("clearPlan (#505)", () => {
     const bp2 = { ...bp, name: "Authored v2" };
     useAppStore.getState().setAuthoredBlueprint("proj", bp2);
     expect(useAppStore.getState().planAuthoredBlueprint["proj"].name).toBe("Authored v2");
+  });
+});
+
+describe("skipPlanSection / unskipPlanSection (#921)", () => {
+  beforeEach(() => useAppStore.setState({ planSkippedSections: {} }));
+
+  it("records a deliberately skipped optional stage per project, idempotently", () => {
+    const { skipPlanSection } = useAppStore.getState();
+    skipPlanSection("proj", "ui");
+    skipPlanSection("proj", "ui"); // dup is a no-op
+    skipPlanSection("proj", "mcp");
+    expect(useAppStore.getState().planSkippedSections["proj"]).toEqual(["ui", "mcp"]);
+  });
+
+  it("un-skips a stage (the user goes back to do it) without touching others", () => {
+    useAppStore.setState({ planSkippedSections: { proj: ["ui", "mcp"] } });
+    useAppStore.getState().unskipPlanSection("proj", "ui");
+    expect(useAppStore.getState().planSkippedSections["proj"]).toEqual(["mcp"]);
   });
 });
 
