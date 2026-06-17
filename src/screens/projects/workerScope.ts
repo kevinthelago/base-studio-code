@@ -40,5 +40,10 @@ export function buildWorkerScope(stream: AgentStream): string {
     "Integration interfaces between streams live in the contracts directory — treat them as the",
     "source of truth. If one is unclear or must change, ask the director (`bsc-ask`) rather than",
     "guessing. For the high-level project context you don't have here, defer to the director.",
+    "",
+    "Issue lifecycle is the director's job, not yours. When you finish an owned issue, signal it",
+    "the way your kickoff says (open your PR / `bsc-landed`) and let the director close it — do",
+    "not run `gh issue close`/`reopen`/`edit` (you have GitHub read access only; the role gate",
+    "blocks the write, so attempting it just wastes a turn).",
   ].join("\n");
 }

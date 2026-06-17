@@ -59,6 +59,20 @@ describe("flowKickoffText", () => {
     expect(k.push).toMatch(/do not stop/i);
   });
 
+  it("tells pushing workers the director closes the issue, not them (#906)", () => {
+    for (const push of ["auto-pr", "self-merge", "push-confirm", "commit-only"] as const) {
+      const k = flowKickoffText(flow({ push }), "api");
+      expect(k.push).toMatch(/director manages issue state and closes it/i);
+      expect(k.push).toMatch(/do not close, reopen, or edit the GitHub issue/i);
+    }
+  });
+
+  it("does not add the issue-close clause to a read-only (none) flow — no issue to close (#906)", () => {
+    const k = flowKickoffText(flow({ push: "none" }), "api");
+    expect(k.push).not.toMatch(/close.*the GitHub issue/i);
+    expect(k.push).toMatch(/read-only role/i);
+  });
+
   it("the trigger phrase varies the push sentence", () => {
     expect(flowKickoffText(flow({ trigger: "per-stage" }), "x").push).toMatch(/at each pipeline stage boundary/);
     expect(flowKickoffText(flow({ trigger: "on-green" }), "x").push).toMatch(/as soon as the checks pass/);
