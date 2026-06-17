@@ -48,6 +48,7 @@ import { buildProjectPaneData } from "./projectPaneData";
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
 import { derivePlanStageState, planStateToSignals, pendingStageConfirms } from "./planStageDerive";
+import { findPlanGaps } from "./lintPlan";
 import { mkSection, planSectionsComplete, type BlueprintSection } from "./blueprints";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, sectionForPhase } from "./focusedPlan";
 import { featureSectionsToIssues } from "./planFeatures";
@@ -651,7 +652,17 @@ export function Planning({ visible }: { visible: boolean }) {
     if (bp) return bp.sections;
     return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
   }, [blueprints, activeBlueprintId, stageConfig]);
-  const signals = useMemo(() => planStateToSignals(stageState), [stageState]);
+  // lint-as-gate (#897 Phase 4b — lint-plan folded into the declarative gate). A WRITTEN section
+  // (drafted/confirmed; pending ones aren't authored yet) must not carry an unresolved placeholder
+  // (TODO / TBD / FIXME / … / "…"). Placeholder-only — empty-file gaps are excluded so brief ack
+  // sections don't false-positive. Surfaced as `hasPlanGaps` (true ⇒ blocks); the gate requires it
+  // be false, and the signal is absent-safe (a missing signal reads false ⇒ passes).
+  const hasPlanGaps = useMemo(() => {
+    const written: Record<string, string> = {};
+    for (const s of sections) if (s.state !== "pending") written[`${s.k}.md`] = s.content ?? "";
+    return findPlanGaps(written).some((g) => g.endsWith("unresolved placeholder"));
+  }, [sections]);
+  const signals = useMemo(() => ({ ...planStateToSignals(stageState), hasPlanGaps }), [stageState, hasPlanGaps]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
   // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user
