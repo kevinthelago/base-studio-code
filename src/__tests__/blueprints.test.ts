@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkSection, computeStatus, reorder, cloneSections, blueprintToStageConfig,
   sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal,
-  PIPELINE_LIB, SECTION_DEFS, type BlueprintSection,
+  SECTION_DEFS, type BlueprintSection,
 } from "../screens/projects/blueprints";
 import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
 import { planStateToSignals } from "../screens/projects/planStageDerive";
@@ -59,12 +59,6 @@ describe("blueprints — seed library", () => {
     expect(keys).toContain("structure");
   });
 
-  it("mkSection resolves pipeline ids against the catalog", () => {
-    const ui = mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] });
-    expect(ui.pipelines).toHaveLength(1);
-    expect(ui.pipelines[0].name).toBe(PIPELINE_LIB.find((p) => p.id === "render-preview")!.name);
-    expect(ui.pipelines[0].trigger).toBe("on artifact change");
-  });
 });
 
 describe("blueprints — computeStatus (dependency locks)", () => {
@@ -99,11 +93,11 @@ describe("blueprints — helpers", () => {
     expect(reorder(a, "x", "z", false).map((o) => o.uid)).toEqual(["y", "z", "x"]);
   });
 
-  it("cloneSections gives fresh uids and independent pipelines", () => {
-    const src = [mkSection("ui", { pipelines: [["render-preview", "on completion", true]] })];
+  it("cloneSections gives fresh uids", () => {
+    const src = [mkSection("ui")];
     const copy = cloneSections(src);
     expect(copy[0].uid).not.toBe(src[0].uid);
-    expect(copy[0].pipelines[0].uid).not.toBe(src[0].pipelines[0].uid);
+    expect(copy[0].key).toBe("ui");
   });
 });
 

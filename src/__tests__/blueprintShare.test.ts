@@ -44,16 +44,15 @@ describe("blueprintShare (#598)", () => {
     expect(coerceBlueprint({ id: "x", name: "y", sections: [{ name: "no key" }] })).toBeNull();
   });
 
-  it("coerces partial section/pipeline fields with safe defaults", () => {
+  it("coerces partial section fields with safe defaults", () => {
     const bp = coerceBlueprint({
       id: "x", name: "Imported",
-      sections: [{ key: "context", name: "Context", pipelines: [{ id: "lint-plan", name: "Lint", kind: "bogus", trigger: "bogus" }] }],
+      sections: [{ key: "context", name: "Context", skills: ["sk1"], mcp: ["Compliance"] }],
     });
     expect(bp).not.toBeNull();
-    const p = bp!.sections[0].pipelines[0];
-    expect(p.kind).toBe("custom");          // unknown kind → custom
-    expect(p.trigger).toBe("on completion"); // unknown trigger → default
     expect(bp!.sections[0].glyph).toBe("✚"); // missing glyph → default
+    expect(bp!.sections[0].skills).toEqual(["sk1"]);
+    expect(bp!.sections[0].mcp).toEqual(["Compliance"]);
   });
 
   it("preserves attached skills + MCP servers + lifecycle metadata through import (#897)", () => {
@@ -94,7 +93,7 @@ describe("blueprintShare (#598)", () => {
     const kb: KbBlock[] = [{ id: "kb1", title: "Retry policy", tags: ["reliability"], updated: "now", lines: 3, content: "backoff + jitter" }];
     const bp = {
       id: "x", name: "BP", desc: "", skills: ["kb1"],
-      sections: [{ uid: "u", key: "structure", name: "Structure", glyph: "◆", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, pipelines: [], skills: ["sk1"] }],
+      sections: [{ uid: "u", key: "structure", name: "Structure", glyph: "◆", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, skills: ["sk1"] }],
     } as unknown as Blueprint;
 
     const bundled = resolveBlueprintSkillPayloads(bp, skills, kb);

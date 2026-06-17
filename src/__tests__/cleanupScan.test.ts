@@ -59,6 +59,5 @@ describe("Refactor blueprint (#626 slice c)", () => {
     expect(refactor!.origin).toBe("built-in");
     const cleanup = refactor!.sections.find((s) => s.key === "cleanup");
     expect(cleanup).toBeTruthy();
-    expect(cleanup!.pipelines).toEqual([]);
   });
 });
