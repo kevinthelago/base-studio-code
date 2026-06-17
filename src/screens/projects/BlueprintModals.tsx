@@ -262,36 +262,21 @@ export function SyncModal({ bp, diff, toRev, onClose, onPull }: {
 }
 
 /* ── New blueprint ── */
-export function NewBlueprintModal({ onClose, onCreate, onDesignWithClaude }: {
+export function NewBlueprintModal({ onClose, onCreate }: {
   onClose: () => void;
-  onCreate: (name: string, mode: "blank" | "default") => void;
-  onDesignWithClaude: (name: string) => void;
+  /** Name the project, then create its folder + open the project planner to author the blueprint (#923). */
+  onCreate: (name: string) => void;
 }) {
   const [name, setName] = useState("");
-  const [mode, setMode] = useState<"blank" | "default" | "claude">("blank");
-  const submit = () => { if (!name.trim()) return; if (mode === "claude") onDesignWithClaude(name.trim()); else onCreate(name.trim(), mode); };
+  const submit = () => { if (!name.trim()) return; onCreate(name.trim()); };
   return (
-    <Modal icon={<Ic n="add" size={15} />} title="New blueprint" sub="Start a reusable planning template" onClose={onClose}
-      foot={<><span style={{ flex: 1 }} /><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!name.trim()} onClick={submit}>{mode === "claude" ? "Design with Claude →" : "Create blueprint"}</button></>}>
-      <div className="field" style={{ marginBottom: 16 }}>
+    <Modal icon={<Ic n="add" size={15} />} title="New blueprint" sub="Name it, then design it in the project planner" onClose={onClose}
+      foot={<><span style={{ flex: 1 }} /><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!name.trim()} onClick={submit}>Create &amp; open planner →</button></>}>
+      <div className="field">
         <label style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Name</label>
         <input className="input" autoFocus style={{ marginTop: 6 }} placeholder="e.g. Internal tool, Data pipeline…" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
-      </div>
-      <div className="field">
-        <label style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Start from</label>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
-          <div className={"disp" + (mode === "blank" ? " on" : "")} onClick={() => setMode("blank")}>
-            <span className="dgl" style={{ background: tint(250, 0.16), color: hue(250) }}>○</span>
-            <span className="dtxt"><div className="dt">Blank</div><div className="dd">One context stage — build the rest yourself</div></span>
-          </div>
-          <div className={"disp" + (mode === "default" ? " on" : "")} onClick={() => setMode("default")}>
-            <span className="dgl" style={{ background: tint(70, 0.16), color: hue(70) }}>≡</span>
-            <span className="dtxt"><div className="dt">Default stages</div><div className="dd">Clone the Default arc and tweak from there</div></span>
-          </div>
-          <div className={"disp" + (mode === "claude" ? " on" : "")} onClick={() => setMode("claude")}>
-            <span className="dgl" style={{ background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 40))", color: "#1a120a" }}>✦</span>
-            <span className="dtxt"><div className="dt">Design with Claude</div><div className="dd">Describe the project — Claude drafts the stage flow</div></span>
-          </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.5 }}>
+          The planner walks you through designing the blueprint stage by stage, then publishes it to a gist.
         </div>
       </div>
     </Modal>
