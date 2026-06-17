@@ -10,11 +10,11 @@ describe("blueprintAssistant — planActions (#609)", () => {
     expect(a).toEqual([{ op: "add", kind: "security" }]);
   });
 
-  it("contract-first adds schema + api with gate pipes", () => {
+  it("contract-first adds the schema + api stages (#897 Phase 4a: no more schema-check/contract-test pipelines)", () => {
     const a = planActions("make it contract-first with API gates", base());
     expect(a).toEqual([
-      { op: "add", kind: "schema", pipes: [["schema-check", true]] },
-      { op: "add", kind: "api", pipes: [["contract-test", true]] },
+      { op: "add", kind: "schema", pipes: undefined },
+      { op: "add", kind: "api", pipes: undefined },
     ]);
   });
 
