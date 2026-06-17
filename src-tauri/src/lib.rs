@@ -116,15 +116,27 @@ pub(crate) fn documents_dir() -> std::path::PathBuf {
     bsc_base_dir().join("documents")
 }
 
-/// The project hub directory and the planner session's CWD:
-/// `~/.base-studio-code/projects/<sanitized-project-key>`. Holds the project's
-/// `CLAUDE.md` (ancestor-loaded context for repo sessions), plan sections
-/// (`goal.md`…`risks.md`), control files, `prompts/`, and the cloned repos as
-/// subdirectories.
+/// Where a PUBLISHED project's hub lives: `~/.base-studio-code/projects/<key>` (#904).
+pub(crate) fn published_project_dir(project_key: &str) -> std::path::PathBuf {
+    bsc_base_dir().join("projects").join(sanitize_project_key(project_key))
+}
+
+/// Where an UNPUBLISHED draft's hub lives: `~/.base-studio-code/draft/<key>` (#904).
+pub(crate) fn draft_project_dir(project_key: &str) -> std::path::PathBuf {
+    bsc_base_dir().join("draft").join(sanitize_project_key(project_key))
+}
+
+/// The project hub directory and the planner session's CWD. Holds the project's `CLAUDE.md`
+/// (ancestor-loaded context for repo sessions), plan sections (`goal.md`…), control files,
+/// `prompts/`, and the cloned repos as subdirectories.
+///
+/// Resolves WHERE the hub actually is (#904): a published hub (`projects/`) wins; otherwise —
+/// including a brand-new project — it lives under `draft/`. Location is the source of truth for
+/// published-ness; publishing MOVES the hub (`promote_project`), so every reader/writer that
+/// routes through this automatically follows it without threading a flag.
 pub(crate) fn project_dir(project_key: &str) -> std::path::PathBuf {
-    bsc_base_dir()
-        .join("projects")
-        .join(sanitize_project_key(project_key))
+    let published = published_project_dir(project_key);
+    if published.is_dir() { published } else { draft_project_dir(project_key) }
 }
 
 /// The on-disk clone location of a repo within its project hub:
@@ -196,8 +208,10 @@ fn delete_project_dir(project_key: String) -> Result<(), String> {
     if sanitize_project_key(&project_key).is_empty() {
         return Err("delete_project_dir: empty project_key".to_string());
     }
-    let dir = project_dir(&project_key);
-    if dir.exists() {
+    // A hub lives in exactly one of projects/ (published) or draft/ (unpublished), but remove
+    // BOTH defensively (#904) so a stale/half-moved copy can't linger and reappear in the list.
+    for dir in [published_project_dir(&project_key), draft_project_dir(&project_key)] {
+        if !dir.exists() { continue; }
         // Clear read-only first: on Windows `remove_dir_all` can't delete read-only files, and
         // git pack files in a cloned-repo subdir are read-only — so a project with a linked repo
         // would otherwise fail to delete (#793). Unix's `remove_dir_all` ignores file perms, so
@@ -301,6 +315,8 @@ struct LocalProject {
     title: String,
     has_plan: bool,
     updated_at: u64,
+    /// True when the hub lives under `projects/` (published), false under `draft/` (#904).
+    published: bool,
 }
 
 /// List the on-disk local projects (the `projects/<key>/` dirs) so the Projects page can surface
@@ -311,41 +327,93 @@ struct LocalProject {
 /// vs. a bare scaffold. `updated_at` is the dir mtime in ms since the epoch (for recency sorting).
 #[tauri::command]
 fn list_local_projects() -> Result<Vec<LocalProject>, String> {
-    let projects = bsc_base_dir().join("projects");
-    if !projects.exists() {
-        return Ok(vec![]);
-    }
-    let mut out = vec![];
-    for entry in std::fs::read_dir(&projects).map_err(|e| e.to_string())?.flatten() {
-        let dir = entry.path();
-        if !dir.is_dir() {
-            continue;
+    // Scan BOTH roots (#904): published hubs under `projects/`, draft hubs under `draft/`.
+    // Keyed by project key so a stray same-key copy in both can't double-list — published wins.
+    let mut by_key: std::collections::HashMap<String, LocalProject> = std::collections::HashMap::new();
+    for (root, published) in [(bsc_base_dir().join("projects"), true), (bsc_base_dir().join("draft"), false)] {
+        let Ok(entries) = std::fs::read_dir(&root) else { continue };
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            if !dir.is_dir() { continue; }
+            let key = match dir.file_name().and_then(|n| n.to_str()) {
+                Some(k) if !k.starts_with('.') => k.to_string(),
+                _ => continue,
+            };
+            // Published wins: skip a draft copy when a published one already registered.
+            if !published && by_key.contains_key(&key) { continue; }
+            let goal = dir.join("goal.md");
+            let has_plan = goal.exists() || dir.join("scope.md").exists() || dir.join("CLAUDE.md").exists();
+            let title = std::fs::read_to_string(&goal)
+                .ok()
+                .and_then(|c| {
+                    c.lines()
+                        .map(|l| l.trim_start_matches('#').trim())
+                        .find(|l| !l.is_empty())
+                        .map(|l| l.split(['.', '!', '?']).next().unwrap_or(l).trim().chars().take(80).collect::<String>())
+                })
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| key.replace(['_', '-'], " "));
+            let updated_at = std::fs::metadata(&dir)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            by_key.insert(key.clone(), LocalProject { key, title, has_plan, updated_at, published });
         }
-        let key = match dir.file_name().and_then(|n| n.to_str()) {
-            Some(k) if !k.starts_with('.') => k.to_string(),
-            _ => continue,
-        };
-        let goal = dir.join("goal.md");
-        let has_plan = goal.exists() || dir.join("scope.md").exists() || dir.join("CLAUDE.md").exists();
-        let title = std::fs::read_to_string(&goal)
-            .ok()
-            .and_then(|c| {
-                c.lines()
-                    .map(|l| l.trim_start_matches('#').trim())
-                    .find(|l| !l.is_empty())
-                    .map(|l| l.split(['.', '!', '?']).next().unwrap_or(l).trim().chars().take(80).collect::<String>())
-            })
-            .filter(|t| !t.is_empty())
-            .unwrap_or_else(|| key.replace(['_', '-'], " "));
-        let updated_at = std::fs::metadata(&dir)
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-        out.push(LocalProject { key, title, has_plan, updated_at });
     }
-    Ok(out)
+    Ok(by_key.into_values().collect())
+}
+
+/// Run `git worktree repair` in every cloned repo under a moved hub (#904) so a fleet launched
+/// before the move keeps working: the worktrees (kept outside the hub) still point at the repo's
+/// OLD path, and `repair` rewrites those links to the repo's new location. Best-effort.
+fn repair_hub_worktrees(hub: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(hub) else { return };
+    for entry in entries.flatten() {
+        let repo = entry.path();
+        if !repo.join(".git").exists() { continue; }
+        let mut cmd = std::process::Command::new("git");
+        cmd.args(["-C", &repo.to_string_lossy(), "worktree", "repair"]);
+        let _ = no_window(&mut cmd).status();
+    }
+}
+
+/// Move a project's hub between `draft/` and `projects/` (#904). `rename` is atomic on the same
+/// volume (both roots are siblings under the base dir). Idempotent: a no-op when the hub already
+/// lives at the destination (or there's nothing to move). Returns the resolved hub path.
+fn move_project_hub(project_key: &str, to_published: bool) -> Result<String, String> {
+    if sanitize_project_key(project_key).is_empty() {
+        return Err("move_project_hub: empty project_key".into());
+    }
+    let (src, dst) = if to_published {
+        (draft_project_dir(project_key), published_project_dir(project_key))
+    } else {
+        (published_project_dir(project_key), draft_project_dir(project_key))
+    };
+    if dst.is_dir() || !src.is_dir() {
+        return Ok(dst.to_string_lossy().into_owned()); // already there, or nothing to move
+    }
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(&src, &dst).map_err(|e| format!("move_project_hub: {e}"))?;
+    repair_hub_worktrees(&dst);
+    log::info!("moved project hub {:?} → {:?}", src, dst);
+    Ok(dst.to_string_lossy().into_owned())
+}
+
+/// Promote a draft to published on publish (#904): move `draft/<key>` → `projects/<key>`.
+#[tauri::command]
+fn promote_project(project_key: String) -> Result<String, String> {
+    move_project_hub(&project_key, true)
+}
+
+/// Demote a project back to a draft (#904): move `projects/<key>` → `draft/<key>`. Used by the
+/// one-time migration that relocates pre-existing unpublished hubs out of `projects/`.
+#[tauri::command]
+fn demote_project(project_key: String) -> Result<String, String> {
+    move_project_hub(&project_key, false)
 }
 
 /// Delete every plan section file (`.md` / `.json`) in a single project's hub
@@ -1985,6 +2053,8 @@ pub fn run() {
             read_plan_sections,
             docstore::write_project_plan,
             delete_project_dir,
+            promote_project,
+            demote_project,
             clear_all_plan_files,
             clear_project_plan_files,
             list_local_projects,
@@ -2535,23 +2605,61 @@ mod tests {
         assert_eq!(sanitize_project_key(&long).len(), 80);
     }
 
-    use super::plan_dir_for;
-
     #[test]
-    fn plan_dir_for_places_sanitized_key_under_projects() {
-        let dir = plan_dir_for("studio-code");
-        let s = dir.to_string_lossy().replace('\\', "/");
-        // Project hub — plan sections live directly in projects/<key> (no
-        // documents/ prefix, no trailing /plans).
-        assert!(s.ends_with("/projects/studio-code"), "got {s}");
-        assert!(!s.contains("/documents/"), "got {s}");
+    fn project_hub_dirs_place_the_sanitized_key_directly_under_their_root() {
+        // A new/unpublished project's hub lives at draft/<key>; a published one at projects/<key>
+        // (#904). Plan sections live directly in the hub — no documents/ prefix, no /plans. (Test
+        // the pure dir helpers, not project_dir, which resolves against the real FS.)
+        let d = super::draft_project_dir("studio-code").to_string_lossy().replace('\\', "/");
+        assert!(d.ends_with("/draft/studio-code"), "got {d}");
+        assert!(!d.contains("/documents/"), "got {d}");
+        let p = super::published_project_dir("studio-code").to_string_lossy().replace('\\', "/");
+        assert!(p.ends_with("/projects/studio-code"), "got {p}");
     }
 
     #[test]
-    fn plan_dir_for_sanitizes_the_key() {
-        let dir = plan_dir_for("acme/api project");
-        let s = dir.to_string_lossy().replace('\\', "/");
-        assert!(s.ends_with("/projects/acme_api_project"), "got {s}");
+    fn project_hub_dirs_sanitize_the_key() {
+        let d = super::draft_project_dir("acme/api project").to_string_lossy().replace('\\', "/");
+        assert!(d.ends_with("/draft/acme_api_project"), "got {d}");
+    }
+
+    #[test]
+    fn project_dir_resolves_published_over_draft_else_defaults_to_draft() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("projdir");
+        let key = "resolve-me";
+        // Nothing on disk yet ⇒ a new project defaults to draft/.
+        assert_eq!(super::project_dir(key), super::draft_project_dir(key));
+        // A draft hub ⇒ resolves to draft/.
+        std::fs::create_dir_all(super::draft_project_dir(key)).unwrap();
+        assert_eq!(super::project_dir(key), super::draft_project_dir(key));
+        // A published hub wins even if a draft copy also exists.
+        std::fs::create_dir_all(super::published_project_dir(key)).unwrap();
+        assert_eq!(super::project_dir(key), super::published_project_dir(key));
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn promote_then_demote_moves_the_hub_between_roots_idempotently() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("promote");
+        let key = "movable".to_string();
+        // A draft hub with a plan file.
+        write_file(&super::draft_project_dir(&key).join("goal.md"), "# goal");
+
+        // Promote: draft/ → projects/, content carried, draft/ gone.
+        super::promote_project(key.clone()).unwrap();
+        assert!(super::published_project_dir(&key).join("goal.md").exists(), "promoted hub keeps its files");
+        assert!(!super::draft_project_dir(&key).exists(), "draft copy is gone after promote");
+        // Idempotent: a second promote is a no-op (already published).
+        super::promote_project(key.clone()).unwrap();
+        assert!(super::published_project_dir(&key).join("goal.md").exists());
+
+        // Demote: projects/ → draft/ (the migration path).
+        super::demote_project(key.clone()).unwrap();
+        assert!(super::draft_project_dir(&key).join("goal.md").exists(), "demoted hub keeps its files");
+        assert!(!super::published_project_dir(&key).exists(), "published copy is gone after demote");
+        std::fs::remove_dir_all(&home).ok();
     }
 
     #[test]
@@ -2717,7 +2825,8 @@ mod tests {
         // Write nested under a pipeline subdir, then read the subdir back.
         super::write_project_file(key.clone(), "pipelines/vue/button.vue".to_string(), "<template/>".to_string()).unwrap();
         super::write_project_file(key.clone(), "pipelines/vue/card.vue".to_string(), "<card/>".to_string()).unwrap();
-        let proj = super::bsc_base_dir().join("projects").join(&key);
+        // A fresh project's hub is the draft hub (#904) — resolve, don't hardcode projects/.
+        let proj = super::project_dir(&key);
         assert!(proj.join("pipelines").join("vue").join("button.vue").exists());
 
         let mut files = super::read_project_files(key.clone(), "pipelines/vue".to_string());
@@ -2940,7 +3049,7 @@ mod tests {
         let bytes: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xFF, 0x10];
         let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
         super::write_project_file_bytes(key.clone(), ".intake/logo.png".to_string(), b64).unwrap();
-        let path = super::bsc_base_dir().join("projects").join(&key).join(".intake").join("logo.png");
+        let path = super::project_dir(&key).join(".intake").join("logo.png");
         assert!(path.exists());
         assert_eq!(std::fs::read(&path).unwrap(), bytes, "bytes round-trip exactly");
 

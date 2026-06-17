@@ -916,7 +916,7 @@ function mountState(s: AppStore, item: string, run: PipelineRun) {
   const tabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
   const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
   const key = `t${tabIdx}p0`;
-  const cwd = s.activeProjectName ? projectHubCwd(s.bscBaseDir, s.activeProjectName) : "";
+  const cwd = s.activeProjectName ? projectHubCwd(s.bscBaseDir, s.activeProjectName, !!s.activeProjectId) : "";
   const newTab: Tab = { id: newTabId(), name: tabName, layout: "1×1", state: "idle", runId };
   const tabs = existingIdx >= 0 ? s.tabs.map((tb, i) => (i === existingIdx ? newTab : tb)) : [...s.tabs, newTab];
   const disabledPanes = { ...s.disabledPanes };
@@ -1703,8 +1703,9 @@ export const useAppStore = create<AppStore>()(
             const key = `t${newTabIdx}p${i}`;
             if (i < count) {
               const fullName = repos[i];
-              // A real repo — launch claude in its clone, ensure it's enabled.
-              newPaneCwds[key]     = projectRepoCwd(s.bscBaseDir, projectName, fullName);
+              // A real repo — launch claude in its clone, ensure it's enabled. Draft projects
+              // live under draft/ (#904); a published project (has a board id) under projects/.
+              newPaneCwds[key]     = projectRepoCwd(s.bscBaseDir, projectName, fullName, !!s.activeProjectId);
               newPaneInitCmds[key] = "claude";
               tabPaneNames[i]      = fullName?.split("/")[1] ?? `pane-${i + 1}`;
               // The startup prompt is baked into the claude launch by the backend
@@ -1899,7 +1900,7 @@ export const useAppStore = create<AppStore>()(
                   // Director session at the project root — sees every repo + worktree.
                   // Prefer the Rust-resolved absolute hub path (#905) so the launch never
                   // depends on the async-loaded `bscBaseDir` mirror (empty/malformed → user root).
-                  newPaneCwds[key]     = paths?.hubPath || projectHubCwd(s.bscBaseDir, projectKey);
+                  newPaneCwds[key]     = paths?.hubPath || projectHubCwd(s.bscBaseDir, projectKey, !!s.activeProjectId);
                   newPaneInitCmds[key] = "claude";
                   newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
                   newPaneAllowedCommands[key] = projectCmds;

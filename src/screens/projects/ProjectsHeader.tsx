@@ -122,7 +122,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
             const isCloned  = clonedNames.includes(fullName);
             const isCloning = cloning.has(fullName);
             const err       = cloneErrors[fullName];
-            const localPath = projectRepoCwd(bscBaseDir, project.name, fullName);
+            const localPath = projectRepoCwd(bscBaseDir, project.name, fullName, !!project.id);
             return (
               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <span style={{ color: "var(--fg-muted)" }}>{fullName}</span>
@@ -172,7 +172,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
             const isCloned  = clonedNames.includes(fullName);
             const isCloning = cloning.has(fullName);
             const err       = cloneErrors[fullName];
-            const localPath = projectRepoCwd(bscBaseDir, project.name, fullName);
+            const localPath = projectRepoCwd(bscBaseDir, project.name, fullName, !!project.id);
             return (
               <div key={fullName} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ color: "var(--fg-muted)" }}>{fullName}</span>
