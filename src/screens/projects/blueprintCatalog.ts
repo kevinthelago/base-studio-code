@@ -64,24 +64,12 @@ export function defaultDisposition(key: string): string {
 // ── pipeline editor metadata (keyed by our PIPELINE_LIB ids) ──────────────────
 export interface PipelineMeta { glyph: string; h: number; gateable: boolean; defaultTrigger: PipelineTrigger }
 
+// Trimmed to the implemented pipelines (#897 Phase 4a) — the 14 no-op catalog entries were
+// removed from PIPELINE_LIB, so their editor metadata went with them.
 export const PIPELINE_META: Record<string, PipelineMeta> = {
   "render-preview":  { glyph: "preview",       h: 350, gateable: true,  defaultTrigger: "on completion" },
-  "file-intake":     { glyph: "cloud_download", h: 350, gateable: false, defaultTrigger: "manual" },
-  "lint-plan":       { glyph: "rule",          h: 25,  gateable: true,  defaultTrigger: "on artifact change" },
-  "generate-issues": { glyph: "checklist",     h: 70,  gateable: false, defaultTrigger: "on completion" },
   "grade-plan":      { glyph: "fact_check",    h: 70,  gateable: false, defaultTrigger: "on completion" },
-  "grade-rubric":    { glyph: "rule",          h: 145, gateable: true,  defaultTrigger: "on completion" },
-  "grade-llm":       { glyph: "fact_check",    h: 295, gateable: false, defaultTrigger: "manual" },
-  "scan-dead-code":  { glyph: "rule",          h: 25,  gateable: false, defaultTrigger: "manual" },
-  "sync-milestones": { glyph: "sync",          h: 70,  gateable: false, defaultTrigger: "on completion" },
-  "scope-streams":   { glyph: "lan",           h: 230, gateable: false, defaultTrigger: "on completion" },
-  "sync-skills":     { glyph: "extension",     h: 70,  gateable: false, defaultTrigger: "manual" },
-  "schema-check":    { glyph: "database",      h: 145, gateable: true,  defaultTrigger: "on artifact change" },
-  "contract-test":   { glyph: "fact_check",    h: 195, gateable: true,  defaultTrigger: "on completion" },
-  "push-figma":      { glyph: "design_services", h: 350, gateable: false, defaultTrigger: "on completion" },
-  "index-repos":     { glyph: "account_tree",  h: 230, gateable: false, defaultTrigger: "on section enter" },
-  "arm-schedule":    { glyph: "bolt",          h: 145, gateable: false, defaultTrigger: "on completion" },
-  "export-notion":   { glyph: "menu_book",     h: 70,  gateable: false, defaultTrigger: "on completion" },
+  "lint-plan":       { glyph: "rule",          h: 25,  gateable: true,  defaultTrigger: "on artifact change" },
 };
 
 export function pipelineMeta(id: string): PipelineMeta {

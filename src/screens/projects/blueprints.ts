@@ -46,24 +46,19 @@ export interface Pipeline extends PipelineDef {
   gate?: boolean;
 }
 
+// Only the pipelines with a real registered handler remain (#897 Phase 4a). The former
+// catalog also listed 14 no-op entries (generate-issues, sync-milestones, sync-skills,
+// scope-streams, index-repos, arm-schedule, file-intake, push-figma, export-notion,
+// scan-dead-code, schema-check, contract-test, grade-rubric, grade-llm) — they had no
+// handler and failed at runtime. Their intent now lives elsewhere: app-actions via
+// handlePublish + the section `output` disposition (issues/milestones/skill-index), fleet
+// profile gen, repo clone, the UI drag-drop, or — for the external tools — an attached MCP
+// server (the blueprint `mcp` field). grade-plan + lint-plan are retired next (Phase 4b:
+// grade → the plan-grader MCP server, lint → the stage gate); render-preview in 4c.
 export const PIPELINE_LIB: PipelineDef[] = [
   { id: "render-preview",  name: "Render preview",      desc: "Visualize screens as a 2D / 3D walkthrough", suits: ["ui"],          kind: "builtin"  },
-  { id: "file-intake",     name: "Drop files",          desc: "Drag in design or any files; the planner routes them to the right repo", suits: ["ui", "*"], kind: "builtin" },
-  { id: "push-figma",      name: "Push to Figma",       desc: "Export generated frames to a Figma file",    suits: ["ui"],          kind: "external" },
-  { id: "generate-issues", name: "Generate issues",     desc: "Turn phases into granular GitHub issues",    suits: ["structure"],   kind: "builtin"  },
   { id: "grade-plan",      name: "Grade plan",          desc: "Score agent-readiness and suggest fixes",    suits: ["structure"],   kind: "builtin"  },
-  { id: "grade-rubric",    name: "Grade section",       desc: "Score this section against a rubric (report card)", suits: ["*"],     kind: "builtin"  },
-  { id: "grade-llm",       name: "Claude review",       desc: "Ask Claude to grade this section against its rubric", suits: ["*"],   kind: "builtin"  },
-  { id: "scan-dead-code",  name: "Scan dead code",      desc: "Find unused code & deps (depcheck / ts-prune / cargo-machete)", suits: ["*"], kind: "builtin" },
-  { id: "sync-milestones", name: "Sync milestones",     desc: "Publish phases as GitHub milestones",        suits: ["structure"],   kind: "builtin"  },
   { id: "lint-plan",       name: "Lint plan",           desc: "Validate this stage's output for gaps",      suits: ["*"],           kind: "builtin"  },
-  { id: "scope-streams",   name: "Scope streams",       desc: "Derive least-privilege agent profiles",      suits: ["permissions"], kind: "builtin"  },
-  { id: "arm-schedule",    name: "Arm schedule",        desc: "Install a cron automation rule",             suits: ["automations"], kind: "builtin"  },
-  { id: "sync-skills",     name: "Sync skill library",  desc: "Upsert reusable skills into the library",    suits: ["skills"],      kind: "builtin"  },
-  { id: "index-repos",     name: "Clone & index repos", desc: "Clone linked repos and build a code index",  suits: ["repos"],       kind: "builtin"  },
-  { id: "export-notion",   name: "Export to Notion",    desc: "Mirror this stage's doc into a Notion page", suits: ["*"],           kind: "external" },
-  { id: "schema-check",    name: "Schema check",        desc: "Validate the data model for orphan relations & missing migrations", suits: ["schema"], kind: "builtin" },
-  { id: "contract-test",   name: "Contract test",       desc: "Run contract tests against the declared API surface",               suits: ["api"],    kind: "builtin" },
 ];
 
 // ── Substeps ─────────────────────────────────────────────────────────────────
@@ -314,7 +309,7 @@ CI gates that must pass before merge to develop. Write testing.md.
 Gate: a coverage strategy and CI gates are defined.`,
   },
   // Refactor & Cleanup blueprint (#626): find unused / dead / legacy code to remove.
-  // Informational (no gateRule) — the scan-dead-code pipeline + cleanup grade drive it.
+  // Informational (no gateRule) — the planner's findings + review drive it.
   cleanup: {
     name: "Dead & legacy code", glyph: "♻", gate: "findings triaged", deps: ["repos"],
     blurb: "Unused code, dead dependencies & legacy debt to remove.",
@@ -611,15 +606,15 @@ export function makeBlueprints(): Blueprint[] {
       id: "default", name: "Default", desc: "Balanced starting point", origin: "built-in", category: "greenfield", mode: "create",
       sections: [
         mkSection("context",     { pipelines: [["lint-plan", "on completion", true]] }),
-        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
+        mkSection("repos"),
         // Features before UI (#825): design the screens from the defined capabilities + author the Claude Design kickoff.
         mkSection("features"),
-        mkSection("ui",          { optional: true, pipelines: [["render-preview", "on artifact change", true], ["file-intake", "manual", true], ["push-figma", "on completion", true]] }),
-        mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", false]] }),
-        mkSection("permissions", { pipelines: [] }),
+        mkSection("ui",          { optional: true, pipelines: [["render-preview", "on artifact change", true]] }),
+        mkSection("structure",   { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("permissions"),
         mkSection("mcp",         { optional: true }),
-        mkSection("automations", { optional: true, pipelines: [["arm-schedule", "on completion", true]] }),
-        mkSection("skills",      { optional: true, pipelines: [["sync-skills", "manual", true]] }),
+        mkSection("automations", { optional: true }),
+        mkSection("skills",      { optional: true }),
       ],
     },
     {
@@ -628,8 +623,8 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("context"), mkSection("repos"),
         mkSection("features"),
         mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
-        mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
-        mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("structure", { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("testing"), mkSection("permissions"),
         mkSection("mcp", { optional: true }),
         mkSection("automations"), mkSection("skills"),
       ],
@@ -640,7 +635,7 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("context"),
         mkSection("features"),
         mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] }),
-        mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
+        mkSection("structure", { pipelines: [["grade-plan", "on completion", false]] }),
         mkSection("permissions"), mkSection("mcp", { optional: true }), mkSection("skills"),
       ],
     },
@@ -649,8 +644,8 @@ export function makeBlueprints(): Blueprint[] {
       sections: [
         mkSection("context"), mkSection("repos"),
         mkSection("features"),
-        mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", true]] }),
-        mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("structure", { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("testing"), mkSection("permissions"),
         mkSection("mcp", { optional: true }),
         mkSection("automations"),
       ],
@@ -663,8 +658,8 @@ export function makeBlueprints(): Blueprint[] {
         // No UI stage: an MCP server is headless (tools/resources over stdio/HTTP), so the plan
         // goes straight from features to structure (#825).
         mkSection("features"),
-        mkSection("structure", { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false], ["sync-milestones", "on completion", true]] }),
-        mkSection("testing"), mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("structure", { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("testing"), mkSection("permissions"),
         mkSection("automations"), mkSection("skills"),
       ],
     },
@@ -673,12 +668,12 @@ export function makeBlueprints(): Blueprint[] {
       origin: "built-in", icon: "♻", h: 25, category: "transform", mode: "operate",
       sections: [
         mkSection("context"),
-        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
-        mkSection("cleanup",     { pipelines: [["scan-dead-code", "manual", false], ["grade-rubric", "on completion", false]] }),
+        mkSection("repos"),
+        mkSection("cleanup"),
         mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
         // No `structure` stage: a refactor pass tracks work as cleanup/refactor units that
         // drive the fleet directly — it doesn't need a GitHub issues.json (#666).
-        mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("permissions"),
       ],
     },
     // ── transform blueprints (#645 slice 2): operate on existing repos ──
@@ -687,11 +682,11 @@ export function makeBlueprints(): Blueprint[] {
       origin: "built-in", icon: "⧉", h: 230, category: "transform", mode: "operate",
       sections: [
         mkSection("context"),
-        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
-        mkSection("boundaries",  { pipelines: [["grade-rubric", "on completion", false]] }),
-        mkSection("extraction",  { pipelines: [["contract-test", "on completion", true]] }),
-        mkSection("structure",   { pipelines: [["generate-issues", "on completion", true], ["grade-plan", "on completion", false]] }),
-        mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("repos"),
+        mkSection("boundaries"),
+        mkSection("extraction"),
+        mkSection("structure",   { pipelines: [["grade-plan", "on completion", false]] }),
+        mkSection("permissions"),
       ],
     },
     {
@@ -699,11 +694,11 @@ export function makeBlueprints(): Blueprint[] {
       origin: "built-in", icon: "⧈", h: 260, category: "transform", mode: "operate",
       sections: [
         mkSection("context"),
-        mkSection("repos",         { pipelines: [["index-repos", "on section enter", true]] }),
-        mkSection("consolidation", { pipelines: [["grade-rubric", "on completion", false]] }),
+        mkSection("repos"),
+        mkSection("consolidation"),
         mkSection("testing",       { pipelines: [["lint-plan", "on completion", true]] }),
-        mkSection("structure",     { pipelines: [["generate-issues", "on completion", true]] }),
-        mkSection("permissions",   { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("structure"),
+        mkSection("permissions"),
       ],
     },
     {
@@ -711,11 +706,11 @@ export function makeBlueprints(): Blueprint[] {
       origin: "built-in", icon: "⇄", h: 195, category: "transform", mode: "operate",
       sections: [
         mkSection("context"),
-        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
-        mkSection("migration",   { pipelines: [["grade-rubric", "on completion", false]] }),
+        mkSection("repos"),
+        mkSection("migration"),
         mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
-        mkSection("structure",   { pipelines: [["generate-issues", "on completion", true]] }),
-        mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("structure"),
+        mkSection("permissions"),
       ],
     },
     {
@@ -723,11 +718,11 @@ export function makeBlueprints(): Blueprint[] {
       origin: "built-in", icon: "⛨", h: 25, category: "harden", mode: "operate",
       sections: [
         mkSection("context"),
-        mkSection("repos",       { pipelines: [["index-repos", "on section enter", true]] }),
-        mkSection("hardening",   { pipelines: [["grade-rubric", "on completion", false]] }),
+        mkSection("repos"),
+        mkSection("hardening"),
         mkSection("testing",     { pipelines: [["lint-plan", "on completion", true]] }),
-        mkSection("structure",   { pipelines: [["generate-issues", "on completion", true]] }),
-        mkSection("permissions", { pipelines: [["scope-streams", "on completion", true]] }),
+        mkSection("structure"),
+        mkSection("permissions"),
       ],
     },
     // ── data blueprints (#782/#783): acquire data into a canonical Data Model ──
