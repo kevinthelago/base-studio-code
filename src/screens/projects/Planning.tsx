@@ -16,7 +16,7 @@ import {
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
   parseAllowCommands, stripAllowCommands,
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
-  buildSectionConfirmMessage,
+  buildSectionConfirmMessage, buildSectionSkipMessage,
 } from "./planningSession";
 import { parseCommandsFile } from "../../lib/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
@@ -49,7 +49,7 @@ import { buildProjectPaneData } from "./projectPaneData";
 // not a hardcoded stage list.
 import { derivePlanStageState, planStateToSignals, pendingStageConfirms } from "./planStageDerive";
 import { findPlanGaps } from "./lintPlan";
-import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, AUTHORING_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./blueprints";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, AUTHORING_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./blueprints";
 import { coerceBlueprint, blueprintToManifest } from "./blueprintShare";
 import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "./blueprintSkills";
 import { buildMcpLibrary } from "./blueprintMcp";
@@ -274,6 +274,7 @@ export function Planning({ visible }: { visible: boolean }) {
     projectLocalRepos,
     planSections, planConfirmedSections,
     planAuthoredBlueprint, importBlueprint, setAuthoredBlueprint,
+    planSkippedSections, skipPlanSection,
     planFleet,
     projectKeyAlias,
     pinnedContext,
@@ -400,6 +401,11 @@ export function Planning({ visible }: { visible: boolean }) {
   const confirmedSet  = useMemo(
     () => new Set(planConfirmedSections[effectiveProjectId] ?? []),
     [planConfirmedSections, effectiveProjectId]);
+  // Optional stages the user deliberately skipped (#921) — they resolve the stage's gate (so the
+  // flow advances) but render as "skipped", not "complete".
+  const skippedSet = useMemo(
+    () => new Set(planSkippedSections[effectiveProjectId] ?? []),
+    [planSkippedSections, effectiveProjectId]);
 
   const sections = useMemo<Section[]>(() => {
     const keys = new Set<string>(ANCHOR_KEYS);
@@ -712,9 +718,16 @@ export function Planning({ visible }: { visible: boolean }) {
   // Pickable libraries for the Capabilities stage's skill + MCP pickers.
   const authorSkillLib = useMemo(() => buildSkillLibrary(skillDefs, kbBlocks), [skillDefs, kbBlocks]);
   const authorMcpLib = useMemo(() => buildMcpLibrary(extensions), [extensions]);
+  // User-skipped optional stages (#921) surface as `skipped:<key>` signals so the data-driven
+  // gate model (`sectionDone`) treats them as resolved.
+  const skipSignals = useMemo(() => {
+    const out: Record<string, boolean> = {};
+    for (const k of skippedSet) out[skippedSignal(k)] = true;
+    return out;
+  }, [skippedSet]);
   const signals = useMemo(
-    () => ({ ...planStateToSignals(stageState), hasPlanGaps, ...(isAuthoring ? authoringSig : {}) }),
-    [stageState, hasPlanGaps, isAuthoring, authoringSig]);
+    () => ({ ...planStateToSignals(stageState), hasPlanGaps, ...(isAuthoring ? authoringSig : {}), ...skipSignals }),
+    [stageState, hasPlanGaps, isAuthoring, authoringSig, skipSignals]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
   // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user
@@ -732,7 +745,18 @@ export function Planning({ visible }: { visible: boolean }) {
   const pendingConfirm = useMemo(
     () => pendingStageConfirms(phases[focusActiveIdx]?.key, sections),
     [phases, focusActiveIdx, sections]);
-  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady);
+  // The active phase is an enabled OPTIONAL stage the user hasn't decided yet — so the advance bar
+  // offers a "Skip stage" control beside the primary action (#921). `phasesFrom` reports a not-yet
+  // -decided optional stage at the frontier as "active"; a decided (done/skipped) one isn't.
+  const activeSkippable = phases[focusActiveIdx]?.optional === true && phases[focusActiveIdx]?.status === "active";
+  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady, activeSkippable);
+  const onSkipStage = useCallback(() => {
+    const phase = phases[focusActiveIdx];
+    if (!phase) return;
+    skipPlanSection(effectiveProjectId, phase.key);
+    // Tell the live planner to drop the skipped stage and move on (mirrors the approve flow).
+    invoke("pty_write", { paneId, data: buildSectionSkipMessage(phase.name) + "\r" }).catch(console.error);
+  }, [phases, focusActiveIdx, skipPlanSection, effectiveProjectId, paneId]);
   // Let "approve & continue" light up as soon as there are drafted sections to confirm, even
   // before the gate flips — clicking it performs that confirmation (see onPrimary below).
   const focusFooter = footerRaw.kind === "approve-continue" && !footerRaw.enabled && pendingConfirm.length > 0
@@ -2301,6 +2325,9 @@ _Auto-generated by base-studio-code planner._`,
                 published: !!activeProjectId,
                 // An authoring project publishes a gist, not a GitHub board (#923).
                 publishLabel: isAuthoring ? "⎙ Publish blueprint" : undefined,
+                // The user deliberately skips the active optional stage (#921); the gate resolves
+                // and the selection re-follows to the next live phase.
+                onSkip: () => { onSkipStage(); setFocusSel(null); },
                 onBack: () => setFocusSel(clampIndex(focusSelectedIdx - 1, phases.length)),
                 onPrimary: () => {
                   if (focusFooter.kind === "publish") { void handlePublish(); return; }
