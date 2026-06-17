@@ -134,6 +134,23 @@ export function BlueprintsPage() {
     toast(`"${blueprints.find((b) => b.id === id)?.name ?? id}" selected — it'll seed new projects`, true);
   }
 
+  // Author a NEW blueprint in the project planner (#923): seed the "Blueprint Author" lifecycle and
+  // open the planner. The planner designs the blueprint and publishes it to a gist (no fleet/triage).
+  function authorBlueprint() {
+    const st = useAppStore.getState();
+    st.setActiveBlueprint("blueprint-author");
+    // Unique session key so concurrent authoring sessions never collide (the planner names the
+    // actual blueprint; this key is just the design session's workspace).
+    const key = `blueprint-${Date.now().toString(36)}`;
+    st.setPlanningTitle("New blueprint");
+    st.setPlanningContext("Design a reusable blueprint to publish as a gist.", "");
+    st.setActiveProjectMeta(null, "", "", 0);
+    st.addDraftProject(key, { title: "New blueprint", pitch: "Design a reusable blueprint.", createdAt: Date.now() });
+    st.setPlanningSession(key);
+    st.setProjectsPageMode("projects");
+    st.setProjectsView("planning");
+  }
+
   // ── create / duplicate / delete ──
   function newBlueprint(name: string, mode: "blank" | "default") {
     const id = addBlueprint();
@@ -299,7 +316,7 @@ export function BlueprintsPage() {
           <LibraryView blueprints={blueprints} onOpen={openBp} onMenu={onCardMenu}
             activeId={activeBlueprintId}
             onUse={selectBlueprint}
-            onNew={() => setModal({ type: "new" })} onImport={() => setView("catalog")} />
+            onNew={() => setModal({ type: "new" })} onImport={() => setView("catalog")} onAuthor={authorBlueprint} />
         </div>
       )}
 
