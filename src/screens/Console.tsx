@@ -12,7 +12,7 @@ import { resetLaunchGate } from "../lib/launchGate";
 import { shouldAdvanceOnReply } from "../lib/consoleFocus";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import { useCoordinator } from "../lib/useCoordinator";
-import { usePipelineConductor } from "../lib/usePipelineConductor";
+import { useWorkflowConductor } from "../lib/useWorkflowConductor";
 import { useDirectorPump } from "../lib/useDirectorPump";
 import { useIdleReaper } from "../lib/useIdleReaper";
 import { useCiWatcher } from "../lib/useCiWatcher";
@@ -160,7 +160,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   useCoordinator();
   useIdleReaper(); // #849 — reap idle background PTYs to bound memory
   // #220: the pipeline conductor — auto-advances pipeline runs as stages report.
-  usePipelineConductor();
+  useWorkflowConductor();
   // Subscribe per-slice instead of `useAppStore()`-the-whole-state, so a mutation
   // anywhere else in the store (kbBlocks, GitHub cache, settings, planning data)
   // no longer re-renders the entire console grid — only changes to slices this

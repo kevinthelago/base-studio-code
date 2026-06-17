@@ -1,4 +1,4 @@
-// Pipeline event driver (#220): bridges the #199 coordination events to the conductor.
+// Workflow event driver (#220): bridges the #199 coordination events to the conductor.
 // A stage session reports its outcome by emitting a #199 event against its stage ref --
 // `bsc-landed 'contract:pipe:<item>::<stage>'` on success, `bsc-failed …` on failure --
 // and this maps that event to a `conduct(outcome)` call on the matching run. Pure (no
@@ -6,8 +6,8 @@
 // events and executes the returned StageLaunch. This is the last piece of #220's logic;
 // the live wiring (launch a StageLaunch as a role-scoped pane, persist the registry, the
 // lane view) sits on top.
-import type { Pipeline } from "./pipeline";
-import { type PipelineRun, type ConductResult, type StageLaunch, startRun, conduct } from "./conductor";
+import type { Workflow } from "./workflow";
+import { type WorkflowRun, type ConductResult, type StageLaunch, startRun, conduct } from "./conductor";
 import type { CoordEvent } from "./coordination";
 
 /** The `contract:` ref name a stage reports against. `::` separates item from stage so an
@@ -29,22 +29,22 @@ export function parseStageRefName(name: string): { item: string; stage: string }
   return item && stage ? { item, stage } : null;
 }
 
-/** In-flight pipeline runs, keyed by item. */
-export interface PipelineRegistry {
-  runs: Record<string, PipelineRun>;
+/** In-flight workflow runs, keyed by item. */
+export interface WorkflowRegistry {
+  runs: Record<string, WorkflowRun>;
 }
 
-export function emptyRegistry(): PipelineRegistry {
+export function emptyRegistry(): WorkflowRegistry {
   return { runs: {} };
 }
 
-/** Start a pipeline for `item`: register the run and return its first stage launch. */
-export function startPipeline(
-  reg: PipelineRegistry,
-  pipeline: Pipeline,
+/** Start a workflow for `item`: register the run and return its first stage launch. */
+export function startWorkflow(
+  reg: WorkflowRegistry,
+  workflow: Workflow,
   item: string,
-): { registry: PipelineRegistry; launch: StageLaunch } {
-  const { run, launch } = startRun(pipeline, item);
+): { registry: WorkflowRegistry; launch: StageLaunch } {
+  const { run, launch } = startRun(workflow, item);
   return { registry: { runs: { ...reg.runs, [item]: run } }, launch };
 }
 
@@ -55,9 +55,9 @@ export function startPipeline(
  * registry and, when an advance happened, the `ConductResult` (launch/done/escalated).
  */
 export function driveOnEvent(
-  reg: PipelineRegistry,
+  reg: WorkflowRegistry,
   ev: CoordEvent,
-): { registry: PipelineRegistry; result?: ConductResult } {
+): { registry: WorkflowRegistry; result?: ConductResult } {
   if (ev.type !== "landed" && ev.type !== "failed") return { registry: reg };
   if (ev.ref.kind !== "contract") return { registry: reg };
   const parsed = parseStageRefName(ev.ref.name);
@@ -76,7 +76,7 @@ export function driveOnEvent(
 // -- Stage prompt (#220 live wiring) --------------------------------------------
 // The agent-facing instruction a stage session is launched with: its role, what to do,
 // the prior stage's output (seed), and -- critically -- how to report its outcome so the
-// conductor advances the pipeline (emit a #199 event against its stage ref).
+// conductor advances the workflow (emit a #199 event against its stage ref).
 
 const STAGE_GUIDANCE: Record<string, string> = {
   implement: "Make the change for this work item within your ownership boundary, then commit. Do not merge.",
@@ -95,7 +95,7 @@ export function stagePrompt(launch: StageLaunch, item: string): string {
   const ref = `contract:${stageRefName(item, launch.stage)}`;
   const guidance = STAGE_GUIDANCE[launch.stage] ?? `Carry out the "${launch.stage}" stage for this work item.`;
   const lines = [
-    `You are the **${launch.stage}** stage of a pipeline for work item ${item}, running as the \`${launch.role}\` role (least privilege: github=${launch.capability.github}, git=${launch.capability.git}, code=${launch.capability.code}).`,
+    `You are the **${launch.stage}** stage of a workflow for work item ${item}, running as the \`${launch.role}\` role (least privilege: github=${launch.capability.github}, git=${launch.capability.git}, code=${launch.capability.code}).`,
     "",
     guidance,
   ];
@@ -104,7 +104,7 @@ export function stagePrompt(launch: StageLaunch, item: string): string {
   }
   lines.push(
     "",
-    "When you finish, signal the result so the conductor advances the pipeline:",
+    "When you finish, signal the result so the conductor advances the workflow:",
     `- success: run  bsc-landed '${ref}'`,
     `- failure: run  echo "<one-line reason>" | bsc-failed '${ref}'`,
   );

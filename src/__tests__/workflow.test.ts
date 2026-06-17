@@ -1,19 +1,19 @@
 import { describe, it, expect } from "vitest";
 import {
-  type Pipeline, type ItemState, type Outcome,
-  startItem, advance, stageCapability, PIPELINE_PRESETS, DONE, ESCALATE,
-} from "../lib/pipeline";
+  type Workflow, type ItemState, type Outcome,
+  startItem, advance, stageCapability, WORKFLOW_PRESETS, DONE, ESCALATE,
+} from "../lib/workflow";
 
-const P = PIPELINE_PRESETS["implement-test-review-integrate"];
+const P = WORKFLOW_PRESETS["implement-test-review-integrate"];
 
-/** Run a sequence of outcomes from the start of pipeline `p`. */
-function run(p: Pipeline, outcomes: Outcome[], item = "#1"): ItemState {
+/** Run a sequence of outcomes from the start of workflow `p`. */
+function run(p: Workflow, outcomes: Outcome[], item = "#1"): ItemState {
   let st = startItem(p, item);
   for (const o of outcomes) st = advance(p, st, o);
   return st;
 }
 
-describe("pipeline — happy path", () => {
+describe("workflow — happy path", () => {
   it("flows implement → build-test → review → integrate → done", () => {
     const st = run(P, ["success", "success", "success", "success"]);
     expect(st.status).toBe("done");
@@ -27,7 +27,7 @@ describe("pipeline — happy path", () => {
   });
 });
 
-describe("pipeline — failure loops are bounded", () => {
+describe("workflow — failure loops are bounded", () => {
   it("build-test ↔ fix loops then escalates after the retry limit", () => {
     // implement✓ → build-test✗→fix✓→build-test✗→fix✓→build-test✗→fix✓→(build-test #4 ⇒ escalate)
     const st = run(P, ["success", "failure", "success", "failure", "success", "failure", "success"]);
@@ -43,7 +43,7 @@ describe("pipeline — failure loops are bounded", () => {
   });
 });
 
-describe("pipeline — review requests changes (loop back)", () => {
+describe("workflow — review requests changes (loop back)", () => {
   it("review✗ sends it back to implement, then completes", () => {
     // implement✓→build-test✓→review✗→implement(2)✓→build-test✓→review✓→integrate✓→done
     const st = run(P, ["success", "success", "failure", "success", "success", "success", "success"]);
@@ -53,7 +53,7 @@ describe("pipeline — review requests changes (loop back)", () => {
   });
 });
 
-describe("pipeline — terminal + robustness", () => {
+describe("workflow — terminal + robustness", () => {
   it("advancing a finished item is a no-op (idempotent)", () => {
     const done = run(P, ["success", "success", "success", "success"]);
     expect(advance(P, done, "success")).toEqual(done);
@@ -61,7 +61,7 @@ describe("pipeline — terminal + robustness", () => {
   });
 
   it("escalates on an unknown transition target", () => {
-    const bad: Pipeline = {
+    const bad: Workflow = {
       name: "bad", start: "a",
       stages: { a: { name: "a", role: "worker", onSuccess: "ghost", onFailure: ESCALATE, retryLimit: 1 } },
     };
@@ -71,7 +71,7 @@ describe("pipeline — terminal + robustness", () => {
   });
 
   it("every preset starts at a defined stage and only targets known stages / terminals", () => {
-    for (const p of Object.values(PIPELINE_PRESETS)) {
+    for (const p of Object.values(WORKFLOW_PRESETS)) {
       expect(p.stages[p.start]).toBeDefined();
       for (const s of Object.values(p.stages)) {
         for (const t of [s.onSuccess, s.onFailure]) {
@@ -82,8 +82,8 @@ describe("pipeline — terminal + robustness", () => {
   });
 });
 
-describe("pipeline — stage capabilities (composes with #219)", () => {
-  const stages = PIPELINE_PRESETS["implement-test-review-integrate"].stages;
+describe("workflow — stage capabilities (composes with #219)", () => {
+  const stages = WORKFLOW_PRESETS["implement-test-review-integrate"].stages;
 
   it("maps each stage to its role-scoped capability", () => {
     expect(stageCapability(stages.implement).code).toBe("write");    // worker edits
