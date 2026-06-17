@@ -31,6 +31,13 @@ describe("buildWorkerScope (#844)", () => {
     expect(md.length).toBeLessThan(1200);
   });
 
+  it("tells the worker the director closes issues — not to run gh issue close (#906)", () => {
+    const md = buildWorkerScope(stream());
+    expect(md).toContain("director's job");
+    expect(md).toContain("gh issue close");
+    expect(md).toMatch(/let the director close it/i);
+  });
+
   it("renders explicit placeholders for empty fields rather than leaving them blank", () => {
     const md = buildWorkerScope(stream({ owns: [], issues: [], dependsOn: [] }));
     expect(md).toContain("none assigned");
