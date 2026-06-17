@@ -811,7 +811,8 @@ describe("repository resolution", () => {
 
 describe("triageStartProject", () => {
   it("launches a pane per repo (cwd under projects/<key>) and disables the empty grid cells", () => {
-    useAppStore.setState({ bscBaseDir: "/base" });
+    // A published project (has a board id) → its hub lives under projects/ (#904).
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub" });
     const before = useAppStore.getState().tabs.length;
     // 5 repos → 3×2 grid = 6 cells, so the 6th cell (index 5) is empty.
     const repos = ["o/a", "o/b", "o/c", "o/d", "o/e"];
@@ -1090,7 +1091,8 @@ describe("agent fleet store", () => {
   });
 
   it("fleetStartProject opens a build tab with the director and worker panes", () => {
-    useAppStore.setState({ bscBaseDir: "/base" });
+    // A published project (has a board id) → director hub lives under projects/ (#904).
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub" });
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
     const idx = st.findFleetTabIdx("proj-key"); // found by stable projectKey, not name (#457)
