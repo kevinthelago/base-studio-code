@@ -28,7 +28,7 @@ export function planActions(text: string, sections: BlueprintSection[]): Assista
   if (/secur|threat|audit|secret/.test(t)) add("security");
   if (/test|coverage|qa/.test(t)) add("testing", [["lint-plan", true]]);
   if (/observ|logging|metric|monitor|trace|tracing/.test(t)) add("observability");
-  if (/contract|api|endpoint/.test(t)) { add("schema", [["schema-check", true]]); add("api", [["contract-test", true]]); }
+  if (/contract|api|endpoint/.test(t)) { add("schema"); add("api"); }
   if (/preview|ui|screen|design|frontend/.test(t)) {
     if (!have.has("ui")) add("ui", [["render-preview", true]]);
     else actions.push({ op: "gatePipe", kind: "ui", pipeKey: "render-preview" });
