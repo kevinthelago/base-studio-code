@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
-  stageRefName, parseStageRefName, emptyRegistry, startPipeline, driveOnEvent, stagePrompt,
-  type PipelineRegistry,
-} from "../lib/pipelineDriver";
-import { PIPELINE_PRESETS } from "../lib/pipeline";
+  stageRefName, parseStageRefName, emptyRegistry, startWorkflow, driveOnEvent, stagePrompt,
+  type WorkflowRegistry,
+} from "../lib/workflowDriver";
+import { WORKFLOW_PRESETS } from "../lib/workflow";
 import type { CoordEvent } from "../lib/coordination";
 
-const P = PIPELINE_PRESETS["implement-test-review-integrate"];
+const P = WORKFLOW_PRESETS["implement-test-review-integrate"];
 
-/** A #199 landed/failed event for a pipeline stage. */
+/** A #199 landed/failed event for a workflow stage. */
 function ev(kind: "landed" | "failed", item: string, stage: string): CoordEvent {
   return { type: kind, ref: { kind: "contract", name: stageRefName(item, stage) }, at: 0 } as CoordEvent;
 }
@@ -22,8 +22,8 @@ describe("stage ref encoding", () => {
 });
 
 describe("driveOnEvent", () => {
-  function started(): PipelineRegistry {
-    return startPipeline(emptyRegistry(), P, "#1").registry;
+  function started(): WorkflowRegistry {
+    return startWorkflow(emptyRegistry(), P, "#1").registry;
   }
 
   it("a landed event for the current stage advances the run + returns the next launch", () => {
@@ -60,7 +60,7 @@ describe("driveOnEvent", () => {
 
 describe("stagePrompt", () => {
   it("names the stage/role and the exact bsc-landed/bsc-failed signal commands", () => {
-    const { launch } = startPipeline(emptyRegistry(), P, "#1");
+    const { launch } = startWorkflow(emptyRegistry(), P, "#1");
     const p = stagePrompt(launch, "#1");
     expect(p).toContain("**implement** stage");
     expect(p).toContain("`worker` role");
@@ -79,7 +79,7 @@ describe("stagePrompt", () => {
 
 describe("driveOnEvent — failure seed", () => {
   it("threads the failed event's reason into the next stage as its seed", () => {
-    let reg = startPipeline(emptyRegistry(), P, "#1").registry;
+    let reg = startWorkflow(emptyRegistry(), P, "#1").registry;
     reg = driveOnEvent(reg, ev("landed", "#1", "implement")).registry; // → build-test
     const failed: CoordEvent = { type: "failed", ref: { kind: "contract", name: stageRefName("#1", "build-test") }, reason: "3 tests red", at: 0 };
     const { result } = driveOnEvent(reg, failed);

@@ -1,4 +1,4 @@
-// Session pipelines (#220): the pure stage state machine that chains role-scoped sessions
+// Session workflows (#220): the pure stage state machine that chains role-scoped sessions
 // through a work item's lifecycle (implement -> build&test -> review -> integrate) with
 // bounded failure loops. The conductor advances an item by a stage outcome; the transport
 // that parks/wakes a session between stages is #199. This module is pure (no PTY/store) so
@@ -7,16 +7,16 @@ import { type SessionRole, type RoleCapability, roleCapability } from "./session
 
 /** The role a stage runs as. The #220 stage roles (tester/reviewer/conductor) now live
  *  in #219's SessionRole + capability matrix, so a stage maps straight to a capability. */
-export type PipelineRole = SessionRole;
+export type WorkflowRole = SessionRole;
 
 /** A transition target: another stage's name, or one of these terminals. */
 export const DONE = "done";
 export const ESCALATE = "escalate";
 export type Transition = string;
 
-export interface PipelineStage {
+export interface WorkflowStage {
   name: string;
-  role: PipelineRole;
+  role: WorkflowRole;
   /** Where to go when the stage succeeds (a stage name, or DONE/ESCALATE). */
   onSuccess: Transition;
   /** Where to go when it fails. */
@@ -25,10 +25,10 @@ export interface PipelineStage {
   retryLimit: number;
 }
 
-export interface Pipeline {
+export interface Workflow {
   name: string;
   start: string;
-  stages: Record<string, PipelineStage>;
+  stages: Record<string, WorkflowStage>;
 }
 
 export type ItemStatus = "active" | "done" | "escalated";
@@ -47,8 +47,8 @@ export interface ItemState {
   escalation?: string;
 }
 
-/** Begin an item at the pipeline's start stage. */
-export function startItem(p: Pipeline, item: string): ItemState {
+/** Begin an item at the workflow's start stage. */
+export function startItem(p: Workflow, item: string): ItemState {
   return { item, stage: p.start, status: "active", attempts: { [p.start]: 1 }, history: [] };
 }
 
@@ -62,7 +62,7 @@ function escalate(st: ItemState, history: ItemState["history"], why: string): It
  * or because entering the target would exceed its retryLimit (this is what bounds the
  * test<->fix loop). Terminal states are returned unchanged (idempotent).
  */
-export function advance(p: Pipeline, st: ItemState, outcome: Outcome): ItemState {
+export function advance(p: Workflow, st: ItemState, outcome: Outcome): ItemState {
   if (st.status !== "active" || st.stage === null) return st;
   const stage = p.stages[st.stage];
   const history = [...st.history, { stage: st.stage, outcome }];
@@ -83,15 +83,15 @@ export function advance(p: Pipeline, st: ItemState, outcome: Outcome): ItemState
 }
 
 /** The #219 capability a stage runs under (least-privilege per role) -- this is how a
- *  pipeline stage composes with the role gate: the conductor launches each stage in a
+ *  workflow stage composes with the role gate: the conductor launches each stage in a
  *  session scoped to `stageCapability(stage)`. */
-export function stageCapability(stage: PipelineStage): RoleCapability {
+export function stageCapability(stage: WorkflowStage): RoleCapability {
   return roleCapability(stage.role);
 }
 
 // -- Presets (start linear + the test-fail loop) --------------------------------
 
-export const PIPELINE_PRESETS: Record<string, Pipeline> = {
+export const WORKFLOW_PRESETS: Record<string, Workflow> = {
   "implement-test-review-integrate": {
     name: "implement -> test -> review -> integrate",
     start: "implement",

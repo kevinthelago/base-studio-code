@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { startRun, conduct, currentLaunch } from "../lib/conductor";
-import { PIPELINE_PRESETS } from "../lib/pipeline";
+import { WORKFLOW_PRESETS } from "../lib/workflow";
 
-const P = PIPELINE_PRESETS["implement-test-review-integrate"];
+const P = WORKFLOW_PRESETS["implement-test-review-integrate"];
 
 describe("conductor", () => {
   it("starts the item at implement with a worker (code-write) session", () => {
