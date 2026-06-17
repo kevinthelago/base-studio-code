@@ -230,7 +230,7 @@ export function ProjectsList() {
   const [draftError, setDraftError] = useState<string | null>(null);
   // On-disk local projects (#…) — the durable source of truth for unpublished work, since the
   // store's draft map drifts out of sync with the `projects/` dir.
-  const [localProjects, setLocalProjects] = useState<{ key: string; title: string; hasPlan: boolean; updatedAt: number }[]>([]);
+  const [localProjects, setLocalProjects] = useState<{ key: string; title: string; hasPlan: boolean; updatedAt: number; published: boolean }[]>([]);
   // Live fleet (for the per-project "agents running" pill).
   const { workers } = useFleetLive();
 
@@ -260,14 +260,43 @@ export function ProjectsList() {
 
   // Enumerate on-disk local projects whenever the tab opens, so unpublished local work always
   // shows even when it isn't in the store's draft map or on GitHub (#…).
-  useEffect(() => {
-    if (activeScreen !== "projects") return;
-    invoke<{ key: string; title: string; hasPlan: boolean; updatedAt: number }[]>("list_local_projects")
+  const refreshLocalProjects = useCallback(() => {
+    return invoke<{ key: string; title: string; hasPlan: boolean; updatedAt: number; published: boolean }[]>("list_local_projects")
       // Coerce to an array: a null/garbage return would make `for (const lp of localProjects)`
       // non-iterable and throw during render (#874).
-      .then((list) => setLocalProjects(Array.isArray(list) ? list : []))
-      .catch(() => setLocalProjects([]));
-  }, [activeScreen]);
+      .then((list) => { const arr = Array.isArray(list) ? list : []; setLocalProjects(arr); return arr; })
+      .catch(() => { setLocalProjects([]); return []; });
+  }, []);
+  useEffect(() => {
+    if (activeScreen !== "projects") return;
+    void refreshLocalProjects();
+  }, [activeScreen, refreshLocalProjects]);
+
+  // One-time migration (#904): relocate pre-existing UNPUBLISHED hubs out of projects/ into draft/.
+  // A hub still under projects/ that is neither a GitHub board nor an aliased published project is
+  // an unpublished draft sitting in the old location — demote it. Best-effort + once per session:
+  // a hub open in a console session can't be moved (the rename fails, caught) and is retried next
+  // visit; project_dir resolves either location, so nothing breaks while a move is pending. Gated on
+  // a completed GitHub sync (`lastSync`) so an unloaded list can't make everything look unpublished.
+  const migratedRef = useRef(false);
+  useEffect(() => {
+    if (activeScreen !== "projects" || lastSync === null || migratedRef.current) return;
+    const publishedTitles = new Set(projects.map(p => p.title.toLowerCase()));
+    const stranded = localProjects.filter(lp =>
+      lp.published &&
+      !publishedTitles.has(lp.title.toLowerCase()) &&
+      !isKnownPublishedKey(lp.key, projectKeyAlias),
+    );
+    if (stranded.length === 0) { migratedRef.current = true; return; }
+    migratedRef.current = true;
+    (async () => {
+      for (const lp of stranded) {
+        await invoke("demote_project", { projectKey: lp.key })
+          .catch((e) => console.warn(`demote ${lp.key} → draft/ failed (may be open in a session):`, e));
+      }
+      await refreshLocalProjects();
+    })();
+  }, [activeScreen, lastSync, localProjects, projects, projectKeyAlias, refreshLocalProjects]);
 
   // Reconcile legacy board node ids → on-disk folder keys (#…). The alias was never populated, so
   // a project opened from the board keyed its store state under the node id, splitting it from the

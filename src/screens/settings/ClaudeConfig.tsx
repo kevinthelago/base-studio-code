@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import type { ConfigProfile } from "../../store";
-import { projectRepoCwd } from "../../lib/projectPaths";
+import { projectRepoCwd, isKnownPublishedKey } from "../../lib/projectPaths";
 
 const TOOL_PRESETS: Array<{ label: string; allow: string[]; deny: string[] }> = [
   { label: "read-only",  allow: ["Read", "Glob", "Grep"],                        deny: ["Write", "Edit", "MultiEdit", "Bash", "WebFetch", "WebSearch"] },
@@ -63,7 +63,7 @@ function ChipInput({
 
 export function ClaudeConfigSettings() {
   const {
-    projectLocalRepos, bscBaseDir, kbBlocks,
+    projectLocalRepos, bscBaseDir, kbBlocks, projectKeyAlias,
     configProfiles, addConfigProfile, updateConfigProfile, removeConfigProfile,
   } = useAppStore();
 
@@ -73,15 +73,18 @@ export function ClaudeConfigSettings() {
   const allRepos = useMemo(() => {
     const seen = new Map<string, string>(); // full_name → local_path (first seen wins)
     for (const [projectKey, fullNames] of Object.entries(projectLocalRepos)) {
+      // Published hubs live under projects/, drafts under draft/ (#904). The key may be a board
+      // node id (a key in the alias) or a folder key (a value) — either means published.
+      const published = projectKey in projectKeyAlias || isKnownPublishedKey(projectKey, projectKeyAlias);
       for (const fullName of fullNames) {
-        if (!seen.has(fullName)) seen.set(fullName, projectRepoCwd(bscBaseDir, projectKey, fullName));
+        if (!seen.has(fullName)) seen.set(fullName, projectRepoCwd(bscBaseDir, projectKey, fullName, published));
       }
     }
     return Array.from(seen.entries()).map(([fullName, local_path]) => ({
       full_name: fullName,
       local_path,
     }));
-  }, [projectLocalRepos, bscBaseDir]);
+  }, [projectLocalRepos, bscBaseDir, projectKeyAlias]);
 
   // Editor state
   const [target, setTarget]                 = useState("global");

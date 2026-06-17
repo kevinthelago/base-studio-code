@@ -39,10 +39,11 @@ export function mcpInstallDir(baseDir: string, name: string): string {
  * The OS separator is inferred from `baseDir` (backslash on Windows, slash
  * elsewhere). Returns an empty string when `baseDir` is empty.
  */
-export function projectRepoCwd(baseDir: string, projectName: string, fullName: string): string {
+export function projectRepoCwd(baseDir: string, projectName: string, fullName: string, published = true): string {
   if (!baseDir) return "";
   const sep = baseDir.includes("\\") ? "\\" : "/";
-  return [baseDir, "projects", sanitizeProjectKey(projectName), repoShortName(fullName)].join(sep);
+  // Published hubs live under projects/, unpublished drafts under draft/ (#904).
+  return [baseDir, published ? "projects" : "draft", sanitizeProjectKey(projectName), repoShortName(fullName)].join(sep);
 }
 
 /**
@@ -51,10 +52,11 @@ export function projectRepoCwd(baseDir: string, projectName: string, fullName: s
  * session runs here so it can see all repos as subdirectories. Mirrors the Rust
  * `project_dir`. Returns an empty string when `baseDir` is empty.
  */
-export function projectHubCwd(baseDir: string, projectKey: string): string {
+export function projectHubCwd(baseDir: string, projectKey: string, published = true): string {
   if (!baseDir) return "";
   const sep = baseDir.includes("\\") ? "\\" : "/";
-  return [baseDir, "projects", sanitizeProjectKey(projectKey)].join(sep);
+  // Published hubs live under projects/, unpublished drafts under draft/ (#904).
+  return [baseDir, published ? "projects" : "draft", sanitizeProjectKey(projectKey)].join(sep);
 }
 
 /** Branch/dir slug for a fleet agent — keeps only `[A-Za-z0-9._-]`. Mirrors the

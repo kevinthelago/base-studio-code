@@ -1700,6 +1700,11 @@ export function Planning({ visible }: { visible: boolean }) {
             // opening it from the board later resolves to the SAME on-disk hub instead of keying
             // fresh state under the node id (the split that scattered repos/plan across two keys).
             useAppStore.getState().setProjectKeyAlias(pv.id, effectiveProjectId);
+            // Promote the hub draft/<key> → projects/<key> now that it's published (#904).
+            // Best-effort: on Windows a rename fails while a session holds the dir as its cwd —
+            // the Projects-page reconciliation retries when it's free, and project_dir resolves
+            // either location meanwhile, so nothing breaks.
+            invoke("promote_project", { projectKey: effectiveProjectId }).catch((e) => console.warn("promote_project failed (will retry on Projects page):", e));
             upd(id, { status: "created", detail: `#${pv.number}`, url: pv.url });
           }
           // Link every repo to the board (idempotent server-side).
