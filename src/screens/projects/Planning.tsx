@@ -48,7 +48,6 @@ import { buildProjectPaneData } from "./projectPaneData";
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
 import { derivePlanStageState, planStateToSignals, pendingStageConfirms } from "./planStageDerive";
-import { isGateBlocked } from "./pipelineRuntime";
 import { mkSection, planSectionsComplete, type BlueprintSection } from "./blueprints";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, sectionForPhase } from "./focusedPlan";
 import { featureSectionsToIssues } from "./planFeatures";
@@ -273,7 +272,7 @@ export function Planning({ visible }: { visible: boolean }) {
     projectKeyAlias,
     pinnedContext,
     blueprints, activeBlueprintId, planStageConfig,
-    uiScreens, uiApproved, planAutomations, stagePipelineRuns,
+    uiScreens, uiApproved, planAutomations,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
     togglePinnedContext,
     addProjectRepo, fleetStartProject,
@@ -653,13 +652,6 @@ export function Planning({ visible }: { visible: boolean }) {
     return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
   }, [blueprints, activeBlueprintId, stageConfig]);
   const signals = useMemo(() => planStateToSignals(stageState), [stageState]);
-  // Sections blocked by an unpassed gate pipeline (#532), straight from the blueprint.
-  const blockedStages = useMemo(() => {
-    const runs = stagePipelineRuns[effectiveProjectId] ?? {};
-    const set = new Set<string>();
-    for (const sec of planSecs) if (isGateBlocked(sec.pipelines, runs)) set.add(sec.key);
-    return set;
-  }, [planSecs, stagePipelineRuns, effectiveProjectId]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
   // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user
@@ -684,7 +676,7 @@ export function Planning({ visible }: { visible: boolean }) {
     ? { ...footerRaw, enabled: true }
     : footerRaw;
   const focusSelPhase = phases[focusSelectedIdx];
-  const focusPill = focusSelPhase ? gatePill(focusSelPhase, blockedStages.has(focusSelPhase.key)) : "wait";
+  const focusPill = focusSelPhase ? gatePill(focusSelPhase) : "wait";
 
   const [restarting, setRestarting] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false); // clear-plan confirmation modal (#…)

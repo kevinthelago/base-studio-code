@@ -1,10 +1,8 @@
 // Blueprints-page registry layer (#609) — the editor's palette metadata, ported from
 // the design (design/base-studio-code-blueprints/js/data.jsx) and reconciled with our
-// runtime model: stage keys match ours (`ui`, not the design's `ux`), and pipeline
-// metadata is keyed by our canonical PIPELINE_LIB ids. Pure; the editor reads this for
-// glyphs/hues/blurbs/dispositions; the runtime (#584 gateRule/sectionStatus) is unchanged.
-
-import { type PipelineTrigger } from "./blueprints";
+// runtime model: stage keys match ours (`ui`, not the design's `ux`). Pure; the editor
+// reads this for glyphs/hues/blurbs/dispositions; the runtime (#584 gateRule/sectionStatus)
+// is unchanged.
 
 // ── hue helpers (oklch accents; share L/C, vary hue) ──────────────────────────
 export const hue = (h: number): string => `oklch(0.74 0.11 ${h})`;
@@ -60,29 +58,6 @@ export function defaultDisposition(key: string): string {
   if (key === "permissions" || key === "context") return "knowledge";
   return "plan-file";
 }
-
-// ── pipeline editor metadata (keyed by our PIPELINE_LIB ids) ──────────────────
-export interface PipelineMeta { glyph: string; h: number; gateable: boolean; defaultTrigger: PipelineTrigger }
-
-// Trimmed to the implemented pipelines (#897 Phase 4a) — the 14 no-op catalog entries were
-// removed from PIPELINE_LIB, so their editor metadata went with them.
-export const PIPELINE_META: Record<string, PipelineMeta> = {
-  "render-preview":  { glyph: "preview",       h: 350, gateable: true,  defaultTrigger: "on completion" },
-  "grade-plan":      { glyph: "fact_check",    h: 70,  gateable: false, defaultTrigger: "on completion" },
-  "lint-plan":       { glyph: "rule",          h: 25,  gateable: true,  defaultTrigger: "on artifact change" },
-};
-
-export function pipelineMeta(id: string): PipelineMeta {
-  return PIPELINE_META[id] ?? { glyph: "conveyor_belt", h: 250, gateable: false, defaultTrigger: "on completion" };
-}
-
-// ── trigger labels: editor shows short labels, model stores the canonical forms ─
-export const TRIGGER_LABELS: { value: PipelineTrigger; label: string }[] = [
-  { value: "on section enter",   label: "enter" },
-  { value: "on artifact change", label: "change" },
-  { value: "on completion",      label: "complete" },
-  { value: "manual",             label: "manual" },
-];
 
 // ── community catalog: shared gist-blueprints to Browse / Fork (#609 slice 5) ──
 // A static starter list for now; discovery becomes federated "sources" later (#598).

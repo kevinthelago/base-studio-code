@@ -39,14 +39,6 @@ describe("BlueprintEditorView (#609 slice 3)", () => {
     expect(spy.mock.calls[spy.mock.calls.length - 1][0][0].prompt).toBe("Write the pitch.");
   });
 
-  it("adds a suggested gate pipeline to the UI stage", () => {
-    render(<Harness initial={base()} />);
-    fireEvent.click(screen.getByText("UI")); // select UI stage
-    // render-preview suits "ui" → offered as a suggestion chip
-    fireEvent.click(screen.getByRole("button", { name: /\+ Render preview/i }));
-    expect(screen.getByText("Render preview")).toBeInTheDocument(); // now an attached row
-  });
-
   it("changes the output disposition", () => {
     const spy = vi.fn();
     render(<Harness initial={base()} onChangeSpy={spy} />);

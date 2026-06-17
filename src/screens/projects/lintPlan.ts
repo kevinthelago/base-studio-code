@@ -6,8 +6,7 @@
 // Pure scanner (findPlanGaps) + the handler/dispatch. Runs in-app; no backend.
 
 import { useAppStore } from "../../store";
-import { registerPipelineHandler, runPipeline, type PipelineHandler, type StageContext, type PipelineRunResult } from "./pipelineRuntime";
-import type { Pipeline } from "./blueprints";
+import { type StageContext, type PipelineRunResult } from "./pipelineRuntime";
 
 export const LINT_PLAN_ID = "lint-plan";
 
@@ -25,7 +24,10 @@ export function findPlanGaps(artifacts: Record<string, string>): string[] {
   return gaps;
 }
 
-export const lintPlanHandler: PipelineHandler = (ctx: StageContext): PipelineRunResult => {
+/** The lint-plan stage helper: flag empty files / unresolved placeholders in a stage's
+ *  artifacts (`blocked` until resolved). Runs by direct dispatch (#897 Phase 4c removed the
+ *  generic engine); folds into the stage gate in Phase 4b. */
+export function lintPlanHandler(ctx: StageContext): PipelineRunResult {
   const gaps = findPlanGaps(ctx.artifacts as Record<string, string>);
   if (gaps.length === 0) return { status: "ok", message: "no gaps", output: { gaps: [] } };
   return {
@@ -33,34 +35,17 @@ export const lintPlanHandler: PipelineHandler = (ctx: StageContext): PipelineRun
     message: `${gaps.length} gap${gaps.length !== 1 ? "s" : ""}: ${gaps.slice(0, 3).join("; ")}${gaps.length > 3 ? "…" : ""}`,
     output: { gaps },
   };
-};
-
-/** Register the builtin (idempotent). Called at module load + safe to call in tests. */
-export function registerLintPlan(): void {
-  registerPipelineHandler(LINT_PLAN_ID, lintPlanHandler);
 }
-registerLintPlan();
 
-const LINT_PLAN_PIPELINE: Pipeline = {
-  uid: LINT_PLAN_ID, id: LINT_PLAN_ID, name: "Lint plan",
-  desc: "Validate this stage's output for gaps", suits: ["*"], kind: "builtin",
-  trigger: "on completion", enabled: true, gate: true,
-};
-
-/**
- * Run lint-plan for a stage and record the run. The run state is keyed by the blueprint
- * section pipeline's uid (so the gate wiring in Planning — isGateBlocked(section.pipelines,
- * runs) — reflects it); falls back to the builtin id for ad-hoc runs. #533 wires the
- * triggers (on-completion / manual) that call this with the section's real artifacts.
- */
+/** Run lint-plan for a stage and record the run, keyed by stage id. Calls the handler directly. */
 export async function dispatchLintPlan(args: {
   projectKey: string; stageId: string; artifacts: Record<string, string>; pipelineUid?: string;
 }): Promise<PipelineRunResult> {
   const store = useAppStore.getState();
   const key = args.pipelineUid ?? LINT_PLAN_ID;
   store.setStagePipelineRun(args.projectKey, key, { status: "running", lastRun: null });
-  const ctx: StageContext = { projectKey: args.projectKey, stageId: args.stageId, artifacts: args.artifacts, trigger: "manual" };
-  const result = await runPipeline(LINT_PLAN_PIPELINE, ctx);
+  const ctx: StageContext = { projectKey: args.projectKey, stageId: args.stageId, artifacts: args.artifacts };
+  const result = lintPlanHandler(ctx);
   store.setStagePipelineRun(args.projectKey, key, { status: result.status, lastRun: Date.now(), message: result.message });
   return result;
 }

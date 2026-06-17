@@ -26,7 +26,7 @@ import { publishGist, installFromGist, gistRevisions, installFromGistRevision } 
 import { diffBlueprints, type DiffLine } from "./blueprintDiff";
 
 const freshSections = (sections: BlueprintSection[]): BlueprintSection[] =>
-  sections.map((s) => ({ ...s, uid: uid("sec"), pipelines: s.pipelines.map((p) => ({ ...p, uid: uid("pl") })) }));
+  sections.map((s) => ({ ...s, uid: uid("sec") }));
 
 type View = "library" | "catalog" | "editor";
 type Modal =

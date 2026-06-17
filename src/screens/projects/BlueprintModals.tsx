@@ -54,15 +54,15 @@ export function StageSummary({ sections }: { sections: BlueprintSection[] }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       {sections.map((s, i) => {
         const k = stageKind(s.key);
-        const gates = s.pipelines.filter((p) => p.gate).length;
+        const caps = (s.skills?.length ?? 0) + (s.mcp?.length ?? 0);
         return (
           <div key={s.uid ?? i} style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 0" }}>
             <span className="mono dim" style={{ fontSize: 9.5, width: 16 }}>{String(i + 1).padStart(2, "0")}</span>
             <span style={{ width: 22, height: 22, flex: "0 0 22px", borderRadius: 5, background: tint(k.h, 0.16), color: hue(k.h), display: "flex", alignItems: "center", justifyContent: "center" }}><Ic n={k.glyph} size={13} /></span>
             <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)" }}>{s.name}</span>
             <span style={{ flex: 1 }} />
-            {s.pipelines.length > 0 && <span className="hint mono">{s.pipelines.length} pipe</span>}
-            {gates > 0 && <span className="tag amber">{gates} gate</span>}
+            {caps > 0 && <span className="hint mono">{caps} attached</span>}
+            {s.gateRule && <span className="tag amber">gate</span>}
           </div>
         );
       })}
@@ -83,7 +83,8 @@ export function PublishModal({ bp, onClose, onPublish, onPublished }: {
   const [info, setInfo] = useState<{ url?: string; id?: string; rev?: string }>({});
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(false);
-  const pipes = bp.sections.reduce((n, s) => n + s.pipelines.length, 0);
+  const caps = bp.sections.reduce((n, s) => n + (s.skills?.length ?? 0) + (s.mcp?.length ?? 0), 0)
+    + (bp.skills?.length ?? 0) + (bp.mcp?.length ?? 0);
 
   async function go() {
     setPhase("publishing");
@@ -115,7 +116,7 @@ export function PublishModal({ bp, onClose, onPublish, onPublished }: {
           <div className="card" style={{ marginBottom: 14, padding: 13 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <span className="bp-icon" style={{ width: 28, height: 28, flex: "0 0 28px", fontSize: 13, background: tint(bp.h ?? 70, 0.16), color: hue(bp.h ?? 70), display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 7, fontFamily: "var(--mono)", fontWeight: 700 }}>{bp.icon ?? bp.name[0]}</span>
-              <div><div className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{bp.name}</div><div className="hint">{bp.sections.length} stages · {pipes} pipelines</div></div>
+              <div><div className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{bp.name}</div><div className="hint">{bp.sections.length} stages · {caps} attached</div></div>
             </div>
             <StageSummary sections={bp.sections} />
           </div>
