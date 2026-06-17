@@ -187,6 +187,8 @@ export const EXT_CATALOG: CatalogItem[] = [
     link: "https://github.com/kevinthelago/complexity-analyzer-mcp",     install: "Downloads to ~/.base-studio-code/mcp/complexity-analyzer-mcp. Run `pnpm install && pnpm build` there, then Add." },
   { name: "Dependency Graph",    by: "kevinthelago", icon: "⌥", desc: "Explore a project's dependency graph — query nodes, neighbors, cycles, and stats.",
     link: "https://github.com/kevinthelago/dependency-graph-mcp-server", install: "Downloads to ~/.base-studio-code/mcp/dependency-graph-mcp-server. Run `pnpm install && pnpm build` there, then Add." },
+  { name: "Plan Grader",         by: "kevinthelago", icon: "◎", desc: "Grade a generated plan's agent-readiness — score its issues, milestones, and repos against the readiness rubric and surface prioritized fixes (the planner's grading as a tool, #897).",
+    link: "https://github.com/kevinthelago/plan-grader-mcp-server",     install: "Downloads to ~/.base-studio-code/mcp/plan-grader-mcp-server, then builds with `python -m uv sync`." },
   // Generic third-party servers (Sentry/Linear/Postgres/Slack/Stripe/Brave/SQLite/Notion) were
   // pruned from the browse list (#870) so the catalog features our first-party servers. Their
   // CATALOG_TEMPLATES (lib/extensions.ts) stay — the planner's `<mcp_assign name="…" />` path
