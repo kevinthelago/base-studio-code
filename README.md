@@ -1,8 +1,6 @@
 > ⚠️ **This application creates issues, milestones, repositories, etc. by default — please be aware!** The project planning page will show you everything that will be done before it happens.
 
-> 🚧 **Preview software — not yet stable.** Every `0.x` build is a development preview; features and internals may change between releases. **`1.0.0` will be the first stable, general-availability release.** See [Versioning & Releases](#versioning--releases).
-
-> 📍 **Where we are:** the core feature set is largely in place. Current development focus is **security testing, quality assurance, and polishing existing features** on the road to `1.0.0`.
+> 📍 **Where we are:** the core feature set is largely in place. Current development focus is **data models and data collection**, **project planning bugs and polish** on the road to `1.0.2`.
 
 # base-studio-code
 
