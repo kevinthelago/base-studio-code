@@ -24,10 +24,10 @@ import type { SessionRole } from "../lib/sessionRoles";
 import type { AgentFlow } from "../screens/projects/agentFlow";
 import { normalizeFlow, resolveFlow } from "../screens/projects/agentFlow";
 import { flowKickoffText } from "../screens/projects/flowKickoff";
-import { PIPELINE_PRESETS } from "../lib/pipeline";
-import { startRun, currentLaunch, type PipelineRun } from "../lib/conductor";
+import { WORKFLOW_PRESETS } from "../lib/workflow";
+import { startRun, currentLaunch, type WorkflowRun } from "../lib/conductor";
 import { generateAgentProfile } from "../lib/profileGen";
-import { stagePrompt } from "../lib/pipelineDriver";
+import { stagePrompt } from "../lib/workflowDriver";
 import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
@@ -260,11 +260,11 @@ interface AppStore {
   wakePane: (paneId: string, prompt: string) => boolean;
   // Session pipelines (#220): in-flight runs keyed by work item. Register-only here;
   // launching a stage as a role-scoped pane + auto-advance is the live-wiring slice.
-  pipelineRuns: Record<string, PipelineRun>;
-  pipelineStart: (presetKey: string, item: string) => void;
-  pipelineClear: (item: string) => void;
-  pipelineMount: (item: string) => void;
-  pipelineSetRuns: (runs: Record<string, PipelineRun>) => void;
+  workflowRuns: Record<string, WorkflowRun>;
+  workflowStart: (presetKey: string, item: string) => void;
+  workflowClear: (item: string) => void;
+  workflowMount: (item: string) => void;
+  workflowSetRuns: (runs: Record<string, WorkflowRun>) => void;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
   // Prune queued panes across every tab whose live status the caller has —
@@ -726,7 +726,7 @@ interface AppStore {
   importBlueprint: (bp: Blueprint) => string;
   // Stage-pipeline run state (#528/#529): per-project, per-pipeline run status, keyed
   // projectKey -> pipelineUid -> state. Distinct from the fleet conductor's
-  // `pipelineRuns` (#220). Session-only (not persisted).
+  // `workflowRuns` (#220). Session-only (not persisted).
   stagePipelineRuns: Record<string, Record<string, PipelineRunState>>;
   setStagePipelineRun: (projectKey: string, pipelineUid: string, state: PipelineRunState) => void;
   // The current UI preview per project (#531): the render-preview pipeline writes the
@@ -881,7 +881,7 @@ interface AppStore {
 }
 
 // (Re)mount a pipeline run's pane for its CURRENT stage (#220): a single-pane
-// `pipeline · <item>` tab whose pane is a fresh, role-scoped claude session seeded
+// `workflow · <item>` tab whose pane is a fresh, role-scoped claude session seeded
 // with the stage prompt. A runId bump remounts it; the caller pty_kills first on a
 // relaunch so it spawns fresh. Terminal runs (done/escalated) just persist.
 // #174: promote a project's planning-assigned automations into the real scheduler on
@@ -908,10 +908,10 @@ function activateAutomations(s: AppStore, projectId: string, targetTab: string):
   return added;
 }
 
-function mountState(s: AppStore, item: string, run: PipelineRun) {
+function mountState(s: AppStore, item: string, run: WorkflowRun) {
   const launch = currentLaunch(run);
-  if (!launch) return { pipelineRuns: { ...s.pipelineRuns, [item]: run } };
-  const tabName = `pipeline · ${item}`;
+  if (!launch) return { workflowRuns: { ...s.workflowRuns, [item]: run } };
+  const tabName = `workflow · ${item}`;
   const existingIdx = s.tabs.findIndex((tb) => tb.name === tabName);
   const tabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
   const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
@@ -933,7 +933,7 @@ function mountState(s: AppStore, item: string, run: PipelineRun) {
     paneRoles: { ...s.paneRoles, [key]: launch.role },
     paneNames: { ...s.paneNames, [tabIdx]: { 0: launch.stage } },
     disabledPanes,
-    pipelineRuns: { ...s.pipelineRuns, [item]: run },
+    workflowRuns: { ...s.workflowRuns, [item]: run },
   };
 }
 
@@ -1600,26 +1600,26 @@ export const useAppStore = create<AppStore>()(
         return ok;
       },
       fleetPaneStreams: {},
-      pipelineRuns: {},
-      pipelineStart: (presetKey, item) =>
+      workflowRuns: {},
+      workflowStart: (presetKey, item) =>
         set((s) => {
-          const pipeline = PIPELINE_PRESETS[presetKey];
+          const pipeline = WORKFLOW_PRESETS[presetKey];
           const id = item.trim();
           if (!pipeline || !id) return {};
           return mountState(s, id, startRun(pipeline, id).run);
         }),
-      pipelineClear: (item) =>
+      workflowClear: (item) =>
         set((s) => {
-          const runs = { ...s.pipelineRuns };
+          const runs = { ...s.workflowRuns };
           delete runs[item];
-          return { pipelineRuns: runs };
+          return { workflowRuns: runs };
         }),
-      pipelineMount: (item) =>
+      workflowMount: (item) =>
         set((s) => {
-          const run = s.pipelineRuns[item];
+          const run = s.workflowRuns[item];
           return run ? mountState(s, item, run) : {};
         }),
-      pipelineSetRuns: (runs) => set({ pipelineRuns: runs }),
+      workflowSetRuns: (runs) => set({ workflowRuns: runs }),
       projectsDrawerIssue: null,
       setProjectsDrawerIssue: (n) => set({ projectsDrawerIssue: n }),
       planningPitch: "",
@@ -2609,7 +2609,7 @@ export const useAppStore = create<AppStore>()(
         paneModels:           s.paneModels,
         focusTarget:          s.focusTarget,
         fleetPaneStreams:     s.fleetPaneStreams,
-        pipelineRuns:         s.pipelineRuns,
+        workflowRuns:         s.workflowRuns,
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
         projectKeyAlias:      s.projectKeyAlias,

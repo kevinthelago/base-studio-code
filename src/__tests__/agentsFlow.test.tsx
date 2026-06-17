@@ -4,13 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { AgentsScreen } from "../screens/agents";
 import { useAppStore } from "../store";
 import { startRun } from "../lib/conductor";
-import { PIPELINE_PRESETS } from "../lib/pipeline";
+import { WORKFLOW_PRESETS } from "../lib/workflow";
 
 /**
- * #199/#220 — the Agents-screen "Flow" tab surfaces the fleet's coordination + pipeline
- * state (parked/ready/stalled/deadlocked sessions, pipeline lanes), cross-referenced with
+ * #199/#220 — the Agents-screen "Flow" tab surfaces the fleet's coordination + workflow
+ * state (parked/ready/stalled/deadlocked sessions, workflow lanes), cross-referenced with
  * the profile each session runs under. Coord state is rebuilt from $BSC_COORD_LOG via the
- * mocked read_coord_log; pipeline runs come from the store.
+ * mocked read_coord_log; workflow runs come from the store.
  */
 const TS = "2026-05-30T18:00:00Z";
 const mockInvoke = vi.mocked(invoke);
@@ -37,7 +37,7 @@ describe("Agents · Flow tab (#199/#220)", () => {
       activeTabIdx: 0,
       paneProfiles: {} as Record<string, string>,
       disabledPanes: {} as Record<string, boolean>,
-      pipelineRuns: {},
+      workflowRuns: {},
     });
   });
   afterEach(() => {
@@ -77,10 +77,10 @@ describe("Agents · Flow tab (#199/#220)", () => {
     });
   });
 
-  it("renders pipeline lanes with their stage sequence", async () => {
-    const presetKey = Object.keys(PIPELINE_PRESETS)[0];
-    const run = startRun(PIPELINE_PRESETS[presetKey], "#42").run;
-    useAppStore.setState({ pipelineRuns: { "#42": run } });
+  it("renders workflow lanes with their stage sequence", async () => {
+    const presetKey = Object.keys(WORKFLOW_PRESETS)[0];
+    const run = startRun(WORKFLOW_PRESETS[presetKey], "#42").run;
+    useAppStore.setState({ workflowRuns: { "#42": run } });
     seedCoordLog([]);
 
     const { container } = render(<AgentsScreen />);
@@ -91,7 +91,7 @@ describe("Agents · Flow tab (#199/#220)", () => {
       expect(within(section as HTMLElement).getByText("#42")).toBeInTheDocument();
     });
     // The first preset stage name appears as a chip.
-    const firstStage = Object.values(run.pipeline.stages)[0].name;
+    const firstStage = Object.values(run.workflow.stages)[0].name;
     expect(container.textContent).toContain(firstStage);
   });
 });
