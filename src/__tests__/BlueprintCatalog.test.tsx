@@ -36,23 +36,18 @@ describe("CatalogView (#609 slice 5)", () => {
   });
 });
 
-describe("NewBlueprintModal (#609)", () => {
-  it("creates with the chosen mode", () => {
-    const onCreate = vi.fn(); const onClaude = vi.fn();
-    render(<NewBlueprintModal onClose={noop} onCreate={onCreate} onDesignWithClaude={onClaude} />);
+describe("NewBlueprintModal (#923)", () => {
+  it("collects just a name and creates (→ opens the planner to author it)", () => {
+    const onCreate = vi.fn();
+    render(<NewBlueprintModal onClose={noop} onCreate={onCreate} />);
     fireEvent.change(screen.getByPlaceholderText(/Internal tool/i), { target: { value: "My BP" } });
-    fireEvent.click(screen.getByText("Default stages"));
-    fireEvent.click(screen.getByRole("button", { name: /Create blueprint/i }));
-    expect(onCreate).toHaveBeenCalledWith("My BP", "default");
+    fireEvent.click(screen.getByRole("button", { name: /Create & open planner/i }));
+    expect(onCreate).toHaveBeenCalledWith("My BP");
   });
 
-  it("routes to Claude when that mode is picked", () => {
-    const onCreate = vi.fn(); const onClaude = vi.fn();
-    render(<NewBlueprintModal onClose={noop} onCreate={onCreate} onDesignWithClaude={onClaude} />);
-    fireEvent.change(screen.getByPlaceholderText(/Internal tool/i), { target: { value: "AI BP" } });
-    fireEvent.click(screen.getByText("Design with Claude"));
-    fireEvent.click(screen.getByRole("button", { name: /Design with Claude →/i }));
-    expect(onClaude).toHaveBeenCalledWith("AI BP");
+  it("has no 'Design with Claude' option (#923 removed it)", () => {
+    render(<NewBlueprintModal onClose={noop} onCreate={vi.fn()} />);
+    expect(screen.queryByText("Design with Claude")).toBeNull();
   });
 });
 

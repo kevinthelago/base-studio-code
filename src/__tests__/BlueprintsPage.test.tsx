@@ -15,16 +15,22 @@ describe("BlueprintsPage (#609 wiring)", () => {
     expect(screen.getByRole("heading", { name: /Default/, level: 3 })).toBeInTheDocument();
   });
 
-  it("creates a new blueprint and lands in the editor", () => {
+  it("New blueprint → names it and opens the planner seeded with the authoring lifecycle (#923)", () => {
     render(<BlueprintsPage />);
     fireEvent.click(screen.getAllByRole("button", { name: /New blueprint/i })[0]);
     fireEvent.change(screen.getByPlaceholderText(/Internal tool/i), { target: { value: "My Tool" } });
-    fireEvent.click(screen.getByRole("button", { name: /Create blueprint/i }));
-    // editor header shows the new name + the stage rail
-    expect(screen.getByDisplayValue("My Tool")).toBeInTheDocument();
-    expect(screen.getByText("Stage flow")).toBeInTheDocument();
-    // persisted to the store
-    expect(useAppStore.getState().blueprints.some((b) => b.name === "My Tool")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /Create & open planner/i }));
+    const s = useAppStore.getState();
+    // seeds the authoring lifecycle + opens the planner on a draft keyed by the name
+    expect(s.activeBlueprintId).toBe("blueprint-author");
+    expect(s.planningSessionKey).toBe("My_Tool");
+    expect(s.projectsView).toBe("planning");
+    expect(s.localDraftProjects["My_Tool"]?.title).toBe("My Tool");
+  });
+
+  it("hides the internal authoring lifecycle from the library grid (#923)", () => {
+    render(<BlueprintsPage />);
+    expect(screen.queryByRole("heading", { name: /Blueprint Author/, level: 3 })).toBeNull();
   });
 
   it("opens a blueprint into the editor and edits flow to the store", () => {

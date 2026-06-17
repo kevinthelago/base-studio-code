@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 import "../../styles/blueprints.css";
 import { useAppStore } from "../../store";
 import { tint, hue, CATALOG_FLOW_KINDS, type CatalogEntry } from "./blueprintCatalog";
-import { uid, type Blueprint, type BlueprintSection, type BlueprintGist, makeBlueprints, DEFAULT_BLUEPRINT_ID } from "./blueprints";
+import { uid, type Blueprint, type BlueprintSection, type BlueprintGist } from "./blueprints";
+import { sanitizeProjectKey } from "../../lib/projectPaths";
 import { mkStageSection } from "./blueprintEdit";
 import { LibraryView, type CardMenuAction } from "./BlueprintLibrary";
 import { CatalogView } from "./BlueprintCatalogView";
@@ -82,7 +83,6 @@ export function BlueprintsPage() {
   const githubToken = useAppStore((s) => s.githubToken);
   const setActiveBlueprint = useAppStore((s) => s.setActiveBlueprint);
   const activeBlueprintId = useAppStore((s) => s.activeBlueprintId);
-  const addBlueprint = useAppStore((s) => s.addBlueprint);
   const duplicateBlueprint = useAppStore((s) => s.duplicateBlueprint);
   const updateBlueprintMeta = useAppStore((s) => s.updateBlueprintMeta);
   const setBlueprintSections = useAppStore((s) => s.setBlueprintSections);
@@ -134,41 +134,26 @@ export function BlueprintsPage() {
     toast(`"${blueprints.find((b) => b.id === id)?.name ?? id}" selected — it'll seed new projects`, true);
   }
 
-  // Author a NEW blueprint in the project planner (#923): seed the "Blueprint Author" lifecycle and
-  // open the planner. The planner designs the blueprint and publishes it to a gist (no fleet/triage).
-  function authorBlueprint() {
+  // "New blueprint" (#923): the user names the project; we create its folder (a draft) and open the
+  // project planner seeded with the authoring lifecycle, which designs the blueprint and publishes it
+  // to a gist (no fleet/triage). The authoring lifecycle drives the planner via the active blueprint.
+  function authorBlueprint(name: string) {
+    const title = name.trim();
+    if (!title) return;
     const st = useAppStore.getState();
     st.setActiveBlueprint("blueprint-author");
-    // Unique session key so concurrent authoring sessions never collide (the planner names the
-    // actual blueprint; this key is just the design session's workspace).
-    const key = `blueprint-${Date.now().toString(36)}`;
-    st.setPlanningTitle("New blueprint");
+    const key = sanitizeProjectKey(title);
+    st.setPlanningTitle(title);
     st.setPlanningContext("Design a reusable blueprint to publish as a gist.", "");
     st.setActiveProjectMeta(null, "", "", 0);
-    st.addDraftProject(key, { title: "New blueprint", pitch: "Design a reusable blueprint.", createdAt: Date.now() });
+    st.addDraftProject(key, { title, pitch: "Design a reusable blueprint.", createdAt: Date.now() });
     st.setPlanningSession(key);
     st.setProjectsPageMode("projects");
     st.setProjectsView("planning");
+    setModal(null);
   }
 
-  // ── create / duplicate / delete ──
-  function newBlueprint(name: string, mode: "blank" | "default") {
-    const id = addBlueprint();
-    const defaultArc = makeBlueprints().find((b) => b.id === DEFAULT_BLUEPRINT_ID)?.sections ?? [];
-    updateBlueprintMeta(id, { name, desc: "A custom planning blueprint.", origin: "local", icon: name[0]?.toUpperCase(), gist: { state: "local" } });
-    setBlueprintSections(id, mode === "default" ? freshSections(defaultArc) : [mkStageSection("context")]);
-    setModal(null);
-    openBp(id);
-    toast("Blueprint created", true);
-  }
-  function designWithClaude(name: string) {
-    const id = addBlueprint();
-    updateBlueprintMeta(id, { name, desc: "Drafted with Claude.", origin: "local", icon: name[0]?.toUpperCase(), gist: { state: "local" } });
-    setBlueprintSections(id, [mkStageSection("context")]);
-    setModal(null);
-    openBp(id);
-    setDrawer({ draftName: name });
-  }
+  // ── duplicate / delete ── (new blueprints are authored in the planner, see authorBlueprint)
   function duplicateBp(id: string) { duplicateBlueprint(id); toast("Duplicated", true); }
   function deleteBp(id: string) {
     removeBlueprint(id);
@@ -316,12 +301,12 @@ export function BlueprintsPage() {
           <LibraryView blueprints={blueprints} onOpen={openBp} onMenu={onCardMenu}
             activeId={activeBlueprintId}
             onUse={selectBlueprint}
-            onNew={() => setModal({ type: "new" })} onImport={() => setView("catalog")} onAuthor={authorBlueprint} />
+            onNew={() => setModal({ type: "new" })} onImport={() => setView("catalog")} />
         </div>
       )}
 
       {/* modals */}
-      {modal?.type === "new" && <NewBlueprintModal onClose={() => setModal(null)} onCreate={newBlueprint} onDesignWithClaude={designWithClaude} />}
+      {modal?.type === "new" && <NewBlueprintModal onClose={() => setModal(null)} onCreate={authorBlueprint} />}
       {modal?.type === "import" && <ImportModal onClose={() => setModal(null)} onResolve={resolveImport} onImport={importPreview} />}
       {modal?.type === "publish" && active && <PublishModal bp={active} onClose={() => setModal(null)} onPublish={doPublish} onPublished={onPublished} />}
       {modal?.type === "preview" && <PreviewModal cat={modal.cat} forked={forkedIds.includes(modal.cat.id)} onClose={() => setModal(null)} onFork={forkCatalog} />}
