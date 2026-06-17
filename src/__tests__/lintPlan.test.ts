@@ -1,11 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { findPlanGaps, lintPlanHandler, dispatchLintPlan, LINT_PLAN_ID } from "../screens/projects/lintPlan";
-import { hasPipelineHandler, isGateBlocked } from "../screens/projects/pipelineRuntime";
-import { mkSection } from "../screens/projects/blueprints";
+import { findPlanGaps, lintPlanHandler, dispatchLintPlan } from "../screens/projects/lintPlan";
 import { useAppStore } from "../store";
 
 const ctx = (artifacts: Record<string, string>) => ({
-  projectKey: "proj", stageId: "structure", artifacts, trigger: "manual" as const,
+  projectKey: "proj", stageId: "structure", artifacts,
 });
 
 describe("lintPlan — findPlanGaps", () => {
@@ -22,36 +20,24 @@ describe("lintPlan — findPlanGaps", () => {
 });
 
 describe("lintPlan — handler", () => {
-  it("registers itself into the engine on import", () => {
-    expect(hasPipelineHandler(LINT_PLAN_ID)).toBe(true);
-  });
-  it("passes a clean stage and blocks one with gaps", async () => {
-    expect((await lintPlanHandler(ctx({ "goal.md": "done" }), {} as never)).status).toBe("ok");
-    const blocked = await lintPlanHandler(ctx({ "goal.md": "TODO" }), {} as never);
+  it("passes a clean stage and blocks one with gaps", () => {
+    expect(lintPlanHandler(ctx({ "goal.md": "done" })).status).toBe("ok");
+    const blocked = lintPlanHandler(ctx({ "goal.md": "TODO" }));
     expect(blocked.status).toBe("blocked");
     expect(blocked.message).toMatch(/gap/);
   });
 });
 
-describe("lintPlan — dispatch + gate integration (#532/#534)", () => {
+describe("lintPlan — dispatch records the run keyed by stage (#534)", () => {
   beforeEach(() => useAppStore.setState({ stagePipelineRuns: {} }));
 
-  it("records the run keyed by the section pipeline uid, blocking the stage gate", async () => {
-    // A structure section with a lint-plan gate pipeline.
-    const section = mkSection("structure", { pipelines: [["lint-plan", "on completion", true]] });
-    const pl = section.pipelines[0];
-    pl.gate = true;
+  it("writes a blocked run for gaps and an ok run for a clean stage", async () => {
+    await dispatchLintPlan({ projectKey: "proj", stageId: "structure", artifacts: { "issues.json": "TODO" } });
+    let run = useAppStore.getState().stagePipelineRuns["proj"]?.["lint-plan"];
+    expect(run?.status).toBe("blocked");
 
-    // Gaps → blocked run → the section's gate is blocked.
-    await dispatchLintPlan({ projectKey: "proj", stageId: "structure", artifacts: { "issues.json": "TODO" }, pipelineUid: pl.uid });
-    let runs = useAppStore.getState().stagePipelineRuns["proj"];
-    expect(runs[pl.uid].status).toBe("blocked");
-    expect(isGateBlocked(section.pipelines, runs)).toBe(true);
-
-    // Clean → ok run → gate clears.
-    await dispatchLintPlan({ projectKey: "proj", stageId: "structure", artifacts: { "issues.json": "[]" }, pipelineUid: pl.uid });
-    runs = useAppStore.getState().stagePipelineRuns["proj"];
-    expect(runs[pl.uid].status).toBe("ok");
-    expect(isGateBlocked(section.pipelines, runs)).toBe(false);
+    await dispatchLintPlan({ projectKey: "proj", stageId: "structure", artifacts: { "issues.json": "[]" } });
+    run = useAppStore.getState().stagePipelineRuns["proj"]?.["lint-plan"];
+    expect(run?.status).toBe("ok");
   });
 });

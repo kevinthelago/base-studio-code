@@ -10,12 +10,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { bundleSkeleton, buildPreviewSrcDoc } from "./previewBundle";
-import {
-  registerPipelineHandler, runPipeline,
-  type PipelineHandler, type StageContext, type PipelineRunResult,
-} from "./pipelineRuntime";
+import { type StageContext, type PipelineRunResult } from "./pipelineRuntime";
 import { registerPipeline } from "./pipelineCommands";
-import type { Pipeline } from "./blueprints";
 
 export type PreviewMode = "2d" | "3d";
 export interface PreviewOutput { srcDoc: string; mode: PreviewMode; screen?: string }
@@ -29,7 +25,9 @@ export function resolveEntry(artifacts: Record<string, string>, entry?: string):
   return src[0] ?? null;
 }
 
-export const renderPreviewHandler: PipelineHandler = async (ctx: StageContext): Promise<PipelineRunResult> => {
+/** The render-preview stage helper: bundle the UI skeleton into an iframe srcDoc. Runs by
+ *  direct dispatch (#897 Phase 4c removed the generic engine); never throws. */
+export async function renderPreviewHandler(ctx: StageContext): Promise<PipelineRunResult> {
   const artifacts = ctx.artifacts as Record<string, string>;
   const entry = resolveEntry(artifacts, ctx.entry);
   if (!entry) return { status: "fail", message: "render-preview: no screen file in the skeleton" };
@@ -37,24 +35,11 @@ export const renderPreviewHandler: PipelineHandler = async (ctx: StageContext): 
   const js = await bundleSkeleton(artifacts, entry);
   const srcDoc = buildPreviewSrcDoc(js);
   return { status: "ok", output: { srcDoc, mode } satisfies PreviewOutput };
-};
-
-/** Register the builtin (idempotent). Called at module load + safe to call in tests. */
-export function registerRenderPreview(): void {
-  registerPipelineHandler(RENDER_PREVIEW_ID, renderPreviewHandler);
 }
-registerRenderPreview();
-
-const RENDER_PREVIEW_PIPELINE: Pipeline = {
-  uid: RENDER_PREVIEW_ID, id: RENDER_PREVIEW_ID, name: "Render preview",
-  desc: "Visualize screens as a 2D / 3D walkthrough", suits: ["ui"], kind: "builtin",
-  trigger: "manual", enabled: true,
-};
 
 /**
  * Run render-preview for a project and reflect the result in the store: the bundled
- * srcdoc (→ PlanPreviewPane) and the run status (→ Blueprints rows / gate). This is
- * the integration point the triggers (#533) call.
+ * srcdoc (→ the preview pane) and the run status. Calls the handler directly.
  */
 export async function dispatchRenderPreview(args: {
   projectKey: string; stageId?: string; artifacts: Record<string, string>; entry?: string; mode?: PreviewMode; screen?: string;
@@ -63,9 +48,11 @@ export async function dispatchRenderPreview(args: {
   store.setStagePipelineRun(args.projectKey, RENDER_PREVIEW_ID, { status: "running", lastRun: null });
   const ctx: StageContext = {
     projectKey: args.projectKey, stageId: args.stageId ?? "ui", artifacts: args.artifacts,
-    trigger: "manual", entry: args.entry, mode: args.mode,
+    entry: args.entry, mode: args.mode,
   };
-  const result = await runPipeline(RENDER_PREVIEW_PIPELINE, ctx);
+  let result: PipelineRunResult;
+  try { result = await renderPreviewHandler(ctx); }
+  catch (e) { result = { status: "fail", message: String(e) }; }
   if (result.status === "ok" && result.output) {
     // Tag the stored preview with the screen so the pane's approve button targets it (#546).
     store.setStagePreview(args.projectKey, { ...(result.output as PreviewOutput), screen: args.screen ?? args.entry });

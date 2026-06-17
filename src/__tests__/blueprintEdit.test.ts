@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  mkStageSection, mkEditorPipeline, reorderStages, addStage, duplicateStage, deleteStage,
-  toggleDep, addPipeline, updatePipeline, removePipeline, setOutput, setStageField, depCandidates,
+  mkStageSection, reorderStages, addStage, duplicateStage, deleteStage,
+  toggleDep, setOutput, setStageField, depCandidates,
 } from "../screens/projects/blueprintEdit";
-import { STAGE_KINDS, DISPOSITIONS, pipelineMeta, defaultDisposition } from "../screens/projects/blueprintCatalog";
+import { STAGE_KINDS, DISPOSITIONS, defaultDisposition } from "../screens/projects/blueprintCatalog";
 import { SECTION_DEFS } from "../screens/projects/blueprints";
 
 describe("blueprintCatalog (#609)", () => {
@@ -17,10 +17,6 @@ describe("blueprintCatalog (#609)", () => {
     expect(defaultDisposition("context")).toBe("knowledge");
     expect(defaultDisposition("stack")).toBe("plan-file");
     for (const k of ["issues", "skill-index", "knowledge", "plan-file"]) expect(DISPOSITIONS[k]).toBeTruthy();
-  });
-  it("pipeline meta falls back for unknown ids", () => {
-    expect(pipelineMeta("render-preview").gateable).toBe(true);
-    expect(pipelineMeta("nope").glyph).toBe("conveyor_belt");
   });
 });
 
@@ -37,7 +33,6 @@ describe("blueprintEdit — mkStageSection (#609)", () => {
     expect(s.name).toBe(STAGE_KINDS.stack.title);
     expect(s.gateRule).toBeUndefined(); // informational — no runtime gate
     expect(s.output).toBe("plan-file");
-    expect(s.pipelines).toEqual([]);
   });
 });
 
@@ -79,19 +74,6 @@ describe("blueprintEdit — stage ops (#609)", () => {
     expect(toggleDep(on, a[1].uid, "context")[1].deps).not.toContain("context");
   });
 
-  it("pipeline add/update/remove", () => {
-    let a = base();
-    a = addPipeline(a, a[1].uid, "render-preview");
-    const p = a[1].pipelines[0];
-    expect(p.id).toBe("render-preview");
-    expect(p.trigger).toBe(pipelineMeta("render-preview").defaultTrigger);
-    a = updatePipeline(a, a[1].uid, p.uid, { gate: true, trigger: "manual" });
-    expect(a[1].pipelines[0].gate).toBe(true);
-    expect(a[1].pipelines[0].trigger).toBe("manual");
-    a = removePipeline(a, a[1].uid, p.uid);
-    expect(a[1].pipelines).toHaveLength(0);
-  });
-
   it("setOutput + setStageField", () => {
     let a = base();
     a = setOutput(a, a[0].uid, "scratch");
@@ -105,12 +87,5 @@ describe("blueprintEdit — stage ops (#609)", () => {
     const a = base();
     expect(depCandidates(a, a[0].uid)).toEqual([]);
     expect(depCandidates(a, a[2].uid).map((s) => s.key)).toEqual(["context", "ui"]);
-  });
-
-  it("mkEditorPipeline pulls catalog name + default trigger", () => {
-    const p = mkEditorPipeline("grade-plan");
-    expect(p.name).toBe("Grade plan");
-    expect(p.enabled).toBe(true);
-    expect(p.gate).toBe(false);
   });
 });

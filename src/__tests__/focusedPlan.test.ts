@@ -9,7 +9,7 @@ import type { PlanSignals } from "../screens/projects/stageGate";
 const sec = (key: string, over: Partial<BlueprintSection> = {}): BlueprintSection => ({
   uid: key, key, name: key.toUpperCase(), glyph: "•", gate: `${key} gate`,
   deps: [], blurb: `${key} blurb`, prompt: "", enabled: true, expanded: false,
-  pipelines: [], ...over,
+  ...over,
 });
 
 // A → B (deps A) → C (only applies when showC)
@@ -104,10 +104,9 @@ describe("activeIndex / clampIndex (#652)", () => {
 
 describe("gatePill (#652)", () => {
   const p = phasesFrom(SECTIONS, { a: true }); // a complete, b active
-  it("pass when complete, blocked when a gate-pipeline blocks, else wait", () => {
-    expect(gatePill(p.find((x) => x.key === "a")!, false)).toBe("pass");
-    expect(gatePill(p.find((x) => x.key === "b")!, false)).toBe("wait");
-    expect(gatePill(p.find((x) => x.key === "b")!, true)).toBe("blocked");
+  it("pass when the gate is satisfied (complete), else wait", () => {
+    expect(gatePill(p.find((x) => x.key === "a")!)).toBe("pass");
+    expect(gatePill(p.find((x) => x.key === "b")!)).toBe("wait");
   });
 });
 

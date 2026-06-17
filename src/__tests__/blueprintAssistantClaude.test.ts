@@ -3,7 +3,7 @@ import { explainActions, proseFor, type AssistantAction } from "../screens/proje
 
 describe("explainActions (#624)", () => {
   const actions: AssistantAction[] = [
-    { op: "add", kind: "api", pipes: [["contract-test", true]] },
+    { op: "add", kind: "api" },
     { op: "remove", kind: "cicd" },
   ];
 
@@ -14,7 +14,7 @@ describe("explainActions (#624)", () => {
     const prompt = complete.mock.calls[0]![0];
     expect(prompt.system).toMatch(/ONE short sentence/);
     expect(prompt.user).toMatch(/Web app/);
-    expect(prompt.user).toMatch(/add api \(contract-test\)/);
+    expect(prompt.user).toMatch(/add api/);
     expect(prompt.user).toMatch(/remove cicd/);
   });
 

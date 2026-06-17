@@ -1,15 +1,17 @@
 // Section-level diff between two blueprints (#598 follow-up) — drives the Sync modal's
 // upstream-change list. Compares by section key: a key only upstream is an add, only
-// local is a delete, in both with different prompt/pipelines/output is a change. Pure.
+// local is a delete, in both with different prompt/skills/mcp/output is a change. Pure.
 
 import { type Blueprint, type BlueprintSection } from "./blueprints";
 
 export interface DiffLine { type: "add" | "mod" | "del"; title: string; note: string }
 
-/** A stable signature of a section's meaningful content (ignores uids/order of pipes). */
+/** A stable signature of a section's meaningful content (ignores uids/order). */
 function sig(s: BlueprintSection): string {
-  const pipes = s.pipelines.map((p) => `${p.id}:${p.trigger}:${p.gate ? "g" : ""}:${p.enabled ? "1" : "0"}`).sort().join(",");
-  return JSON.stringify({ prompt: s.prompt, output: s.output ?? "", deps: [...s.deps].sort(), pipes, name: s.name });
+  return JSON.stringify({
+    prompt: s.prompt, output: s.output ?? "", deps: [...s.deps].sort(), name: s.name,
+    skills: [...(s.skills ?? [])].sort(), mcp: [...(s.mcp ?? [])].sort(),
+  });
 }
 
 /** Diff `local` against `upstream` (what pulling upstream would change). */

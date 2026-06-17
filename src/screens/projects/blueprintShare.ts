@@ -3,34 +3,15 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/extensions/manifest.ts.
 
-import { type Blueprint, type BlueprintSection, type Pipeline, uid } from "./blueprints";
+import { type Blueprint, type BlueprintSection, uid } from "./blueprints";
 import { wrapExtension, type ExtensionManifest } from "../../lib/extensions/manifest";
 import { type SkillPayload } from "./blueprintSkills";
 
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
 const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
-const PIPE_KINDS = ["builtin", "external", "custom"] as const;
-const PIPE_TRIGGERS = ["on section enter", "on artifact change", "on completion", "manual"] as const;
 const BP_CATEGORIES = ["greenfield", "transform", "harden", "maintain", "data"] as const;
 const BP_MODES = ["create", "operate"] as const;
-
-function coercePipeline(v: unknown): Pipeline | null {
-  if (!v || typeof v !== "object") return null;
-  const o = v as Record<string, unknown>;
-  const id = str(o.id);
-  const name = str(o.name);
-  if (!id || !name) return null;
-  return {
-    uid: uid("pl"), id, name,
-    desc: str(o.desc),
-    suits: strArr(o.suits),
-    kind: (PIPE_KINDS as readonly string[]).includes(str(o.kind)) ? (str(o.kind) as Pipeline["kind"]) : "custom",
-    trigger: (PIPE_TRIGGERS as readonly string[]).includes(str(o.trigger)) ? (str(o.trigger) as Pipeline["trigger"]) : "on completion",
-    enabled: o.enabled !== false,
-    gate: o.gate === true,
-  };
-}
 
 function coerceSection(v: unknown): BlueprintSection | null {
   if (!v || typeof v !== "object") return null;
@@ -47,9 +28,6 @@ function coerceSection(v: unknown): BlueprintSection | null {
     prompt: str(o.prompt),
     enabled: o.enabled !== false,
     expanded: false,
-    pipelines: Array.isArray(o.pipelines)
-      ? (o.pipelines.map(coercePipeline).filter(Boolean) as Pipeline[])
-      : [],
     // Attached capabilities (#897) — preserve the section's skill ids + MCP server names so a
     // shared blueprint carries its tools/knowledge instead of silently dropping them on import.
     skills: strArr(o.skills),
