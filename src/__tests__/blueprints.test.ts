@@ -6,6 +6,7 @@ import {
 } from "../screens/projects/blueprints";
 import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
 import { planStateToSignals } from "../screens/projects/planStageDerive";
+import { evalGate } from "../screens/projects/stageGate";
 
 const sig = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
   planStateToSignals(buildPlanStageState(over));
@@ -190,5 +191,25 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     // a section's enabled flag carries through
     const repos = bp.sections.find((s) => s.key === "repos")!;
     expect(cfg.enabled.repos).toBe(repos.enabled);
+  });
+});
+
+describe("lint-as-gate (#897 Phase 4b)", () => {
+  it("wires a hasPlanGaps requirement into the context + structure gates", () => {
+    for (const key of ["context", "structure"] as const) {
+      const reqs = SECTION_DEFS[key].gateRule?.require ?? [];
+      const r = reqs.find((x) => x.signal === "hasPlanGaps");
+      expect(r, `${key} has a hasPlanGaps requirement`).toBeTruthy();
+      expect(r!.target).toBe(false); // must be FALSE (no gaps) to pass
+      expect(r!.weight).toBe(0);     // must-pass, doesn't move the progress fill
+    }
+  });
+
+  it("blocks the gate on an unresolved placeholder, passes when clean or absent (absent-safe)", () => {
+    const gate = SECTION_DEFS.context.gateRule!;
+    const base = { coreConfirmed: true, topicsResolved: 3, topicsTotal: 3 }; // other context reqs satisfied
+    expect(evalGate(gate, { ...base, hasPlanGaps: true }).done).toBe(false);  // a TODO/placeholder blocks
+    expect(evalGate(gate, { ...base, hasPlanGaps: false }).done).toBe(true);  // clean passes
+    expect(evalGate(gate, base).done).toBe(true);                             // signal absent ⇒ passes
   });
 });

@@ -88,6 +88,8 @@ export const SECTION_DEFS: Record<string, SectionDef> = {
     gateRule: { require: [
       { signal: "coreConfirmed", target: true, weight: 0, label: "confirm goal, scope, stack & architecture" },
       { signal: "topicsResolved", of: "topicsTotal", label: "resolve the discovery topics" },
+      // lint-as-gate (#897 Phase 4b): no unresolved TODO/placeholder in the written sections.
+      { signal: "hasPlanGaps", target: false, weight: 0, label: "resolve TODO/placeholder markers in the written sections" },
     ] },
     blurb: "Discovery — goal, scope, stack, architecture (+ applicable dimensions).",
     prompt:
@@ -195,6 +197,8 @@ owns the seams.` },
     gateRule: { require: [
       { signal: "phasesConfirmed", target: true, label: "approve the roadmap" },
       { signal: "issueCount", target: 1, label: "generate agent-ready issues" },
+      // lint-as-gate (#897 Phase 4b): no unresolved TODO/placeholder in the written sections.
+      { signal: "hasPlanGaps", target: false, weight: 0, label: "resolve TODO/placeholder markers in the written sections" },
     ] },
     blurb: "Autonomous: contracts, phases, and the sub-issue tree.",
     prompt:
