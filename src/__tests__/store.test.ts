@@ -1146,6 +1146,36 @@ describe("agent fleet store", () => {
     expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
   });
 
+  it("prefers Rust-provided hub + worktree paths over the bscBaseDir mirror (#905)", () => {
+    // bscBaseDir EMPTY — the exact condition that silently dropped every session at
+    // user root, because projectHubCwd/agentWorktreeCwd return "" and the PTY then
+    // inherits the app's cwd. With authoritative Rust paths the launch is correct anyway.
+    useAppStore.setState({ bscBaseDir: "" });
+    useAppStore.getState().fleetStartProject("RP", fleet, "rp-key", {
+      hubPath: "/abs/hub/rp-key",
+      worktreePaths: { "auth-ui": "/abs/wt/web--auth-ui", "api": "/abs/wt/api--api" },
+    });
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("rp-key");
+    expect(st.paneCwds[`t${idx}p0`]).toBe("/abs/hub/rp-key");        // director → hub path
+    expect(st.paneCwds[`t${idx}p1`]).toBe("/abs/wt/web--auth-ui");   // worker → its worktree
+    expect(st.paneCwds[`t${idx}p2`]).toBe("/abs/wt/api--api");
+  });
+
+  it("falls back to bscBaseDir-derived paths per pane when a Rust path is absent (#905)", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    // Director hub path provided; worker map omits "api" → that one falls back.
+    useAppStore.getState().fleetStartProject("FB", fleet, "fb-key", {
+      hubPath: "/abs/hub/fb-key",
+      worktreePaths: { "auth-ui": "/abs/wt/web--auth-ui" },
+    });
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("fb-key");
+    expect(st.paneCwds[`t${idx}p0`]).toBe("/abs/hub/fb-key");                  // provided
+    expect(st.paneCwds[`t${idx}p1`]).toBe("/abs/wt/web--auth-ui");             // provided
+    expect(st.paneCwds[`t${idx}p2`]).toBe("/base/worktrees/fb-key/api--api");  // fallback
+  });
+
   it("gives the director AND every worker the project's MCP extensions (#876)", () => {
     useAppStore.setState({
       bscBaseDir: "/base",
