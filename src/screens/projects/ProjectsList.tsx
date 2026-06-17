@@ -571,9 +571,17 @@ export function ProjectsList() {
         )}
 
         {(() => {
-          const publishedTitles = new Set(visibleProjects.map(p => p.title.toLowerCase()));
+          // A project is published — and must NOT also appear as a draft — when its STABLE folder
+          // key is known to GitHub: recorded in the alias at publish, or derivable from a board
+          // title. Dedup by KEY, not by the local hub's goal.md-derived title (#904 follow-up): the
+          // local title (first line of goal.md) frequently differs from the board name, and the old
+          // title match then missed, duplicating published projects into the draft list.
+          const publishedKeys = new Set<string>([
+            ...Object.values(projectKeyAlias),
+            ...visibleProjects.map(p => sanitizeProjectKey(p.title)),
+          ]);
           // Merge the on-disk projects (durable truth) with the store's draft map (carries the
-          // pitch), keyed by project key, then drop any that are already published (#…).
+          // pitch), keyed by project key, then drop any that are already published.
           const byKey = new Map<string, { key: string; title: string; pitch: string; sort: number }>();
           for (const lp of Array.isArray(localProjects) ? localProjects : []) {
             if (!lp?.hasPlan) continue; // skip bare scaffold dirs
@@ -584,7 +592,7 @@ export function ProjectsList() {
             byKey.set(key, { key, title: d.title, pitch: d.pitch, sort: Math.max(ex?.sort ?? 0, d.createdAt) });
           }
           const drafts = [...byKey.values()]
-            .filter(d => !publishedTitles.has(d.title.toLowerCase()))
+            .filter(d => !publishedKeys.has(d.key))
             .sort((a, b) => b.sort - a.sort);
           if (drafts.length === 0) return null;
           return (
