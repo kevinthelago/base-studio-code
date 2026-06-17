@@ -108,8 +108,8 @@ describe("blueprintEdit — stage ops (#609)", () => {
   });
 
   it("mkEditorPipeline pulls catalog name + default trigger", () => {
-    const p = mkEditorPipeline("generate-issues");
-    expect(p.name).toBe("Generate issues");
+    const p = mkEditorPipeline("grade-plan");
+    expect(p.name).toBe("Grade plan");
     expect(p.enabled).toBe(true);
     expect(p.gate).toBe(false);
   });
