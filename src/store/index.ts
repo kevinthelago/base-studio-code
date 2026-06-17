@@ -635,7 +635,17 @@ interface AppStore {
   // keys off projectKey (the planning session key — where repos/prompts live).
   /** Launches the fleet; returns the fleet roster rows (paneId/stream/repo/branch/role TSV,
    *  one per live session) for the caller to persist via publishFleetRoster (#734). */
-  fleetStartProject: (projectName: string, fleet: FleetPlan, projectKey: string) => string[];
+  fleetStartProject: (
+    projectName: string,
+    fleet: FleetPlan,
+    projectKey: string,
+    /** Authoritative absolute cwds from the Rust backend (#905): the hub dir
+     *  (`project_dir_path`) for the director and each stream's worktree path
+     *  (`ensure_worktree`) for its worker. Used verbatim so the launch never
+     *  depends on the async-loaded `bscBaseDir` mirror; falls back to the
+     *  `bscBaseDir`-derived path per pane when an entry is absent. */
+    paths?: { hubPath?: string; worktreePaths?: Record<string, string> },
+  ) => string[];
   // Index of this project's primary "· build" tab, matched on its STABLE projectKey
   // (#457) — pass the same projectKey used to launch the fleet. -1 when none.
   findFleetTabIdx: (projectKey: string) => number;
@@ -1779,7 +1789,7 @@ export const useAppStore = create<AppStore>()(
 
       findFleetTabIdx: (projectKey) =>
         findProjectTabIdx(get().tabs, sanitizeProjectKey(projectKey), "build", 0),
-      fleetStartProject: (projectName, fleet, projectKey) => {
+      fleetStartProject: (projectName, fleet, projectKey, paths) => {
         // Roster rows (paneId/stream/repo/branch/role) collected during the build below and
         // written to the project hub as fleet.roster.tsv so the director's `bsc-fleet` helper
         // can enumerate the fleet + each worker's state (#734).
@@ -1887,7 +1897,9 @@ export const useAppStore = create<AppStore>()(
                 const sess = chunk[i];
                 if (sess === null) {
                   // Director session at the project root — sees every repo + worktree.
-                  newPaneCwds[key]     = projectHubCwd(s.bscBaseDir, projectKey);
+                  // Prefer the Rust-resolved absolute hub path (#905) so the launch never
+                  // depends on the async-loaded `bscBaseDir` mirror (empty/malformed → user root).
+                  newPaneCwds[key]     = paths?.hubPath || projectHubCwd(s.bscBaseDir, projectKey);
                   newPaneInitCmds[key] = "claude";
                   newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
                   newPaneAllowedCommands[key] = projectCmds;
@@ -1903,8 +1915,10 @@ export const useAppStore = create<AppStore>()(
                   newPaneDirectorDrive[key] = resolveDirectorDrive(fleet.director.drive);
                   newPaneDirectorMode[key] = strategySettings(resolveStrategy(undefined, fleet.strategy)).director;
                 } else {
-                  // Worker runs in its own git worktree on its own branch.
-                  newPaneCwds[key]     = agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
+                  // Worker runs in its own git worktree on its own branch. Prefer the
+                  // absolute path ensure_worktree returned (#905) over the bscBaseDir-derived
+                  // mirror, so an empty/malformed base dir can't drop the worker at user root.
+                  newPaneCwds[key]     = paths?.worktreePaths?.[sess.id] || agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
                   newPaneInitCmds[key] = "claude";
                   if (sess.prompt) {
                     newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);

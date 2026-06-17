@@ -1548,13 +1548,20 @@ export function Planning({ visible }: { visible: boolean }) {
         setTriageError(`${failed[0].id}: ${failed[0].err ?? "empty path"}`);
         return;
       }
+      // Carry the authoritative absolute paths into fleetStartProject (#905) so each pane's
+      // cwd comes from the Rust backend, not the async-loaded `bscBaseDir` mirror (which, when
+      // empty/malformed, silently drops every session at the user's home dir). Workers use the
+      // worktree path ensure_worktree just returned; the director uses the hub dir.
+      const worktreePaths: Record<string, string> = {};
+      for (const r of worktreeResults) if (r.path) worktreePaths[r.id] = r.path;
+      const hubPath = await invoke<string>("project_dir_path", { projectKey: effectiveProjectId }).catch(() => "");
       // Give the director its standing protocol at the hub (#375) so it gets the bsc-fleet
       // roster instruction + answers worker questions (the refactor dropped this call; #734).
       if (launchPlan.director.enabled) {
         await invoke("ensure_director_protocol", { projectKey: effectiveProjectId })
           .catch(e => console.error("director protocol failed:", e));
       }
-      const roster = fleetStartProject(projectTitle, launchPlan, effectiveProjectId);
+      const roster = fleetStartProject(projectTitle, launchPlan, effectiveProjectId, { hubPath, worktreePaths });
       publishFleetRoster(effectiveProjectId, roster); // #734: hub fleet.roster.tsv for bsc-fleet
     } catch (e) {
       console.error("fleet launch failed:", e);
