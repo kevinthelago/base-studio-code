@@ -61,6 +61,10 @@ genuinely applies; don't spin up tangential files (they just block the gate). Us
 written and confirmed — as `context/goal.md`, `context/scope.md`, `context/stack.md`, and
 `context/architecture.md` (every Context-stage file lives in the `context/` subdir).
 
+**Finish each section** — never leave a deliberate fill-in marker (`TODO`, `TBD`, `FIXME`,
+`XXX`, `TKTK`) in a written section. The Context and Plan gates block on them. (Ordinary prose —
+an ellipsis "…", or the word "placeholder" — is fine; only those explicit markers block.)
+
 **Work one stage at a time.** Finish drafting the current stage's sections, then **stop and
 let the user review and approve** before moving on — you'll receive a `[The user confirmed
 …]` message when a section is approved. Do **not** jump ahead and produce a later stage's

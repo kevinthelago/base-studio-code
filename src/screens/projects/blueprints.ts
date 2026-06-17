@@ -88,8 +88,8 @@ export const SECTION_DEFS: Record<string, SectionDef> = {
     gateRule: { require: [
       { signal: "coreConfirmed", target: true, weight: 0, label: "confirm goal, scope, stack & architecture" },
       { signal: "topicsResolved", of: "topicsTotal", label: "resolve the discovery topics" },
-      // lint-as-gate (#897 Phase 4b): no unresolved TODO/placeholder in the written sections.
-      { signal: "hasPlanGaps", target: false, weight: 0, label: "resolve TODO/placeholder markers in the written sections" },
+      // lint-as-gate (#897 Phase 4b): no deliberate fill-in marker (TODO/FIXME/...) left behind (#918).
+      { signal: "hasPlanGaps", target: false, weight: 0, label: "resolve TODO/FIXME markers in the written sections" },
     ] },
     blurb: "Discovery — goal, scope, stack, architecture (+ applicable dimensions).",
     prompt:
@@ -98,6 +98,8 @@ file's stem. The gate REQUIRES these four written and confirmed: goal, scope, st
 architecture. Cover other dimensions ONLY where they genuinely apply (canonical keys:
 users, ux, schema, api, auth, security, testing, …) and record the rest in _skipped.md.
 Each file you create is a gate item the user confirms — don't create tangential files.
+Finish each section fully — do NOT leave TODO / TBD / FIXME / XXX / TKTK markers in a written
+section; the gate blocks on them. (Ordinary prose like "..." or the word "placeholder" is fine.)
 
 Gate: goal/scope/stack/architecture confirmed, and every documented topic confirmed
 (skipped dimensions don't count).`,
@@ -197,8 +199,8 @@ owns the seams.` },
     gateRule: { require: [
       { signal: "phasesConfirmed", target: true, label: "approve the roadmap" },
       { signal: "issueCount", target: 1, label: "generate agent-ready issues" },
-      // lint-as-gate (#897 Phase 4b): no unresolved TODO/placeholder in the written sections.
-      { signal: "hasPlanGaps", target: false, weight: 0, label: "resolve TODO/placeholder markers in the written sections" },
+      // lint-as-gate (#897 Phase 4b): no deliberate fill-in marker (TODO/FIXME/...) left behind (#918).
+      { signal: "hasPlanGaps", target: false, weight: 0, label: "resolve TODO/FIXME markers in the written sections" },
     ] },
     blurb: "Autonomous: contracts, phases, and the sub-issue tree.",
     prompt:
@@ -213,7 +215,8 @@ owns the seams.` },
    stream, decomposed into granular sub-issues (acceptance criteria, owned files/globs,
    dependencies, labels).
 Then STOP and ask the user to APPROVE the phases + the seam/dependency graph before treating any
-of it as final.
+of it as final. Leave no TODO / TBD / FIXME / XXX / TKTK markers in the written plan — the gate
+blocks on them.
 
 Gate: phases approved, and every feature decomposed into agent-ready issues.`,
   },
