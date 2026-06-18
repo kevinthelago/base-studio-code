@@ -108,6 +108,26 @@ describe("coerceDeployConfig — the planner <deploy_config> channel (#919)", ()
   it("parseDeployConfigTag returns null when there's no JSON object", () => {
     expect(parseDeployConfigTag("no json here")).toBeNull();
   });
+
+  it("repairs terminal-wrapped JSON with a raw newline INSIDE a string value", () => {
+    // The planner CLI wrapped the big JSON at terminal width, injecting a raw newline + indent
+    // mid-string (`"fly\n  app …"`) — which makes JSON.parse throw. The parser must repair + parse.
+    const wrapped =
+      '<deploy_config>\n  {\n' +
+      '    "services": [{"id": "user", "repo": "o/user", "platform": "fly", "workload":\n' +
+      '  "container", "region": "iad", "build": "docker build", "output": "fly\n' +
+      '  app chirp-user-{env}"}],\n' +
+      '    "environments": [{"name":"staging","branch":"develop"},{"name":"prod","branch":"main"}],\n' +
+      '    "pipeline": {"provider":"GitHub Actions","stages":[{"name":"test","gate":true},{"name":"deploy"}]},\n' +
+      '    "secrets": [{"key":"DATABASE_URL","envs":["staging","prod"]}],\n' +
+      '    "release": {"strategy":"rolling","autoRollback":true}\n' +
+      '  }\n</deploy_config>';
+    const body = wrapped.replace(/^<deploy_config>/, "").replace(/<\/deploy_config>$/, "");
+    const cfg = parseDeployConfigTag(body);
+    expect(cfg).not.toBeNull();
+    expect(cfg!.services[0].platform).toBe("fly");
+    expect(deploymentDefined(cfg!)).toBe(true);
+  });
 });
 
 describe("Deploy stage placement (#919)", () => {
