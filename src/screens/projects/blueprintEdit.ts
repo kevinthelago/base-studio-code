@@ -5,10 +5,10 @@
 // (add by kind, reorder, dep toggle, pipeline trigger/gate, output disposition).
 
 import {
-  type BlueprintSection, type Pipeline, type PipelineTrigger,
-  PIPELINE_LIB, SECTION_DEFS, mkSection, uid,
+  type BlueprintSection,
+  SECTION_DEFS, mkSection, uid,
 } from "./blueprints";
-import { stageKind, defaultDisposition, pipelineMeta } from "./blueprintCatalog";
+import { stageKind, defaultDisposition } from "./blueprintCatalog";
 
 /** Build a section for ANY stage kind. Known kinds (in SECTION_DEFS) keep their runtime
  *  gate; unknown ones (users/stack/…) are synthesized as informational stages. */
@@ -22,18 +22,7 @@ export function mkStageSection(kind: string): BlueprintSection {
     uid: uid("sec"), key: kind, name: k.title, glyph: "✚",
     gate: "stage complete", deps: [], blurb: k.blurb,
     prompt: `Document the project's ${k.title.toLowerCase()}. ${k.blurb}`,
-    enabled: true, expanded: false, pipelines: [], output: defaultDisposition(kind),
-  };
-}
-
-/** Build a pipeline instance for the editor from a catalog id. */
-export function mkEditorPipeline(id: string): Pipeline {
-  const def = PIPELINE_LIB.find((p) => p.id === id);
-  const meta = pipelineMeta(id);
-  return {
-    uid: uid("pl"), id,
-    name: def?.name ?? id, desc: def?.desc ?? "", suits: def?.suits ?? ["*"], kind: def?.kind ?? "custom",
-    trigger: meta.defaultTrigger, enabled: true, gate: false,
+    enabled: true, expanded: false, output: defaultDisposition(kind),
   };
 }
 
@@ -59,10 +48,7 @@ export function duplicateStage(sections: BlueprintSection[], u: string): Bluepri
   const i = sections.findIndex((s) => s.uid === u);
   if (i < 0) return sections;
   const src = sections[i];
-  const copy: BlueprintSection = {
-    ...src, uid: uid("sec"), name: src.name + " copy",
-    pipelines: src.pipelines.map((p) => ({ ...p, uid: uid("pl") })),
-  };
+  const copy: BlueprintSection = { ...src, uid: uid("sec"), name: src.name + " copy" };
   const a = [...sections];
   a.splice(i + 1, 0, copy);
   return a;
@@ -86,17 +72,6 @@ export function toggleDep(sections: BlueprintSection[], secUid: string, depKey: 
   }));
 }
 
-export function addPipeline(sections: BlueprintSection[], secUid: string, pipelineId: string): BlueprintSection[] {
-  return mapSec(sections, secUid, (s) => ({ ...s, pipelines: [...s.pipelines, mkEditorPipeline(pipelineId)] }));
-}
-export function updatePipeline(
-  sections: BlueprintSection[], secUid: string, pipeUid: string, patch: Partial<Pick<Pipeline, "trigger" | "gate" | "enabled">>,
-): BlueprintSection[] {
-  return mapSec(sections, secUid, (s) => ({ ...s, pipelines: s.pipelines.map((p) => (p.uid === pipeUid ? { ...p, ...patch } : p)) }));
-}
-export function removePipeline(sections: BlueprintSection[], secUid: string, pipeUid: string): BlueprintSection[] {
-  return mapSec(sections, secUid, (s) => ({ ...s, pipelines: s.pipelines.filter((p) => p.uid !== pipeUid) }));
-}
 export function setOutput(sections: BlueprintSection[], secUid: string, output: string): BlueprintSection[] {
   return mapSec(sections, secUid, (s) => ({ ...s, output }));
 }
@@ -108,6 +83,15 @@ export function addSkill(sections: BlueprintSection[], secUid: string, skillId: 
 /** Detach a skill/knowledge id from a section. (#636) */
 export function removeSkill(sections: BlueprintSection[], secUid: string, skillId: string): BlueprintSection[] {
   return mapSec(sections, secUid, (s) => ({ ...s, skills: (s.skills ?? []).filter((x) => x !== skillId) }));
+}
+
+/** Attach an MCP server (by name) to a section (no-op if already attached). (#897) */
+export function addMcpServer(sections: BlueprintSection[], secUid: string, name: string): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ((s.mcp ?? []).includes(name) ? s : { ...s, mcp: [...(s.mcp ?? []), name] }));
+}
+/** Detach an MCP server (by name) from a section. (#897) */
+export function removeMcpServer(sections: BlueprintSection[], secUid: string, name: string): BlueprintSection[] {
+  return mapSec(sections, secUid, (s) => ({ ...s, mcp: (s.mcp ?? []).filter((x) => x !== name) }));
 }
 export function setStageField(
   sections: BlueprintSection[], secUid: string, patch: Partial<Pick<BlueprintSection, "name" | "prompt">>,
@@ -121,7 +105,3 @@ export function depCandidates(sections: BlueprintSection[], secUid: string): Blu
   const i = sections.findIndex((s) => s.uid === secUid);
   return i <= 0 ? [] : sections.slice(0, i);
 }
-
-/** A trigger label "enter|change|complete|manual" mapped to/from canonical forms is in
- *  blueprintCatalog; re-export the type for editor convenience. */
-export type { PipelineTrigger };

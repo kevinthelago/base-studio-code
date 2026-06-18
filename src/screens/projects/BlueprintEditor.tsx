@@ -10,15 +10,16 @@ import "../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import {
   stageKind, tint, hue, DISPOSITIONS, DISPOSITION_KEYS, defaultDisposition,
-  pipelineMeta, TRIGGER_LABELS, STAGE_KIND_KEYS,
+  STAGE_KIND_KEYS,
 } from "./blueprintCatalog";
 import {
   reorderStages, addStage, duplicateStage, deleteStage, toggleDep,
-  addPipeline, updatePipeline, removePipeline, setOutput, setStageField, depCandidates,
-  addSkill, removeSkill,
+  setOutput, setStageField, depCandidates,
+  addSkill, removeSkill, addMcpServer, removeMcpServer,
 } from "./blueprintEdit";
 import { resolveBlueprintSkills, type BlueprintSkillItem } from "./blueprintSkills";
-import { PIPELINE_LIB, type BlueprintSection, type PipelineTrigger } from "./blueprints";
+import { resolveBlueprintMcp, type McpLibraryItem } from "./blueprintMcp";
+import { type BlueprintSection } from "./blueprints";
 
 export interface EditorRibbon { author?: string; label: string; summary: string }
 
@@ -30,11 +31,14 @@ export interface BlueprintEditorProps {
   onChange: (sections: BlueprintSection[]) => void;
   /** The pickable skills/knowledge library (#636); empty ⇒ the Skills block hides its picker. */
   skillLibrary?: BlueprintSkillItem[];
+  /** The pickable MCP-server library (#897); empty ⇒ the MCP block hides its picker. */
+  mcpLibrary?: McpLibraryItem[];
   ribbon?: EditorRibbon | null;
   onResolveRibbon?: (action: "dismiss" | "review") => void;
 }
 
-const gateCount = (s: BlueprintSection) => s.pipelines.filter((p) => p.gate).length;
+const gateCount = (s: BlueprintSection) => (s.gateRule ? 1 : 0);
+const capCount = (s: BlueprintSection) => (s.skills?.length ?? 0) + (s.mcp?.length ?? 0);
 
 /* ── stage rail ── */
 function StageNode({
@@ -47,6 +51,7 @@ function StageNode({
 }) {
   const k = stageKind(section.key);
   const gates = gateCount(section);
+  const caps = capCount(section);
   const depNames = section.deps.map((d) => all.find((s) => s.key === d)?.name ?? d);
   const locked = depNames.length > 0;
   return (
@@ -65,10 +70,10 @@ function StageNode({
       <span className="sbody">
         <span className="sname">{section.name}{locked && <span className="lock" title={"depends on " + depNames.join(", ")}>🔒</span>}</span>
         <span className="smeta">
-          {section.pipelines.length > 0 && <span>{section.pipelines.length} pipeline{section.pipelines.length > 1 ? "s" : ""}</span>}
-          {gates > 0 && <span className="gate">{gates} gate{gates > 1 ? "s" : ""}</span>}
+          {caps > 0 && <span>{caps} attached</span>}
+          {gates > 0 && <span className="gate">gate</span>}
           {locked && <span>↳ {depNames.join(", ")}</span>}
-          {section.pipelines.length === 0 && !locked && <span className="dim">{DISPOSITIONS[section.output ?? defaultDisposition(section.key)]?.title ?? "Plan file"}</span>}
+          {caps === 0 && !locked && <span className="dim">{DISPOSITIONS[section.output ?? defaultDisposition(section.key)]?.title ?? "Plan file"}</span>}
         </span>
       </span>
     </div>
@@ -155,42 +160,14 @@ function DependencyEditor({ sections, section, onChange }: { sections: Blueprint
   );
 }
 
-function PipelineRow({ p, onTrigger, onGate, onRemove }: {
-  p: BlueprintSection["pipelines"][number];
-  onTrigger: (t: PipelineTrigger) => void; onGate: () => void; onRemove: () => void;
-}) {
-  const meta = pipelineMeta(p.id);
-  return (
-    <div className="pipe">
-      <span className="pi" style={{ background: tint(meta.h, 0.16), color: hue(meta.h) }}><Ic n={meta.glyph} size={15} /></span>
-      <div className="pbody">
-        <div className="pname">{p.name}{!p.enabled && <span className="tag">paused</span>}</div>
-        <div className="pdesc">{p.desc}</div>
-      </div>
-      <div className="ptrig">
-        <div className="seg" title="When this pipeline runs">
-          {TRIGGER_LABELS.map((t) => <button key={t.value} className={p.trigger === t.value ? "on" : ""} onClick={() => onTrigger(t.value)}>{t.label}</button>)}
-        </div>
-        {meta.gateable && (
-          <span className="gate-toggle" onClick={onGate} title="Gate: stage can't complete until this passes">
-            <span className={"switch" + (p.gate ? " on" : "")} />gate
-          </span>
-        )}
-        <button className="iconbtn danger" title="Remove pipeline" onClick={onRemove}>✕</button>
-      </div>
-    </div>
-  );
-}
-
-function StageDetail({ sections, section, onSelect, onChange, skillLibrary = [] }: { sections: BlueprintSection[]; section: BlueprintSection; onSelect: (uid: string) => void; onChange: (s: BlueprintSection[]) => void; skillLibrary?: BlueprintSkillItem[] }) {
+function StageDetail({ sections, section, onSelect, onChange, skillLibrary = [], mcpLibrary = [] }: { sections: BlueprintSection[]; section: BlueprintSection; onSelect: (uid: string) => void; onChange: (s: BlueprintSection[]) => void; skillLibrary?: BlueprintSkillItem[]; mcpLibrary?: McpLibraryItem[] }) {
   const attached = section.skills ?? [];
   const { found: attachedSkills, missing: missingSkills } = resolveBlueprintSkills(attached, skillLibrary);
   const addableSkills = skillLibrary.filter((i) => !attached.includes(i.id));
+  const attachedMcpIds = section.mcp ?? [];
+  const { found: attachedMcp, missing: missingMcp } = resolveBlueprintMcp(attachedMcpIds, mcpLibrary);
+  const addableMcp = mcpLibrary.filter((i) => !attachedMcpIds.includes(i.id));
   const k = stageKind(section.key);
-  const existing = new Set(section.pipelines.map((p) => p.id));
-  const suggested = PIPELINE_LIB.filter((p) => p.suits.includes(section.key)).map((p) => p.id);
-  const others = PIPELINE_LIB.filter((p) => !suggested.includes(p.id)).map((p) => p.id);
-  const addable = [...suggested, ...others].filter((id) => !existing.has(id));
   const output = section.output ?? defaultDisposition(section.key);
 
   return (
@@ -219,33 +196,6 @@ function StageDetail({ sections, section, onSelect, onChange, skillLibrary = [] 
         <div className="d-block">
           <div className="lbl">Dependencies <span className="ln" /><span className="lhint">stage stays locked until these complete</span></div>
           <DependencyEditor sections={sections} section={section} onChange={onChange} />
-        </div>
-
-        <div className="d-block">
-          <div className="lbl">Attached pipelines <span className="ln" /><span className="lhint">actions that run on this stage's output</span></div>
-          {section.pipelines.length === 0 && <div className="hint" style={{ marginBottom: 8 }}>No pipelines attached. Add one below — gate pipelines block stage completion until they pass.</div>}
-          {section.pipelines.map((p) => (
-            <PipelineRow key={p.uid} p={p}
-              onTrigger={(t) => onChange(updatePipeline(sections, section.uid, p.uid, { trigger: t }))}
-              onGate={() => onChange(updatePipeline(sections, section.uid, p.uid, { gate: !p.gate }))}
-              onRemove={() => onChange(removePipeline(sections, section.uid, p.uid))} />
-          ))}
-          {addable.length > 0 && (
-            <div className="pipe-add">
-              {addable.map((id) => {
-                const def = PIPELINE_LIB.find((p) => p.id === id)!;
-                const m = pipelineMeta(id);
-                const isSug = suggested.includes(id);
-                return (
-                  <button className="chip-sug" key={id} title={def.desc}
-                    style={isSug ? { borderColor: tint(m.h, 0.5), color: hue(m.h) } : undefined}
-                    onClick={() => onChange(addPipeline(sections, section.uid, id))}>
-                    + {def.name}{isSug && " ✦"}
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
 
         <div className="d-block">
@@ -295,13 +245,46 @@ function StageDetail({ sections, section, onSelect, onChange, skillLibrary = [] 
             </div>
           )}
         </div>
+
+        {/* MCP servers attached to this stage (#897) — tools the planner can call here. */}
+        <div className="d-block">
+          <div className="lbl">MCP servers <span className="ln" /><span className="lhint">tools Claude can call in this stage</span></div>
+          {attachedMcp.length === 0 && missingMcp.length === 0 && (
+            <div className="hint" style={{ marginBottom: 8 }}>No MCP servers attached. Add tools below — they're scoped to the project so the planner (and fleet) can call them.</div>
+          )}
+          {(attachedMcp.length > 0 || missingMcp.length > 0) && (
+            <div className="dep-row" style={{ marginBottom: 8 }}>
+              {attachedMcp.map((m) => (
+                <span className="dep-chip on" key={m.id} title={m.desc}>
+                  {m.downloadable && <span className="dim" style={{ fontSize: 8.5 }}>first-party</span>}{m.name}
+                  <span style={{ cursor: "pointer", opacity: .8 }} onClick={() => onChange(removeMcpServer(sections, section.uid, m.id))}> ✕</span>
+                </span>
+              ))}
+              {missingMcp.map((id) => (
+                <span className="dep-chip" key={id} title="Not in the catalog or installed — add it or it won't connect" style={{ color: "var(--danger)", borderColor: "color-mix(in oklch, var(--danger), transparent 60%)" }}>
+                  ⚠ {id}
+                  <span style={{ cursor: "pointer", opacity: .8 }} onClick={() => onChange(removeMcpServer(sections, section.uid, id))}> ✕</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {addableMcp.length > 0 && (
+            <div className="pipe-add">
+              {addableMcp.map((m) => (
+                <button className="chip-sug" key={m.id} title={m.desc} onClick={() => onChange(addMcpServer(sections, section.uid, m.id))}>
+                  + {m.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 /** The editor body: an optional upstream ribbon + the stage rail + the stage detail. */
-export function BlueprintEditorView({ sections, selectedUid, onSelect, onChange, skillLibrary, ribbon, onResolveRibbon }: BlueprintEditorProps) {
+export function BlueprintEditorView({ sections, selectedUid, onSelect, onChange, skillLibrary, mcpLibrary, ribbon, onResolveRibbon }: BlueprintEditorProps) {
   const section = sections.find((s) => s.uid === selectedUid) ?? sections[0];
   return (
     <div className="ed">
@@ -317,7 +300,7 @@ export function BlueprintEditorView({ sections, selectedUid, onSelect, onChange,
       <div className="ed-body">
         <StageRail sections={sections} selectedUid={section ? section.uid : null} onSelect={onSelect} onChange={onChange} />
         {section ? (
-          <StageDetail sections={sections} section={section} onSelect={onSelect} onChange={onChange} skillLibrary={skillLibrary} />
+          <StageDetail sections={sections} section={section} onSelect={onSelect} onChange={onChange} skillLibrary={skillLibrary} mcpLibrary={mcpLibrary} />
         ) : (
           <div className="detail"><div className="d-empty"><div className="ico">▢</div><div>No stages yet. Add one from the flow rail, or ask Claude to design the blueprint.</div></div></div>
         )}

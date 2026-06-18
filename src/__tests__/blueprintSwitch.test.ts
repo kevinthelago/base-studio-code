@@ -25,10 +25,11 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(useAppStore.getState().projectBlueprintId["p"]).toBe("api");
   });
 
-  it("applyBlueprintToProject re-seeds the config, records the blueprint, and clears progress", () => {
-    useAppStore.getState().applyBlueprintToProject("p", "fullstack");
+  it("applyBlueprintToProject re-seeds the config, records the blueprint, and clears progress (greenfield → transform)", () => {
+    useAppStore.getState().setProjectBlueprintId("p", "default"); // greenfield origin
+    useAppStore.getState().applyBlueprintToProject("p", "refactor"); // → transform (allowed)
     const s = useAppStore.getState();
-    expect(s.projectBlueprintId["p"]).toBe("fullstack");
+    expect(s.projectBlueprintId["p"]).toBe("refactor");
     expect(s.planStageConfig["p"]).toBeTruthy();
     expect(s.planStageConfig["p"].order.length).toBeGreaterThan(0);
     // progress keyed to the old arc is wiped
@@ -58,5 +59,27 @@ describe("blueprint-per-project + reset (#647)", () => {
     const s = useAppStore.getState();
     expect(s.projectBlueprintId["p"]).toBeUndefined();
     expect(s.sectionGrades["p"]).toBeTruthy(); // untouched
+  });
+
+  it("won't switch a project locked to the blueprint-author lifecycle (#923)", () => {
+    // bind the project to the authoring lifecycle, then try to switch it away
+    useAppStore.getState().setProjectBlueprintId("p", "blueprint-author");
+    useAppStore.getState().applyBlueprintToProject("p", "mcp-server");
+    const s = useAppStore.getState();
+    // the switch is refused — the authoring blueprint overrides + locks the project
+    expect(s.projectBlueprintId["p"]).toBe("blueprint-author");
+    expect(s.sectionGrades["p"]).toBeTruthy();      // progress NOT wiped
+    expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
+  });
+
+  it("won't switch greenfield outside transform/harden, nor switch a non-greenfield origin (#923)", () => {
+    // greenfield → data is not an allowed target
+    useAppStore.getState().setProjectBlueprintId("p", "default");
+    useAppStore.getState().applyBlueprintToProject("p", "data-migration");
+    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("default"); // refused
+    // a transform-origin project can't switch at all
+    useAppStore.getState().setProjectBlueprintId("p", "refactor");
+    useAppStore.getState().applyBlueprintToProject("p", "harden");
+    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("refactor"); // refused
   });
 });

@@ -132,6 +132,53 @@ pub fn build_message(
     })
 }
 
+/// Build an FCM push for an agent that entered a manual-wait or asking state (F4).
+/// Lets the user know an agent is paused and what it's waiting for, so they can
+/// respond from the mobile app even when the relay session is backgrounded.
+pub fn build_coord_wait_message(
+    device_token: &str,
+    session: &str,
+    reason: &str,
+) -> serde_json::Value {
+    let body = if reason.trim().is_empty() {
+        "An agent paused and is waiting for you.".to_string()
+    } else {
+        notification_body(reason)
+    };
+    serde_json::json!({
+        "token": device_token,
+        "notification": { "title": "Studio Code — agent waiting", "body": body },
+        "data": { "type": "coord_wait", "session": session, "reason": reason },
+        "apns": {
+            "headers": { "apns-priority": "10" },
+            "payload": { "aps": { "sound": "default", "mutable-content": 1 } }
+        }
+    })
+}
+
+/// Build an FCM push for a non-transient automation failure (A4).
+/// The automation name and error are sent so the user can triage from the mobile app.
+pub fn build_autom_failed_message(
+    device_token: &str,
+    automation_name: &str,
+    error: &str,
+) -> serde_json::Value {
+    let title = if automation_name.trim().is_empty() {
+        "Studio Code — automation failed".to_string()
+    } else {
+        format!("Automation failed: {automation_name}")
+    };
+    serde_json::json!({
+        "token": device_token,
+        "notification": { "title": title, "body": notification_body(error) },
+        "data": { "type": "autom_failed", "name": automation_name, "error": error },
+        "apns": {
+            "headers": { "apns-priority": "10" },
+            "payload": { "aps": { "sound": "default", "mutable-content": 1 } }
+        }
+    })
+}
+
 #[derive(Serialize)]
 struct JwtClaims<'a> {
     iss: &'a str,
@@ -225,6 +272,9 @@ impl FcmSender {
 
     /// Send one combined notification+data push to `device_token`. Returns a `SendOutcome`
     /// telling the caller whether to drop the token (it was stale/invalid).
+    // The sender landed ahead of its caller — the FCM trigger (user_request / coordination
+    // pushes, #932/#936) wires it. Until then clippy's -D dead-code would fail CI, so allow it.
+    #[allow(dead_code)]
     pub async fn send(
         &self,
         device_token: &str,
@@ -232,6 +282,13 @@ impl FcmSender {
         prompt: &str,
         session_name: &str,
     ) -> SendOutcome {
+        self.send_built(build_message(device_token, pane_id, prompt, session_name)).await
+    }
+
+    /// Send a pre-built FCM message object (the value of the `message` key in the FCM v1
+    /// request body). Used by the push worker when it builds the message with one of the
+    /// specialised `build_*` helpers before dispatching. Returns a `SendOutcome`.
+    pub async fn send_built(&self, message: serde_json::Value) -> SendOutcome {
         let access = match self.access_token().await {
             Ok(t) => t,
             Err(e) => {
@@ -239,8 +296,7 @@ impl FcmSender {
                 return SendOutcome::Error;
             }
         };
-        let body =
-            serde_json::json!({ "message": build_message(device_token, pane_id, prompt, session_name) });
+        let body = serde_json::json!({ "message": message });
         let resp = match self
             .http
             .post(self.send_url())

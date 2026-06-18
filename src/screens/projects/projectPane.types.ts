@@ -11,6 +11,8 @@ import type { IntegrationStrategy } from "./integrationStrategy";
 import type { PlanGrade } from "../../lib/planGrade";
 import type { PlanFeature } from "./featureList";
 import type { SeamGraph } from "../../lib/planSeamGraph";
+import type { Blueprint } from "./blueprints";
+import type { DeployConfig } from "./deployConfig";
 
 export type { PlanGrade };
 
@@ -144,6 +146,11 @@ export interface ProjectPaneData {
   mcpServers?: McpServer[];
   /** User-facing capabilities defined in the Features stage (#…); each is a fleet stream. */
   features?: PlanFeature[];
+  /** The in-progress blueprint an AUTHORING project is designing (#923) — rendered in the
+   *  authoring stages' focused bodies (Purpose/Stages/Capabilities/Review). */
+  authoredBlueprint?: Blueprint;
+  /** The deployment & infrastructure config (#919) — the Deploy stage pane's editable state. */
+  deploy?: DeployConfig;
   /** The feature seam/dependency DAG (#…) — the Plan stage's approval surface. */
   seamGraph?: SeamGraph;
   // The agent-readiness grade (#445) is no longer carried on the pane data: it is now

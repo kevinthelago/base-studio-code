@@ -53,12 +53,19 @@ const PLANNING_EXISTING_INTRO: &str = include_str!("../templates/planning-existi
 
 const PLANNING_PROCESS_MD: &str = include_str!("../templates/planning-process.md");
 
+// The blueprint-authoring lifecycle (#923) gets its OWN, self-contained intro — the planner is
+// designing a reusable blueprint (deliverable = a gist), not a software project — and does NOT get
+// the software-planning process block (repos / features / fleet / GitHub publish), which would only
+// mislead it. The `<blueprint>` tag spec + the four authoring stages live in this intro.
+const PLANNING_BLUEPRINT_INTRO: &str = include_str!("../templates/planning-blueprint-intro.md");
+
 /// One-line directive per planning stage (#542/#666) for the assembled active-stages
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
     let line = match id {
-        "context"     => "**Context** — discovery, one topic at a time. Write every discovery file into the **`context/`** subdir. The gate REQUIRES these four, written and confirmed: `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md` — always create them. Cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/users.md`, `context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, …); record every dimension you don't document in `context/_skipped.md`. Each file you create is a gate item the user must confirm — do NOT create files for tangential topics, or the gate can't complete.",
+        "context"     => "**Context** — discovery, one topic at a time. Write every discovery file into the **`context/`** subdir. The gate REQUIRES these four, written and confirmed: `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md` — always create them. Cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/users.md`, `context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, `context/observability.md`, `context/reliability.md`, `context/data_lifecycle.md`, …; the production-readiness bars in the planning guide are first-class dimensions here — apply where they matter, accessibility/compliance via the Compliance MCP); record every dimension you don't document in `context/_skipped.md`. Each file you create is a gate item the user must confirm — do NOT create files for tangential topics, or the gate can't complete.",
         "repos"       => "**Repos** — decide and link the repositories (emit `<repo_link>`, write `repos.json`).",
+        "deploy"      => "**Deploy** (right after Repos) — define how each service SHIPS, then EMIT it as a `<deploy_config>{…JSON…}</deploy_config>` tag. **The tag is what clears the gate and fills the Deploy pane — a prose `deploy.md` does NOT.** JSON fields: `services` (array; each REQUIRES `platform` + `workload` = static|serverless|container|service, plus `id`, `repo`, `region`, `build`, `output`/`runtime`); `environments` (≥2; each `name`, `branch`, `url`, `auto`); `pipeline` (`provider` + `stages`: array of `{name, trigger: push|tag|on-green|manual, gate: bool, cmd}`, ≥2 stages); `secrets` (array of `{key, envs:[…]}` — list `prod` in `envs` for every prod-needed secret); `release` (`strategy` = recreate|rolling|blue-green|canary, `autoRollback`, `keep`, `migrateWithDeploy`); `health` (`probe`, `slo`, `alerts`). The gate (`deploymentDefined`) needs: a `platform` on EVERY service, ≥2 environments, ≥2 pipeline stages, every secret wired for `prod`, and a non-empty `release.strategy`. Propose defaults from the stack, confirm with the user, then emit the tag (re-emit the whole tag as it firms up). A human-readable `deploy.md` is optional reference. Publishes as deployment issues owned by a `deploy` stream.",
         "ui"          => "**UI** — runs AFTER Features: design the screens that deliver the defined capabilities. Write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live. Then author a **Claude Design kickoff** at `prompts/ui-kickoff.md` — a self-contained brief (goal, feature→screen map, each screen's states/flows, design-system constraints) the user pastes into a Claude Design session.",
         "features"    => "**Features** — agree a short feature list, then drive ONE feature at a time and write each as an entry in `features.json` (a JSON array; one object per user-facing capability, which is ALSO its fleet stream). Per feature fill: `name`, `behavior` (what it does + when, in the user's terms), `acceptance` (a done-when checklist array), `approach` (how it's built), `tools` (libraries/services array), `data` (what it stores/reads + which features it depends on), `stream` (defaults to the slug). A feature is done when it has name + behavior + ≥1 acceptance; confirm it before the next. Do NOT design the integration contracts here — that's the Plan/Structure stage.",
         "structure"   => "**Structure** — with the features defined, run the workshop to synthesize the plan (new project → feature-by-feature; existing → section-by-section migration — inventory every screen/module first), then write `phases.json` + agent-ready `issues.json`. Go ONE unit at a time; never move on until the current unit is fully decomposed and written.",
@@ -75,6 +82,13 @@ fn stage_directive(id: &str) -> String {
         "consolidation" => "**Consolidation** — plan merging the services, unifying data stores and contracts.",
         "migration"    => "**Migration plan** — the from→to mapping and an incremental, reversible cutover.",
         "hardening"    => "**Security hardening** — threat-model, audit (authz / secrets / deps), and plan concrete fixes.",
+        // Blueprint-authoring lifecycle (#923) — the DELIVERABLE is a reusable blueprint published
+        // to a gist; there is NO code, no fleet, no triage. Build the blueprint with the <blueprint>
+        // tag and re-emit the whole tag as it grows.
+        "purpose"         => "**Purpose** — you are designing a reusable BLUEPRINT (a planning template), not a software project. Establish its lifecycle category, the projects it seeds, and its name + description; emit a `<blueprint>` tag with id/name/desc/category/mode.",
+        "bp_stages"       => "**Stages** — design the blueprint's ordered stages, one at a time: each stage's key+name, intent, the discovery prompt it runs, its deps/order, and whether it's optional. Re-emit the full `<blueprint>` tag as the sections array grows.",
+        "bp_capabilities" => "**Capabilities** (optional) — attach reusable skills/knowledge + MCP servers the blueprint should bundle into projects it seeds; fold them into the `<blueprint>` tag's section or blueprint-level skills/mcp arrays.",
+        "bp_review"       => "**Review & publish** — review the assembled blueprint with the user, emit the FINAL `<blueprint>` tag, and let the user publish it to a gist from the footer. Do NOT publish it yourself.",
         other         => return format!("**{other}** — configured stage."),
     };
     line.to_string()
@@ -110,6 +124,9 @@ pub(crate) async fn setup_workspaces(
     github_login: String,
     github_name: String,
     enabled_stages: Vec<String>,
+    // The active blueprint's deliverable is a blueprint itself (#923) — use the authoring intro and
+    // omit the software-planning process block. Optional so older call sites default to false.
+    authoring: Option<bool>,
 ) -> Result<WorkspacePaths, String> {
     let _perf = PerfSpan::new("setup_workspaces");
     config::sanitize_claude_config();
@@ -157,8 +174,12 @@ pub(crate) async fn setup_workspaces(
     std::fs::write(kb_dir.join("CLAUDE.md"), KB_CLAUDE_MD)
         .map_err(|e| e.to_string())?;
 
-    // Assemble the template: orientation-specific INTRO + shared PROCESS block.
-    let mut planning_md = if is_existing {
+    // Assemble the template: orientation-specific INTRO + shared PROCESS block. The blueprint-
+    // authoring lifecycle (#923) is self-contained — its intro carries the whole task + the
+    // <blueprint> tag spec, and the software-planning process block is omitted entirely.
+    let mut planning_md = if authoring.unwrap_or(false) {
+        PLANNING_BLUEPRINT_INTRO.to_string()
+    } else if is_existing {
         format!(
             "{}{}",
             PLANNING_EXISTING_INTRO

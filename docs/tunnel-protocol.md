@@ -62,27 +62,65 @@ Multi-word field names are **camelCase** (`paneId`, `currentTask`, `lastActivity
 
 ### Client → server (`TunnelClientMessage`)
 
-| `type`            | Fields                                  | Meaning |
-|-------------------|-----------------------------------------|---------|
-| `auth`            | `token`, `fcmToken?`                     | First frame inside the Noise session. `fcmToken` is the device's FCM registration token, persisted as the push target for `user_request` notifications (see [FCM push](#fcm-push-user_request), #846). |
-| `set_fcm_token`   | `fcmToken`                               | Refreshed FCM registration token (tokens rotate). Updates the stored push target mid-session; allowed even while view-only. |
-| `pane_set_state`  | `paneId`, `state` (`streaming`/`minimized`/`dormant`) | Mark a pane focused (`streaming`) or background. |
-| `pane_focus`      | `paneId`                                 | Focus a pane (begin streaming its output). |
-| `pane_input`      | `paneId`, `data`                         | Keystrokes → the pane's PTY. |
-| `pane_resize`     | `paneId`, `cols`, `rows`                 | Resize the pane's PTY. |
+| `type`                    | Fields                                  | Meaning |
+|---------------------------|-----------------------------------------|---------|
+| `auth`                    | `token`, `fcmToken?`                    | First frame inside the Noise session. `fcmToken` is the device's FCM registration token, persisted as the push target for notifications (see [FCM push](#fcm-push-out-of-band-notifications), #846). |
+| `set_fcm_token`           | `fcmToken`                              | Refreshed FCM registration token (tokens rotate). Updates the stored push target mid-session; allowed even while view-only. |
+| `pane_set_state`          | `paneId`, `state` (`streaming`/`minimized`/`dormant`) | Mark a pane focused (`streaming`) or background. |
+| `pane_focus`              | `paneId`                                | Focus a pane (begin streaming its output). |
+| `pane_input`              | `paneId`, `data`                        | Keystrokes → the pane's PTY. |
+| `pane_resize`             | `paneId`, `cols`, `rows`                | Resize the pane's PTY. |
+| `plan_sync_manifest_request` | `projectId`                          | Request the desktop's current plan manifest for a project. |
+| `plan_sync_pull`          | `projectId`, `paths`                    | Request specific plan files from the desktop. |
+| `plan_sync_push`          | `projectId`, `files`                    | Push mobile's merged plan state to the desktop. |
+| `coord_wake`              | `session`                               | Ask the desktop to wake a dep-blocked waiter (F2). |
+| `coord_approve`           | `session`                               | Approve a checkpoint/confirm-paused agent (F2). |
+| `automation_arm`          | `id`, `armed`                           | Arm or disarm an automation on the desktop (A2). |
+| `automation_run_now`      | `id`                                    | Trigger an automation to run immediately (A2). |
 
 ### Server → client (`TunnelServerMessage`)
 
-| `type`           | Fields                                                       | Meaning |
-|------------------|--------------------------------------------------------------|---------|
-| `auth_ok`        | —                                                            | Token accepted. Sent before any other frame. |
-| `pane_list`      | `panes: [{ id, cwd, name, status }]`                          | Current panes. Replayed on connect + on change. |
-| `pane_output`    | `paneId`, `data`, `coarse`                                    | PTY output for the client's focused pane. |
-| `pane_size`      | `paneId`, `cols`, `rows`                                      | The PTY grid size `pane_output` is rendered for. The client must size its terminal to these `cols`/`rows` so the stream's baked line-wrapping + cursor positioning line up. Replayed on connect + sent whenever the desktop PTY resizes. |
-| `session_state`  | `paneId`, `status`, `currentTask`, `lastActivity`, `prompt`   | Per-pane agent state. `prompt` set when `status == "awaiting_input"`. |
-| `user_request`   | `paneId`, `prompt`                                           | A pane newly needs input. |
+| `type`                | Fields                                                         | Meaning |
+|-----------------------|----------------------------------------------------------------|---------|
+| `auth_ok`             | —                                                              | Token accepted. Sent before any other frame. |
+| `pane_list`           | `panes: [{ id, cwd, name, status }]`                           | Current panes. Replayed on connect + on change. |
+| `pane_output`         | `paneId`, `data`, `coarse`                                     | PTY output for the client's focused pane. |
+| `pane_size`           | `paneId`, `cols`, `rows`                                       | The PTY grid size `pane_output` is rendered for. Replayed on connect + sent whenever the desktop PTY resizes. |
+| `session_state`       | `paneId`, `status`, `currentTask`, `lastActivity`, `prompt`    | Per-pane agent state. `prompt` set when `status == "awaiting_input"`. |
+| `user_request`        | `paneId`, `prompt`                                             | A pane newly needs input. |
+| `plan_sync_manifest`  | `projectId`, `files: Record<relpath, hash>`                    | Plan manifest (relpath → FNV-1a hash). Replayed on connect + on change (#588). |
+| `plan_sync_files`     | `projectId`, `files: [{ relpath, content }]`                   | Plan file contents in response to `plan_sync_pull`. |
+| `plan_sync_ack`       | `projectId`, `applied`                                         | Desktop ack after applying a `plan_sync_push`. |
+| `fleet_roster`        | `sessions: FleetSession[]`                                     | Full fleet snapshot. Replayed on connect + on every fleet state change (F2). |
+| `coord_event`         | `kind`, `session?`, `refKey?`, `at`                            | Single coordination event (blocked / satisfied / woken / waiting / asking / failed). kind ∈ those values (F2). |
+| `automation_list`     | `automations: AutomationFrame[]`                               | Full automation list. Replayed on connect + on every change (A2). |
+| `automation_ran`      | `id`, `at`, `status`, `note`                                   | Informational: automation fired. status ∈ "ok"/"skipped"/"fail" (A2). |
+| `automation_failed`   | `id`, `at`, `error`                                            | Non-transient automation failure; also triggers an FCM push (A4). |
+| `mcp_list`            | `extensions: McpExtFrame[]`                                    | Full MCP server / hook list (read-only on mobile). Replayed on connect + on every change (M2). |
 
 `status` ∈ `running | idle | awaiting_input | error` (`PaneStatus`).
+
+#### `FleetSession` shape (F2)
+
+```json
+{ "session": "t0p1", "status": "blocked", "blockedOn": ["#42"], "waitReason": null, "question": null, "at": 1750000000000 }
+```
+
+`status` ∈ `running | blocked | waiting | asking | idle`. `blockedOn` is omitted when empty. `waitReason` is set when `status == "waiting"`; `question` when `status == "asking"`.
+
+#### `AutomationFrame` shape (A2)
+
+```json
+{ "id": "sched-1", "name": "Nightly build", "armed": true, "whenExpr": "0 2 * * *", "lastRunAt": 1750000000000, "nextRunAt": 1750086400000, "lastStatus": "ok" }
+```
+
+#### `McpExtFrame` shape (M2)
+
+```json
+{ "id": "m1", "kind": "mcp", "name": "Postgres", "enabled": true, "transport": "stdio", "url": null }
+```
+
+`kind` ∈ `"mcp" | "hook"`. `transport` ∈ `"stdio" | "http"` (null for hooks).
 
 ## Connection lifecycle
 
@@ -97,26 +135,33 @@ Multi-word field names are **camelCase** (`paneId`, `currentTask`, `lastActivity
 7. Either side reconnects to the relay with backoff on a transient drop; a fresh Noise
    handshake re-establishes the session.
 
-## FCM push (`user_request`)
+## FCM push (out-of-band notifications)
 
 The relay session only reaches a phone whose app is **foregrounded** — when MSC is
-backgrounded or quit, it drops its relay connection, so a `user_request` sent over the
-tunnel never arrives. To reach the phone anyway, the desktop also pushes the
-`user_request` out-of-band via **Firebase Cloud Messaging** (#846, `src-tauri/src/fcm.rs`).
+backgrounded or quit, it drops its relay connection. To reach the phone anyway, the desktop
+pushes out-of-band via **Firebase Cloud Messaging** (#846, `src-tauri/src/fcm.rs`).
 
-- **Trigger.** Exactly one push per `awaiting_input` transition per pane — fired from
-  `tunnel_set_sessions` alongside the relay `user_request` broadcast, debounced by the same
-  `!was_awaiting` guard (repeated state syncs while a pane stays awaiting don't re-push).
+Three FCM message types are currently sent:
+
+| `data.type`     | Trigger                                        | Issue |
+|-----------------|------------------------------------------------|-------|
+| `user_request`  | Pane enters `awaiting_input` (new prompt)      | T6    |
+| `coord_wait`    | Agent enters `waiting` or `asking` state       | F4    |
+| `autom_failed`  | Non-transient automation failure               | A4    |
+
+**Common properties:**
 - **Target.** The device's FCM registration token, captured from the `auth` handshake
   (`fcmToken`) and updated by `set_fcm_token` refreshes. Stored in-memory per desktop
   session; dropped automatically when FCM reports it `UNREGISTERED` / `INVALID_ARGUMENT`.
-- **Message (FCM HTTP v1, combined notification + data).** iOS shows the banner itself
-  when MSC is backgrounded/quit (no on-device background handler), and the `data` block
-  rides along for tap-routing. Fixed contract the mobile app parses:
-  - `notification = { title: <pane/session name>, body: <prompt summary> }`
-  - `data = { type: "user_request", paneId, prompt }` — **all values are strings**
+- **Message format (FCM HTTP v1, combined notification + data).** iOS shows the banner
+  itself when MSC is backgrounded/quit; the `data` block rides along for tap-routing. All
+  `data` values are strings (FCM requirement).
   - `apns.headers["apns-priority"] = "10"`, `apns.payload.aps = { sound: "default", "mutable-content": 1 }`
-    (deliberately **no** `content-available` — this is a visible alert, not a silent push).
+    (deliberately **no** `content-available` — these are visible alerts, not silent pushes).
+
+**`user_request` debouncing:** exactly one push per `awaiting_input` transition per pane —
+fired from `tunnel_set_sessions`, debounced by the `!was_awaiting` guard (repeated syncs
+while a pane stays awaiting don't re-push).
 
 ### Configuration
 
@@ -140,6 +185,32 @@ thread in `src-tauri/src/lib.rs` into the tunnel's in-process bus (a no-op while
 is connected) and drained by the relay transport (#242). Inbound input/resize is routed
 back into the PTY.
 
+## Relay test / health probe (`tunnel_check_relay`)
+
+The Settings card can probe any relay URL for liveness via the `tunnelCheckRelay` Tauri
+command (T3b, `src-tauri/src/tunnel.rs`). The command GETs `<relayUrl>/health` with a 5 s
+timeout and returns a `RelayDiag`:
+
+| Field | Meaning |
+|---|---|
+| `reachable` | `true` when the relay responded with HTTP 200. |
+| `service`, `version` | Fields from the relay's `/health` JSON body. |
+| `latencyMs` | Round-trip time for the probe. |
+| `error` | Error message when the probe failed (`null` on success). |
+| `hostConnected` | Whether the desktop's own relay WebSocket (host leg) is open. |
+| `clientCount` | Number of paired mobile clients (guest legs) right now. |
+
+## Relay idle / TTL recovery (T5)
+
+The relay's Durable Object closes rooms after `IDLE_TIMEOUT_MS` (5 min) of no traffic and
+after `ROOM_TTL_MS` (1 h) regardless of activity (`relay/src/room.ts`). When the desktop
+receives a close frame with reason `"room idle timeout"` or `"room lifetime exceeded"` it:
+
+1. Emits `tunnel://room-expired` to the frontend (for UI prompt to re-scan).
+2. Returns a clean exit from the session, resetting the reconnect backoff.
+3. Re-dials the relay on the **same** room id — the DO resets after TTL so the same id
+   creates a fresh session; the existing QR is still valid for re-pairing.
+
 ## Status
 
 - **#240** landed the transport-agnostic contract: the wire types, the pure store→wire
@@ -148,8 +219,35 @@ back into the PTY.
   blind pipe.
 - **#242** landed the desktop side: the protocol serde + Noise IK crypto (#242a) and the
   relay dial-out client transport — `tunnel_start`/`tunnel_stop`, the responder
-  handshake, auth, replay, and the bus pump (#242b). The desktop now connects to a relay
-  and serves a paired mobile client end-to-end.
-- **#243** (next) generates the pairing QR after the relay connects and adds the Settings
-  relay section. The **mobile** client (relay initiator + Noise + scan-to-pair) lives in
-  `mobile-studio-code`. See #197 for the full architecture.
+  handshake, auth, replay, and the bus pump (#242b). The desktop connects to a relay and
+  serves a paired mobile client end-to-end.
+- **#243** landed the pairing QR generation and Settings relay section; `tunnelClient.ts`
+  exposes all Tauri commands. The **mobile** client (relay initiator + Noise + scan-to-pair)
+  lives in `mobile-studio-code`. See #197 for the full architecture.
+- **T3b** added the `tunnel_check_relay` / `tunnelCheckRelay` diagnostic command: relay
+  reachability + per-leg (host/guest) connection state in a single call.
+- **T5** added relay idle/TTL close detection: `tunnel://room-expired` event and clean-exit
+  reconnect so the backoff resets after a normal room expiry.
+- **T6** added FCM out-of-band push for `user_request` transitions so a backgrounded phone
+  receives the notification even when off the relay (`src-tauri/src/fcm.rs`).
+- **T2b** wired all Rust commands into `tunnelClient.ts`, including the previously missing
+  `tunnelAckPlanPush`.
+- **T1b** added the Noise IK cross-repo test vector scaffold: the test reads
+  `src/lib/tunnelProtocol.noiseVector.json` (produced by tunnel-mobile T1a) and asserts
+  snow ↔ noble byte-level agreement. Active once the fixture file lands on develop.
+- **T8** refreshed this doc to cover all landed protocol additions (F2/A2/M2/PT2).
+- **PT2** wired plan_sync message flow: `tunnel_set_plan_state`, `tunnel_ack_plan_push`,
+  `tunnelSetPlanState`, `tunnelAckPlanPush` TS bindings; `PlanSyncManifest`, `PlanSyncFiles`,
+  `PlanSyncAck` ServerMsg; `PlanSyncManifestRequest`, `PlanSyncPull`, `PlanSyncPush`
+  ClientMsg; manifest replay on connect.
+- **F2** added fleet/coordination wire frames: `FleetRoster` + `CoordEvent` ServerMsg;
+  `CoordWake` + `CoordApprove` ClientMsg; `tunnel_set_fleet_state` / `tunnel_emit_coord_event`
+  Tauri commands; `fleetLive.ts` pure CoordState → FleetSession[] projection; replay on connect.
+- **F4** added FCM `coord_wait` push when `tunnel_emit_coord_event` kind is "waiting" or
+  "asking", so a backgrounded phone is notified when an agent needs attention.
+- **A2** added automation wire frames: `AutomationList` + `AutomationRan` + `AutomationFailed`
+  ServerMsg; `AutomationArm` + `AutomationRunNow` ClientMsg; `tunnel_set_automations`,
+  `tunnel_automation_ran`, `tunnel_automation_failed` Tauri commands; replay on connect.
+- **A4** added FCM `autom_failed` push when `tunnel_automation_failed` is called.
+- **M2** added MCP extension wire frame: `McpList` ServerMsg; `tunnel_set_mcp_state` Tauri
+  command; read-only on mobile; replay on connect.

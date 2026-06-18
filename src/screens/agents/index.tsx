@@ -22,7 +22,7 @@ import {
   type BlockedView, type Waiter, type CoordState,
 } from "../../lib/coordination";
 import { actuateWake } from "../../lib/coordinatorActuate";
-import type { PipelineRun } from "../../lib/conductor";
+import type { WorkflowRun } from "../../lib/conductor";
 import { useAppStore } from "../../store";
 import "./agents.css";
 
@@ -58,10 +58,10 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
   const paneProfiles = useAppStore((s) => s.paneProfiles);
   const activeRepoName = useAppStore((s) => s.activeRepoName);
 
-  // Coordination & pipelines (the Flow tab): the fleet's live work-flow, cross-referenced
+  // Coordination & workflows (the Flow tab): the fleet's live work-flow, cross-referenced
   // with the profile each session runs under — the Agents screen's angle on #199/#220.
   const wakePane = useAppStore((s) => s.wakePane);
-  const pipelineRuns = useAppStore((s) => s.pipelineRuns);
+  const workflowRuns = useAppStore((s) => s.workflowRuns);
 
   // Application roles are app-managed singletons (display-only here).
   const roles = APP_ROLES;
@@ -96,8 +96,8 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
     { id: "profiles", label: "Profiles", count: roles.length + profiles.length, hint: "· application + custom roles" },
     { id: "assignments", label: "Assignments", count: consoles.length, hint: "· consoles & panes" },
     { id: "activity", label: "Activity", count: auditRows.length },
-    { id: "flow", label: "Flow", count: Object.keys(pipelineRuns).length, hint: "· coordination & pipelines" },
-  ], [roles.length, profiles.length, consoles.length, auditRows.length, pipelineRuns]);
+    { id: "flow", label: "Flow", count: Object.keys(workflowRuns).length, hint: "· coordination & workflows" },
+  ], [roles.length, profiles.length, consoles.length, auditRows.length, workflowRuns]);
   const { tabs: agentTabs, activeId, select, reorder, tearOff } = usePageTabs("agents", agentDefs);
   const tab = sectionOverride ?? activeId; // active section
 
@@ -141,7 +141,7 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
   const find = (id: string) => [...roles, ...profiles].find((p) => p.id === id);
   const selected = find(selectedId) ?? profiles[0];
 
-  // Resolve the profile a coord/pipeline session (a pane id like `t0p1`) runs under, so the
+  // Resolve the profile a coord/workflow session (a pane id like `t0p1`) runs under, so the
   // Flow tab can show who is parked/flowing and under which permission profile. Falls back
   // to the safe default when a pane has no explicit assignment.
   const profileFor = useCallback(
@@ -268,7 +268,7 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
           />
         )}
         {tab === "flow" && (
-          <FlowTab runs={pipelineRuns} wakePane={wakePane} profileFor={profileFor} />
+          <FlowTab runs={workflowRuns} wakePane={wakePane} profileFor={profileFor} />
         )}
       </div>
     </div>
@@ -599,7 +599,7 @@ function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign, onOpen
           <div className="ch" style={{ background: "color-mix(in oklch, var(--info), transparent 92%)" }}>
             <span className="cdot" style={{ background: "var(--info)" }} />
             <span className="cn">system</span>
-            <span className="repo">workspace · acme/payments</span>
+            <span className="repo">workspace-wide</span>
             <span className="spacer" />
             <span className="hint" style={{ fontFamily: "var(--mono)" }}>launched at startup · not reassignable</span>
           </div>
@@ -812,7 +812,7 @@ function ActivityTab({ rows, consoles, actDecision, setActDecision, actConsole, 
 
 // ── Flow tab ──────────────────────────────────────────────────────────────────
 // The fleet's live work-flow: which sessions are parked on a dependency (#199) and which
-// work items are flowing through their pipeline stages (#220) — each cross-referenced with
+// work items are flowing through their workflow stages (#220) — each cross-referenced with
 // the permission profile the session runs under. This is the Agents-screen view of
 // coordination (the project-wide inbox lives on the Projects board); the angle here is
 // "who is blocked/flowing, and under which profile". Coord state is rebuilt from the
@@ -821,7 +821,7 @@ function ActivityTab({ rows, consoles, actDecision, setActDecision, actConsole, 
 const COORD_POLL_MS = 3000;
 
 interface FlowTabProps {
-  runs: Record<string, PipelineRun>;
+  runs: Record<string, WorkflowRun>;
   wakePane: (paneId: string, prompt: string) => boolean;
   profileFor: (session: string) => AgentProfile | undefined;
 }
@@ -896,7 +896,7 @@ function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
         <div className="card"><div className="k">ready</div><div className="v success">{ready.length}</div><div className="sub">deps landed — wake</div></div>
         <div className="card"><div className="k">blocked</div><div className="v accent">{views.length}</div><div className="sub">parked on a dep</div></div>
         <div className="card"><div className="k">stalled / deadlocked</div><div className="v danger">{stalled + deadlocked}</div><div className="sub">{deadlocked} cyclic · escalate</div></div>
-        <div className="card"><div className="k">pipelines</div><div className="v">{runEntries.length}</div><div className="sub">work items flowing</div></div>
+        <div className="card"><div className="k">workflows</div><div className="v">{runEntries.length}</div><div className="sub">work items flowing</div></div>
       </div>
 
       {deadlocked > 0 && (
@@ -915,7 +915,7 @@ function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
       {idle && !err && (
         <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11.5, padding: "8px 2px" }}>
           The fleet is flowing. Parked sessions appear here when a worker runs <code>bsc-blocked --on &lt;ref&gt;</code>;
-          pipeline runs appear once a work item is started (Projects → Pipelines).
+          workflow runs appear once a work item is started (Projects → Workflows).
         </div>
       )}
 
@@ -977,14 +977,14 @@ function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
 
       {runEntries.length > 0 && (
         <>
-          <div className="sec-head"><h3>Pipelines</h3><span className="hint">role-staged work items (#220) · the role each stage runs as</span></div>
+          <div className="sec-head"><h3>Workflows</h3><span className="hint">role-staged work items (#220) · the role each stage runs as</span></div>
           {runEntries.map(([id, run]) => {
-            const stages = Object.values(run.pipeline.stages);
+            const stages = Object.values(run.workflow.stages);
             return (
               <div key={id} className="card" style={{ marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                   <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{id}</h3>
-                  <span className="hint" style={{ fontSize: 10.5 }}>{run.pipeline.name}</span>
+                  <span className="hint" style={{ fontSize: 10.5 }}>{run.workflow.name}</span>
                   <span className="tag" style={{ color: stageColor(run.state.status), fontSize: 9.5 }}>● {run.state.status}</span>
                   <div style={{ flex: 1 }} />
                   {run.state.escalation && (

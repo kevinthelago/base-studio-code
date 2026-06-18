@@ -66,5 +66,14 @@ export function flowKickoffText(flow: AgentFlow | undefined, branch: string): Fl
       push = `When your work is ready and the checks pass (${when}), commit to your branch ${branch}, push it, and open a PR to develop. After opening the PR, STOP -- CI runs automatically and is watched for you: when it finishes you will be told to continue (if it passed) or to fix the build and push (if it failed). Do not poll CI, reopen, or duplicate the PR; the director reviews and merges it once it is green.`;
   }
 
+  // Issue lifecycle is the director's job (#906): a worker signals completion (above) but
+  // never closes the GitHub issue itself — workers have GitHub read access only, so the role
+  // gate blocks `gh issue close` and attempting it just wastes a turn. The director closes the
+  // issue once the work lands (it sees the PR merge / your `bsc-landed`). A read-only (`none`)
+  // role owns no issue to close, so it gets no such clause.
+  if (f.push !== "none") {
+    push += " Do not close, reopen, or edit the GitHub issue yourself — the director manages issue state and closes it once your work lands; just signal completion as above.";
+  }
+
   return { autonomy, push };
 }

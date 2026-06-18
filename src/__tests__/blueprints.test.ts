@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkSection, computeStatus, reorder, cloneSections, blueprintToStageConfig,
-  sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal,
-  PIPELINE_LIB, SECTION_DEFS, type BlueprintSection,
+  sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal, skippedSignal,
+  isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, sectionDone,
+  SECTION_DEFS, type BlueprintSection, type Blueprint,
 } from "../screens/projects/blueprints";
 import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
 import { planStateToSignals } from "../screens/projects/planStageDerive";
+import { evalGate } from "../screens/projects/stageGate";
 
 const sig = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
   planStateToSignals(buildPlanStageState(over));
@@ -41,12 +43,74 @@ describe("blueprints — seed library", () => {
   it("adds an optional MCP Servers stage after Permissions in the greenfield blueprints (#878)", () => {
     expect(SECTION_DEFS.mcp).toBeTruthy();
     expect(SECTION_DEFS.mcp.optional).toBe(true);
-    for (const id of ["default", "fullstack", "mobile", "api"]) {
+    for (const id of ["default"]) {
       const bp = makeBlueprints().find((b) => b.id === id)!;
       const keys = bp.sections.map((s) => s.key);
       expect(keys, `${id} has an mcp stage`).toContain("mcp");
       expect(keys.indexOf("mcp"), `${id}: mcp after permissions`).toBeGreaterThan(keys.indexOf("permissions"));
     }
+  });
+
+  it("includes a 'blueprint-author' authoring blueprint: deliverable=blueprint, 4 stages, no fleet/triage (#923)", () => {
+    const bp = makeBlueprints().find((b) => b.id === "blueprint-author");
+    expect(bp).toBeTruthy();
+    expect(isAuthoringBlueprint(bp)).toBe(true);
+    expect(bp!.deliverable).toBe("blueprint");
+    const keys = bp!.sections.map((s) => s.key);
+    expect(keys).toEqual(["purpose", "bp_stages", "bp_capabilities", "bp_review"]);
+    // capabilities is the only optional stage; it has no repos/structure/permissions (no execution).
+    expect(bp!.sections.find((s) => s.key === "bp_capabilities")!.optional).toBe(true);
+    expect(keys).not.toContain("structure");
+    expect(keys).not.toContain("permissions");
+    // a normal blueprint is NOT an authoring one
+    expect(isAuthoringBlueprint(makeBlueprints().find((b) => b.id === "default"))).toBe(false);
+  });
+
+  it("canChangeBlueprint: only greenfield projects can switch; others + blueprint-author locked (#923)", () => {
+    const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
+    expect(canChangeBlueprint(by("default"))).toBe(true);       // greenfield → switchable
+    expect(canChangeBlueprint(by("refactor"))).toBe(false);     // transform → locked
+    expect(canChangeBlueprint(by("harden"))).toBe(false);       // harden → locked
+    expect(canChangeBlueprint(by("blueprint-author"))).toBe(false); // authoring → locked
+  });
+
+  it("canSwitchBlueprint: greenfield → transform | harden only (#923)", () => {
+    const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
+    // greenfield can move on to transform or harden
+    expect(canSwitchBlueprint(by("default"), by("refactor"))).toBe(true);   // → transform
+    expect(canSwitchBlueprint(by("default"), by("harden"))).toBe(true);     // → harden
+    // greenfield → another greenfield / data / itself is NOT allowed
+    expect(canSwitchBlueprint(by("default"), by("mcp-server"))).toBe(false); // → greenfield
+    expect(canSwitchBlueprint(by("default"), by("data-migration"))).toBe(false); // → data
+    // a non-greenfield origin can't switch at all
+    expect(canSwitchBlueprint(by("refactor"), by("harden"))).toBe(false);
+    // anything touching the authoring lifecycle is refused
+    expect(canSwitchBlueprint(by("blueprint-author"), by("refactor"))).toBe(false);
+    expect(canSwitchBlueprint(by("default"), by("blueprint-author"))).toBe(false);
+    // unbound (no current) can't "switch"
+    expect(canSwitchBlueprint(undefined, by("refactor"))).toBe(false);
+  });
+
+  it("authoringSignals: identity (name+pitch+tag), stages (≥2 + prompts), publishable (#923)", () => {
+    expect(authoringSignals(undefined)).toEqual({ bpName: false, bpStageCount: 0, bpStagesReady: false, bpValid: false });
+    // identity needs name + pitch + ≥1 tag — name alone isn't enough.
+    const named = { id: "x", name: "My BP", desc: "", sections: [] } as Blueprint;
+    expect(authoringSignals(named)).toMatchObject({ bpName: false, bpValid: false });
+    const identity = { id: "x", name: "My BP", desc: "", pitch: "ship it", tags: ["api"], sections: [] } as Blueprint;
+    // identity passes, but no stages → not ready / not publishable.
+    expect(authoringSignals(identity)).toMatchObject({ bpName: true, bpStagesReady: false, bpValid: false });
+    // ≥2 stages but a stage missing its prompt → stages gate fails.
+    const oneEmptyPrompt = {
+      ...identity,
+      sections: [{ ...mkSection("purpose"), prompt: "do x" }, { ...mkSection("bp_stages"), prompt: "" }],
+    } as Blueprint;
+    expect(authoringSignals(oneEmptyPrompt)).toMatchObject({ bpStageCount: 2, bpStagesReady: false, bpValid: false });
+    // identity + ≥2 stages all with prompts → ready + publishable.
+    const full = {
+      ...identity,
+      sections: [{ ...mkSection("purpose"), prompt: "do x" }, { ...mkSection("bp_stages"), prompt: "do y" }],
+    } as Blueprint;
+    expect(authoringSignals(full)).toMatchObject({ bpName: true, bpStageCount: 2, bpStagesReady: true, bpValid: true });
   });
 
   it("includes a headless 'mcp-server' greenfield blueprint with no UI stage (#825)", () => {
@@ -59,12 +123,6 @@ describe("blueprints — seed library", () => {
     expect(keys).toContain("structure");
   });
 
-  it("mkSection resolves pipeline ids against the catalog", () => {
-    const ui = mkSection("ui", { pipelines: [["render-preview", "on artifact change", true]] });
-    expect(ui.pipelines).toHaveLength(1);
-    expect(ui.pipelines[0].name).toBe(PIPELINE_LIB.find((p) => p.id === "render-preview")!.name);
-    expect(ui.pipelines[0].trigger).toBe("on artifact change");
-  });
 });
 
 describe("blueprints — computeStatus (dependency locks)", () => {
@@ -99,11 +157,11 @@ describe("blueprints — helpers", () => {
     expect(reorder(a, "x", "z", false).map((o) => o.uid)).toEqual(["y", "z", "x"]);
   });
 
-  it("cloneSections gives fresh uids and independent pipelines", () => {
-    const src = [mkSection("ui", { pipelines: [["render-preview", "on completion", true]] })];
+  it("cloneSections gives fresh uids", () => {
+    const src = [mkSection("ui")];
     const copy = cloneSections(src);
     expect(copy[0].uid).not.toBe(src[0].uid);
-    expect(copy[0].pipelines[0].uid).not.toBe(src[0].pipelines[0].uid);
+    expect(copy[0].key).toBe("ui");
   });
 });
 
@@ -144,20 +202,27 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     expect(sectionStatus(testing, secs, { ...sig(), [confirmedSignal("testing")]: true }).status).toBe("complete");
   });
 
-  it("an optional section is shown but never blocks completion, deps, or the current stage (#676)", () => {
+  it("an optional stage is shown + never locks dependents, but IS a deliberate stop the user must decide (#676/#921)", () => {
     const secs = [mkSection("context"), mkSection("ui", { optional: true }), mkSection("structure")];
     const signals = sig({ context: { resolved: 1, total: 1, coreConfirmed: true }, requiresUi: true,
       phasesConfirmed: true, issueCount: 1 });
     const ui = secs.find((s) => s.key === "ui")!;
     // shown (not N/A) even though its screens gate is unmet
     expect(sectionStatus(ui, secs, signals).status).not.toBe("na");
-    // off the critical path — never the current stage
-    expect(currentSection(secs, signals)?.key).not.toBe("ui");
-    // structure depends on ui, but optional ui doesn't lock it
+    // structure depends on ui, but an optional dep never locks the dependent (#676)
     expect(sectionStatus(secs.find((s) => s.key === "structure")!, secs, signals).status).not.toBe("locked");
-    // the incomplete optional ui doesn't block plan completion
-    expect(planSectionsComplete([mkSection("context"), mkSection("ui", { optional: true })],
-      sig({ context: { resolved: 1, total: 1, coreConfirmed: true }, requiresUi: true }))).toBe(true);
+    // #921: the flow now STOPS on the optional stage — once context is done it IS the current stage,
+    // so the user decides whether to do or skip it (was: optional excluded from the frontier).
+    expect(currentSection(secs, signals)?.key).toBe("ui");
+    // …and an undecided optional stage blocks plan completion until the user decides (do or skip).
+    const twoSec = [mkSection("context"), mkSection("ui", { optional: true })];
+    const ctxDone = sig({ context: { resolved: 1, total: 1, coreConfirmed: true }, requiresUi: true });
+    expect(planSectionsComplete(twoSec, ctxDone)).toBe(false);
+    // a USER-skip resolves the optional stage → it counts as done, the frontier advances, plan completes.
+    const skipped = { ...ctxDone, [skippedSignal("ui")]: true };
+    expect(sectionDone(ui, skipped).done).toBe(true);
+    expect(currentSection(twoSec, skipped)?.key).toBe("ui"); // last applicable once all resolved
+    expect(planSectionsComplete(twoSec, skipped)).toBe(true);
   });
 
   it("incompleteSections lists each unfinished section with its gate reason", () => {
@@ -188,7 +253,8 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
 
   it("blueprintToStageConfig maps enabled+order over known stages, dropping non-registry sections", () => {
     const known = new Set(PLAN_STAGES.map((s) => s.id));
-    const bp = makeBlueprints().find((b) => b.id === "fullstack")!; // includes "testing"
+    // a blueprint including "testing" (a non-registry stage) — dropped from the stage config order.
+    const bp = { id: "t", name: "T", desc: "", sections: [mkSection("context"), mkSection("repos"), mkSection("structure"), mkSection("testing")] } as Blueprint;
     const cfg = blueprintToStageConfig(bp);
     // order only contains registry stage ids, in blueprint order
     expect(cfg.order.every((id) => known.has(id))).toBe(true);
@@ -196,5 +262,25 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     // a section's enabled flag carries through
     const repos = bp.sections.find((s) => s.key === "repos")!;
     expect(cfg.enabled.repos).toBe(repos.enabled);
+  });
+});
+
+describe("lint-as-gate (#897 Phase 4b)", () => {
+  it("wires a hasPlanGaps requirement into the context + structure gates", () => {
+    for (const key of ["context", "structure"] as const) {
+      const reqs = SECTION_DEFS[key].gateRule?.require ?? [];
+      const r = reqs.find((x) => x.signal === "hasPlanGaps");
+      expect(r, `${key} has a hasPlanGaps requirement`).toBeTruthy();
+      expect(r!.target).toBe(false); // must be FALSE (no gaps) to pass
+      expect(r!.weight).toBe(0);     // must-pass, doesn't move the progress fill
+    }
+  });
+
+  it("blocks the gate on an unresolved placeholder, passes when clean or absent (absent-safe)", () => {
+    const gate = SECTION_DEFS.context.gateRule!;
+    const base = { coreConfirmed: true, topicsResolved: 3, topicsTotal: 3 }; // other context reqs satisfied
+    expect(evalGate(gate, { ...base, hasPlanGaps: true }).done).toBe(false);  // a TODO/placeholder blocks
+    expect(evalGate(gate, { ...base, hasPlanGaps: false }).done).toBe(true);  // clean passes
+    expect(evalGate(gate, base).done).toBe(true);                             // signal absent ⇒ passes
   });
 });

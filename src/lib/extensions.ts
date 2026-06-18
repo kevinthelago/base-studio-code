@@ -126,6 +126,8 @@ const CATALOG_TEMPLATES: Record<string, Partial<ExtensionDef>> = {
   "Compliance":          { kind: "mcp", transport: "stdio", command: "python", args: "-m uv run --directory {dir} compliance-mcp" },
   "Complexity Analyzer": { kind: "mcp", transport: "stdio", command: "node", args: "{dir}/dist/mcp/index.js" },
   "Dependency Graph":    { kind: "mcp", transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
+  // Python/uv like Compliance — console-script `plan-grader-mcp` (#897).
+  "Plan Grader":         { kind: "mcp", transport: "stdio", command: "python", args: "-m uv run --directory {dir} plan-grader-mcp" },
   // Well-known third-party servers — pruned from the browse catalog (#870) but kept here so the
   // planner's `<mcp_assign name="…" />` (planExtensions.ts) still resolves them to a working config.
   "Postgres":     { kind: "mcp", transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres", env: [["POSTGRES_CONNECTION_STRING", ""]] },

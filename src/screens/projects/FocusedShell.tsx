@@ -78,13 +78,13 @@ export function PhaseHeader({ phase, pill }: { phase: Phase; pill: GatePill }) {
       <div className="ph-title"><h2>{phase.name}</h2></div>
       <p className="ph-blurb">{phase.blurb}</p>
       <span
-        className={"ph-gate " + (pill === "blocked" ? "fail" : pill)}
+        className={"ph-gate " + pill}
         title={tip}
         onClick={hasReasons ? () => setShowReasons((v) => !v) : undefined}
         style={{ cursor: hasReasons ? "pointer" : undefined }}
       >
         <span className="gd" />
-        gate · {phase.gate} — {pill === "pass" ? "passing" : pill === "blocked" ? "blocked" : "waiting"}
+        gate · {phase.gate} — {pill === "pass" ? "passing" : "waiting"}
         {hasReasons && <span style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</span>}
       </span>
       {hasReasons && showReasons && (
@@ -133,17 +133,23 @@ const FOOTER_LABEL: Record<FooterKind, string> = {
 };
 
 /** The advance bar: back · progress · the context-sensitive primary action. */
-export function PhaseFooter({ phase, action, published, onBack, onPrimary }: {
+export function PhaseFooter({ phase, action, published, publishLabel, onBack, onPrimary, onSkip }: {
   phase: Phase;
-  action: { kind: FooterKind; enabled: boolean };
+  action: { kind: FooterKind; enabled: boolean; canSkip?: boolean };
   /** The project already has a GitHub board — the publish action re-syncs it ("Update GitHub", #823). */
   published?: boolean;
+  /** Override the publish action's label (#923) — e.g. "Publish blueprint" for an authoring project,
+   *  whose deliverable is a gist, not a GitHub board. */
+  publishLabel?: string;
   onBack: () => void;
   onPrimary: () => void;
+  /** Skip the active OPTIONAL stage (#921) — rendered when `action.canSkip`. */
+  onSkip?: () => void;
 }) {
   const primaryLabel =
     action.kind === "approve-continue" && !action.enabled ? "gate blocking…"
     : action.kind === "publish" && published ? "⟳ Update GitHub"
+    : action.kind === "publish" && publishLabel ? publishLabel
     : FOOTER_LABEL[action.kind];
   const primary = action.kind === "approve-continue" || action.kind === "publish";
   // When the gate is blocking the advance button, the tooltip says what's still needed (#805).
@@ -156,6 +162,16 @@ export function PhaseFooter({ phase, action, published, onBack, onPrimary }: {
       <button className="nav-btn" disabled={phase.index === 0} onClick={onBack}>← back</button>
       <span className="prog">phase {phase.index + 1} of {phase.total}</span>
       <span style={{ flex: 1 }} />
+      {/* This stage is OPTIONAL — the USER decides whether to do or skip it (#921). */}
+      {action.canSkip && onSkip && (
+        <button
+          className="nav-btn"
+          onClick={onSkip}
+          title="This stage is optional — skip it and continue without completing its gate"
+        >
+          skip stage →
+        </button>
+      )}
       <button className={"nav-btn" + (primary ? " primary" : "")} disabled={!action.enabled} onClick={onPrimary} title={blockedTip}>
         {primaryLabel}
       </button>

@@ -46,6 +46,27 @@ export interface SkillDef {
   trend: number[];
 }
 
+/** Reconstruct a SkillDef from a shared blueprint's embedded skill payload (#897 Phase 5b).
+ *  Keeps the original id (so the blueprint's refs resolve) + content; marks it `source:
+ *  "imported"` and defaults everything else (kind falls back to the first known kind when the
+ *  payload didn't carry one). Structural param so there's no import cycle with blueprintSkills. */
+export function skillFromPayload(p: { id: string; name: string; content: string; desc?: string; skillKind?: SkillKind; tools?: string[] }): SkillDef {
+  return {
+    id: p.id,
+    name: p.name,
+    kind: p.skillKind && KIND_KEYS.includes(p.skillKind) ? p.skillKind : KIND_KEYS[0],
+    source: "imported",
+    desc: p.desc ?? "",
+    prompt: p.content,
+    tools: p.tools ?? [],
+    profiles: [],
+    projects: [],
+    enabled: true,
+    pinned: false,
+    invocations: 0, success: 0, avgTokensK: 0, trend: [],
+  };
+}
+
 /** A sample {@link Skill} → a full editable {@link SkillDef} (enabled + global).
  *  Telemetry (invocations/success/trend/avgTokensK) starts at zero — real usage
  *  is supplied later from the skill-usage log (#406), never seeded with samples. */

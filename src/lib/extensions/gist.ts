@@ -31,8 +31,50 @@ export function gistIdFromUrl(input: string): string | null {
 interface GistApiResponse {
   id?: string;
   html_url?: string;
+  description?: string | null;
+  updated_at?: string;
+  owner?: { login?: string } | null;
   files?: Record<string, { content?: string; raw_url?: string; filename?: string }>;
   history?: GistHistoryItem[];
+}
+
+/** One blueprint gist from a source user's gists (#923). */
+export interface BlueprintGistItem {
+  id: string;
+  /** Blueprint name, parsed from the gist description (`blueprint: <name>`, set by publishGist). */
+  name: string;
+  description: string;
+  owner: string;
+  htmlUrl: string;
+  updatedAt: string;
+}
+
+/** List a GitHub user's BLUEPRINT gists (#923). A gist is a blueprint when its description carries
+ *  the `blueprint:` prefix publishGist writes (`${kind}: ${name}`) — the list endpoint omits file
+ *  content, so the description is the reliable signal. No auth needed for public gists; `token`
+ *  raises the rate limit + surfaces the user's secret gists. Empty on error. */
+export async function listBlueprintGists(user: string, token = ""): Promise<BlueprintGistItem[]> {
+  if (!user.trim()) return [];
+  let gists: GistApiResponse[];
+  try {
+    gists = (await invoke("github_request", { token, path: `users/${user}/gists?per_page=100`, maxAgeSecs: 60, force: false })) as GistApiResponse[];
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(gists)) return [];
+  return gists
+    .filter((g) => !!g.id && (g.description ?? "").trim().toLowerCase().startsWith("blueprint:"))
+    .map((g) => {
+      const description = (g.description ?? "").trim();
+      return {
+        id: g.id!,
+        name: description.replace(/^blueprint:\s*/i, "").trim() || "(untitled blueprint)",
+        description,
+        owner: g.owner?.login ?? user,
+        htmlUrl: g.html_url ?? "",
+        updatedAt: g.updated_at ?? "",
+      };
+    });
 }
 
 interface GistHistoryItem {

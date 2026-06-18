@@ -72,12 +72,11 @@ describe("PhaseHeader (#652)", () => {
     expect(screen.getByText("Repos")).toBeInTheDocument();
     expect(screen.getByText(/waiting/)).toBeInTheDocument();
   });
-  it("renders pass + blocked pills", () => {
-    const { rerender, container } = render(<PhaseHeader phase={phase()} pill="pass" />);
+  it("renders pass + wait pills", () => {
+    const { rerender } = render(<PhaseHeader phase={phase()} pill="pass" />);
     expect(screen.getByText(/passing/)).toBeInTheDocument();
-    rerender(<PhaseHeader phase={phase()} pill="blocked" />);
-    expect(container.querySelector(".ph-gate.fail")).toBeTruthy();
-    expect(screen.getByText(/blocked/)).toBeInTheDocument();
+    rerender(<PhaseHeader phase={phase()} pill="wait" />);
+    expect(screen.getByText(/waiting/)).toBeInTheDocument();
   });
 
   it("surfaces unmet gate reasons on click when blocked (#805)", () => {
@@ -85,7 +84,7 @@ describe("PhaseHeader (#652)", () => {
       { label: "resolve the discovery topics", detail: "3 of 5" },
       { label: "confirm goal, scope, stack & architecture" },
     ] });
-    render(<PhaseHeader phase={p} pill="blocked" />);
+    render(<PhaseHeader phase={p} pill="wait" />);
     // a "why?" affordance shows; the reason list is hidden until clicked
     expect(screen.getByText("why?")).toBeInTheDocument();
     expect(screen.queryByText(/Still needed to pass/)).not.toBeInTheDocument();

@@ -811,7 +811,8 @@ describe("repository resolution", () => {
 
 describe("triageStartProject", () => {
   it("launches a pane per repo (cwd under projects/<key>) and disables the empty grid cells", () => {
-    useAppStore.setState({ bscBaseDir: "/base" });
+    // A published project (has a board id) → its hub lives under projects/ (#904).
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub" });
     const before = useAppStore.getState().tabs.length;
     // 5 repos → 3×2 grid = 6 cells, so the 6th cell (index 5) is empty.
     const repos = ["o/a", "o/b", "o/c", "o/d", "o/e"];
@@ -1090,7 +1091,8 @@ describe("agent fleet store", () => {
   });
 
   it("fleetStartProject opens a build tab with the director and worker panes", () => {
-    useAppStore.setState({ bscBaseDir: "/base" });
+    // A published project (has a board id) → director hub lives under projects/ (#904).
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub" });
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
     const idx = st.findFleetTabIdx("proj-key"); // found by stable projectKey, not name (#457)
@@ -1144,6 +1146,36 @@ describe("agent fleet store", () => {
     expect(st.fleetPaneStreams["t3p2"].id).toBe("api");
     expect(st.fleetPaneStreams["t3p0"]).toBeUndefined(); // director pane
     expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
+  });
+
+  it("prefers Rust-provided hub + worktree paths over the bscBaseDir mirror (#905)", () => {
+    // bscBaseDir EMPTY — the exact condition that silently dropped every session at
+    // user root, because projectHubCwd/agentWorktreeCwd return "" and the PTY then
+    // inherits the app's cwd. With authoritative Rust paths the launch is correct anyway.
+    useAppStore.setState({ bscBaseDir: "" });
+    useAppStore.getState().fleetStartProject("RP", fleet, "rp-key", {
+      hubPath: "/abs/hub/rp-key",
+      worktreePaths: { "auth-ui": "/abs/wt/web--auth-ui", "api": "/abs/wt/api--api" },
+    });
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("rp-key");
+    expect(st.paneCwds[`t${idx}p0`]).toBe("/abs/hub/rp-key");        // director → hub path
+    expect(st.paneCwds[`t${idx}p1`]).toBe("/abs/wt/web--auth-ui");   // worker → its worktree
+    expect(st.paneCwds[`t${idx}p2`]).toBe("/abs/wt/api--api");
+  });
+
+  it("falls back to bscBaseDir-derived paths per pane when a Rust path is absent (#905)", () => {
+    useAppStore.setState({ bscBaseDir: "/base" });
+    // Director hub path provided; worker map omits "api" → that one falls back.
+    useAppStore.getState().fleetStartProject("FB", fleet, "fb-key", {
+      hubPath: "/abs/hub/fb-key",
+      worktreePaths: { "auth-ui": "/abs/wt/web--auth-ui" },
+    });
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("fb-key");
+    expect(st.paneCwds[`t${idx}p0`]).toBe("/abs/hub/fb-key");                  // provided
+    expect(st.paneCwds[`t${idx}p1`]).toBe("/abs/wt/web--auth-ui");             // provided
+    expect(st.paneCwds[`t${idx}p2`]).toBe("/base/worktrees/fb-key/api--api");  // fallback
   });
 
   it("gives the director AND every worker the project's MCP extensions (#876)", () => {
@@ -1667,7 +1699,7 @@ describe("blueprints library (#513/#514)", () => {
     useAppStore.getState().setBlueprintSections("default", flipped);
     expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "context")!.enabled).toBe(false);
     // a sibling blueprint is untouched
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "mcp-server")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
   });
 
   it("updateBlueprintMeta edits name/desc", () => {
@@ -1703,6 +1735,8 @@ describe("clearPlan (#505)", () => {
     useAppStore.setState({
       planSections: { myproj: { goal: "# Goal" }, other: { scope: "# Scope" } },
       planConfirmedSections: { myproj: ["goal"], other: [] },
+      planAuthoredBlueprint: { myproj: { id: "bp", name: "BP", desc: "", sections: [] } },
+      planSkippedSections: { myproj: ["ui"], other: [] },
       planKbAssignments: { myproj: ["kb-1"] },
       planAutomations: { myproj: [] },
       planStageConfig: {},
@@ -1724,6 +1758,8 @@ describe("clearPlan (#505)", () => {
     const s = useAppStore.getState();
     expect(s.planSections["myproj"]).toBeUndefined();
     expect(s.planConfirmedSections["myproj"]).toBeUndefined();
+    expect(s.planAuthoredBlueprint["myproj"]).toBeUndefined();
+    expect(s.planSkippedSections["myproj"]).toBeUndefined();
     expect(s.planKbAssignments["myproj"]).toBeUndefined();
     expect(s.planAutomations["myproj"]).toBeUndefined();
     expect(s.uiScreens["myproj"]).toBeUndefined();
@@ -1745,6 +1781,35 @@ describe("clearPlan (#505)", () => {
     useAppStore.getState().clearPlan("nonexistent");
     const s = useAppStore.getState();
     expect(s.planSections["myproj"]).toEqual({ goal: "# Goal" });
+  });
+
+  it("setAuthoredBlueprint records the in-progress blueprint per project (#923)", () => {
+    useAppStore.setState({ planAuthoredBlueprint: {} });
+    const bp = { id: "x", name: "Authored", desc: "", sections: [] };
+    useAppStore.getState().setAuthoredBlueprint("proj", bp);
+    expect(useAppStore.getState().planAuthoredBlueprint["proj"]).toEqual(bp);
+    // overwrite replaces (the planner re-emits the full blueprint)
+    const bp2 = { ...bp, name: "Authored v2" };
+    useAppStore.getState().setAuthoredBlueprint("proj", bp2);
+    expect(useAppStore.getState().planAuthoredBlueprint["proj"].name).toBe("Authored v2");
+  });
+});
+
+describe("skipPlanSection / unskipPlanSection (#921)", () => {
+  beforeEach(() => useAppStore.setState({ planSkippedSections: {} }));
+
+  it("records a deliberately skipped optional stage per project, idempotently", () => {
+    const { skipPlanSection } = useAppStore.getState();
+    skipPlanSection("proj", "ui");
+    skipPlanSection("proj", "ui"); // dup is a no-op
+    skipPlanSection("proj", "mcp");
+    expect(useAppStore.getState().planSkippedSections["proj"]).toEqual(["ui", "mcp"]);
+  });
+
+  it("un-skips a stage (the user goes back to do it) without touching others", () => {
+    useAppStore.setState({ planSkippedSections: { proj: ["ui", "mcp"] } });
+    useAppStore.getState().unskipPlanSection("proj", "ui");
+    expect(useAppStore.getState().planSkippedSections["proj"]).toEqual(["mcp"]);
   });
 });
 

@@ -40,14 +40,12 @@ describe("blueprint categories (#645)", () => {
     expect(def.sections.find((s) => s.key === "ui")!.optional).toBe(true);
     expect(def.sections.find((s) => s.key === "automations")!.optional).toBe(true);
     expect(def.sections.find((s) => s.key === "skills")!.optional).toBe(true);
-    // other blueprints' UI stays required
-    expect(makeBlueprints().find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "ui")!.optional).toBeFalsy();
   });
 
   it("refreshBuiltIns updates stale persisted built-ins but keeps user blueprints (#677)", () => {
     // a stale persisted built-in (UI not yet optional) + a user blueprint
     const stale: Blueprint = { id: "default", name: "Default", desc: "old", origin: "built-in",
-      sections: [{ uid: "x", key: "ui", name: "UI", glyph: "▣", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, pipelines: [] }] };
+      sections: [{ uid: "x", key: "ui", name: "UI", glyph: "▣", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false }] };
     const mine: Blueprint = { id: "mine", name: "Mine", desc: "", origin: "local", sections: [] };
     const out = refreshBuiltIns([stale, mine]);
     // the built-in is refreshed from code → UI optional again
@@ -55,13 +53,22 @@ describe("blueprint categories (#645)", () => {
     // the user blueprint is untouched
     expect(out.find((b) => b.id === "mine")).toBe(mine);
     // new built-ins (not in the stale set) are added
-    expect(out.some((b) => b.id === "fullstack")).toBe(true);
+    expect(out.some((b) => b.id === "mcp-server")).toBe(true);
   });
 
-  it("tags every built-in blueprint origin=built-in, incl. the greenfield four (#658)", () => {
+  it("prunes persisted built-ins that no longer exist in code, keeps user blueprints (#923)", () => {
+    // a removed built-in (fullstack) lingering in the persisted store + a user blueprint
+    const removed: Blueprint = { id: "fullstack", name: "Full-stack", desc: "", origin: "built-in", sections: [] };
+    const mine: Blueprint = { id: "mine", name: "Mine", desc: "", origin: "local", sections: [] };
+    const out = refreshBuiltIns([removed, mine]);
+    expect(out.some((b) => b.id === "fullstack")).toBe(false); // pruned
+    expect(out.find((b) => b.id === "mine")).toBe(mine);        // user blueprint untouched
+  });
+
+  it("tags every built-in blueprint origin=built-in (#658)", () => {
     const all = makeBlueprints();
     expect(all.every((b) => b.origin === "built-in")).toBe(true);
-    for (const id of ["default", "fullstack", "mobile", "api"]) {
+    for (const id of ["default", "mcp-server", "refactor"]) {
       expect(all.find((b) => b.id === id)!.origin, id).toBe("built-in");
     }
   });

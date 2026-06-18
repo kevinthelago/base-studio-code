@@ -24,10 +24,10 @@ import type { SessionRole } from "../lib/sessionRoles";
 import type { AgentFlow } from "../screens/projects/agentFlow";
 import { normalizeFlow, resolveFlow } from "../screens/projects/agentFlow";
 import { flowKickoffText } from "../screens/projects/flowKickoff";
-import { PIPELINE_PRESETS } from "../lib/pipeline";
-import { startRun, currentLaunch, type PipelineRun } from "../lib/conductor";
+import { WORKFLOW_PRESETS } from "../lib/workflow";
+import { startRun, currentLaunch, type WorkflowRun } from "../lib/conductor";
 import { generateAgentProfile } from "../lib/profileGen";
-import { stagePrompt } from "../lib/pipelineDriver";
+import { stagePrompt } from "../lib/workflowDriver";
 import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
@@ -35,7 +35,8 @@ import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/project
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
 import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import type { GradeResult } from "../screens/projects/grading";
-import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
+import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
+import type { DeployConfig } from "../screens/projects/deployConfig";
 import { seedDataModels, emptyDataModel, type DataModel } from "../screens/projects/dataModel";
 import { canonicalSectionKey } from "../screens/projects/planSections";
 import type { PaneDescriptor } from "../lib/tunnel";
@@ -43,7 +44,8 @@ import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategy
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
-import { resolveSkills, seedSkills, type SkillDef } from "../lib/skills";
+import { resolveSkills, seedSkills, skillFromPayload, type SkillDef } from "../lib/skills";
+import { type SkillPayload } from "../screens/projects/blueprintSkills";
 import { invoke } from "@tauri-apps/api/core";
 
 /** Mint a stable tab id (#463). Prefers crypto.randomUUID; falls back for older
@@ -259,11 +261,11 @@ interface AppStore {
   wakePane: (paneId: string, prompt: string) => boolean;
   // Session pipelines (#220): in-flight runs keyed by work item. Register-only here;
   // launching a stage as a role-scoped pane + auto-advance is the live-wiring slice.
-  pipelineRuns: Record<string, PipelineRun>;
-  pipelineStart: (presetKey: string, item: string) => void;
-  pipelineClear: (item: string) => void;
-  pipelineMount: (item: string) => void;
-  pipelineSetRuns: (runs: Record<string, PipelineRun>) => void;
+  workflowRuns: Record<string, WorkflowRun>;
+  workflowStart: (presetKey: string, item: string) => void;
+  workflowClear: (item: string) => void;
+  workflowMount: (item: string) => void;
+  workflowSetRuns: (runs: Record<string, WorkflowRun>) => void;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
   // Prune queued panes across every tab whose live status the caller has —
@@ -634,7 +636,17 @@ interface AppStore {
   // keys off projectKey (the planning session key — where repos/prompts live).
   /** Launches the fleet; returns the fleet roster rows (paneId/stream/repo/branch/role TSV,
    *  one per live session) for the caller to persist via publishFleetRoster (#734). */
-  fleetStartProject: (projectName: string, fleet: FleetPlan, projectKey: string) => string[];
+  fleetStartProject: (
+    projectName: string,
+    fleet: FleetPlan,
+    projectKey: string,
+    /** Authoritative absolute cwds from the Rust backend (#905): the hub dir
+     *  (`project_dir_path`) for the director and each stream's worktree path
+     *  (`ensure_worktree`) for its worker. Used verbatim so the launch never
+     *  depends on the async-loaded `bscBaseDir` mirror; falls back to the
+     *  `bscBaseDir`-derived path per pane when an entry is absent. */
+    paths?: { hubPath?: string; worktreePaths?: Record<string, string> },
+  ) => string[];
   // Index of this project's primary "· build" tab, matched on its STABLE projectKey
   // (#457) — pass the same projectKey used to launch the fleet. -1 when none.
   findFleetTabIdx: (projectKey: string) => number;
@@ -658,6 +670,19 @@ interface AppStore {
   planConfirmedSections: Record<string, string[]>;
   confirmPlanSection:   (projectId: string, key: string) => void;
   unconfirmPlanSection: (projectId: string, key: string) => void;
+  /** The in-progress blueprint an AUTHORING project (#923) is designing — emitted by the planner's
+   *  <blueprint> tag, rendered in the focused pane, and published to a gist at the Review stage. */
+  planAuthoredBlueprint: Record<string, Blueprint>;
+  setAuthoredBlueprint: (projectId: string, bp: Blueprint) => void;
+  /** Per-project deployment & infrastructure config (#919) — edited by the planner's Deploy
+   *  stage pane; the `deploymentDefined` gate signal derives from it. */
+  planDeployConfig: Record<string, DeployConfig>;
+  setPlanDeployConfig: (projectId: string, cfg: DeployConfig) => void;
+  /** Optional stages the user deliberately SKIPPED (#921). The flow stops on every optional stage;
+   *  skipping marks it resolved (frontier advances, never blocks completion) but renders distinctly. */
+  planSkippedSections:  Record<string, string[]>;
+  skipPlanSection:      (projectId: string, key: string) => void;
+  unskipPlanSection:    (projectId: string, key: string) => void;
   /** Collapse non-canonical section keys (e.g. "Tech stack" → "stack") for a project,
    *  merging content into the canonical key (and deduping confirmed keys) — repairs a gate
    *  stuck on a stale title-named section (#803). */
@@ -715,7 +740,7 @@ interface AppStore {
   importBlueprint: (bp: Blueprint) => string;
   // Stage-pipeline run state (#528/#529): per-project, per-pipeline run status, keyed
   // projectKey -> pipelineUid -> state. Distinct from the fleet conductor's
-  // `pipelineRuns` (#220). Session-only (not persisted).
+  // `workflowRuns` (#220). Session-only (not persisted).
   stagePipelineRuns: Record<string, Record<string, PipelineRunState>>;
   setStagePipelineRun: (projectKey: string, pipelineUid: string, state: PipelineRunState) => void;
   // The current UI preview per project (#531): the render-preview pipeline writes the
@@ -786,6 +811,9 @@ interface AppStore {
   // Written into a launched session's .claude/skills/<slug>/SKILL.md so agents
   // actually get them. Seeded from the sample library; persisted. (#404)
   skills: SkillDef[];
+  /** Reconstitute a shared blueprint's embedded skills/KB into the libraries (#897 Phase 5b),
+   *  upserting by id (skip an id already present) so the blueprint's refs resolve. */
+  installBundledSkills: (payloads: SkillPayload[]) => void;
   addSkill:        (def: Omit<SkillDef, "id">) => string;
   updateSkill:     (id: string, patch: Partial<SkillDef>) => void;
   removeSkill:     (id: string) => void;
@@ -867,7 +895,7 @@ interface AppStore {
 }
 
 // (Re)mount a pipeline run's pane for its CURRENT stage (#220): a single-pane
-// `pipeline · <item>` tab whose pane is a fresh, role-scoped claude session seeded
+// `workflow · <item>` tab whose pane is a fresh, role-scoped claude session seeded
 // with the stage prompt. A runId bump remounts it; the caller pty_kills first on a
 // relaunch so it spawns fresh. Terminal runs (done/escalated) just persist.
 // #174: promote a project's planning-assigned automations into the real scheduler on
@@ -894,15 +922,15 @@ function activateAutomations(s: AppStore, projectId: string, targetTab: string):
   return added;
 }
 
-function mountState(s: AppStore, item: string, run: PipelineRun) {
+function mountState(s: AppStore, item: string, run: WorkflowRun) {
   const launch = currentLaunch(run);
-  if (!launch) return { pipelineRuns: { ...s.pipelineRuns, [item]: run } };
-  const tabName = `pipeline · ${item}`;
+  if (!launch) return { workflowRuns: { ...s.workflowRuns, [item]: run } };
+  const tabName = `workflow · ${item}`;
   const existingIdx = s.tabs.findIndex((tb) => tb.name === tabName);
   const tabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
   const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
   const key = `t${tabIdx}p0`;
-  const cwd = s.activeProjectName ? projectHubCwd(s.bscBaseDir, s.activeProjectName) : "";
+  const cwd = s.activeProjectName ? projectHubCwd(s.bscBaseDir, s.activeProjectName, !!s.activeProjectId) : "";
   const newTab: Tab = { id: newTabId(), name: tabName, layout: "1×1", state: "idle", runId };
   const tabs = existingIdx >= 0 ? s.tabs.map((tb, i) => (i === existingIdx ? newTab : tb)) : [...s.tabs, newTab];
   const disabledPanes = { ...s.disabledPanes };
@@ -919,7 +947,7 @@ function mountState(s: AppStore, item: string, run: PipelineRun) {
     paneRoles: { ...s.paneRoles, [key]: launch.role },
     paneNames: { ...s.paneNames, [tabIdx]: { 0: launch.stage } },
     disabledPanes,
-    pipelineRuns: { ...s.pipelineRuns, [item]: run },
+    workflowRuns: { ...s.workflowRuns, [item]: run },
   };
 }
 
@@ -1489,6 +1517,9 @@ export const useAppStore = create<AppStore>()(
           return {
             planSections:           byKey(s.planSections),
             planConfirmedSections:  byKey(s.planConfirmedSections),
+            planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
+            planDeployConfig:       byKey(s.planDeployConfig),
+            planSkippedSections:    byKey(s.planSkippedSections),
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
@@ -1521,7 +1552,7 @@ export const useAppStore = create<AppStore>()(
         }),
       resetProjectData: () =>
         set({
-          planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
+          planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planSkippedSections: {}, planDeployConfig: {}, planKbAssignments: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
@@ -1586,26 +1617,26 @@ export const useAppStore = create<AppStore>()(
         return ok;
       },
       fleetPaneStreams: {},
-      pipelineRuns: {},
-      pipelineStart: (presetKey, item) =>
+      workflowRuns: {},
+      workflowStart: (presetKey, item) =>
         set((s) => {
-          const pipeline = PIPELINE_PRESETS[presetKey];
+          const pipeline = WORKFLOW_PRESETS[presetKey];
           const id = item.trim();
           if (!pipeline || !id) return {};
           return mountState(s, id, startRun(pipeline, id).run);
         }),
-      pipelineClear: (item) =>
+      workflowClear: (item) =>
         set((s) => {
-          const runs = { ...s.pipelineRuns };
+          const runs = { ...s.workflowRuns };
           delete runs[item];
-          return { pipelineRuns: runs };
+          return { workflowRuns: runs };
         }),
-      pipelineMount: (item) =>
+      workflowMount: (item) =>
         set((s) => {
-          const run = s.pipelineRuns[item];
+          const run = s.workflowRuns[item];
           return run ? mountState(s, item, run) : {};
         }),
-      pipelineSetRuns: (runs) => set({ pipelineRuns: runs }),
+      workflowSetRuns: (runs) => set({ workflowRuns: runs }),
       projectsDrawerIssue: null,
       setProjectsDrawerIssue: (n) => set({ projectsDrawerIssue: n }),
       planningPitch: "",
@@ -1689,8 +1720,9 @@ export const useAppStore = create<AppStore>()(
             const key = `t${newTabIdx}p${i}`;
             if (i < count) {
               const fullName = repos[i];
-              // A real repo — launch claude in its clone, ensure it's enabled.
-              newPaneCwds[key]     = projectRepoCwd(s.bscBaseDir, projectName, fullName);
+              // A real repo — launch claude in its clone, ensure it's enabled. Draft projects
+              // live under draft/ (#904); a published project (has a board id) under projects/.
+              newPaneCwds[key]     = projectRepoCwd(s.bscBaseDir, projectName, fullName, !!s.activeProjectId);
               newPaneInitCmds[key] = "claude";
               tabPaneNames[i]      = fullName?.split("/")[1] ?? `pane-${i + 1}`;
               // The startup prompt is baked into the claude launch by the backend
@@ -1775,7 +1807,7 @@ export const useAppStore = create<AppStore>()(
 
       findFleetTabIdx: (projectKey) =>
         findProjectTabIdx(get().tabs, sanitizeProjectKey(projectKey), "build", 0),
-      fleetStartProject: (projectName, fleet, projectKey) => {
+      fleetStartProject: (projectName, fleet, projectKey, paths) => {
         // Roster rows (paneId/stream/repo/branch/role) collected during the build below and
         // written to the project hub as fleet.roster.tsv so the director's `bsc-fleet` helper
         // can enumerate the fleet + each worker's state (#734).
@@ -1883,7 +1915,9 @@ export const useAppStore = create<AppStore>()(
                 const sess = chunk[i];
                 if (sess === null) {
                   // Director session at the project root — sees every repo + worktree.
-                  newPaneCwds[key]     = projectHubCwd(s.bscBaseDir, projectKey);
+                  // Prefer the Rust-resolved absolute hub path (#905) so the launch never
+                  // depends on the async-loaded `bscBaseDir` mirror (empty/malformed → user root).
+                  newPaneCwds[key]     = paths?.hubPath || projectHubCwd(s.bscBaseDir, projectKey, !!s.activeProjectId);
                   newPaneInitCmds[key] = "claude";
                   newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
                   newPaneAllowedCommands[key] = projectCmds;
@@ -1899,8 +1933,10 @@ export const useAppStore = create<AppStore>()(
                   newPaneDirectorDrive[key] = resolveDirectorDrive(fleet.director.drive);
                   newPaneDirectorMode[key] = strategySettings(resolveStrategy(undefined, fleet.strategy)).director;
                 } else {
-                  // Worker runs in its own git worktree on its own branch.
-                  newPaneCwds[key]     = agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
+                  // Worker runs in its own git worktree on its own branch. Prefer the
+                  // absolute path ensure_worktree returned (#905) over the bscBaseDir-derived
+                  // mirror, so an empty/malformed base dir can't drop the worker at user root.
+                  newPaneCwds[key]     = paths?.worktreePaths?.[sess.id] || agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
                   newPaneInitCmds[key] = "claude";
                   if (sess.prompt) {
                     newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
@@ -2039,6 +2075,26 @@ export const useAppStore = create<AppStore>()(
             [projectId]: (s.planConfirmedSections[projectId] ?? []).filter((k) => k !== key),
           },
         })),
+      planAuthoredBlueprint: {},
+      setAuthoredBlueprint: (projectId, bp) =>
+        set((s) => ({ planAuthoredBlueprint: { ...s.planAuthoredBlueprint, [projectId]: bp } })),
+      planDeployConfig: {},
+      setPlanDeployConfig: (projectId, cfg) =>
+        set((s) => ({ planDeployConfig: { ...s.planDeployConfig, [projectId]: cfg } })),
+      planSkippedSections: {},
+      skipPlanSection: (projectId, key) =>
+        set((s) => {
+          const existing = s.planSkippedSections[projectId] ?? [];
+          if (existing.includes(key)) return {};
+          return { planSkippedSections: { ...s.planSkippedSections, [projectId]: [...existing, key] } };
+        }),
+      unskipPlanSection: (projectId, key) =>
+        set((s) => ({
+          planSkippedSections: {
+            ...s.planSkippedSections,
+            [projectId]: (s.planSkippedSections[projectId] ?? []).filter((k) => k !== key),
+          },
+        })),
       canonicalizePlanSections: (projectId) =>
         set((s) => {
           const sections = s.planSections[projectId];
@@ -2140,6 +2196,10 @@ export const useAppStore = create<AppStore>()(
         set((s) => {
           const bp = s.blueprints.find((b) => b.id === blueprintId);
           if (!bp) return {};
+          // Only a greenfield project may switch, and only to a transform/harden lifecycle (#923);
+          // every other origin/target (incl. the locked blueprint-author) is refused.
+          const current = s.blueprints.find((b) => b.id === s.projectBlueprintId[projectId]);
+          if (!canSwitchBlueprint(current, bp)) return {};
           const drop = <T,>(m: Record<string, T>): Record<string, T> => {
             const n = { ...m }; delete n[projectId]; return n;
           };
@@ -2149,6 +2209,9 @@ export const useAppStore = create<AppStore>()(
           return {
             planSections:          drop(s.planSections),
             planConfirmedSections: drop(s.planConfirmedSections),
+            planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
+            planDeployConfig:      drop(s.planDeployConfig),
+            planSkippedSections:   drop(s.planSkippedSections),
             planKbAssignments:     drop(s.planKbAssignments),
             planAutomations:       drop(s.planAutomations),
             planFleet:             drop(s.planFleet),
@@ -2361,6 +2424,9 @@ export const useAppStore = create<AppStore>()(
           return {
           planSections:          omitKey(s.planSections),
           planConfirmedSections: omitKey(s.planConfirmedSections),
+          planAuthoredBlueprint: omitKey(s.planAuthoredBlueprint),
+          planDeployConfig:      omitKey(s.planDeployConfig),
+          planSkippedSections:   omitKey(s.planSkippedSections),
           planKbAssignments:     omitKey(s.planKbAssignments),
           planAutomations:       omitKey(s.planAutomations),
           planStageConfig:       omitKey(s.planStageConfig),
@@ -2401,6 +2467,26 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ skills: [...s.skills, { ...def, id }] }));
         return id;
       },
+      installBundledSkills: (payloads) =>
+        set((s) => {
+          const haveSkill = new Set(s.skills.map((x) => x.id));
+          const haveKb = new Set(s.kbBlocks.map((x) => x.id));
+          const newSkills: SkillDef[] = [];
+          const newKb: KbBlock[] = [];
+          for (const p of payloads) {
+            if (p.kind === "kb") {
+              if (haveKb.has(p.id) || !p.id) continue;
+              haveKb.add(p.id);
+              newKb.push({ id: p.id, title: p.name, tags: p.tags ?? [], updated: "imported", lines: (p.content ?? "").split("\n").length, content: p.content });
+            } else {
+              if (haveSkill.has(p.id) || !p.id) continue;
+              haveSkill.add(p.id);
+              newSkills.push(skillFromPayload(p));
+            }
+          }
+          if (newSkills.length === 0 && newKb.length === 0) return {};
+          return { skills: [...s.skills, ...newSkills], kbBlocks: [...s.kbBlocks, ...newKb] };
+        }),
       updateSkill: (id, patch) =>
         set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, ...patch } : sk)) })),
       removeSkill: (id) =>
@@ -2570,7 +2656,7 @@ export const useAppStore = create<AppStore>()(
         paneModels:           s.paneModels,
         focusTarget:          s.focusTarget,
         fleetPaneStreams:     s.fleetPaneStreams,
-        pipelineRuns:         s.pipelineRuns,
+        workflowRuns:         s.workflowRuns,
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
         projectKeyAlias:      s.projectKeyAlias,
@@ -2587,6 +2673,9 @@ export const useAppStore = create<AppStore>()(
         configProfiles:       s.configProfiles,
         planSections:          s.planSections,
         planConfirmedSections: s.planConfirmedSections,
+        planAuthoredBlueprint: s.planAuthoredBlueprint,
+        planDeployConfig:      s.planDeployConfig,
+        planSkippedSections:   s.planSkippedSections,
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,

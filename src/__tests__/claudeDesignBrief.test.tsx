@@ -21,11 +21,9 @@ describe("buildClaudeDesignBrief (#634)", () => {
 });
 
 describe("default blueprint accepts Claude Design files (#634)", () => {
-  it("the default blueprint's UI stage carries the file-intake pipeline", () => {
+  it("the default blueprint has a UI stage (where the design files are dropped + previewed) (#897 Phase 4c: these are stage features, not pipelines)", () => {
     const def = makeBlueprints().find((b) => b.id === "default")!;
-    const ui = def.sections.find((s) => s.key === "ui")!;
-    expect(ui.pipelines.map((p) => p.id)).toContain("file-intake");
-    expect(ui.pipelines.map((p) => p.id)).toContain("render-preview");
+    expect(def.sections.some((s) => s.key === "ui")).toBe(true);
   });
 });
 

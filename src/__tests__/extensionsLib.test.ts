@@ -71,7 +71,7 @@ describe("catalog templates + blanks", () => {
   });
 
   it("includes the first-party MCP servers with download links + run configs (#858)", () => {
-    const firstParty = ["Compliance", "Complexity Analyzer", "Dependency Graph"];
+    const firstParty = ["Compliance", "Complexity Analyzer", "Dependency Graph", "Plan Grader"];
     for (const name of firstParty) {
       const item = EXT_CATALOG.find((c) => c.name === name);
       expect(item, `${name} in catalog`).toBeDefined();
@@ -84,6 +84,7 @@ describe("catalog templates + blanks", () => {
     expect(defFromCatalog("Compliance")).toMatchObject({ kind: "mcp", transport: "stdio", command: "python", args: "-m uv run --directory {dir} compliance-mcp" });
     expect(defFromCatalog("Complexity Analyzer")).toMatchObject({ command: "node", args: "{dir}/dist/mcp/index.js" });
     expect(defFromCatalog("Dependency Graph")).toMatchObject({ command: "node", args: "{dir}/dist/index.js" });
+    expect(defFromCatalog("Plan Grader")).toMatchObject({ kind: "mcp", transport: "stdio", command: "python", args: "-m uv run --directory {dir} plan-grader-mcp" });
   });
 
   it("blankExtension produces empty mcp/hook shapes", () => {

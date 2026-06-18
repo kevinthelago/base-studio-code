@@ -53,12 +53,11 @@ describe("runCleanupScan (#626 slice c)", () => {
 });
 
 describe("Refactor blueprint (#626 slice c)", () => {
-  it("is a built-in blueprint with a cleanup stage carrying the scan pipeline", () => {
+  it("is a built-in blueprint with a cleanup stage (#897 Phase 4a: scan-dead-code is no longer a pipeline — runCleanupScan runs the scan as a feature)", () => {
     const refactor = makeBlueprints().find((b) => b.id === "refactor");
     expect(refactor).toBeTruthy();
     expect(refactor!.origin).toBe("built-in");
     const cleanup = refactor!.sections.find((s) => s.key === "cleanup");
     expect(cleanup).toBeTruthy();
-    expect(cleanup!.pipelines.map((p) => p.id)).toContain("scan-dead-code");
   });
 });
