@@ -14,11 +14,14 @@ describe("stageGate — evalRequirement", () => {
     expect(evalRequirement({ signal: "n", target: 1 }, { n: 0 })).toEqual({ pass: false, progress: 0 });
   });
 
-  it("ratio (`of`) progress is num/denom and fails when denom is 0", () => {
+  it("ratio (`of`) progress is num/denom; a zero denominator is vacuously satisfied (#953)", () => {
     expect(evalRequirement({ signal: "a", of: "t" }, { a: 2, t: 4 })).toEqual({ pass: false, progress: 0.5 });
     expect(evalRequirement({ signal: "a", of: "t" }, { a: 4, t: 4 })).toEqual({ pass: true, progress: 1 });
-    // total 0 ⇒ not vacuously complete (this is the "total > 0" guard)
-    expect(evalRequirement({ signal: "a", of: "t" }, { a: 0, t: 0 })).toEqual({ pass: false, progress: 0 });
+    // total 0 ⇒ nothing to resolve ⇒ vacuously complete (you can't fail to resolve 0 of 0).
+    // Previously this FAILED, which deadlocked the Context gate for blueprints that surface
+    // no discovery topics.
+    expect(evalRequirement({ signal: "a", of: "t" }, { a: 0, t: 0 })).toEqual({ pass: true, progress: 1 });
+    expect(evalRequirement({ signal: "a", of: "t" }, {})).toEqual({ pass: true, progress: 1 });
   });
 });
 
@@ -47,6 +50,23 @@ describe("stageGate — evalGate", () => {
       .toEqual({ done: false, fraction: 0.75 });
     expect(evalGate(gate, { coreConfirmed: true, topicsResolved: 4, topicsTotal: 4 }))
       .toEqual({ done: true, fraction: 1 });
+  });
+
+  it("the Context gate completes when a blueprint surfaces no discovery topics (#953)", () => {
+    // The real SECTION_DEFS.context gateRule: core confirmed (must-pass, no fill) + every
+    // surfaced topic resolved + no leftover gaps. A lighter blueprint (e.g. a maintain
+    // "Feature Add" one) can legitimately surface zero topics — the gate must still complete
+    // rather than deadlock on `topicsResolved of topicsTotal` with a 0 denominator.
+    const contextGate: StageGate = { require: [
+      { signal: "coreConfirmed", target: true, weight: 0 },
+      { signal: "topicsResolved", of: "topicsTotal" },
+      { signal: "hasPlanGaps", target: false, weight: 0 },
+    ] };
+    expect(evalGate(contextGate, { coreConfirmed: true, topicsResolved: 0, topicsTotal: 0, hasPlanGaps: false }))
+      .toEqual({ done: true, fraction: 1 });
+    // still blocked while a surfaced topic is unresolved or a gap remains
+    expect(evalGate(contextGate, { coreConfirmed: true, topicsResolved: 1, topicsTotal: 3, hasPlanGaps: false }).done).toBe(false);
+    expect(evalGate(contextGate, { coreConfirmed: true, topicsResolved: 0, topicsTotal: 0, hasPlanGaps: true }).done).toBe(false);
   });
 });
 
