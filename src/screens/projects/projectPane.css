@@ -499,7 +499,7 @@
   font-family: var(--mono); font-size: 9px; color: var(--fg-muted); }
 
 /* sequenced rail (#668) — ported from the V4 design (bsc-project-planner-progress-bar) */
-.fp .seqrail-wrap { flex: 0 0 auto; padding: 18px 16px; border-bottom: 1px solid var(--border-soft); background: var(--bg-panel); }
+.fp .seqrail-wrap { flex: 0 0 auto; padding: 13px 14px 9px; border-bottom: 1px solid var(--border-soft); background: var(--bg-panel); }
 /* Each seg is a FIXED-HEIGHT box that vertically centers the node; the marker (top) and
    label (bottom) are absolutely positioned so they never affect the node's position. The
    node therefore sits at the same y on every seg regardless of state/marker (#668). */
