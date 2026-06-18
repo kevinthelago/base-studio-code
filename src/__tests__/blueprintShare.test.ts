@@ -44,6 +44,19 @@ describe("blueprintShare (#598)", () => {
     expect(coerceBlueprint({ id: "x", name: "y", sections: [{ name: "no key" }] })).toBeNull();
   });
 
+  it("allowEmptySections accepts a section-less in-progress blueprint (#923 authoring)", () => {
+    // The Purpose stage emits identity (name/category) before any stages exist — strict import would
+    // drop it, so the <blueprint> tag handler opts into allowEmptySections.
+    expect(coerceBlueprint({ id: "x", name: "y", category: "greenfield", sections: [] })).toBeNull();
+    const bp = coerceBlueprint({ id: "x", name: "y", category: "greenfield", sections: [] }, { allowEmptySections: true });
+    expect(bp).not.toBeNull();
+    expect(bp!.name).toBe("y");
+    expect(bp!.category).toBe("greenfield");
+    expect(bp!.sections).toEqual([]);
+    // still requires id + name even when empty sections are allowed
+    expect(coerceBlueprint({ name: "no id", sections: [] }, { allowEmptySections: true })).toBeNull();
+  });
+
   it("coerces partial section fields with safe defaults", () => {
     const bp = coerceBlueprint({
       id: "x", name: "Imported",
