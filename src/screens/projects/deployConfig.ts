@@ -179,3 +179,98 @@ export function deployChecks(d: DeployConfig): DeployCheck[] {
 export function deploymentDefined(d: DeployConfig | undefined): boolean {
   return !!d && deployChecks(d).every((c) => c.ok);
 }
+
+// ── Planner channel (#919): coerce the planner's `<deploy_config>` JSON → a full DeployConfig ──
+// The planner emits a lenient/partial shape; we overlay it onto the seeded defaults so the gate
+// can clear from the planner's output (not only manual pane edits). Defensive: any missing piece
+// falls back to a sensible default; the caller try/catches bad JSON and the planner re-emits.
+type Raw = Record<string, unknown>;
+const asArr = (v: unknown): Raw[] => Array.isArray(v) ? v.filter((x): x is Raw => !!x && typeof x === "object") : [];
+const asStr = (v: unknown, d = ""): string => typeof v === "string" ? v : d;
+const asBool = (v: unknown, d: boolean): boolean => typeof v === "boolean" ? v : d;
+
+export function coerceDeployConfig(raw: unknown, repos: string[] = []): DeployConfig {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Raw;
+  const base = defaultDeployConfig(repos);
+
+  // services — keep the platform the planner picked (the gate's "target per service" check); id
+  // defaults to the repo short-name; workload coerced against the platform's supported kinds.
+  const rawServices = asArr(o.services);
+  const services: DeployService[] = (rawServices.length ? rawServices : base.services).map((s, i) => {
+    const repo = asStr(s.repo, base.services[i]?.repo ?? "");
+    const id = asStr(s.id) || (repo ? repoShortName(repo) : `service-${i + 1}`);
+    const plat = platform(asStr(s.platform));
+    const wl = asStr(s.workload) as Workload;
+    const workload: Workload = plat.kinds.includes(wl) ? wl : (plat.kinds[0] ?? "static");
+    return {
+      id, repo, path: asStr(s.path, "."), stack: asStr(s.stack, "—"),
+      platform: asStr(s.platform), workload, proposed: false,
+      region: asStr(s.region, "—"), build: asStr(s.build, "—"),
+      output: asStr(s.output, "dist"), runtime: asStr(s.runtime, "—"),
+    };
+  });
+
+  // environments (accepts `environments` or `envs`)
+  const rawEnvs = asArr(o.environments).length ? asArr(o.environments) : asArr(o.envs);
+  const envs: DeployEnvironment[] = (rawEnvs.length ? rawEnvs : base.envs).map((e, i) => {
+    const name = asStr(e.name) || base.envs[i]?.name || `env-${i + 1}`;
+    return { id: asStr(e.id) || name, name, branch: asStr(e.branch, "main"), url: asStr(e.url), auto: asBool(e.auto, true) };
+  });
+
+  // pipeline
+  const rawPipe = (o.pipeline && typeof o.pipeline === "object" ? o.pipeline : {}) as Raw;
+  const rawStages = asArr(rawPipe.stages);
+  const pipeline: Pipeline = {
+    provider: asStr(rawPipe.provider, base.pipeline.provider),
+    stages: (rawStages.length ? rawStages : base.pipeline.stages).map((st, i) => {
+      const trig = asStr(st.trigger) as PipeTrigger;
+      return {
+        id: asStr(st.id) || asStr(st.name) || `stage-${i + 1}`,
+        name: asStr(st.name) || `stage-${i + 1}`,
+        trigger: PIPE_TRIGGERS.includes(trig) ? trig : "push",
+        gate: asBool(st.gate, false), cmd: asStr(st.cmd),
+      };
+    }),
+  };
+
+  // config + secrets. A secret may carry `envs: ["dev","prod"]` OR per-env booleans; an unspecified
+  // secret defaults to wired in every env (so the planner needn't enumerate to clear the gate).
+  const config: DeployConfigRow[] = asArr(o.config).map((r) => {
+    const row: DeployConfigRow = { key: asStr(r.key) };
+    for (const e of envs) row[e.id] = asStr(r[e.id]);
+    return row;
+  });
+  const secrets: DeploySecretRow[] = asArr(o.secrets).map((r) => {
+    const listed = Array.isArray(r.envs) ? new Set((r.envs as unknown[]).map((x) => String(x))) : null;
+    const row: DeploySecretRow = { key: asStr(r.key) };
+    for (const e of envs) {
+      row[e.id] = listed ? (listed.has(e.id) || listed.has(e.name)) : (typeof r[e.id] === "boolean" ? (r[e.id] as boolean) : true);
+    }
+    return row;
+  });
+
+  // release + health
+  const rawRel = (o.release && typeof o.release === "object" ? o.release : {}) as Raw;
+  const strat = asStr(rawRel.strategy) as ReleaseStrategy;
+  const release: ReleasePolicy = {
+    strategy: RELEASE_STRATEGIES.some((s) => s.id === strat) ? strat : "",
+    autoRollback: asBool(rawRel.autoRollback, base.release.autoRollback),
+    keep: typeof rawRel.keep === "number" ? rawRel.keep : base.release.keep,
+    migrateWithDeploy: asBool(rawRel.migrateWithDeploy, base.release.migrateWithDeploy),
+  };
+  const rawHealth = (o.health && typeof o.health === "object" ? o.health : {}) as Raw;
+  const health: HealthPolicy = {
+    probe: asStr(rawHealth.probe, base.health.probe), probeOn: asBool(rawHealth.probeOn, !!asStr(rawHealth.probe)),
+    slo: asStr(rawHealth.slo), sloOn: asBool(rawHealth.sloOn, !!asStr(rawHealth.slo)),
+    alerts: asStr(rawHealth.alerts), alertsOn: asBool(rawHealth.alertsOn, !!asStr(rawHealth.alerts)),
+  };
+
+  return {
+    selService: services[0]?.id ?? "",
+    services,
+    envs: envs.length ? envs : base.envs,
+    pipeline,
+    config: { config, secrets, vault: asStr((o.config as Raw)?.vault) || asStr(o.vault, "host vault") },
+    release, health,
+  };
+}

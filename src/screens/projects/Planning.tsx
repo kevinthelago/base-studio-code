@@ -44,7 +44,7 @@ import { catalogLink, repoNameFromLink, mcpRepoName } from "../../lib/mcpInstall
 import { type McpInstallState } from "./mcpPaneData";
 import { EXT_CATALOG } from "../../data/extensions";
 import { buildProjectPaneData } from "./projectPaneData";
-import { defaultDeployConfig, deploymentDefined } from "./deployConfig";
+import { defaultDeployConfig, deploymentDefined, coerceDeployConfig } from "./deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
@@ -1279,6 +1279,20 @@ export function Planning({ visible }: { visible: boolean }) {
             if (parsed) useAppStore.getState().setAuthoredBlueprint(projIdSnap, parsed);
           } catch { /* incomplete/invalid JSON — ignore; the planner re-emits */ }
           bufRef.current = bufRef.current.replace(/<blueprint\s*>[\s\S]*?<\/blueprint>/g, "");
+        }
+
+        // ── <deploy_config>{…JSON…}</deploy_config> — the Deploy stage's structured config (#919).
+        // The planner emits it (a lenient shape coerced into the full DeployConfig) so the `deploy`
+        // gate clears from the plan, not only from manual pane edits. Last complete tag wins.
+        const dcRe = /<deploy_config\s*>([\s\S]*?)<\/deploy_config>/g;
+        let lastDcBody: string | null = null;
+        while ((m = dcRe.exec(bufRef.current)) !== null) lastDcBody = m[1];
+        if (lastDcBody !== null) {
+          try {
+            const cfg = coerceDeployConfig(JSON.parse(lastDcBody.trim()));
+            useAppStore.getState().setPlanDeployConfig(projIdSnap, cfg);
+          } catch { /* mid-stream / invalid JSON — ignore; the planner re-emits */ }
+          bufRef.current = bufRef.current.replace(/<deploy_config\s*>[\s\S]*?<\/deploy_config>/g, "");
         }
 
         // Cap buffer to prevent unbounded growth while preserving any partial

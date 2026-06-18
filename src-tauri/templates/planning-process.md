@@ -622,6 +622,23 @@ Extensions screen:
 ```
 <mcp_assign name="Postgres" />
 ```
+**Emit the Deploy stage's config** (#919) — the **structured** artifact for the Deploy stage
+(right after Repos). This tag — NOT a prose `deploy.md` — fills the Deploy pane and clears the
+stage gate. Re-emit the whole tag as the config firms up (the latest one wins). The gate needs a
+`platform` on every service, ≥2 `environments`, ≥2 `pipeline.stages`, every secret listing `prod`
+in its `envs`, and a non-empty `release.strategy`:
+```
+<deploy_config>
+{
+  "services": [{"id":"web","repo":"owner/web","platform":"vercel","workload":"static","region":"iad1","build":"pnpm build","output":"dist"}],
+  "environments": [{"name":"dev","branch":"feature/*","auto":true},{"name":"staging","branch":"develop","auto":true},{"name":"prod","branch":"main","auto":false}],
+  "pipeline": {"provider":"GitHub Actions","stages":[{"name":"build","trigger":"push"},{"name":"test","trigger":"on-green","gate":true},{"name":"deploy","trigger":"on-green"}]},
+  "secrets": [{"key":"DATABASE_URL","envs":["dev","staging","prod"]}],
+  "release": {"strategy":"blue-green","autoRollback":true,"keep":3,"migrateWithDeploy":true},
+  "health": {"probe":"/healthz","slo":"99.9% uptime","alerts":"Slack #deploys"}
+}
+</deploy_config>
+```
 **Register a per-repo starting script** (emit once you've written the file to
 `prompts/`; `mode` is `dev` or `triage`, `path` is relative to this directory).
 The app auto-assigns it so that repo's future sessions launch with it:
