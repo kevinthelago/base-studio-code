@@ -614,8 +614,9 @@ export function isAuthoringBlueprint(bp: Blueprint | undefined): boolean {
 }
 
 /** The lifecycle categories a GREENFIELD project may switch INTO (#923) — the natural progression
- *  once it's been built: restructure (transform) or secure in place (harden). */
-export const GREENFIELD_SWITCH_TARGETS: BlueprintCategory[] = ["transform", "harden"];
+ *  once it's been built: restructure (transform), secure in place (harden), or move into ongoing
+ *  maintenance (maintain). */
+export const GREENFIELD_SWITCH_TARGETS: BlueprintCategory[] = ["transform", "harden", "maintain"];
 
 /** Whether a project bound to this blueprint may switch to a different one AT ALL (#923) — only a
  *  GREENFIELD project can (it can move on to a transform/harden lifecycle once built). Every other
@@ -626,8 +627,8 @@ export function canChangeBlueprint(bp: Blueprint | undefined): boolean {
 }
 
 /** Whether a project currently on `from` may switch to a `to` blueprint (#923). Only greenfield →
- *  transform | harden is allowed; everything else (other origins, other targets, anything touching
- *  the locked blueprint-author lifecycle) is refused. This is the authoritative switch gate. */
+ *  transform | harden | maintain is allowed; everything else (other origins, other targets, anything
+ *  touching the locked blueprint-author lifecycle) is refused. This is the authoritative switch gate. */
 export function canSwitchBlueprint(from: Blueprint | undefined, to: Blueprint | undefined): boolean {
   if (!from || !to) return false;
   if (isAuthoringBlueprint(from) || isAuthoringBlueprint(to)) return false;
