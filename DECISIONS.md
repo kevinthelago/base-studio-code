@@ -36,3 +36,5 @@
 
 - PT2/F2/A2/M2/F4/A4: waiting for director go-ahead after tunnel-mobile lands PT1/F1/A1/M1.
 
+- T2b/T3b/T5/T6/T8 landed on develop (e5dfbb6). T1b blocked on T1a (tunnel-mobile Noise vector fixture). PT2/F2/A2/M2/F4/A4 blocked on director go-ahead after tunnel-mobile lands PT1/F1/A1/M1.
+
