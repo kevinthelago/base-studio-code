@@ -1551,6 +1551,77 @@ mod tests {
         );
     }
 
+    // ── T1b: Noise IK byte-level match against shared cross-repo test vector ────────
+    //
+    // tunnel-mobile (T1a) generates a deterministic Noise IK session using fixed
+    // keypairs with noble-curves and saves the expected byte sequences to
+    // `src/lib/tunnelProtocol.noiseVector.json`. This test loads that fixture and
+    // replays the handshake with snow, asserting byte-for-byte agreement. Until T1a
+    // lands the vector file, the test body is a no-op (returns early); once it lands
+    // the test gates CI on any snow-vs-noble divergence.
+    #[test]
+    fn noise_ik_matches_shared_test_vector() {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../src/lib/tunnelProtocol.noiseVector.json");
+
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => {
+                // T1a (tunnel-mobile's Noise vector generation) has not yet landed.
+                // Once src/lib/tunnelProtocol.noiseVector.json is committed, this test
+                // becomes active and will catch any byte-level snow ↔ noble divergence.
+                eprintln!("noise_ik_matches_shared_test_vector: SKIP — T1a vector not yet available");
+                return;
+            }
+        };
+        let v: serde_json::Value = serde_json::from_str(&raw)
+            .expect("tunnelProtocol.noiseVector.json must be valid JSON");
+
+        // Decode the fixed keypairs produced by noble (mobile side).
+        let init_priv = b64.decode(v["initiatorPriv"].as_str().expect("initiatorPriv")).unwrap();
+        let resp_priv = b64.decode(v["responderPriv"].as_str().expect("responderPriv")).unwrap();
+        let resp_pub  = b64.decode(v["responderPub"].as_str().expect("responderPub")).unwrap();
+
+        let mut init = noise::initiator(&init_priv, &resp_pub).unwrap();
+        let mut resp = noise::responder(&resp_priv).unwrap();
+        let mut buf  = vec![0u8; 1024];
+        let mut out  = vec![0u8; 1024];
+
+        // → e, es, s, ss
+        let n = init.write_message(&[], &mut buf).unwrap();
+        assert_eq!(
+            b64.encode(&buf[..n]),
+            v["msg1"].as_str().expect("msg1"),
+            "Noise IK msg1 byte mismatch: snow ↔ noble diverge (T1b)"
+        );
+        resp.read_message(&buf[..n], &mut out).unwrap();
+
+        // ← e, ee, se
+        let n = resp.write_message(&[], &mut buf).unwrap();
+        assert_eq!(
+            b64.encode(&buf[..n]),
+            v["msg2"].as_str().expect("msg2"),
+            "Noise IK msg2 byte mismatch: snow ↔ noble diverge (T1b)"
+        );
+        init.read_message(&buf[..n], &mut out).unwrap();
+
+        // Transport-mode ciphertext check.
+        let mut it = init.into_transport_mode().unwrap();
+        let mut rt = resp.into_transport_mode().unwrap();
+        let plaintext = b64.decode(v["plaintext"].as_str().expect("plaintext")).unwrap();
+        let n = it.write_message(&plaintext, &mut buf).unwrap();
+        assert_eq!(
+            b64.encode(&buf[..n]),
+            v["ciphertext"].as_str().expect("ciphertext"),
+            "Noise IK transport ciphertext mismatch: snow ↔ noble diverge (T1b)"
+        );
+        let m = rt.read_message(&buf[..n], &mut out).unwrap();
+        assert_eq!(&out[..m], &plaintext, "Noise IK transport decrypt mismatch");
+    }
+
     /// A full Noise IK handshake between the desktop (responder) and a mobile peer
     /// (initiator that knows the desktop's static public key) yields a working
     /// bidirectional transport — the end-to-end channel the relay can't read.
