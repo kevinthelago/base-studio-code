@@ -1,20 +1,61 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ExternalLink, MoreHorizontal, Trash2, GitFork } from "lucide-react";
+import { ExternalLink, MoreHorizontal, Trash2, Pencil, Search, Layers, GitFork, Shield, Wrench, Database, Link2 } from "lucide-react";
 import { useAppStore } from "../../store";
 import { useFleetLive } from "../../hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../lib/projectPaths";
+import { AUTHORING_BLUEPRINT_ID, CATEGORY_META, type Blueprint, type BlueprintGist, type BlueprintCategory } from "./blueprints";
 
-// A project's lifecycle, derived from GitHub state (#499 design).
-type ProjStatus = "active" | "drafting" | "shipped";
+// A published project's lifecycle, derived from GitHub state: open ⇒ active, closed ⇒ shipped.
+// (Local, not-yet-on-GitHub work lives in the separate Drafts section.)
+type ProjStatus = "active" | "shipped";
 const STATUS_META: Record<ProjStatus, { label: string; cls: string; dot: string }> = {
   active:   { label: "active",   cls: "green", dot: "var(--success)" },
-  drafting: { label: "drafting", cls: "amber", dot: "var(--accent)" },
   shipped:  { label: "shipped",  cls: "",      dot: "var(--fg-dim)" },
 };
-function projStatus(p: { closed: boolean; items: { totalCount: number } }): ProjStatus {
-  if (p.closed) return "shipped";
-  return p.items.totalCount === 0 ? "drafting" : "active";
+function projStatus(p: { closed: boolean }): ProjStatus {
+  return p.closed ? "shipped" : "active";
+}
+
+// ── Blueprint display helpers (#…): a hued icon tile keyed by lifecycle category, a visibility
+// pill (draft / private gist / public gist), and a shortened gist link. ────────────────────────
+const CAT_ICON: Record<BlueprintCategory, typeof Layers> = {
+  greenfield: Layers, transform: GitFork, harden: Shield, maintain: Wrench, data: Database,
+};
+function catHue(cat: BlueprintCategory): string {
+  return `oklch(0.75 0.13 ${CATEGORY_META[cat]?.h ?? 70})`;
+}
+type Visibility = "draft" | "private" | "public";
+const VIS_META: Record<Visibility, { label: string; color: string }> = {
+  draft:   { label: "draft",        color: "var(--accent)" },
+  private: { label: "private gist", color: "var(--info)" },
+  public:  { label: "public gist",  color: "var(--success)" },
+};
+function prettyGist(g?: BlueprintGist): string | undefined {
+  if (!g) return undefined;
+  if (g.url) {
+    const s = g.url.replace(/^https?:\/\//, "").replace(/^www\./, "");
+    return s.length > 32 ? s.slice(0, 30) + "…" : s;
+  }
+  return g.id ? `gist · ${g.id.slice(0, 7)}` : undefined;
+}
+
+/** A blueprint surfaced in the Projects page: either a saved library blueprint, or an in-progress
+ *  authoring draft (a planning session bound to the blueprint-author lifecycle). */
+interface BpItem {
+  id: string;          // library blueprint id, or "draft:<key>" for an authoring draft
+  kind: "library" | "draft";
+  draftKey?: string;   // present for authoring drafts (its resume / delete target)
+  draftTitle?: string;
+  draftPitch?: string;
+  name: string;
+  pitch: string;
+  category: BlueprintCategory;
+  stages: number;
+  vis: Visibility;
+  gistLabel?: string;
+  updatedLabel: string;
+  sort: number;        // recency key (epoch ms)
 }
 
 /** Live "N agents running · M paused" pill for a project (matched by repo). */
@@ -34,12 +75,25 @@ function FleetPill({ running, paused }: { running: number; paused: number }) {
   );
 }
 
-function GroupLabel({ label, count }: { label: string; count: number }) {
+/** Top-level section divider (Drafts · Projects · Blueprints). */
+function SectionHeader({ label, count, note }: { label: string; count: number; note: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "2px 2px 0", marginTop: 4 }}>
-      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".08em" }}>{label}</span>
-      <span className="tag" style={{ fontSize: 9 }}>{count}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 9, margin: "0 0 10px" }}>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>{label}</span>
+      <span style={{ padding: "0 6px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{count}</span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{note}</span>
       <span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+    </div>
+  );
+}
+
+/** Lifecycle sub-group header within the Projects section (Active · Drafting · Shipped). */
+function GroupHeader({ label, count, dot }: { label: string; count: number; dot: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 7px", paddingLeft: 2 }}>
+      <span style={{ width: 6, height: 6, borderRadius: 99, background: dot }} />
+      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".07em" }}>{label}</span>
+      <span style={{ padding: "0 5px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 9, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{count}</span>
     </div>
   );
 }
@@ -114,6 +168,9 @@ function timeAgo(iso: string): string {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
+function timeAgoMs(ms: number): string {
+  return ms > 0 ? timeAgo(new Date(ms).toISOString()) : "—";
+}
 
 interface ProjectRowProps {
   p: GhProject;
@@ -169,7 +226,6 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
         <div style={{ display: "flex", gap: 16, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", flexWrap: "wrap" }}>
           {p.items.totalCount > 0 && <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>}
           {open > 0 && <span><b style={{ color: "var(--fg)" }}>{open}</b> open</span>}
-          {status === "drafting" && <span style={{ color: "var(--accent)" }}>plan in progress</span>}
           {p.items.totalCount > 0 && <ProgressBar pct={pct} />}
           <span style={{ color: "var(--fg-dim)" }}>updated {timeAgo(p.updatedAt)}</span>
         </div>
@@ -197,11 +253,11 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
             <div style={{
               position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
               background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-              borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 168,
-              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+              borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 178,
+              boxShadow: "0 6px 22px rgba(0,0,0,0.45)",
             }}>
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onBoard(p); }}>
-                <ExternalLink size={12} /> board on GitHub
+                <ExternalLink size={12} /> open board on GitHub
               </button>
               <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
               <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(p); }}>
@@ -215,14 +271,178 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
   );
 }
 
+interface DraftRow { key: string; title: string; pitch: string; sort: number }
+
+/** A planning draft not yet on GitHub — dashed card with resume + ⋯ (edit plan / delete draft). */
+function DraftCard({ d, onResume, onDelete, menuOpenId, setMenuOpenId }: {
+  d: DraftRow;
+  onResume: (d: DraftRow) => void;
+  onDelete: (key: string) => void;
+  menuOpenId: string | null;
+  setMenuOpenId: (id: string | null) => void;
+}) {
+  const id = "draft:" + d.key;
+  const isOpen = menuOpenId === id;
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState(false);
+  useEffect(() => {
+    if (!isOpen) return;
+    function onDown(e: MouseEvent) { if (!menuRef.current?.contains(e.target as Node)) setMenuOpenId(null); }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [isOpen, setMenuOpenId]);
+
+  return (
+    <div
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+        display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+        background: "var(--bg-elev)", border: "1px dashed " + (hover ? "var(--accent-dim)" : "var(--border-soft)"),
+        borderRadius: "var(--r-md)",
+      }}>
+      <div onClick={() => onResume(d)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+          <span className="tag amber" style={{ fontSize: 9.5 }}>draft</span>
+          <span style={{ fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>{d.title}</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>no board yet</span>
+        </div>
+        {d.pitch && (
+          <div style={{ marginTop: 5, color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 560 }}>{d.pitch}</div>
+        )}
+        <div style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>updated {timeAgoMs(d.sort)}</div>
+      </div>
+      <button
+        className="btn ghost"
+        style={{ height: 24, padding: "0 10px", fontSize: 10.5, color: "var(--fg-muted)" }}
+        onClick={() => onResume(d)}
+      >resume →</button>
+      <div ref={menuRef} style={{ position: "relative" }}>
+        <button
+          className="btn ghost"
+          style={{ height: 26, width: 26, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setMenuOpenId(isOpen ? null : id)}
+          title="More options"
+        ><MoreHorizontal size={14} /></button>
+        {isOpen && (
+          <div style={{
+            position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
+            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+            borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 168, boxShadow: "0 6px 22px rgba(0,0,0,0.45)",
+          }}>
+            <button className="menu-item" onClick={() => { setMenuOpenId(null); onResume(d); }}>
+              <Pencil size={12} /> edit plan
+            </button>
+            <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+            <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(d.key); }}>
+              <Trash2 size={12} /> delete draft
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A reusable plan template — hued icon tile + category/visibility/gist metadata + ⋯ menu. */
+function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
+  b: BpItem;
+  onOpen: (b: BpItem) => void;
+  onDelete: (b: BpItem) => void;
+  menuOpenId: string | null;
+  setMenuOpenId: (id: string | null) => void;
+}) {
+  const menuId = "bp:" + b.id;
+  const isOpen = menuOpenId === menuId;
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState(false);
+  useEffect(() => {
+    if (!isOpen) return;
+    function onDown(e: MouseEvent) { if (!menuRef.current?.contains(e.target as Node)) setMenuOpenId(null); }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [isOpen, setMenuOpenId]);
+
+  const hue = catHue(b.category);
+  const Icon = CAT_ICON[b.category] ?? Layers;
+  const vis = VIS_META[b.vis];
+
+  return (
+    <div
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+        display: "flex", alignItems: "center", gap: 14, padding: "13px 14px",
+        background: hover ? "var(--bg-elev)" : "var(--bg-panel)",
+        border: "1px solid " + (hover ? "var(--border)" : "var(--border-soft)"), borderRadius: "var(--r-lg)",
+      }}>
+      <div style={{
+        width: 42, height: 42, flex: "0 0 42px", borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center",
+        background: `color-mix(in oklch, ${hue}, transparent 88%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 70%)`, color: hue,
+      }}>
+        <Icon size={18} />
+      </div>
+      <div onClick={() => onOpen(b)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>{b.name}</span>
+          <span style={{
+            padding: "1px 7px", borderRadius: 99, fontFamily: "var(--mono)", fontSize: 9.5, color: hue,
+            background: `color-mix(in oklch, ${hue}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
+          }}>{b.category}</span>
+        </div>
+        {b.pitch && (
+          <div style={{ marginTop: 4, color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 560 }}>{b.pitch}</div>
+        )}
+        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+          <span><b style={{ color: "var(--fg-muted)", fontWeight: 600 }}>{b.stages}</b> stage{b.stages !== 1 ? "s" : ""}</span>
+          <span style={{
+            padding: "1px 7px", borderRadius: 99, fontSize: 9, color: vis.color,
+            background: `color-mix(in oklch, ${vis.color}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${vis.color}, transparent 75%)`,
+          }}>{vis.label}</span>
+          {b.gistLabel && (
+            <span style={{ color: "var(--info)", display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <Link2 size={11} />{b.gistLabel}
+            </span>
+          )}
+          {b.sort > 0 && <span>updated {b.updatedLabel}</span>}
+        </div>
+      </div>
+      <div ref={menuRef} style={{ position: "relative" }}>
+        <button
+          className="btn ghost"
+          style={{ height: 26, width: 26, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setMenuOpenId(isOpen ? null : menuId)}
+          title="More options"
+        ><MoreHorizontal size={14} /></button>
+        {isOpen && (
+          <div style={{
+            position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
+            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+            borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 172, boxShadow: "0 6px 22px rgba(0,0,0,0.45)",
+          }}>
+            <button className="menu-item" onClick={() => { setMenuOpenId(null); onOpen(b); }}>
+              <Pencil size={12} /> open &amp; edit
+            </button>
+            <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+            <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(b); }}>
+              <Trash2 size={12} /> delete blueprint
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ProjectsList() {
-  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, planAuthoredBlueprint, setAuthoredBlueprint, blueprints, removeBlueprint } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
   const [lastSync, setLastSync]   = useState<Date | null>(null);
   const [title, setTitle]         = useState("");
   const [pitch, setPitch]         = useState("");
+  const [newOpen, setNewOpen]     = useState(false);
+  const [query, setQuery]         = useState("");
+  const [sort, setSort]           = useState<"recency" | "name">("recency");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GhProject | null>(null);
   const [deleting, setDeleting]   = useState(false);
@@ -395,14 +615,17 @@ export function ProjectsList() {
     setActiveProjectMeta(null, "", "", 0);
     addDraftProject(draftKey, { title: titleTrimmed, pitch: pitch.trim(), createdAt: Date.now() });
     setPlanningSession(draftKey);
+    setNewOpen(false);
+    setTitle("");
+    setPitch("");
     setProjectsView("planning");
   }
 
-  function reopenDraft(key: string, d: { title: string; pitch: string }) {
+  function reopenDraft(d: { key: string; title: string; pitch: string }) {
     setPlanningTitle(d.title);
     setPlanningContext(d.pitch, "");
     setActiveProjectMeta(null, "", "", 0);
-    setPlanningSession(key);
+    setPlanningSession(d.key);
     setProjectsView("planning");
   }
 
@@ -450,38 +673,150 @@ export function ProjectsList() {
     return m;
   }, [visibleProjects, workers]);
 
-  // Group the published projects by lifecycle for the sectioned list (#499).
-  const grouped = useMemo(() => {
-    const order: ProjStatus[] = ["active", "drafting", "shipped"];
-    const by: Record<ProjStatus, GhProject[]> = { active: [], drafting: [], shipped: [] };
-    for (const p of visibleProjects) by[projStatus(p)].push(p);
-    return order.map(s => [s, by[s]] as const).filter(([, arr]) => arr.length > 0);
-  }, [visibleProjects]);
+  // ── Local drafts (durable on-disk truth ∪ store draft map), dropping anything already published.
+  const allDrafts = useMemo<DraftRow[]>(() => {
+    const publishedKeys = new Set<string>([
+      ...Object.values(projectKeyAlias),
+      ...visibleProjects.map(p => sanitizeProjectKey(p.title)),
+    ]);
+    const byKey = new Map<string, DraftRow>();
+    for (const lp of Array.isArray(localProjects) ? localProjects : []) {
+      if (!lp?.hasPlan) continue; // skip bare scaffold dirs
+      byKey.set(lp.key, { key: lp.key, title: lp.title, pitch: "", sort: lp.updatedAt });
+    }
+    for (const [key, d] of Object.entries(localDraftProjects)) {
+      const ex = byKey.get(key);
+      byKey.set(key, { key, title: d.title, pitch: d.pitch, sort: Math.max(ex?.sort ?? 0, d.createdAt) });
+    }
+    return [...byKey.values()].filter(d => !publishedKeys.has(d.key));
+  }, [localProjects, localDraftProjects, projectKeyAlias, visibleProjects]);
 
-  // Jump to the GitHub Portfolio tab (where the analytics + live Fleet now live, #498).
-  function gotoPortfolio() { setGithubTab("projects"); setScreen("github"); }
+  // A draft bound to the blueprint-author lifecycle is an in-progress BLUEPRINT — it belongs in the
+  // Blueprints section, not the normal Drafts list (#923 / Projects-tab redesign).
+  const isAuthoringKey = useCallback((key: string) => projectBlueprintId[key] === AUTHORING_BLUEPRINT_ID, [projectBlueprintId]);
+  const normalDrafts = useMemo(() => allDrafts.filter(d => !isAuthoringKey(d.key)), [allDrafts, isAuthoringKey]);
+  const authoringDrafts = useMemo(() => allDrafts.filter(d => isAuthoringKey(d.key)), [allDrafts, isAuthoringKey]);
+
+  // ── Blueprints surfaced here: the user's saved library blueprints (built-ins stay in the
+  // Blueprints tab), plus any in-progress authoring drafts not yet saved to the library. The
+  // saved/published version wins the dedup (by name) over a still-open authoring draft.
+  const blueprintItems = useMemo<BpItem[]>(() => {
+    const items: BpItem[] = [];
+    const seen = new Set<string>();
+    for (const b of blueprints) {
+      if (b.origin === "built-in") continue;
+      seen.add(b.name.toLowerCase());
+      const hasGist = !!b.gist?.id;
+      const vis: Visibility = hasGist ? (b.gist?.public ? "public" : "private") : "draft";
+      const sortMs = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      items.push({
+        id: b.id, kind: "library", name: b.name,
+        pitch: b.pitch ?? b.desc ?? "",
+        category: b.category ?? "greenfield",
+        stages: b.sections.length, vis,
+        gistLabel: hasGist ? prettyGist(b.gist) : undefined,
+        updatedLabel: timeAgoMs(sortMs), sort: sortMs,
+      });
+    }
+    for (const d of authoringDrafts) {
+      const bp = planAuthoredBlueprint[d.key] as Blueprint | undefined;
+      const name = bp?.name ?? d.title;
+      if (seen.has(name.toLowerCase())) continue;
+      items.push({
+        id: "draft:" + d.key, kind: "draft", draftKey: d.key, draftTitle: d.title, draftPitch: d.pitch,
+        name, pitch: bp?.pitch ?? bp?.desc ?? d.pitch ?? "",
+        category: bp?.category ?? "greenfield",
+        stages: bp?.sections?.length ?? 0, vis: "draft",
+        updatedLabel: timeAgoMs(d.sort), sort: d.sort,
+      });
+    }
+    return items;
+  }, [blueprints, authoringDrafts, planAuthoredBlueprint]);
+
+  // ── Search + sort over every list (#… redesign). ───────────────────────────────────────────────
+  const q = query.trim().toLowerCase();
+  const matchP = (p: GhProject) => !q || (p.title + " " + (p.shortDescription ?? "")).toLowerCase().includes(q);
+  const matchD = (d: DraftRow) => !q || (d.title + " " + d.pitch).toLowerCase().includes(q);
+  const matchB = (b: BpItem) => !q || (b.name + " " + b.pitch).toLowerCase().includes(q);
+
+  // Group the published projects by lifecycle, filtered + sorted (#499 + redesign).
+  const grouped = useMemo(() => {
+    const cmpP = (a: GhProject, b: GhProject) =>
+      sort === "name" ? a.title.toLowerCase().localeCompare(b.title.toLowerCase())
+                      : new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    const by: Record<ProjStatus, GhProject[]> = { active: [], shipped: [] };
+    for (const p of visibleProjects) { if (matchP(p)) by[projStatus(p)].push(p); }
+    (Object.keys(by) as ProjStatus[]).forEach(s => by[s].sort(cmpP));
+    return by;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleProjects, sort, q]);
+
+  const fDrafts = useMemo(() => {
+    const arr = normalDrafts.filter(matchD);
+    arr.sort((a, b) => sort === "name" ? a.title.toLowerCase().localeCompare(b.title.toLowerCase()) : b.sort - a.sort);
+    return arr;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [normalDrafts, sort, q]);
+
+  const fBlueprints = useMemo(() => {
+    const arr = blueprintItems.filter(matchB);
+    arr.sort((a, b) => sort === "name" ? a.name.toLowerCase().localeCompare(b.name.toLowerCase()) : b.sort - a.sort);
+    return arr;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blueprintItems, sort, q]);
+
+  const publishedCount = grouped.active.length + grouped.shipped.length;
+  const grandTotal = publishedCount + fDrafts.length + fBlueprints.length;
+  const noResults = grandTotal === 0;
+
+  // "open & edit" a blueprint always lands in the project planning page (#…): an in-progress
+  // authoring draft resumes its session; a saved library blueprint re-opens an authoring session
+  // keyed by its name, seeded with the blueprint so the planner + focused pane edit it in place.
+  function openBlueprint(b: BpItem) {
+    if (b.kind === "draft" && b.draftKey) {
+      reopenDraft({ key: b.draftKey, title: b.draftTitle ?? b.name, pitch: b.draftPitch ?? "" });
+      return;
+    }
+    const full = blueprints.find(x => x.id === b.id);
+    const key = sanitizeProjectKey(b.name);
+    setProjectBlueprintId(key, AUTHORING_BLUEPRINT_ID);
+    if (full) setAuthoredBlueprint(key, full);
+    setPlanningTitle(b.name);
+    setPlanningContext(b.pitch || "Design a reusable blueprint to publish as a gist.", "");
+    setActiveProjectMeta(null, "", "", 0);
+    addDraftProject(key, { title: b.name, pitch: b.pitch ?? "", createdAt: Date.now() });
+    setPlanningSession(key);
+    setProjectsView("planning");
+  }
+  function deleteBlueprint(b: BpItem) {
+    if (b.kind === "draft" && b.draftKey) void deleteDraft(b.draftKey);
+    else removeBlueprint(b.id);
+  }
+
+  const totalSummary = `${visibleProjects.length} published · ${normalDrafts.length} draft${normalDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
+  const sortBtn = (active: boolean) => ({
+    height: 28, padding: "0 11px", border: 0, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5,
+    background: active ? "var(--bg-elev2)" : "transparent", color: active ? "var(--fg)" : "var(--fg-dim)",
+  } as const);
 
   return (
     <section style={{ flex: 1, overflow: "auto", padding: "24px 32px", minWidth: 0 }}>
-      <div style={{ maxWidth: 1080, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 18 }}>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600 }}>Projects</h2>
-            <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ maxWidth: 1040, margin: "0 auto" }}>
+        {/* header */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 16 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600, color: "var(--fg)" }}>Projects</h2>
+              <span style={{ padding: "1px 7px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 10, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{grandTotal}</span>
+            </div>
+            <div style={{ color: "var(--fg-muted)", fontSize: 11.5, marginTop: 5, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontFamily: "var(--mono)" }}>
               <span style={{ color: "var(--success)" }}>● github connected</span>
-              {!loading && visibleProjects.length > 0 && (
-                <>
-                  <span>·</span>
-                  <span>
-                    {visibleProjects.length} project{visibleProjects.length !== 1 ? "s" : ""}
-                    {repos.size > 0 ? ` across ${repos.size} repo${repos.size !== 1 ? "s" : ""}` : ""}
-                  </span>
-                </>
-              )}
+              <span style={{ color: "var(--fg-dim)" }}>·</span>
+              <span>{totalSummary}</span>
               {lastSync && (
                 <>
-                  <span>·</span>
-                  <span>last sync {timeAgo(lastSync.toISOString())}</span>
+                  <span style={{ color: "var(--fg-dim)" }}>·</span>
+                  <span style={{ color: "var(--fg-dim)" }}>last sync {timeAgo(lastSync.toISOString())}</span>
                 </>
               )}
             </div>
@@ -489,60 +824,68 @@ export function ProjectsList() {
           <button className="btn ghost" onClick={fetchProjects} disabled={loading}>
             {loading ? "syncing…" : "↻ sync"}
           </button>
-          <button className="btn">import existing</button>
+          <button className="btn primary" onClick={() => { setNewOpen(o => !o); setTitle(""); setPitch(""); }}>+ New project</button>
         </div>
 
-        {/* Analytics moved-out signpost (#498): the portfolio + live Fleet now live
-            on the GitHub page. */}
-        <div onClick={gotoPortfolio} style={{
-          display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", marginBottom: 16, cursor: "pointer",
-          background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
-        }}>
-          <GitFork size={13} style={{ color: "var(--info)" }} />
-          <span style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>
-            Portfolio analytics &amp; live <b style={{ color: "var(--fg)" }}>Fleet</b> now live under <b style={{ color: "var(--fg)" }}>GitHub → Projects</b>.
-          </span>
-          <span style={{ flex: 1 }} />
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--info)" }}>view analytics →</span>
-        </div>
+        {/* new project — inline, toggled by "+ New project" */}
+        {newOpen && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 14,
+            background: "var(--bg-panel)", border: "1px solid var(--accent-dim)", borderRadius: 8,
+          }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>+ plan</span>
+            <input
+              autoFocus
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); if (e.key === "Escape") { setNewOpen(false); setTitle(""); setPitch(""); } }}
+              placeholder="project title…"
+              style={{
+                flex: "0 0 200px", background: "none", border: "none", outline: "none",
+                fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
+                borderRight: "1px solid var(--border-soft)", paddingRight: 8,
+              }}
+            />
+            {titleConflict && (
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>⚠ exists</span>
+            )}
+            <input
+              value={pitch}
+              onChange={e => setPitch(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); }}
+              placeholder="describe what you want to build… (optional)"
+              style={{ flex: 1, background: "none", border: "none", outline: "none", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}
+            />
+            <button
+              onClick={handleStartPlanning}
+              disabled={!titleTrimmed || !!titleConflict}
+              className="btn primary"
+              style={{ height: 24, fontSize: 10.5, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4, whiteSpace: "nowrap" }}
+            >start planning →</button>
+            <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }} onClick={() => { setNewOpen(false); setTitle(""); setPitch(""); }}>cancel</button>
+          </div>
+        )}
 
-        {/* Plan new project — slim inline bar (#522) */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "7px 10px", marginBottom: 14,
-          background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
-        }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>+ plan</span>
-          <input
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            onKeyDown={e => { if (e.key === "Tab") e.preventDefault(); }}
-            placeholder="project title…"
-            style={{
-              flex: "0 0 160px", background: "none", border: "none", outline: "none",
-              fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
-              borderRight: "1px solid var(--border-soft)", paddingRight: 8,
-            }}
-          />
-          {titleConflict && (
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>⚠ exists</span>
-          )}
-          <input
-            value={pitch}
-            onChange={e => setPitch(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); }}
-            placeholder="describe what you want to build… (optional)"
-            style={{
-              flex: 1, background: "none", border: "none", outline: "none",
-              fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
-            }}
-          />
-          <button
-            onClick={handleStartPlanning}
-            disabled={!titleTrimmed || !!titleConflict}
-            className="btn primary"
-            style={{ height: 24, fontSize: 10.5, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4, whiteSpace: "nowrap" }}
-          >start planning →</button>
+        {/* search + sort */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, height: 30, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", flex: "0 0 300px" }}>
+            <Search size={13} style={{ color: "var(--fg-dim)" }} />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="search projects & blueprints…"
+              style={{ flex: 1, background: "none", border: "none", outline: "none", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>sort</span>
+            <div style={{ display: "flex", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+              <button onClick={() => setSort("recency")} style={sortBtn(sort === "recency")}>recency</button>
+              <span style={{ width: 1, background: "var(--border-soft)" }} />
+              <button onClick={() => setSort("name")} style={sortBtn(sort === "name")}>name</button>
+            </div>
+          </div>
+          {q && <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{grandTotal} match{grandTotal !== 1 ? "es" : ""}</span>}
         </div>
 
         {error && (
@@ -564,101 +907,83 @@ export function ProjectsList() {
           </div>
         )}
 
-        {!loading && visibleProjects.length === 0 && !error && (
-          <div style={{ textAlign: "center", padding: "40px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
-            No GitHub Projects found. Create one at github.com/your-org to get started.
-          </div>
+        {draftError && (
+          <div style={{
+            padding: "8px 12px", borderRadius: "var(--r-md)", marginBottom: 12, fontFamily: "var(--mono)", fontSize: 11,
+            color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)",
+            border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
+          }}>{draftError}</div>
         )}
 
-        {(() => {
-          // A project is published — and must NOT also appear as a draft — when its STABLE folder
-          // key is known to GitHub: recorded in the alias at publish, or derivable from a board
-          // title. Dedup by KEY, not by the local hub's goal.md-derived title (#904 follow-up): the
-          // local title (first line of goal.md) frequently differs from the board name, and the old
-          // title match then missed, duplicating published projects into the draft list.
-          const publishedKeys = new Set<string>([
-            ...Object.values(projectKeyAlias),
-            ...visibleProjects.map(p => sanitizeProjectKey(p.title)),
-          ]);
-          // Merge the on-disk projects (durable truth) with the store's draft map (carries the
-          // pitch), keyed by project key, then drop any that are already published.
-          const byKey = new Map<string, { key: string; title: string; pitch: string; sort: number }>();
-          for (const lp of Array.isArray(localProjects) ? localProjects : []) {
-            if (!lp?.hasPlan) continue; // skip bare scaffold dirs
-            byKey.set(lp.key, { key: lp.key, title: lp.title, pitch: "", sort: lp.updatedAt });
-          }
-          for (const [key, d] of Object.entries(localDraftProjects)) {
-            const ex = byKey.get(key);
-            byKey.set(key, { key, title: d.title, pitch: d.pitch, sort: Math.max(ex?.sort ?? 0, d.createdAt) });
-          }
-          const drafts = [...byKey.values()]
-            .filter(d => !publishedKeys.has(d.key))
-            .sort((a, b) => b.sort - a.sort);
-          if (drafts.length === 0) return null;
-          return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 10 }}>
-              {draftError && (
-                <div style={{
-                  padding: "8px 12px", borderRadius: "var(--r-md)", fontFamily: "var(--mono)", fontSize: 11,
-                  color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)",
-                  border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
-                }}>{draftError}</div>
-              )}
-              {drafts.map(d => (
-                <div key={d.key} style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
-                  background: "var(--bg-elev)", border: "1px dashed var(--border-soft)", borderRadius: "var(--r-md)",
-                }}>
-                  <div onClick={() => reopenDraft(d.key, d)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span className="tag amber">draft</span>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg)" }}>{d.title}</span>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>not yet on GitHub</span>
-                    </div>
-                    {d.pitch && (
-                      <div style={{ marginTop: 4, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.pitch}</div>
-                    )}
-                  </div>
-                  <button
-                    className="btn ghost"
-                    style={{ height: 24, padding: "0 8px", fontSize: 10.5, color: "var(--fg-muted)" }}
-                    onClick={() => reopenDraft(d.key, d)}
-                  >resume →</button>
-                  <button
-                    title="Delete draft (removes its local plan files)"
-                    onClick={() => deleteDraft(d.key)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--fg-dim)", padding: 4 }}
-                  ><Trash2 size={14} /></button>
-                </div>
+        {/* ── SECTION A · DRAFTS ── */}
+        {fDrafts.length > 0 && (
+          <>
+            <SectionHeader label="Drafts" count={fDrafts.length} note="not yet on github" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 26 }}>
+              {fDrafts.map(d => (
+                <DraftCard key={d.key} d={d} onResume={reopenDraft} onDelete={deleteDraft} menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId} />
               ))}
             </div>
-          );
-        })()}
+          </>
+        )}
 
-        {/* Grouped published projects: Active · Drafting · Shipped */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {grouped.map(([status, items]) => (
-            <div key={status} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <GroupLabel label={STATUS_META[status].label} count={items.length} />
-              <div style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
-                {items.map((p, i) => (
-                  <div key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
-                    <ProjectRow
-                      p={p}
-                      running={fleetByProject[p.id]?.running ?? 0}
-                      paused={fleetByProject[p.id]?.paused ?? 0}
-                      onPlan={handleEditPlan}
-                      onBoard={handleOpenGithubBoard}
-                      onDelete={setDeleteTarget}
-                      menuOpenId={menuOpenId}
-                      setMenuOpenId={setMenuOpenId}
-                    />
+        {/* ── SECTION B · PROJECTS (published) ── */}
+        {publishedCount > 0 && (
+          <>
+            <SectionHeader label="Projects" count={publishedCount} note="on github · grouped by lifecycle" />
+            {(["active", "shipped"] as ProjStatus[]).map(status => {
+              const items = grouped[status];
+              if (items.length === 0) return null;
+              return (
+                <div key={status} style={{ marginTop: status === "active" ? 14 : 18 }}>
+                  <GroupHeader label={STATUS_META[status].label} count={items.length} dot={STATUS_META[status].dot} />
+                  <div style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "hidden", opacity: status === "shipped" ? 0.82 : 1 }}>
+                    {items.map((p, i) => (
+                      <div key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
+                        <ProjectRow
+                          p={p}
+                          running={fleetByProject[p.id]?.running ?? 0}
+                          paused={fleetByProject[p.id]?.paused ?? 0}
+                          onPlan={handleEditPlan}
+                          onBoard={handleOpenGithubBoard}
+                          onDelete={setDeleteTarget}
+                          menuOpenId={menuOpenId}
+                          setMenuOpenId={setMenuOpenId}
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              );
+            })}
+            <div style={{ height: 26 }} />
+          </>
+        )}
+
+        {/* ── SECTION C · BLUEPRINTS ── */}
+        {fBlueprints.length > 0 && (
+          <>
+            <SectionHeader label="Blueprints" count={fBlueprints.length} note="reusable plan templates · published as gists" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {fBlueprints.map(b => (
+                <BlueprintCard key={b.id} b={b} onOpen={openBlueprint} onDelete={deleteBlueprint} menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId} />
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
+
+        {/* no results / empty */}
+        {!loading && noResults && (
+          q ? (
+            <div style={{ textAlign: "center", padding: "48px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+              No projects or blueprints match “{query}”.
+            </div>
+          ) : !error && (
+            <div style={{ textAlign: "center", padding: "48px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+              Nothing here yet. Start a plan with <b style={{ color: "var(--fg-muted)" }}>+ New project</b>.
+            </div>
+          )
+        )}
       </div>
 
       {/* Delete confirmation dialog */}

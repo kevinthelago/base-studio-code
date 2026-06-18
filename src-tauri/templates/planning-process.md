@@ -154,8 +154,9 @@ needs. Read `extensions.md` (the catalog of available MCP servers) and
 `automations.md` first.
 
 - **Extensions / MCP** — for each capability the work needs (a Postgres MCP for a
-  DB-backed project, Sentry for error triage, Linear/Notion for issue/doc access,
-  Brave Search for research), assign the server with `<mcp_assign name="Postgres" />`
+  DB-backed project, Sentry for error triage, the **Compliance** server for accessibility /
+  regulatory compliance, Linear/Notion for issue/doc access, Brave Search for research),
+  assign the server with `<mcp_assign name="Postgres" />`
   (see "App integration tags"). Each assignment is scoped to THIS project and loaded
   into every build & triage session the plan launches — written to the session's
   `.mcp.json` and pre-trusted, so an autonomous agent never blocks on a "trust these
@@ -309,6 +310,35 @@ and docs are part of "done," not extras**. Don't propose a stopgap and call the 
 follow-up; propose the real thing. (Phasing is fine and expected — sequencing the complete plan
 into milestones is different from scoping the solution down.)
 
+**Enterprise / production-readiness bars — part of "done," folded into the build.** For a
+production or enterprise target, **weigh each of these and APPLY the ones that matter** — as the
+relevant feature's acceptance criteria, an architecture decision, a reusable Skill, or a short
+section + `<kb_assign>`. Don't run them as a dozen set-piece discovery chats; fold each into the
+feature/issue that carries it, and record any you deliberately skip in `context/_skipped.md`:
+- **Observability & SLOs** — structured logging, metrics, distributed tracing (OpenTelemetry),
+  dashboards, and explicit SLIs/SLOs with alerting. ("Can you see it in prod, and know when it breaks?")
+- **Reliability & resilience** — timeouts, retries with backoff, idempotency, circuit breakers,
+  graceful degradation, rate limiting; plus disaster recovery: a documented RPO/RTO and a *tested* restore.
+- **Incident response** — error tracking, an on-call/runbook path, and a postmortem habit.
+- **Data governance** — reversible, zero-downtime schema migrations (with backfills), PII
+  classification, retention/deletion (right-to-be-forgotten), and data-quality checks.
+- **Release strategy** — feature flags / kill switches, canary or blue-green rollout, automated
+  rollback, and migrations coordinated with deploys (distinct from merely "CI exists").
+- **Supply-chain integrity** — SBOM generation, dependency/vuln scanning (SCA), signed artifacts +
+  build provenance, and license compliance.
+- **Identity & secrets** — SSO (SAML/OIDC), SCIM provisioning, RBAC/ABAC, MFA where it applies, and
+  secrets management with rotation (never secrets in the repo).
+- **Performance & capacity** — load testing, performance budgets, and validated autoscaling assumptions.
+- **Docs & decisions** — ADRs (decision records), runbooks, API contracts/versioning with a
+  deprecation policy, and onboarding docs.
+- **Cost / FinOps** — budgets and cost tagging (for an agent-driven product, include LLM/API spend).
+
+**Compliance & accessibility are owned by the Compliance MCP server — not a discovery section.** When
+the project has accessibility (WCAG) or regulatory needs (GDPR, SOC 2, ISO 27001, HIPAA, PCI DSS),
+assign it with `<mcp_assign name="Compliance" />`: it generates the necessary compliance/accessibility
+**Skills** during planning and enforces them at runtime. Don't hand-author accessibility sections —
+assign the server and let it own that surface.
+
 **Complete ≠ bloated.** "Most complete" means fully solving the *actual* goal at high quality — it
 does NOT mean gold-plating. Don't add speculative abstractions, features beyond the goal, or
 defensive handling for scenarios that can't happen. Build the simplest design that fully and
@@ -358,10 +388,18 @@ identity needs, and third-party calls belong to that feature's issues, where an
 agent will actually build them. Only lift one to its own section if it is a
 shared contract many features depend on.
 
-**Skip by default — one line in `context/_skipped.md` unless the product is centrally
-about it:** `ux`, `observability`, `performance`, `infra`, `data_lifecycle`,
-`docs`, `analytics`, `accessibility`, `cost`. Document one only when it is a
-first-class concern (e.g. `ux` for a design tool, `performance` for a database).
+**Enterprise / production-readiness dimensions — `observability`, `reliability`,
+`data_lifecycle`, `release`, `performance`, `docs`, `cost`** — are the "done" bars enumerated under
+"Aim for the most complete, production-grade solution" above. For a production/enterprise target,
+apply each where it matters (folded into the feature/architecture/issues, a Skill, or a short
+section) and record any you skip in `context/_skipped.md` — don't silently drop them.
+**`accessibility` and other compliance** (GDPR / SOC 2 / HIPAA / PCI) are owned by the **Compliance
+MCP server** (`<mcp_assign name="Compliance" />`, which generates the compliance/accessibility
+Skills) — never a hand-authored discovery section.
+
+**Genuinely optional — one line in `context/_skipped.md` unless the product is centrally about
+it:** `ux`, `infra`, `analytics`. Document one only when it is a first-class concern (e.g. `ux`
+for a design tool).
 
 **Planning — the real output (see "Special sections" + the feature workshop):**
 - `phases` — the roadmap as a JSON array; each phase a crisp "done when", no time

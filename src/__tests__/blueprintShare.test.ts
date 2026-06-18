@@ -9,7 +9,7 @@ import type { Blueprint } from "../screens/projects/blueprints";
 import type { SkillDef } from "../lib/skills";
 import type { KbBlock } from "../data/mock";
 
-const sample = () => makeBlueprints().find((b) => b.id === "fullstack")!;
+const sample = () => makeBlueprints().find((b) => b.id === "default")!;
 
 describe("blueprintShare (#598)", () => {
   it("round-trips a blueprint through the manifest (content preserved, fresh uids)", () => {
@@ -42,6 +42,37 @@ describe("blueprintShare (#598)", () => {
     expect(coerceBlueprint(null)).toBeNull();
     expect(coerceBlueprint({ id: "x", name: "y", sections: [] })).toBeNull(); // no valid sections
     expect(coerceBlueprint({ id: "x", name: "y", sections: [{ name: "no key" }] })).toBeNull();
+  });
+
+  it("accepts the planner-facing `stages` field as an alias for sections (#923)", () => {
+    // The planner emits `stages` (the planning-process term + the design's name); coerceBlueprint
+    // maps it onto the internal `sections`. Stages = the planning STEPS, one per pane.
+    const bp = coerceBlueprint({
+      id: "x", name: "Authored", category: "greenfield",
+      stages: [{ key: "context", name: "Context" }, { key: "structure", name: "Structure" }],
+    });
+    expect(bp).not.toBeNull();
+    expect(bp!.sections.map((s) => s.key)).toEqual(["context", "structure"]);
+    // `stages` wins when both are present (it's the canonical planner-facing field).
+    const both = coerceBlueprint({
+      id: "y", name: "Both",
+      stages: [{ key: "context", name: "Context" }],
+      sections: [{ key: "repos", name: "Repos" }, { key: "ui", name: "UI" }],
+    });
+    expect(both!.sections.map((s) => s.key)).toEqual(["context"]);
+  });
+
+  it("allowEmptySections accepts a section-less in-progress blueprint (#923 authoring)", () => {
+    // The Purpose stage emits identity (name/category) before any stages exist — strict import would
+    // drop it, so the <blueprint> tag handler opts into allowEmptySections.
+    expect(coerceBlueprint({ id: "x", name: "y", category: "greenfield", sections: [] })).toBeNull();
+    const bp = coerceBlueprint({ id: "x", name: "y", category: "greenfield", sections: [] }, { allowEmptySections: true });
+    expect(bp).not.toBeNull();
+    expect(bp!.name).toBe("y");
+    expect(bp!.category).toBe("greenfield");
+    expect(bp!.sections).toEqual([]);
+    // still requires id + name even when empty sections are allowed
+    expect(coerceBlueprint({ name: "no id", sections: [] }, { allowEmptySections: true })).toBeNull();
   });
 
   it("coerces partial section fields with safe defaults", () => {

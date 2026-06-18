@@ -9,7 +9,7 @@ import "../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import { stageKind, tint, hue } from "./blueprintCatalog";
 import {
-  blueprintCategory, filterBlueprints, CATEGORY_META, BLUEPRINT_CATEGORIES,
+  blueprintCategory, filterBlueprints, isAuthoringBlueprint, CATEGORY_META, BLUEPRINT_CATEGORIES,
   type Blueprint, type BlueprintSection, type BlueprintGist, type BlueprintOrigin, type BlueprintCategory,
 } from "./blueprints";
 
@@ -130,15 +130,18 @@ export interface LibraryViewProps {
 }
 
 export function LibraryView({ blueprints, onOpen, onMenu, onNew, onImport, activeId, onUse, seeded = 0 }: LibraryViewProps) {
-  const totalStages = blueprints.reduce((n, b) => n + b.sections.length, 0);
-  const published = blueprints.filter((b) => bpGist(b).state !== "local").length;
-  const gates = blueprints.reduce((n, b) => n + b.sections.filter((s) => s.gateRule).length, 0);
-  const top = [...blueprints].sort((a, b) => (b.uses ?? 0) - (a.uses ?? 0))[0];
+  // The blueprint-authoring lifecycle (#923) is an internal template that drives the planner when you
+  // create a new blueprint — it's not a seedable card, so it never appears in the library.
+  const libBlueprints = blueprints.filter((b) => !isAuthoringBlueprint(b));
+  const totalStages = libBlueprints.reduce((n, b) => n + b.sections.length, 0);
+  const published = libBlueprints.filter((b) => bpGist(b).state !== "local").length;
+  const gates = libBlueprints.reduce((n, b) => n + b.sections.filter((s) => s.gateRule).length, 0);
+  const top = [...libBlueprints].sort((a, b) => (b.uses ?? 0) - (a.uses ?? 0))[0];
 
   // Search + category filter (#645).
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<BlueprintCategory | "all">("all");
-  const shown = filterBlueprints(blueprints, { query, category: cat });
+  const shown = filterBlueprints(libBlueprints, { query, category: cat });
 
   return (
     <div className="wrap">

@@ -268,6 +268,65 @@ stack, and propose any new ones worth saving for reuse. Write skills.json.
 
 Gate: the applicable skills are selected.`,
   },
+  // ── Blueprint-authoring lifecycle (#923) ───────────────────────────────────
+  // The planner DESIGNS a reusable blueprint (the deliverable) and publishes it to a gist — no
+  // code, so no fleet/triage. The evolving blueprint accumulates via the <blueprint> tag; these
+  // stages' gates read signals derived from it (bpName / bpStageCount / bpValid in Planning.tsx).
+  purpose: {
+    name: "Purpose", glyph: "◆", gate: "identity-check", deps: [],
+    gateRule: { require: [
+      { signal: "bpName", target: true, weight: 0, label: "set a name, a one-line pitch, and at least one catalog tag" },
+    ] },
+    blurb: "Define what this blueprint is for, who it serves, and how it appears in the catalog.",
+    prompt:
+`You are designing a NEW, reusable BLUEPRINT — a planning template others seed projects from (NOT a
+software project). Establish its PURPOSE: the lifecycle category (greenfield = create from a pitch,
+transform = restructure existing repos, harden, maintain, data), the kind of project it should seed,
+and its name + one-line description. Propose, interrogate with the user, then record it by emitting a
+<blueprint> tag (see "App integration tags") carrying at least id, name, desc, category, mode.
+
+Gate: the blueprint has a name and a lifecycle category.`,
+  },
+  bp_stages: {
+    name: "Stages", glyph: "❑", gate: "flow-check", deps: ["purpose"],
+    gateRule: { require: [
+      { signal: "bpStagesReady", target: true, label: "compose ≥2 stages, each with a prompt module" },
+    ] },
+    blurb: "Compose the stage flow — order, dependencies, and the prompt module each stage runs.",
+    prompt:
+`Design the STAGES the authored blueprint will drive, one at a time (propose → interrogate → record).
+For each stage define: a short key + name, its intent (blurb), the discovery PROMPT the planner runs
+when that stage is active, its order + dependencies on earlier stages, and whether it's optional.
+Give each a simple completion gate — default to "the planner confirms this stage is done" unless a
+concrete signal is obvious. Re-emit the FULL <blueprint> tag (with the growing sections array) as the
+stage set firms up.
+
+Gate: at least one stage is designed, each confirmed with the user.`,
+  },
+  bp_capabilities: {
+    name: "Capabilities", glyph: "✦", gate: "skills + MCP wired", deps: ["bp_stages"], optional: true,
+    blurb: "Wire each stage's output disposition, attached skills/knowledge, and MCP servers.",
+    prompt:
+`OPTIONAL. Decide the reusable SKILLS / knowledge and MCP servers this blueprint should attach so every
+project seeded from it inherits them. Attach them blueprint-wide or to a specific stage and fold them
+into the <blueprint> tag (a section's skills/mcp arrays, or the blueprint-level skills/mcp). Skip this
+stage if the blueprint needs no bundled capabilities.
+
+Gate: the applicable skills + MCP servers are attached (optional).`,
+  },
+  bp_review: {
+    name: "Review & publish", glyph: "⎙", gate: "lint", deps: ["bp_stages"],
+    gateRule: { require: [
+      { signal: "bpValid", target: true, label: "all validation checks pass" },
+    ] },
+    blurb: "Validate the blueprint, choose its visibility, and publish it to the catalog.",
+    prompt:
+`Review the assembled blueprint with the user: purpose, every stage (intent, prompt, gate, deps,
+optional), and attached capabilities. Emit the FINAL, complete <blueprint> tag. When the user
+approves, THEY publish it to a gist from the footer — you do not publish it yourself.
+
+Gate: the assembled blueprint is complete and valid.`,
+  },
   testing: {
     name: "Testing", glyph: "✓", gate: "coverage strategy set", deps: ["structure"],
     blurb: "Test strategy, fixtures, and CI gates.",
@@ -512,6 +571,68 @@ export interface Blueprint {
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
   mode?: BlueprintMode;
+  /** Authoring metadata (#923, blueprint-author design): a one-line catalog pitch, the audience it
+   *  serves, and the publish visibility. `tags` doubles as the design's "best for" catalog tags. */
+  pitch?: string;
+  audience?: string;
+  visibility?: "local" | "private-gist" | "catalog";
+  /** Deliverable / output lifecycle (#923). Absent ⇒ the normal software deliverable: the planner
+   *  publishes repos + a project board + milestones + issues, then a fleet builds them. `"blueprint"`
+   *  marks an AUTHORING lifecycle — the planner designs a reusable blueprint and "publish" ships it
+   *  to a gist; there is no code, so no fleet and no triage (see `isAuthoringBlueprint`). */
+  deliverable?: "blueprint";
+}
+
+/** The built-in blueprint-author lifecycle's id (#923). */
+export const AUTHORING_BLUEPRINT_ID = "blueprint-author";
+
+/** Whether a blueprint's deliverable is a blueprint itself (#923) — the authoring lifecycle:
+ *  publish → gist, and no fleet / triage. */
+export function isAuthoringBlueprint(bp: Blueprint | undefined): boolean {
+  return bp?.deliverable === "blueprint";
+}
+
+/** The lifecycle categories a GREENFIELD project may switch INTO (#923) — the natural progression
+ *  once it's been built: restructure (transform) or secure in place (harden). */
+export const GREENFIELD_SWITCH_TARGETS: BlueprintCategory[] = ["transform", "harden"];
+
+/** Whether a project bound to this blueprint may switch to a different one AT ALL (#923) — only a
+ *  GREENFIELD project can (it can move on to a transform/harden lifecycle once built). Every other
+ *  lifecycle — transform, harden, maintain, data, and the locked blueprint-author — stays put.
+ *  Drives whether a "switch blueprint" affordance is offered. */
+export function canChangeBlueprint(bp: Blueprint | undefined): boolean {
+  return !!bp && !isAuthoringBlueprint(bp) && blueprintCategory(bp) === "greenfield";
+}
+
+/** Whether a project currently on `from` may switch to a `to` blueprint (#923). Only greenfield →
+ *  transform | harden is allowed; everything else (other origins, other targets, anything touching
+ *  the locked blueprint-author lifecycle) is refused. This is the authoritative switch gate. */
+export function canSwitchBlueprint(from: Blueprint | undefined, to: Blueprint | undefined): boolean {
+  if (!from || !to) return false;
+  if (isAuthoringBlueprint(from) || isAuthoringBlueprint(to)) return false;
+  return blueprintCategory(from) === "greenfield" && GREENFIELD_SWITCH_TARGETS.includes(blueprintCategory(to));
+}
+
+/** The gate signals the blueprint-authoring stages read, derived from the in-progress blueprint the
+ *  planner is designing (#923, gates per the blueprint-author design):
+ *  - `bpName` — Purpose gate: name + pitch + ≥1 catalog tag.
+ *  - `bpStageCount` — how many stages (display).
+ *  - `bpStagesReady` — Stages gate: ≥2 stages, each with a prompt module written.
+ *  - `bpValid` — Review gate: every publish check passes (identity + stages + prompts).
+ *  Pure; mirrors the design's validation without importing the editor. */
+export function authoringSignals(bp: Blueprint | undefined): Record<string, number | boolean> {
+  const sections = bp?.sections ?? [];
+  const hasName = !!bp?.name?.trim();
+  const hasPitch = !!bp?.pitch?.trim();
+  const hasTag = (bp?.tags?.length ?? 0) > 0;
+  const enoughStages = sections.length >= 2;
+  const everyPrompt = sections.length > 0 && sections.every((s) => !!s.prompt?.trim());
+  return {
+    bpName: hasName && hasPitch && hasTag,
+    bpStageCount: sections.length,
+    bpStagesReady: enoughStages && everyPrompt,
+    bpValid: hasName && hasPitch && hasTag && enoughStages && everyPrompt,
+  };
 }
 
 /** A blueprint's category, defaulting to greenfield. */
@@ -559,7 +680,11 @@ export function mkSection(
 export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
   const fresh = makeBlueprints();
   const byId = new Map(fresh.map((b) => [b.id, b]));
-  const merged = persisted.map((b) => (b.origin === "built-in" && byId.has(b.id) ? byId.get(b.id)! : b));
+  // Drop persisted built-ins that no longer exist in code (removed templates), refresh the rest by
+  // id, and leave user-created / forked / imported blueprints untouched (#923 cleanup).
+  const merged = persisted
+    .filter((b) => b.origin !== "built-in" || byId.has(b.id))
+    .map((b) => (b.origin === "built-in" && byId.has(b.id) ? byId.get(b.id)! : b));
   for (const b of fresh) if (!merged.some((x) => x.id === b.id)) merged.push(b);
   return merged;
 }
@@ -579,39 +704,6 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("mcp",         { optional: true }),
         mkSection("automations", { optional: true }),
         mkSection("skills",      { optional: true }),
-      ],
-    },
-    {
-      id: "fullstack", name: "Full-stack web app", desc: "Web client + API + DB", origin: "built-in", category: "greenfield", mode: "create",
-      sections: [
-        mkSection("context"), mkSection("repos"),
-        mkSection("features"),
-        mkSection("ui"),
-        mkSection("structure"),
-        mkSection("testing"), mkSection("permissions"),
-        mkSection("mcp", { optional: true }),
-        mkSection("automations"), mkSection("skills"),
-      ],
-    },
-    {
-      id: "mobile", name: "Mobile MVP", desc: "Single app, ship fast", origin: "built-in", category: "greenfield", mode: "create",
-      sections: [
-        mkSection("context"),
-        mkSection("features"),
-        mkSection("ui"),
-        mkSection("structure"),
-        mkSection("permissions"), mkSection("mcp", { optional: true }), mkSection("skills"),
-      ],
-    },
-    {
-      id: "api", name: "API microservice", desc: "Headless service, no UI", origin: "built-in", category: "greenfield", mode: "create",
-      sections: [
-        mkSection("context"), mkSection("repos"),
-        mkSection("features"),
-        mkSection("structure"),
-        mkSection("testing"), mkSection("permissions"),
-        mkSection("mcp", { optional: true }),
-        mkSection("automations"),
       ],
     },
     {
@@ -714,6 +806,19 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("dataExtract"),
         mkSection("dataClean"),
         mkSection("dataLoad"),
+      ],
+    },
+    // ── meta: author a reusable blueprint, publish to a gist (#923) ──
+    {
+      id: AUTHORING_BLUEPRINT_ID, name: "Blueprint Author",
+      desc: "Design a reusable blueprint and publish it to a gist",
+      origin: "built-in", icon: "⎙", h: 160, category: "greenfield", mode: "create",
+      deliverable: "blueprint",
+      sections: [
+        mkSection("purpose"),
+        mkSection("bp_stages"),
+        mkSection("bp_capabilities", { optional: true }),
+        mkSection("bp_review"),
       ],
     },
   ];

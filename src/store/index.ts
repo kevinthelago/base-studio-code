@@ -35,7 +35,7 @@ import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/project
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
 import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import type { GradeResult } from "../screens/projects/grading";
-import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
+import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
 import { seedDataModels, emptyDataModel, type DataModel } from "../screens/projects/dataModel";
 import { canonicalSectionKey } from "../screens/projects/planSections";
 import type { PaneDescriptor } from "../lib/tunnel";
@@ -669,6 +669,10 @@ interface AppStore {
   planConfirmedSections: Record<string, string[]>;
   confirmPlanSection:   (projectId: string, key: string) => void;
   unconfirmPlanSection: (projectId: string, key: string) => void;
+  /** The in-progress blueprint an AUTHORING project (#923) is designing — emitted by the planner's
+   *  <blueprint> tag, rendered in the focused pane, and published to a gist at the Review stage. */
+  planAuthoredBlueprint: Record<string, Blueprint>;
+  setAuthoredBlueprint: (projectId: string, bp: Blueprint) => void;
   /** Collapse non-canonical section keys (e.g. "Tech stack" → "stack") for a project,
    *  merging content into the canonical key (and deduping confirmed keys) — repairs a gate
    *  stuck on a stale title-named section (#803). */
@@ -1503,6 +1507,7 @@ export const useAppStore = create<AppStore>()(
           return {
             planSections:           byKey(s.planSections),
             planConfirmedSections:  byKey(s.planConfirmedSections),
+            planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
@@ -1535,7 +1540,7 @@ export const useAppStore = create<AppStore>()(
         }),
       resetProjectData: () =>
         set({
-          planSections: {}, planConfirmedSections: {}, planKbAssignments: {},
+          planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planKbAssignments: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
@@ -2058,6 +2063,9 @@ export const useAppStore = create<AppStore>()(
             [projectId]: (s.planConfirmedSections[projectId] ?? []).filter((k) => k !== key),
           },
         })),
+      planAuthoredBlueprint: {},
+      setAuthoredBlueprint: (projectId, bp) =>
+        set((s) => ({ planAuthoredBlueprint: { ...s.planAuthoredBlueprint, [projectId]: bp } })),
       canonicalizePlanSections: (projectId) =>
         set((s) => {
           const sections = s.planSections[projectId];
@@ -2159,6 +2167,10 @@ export const useAppStore = create<AppStore>()(
         set((s) => {
           const bp = s.blueprints.find((b) => b.id === blueprintId);
           if (!bp) return {};
+          // Only a greenfield project may switch, and only to a transform/harden lifecycle (#923);
+          // every other origin/target (incl. the locked blueprint-author) is refused.
+          const current = s.blueprints.find((b) => b.id === s.projectBlueprintId[projectId]);
+          if (!canSwitchBlueprint(current, bp)) return {};
           const drop = <T,>(m: Record<string, T>): Record<string, T> => {
             const n = { ...m }; delete n[projectId]; return n;
           };
@@ -2168,6 +2180,7 @@ export const useAppStore = create<AppStore>()(
           return {
             planSections:          drop(s.planSections),
             planConfirmedSections: drop(s.planConfirmedSections),
+            planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
             planKbAssignments:     drop(s.planKbAssignments),
             planAutomations:       drop(s.planAutomations),
             planFleet:             drop(s.planFleet),
@@ -2380,6 +2393,7 @@ export const useAppStore = create<AppStore>()(
           return {
           planSections:          omitKey(s.planSections),
           planConfirmedSections: omitKey(s.planConfirmedSections),
+          planAuthoredBlueprint: omitKey(s.planAuthoredBlueprint),
           planKbAssignments:     omitKey(s.planKbAssignments),
           planAutomations:       omitKey(s.planAutomations),
           planStageConfig:       omitKey(s.planStageConfig),
@@ -2626,6 +2640,7 @@ export const useAppStore = create<AppStore>()(
         configProfiles:       s.configProfiles,
         planSections:          s.planSections,
         planConfirmedSections: s.planConfirmedSections,
+        planAuthoredBlueprint: s.planAuthoredBlueprint,
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,

@@ -1,58 +1,65 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { CatalogView } from "../screens/projects/BlueprintCatalogView";
-import { NewBlueprintModal, PublishModal, ImportModal, PreviewModal, type PreviewBlueprint } from "../screens/projects/BlueprintModals";
-import { CATALOG } from "../screens/projects/blueprintCatalog";
+import { NewBlueprintModal, PublishModal, ImportModal, type PreviewBlueprint } from "../screens/projects/BlueprintModals";
 import { mkStageSection } from "../screens/projects/blueprintEdit";
 import type { Blueprint } from "../screens/projects/blueprints";
 
+vi.mock("../lib/extensions/gist", () => ({ listBlueprintGists: vi.fn() }));
+import { listBlueprintGists } from "../lib/extensions/gist";
+const mockList = vi.mocked(listBlueprintGists);
+
 const noop = () => {};
 
-describe("CatalogView (#609 slice 5)", () => {
-  it("lists catalog entries and filters by search", () => {
-    render(<CatalogView forkedIds={[]} onFork={noop} onPreview={noop} onBack={noop} onManualImport={noop} />);
-    expect(screen.getByText("Rust CLI tool")).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(/search blueprints/i), { target: { value: "saas" } });
-    expect(screen.getByText("B2B SaaS starter")).toBeInTheDocument();
-    expect(screen.queryByText("Rust CLI tool")).not.toBeInTheDocument();
+describe("CatalogView (#923 — gist source)", () => {
+  const gists = [
+    { id: "abc1234567", name: "Realtime API", description: "blueprint: Realtime API", owner: "kevinthelago", htmlUrl: "https://gist.github.com/kevinthelago/abc1234567", updatedAt: new Date().toISOString() },
+    { id: "def7654321", name: "Data Pipeline", description: "blueprint: Data Pipeline", owner: "kevinthelago", htmlUrl: "https://gist.github.com/kevinthelago/def7654321", updatedAt: new Date().toISOString() },
+  ];
+  beforeEach(() => mockList.mockReset());
+
+  it("lists the source's blueprint gists and filters by search", async () => {
+    mockList.mockResolvedValue(gists);
+    render(<CatalogView source="kevinthelago" onImport={noop} onBack={noop} onManualImport={noop} />);
+    expect(await screen.findByText("Realtime API")).toBeInTheDocument();
+    expect(screen.getByText("Data Pipeline")).toBeInTheDocument();
+    expect(mockList).toHaveBeenCalledWith("kevinthelago", "");
+    fireEvent.change(screen.getByPlaceholderText(/search blueprints/i), { target: { value: "realtime" } });
+    expect(screen.getByText("Realtime API")).toBeInTheDocument();
+    expect(screen.queryByText("Data Pipeline")).not.toBeInTheDocument();
   });
 
-  it("forks an entry and shows ✓ for already-forked ones", () => {
-    const onFork = vi.fn();
-    render(<CatalogView forkedIds={["cat_rust"]} onFork={onFork} onPreview={noop} onBack={noop} onManualImport={noop} />);
-    // the rust row is already forked → its button is disabled and labelled ✓
-    expect(screen.getByRole("button", { name: /✓ Forked/i })).toBeDisabled();
-    // fork a different one
-    const saasRow = screen.getByText("B2B SaaS starter").closest(".cat-row") as HTMLElement;
-    fireEvent.click(within(saasRow).getByRole("button", { name: /Fork/i }));
-    expect(onFork).toHaveBeenCalledWith(expect.objectContaining({ id: "cat_saas" }));
+  it("imports a gist by id and disables already-imported ones", async () => {
+    mockList.mockResolvedValue(gists);
+    const onImport = vi.fn();
+    render(<CatalogView source="kevinthelago" importedIds={["abc1234567"]} onImport={onImport} onBack={noop} onManualImport={noop} />);
+    await screen.findByText("Realtime API");
+    const realtimeRow = screen.getByText("Realtime API").closest(".cat-row") as HTMLElement;
+    expect(within(realtimeRow).getByRole("button", { name: /Imported/i })).toBeDisabled();
+    const dataRow = screen.getByText("Data Pipeline").closest(".cat-row") as HTMLElement;
+    fireEvent.click(within(dataRow).getByRole("button", { name: /^Import$/i }));
+    expect(onImport).toHaveBeenCalledWith("def7654321");
   });
 
-  it("sort by name reorders", () => {
-    render(<CatalogView forkedIds={[]} onFork={noop} onPreview={noop} onBack={noop} onManualImport={noop} />);
-    fireEvent.click(screen.getByRole("button", { name: /^name$/i }));
-    const names = screen.getAllByText(/.*/, { selector: ".cat-row .cname" }).map((n) => n.textContent);
-    expect(names[0]!.startsWith("B2B")).toBe(true); // alphabetical
+  it("shows an empty state when the source has no blueprint gists", async () => {
+    mockList.mockResolvedValue([]);
+    render(<CatalogView source="kevinthelago" onImport={noop} onBack={noop} onManualImport={noop} />);
+    expect(await screen.findByText(/No blueprint gists found/i)).toBeInTheDocument();
   });
 });
 
-describe("NewBlueprintModal (#609)", () => {
-  it("creates with the chosen mode", () => {
-    const onCreate = vi.fn(); const onClaude = vi.fn();
-    render(<NewBlueprintModal onClose={noop} onCreate={onCreate} onDesignWithClaude={onClaude} />);
+describe("NewBlueprintModal (#923)", () => {
+  it("collects just a name and creates (→ opens the planner to author it)", () => {
+    const onCreate = vi.fn();
+    render(<NewBlueprintModal onClose={noop} onCreate={onCreate} />);
     fireEvent.change(screen.getByPlaceholderText(/Internal tool/i), { target: { value: "My BP" } });
-    fireEvent.click(screen.getByText("Default stages"));
-    fireEvent.click(screen.getByRole("button", { name: /Create blueprint/i }));
-    expect(onCreate).toHaveBeenCalledWith("My BP", "default");
+    fireEvent.click(screen.getByRole("button", { name: /Create & open planner/i }));
+    expect(onCreate).toHaveBeenCalledWith("My BP");
   });
 
-  it("routes to Claude when that mode is picked", () => {
-    const onCreate = vi.fn(); const onClaude = vi.fn();
-    render(<NewBlueprintModal onClose={noop} onCreate={onCreate} onDesignWithClaude={onClaude} />);
-    fireEvent.change(screen.getByPlaceholderText(/Internal tool/i), { target: { value: "AI BP" } });
-    fireEvent.click(screen.getByText("Design with Claude"));
-    fireEvent.click(screen.getByRole("button", { name: /Design with Claude →/i }));
-    expect(onClaude).toHaveBeenCalledWith("AI BP");
+  it("has no 'Design with Claude' option (#923 removed it)", () => {
+    render(<NewBlueprintModal onClose={noop} onCreate={vi.fn()} />);
+    expect(screen.queryByText("Design with Claude")).toBeNull();
   });
 });
 
@@ -84,12 +91,3 @@ describe("ImportModal (#609)", () => {
   });
 });
 
-describe("PreviewModal (#609)", () => {
-  it("synthesizes a stage flow and forks", () => {
-    const onFork = vi.fn();
-    render(<PreviewModal cat={CATALOG[0]} forked={false} onClose={noop} onFork={onFork} />);
-    expect(screen.getByText("Stage flow")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Fork to my library/i }));
-    expect(onFork).toHaveBeenCalledWith(CATALOG[0]);
-  });
-});

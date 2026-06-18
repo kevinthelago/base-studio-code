@@ -5,8 +5,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import "../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
-import { stageKind, tint, hue, type CatalogEntry, CATALOG_FLOW_KINDS } from "./blueprintCatalog";
-import { mkStageSection } from "./blueprintEdit";
+import { stageKind, tint, hue } from "./blueprintCatalog";
 import { type DiffLine } from "./blueprintDiff";
 import { type Blueprint, type BlueprintSection } from "./blueprints";
 import { type SkillPayload } from "./blueprintSkills";
@@ -183,26 +182,6 @@ export function ImportModal({ onClose, onResolve, onImport }: {
   );
 }
 
-/* ── Preview (catalog) ── */
-export function PreviewModal({ cat, forked, onClose, onFork }: {
-  cat: CatalogEntry; forked: boolean; onClose: () => void; onFork: (cat: CatalogEntry) => void;
-}) {
-  const sections = CATALOG_FLOW_KINDS.slice(0, cat.stageCount).map((k) => mkStageSection(k));
-  return (
-    <Modal lg icon={cat.icon} iconBg={tint(cat.h, 0.16)} iconColor={hue(cat.h)} title={cat.name}
-      sub={`by ${cat.author} · ★ ${cat.stars.toLocaleString()} · ${cat.stageCount} stages`} onClose={onClose}
-      foot={<><span className="hint mono">gist.github.com/{cat.author}/{cat.gistId}</span><span style={{ flex: 1 }} /><button className="btn ghost" onClick={onClose}>Close</button><button className="btn primary" disabled={forked} onClick={() => onFork(cat)}>{forked ? "✓ In your library" : "⑂ Fork to my library"}</button></>}>
-      <div className="hbody" style={{ marginBottom: 14 }}>{cat.desc}</div>
-      <div className="seclabel">Stage flow<span className="ln" /><span className="dim mono">{sections.length}</span></div>
-      <div className="card" style={{ padding: 13 }}><StageSummary sections={sections} /></div>
-      <div style={{ display: "flex", gap: 7, marginTop: 12, flexWrap: "wrap" }}>
-        {cat.tags.map((t) => <span className="tag" key={t}>{t}</span>)}
-        <span className="tag green">public gist</span>
-      </div>
-    </Modal>
-  );
-}
-
 /* ── Version history (gist revisions) ── */
 export interface Revision { sha: string; when: string; msg: string; add?: number; del?: number; cur?: boolean; version?: string }
 export function HistoryModal({ bp, revs, onClose, onRestore }: {
@@ -262,36 +241,21 @@ export function SyncModal({ bp, diff, toRev, onClose, onPull }: {
 }
 
 /* ── New blueprint ── */
-export function NewBlueprintModal({ onClose, onCreate, onDesignWithClaude }: {
+export function NewBlueprintModal({ onClose, onCreate }: {
   onClose: () => void;
-  onCreate: (name: string, mode: "blank" | "default") => void;
-  onDesignWithClaude: (name: string) => void;
+  /** Name the project, then create its folder + open the project planner to author the blueprint (#923). */
+  onCreate: (name: string) => void;
 }) {
   const [name, setName] = useState("");
-  const [mode, setMode] = useState<"blank" | "default" | "claude">("blank");
-  const submit = () => { if (!name.trim()) return; if (mode === "claude") onDesignWithClaude(name.trim()); else onCreate(name.trim(), mode); };
+  const submit = () => { if (!name.trim()) return; onCreate(name.trim()); };
   return (
-    <Modal icon={<Ic n="add" size={15} />} title="New blueprint" sub="Start a reusable planning template" onClose={onClose}
-      foot={<><span style={{ flex: 1 }} /><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!name.trim()} onClick={submit}>{mode === "claude" ? "Design with Claude →" : "Create blueprint"}</button></>}>
-      <div className="field" style={{ marginBottom: 16 }}>
+    <Modal icon={<Ic n="add" size={15} />} title="New blueprint" sub="Name it, then design it in the project planner" onClose={onClose}
+      foot={<><span style={{ flex: 1 }} /><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!name.trim()} onClick={submit}>Create &amp; open planner →</button></>}>
+      <div className="field">
         <label style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Name</label>
         <input className="input" autoFocus style={{ marginTop: 6 }} placeholder="e.g. Internal tool, Data pipeline…" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
-      </div>
-      <div className="field">
-        <label style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Start from</label>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
-          <div className={"disp" + (mode === "blank" ? " on" : "")} onClick={() => setMode("blank")}>
-            <span className="dgl" style={{ background: tint(250, 0.16), color: hue(250) }}>○</span>
-            <span className="dtxt"><div className="dt">Blank</div><div className="dd">One context stage — build the rest yourself</div></span>
-          </div>
-          <div className={"disp" + (mode === "default" ? " on" : "")} onClick={() => setMode("default")}>
-            <span className="dgl" style={{ background: tint(70, 0.16), color: hue(70) }}>≡</span>
-            <span className="dtxt"><div className="dt">Default stages</div><div className="dd">Clone the Default arc and tweak from there</div></span>
-          </div>
-          <div className={"disp" + (mode === "claude" ? " on" : "")} onClick={() => setMode("claude")}>
-            <span className="dgl" style={{ background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 40))", color: "#1a120a" }}>✦</span>
-            <span className="dtxt"><div className="dt">Design with Claude</div><div className="dd">Describe the project — Claude drafts the stage flow</div></span>
-          </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.5 }}>
+          The planner walks you through designing the blueprint stage by stage, then publishes it to a gist.
         </div>
       </div>
     </Modal>
