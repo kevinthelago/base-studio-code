@@ -14,6 +14,8 @@ pub mod ddl;
 pub mod connector;
 pub mod reconcile;
 pub mod error;
+pub mod infer;
+pub mod salesforce;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
@@ -22,6 +24,7 @@ pub use error::{DataError, Result};
 pub use schema::{DataModel, Entity, Field, FieldType};
 pub use connector::{Connector, CsvConnector, RowSet, SourceObject};
 pub use reconcile::{reconcile, MergedRecord, Precedence, Reconciled, SourceLoad};
+pub use infer::{infer, EntityInference, FieldProvenance, InferResult};
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
