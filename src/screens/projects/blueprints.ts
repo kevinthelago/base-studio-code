@@ -564,6 +564,9 @@ export interface BlueprintGist {
   id?: string;
   url?: string;
   public?: boolean;
+  /** The upstream gist's `updated_at` recorded at import/sync. Compared against the gist's CURRENT
+   *  `updated_at` on the import-from-gist page to detect an available update (#955). */
+  updatedAt?: string;
 }
 
 export interface Blueprint {

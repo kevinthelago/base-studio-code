@@ -13,6 +13,9 @@ import { type SkillPayload } from "./blueprintSkills";
 /** A resolved import/preview blueprint (subset enough to preview + import). */
 export interface PreviewBlueprint {
   name: string; icon: string; h: number; author?: string; rev?: string; sections: BlueprintSection[];
+  /** The upstream gist id this preview came from (#955) — recorded on import so a re-import is
+   *  recognized (dedupe → update in place) and the import page can show its sync state. */
+  gistId?: string;
   /** The fully-coerced blueprint (#897) — carried so import preserves blueprint-wide
    *  skills/mcp/category/mode instead of reconstructing from the lossy preview subset. */
   blueprint?: Blueprint;
