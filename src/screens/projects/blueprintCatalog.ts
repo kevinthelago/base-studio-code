@@ -64,3 +64,14 @@ export function defaultDisposition(key: string): string {
 // catalog (+ its preview/fork flow) was removed. Configurable sources land later (#598). For now
 // the default source is the maintainer's account.
 export const DEFAULT_GIST_SOURCE = "kevinthelago";
+
+/** Whether an imported blueprint is OUT OF DATE with its upstream gist (#955): the gist's current
+ *  `updated_at` is strictly newer than the one recorded locally at import/sync. Both are GitHub
+ *  `updated_at` timestamps. Unknown on either side ⇒ can't tell ⇒ not stale (treat as current).
+ *  Drives whether the import page renders an "Update" button instead of "✓ Imported". */
+export function gistUpdateAvailable(currentUpdatedAt?: string, importedUpdatedAt?: string): boolean {
+  if (!currentUpdatedAt || !importedUpdatedAt) return false;
+  const cur = new Date(currentUpdatedAt).getTime();
+  const imp = new Date(importedUpdatedAt).getTime();
+  return isFinite(cur) && isFinite(imp) && cur > imp;
+}
