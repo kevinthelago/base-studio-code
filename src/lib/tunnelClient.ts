@@ -70,3 +70,78 @@ export const tunnelAckPlanPush = (projectId: string, applied: boolean): Promise<
  *  Always resolves (never rejects) — check `error` for failure details. */
 export const tunnelCheckRelay = (relayUrl: string): Promise<RelayDiag> =>
   invoke("tunnel_check_relay", { relayUrl });
+
+// ── F2: fleet / coordination ─────────────────────────────────────────────────
+
+/** Wire shape for one agent session in the fleet roster. Mirrors Rust `FleetSession`. */
+export interface FleetSession {
+  session: string;
+  /** "running" | "blocked" | "waiting" | "asking" | "idle" */
+  status: string;
+  /** Present and non-empty when `status == "blocked"`. */
+  blockedOn?: string[];
+  waitReason?: string | null;
+  question?: string | null;
+  /** ms-epoch timestamp of the last status change. */
+  at: number;
+}
+
+/** Push the current fleet roster to connected mobile clients. Replayed on connect. */
+export const tunnelSetFleetState = (sessions: FleetSession[]): Promise<void> =>
+  invoke("tunnel_set_fleet_state", { sessions });
+
+/** Broadcast a single coordination event to connected clients.
+ *  When `kind` is "waiting" or "asking", also triggers an FCM push (F4). */
+export const tunnelEmitCoordEvent = (
+  kind: string,
+  session?: string,
+  refKey?: string,
+  at?: number,
+): Promise<void> =>
+  invoke("tunnel_emit_coord_event", { kind, session: session ?? null, refKey: refKey ?? null, at: at ?? Date.now() });
+
+// ── A2: automations ──────────────────────────────────────────────────────────
+
+/** Wire shape for one automation descriptor. Mirrors Rust `AutomationFrame`. */
+export interface AutomationFrame {
+  id: string;
+  name: string;
+  armed: boolean;
+  /** Human-readable schedule expression or cron string. */
+  whenExpr: string;
+  lastRunAt?: number | null;
+  nextRunAt?: number | null;
+  /** "ok" | "fail" | "skipped" */
+  lastStatus?: string | null;
+}
+
+/** Push the full automation list to connected mobile clients. Replayed on connect. */
+export const tunnelSetAutomations = (automations: AutomationFrame[]): Promise<void> =>
+  invoke("tunnel_set_automations", { automations });
+
+/** Push an automation-ran notification (informational, no FCM push). */
+export const tunnelAutomationRan = (id: string, at: number, status: string, note: string): Promise<void> =>
+  invoke("tunnel_automation_ran", { id, at, status, note });
+
+/** Push an automation-failed notification. Also queues an FCM push (A4). */
+export const tunnelAutomationFailed = (id: string, at: number, error: string, name: string): Promise<void> =>
+  invoke("tunnel_automation_failed", { id, at, error, name });
+
+// ── M2: MCP extensions ───────────────────────────────────────────────────────
+
+/** Wire shape for one MCP server / hook descriptor. Mirrors Rust `McpExtFrame`. */
+export interface McpExtFrame {
+  id: string;
+  /** "mcp" | "hook" */
+  kind: string;
+  name: string;
+  enabled: boolean;
+  /** "stdio" | "http" — present for MCP servers, null for hooks. */
+  transport?: string | null;
+  url?: string | null;
+}
+
+/** Push the full MCP extension list to connected mobile clients. Read-only on mobile.
+ *  Replayed on connect. */
+export const tunnelSetMcpState = (extensions: McpExtFrame[]): Promise<void> =>
+  invoke("tunnel_set_mcp_state", { extensions });
