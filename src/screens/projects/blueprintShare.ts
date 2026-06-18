@@ -53,9 +53,12 @@ export function coerceBlueprint(
   const id = str(o.id);
   const name = str(o.name);
   if (!id || !name) return null;
-  const sections = Array.isArray(o.sections)
-    ? (o.sections.map(coerceSection).filter(Boolean) as BlueprintSection[])
-    : [];
+  // Accept `stages` (the planner-facing name — matching the design, the UI, and the planning-process
+  // concept) OR the internal `sections` field (#923): they're the same thing — the ordered planning
+  // STAGES, one per project pane. (NOT the per-stage context files, which a stage like Context
+  // produces itself.) The internal model keeps the field name `sections`.
+  const rawStages = Array.isArray(o.stages) ? o.stages : Array.isArray(o.sections) ? o.sections : [];
+  const sections = rawStages.map(coerceSection).filter(Boolean) as BlueprintSection[];
   if (sections.length === 0 && !allowEmptySections) return null;
   const category = (BP_CATEGORIES as readonly string[]).includes(str(o.category))
     ? (str(o.category) as Blueprint["category"]) : undefined;
