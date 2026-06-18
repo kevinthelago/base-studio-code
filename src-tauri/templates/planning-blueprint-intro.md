@@ -27,7 +27,7 @@ yourself.
   "category": "greenfield",            // greenfield | transform | harden | maintain | data
   "mode": "create",                     // create | operate
   "skills": [], "mcp": [],             // blueprint-wide attached skills / MCP server names
-  "sections": [
+  "stages": [
     { "key": "context", "name": "Context", "blurb": "...", "prompt": "what the planner does here",
       "deps": [], "optional": false, "output": "knowledge", "skills": [], "mcp": [] }
   ]
@@ -35,11 +35,17 @@ yourself.
 </blueprint>
 ```
 
-- Each section needs at least `key` + `name`; everything else has sensible defaults.
-- Order the `sections` array the way the stages should run; use `deps` (earlier section keys)
-  for ordering constraints and `optional: true` for stages the user may skip.
+**`stages` are the planning STEPS — one per project pane.** Each object in `stages` becomes a
+stage the planner walks (a pane in the focused planning view) when a project uses this blueprint.
+They are NOT context files: a stage like **Context** *produces* files (goal.md, scope.md, …) as
+the planner works it — you don't list those files here. You're designing the *flow of stages*,
+not their output documents.
+
+- Each stage needs at least `key` + `name`; everything else has sensible defaults.
+- Order the `stages` array the way they should run; use `deps` (earlier stage keys) for ordering
+  constraints and `optional: true` for stages the user may skip.
 - `output` is a disposition key: `plan-file | issues | milestones | skill-index | knowledge | scratch`.
-- Section `key`s can be any of the known stage kinds (context, repos, users, ui, stack,
+- A stage's `key` can be any of the known stage kinds (context, repos, users, ui, stack,
   architecture, schema, api, structure, permissions, automations, skills, testing, security,
   observability, infra, cicd, docs) or your own; pick the closest kind so it gets a sensible icon.
 
@@ -47,7 +53,7 @@ yourself.
 
 1. **Purpose** — the blueprint's identity. Decide its name, a one-line catalog **pitch**, a
    description, the **audience**, and at least one **"best for" tag**, plus its lifecycle
-   category. Emit the `<blueprint>` tag with these fields (sections may still be empty here).
+   category. Emit the `<blueprint>` tag with these fields (the `stages` array may still be empty here).
 2. **Stages** — design the ordered stages the blueprint will drive. For each: a `key` + `name`,
    the **prompt module** its planner runs, dependencies on earlier stages, and whether it's
    optional. Aim for **≥ 2 stages, each with a written prompt**. Re-emit the full tag as it grows.
