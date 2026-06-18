@@ -1354,9 +1354,8 @@ function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
 
 // The Plan review (#…): the Plan stage's autonomous output — the feature seam/dependency graph
 // and the phases — shown for the user to APPROVE (the catch-point for a wrong inferred seam).
-function FocusedPlanBody({ data, onApprovePlan }: {
+function FocusedPlanBody({ data }: {
   data?: ProjectPaneData;
-  onApprovePlan?: () => void;
 }) {
   const phases = data?.phaseStructure ?? [];
   const graph = data?.seamGraph;
@@ -1394,11 +1393,6 @@ function FocusedPlanBody({ data, onApprovePlan }: {
             ))}
           </div>
         </div>
-      )}
-      {onApprovePlan && (
-        <button className="nav-btn primary" onClick={onApprovePlan} style={{ alignSelf: "flex-start" }}>
-          ✓ Approve milestones &amp; seams
-        </button>
       )}
     </div>
   );
@@ -1446,7 +1440,7 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
   );
 }
 
-function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onApprovePlan, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange }: {
+function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
@@ -1455,7 +1449,6 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onApp
   onLinkRepo?: (r: string) => void;
   /** Deploy stage (#919): persist the edited deployment config. */
   onDeployChange?: (next: DeployConfig) => void;
-  onApprovePlan?: () => void;
   onView?: (f: ContextFile) => void;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
@@ -1481,7 +1474,7 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onApp
     case "features":
       return <FocusedFeaturesBody features={data?.features} />;
     case "structure":
-      return <FocusedPlanBody data={data} onApprovePlan={onApprovePlan} />;
+      return <FocusedPlanBody data={data} />;
     case "permissions":
       return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} />;
     case "mcp":
@@ -1756,7 +1749,6 @@ export function ProjectPane({
   // focused mode: one-phase sequenced rail (#652)
   focus,
   onLinkRepo,
-  onApprovePlan,
   onGenerateProfiles,
   onToggleMcp,
   onBuildMcp,
@@ -1800,8 +1792,6 @@ export function ProjectPane({
   };
   /** Callback to link a repository from the focused repos body (#677). */
   onLinkRepo?: (repo: string) => void;
-  /** Approve the Plan stage's drafted phases + seams (#…) — confirms the roadmap. */
-  onApprovePlan?: () => void;
   /** Materialize least-privilege profiles for every fleet stream (#817) — what the focused
    *  Permissions stage needs to satisfy its `profilesComplete` gate. */
   onGenerateProfiles?: () => void;
@@ -1900,7 +1890,7 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing}
+          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} />
         </div>

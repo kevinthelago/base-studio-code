@@ -24,6 +24,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 - Leftover mock/sample data from shipping screens (the `acme/payments` sample fleet, the fabricated risk register, dead KPI/plan-session samples)
+- Duplicate "Approve milestones & seams" button in the planner Structure stage — the footer's "approve & continue" is now the single approve control (#949)
+
+### Fixed
+- Deploy stage gate no longer stalls on a valid `<deploy_config>` — the parser repairs JSON that the planner CLI terminal-wrapped (raw newlines injected inside string values) before parsing (#947)
 
 ## [1.0.1] — 2026-06-16
 
