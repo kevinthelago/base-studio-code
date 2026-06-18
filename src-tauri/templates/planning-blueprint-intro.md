@@ -10,10 +10,16 @@ single deliverable is the blueprint itself.
 
 ## How you deliver the blueprint
 
-Build the blueprint up as JSON and emit the **whole thing** in a `<blueprint>` tag. Re-emit the
-FULL tag every time it grows (the latest complete tag wins) — the app validates it, renders it
-live in the focused pane, and the user publishes it from the Review stage. You never publish it
-yourself.
+Build the blueprint up as JSON. Deliver it through BOTH channels, the file being authoritative:
+
+1. **Write `blueprint.json`** in this directory — the reliable channel the app polls (an inline tag
+   in the chat stream can be missed). Overwrite the whole file every time the blueprint grows.
+2. **Also emit the whole thing in a `<blueprint>` tag** (the fast path — same JSON) so the pane
+   updates immediately.
+
+Re-emit/rewrite the FULL blueprint every time it grows (the latest version wins). The app validates
+it, renders it live in the focused pane, and the user publishes it from the Review stage — you never
+publish it yourself.
 
 ```
 <blueprint>
