@@ -61,6 +61,55 @@ pub struct PlanFile {
     pub content: String,
 }
 
+// ── F2/A2/M2 wire payload types ────────────────────────────────────────────────
+
+/// One agent session in the fleet roster (F2). Mobile renders a "who's running / blocked
+/// / waiting" view. status ∈ "running"|"blocked"|"waiting"|"asking"|"idle".
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FleetSession {
+    pub session: String,
+    pub status: String,
+    /// Ref keys this session is blocked on (non-empty when `status == "blocked"`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked_on: Vec<String>,
+    pub wait_reason: Option<String>,
+    pub question: Option<String>,
+    /// ms-epoch timestamp of the last status change.
+    pub at: u64,
+}
+
+/// A read-only automation descriptor pushed to mobile (A2). Mobile shows the list and
+/// can arm/disarm or trigger via `automation_arm` / `automation_run_now` inbound frames.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationFrame {
+    pub id: String,
+    pub name: String,
+    pub armed: bool,
+    /// Human-readable schedule: "Every day at 09:00" or the raw cron expression.
+    pub when_expr: String,
+    pub last_run_at: Option<u64>,
+    pub next_run_at: Option<u64>,
+    /// "ok" | "fail" | "skipped" for the most recent run.
+    pub last_status: Option<String>,
+}
+
+/// A read-only MCP server / hook descriptor pushed to mobile (M2). Read-only — mobile
+/// can see but not modify extensions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpExtFrame {
+    pub id: String,
+    /// "mcp" | "hook"
+    pub kind: String,
+    pub name: String,
+    pub enabled: bool,
+    /// "stdio" | "http" for MCP servers; None for hooks.
+    pub transport: Option<String>,
+    pub url: Option<String>,
+}
+
 /// Messages the desktop sends to the mobile client. Tagged by snake_case `type`.
 /// `AuthOk` / `PaneOutput` are emitted by the relay transport (#242b); the rest are
 /// emitted now by the metadata-push commands.
@@ -101,7 +150,7 @@ pub enum ServerMsg {
         pane_id: String,
         prompt: String,
     },
-    // ── Planner sync (#588) ──────────────────────────────────────────────────
+    // ── Planner sync (#588 / PT2) ────────────────────────────────────────────
     /// Desktop pushes its plan manifest (relpath → hex hash) to mobile.
     /// Also sent proactively on connect so mobile can start reconciling immediately.
     #[serde(rename_all = "camelCase")]
@@ -121,6 +170,52 @@ pub enum ServerMsg {
     PlanSyncAck {
         project_id: String,
         applied: bool,
+    },
+    // ── Fleet / coordination (F2) ────────────────────────────────────────────
+    /// Full fleet roster snapshot — all agent sessions and their states. Replayed on
+    /// connect and re-pushed whenever the fleet state changes.
+    FleetRoster {
+        sessions: Vec<FleetSession>,
+    },
+    /// A single coordination event. Mobile shows a live activity feed.
+    /// kind ∈ "blocked"|"satisfied"|"woken"|"waiting"|"asking"|"failed"
+    #[serde(rename_all = "camelCase")]
+    CoordEvent {
+        kind: String,
+        /// The pane id involved (None for global events).
+        session: Option<String>,
+        /// The ref key for blocked/satisfied events.
+        ref_key: Option<String>,
+        /// ms-epoch timestamp.
+        at: u64,
+    },
+    // ── Automations (A2) ────────────────────────────────────────────────────
+    /// Full automation list — replayed on connect and re-pushed on any change.
+    AutomationList {
+        automations: Vec<AutomationFrame>,
+    },
+    /// Notification that an automation fired (Ok/skipped/fail).
+    #[serde(rename_all = "camelCase")]
+    AutomationRan {
+        id: String,
+        at: u64,
+        /// "ok" | "skipped" | "fail"
+        status: String,
+        note: String,
+    },
+    /// Notification that an automation failed (non-transient). Triggers an FCM push (A4)
+    /// so the user is notified even when the mobile app is backgrounded.
+    #[serde(rename_all = "camelCase")]
+    AutomationFailed {
+        id: String,
+        at: u64,
+        error: String,
+    },
+    // ── MCP extensions (M2) ─────────────────────────────────────────────────
+    /// Full list of enabled MCP servers and hooks. Read-only on mobile. Replayed on connect
+    /// and re-pushed whenever the Extensions store changes.
+    McpList {
+        extensions: Vec<McpExtFrame>,
     },
 }
 
@@ -168,6 +263,20 @@ pub enum ClientMsg {
         project_id: String,
         files: Vec<PlanFile>,
     },
+    // ── Fleet / coordination (F2) ────────────────────────────────────────────
+    /// Mobile requests that a blocked/paused agent be woken (dep-blocked waiter).
+    #[serde(rename_all = "camelCase")]
+    CoordWake { session: String },
+    /// Mobile approves a checkpoint/confirm-paused agent (waiting-for-user waiter).
+    #[serde(rename_all = "camelCase")]
+    CoordApprove { session: String },
+    // ── Automations (A2) ────────────────────────────────────────────────────
+    /// Mobile arms or disarms an automation (toggle the armed flag).
+    #[serde(rename_all = "camelCase")]
+    AutomationArm { id: String, armed: bool },
+    /// Mobile triggers an automation to run immediately.
+    #[serde(rename_all = "camelCase")]
+    AutomationRunNow { id: String },
 }
 
 /// One PTY output chunk fanned out to the relay transport (which filters per pane).
@@ -272,6 +381,15 @@ struct Inner {
     /// Full plan file caches per projectId — pushed by the frontend so mobile can
     /// pull individual files via PlanSyncPull.
     plan_files: HashMap<String, Vec<PlanFile>>,
+    // ── Fleet / coordination (F2) ────────────────────────────────────────────
+    /// Latest fleet roster — replayed to freshly-paired mobile clients.
+    fleet_sessions: Vec<FleetSession>,
+    // ── Automations (A2) ────────────────────────────────────────────────────
+    /// Latest automation list — replayed to freshly-paired mobile clients.
+    automations: Vec<AutomationFrame>,
+    // ── MCP extensions (M2) ─────────────────────────────────────────────────
+    /// Latest MCP extension list — replayed to freshly-paired mobile clients.
+    mcp_extensions: Vec<McpExtFrame>,
 }
 
 /// Single source of truth for the tunnel, managed by Tauri. Holds the desktop's static
@@ -298,14 +416,15 @@ pub struct TunnelState {
     push_tx: mpsc::UnboundedSender<PushJob>,
 }
 
-/// One queued FCM push: a `user_request` transition that should notify every paired device.
-/// The worker reads the live token set itself (so it always uses the latest), so the job
-/// only carries the per-request content.
-struct PushJob {
-    pane_id: String,
-    prompt: String,
-    /// Human-readable banner title — the pane/session name.
-    session_name: String,
+/// Queued FCM push jobs. The worker reads the live token set itself; each variant carries
+/// the content for a different notification type.
+enum PushJob {
+    /// Agent just entered `awaiting_input` — notify the user to respond (T6).
+    UserRequest { pane_id: String, prompt: String, session_name: String },
+    /// Agent entered a manual-wait or asking state (F4).
+    CoordWait { session: String, reason: String },
+    /// Automation failed non-transiently (A4).
+    AutomFailed { name: String, error: String },
 }
 
 /// Drain `rx` and send an FCM push per paired token for each job. Runs on its own OS thread
@@ -353,13 +472,25 @@ fn spawn_push_worker(mut rx: mpsc::UnboundedReceiver<PushJob>, tokens: Arc<Mutex
                     if targets.is_empty() {
                         continue;
                     }
-                    for token in targets {
-                        match sender.send(&token, &job.pane_id, &job.prompt, &job.session_name).await {
+                    for token in &targets {
+                        let msg = match &job {
+                            PushJob::UserRequest { pane_id, prompt, session_name } =>
+                                fcm::build_message(token, pane_id, prompt, session_name),
+                            PushJob::CoordWait { session, reason } =>
+                                fcm::build_coord_wait_message(token, session, reason),
+                            PushJob::AutomFailed { name, error } =>
+                                fcm::build_autom_failed_message(token, name, error),
+                        };
+                        match sender.send_built(msg).await {
                             SendOutcome::Sent => {
-                                log::debug!("fcm: pushed user_request for pane {}", job.pane_id);
+                                log::debug!("fcm: pushed {:?}", match &job {
+                                    PushJob::UserRequest { pane_id, .. } => format!("user_request pane={pane_id}"),
+                                    PushJob::CoordWait { session, .. } => format!("coord_wait session={session}"),
+                                    PushJob::AutomFailed { name, .. } => format!("autom_failed name={name}"),
+                                });
                             }
                             SendOutcome::DropToken => {
-                                tokens.lock().unwrap().remove(&token);
+                                tokens.lock().unwrap().remove(token);
                             }
                             SendOutcome::Error => {}
                         }
@@ -403,6 +534,9 @@ impl TunnelState {
                 shutdown_tx: None,
                 plan_manifests: HashMap::new(),
                 plan_files: HashMap::new(),
+                fleet_sessions: Vec::new(),
+                automations: Vec::new(),
+                mcp_extensions: Vec::new(),
             }),
             output_tx,
             event_tx,
@@ -433,10 +567,32 @@ impl TunnelState {
         if self.fcm_tokens.lock().unwrap().is_empty() {
             return;
         }
-        let _ = self.push_tx.send(PushJob {
+        let _ = self.push_tx.send(PushJob::UserRequest {
             pane_id: pane_id.to_string(),
             prompt: prompt.to_string(),
             session_name: session_name.to_string(),
+        });
+    }
+
+    /// Queue an FCM `coord_wait` push (F4). Non-blocking. No-op without stored tokens.
+    fn enqueue_coord_wait_push(&self, session: &str, reason: &str) {
+        if self.fcm_tokens.lock().unwrap().is_empty() {
+            return;
+        }
+        let _ = self.push_tx.send(PushJob::CoordWait {
+            session: session.to_string(),
+            reason: reason.to_string(),
+        });
+    }
+
+    /// Queue an FCM `autom_failed` push (A4). Non-blocking. No-op without stored tokens.
+    fn enqueue_autom_failed_push(&self, name: &str, error: &str) {
+        if self.fcm_tokens.lock().unwrap().is_empty() {
+            return;
+        }
+        let _ = self.push_tx.send(PushJob::AutomFailed {
+            name: name.to_string(),
+            error: error.to_string(),
         });
     }
 
@@ -547,6 +703,18 @@ impl TunnelState {
     /// Snapshot all stored plan manifests to replay to a freshly-paired mobile client.
     fn plan_manifests_snapshot(&self) -> HashMap<String, HashMap<String, String>> {
         self.inner.lock().unwrap().plan_manifests.clone()
+    }
+
+    fn fleet_snapshot(&self) -> Vec<FleetSession> {
+        self.inner.lock().unwrap().fleet_sessions.clone()
+    }
+
+    fn automations_snapshot(&self) -> Vec<AutomationFrame> {
+        self.inner.lock().unwrap().automations.clone()
+    }
+
+    fn mcp_snapshot(&self) -> Vec<McpExtFrame> {
+        self.inner.lock().unwrap().mcp_extensions.clone()
     }
 
     /// Record how many mobile clients are connected (for the settings card).
@@ -697,6 +865,98 @@ pub fn tunnel_ack_plan_push(
 ) {
     log::debug!("tunnel: plan push ack for {project_id} (applied={applied})");
     let _ = state.event_tx.send(ServerMsg::PlanSyncAck { project_id, applied });
+}
+
+// ── Fleet / coordination (F2) — Tauri commands ──────────────────────────────
+
+/// Push the full fleet roster from the frontend store. Stored for replay to new
+/// clients and broadcast to connected ones.
+#[tauri::command]
+pub fn tunnel_set_fleet_state(sessions: Vec<FleetSession>, state: State<'_, TunnelState>) {
+    {
+        let mut inner = state.inner.lock().unwrap();
+        inner.fleet_sessions = sessions.clone();
+    }
+    log::debug!("tunnel: fleet state updated ({} session(s))", sessions.len());
+    let _ = state.event_tx.send(ServerMsg::FleetRoster { sessions });
+}
+
+/// Push one coordination event to connected mobile clients. When the event kind is
+/// "waiting" or "asking" (an agent paused for user input), an FCM push is also queued
+/// (F4) so the user is notified even when the mobile app is backgrounded.
+#[tauri::command]
+pub fn tunnel_emit_coord_event(
+    kind: String,
+    session: Option<String>,
+    ref_key: Option<String>,
+    at: u64,
+    state: State<'_, TunnelState>,
+) {
+    log::debug!("tunnel: coord event kind={kind} session={session:?}");
+    // F4: push FCM when an agent enters a state that requires user attention.
+    if (kind == "waiting" || kind == "asking") && !state.fcm_tokens.lock().unwrap().is_empty() {
+        if let Some(ref s) = session {
+            state.enqueue_coord_wait_push(s, &kind);
+        }
+    }
+    let _ = state.event_tx.send(ServerMsg::CoordEvent { kind, session, ref_key, at });
+}
+
+// ── Automations (A2) — Tauri commands ───────────────────────────────────────
+
+/// Push the full automation list from the frontend store. Stored for replay to new
+/// clients and broadcast to connected ones.
+#[tauri::command]
+pub fn tunnel_set_automations(automations: Vec<AutomationFrame>, state: State<'_, TunnelState>) {
+    {
+        let mut inner = state.inner.lock().unwrap();
+        inner.automations = automations.clone();
+    }
+    log::debug!("tunnel: automation list updated ({} automation(s))", automations.len());
+    let _ = state.event_tx.send(ServerMsg::AutomationList { automations });
+}
+
+/// Push a non-critical automation-ran notification. No FCM push — skipped/ok runs are
+/// informational and don't require user attention.
+#[tauri::command]
+pub fn tunnel_automation_ran(
+    id: String,
+    at: u64,
+    status: String,
+    note: String,
+    state: State<'_, TunnelState>,
+) {
+    log::debug!("tunnel: automation {id} ran (status={status})");
+    let _ = state.event_tx.send(ServerMsg::AutomationRan { id, at, status, note });
+}
+
+/// Push a non-transient automation failure. Broadcasts `automation_failed` to
+/// connected clients and queues an FCM push (A4) so a backgrounded phone is notified.
+#[tauri::command]
+pub fn tunnel_automation_failed(
+    id: String,
+    at: u64,
+    error: String,
+    name: String,
+    state: State<'_, TunnelState>,
+) {
+    log::warn!("tunnel: automation {id} ({name}) failed: {error}");
+    state.enqueue_autom_failed_push(&name, &error);
+    let _ = state.event_tx.send(ServerMsg::AutomationFailed { id, at, error });
+}
+
+// ── MCP extensions (M2) — Tauri commands ────────────────────────────────────
+
+/// Push the full MCP extension list from the frontend store. Stored for replay to new
+/// clients and broadcast to connected ones. Read-only on mobile.
+#[tauri::command]
+pub fn tunnel_set_mcp_state(extensions: Vec<McpExtFrame>, state: State<'_, TunnelState>) {
+    {
+        let mut inner = state.inner.lock().unwrap();
+        inner.mcp_extensions = extensions.clone();
+    }
+    log::debug!("tunnel: MCP list updated ({} extension(s))", extensions.len());
+    let _ = state.event_tx.send(ServerMsg::McpList { extensions });
 }
 
 // ── Relay diagnostics (T3b) ──────────────────────────────────────────────────
@@ -1190,6 +1450,24 @@ mod transport {
             send_msg(&mut sink, &mut noise_tx, &ServerMsg::PlanSyncManifest { project_id, files }).await?;
         }
 
+        // Replay fleet roster (F2) — non-empty only after the fleet has launched.
+        let fleet = app.try_state::<TunnelState>().map(|s| s.fleet_snapshot()).unwrap_or_default();
+        if !fleet.is_empty() {
+            send_msg(&mut sink, &mut noise_tx, &ServerMsg::FleetRoster { sessions: fleet }).await?;
+        }
+
+        // Replay automation list (A2).
+        let automations = app.try_state::<TunnelState>().map(|s| s.automations_snapshot()).unwrap_or_default();
+        if !automations.is_empty() {
+            send_msg(&mut sink, &mut noise_tx, &ServerMsg::AutomationList { automations }).await?;
+        }
+
+        // Replay MCP extension list (M2).
+        let mcp = app.try_state::<TunnelState>().map(|s| s.mcp_snapshot()).unwrap_or_default();
+        if !mcp.is_empty() {
+            send_msg(&mut sink, &mut noise_tx, &ServerMsg::McpList { extensions: mcp }).await?;
+        }
+
         // Subscribe AFTER replay so we don't double-send; then pump until either side closes.
         let (mut out_rx, mut evt_rx) = match app.try_state::<TunnelState>() {
             Some(s) => {
@@ -1347,6 +1625,24 @@ mod transport {
                 log::info!("tunnel: plan push received for {project_id} ({} file(s))", files.len());
                 let payload = serde_json::json!({ "projectId": project_id, "files": files });
                 let _ = app.emit("tunnel://plan-sync-push", payload);
+            }
+            // ── Fleet / coordination (F2) ────────────────────────────────
+            ClientMsg::CoordWake { session } => {
+                log::info!("tunnel: mobile requested wake for session {session}");
+                let _ = app.emit("tunnel://coord-wake", serde_json::json!({ "session": session }));
+            }
+            ClientMsg::CoordApprove { session } => {
+                log::info!("tunnel: mobile approved session {session}");
+                let _ = app.emit("tunnel://coord-approve", serde_json::json!({ "session": session }));
+            }
+            // ── Automations (A2) ────────────────────────────────────────
+            ClientMsg::AutomationArm { id, armed } => {
+                log::info!("tunnel: mobile {} automation {id}", if armed { "armed" } else { "disarmed" });
+                let _ = app.emit("tunnel://automation-arm", serde_json::json!({ "id": id, "armed": armed }));
+            }
+            ClientMsg::AutomationRunNow { id } => {
+                log::info!("tunnel: mobile triggered automation {id}");
+                let _ = app.emit("tunnel://automation-run-now", serde_json::json!({ "id": id }));
             }
         }
     }
@@ -1905,5 +2201,206 @@ mod tests {
         cf.truncate(m);
         let decoded = decode_room_msg(&mut host, &cf).unwrap();
         assert!(matches!(decoded, ClientMsg::Auth { token, .. } if token == "secret"));
+    }
+
+    // ── F2: fleet roster + coord event ──────────────────────────────────────────
+
+    /// FleetSession serializes with camelCase and omits empty `blocked_on`.
+    #[test]
+    fn fleet_session_camel_case_and_skips_empty_blocked_on() {
+        let s = FleetSession {
+            session: "t0p1".into(),
+            status: "running".into(),
+            blocked_on: vec![],
+            wait_reason: None,
+            question: None,
+            at: 1_700_000_000_000,
+        };
+        let v = serde_json::to_value(&s).unwrap();
+        // camelCase field names
+        assert!(v.get("blockedOn").is_none(), "empty blocked_on must be omitted");
+        assert!(v.get("waitReason").is_some(), "waitReason must be present (null)");
+        assert_eq!(v["session"], "t0p1");
+        assert_eq!(v["status"], "running");
+    }
+
+    /// FleetSession with deps serializes blocked_on as an array.
+    #[test]
+    fn fleet_session_with_blocked_on_includes_array() {
+        let s = FleetSession {
+            session: "t0p2".into(),
+            status: "blocked".into(),
+            blocked_on: vec!["#42".into(), "contract:TunnelState".into()],
+            wait_reason: None,
+            question: None,
+            at: 0,
+        };
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["blockedOn"], serde_json::json!(["#42", "contract:TunnelState"]));
+    }
+
+    /// FleetRoster ServerMsg serializes with snake_case type tag.
+    #[test]
+    fn fleet_roster_msg_type_tag() {
+        let msg = ServerMsg::FleetRoster { sessions: vec![] };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "fleet_roster");
+        assert_eq!(v["sessions"], serde_json::json!([]));
+    }
+
+    /// CoordEvent ServerMsg serializes correctly.
+    #[test]
+    fn coord_event_msg_type_tag() {
+        let msg = ServerMsg::CoordEvent {
+            kind: "waiting".into(),
+            session: Some("t0p1".into()),
+            ref_key: None,
+            at: 12345,
+        };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "coord_event");
+        assert_eq!(v["kind"], "waiting");
+        assert_eq!(v["session"], "t0p1");
+        assert_eq!(v["at"], 12345);
+    }
+
+    /// CoordWake ClientMsg deserializes from the wire shape.
+    #[test]
+    fn coord_wake_client_msg_deserializes() {
+        let raw = serde_json::json!({ "type": "coord_wake", "session": "t0p3" });
+        let msg = serde_json::from_value::<ClientMsg>(raw).unwrap();
+        assert!(matches!(msg, ClientMsg::CoordWake { session } if session == "t0p3"));
+    }
+
+    /// CoordApprove ClientMsg deserializes from the wire shape.
+    #[test]
+    fn coord_approve_client_msg_deserializes() {
+        let raw = serde_json::json!({ "type": "coord_approve", "session": "t0p4" });
+        let msg = serde_json::from_value::<ClientMsg>(raw).unwrap();
+        assert!(matches!(msg, ClientMsg::CoordApprove { session } if session == "t0p4"));
+    }
+
+    // ── A2: automation frames + run-now ─────────────────────────────────────────
+
+    /// AutomationFrame serializes with camelCase.
+    #[test]
+    fn automation_frame_camel_case() {
+        let f = AutomationFrame {
+            id: "a1".into(),
+            name: "Nightly build".into(),
+            armed: true,
+            when_expr: "0 2 * * *".into(),
+            last_run_at: Some(1_700_000_000_000),
+            next_run_at: None,
+            last_status: Some("ok".into()),
+        };
+        let v = serde_json::to_value(&f).unwrap();
+        assert_eq!(v["whenExpr"], "0 2 * * *");
+        assert_eq!(v["lastRunAt"], 1_700_000_000_000_u64);
+        assert_eq!(v["lastStatus"], "ok");
+        assert_eq!(v["nextRunAt"], serde_json::Value::Null);
+    }
+
+    /// AutomationList ServerMsg type tag.
+    #[test]
+    fn automation_list_msg_type_tag() {
+        let msg = ServerMsg::AutomationList { automations: vec![] };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "automation_list");
+    }
+
+    /// AutomationFailed ServerMsg type tag and camelCase.
+    #[test]
+    fn automation_failed_msg_shape() {
+        let msg = ServerMsg::AutomationFailed { id: "a1".into(), at: 42, error: "timeout".into() };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "automation_failed");
+        assert_eq!(v["error"], "timeout");
+    }
+
+    /// AutomationArm ClientMsg deserializes.
+    #[test]
+    fn automation_arm_client_msg_deserializes() {
+        let raw = serde_json::json!({ "type": "automation_arm", "id": "a1", "armed": false });
+        let msg = serde_json::from_value::<ClientMsg>(raw).unwrap();
+        assert!(matches!(msg, ClientMsg::AutomationArm { id, armed } if id == "a1" && !armed));
+    }
+
+    /// AutomationRunNow ClientMsg deserializes.
+    #[test]
+    fn automation_run_now_client_msg_deserializes() {
+        let raw = serde_json::json!({ "type": "automation_run_now", "id": "a2" });
+        let msg = serde_json::from_value::<ClientMsg>(raw).unwrap();
+        assert!(matches!(msg, ClientMsg::AutomationRunNow { id } if id == "a2"));
+    }
+
+    // ── M2: MCP extension list ───────────────────────────────────────────────────
+
+    /// McpExtFrame serializes with camelCase.
+    #[test]
+    fn mcp_ext_frame_camel_case() {
+        let f = McpExtFrame {
+            id: "m1".into(),
+            kind: "mcp".into(),
+            name: "Postgres".into(),
+            enabled: true,
+            transport: Some("stdio".into()),
+            url: None,
+        };
+        let v = serde_json::to_value(&f).unwrap();
+        assert_eq!(v["transport"], "stdio");
+        assert_eq!(v["url"], serde_json::Value::Null);
+        assert_eq!(v["enabled"], true);
+    }
+
+    /// McpList ServerMsg type tag.
+    #[test]
+    fn mcp_list_msg_type_tag() {
+        let msg = ServerMsg::McpList { extensions: vec![] };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "mcp_list");
+    }
+
+    // ── TunnelState snapshot methods ────────────────────────────────────────────
+
+    /// fleet_snapshot / automations_snapshot / mcp_snapshot return empty then update.
+    #[test]
+    fn snapshot_methods_start_empty_and_update() {
+        let st = TunnelState::new();
+        assert!(st.fleet_snapshot().is_empty());
+        assert!(st.automations_snapshot().is_empty());
+        assert!(st.mcp_snapshot().is_empty());
+
+        {
+            let mut inner = st.inner.lock().unwrap();
+            inner.fleet_sessions.push(FleetSession {
+                session: "t0p0".into(),
+                status: "running".into(),
+                blocked_on: vec![],
+                wait_reason: None,
+                question: None,
+                at: 0,
+            });
+            inner.automations.push(AutomationFrame {
+                id: "a1".into(),
+                name: "test".into(),
+                armed: true,
+                when_expr: "*/5 * * * *".into(),
+                last_run_at: None,
+                next_run_at: None,
+                last_status: None,
+            });
+            inner.mcp_extensions.push(McpExtFrame {
+                id: "m1".into(),
+                kind: "mcp".into(),
+                name: "Postgres".into(),
+                enabled: true,
+                transport: Some("stdio".into()),
+                url: None,
+            });
+        }
+        assert_eq!(st.fleet_snapshot().len(), 1);
+        assert_eq!(st.automations_snapshot().len(), 1);
+        assert_eq!(st.mcp_snapshot().len(), 1);
     }
 }
