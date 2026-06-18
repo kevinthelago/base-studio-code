@@ -74,11 +74,14 @@ describe("blueprints — seed library", () => {
     expect(canChangeBlueprint(by("blueprint-author"))).toBe(false); // authoring → locked
   });
 
-  it("canSwitchBlueprint: greenfield → transform | harden only (#923)", () => {
+  it("canSwitchBlueprint: greenfield → transform | harden | maintain (#923)", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
-    // greenfield can move on to transform or harden
+    // a maintain-category blueprint (no built-in yet — synthesize from an existing one)
+    const maintain = { ...by("harden"), id: "maint", category: "maintain" as const };
+    // greenfield can move on to transform, harden, or maintain
     expect(canSwitchBlueprint(by("default"), by("refactor"))).toBe(true);   // → transform
     expect(canSwitchBlueprint(by("default"), by("harden"))).toBe(true);     // → harden
+    expect(canSwitchBlueprint(by("default"), maintain)).toBe(true);         // → maintain
     // greenfield → another greenfield / data / itself is NOT allowed
     expect(canSwitchBlueprint(by("default"), by("mcp-server"))).toBe(false); // → greenfield
     expect(canSwitchBlueprint(by("default"), by("data-migration"))).toBe(false); // → data
