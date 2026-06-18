@@ -53,6 +53,12 @@ const PLANNING_EXISTING_INTRO: &str = include_str!("../templates/planning-existi
 
 const PLANNING_PROCESS_MD: &str = include_str!("../templates/planning-process.md");
 
+// The blueprint-authoring lifecycle (#923) gets its OWN, self-contained intro — the planner is
+// designing a reusable blueprint (deliverable = a gist), not a software project — and does NOT get
+// the software-planning process block (repos / features / fleet / GitHub publish), which would only
+// mislead it. The `<blueprint>` tag spec + the four authoring stages live in this intro.
+const PLANNING_BLUEPRINT_INTRO: &str = include_str!("../templates/planning-blueprint-intro.md");
+
 /// One-line directive per planning stage (#542/#666) for the assembled active-stages
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
@@ -117,6 +123,9 @@ pub(crate) async fn setup_workspaces(
     github_login: String,
     github_name: String,
     enabled_stages: Vec<String>,
+    // The active blueprint's deliverable is a blueprint itself (#923) — use the authoring intro and
+    // omit the software-planning process block. Optional so older call sites default to false.
+    authoring: Option<bool>,
 ) -> Result<WorkspacePaths, String> {
     let _perf = PerfSpan::new("setup_workspaces");
     config::sanitize_claude_config();
@@ -164,8 +173,12 @@ pub(crate) async fn setup_workspaces(
     std::fs::write(kb_dir.join("CLAUDE.md"), KB_CLAUDE_MD)
         .map_err(|e| e.to_string())?;
 
-    // Assemble the template: orientation-specific INTRO + shared PROCESS block.
-    let mut planning_md = if is_existing {
+    // Assemble the template: orientation-specific INTRO + shared PROCESS block. The blueprint-
+    // authoring lifecycle (#923) is self-contained — its intro carries the whole task + the
+    // <blueprint> tag spec, and the software-planning process block is omitted entirely.
+    let mut planning_md = if authoring.unwrap_or(false) {
+        PLANNING_BLUEPRINT_INTRO.to_string()
+    } else if is_existing {
         format!(
             "{}{}",
             PLANNING_EXISTING_INTRO
