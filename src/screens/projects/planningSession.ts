@@ -39,6 +39,15 @@ export function buildSectionConfirmMessage(sectionTitle: string): string {
   return `[The user confirmed the "${sectionTitle}" section in the planner UI — continue to the next section.]`;
 }
 
+/**
+ * The message injected into Claude's PTY when the user deliberately SKIPS an optional stage in the
+ * planner UI (#921). It tells the planner to stop any work on that stage and move on — the stage is
+ * optional and the user chose not to do it.
+ */
+export function buildSectionSkipMessage(sectionTitle: string): string {
+  return `[The user chose to SKIP the optional "${sectionTitle}" section in the planner UI — do not work on it; continue to the next section.]`;
+}
+
 export interface StartupScriptTag {
   /** Repo full_name (owner/name) the script belongs to. */
   repo: string;

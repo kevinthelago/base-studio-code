@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkSection, computeStatus, reorder, cloneSections, blueprintToStageConfig,
-  sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal,
-  isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint,
+  sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal, skippedSignal,
+  isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, sectionDone,
   SECTION_DEFS, type BlueprintSection, type Blueprint,
 } from "../screens/projects/blueprints";
 import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
@@ -202,20 +202,27 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     expect(sectionStatus(testing, secs, { ...sig(), [confirmedSignal("testing")]: true }).status).toBe("complete");
   });
 
-  it("an optional section is shown but never blocks completion, deps, or the current stage (#676)", () => {
+  it("an optional stage is shown + never locks dependents, but IS a deliberate stop the user must decide (#676/#921)", () => {
     const secs = [mkSection("context"), mkSection("ui", { optional: true }), mkSection("structure")];
     const signals = sig({ context: { resolved: 1, total: 1, coreConfirmed: true }, requiresUi: true,
       phasesConfirmed: true, issueCount: 1 });
     const ui = secs.find((s) => s.key === "ui")!;
     // shown (not N/A) even though its screens gate is unmet
     expect(sectionStatus(ui, secs, signals).status).not.toBe("na");
-    // off the critical path — never the current stage
-    expect(currentSection(secs, signals)?.key).not.toBe("ui");
-    // structure depends on ui, but optional ui doesn't lock it
+    // structure depends on ui, but an optional dep never locks the dependent (#676)
     expect(sectionStatus(secs.find((s) => s.key === "structure")!, secs, signals).status).not.toBe("locked");
-    // the incomplete optional ui doesn't block plan completion
-    expect(planSectionsComplete([mkSection("context"), mkSection("ui", { optional: true })],
-      sig({ context: { resolved: 1, total: 1, coreConfirmed: true }, requiresUi: true }))).toBe(true);
+    // #921: the flow now STOPS on the optional stage — once context is done it IS the current stage,
+    // so the user decides whether to do or skip it (was: optional excluded from the frontier).
+    expect(currentSection(secs, signals)?.key).toBe("ui");
+    // …and an undecided optional stage blocks plan completion until the user decides (do or skip).
+    const twoSec = [mkSection("context"), mkSection("ui", { optional: true })];
+    const ctxDone = sig({ context: { resolved: 1, total: 1, coreConfirmed: true }, requiresUi: true });
+    expect(planSectionsComplete(twoSec, ctxDone)).toBe(false);
+    // a USER-skip resolves the optional stage → it counts as done, the frontier advances, plan completes.
+    const skipped = { ...ctxDone, [skippedSignal("ui")]: true };
+    expect(sectionDone(ui, skipped).done).toBe(true);
+    expect(currentSection(twoSec, skipped)?.key).toBe("ui"); // last applicable once all resolved
+    expect(planSectionsComplete(twoSec, skipped)).toBe(true);
   });
 
   it("incompleteSections lists each unfinished section with its gate reason", () => {
