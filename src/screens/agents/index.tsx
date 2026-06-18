@@ -599,7 +599,7 @@ function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign, onOpen
           <div className="ch" style={{ background: "color-mix(in oklch, var(--info), transparent 92%)" }}>
             <span className="cdot" style={{ background: "var(--info)" }} />
             <span className="cn">system</span>
-            <span className="repo">workspace · acme/payments</span>
+            <span className="repo">workspace-wide</span>
             <span className="spacer" />
             <span className="hint" style={{ fontFamily: "var(--mono)" }}>launched at startup · not reassignable</span>
           </div>
