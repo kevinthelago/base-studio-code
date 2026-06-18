@@ -36,8 +36,8 @@ export interface AuthorViewProps {
   published?: boolean;
 }
 
-function Lbl({ children, hint }: { children: React.ReactNode; hint?: string }) {
-  return <div className="lbl">{children}<span className="ln" />{hint && <span className="lhint">{hint}</span>}</div>;
+function Lbl({ children, hint, style }: { children: React.ReactNode; hint?: string; style?: CSSProperties }) {
+  return <div className="lbl" style={style}>{children}<span className="ln" />{hint && <span className="lhint">{hint}</span>}</div>;
 }
 
 function StageGlyph({ k, size = 26 }: { k: string; size?: number }) {
@@ -302,7 +302,7 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
 
             {isOpen && (
               <div style={{ padding: "0 13px 14px", borderTop: "1px solid var(--border-soft)" }}>
-                <Lbl hint="what happens to the artifact"><span style={{ marginTop: 13, display: "inline-block" }}>Output disposition</span></Lbl>
+                <Lbl style={{ marginTop: 13 }} hint="what happens to the artifact">Output disposition</Lbl>
                 <div className="disp-grid">
                   {DISPOSITION_KEYS.map((key) => {
                     const d = DISPOSITIONS[key];
@@ -315,7 +315,7 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
                   })}
                 </div>
 
-                <Lbl hint="injected context for this stage"><span style={{ marginTop: 18, display: "inline-block" }}>Skills & knowledge</span></Lbl>
+                <Lbl style={{ marginTop: 18 }} hint="injected context for this stage">Skills &amp; knowledge</Lbl>
                 {attachedSkills.length === 0 && <div className="hint" style={{ marginBottom: 8 }}>No skills attached.</div>}
                 {attachedSkills.length > 0 && (
                   <div className="dep-row" style={{ marginBottom: 8 }}>
@@ -336,7 +336,7 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
                   </div>
                 )}
 
-                <Lbl hint="tools this stage's agents can call"><span style={{ marginTop: 18, display: "inline-block" }}>MCP servers</span></Lbl>
+                <Lbl style={{ marginTop: 18 }} hint="tools this stage's agents can call">MCP servers</Lbl>
                 {attachedMcp.length === 0 && <div className="hint" style={{ marginBottom: 8 }}>No MCP servers attached.</div>}
                 {attachedMcp.length > 0 && (
                   <div className="dep-row" style={{ marginBottom: 8 }}>

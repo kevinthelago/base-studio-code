@@ -311,3 +311,21 @@
   .dim { color: var(--fg-dim); }
   .mono { font-family: var(--mono); }
 }
+
+/* ── Blueprint Author embedded in the focused planner pane (#923) ──
+   The blueprint-author views reuse the .bp-page component rules above, but render inside the
+   focused pane (.pp.fp > .pp-scroll), not the full editor page. The wrapper carries both
+   `bp-page` (so the component rules match) and `bpwrap` — `bpwrap` neutralizes .bp-page's own
+   page-level flex/background and adds the focused-pane tweaks. Ported from the design's ba.css. */
+.bp-page.bpwrap { flex: 0 1 auto; display: block; background: none; min-height: 0; }
+.fp .step-label { max-width: 88px; }
+.fp .bpwrap .card { border-radius: 9px; }
+.fp .bpwrap .disp .dd { line-height: 1.35; }
+.fp .bpwrap .stage-conn { margin-left: 34px; }
+/* standalone .lbl (not inside .d-block) — divider line grows, hint sits to the right */
+.fp .bpwrap .lbl {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--fg-muted); margin-bottom: 9px; display: flex; align-items: center; gap: 9px;
+}
+.fp .bpwrap .lbl .ln { flex: 1; height: 1px; background: var(--border-soft); }
+.fp .bpwrap .lbl .lhint { text-transform: none; letter-spacing: 0; color: var(--fg-dim); font-size: 10px; }

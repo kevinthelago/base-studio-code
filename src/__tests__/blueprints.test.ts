@@ -71,7 +71,7 @@ describe("blueprints — seed library", () => {
     // identity needs name + pitch + ≥1 tag — name alone isn't enough.
     const named = { id: "x", name: "My BP", desc: "", sections: [] } as Blueprint;
     expect(authoringSignals(named)).toMatchObject({ bpName: false, bpValid: false });
-    const identity = { id: "x", name: "My BP", pitch: "ship it", tags: ["api"], sections: [] } as Blueprint;
+    const identity = { id: "x", name: "My BP", desc: "", pitch: "ship it", tags: ["api"], sections: [] } as Blueprint;
     // identity passes, but no stages → not ready / not publishable.
     expect(authoringSignals(identity)).toMatchObject({ bpName: true, bpStagesReady: false, bpValid: false });
     // ≥2 stages but a stage missing its prompt → stages gate fails.

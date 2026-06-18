@@ -1341,13 +1341,20 @@ function FocusedAuthoringBody({ bp, phaseKey, wiring }: {
   }
   const sel = selStage ?? bp.sections?.[0]?.uid ?? null;
   const common = { bp, onChange: wiring.onChange, skillLibrary: wiring.skillLibrary, mcpLibrary: wiring.mcpLibrary };
-  switch (phaseKey) {
-    case "purpose":        return <PurposeView {...common} />;
-    case "bp_stages":      return <StagesView {...common} selectedUid={sel} onSelectStage={setSelStage} />;
-    case "bp_capabilities": return <CapabilitiesView {...common} />;
-    case "bp_review":      return <PublishView {...common} onPublish={wiring.onPublish} published={wiring.published} />;
-    default:               return null;
-  }
+  const view = (() => {
+    switch (phaseKey) {
+      case "purpose":         return <PurposeView {...common} />;
+      case "bp_stages":       return <StagesView {...common} selectedUid={sel} onSelectStage={setSelStage} />;
+      case "bp_capabilities": return <CapabilitiesView {...common} />;
+      case "bp_review":       return <PublishView {...common} onPublish={wiring.onPublish} published={wiring.published} />;
+      default:                return null;
+    }
+  })();
+  if (!view) return null;
+  // blueprints.css scopes every component rule under `.bp-page`; the focused pane has no such
+  // ancestor, so the views render unstyled without this wrapper. `bpwrap` neutralizes .bp-page's
+  // own page-level layout and adds the focused-pane label/spacing tweaks (#923, ported from ba.css).
+  return <div className="bp-page bpwrap" style={{ padding: 16 }}>{view}</div>;
 }
 
 function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
@@ -1884,6 +1891,8 @@ export function ProjectPane({
     onPrimary: () => void;
     /** The project already has a GitHub board — the publish action reads as "Update GitHub" (#823). */
     published?: boolean;
+    /** Override the footer publish label (#923) — "Publish blueprint" for an authoring project. */
+    publishLabel?: string;
     /** Blueprint-authoring wiring (#923) — present only for an authoring project; drives the
      *  interactive Purpose/Stages/Capabilities/Review editor views. */
     authoring?: AuthoringWiring;
@@ -1993,7 +2002,7 @@ export function ProjectPane({
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} />
         </div>
-        <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} onBack={focus.onBack} onPrimary={focus.onPrimary} />
+        <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} />
         {viewerModal}
       </div>
     );
