@@ -492,27 +492,26 @@ export function ProjectsList() {
     void refreshLocalProjects();
   }, [activeScreen, refreshLocalProjects]);
 
-  // One-time migration (#904): relocate pre-existing UNPUBLISHED hubs out of projects/ into draft/.
-  // A hub still under projects/ that is neither a GitHub board nor an aliased published project is
-  // an unpublished draft sitting in the old location — demote it. Best-effort + once per session:
-  // a hub open in a console session can't be moved (the rename fails, caught) and is retried next
-  // visit; project_dir resolves either location, so nothing breaks while a move is pending. Gated on
-  // a completed GitHub sync (`lastSync`) so an unloaded list can't make everything look unpublished.
-  const migratedRef = useRef(false);
+  // Reconcile published markers (#922): a local hub that matches a GitHub board (by title or alias)
+  // but isn't yet flagged published gets its in-place `.published` marker stamped. This is what
+  // promotes a hub that couldn't be flagged at publish time — e.g. a project published under the old
+  // #904 location split, or one whose publish-time write lost a race — and it catches the hub the
+  // startup migration moved out of draft/ as soon as its board is known. Runs whenever the list or
+  // boards change (NOT one-time): marking flips `lp.published`, so the set drains and it converges.
+  // The hub never moves and the marker is written in place, so this can't fail on a cwd lock. Gated
+  // on a completed GitHub sync (`lastSync`) so an unloaded board list can't look like "no boards".
   useEffect(() => {
-    if (activeScreen !== "projects" || lastSync === null || migratedRef.current) return;
+    if (activeScreen !== "projects" || lastSync === null) return;
     const publishedTitles = new Set(projects.map(p => p.title.toLowerCase()));
-    const stranded = localProjects.filter(lp =>
-      lp.published &&
-      !publishedTitles.has(lp.title.toLowerCase()) &&
-      !isKnownPublishedKey(lp.key, projectKeyAlias),
+    const toMark = localProjects.filter(lp =>
+      !lp.published &&
+      (publishedTitles.has(lp.title.toLowerCase()) || isKnownPublishedKey(lp.key, projectKeyAlias)),
     );
-    if (stranded.length === 0) { migratedRef.current = true; return; }
-    migratedRef.current = true;
+    if (toMark.length === 0) return;
     (async () => {
-      for (const lp of stranded) {
-        await invoke("demote_project", { projectKey: lp.key })
-          .catch((e) => console.warn(`demote ${lp.key} → draft/ failed (may be open in a session):`, e));
+      for (const lp of toMark) {
+        await invoke("mark_published", { projectKey: lp.key })
+          .catch((e) => console.warn(`mark_published ${lp.key} failed:`, e));
       }
       await refreshLocalProjects();
     })();
