@@ -499,12 +499,13 @@ export function Planning({ visible }: { visible: boolean }) {
       repos:    publishRepos,
       sections,
       features: planFeatures,
+      authoredBlueprint: planAuthoredBlueprint[effectiveProjectId],
       pinned:   pinnedContext[effectiveProjectId],
       extensions,
       projectKey: effectiveProjectId,
       mcpInstallState,
     }),
-    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, extensions, mcpInstallState],
+    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, extensions, mcpInstallState],
   );
 
   // Probe each downloadable MCP server's on-disk state so the pane opens with real status
@@ -1198,7 +1199,9 @@ export function Planning({ visible }: { visible: boolean }) {
         while ((m = bpRe.exec(bufRef.current)) !== null) lastBpBody = m[1];
         if (lastBpBody !== null) {
           try {
-            const parsed = coerceBlueprint(JSON.parse(lastBpBody.trim()));
+            // Allow a section-less blueprint: at the Purpose stage the planner emits its identity
+            // (name/category) before any stages exist (#923).
+            const parsed = coerceBlueprint(JSON.parse(lastBpBody.trim()), { allowEmptySections: true });
             if (parsed) useAppStore.getState().setAuthoredBlueprint(projIdSnap, parsed);
           } catch { /* incomplete/invalid JSON — ignore; the planner re-emits */ }
           bufRef.current = bufRef.current.replace(/<blueprint\s*>[\s\S]*?<\/blueprint>/g, "");

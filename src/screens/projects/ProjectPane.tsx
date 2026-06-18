@@ -1311,6 +1311,49 @@ function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: {
 // The Features board (#…): one card per user-facing capability the planner has written to
 // features.json, with a defined/drafting badge + its owning stream. The "easy way" the user
 // curates and watches each feature take shape.
+/** The authoring stages' body (#923): renders the in-progress blueprint the planner is designing —
+ *  identity at Purpose, the growing stage list at Stages, capabilities, and a publish hint at Review. */
+function FocusedAuthoringBody({ bp, phaseKey }: { bp?: ProjectPaneData["authoredBlueprint"]; phaseKey: string }) {
+  if (!bp) {
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">⎙</span>
+        <span>As the planner designs the blueprint, it appears here.</span>
+      </div>
+    );
+  }
+  const stageCount = bp.sections?.length ?? 0;
+  return (
+    <div className="scroll" style={{ padding: 16, fontFamily: "var(--mono)", fontSize: 12, lineHeight: 1.5 }}>
+      <div style={{ fontFamily: "var(--sans)", fontSize: 15, fontWeight: 600, color: "var(--fg)" }}>{bp.name || "Untitled blueprint"}</div>
+      <div style={{ color: "var(--fg-muted)", margin: "4px 0 12px" }}>{bp.desc || "—"}</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+        <span className="tag">{bp.category ?? "greenfield"}</span>
+        <span className="tag">{bp.mode ?? "create"}</span>
+        <span className="tag">{stageCount} stage{stageCount === 1 ? "" : "s"}</span>
+        {(bp.skills?.length ?? 0) > 0 && <span className="tag">{bp.skills!.length} skill{bp.skills!.length === 1 ? "" : "s"}</span>}
+        {(bp.mcp?.length ?? 0) > 0 && <span className="tag">{bp.mcp!.length} MCP</span>}
+      </div>
+      {stageCount > 0 && (
+        <ol style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 8 }}>
+          {bp.sections!.map((s, i) => (
+            <li key={s.uid ?? s.key ?? i} style={{ color: "var(--fg-muted)" }}>
+              <span style={{ color: "var(--fg)" }}>{s.name || s.key}</span>
+              {s.optional && <span style={{ color: "var(--fg-dim)" }}> · optional</span>}
+              {s.blurb && <div style={{ color: "var(--fg-dim)", fontSize: 11 }}>{s.blurb}</div>}
+            </li>
+          ))}
+        </ol>
+      )}
+      {phaseKey === "bp_review" && (
+        <div style={{ marginTop: 14, color: "var(--fg-dim)", fontSize: 11 }}>
+          When the gate passes, publish this blueprint to a gist from the footer →
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
   const list = features ?? [];
   // Auto-expand the first not-yet-defined feature — the one the workshop is actively driving down.
@@ -1544,6 +1587,12 @@ function FocusedPhaseBody({ phase, data, projectId, onLinkRepo, onApprovePlan, o
       return <FocusedAutomationsBody automations={data?.automations} />;
     case "skills":
       return <FocusedSkillsBody skills={data?.skills} />;
+    // Blueprint-authoring stages (#923): render the in-progress blueprint the planner is designing.
+    case "purpose":
+    case "bp_stages":
+    case "bp_capabilities":
+    case "bp_review":
+      return <FocusedAuthoringBody bp={data?.authoredBlueprint} phaseKey={phase.key} />;
     default:
       return (
         <div className="empty-state">

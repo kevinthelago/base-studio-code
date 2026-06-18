@@ -38,9 +38,16 @@ function coerceSection(v: unknown): BlueprintSection | null {
   };
 }
 
-/** Reconstruct a Blueprint from an untrusted payload, or null if it's not one.
- *  Requires an id, a name, and at least one valid section. Assigns fresh uids. */
-export function coerceBlueprint(payload: unknown): Blueprint | null {
+/** Reconstruct a Blueprint from an untrusted payload, or null if it's not one. Requires an id, a
+ *  name, and (by default) at least one valid section; assigns fresh uids.
+ *
+ *  `allowEmptySections` (#923) accepts a section-less blueprint — used for the IN-PROGRESS blueprint
+ *  an authoring session emits via the `<blueprint>` tag, which has its identity (name/category) at
+ *  the Purpose stage before any stages are designed. Import stays strict (≥1 section). */
+export function coerceBlueprint(
+  payload: unknown,
+  { allowEmptySections = false }: { allowEmptySections?: boolean } = {},
+): Blueprint | null {
   if (!payload || typeof payload !== "object") return null;
   const o = payload as Record<string, unknown>;
   const id = str(o.id);
@@ -49,7 +56,7 @@ export function coerceBlueprint(payload: unknown): Blueprint | null {
   const sections = Array.isArray(o.sections)
     ? (o.sections.map(coerceSection).filter(Boolean) as BlueprintSection[])
     : [];
-  if (sections.length === 0) return null;
+  if (sections.length === 0 && !allowEmptySections) return null;
   const category = (BP_CATEGORIES as readonly string[]).includes(str(o.category))
     ? (str(o.category) as Blueprint["category"]) : undefined;
   const mode = (BP_MODES as readonly string[]).includes(str(o.mode))
