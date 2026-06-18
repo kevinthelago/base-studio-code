@@ -113,3 +113,15 @@ export function triageLockReason(s: TriageGateState): string | null {
   if (!s.hasFleet) return "Plan the agent fleet first";
   return null;
 }
+
+/**
+ * Why Publish can't proceed, or null when it can (#969). Publish used to return SILENTLY when there
+ * was no token or no linked repo, so the user believed they'd published when nothing happened — and
+ * the fleet-launch button then stayed locked with no explanation. The common trigger is a blueprint
+ * with no Repos stage (e.g. a user-authored `maintain` one): nothing ever prompts a repo link.
+ */
+export function publishBlockReason(s: { hasToken: boolean; repoCount: number }): string | null {
+  if (!s.hasToken) return "Can't publish — connect a GitHub token in Settings first.";
+  if (s.repoCount === 0) return "Can't publish — no repository is linked. This blueprint has no Repos stage, so add one (or link a repo) before publishing.";
+  return null;
+}
