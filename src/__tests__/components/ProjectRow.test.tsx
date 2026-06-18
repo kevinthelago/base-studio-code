@@ -58,10 +58,10 @@ describe("ProjectRow", () => {
     expect(screen.getByText("67%")).toBeTruthy();
   });
 
-  it("calls onBoard when 'board on GitHub' is clicked", () => {
+  it("calls onBoard when 'open board on GitHub' is clicked", () => {
     const onBoard = vi.fn();
     render(row({ onBoard }));
-    fireEvent.click(screen.getByText("board on GitHub"));
+    fireEvent.click(screen.getByText("open board on GitHub"));
     expect(onBoard).toHaveBeenCalledWith(mockProject);
   });
 
