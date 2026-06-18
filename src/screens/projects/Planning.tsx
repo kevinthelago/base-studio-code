@@ -278,6 +278,7 @@ export function Planning({ visible }: { visible: boolean }) {
     projectKeyAlias,
     pinnedContext,
     blueprints, activeBlueprintId, planStageConfig,
+    projectBlueprintId, setProjectBlueprintId,
     uiScreens, uiApproved, planAutomations,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
     togglePinnedContext,
@@ -303,6 +304,20 @@ export function Planning({ visible }: { visible: boolean }) {
   const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
   const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
+  // A project is bound to the blueprint it was created with (#647/#923): `projectBlueprintId`
+  // records it; the GLOBAL `activeBlueprintId` is only the fallback (default for a brand-new
+  // project that hasn't been bound yet). Resolving per-project here is what keeps an existing
+  // project on its own blueprint when the global active changes (or resets to default on restart)
+  // — instead of silently reverting to the default stage set.
+  const effectiveBlueprintId = projectBlueprintId[effectiveProjectId] ?? activeBlueprintId;
+  // Bind the project to its blueprint the first time it's planned — so it never drifts to a
+  // different (or default) blueprint when the global active changes later (#647/#923). Once
+  // recorded, the binding wins; we never overwrite it here.
+  useEffect(() => {
+    if (effectiveProjectId && !projectBlueprintId[effectiveProjectId] && activeBlueprintId) {
+      setProjectBlueprintId(effectiveProjectId, activeBlueprintId);
+    }
+  }, [effectiveProjectId, projectBlueprintId, activeBlueprintId, setProjectBlueprintId]);
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
@@ -539,36 +554,36 @@ export function Planning({ visible }: { visible: boolean }) {
   // scopes existing, or adds); clones the downloadable (first-party) ones like the <mcp_assign>
   // handler. Re-runs when the project or the blueprint's attached-MCP set changes.
   const bpMcpKey = useMemo(() => {
-    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    const bp = blueprints.find(b => b.id === effectiveBlueprintId);
     return bp ? collectBlueprintMcp(bp).join("\n") : "";
-  }, [blueprints, activeBlueprintId]);
+  }, [blueprints, effectiveBlueprintId]);
   useEffect(() => {
     if (!effectiveProjectId || !bpMcpKey) return;
     const store = useAppStore.getState();
-    const bp = store.blueprints.find(b => b.id === activeBlueprintId);
+    const bp = store.blueprints.find(b => b.id === effectiveBlueprintId);
     if (!bp) return;
     for (const name of applyBlueprintMcp(store, bp, effectiveProjectId, store.bscBaseDir)) {
       const link = catalogLink(name);
       if (link) invoke("mcp_clone", { name: repoNameFromLink(link), url: link }).catch(() => {});
     }
-  }, [bpMcpKey, effectiveProjectId, activeBlueprintId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bpMcpKey, effectiveProjectId, effectiveBlueprintId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Write the active blueprint's attached SKILLS to the project hub's skills.md (#636 — the write
   // that was built but never wired). inject_skills (Rust) inlines that file into each worker's
   // CLAUDE.local.md and the planner reads it, so this is the skills counterpart to the MCP launch
   // wiring above. No-op when nothing is attached. Re-runs on project / attached-skill-set change.
   const bpSkillKey = useMemo(() => {
-    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    const bp = blueprints.find(b => b.id === effectiveBlueprintId);
     return bp ? collectBlueprintSkillIds(bp).join("\n") : "";
-  }, [blueprints, activeBlueprintId]);
+  }, [blueprints, effectiveBlueprintId]);
   useEffect(() => {
     if (!effectiveProjectId) return;
     const store = useAppStore.getState();
-    const bp = store.blueprints.find(b => b.id === activeBlueprintId);
+    const bp = store.blueprints.find(b => b.id === effectiveBlueprintId);
     if (!bp) return;
     void writeBlueprintSkillContext({ projectKey: effectiveProjectId, blueprint: bp, skills: store.skills, kb: store.kbBlocks })
       .catch((e) => console.warn("writeBlueprintSkillContext failed:", e));
-  }, [bpSkillKey, effectiveProjectId, activeBlueprintId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bpSkillKey, effectiveProjectId, effectiveBlueprintId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── MCP stage handlers (#878) ──────────────────────────────────────────────
   const onToggleMcp = useCallback((id: string) => useAppStore.getState().toggleExtension(id), []);
@@ -655,10 +670,10 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, confirmedSet]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
-    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    const bp = blueprints.find(b => b.id === effectiveBlueprintId);
     if (bp) return bp.sections;
     return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
-  }, [blueprints, activeBlueprintId, stageConfig]);
+  }, [blueprints, effectiveBlueprintId, stageConfig]);
   // lint-as-gate (#897 Phase 4b — lint-plan folded into the declarative gate). A WRITTEN section
   // (drafted/confirmed; pending ones aren't authored yet) must not carry a deliberate "fill this
   // in later" marker (TODO / TBD / FIXME / XXX / TKTK). Scanned ONLY over sections that belong to
@@ -673,7 +688,7 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [sections, planSecs]);
   // Blueprint-authoring lifecycle (#923): this project DESIGNS a blueprint (the deliverable) rather
   // than building software. The in-progress blueprint arrives via the planner's <blueprint> tag.
-  const activeBlueprint = useMemo(() => blueprints.find(b => b.id === activeBlueprintId), [blueprints, activeBlueprintId]);
+  const activeBlueprint = useMemo(() => blueprints.find(b => b.id === effectiveBlueprintId), [blueprints, effectiveBlueprintId]);
   const isAuthoring = isAuthoringBlueprint(activeBlueprint);
   const authoredBp = planAuthoredBlueprint[effectiveProjectId];
   // Signals the authoring stages' gates read (name+category, stage count, validity).
@@ -691,7 +706,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const phases = useMemo(() => phasesFrom(planSecs, signals), [planSecs, signals]);
   const focusActiveIdx = useMemo(() => activeIndex(phases), [phases]);
   const [focusSel, setFocusSel] = useState<number | null>(null);
-  useEffect(() => { setFocusSel(null); }, [effectiveProjectId, activeBlueprintId]);
+  useEffect(() => { setFocusSel(null); }, [effectiveProjectId, effectiveBlueprintId]);
   const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, phases.length);
   const focusGateReady = useMemo(() => currentGateReady(planSecs, signals), [planSecs, signals]);
   const planComplete = useMemo(() => planSectionsComplete(planSecs, signals), [planSecs, signals]);
@@ -768,7 +783,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // silently reverted a refactor/transform plan to the greenfield stage set. (#A — restored.)
   const stageIdsFor = (key: string): string[] => {
     const st = useAppStore.getState();
-    const bp = st.blueprints.find(b => b.id === st.activeBlueprintId);
+    // Resolve the project's OWN blueprint (#647/#923), falling back to the global active only when
+    // the project hasn't been bound — so an existing project keeps its stage set across version /
+    // active-blueprint changes instead of reverting to the default greenfield stages.
+    const bpId = st.projectBlueprintId[key] ?? st.activeBlueprintId;
+    const bp = st.blueprints.find(b => b.id === bpId);
     if (bp) return bp.sections.filter(s => s.enabled).map(s => s.key);
     return enabledOrderedStages(st.planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
   };
@@ -892,7 +911,7 @@ export function Planning({ visible }: { visible: boolean }) {
     pendingRef.current = null;
     setNudgeStep(null);
   }, []);
-  useEffect(() => { resetConductor(); }, [effectiveProjectId, activeBlueprintId, resetConductor]);
+  useEffect(() => { resetConductor(); }, [effectiveProjectId, effectiveBlueprintId, resetConductor]);
   // Re-send the current step (the nudge action + manual override): drop it from delivered + clear
   // pending/nudge so the next tick re-injects it.
   const resendCurrentStep = useCallback(() => {

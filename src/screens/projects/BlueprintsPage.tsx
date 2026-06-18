@@ -141,8 +141,11 @@ export function BlueprintsPage() {
     const title = name.trim();
     if (!title) return;
     const st = useAppStore.getState();
-    st.setActiveBlueprint("blueprint-author");
     const key = sanitizeProjectKey(title);
+    // Bind THIS project to the authoring lifecycle per-project (#923) — not via the global active
+    // blueprint, which would leak "blueprint-author" into the next normal project. Planning resolves
+    // projectBlueprintId[key] ?? activeBlueprintId.
+    st.setProjectBlueprintId(key, "blueprint-author");
     st.setPlanningTitle(title);
     st.setPlanningContext("Design a reusable blueprint to publish as a gist.", "");
     st.setActiveProjectMeta(null, "", "", 0);
