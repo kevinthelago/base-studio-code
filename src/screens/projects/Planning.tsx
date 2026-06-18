@@ -49,9 +49,10 @@ import { buildProjectPaneData } from "./projectPaneData";
 // not a hardcoded stage list.
 import { derivePlanStageState, planStateToSignals, pendingStageConfirms } from "./planStageDerive";
 import { findPlanGaps } from "./lintPlan";
-import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, type BlueprintSection } from "./blueprints";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, type BlueprintSection, type Blueprint } from "./blueprints";
 import { coerceBlueprint, blueprintToManifest } from "./blueprintShare";
-import { resolveBlueprintSkillPayloads } from "./blueprintSkills";
+import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "./blueprintSkills";
+import { buildMcpLibrary } from "./blueprintMcp";
 import { publishGist } from "../../lib/extensions/gist";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, sectionForPhase } from "./focusedPlan";
 import { featureSectionsToIssues } from "./planFeatures";
@@ -272,7 +273,7 @@ export function Planning({ visible }: { visible: boolean }) {
     activeProjectRepos,
     projectLocalRepos,
     planSections, planConfirmedSections,
-    planAuthoredBlueprint, importBlueprint,
+    planAuthoredBlueprint, importBlueprint, setAuthoredBlueprint,
     planFleet,
     projectKeyAlias,
     pinnedContext,
@@ -287,6 +288,7 @@ export function Planning({ visible }: { visible: boolean }) {
   } = useAppStore();
   const autoPlanWithClaude = useAppStore(s => s.autoPlanWithClaude);
   const claudeApiKey = useAppStore(s => s.claudeApiKey);
+  const skillDefs = useAppStore(s => s.skills);
   // The extensions store drives the MCP stage pane (#878); the base dir is read on demand.
   const extensions = useAppStore(s => s.extensions);
 
@@ -676,6 +678,9 @@ export function Planning({ visible }: { visible: boolean }) {
   const authoredBp = planAuthoredBlueprint[effectiveProjectId];
   // Signals the authoring stages' gates read (name+category, stage count, validity).
   const authoringSig = useMemo(() => authoringSignals(authoredBp), [authoredBp]);
+  // Pickable libraries for the Capabilities stage's skill + MCP pickers.
+  const authorSkillLib = useMemo(() => buildSkillLibrary(skillDefs, kbBlocks), [skillDefs, kbBlocks]);
+  const authorMcpLib = useMemo(() => buildMcpLibrary(extensions), [extensions]);
   const signals = useMemo(
     () => ({ ...planStateToSignals(stageState), hasPlanGaps, ...(isAuthoring ? authoringSig : {}) }),
     [stageState, hasPlanGaps, isAuthoring, authoringSig]);
@@ -1607,12 +1612,15 @@ export function Planning({ visible }: { visible: boolean }) {
     }
   }
 
-  // Publish an AUTHORING project's deliverable (#923): the designed blueprint → a secret gist, via
-  // the same manifest path the Blueprints page uses. No repos/board/milestones/issues/fleet.
+  // Publish an AUTHORING project's deliverable (#923): land the designed blueprint in the library,
+  // then ship it to a gist per the chosen visibility — "local" stays library-only, "private-gist" is
+  // secret, "catalog" is public. No repos/board/milestones/issues/fleet.
   async function publishAuthoredBlueprint() {
     const bp = planAuthoredBlueprint[effectiveProjectId];
     const valid = bp ? coerceBlueprint(bp) : null;
-    if (!githubToken || !valid) { setPublishPhase("error"); return; }
+    if (!valid) { setPublishPhase("error"); return; }
+    const visibility = valid.visibility ?? "private-gist";
+    if (visibility !== "local" && !githubToken) { setPublishPhase("error"); return; }
     setGhStatus({ blueprint: { status: "running" } });
     setPublishPhase("running");
     try {
@@ -1621,13 +1629,19 @@ export function Planning({ visible }: { visible: boolean }) {
       // seeded this project so re-opening resolves to it.
       const newId = importBlueprint(valid);
       store.setProjectBlueprintId(effectiveProjectId, newId);
+      if (visibility === "local") {
+        setGhStatus({ blueprint: { status: "created", detail: `${valid.name} · saved to library` } });
+        setPublishPhase("done");
+        invoke("pty_write", { paneId, data: `[Blueprint "${valid.name}" saved to your local library.]\r` }).catch(console.error);
+        return;
+      }
       // Bundle attached skill/KB content so the share is self-contained; MCP stays by reference.
       const bundled = resolveBlueprintSkillPayloads(valid, store.skills, kbBlocks);
-      const res = await publishGist(githubToken, blueprintToManifest(valid, bundled), { public: false });
+      const res = await publishGist(githubToken, blueprintToManifest(valid, bundled), { public: visibility === "catalog" });
       setGhStatus({ blueprint: { status: "created", detail: valid.name, url: res.htmlUrl } });
       setPublishPhase("done");
-      // Report the gist URL back to the planner so it can hand it to the user.
-      invoke("pty_write", { paneId, data: `[Blueprint published to a secret gist: ${res.htmlUrl}]\r` }).catch(console.error);
+      const kind = visibility === "catalog" ? "public" : "secret";
+      invoke("pty_write", { paneId, data: `[Blueprint published to a ${kind} gist: ${res.htmlUrl}]\r` }).catch(console.error);
     } catch (e) {
       setGhStatus({ blueprint: { status: "error", detail: String(e) } });
       setPublishPhase("error");
@@ -2213,6 +2227,17 @@ _Auto-generated by base-studio-code planner._`,
                   }
                   setFocusSel(null); // re-follow the live phase
                 },
+                // Blueprint-authoring wiring (#923): the interactive editor views write edits back to
+                // the stored blueprint (kept in sync with the planner's <blueprint> tag) + publish.
+                authoring: isAuthoring ? {
+                  onChange: (bp: Blueprint) => setAuthoredBlueprint(effectiveProjectId, bp),
+                  skillLibrary: authorSkillLib,
+                  mcpLibrary: authorMcpLib,
+                  onPublish: () => { void handlePublish(); },
+                  // The focused pane only renders while idle; the publish-progress header takes over
+                  // once publishing starts, so "published" is always false within this view.
+                  published: false,
+                } : undefined,
               }}
             />
           ) : (

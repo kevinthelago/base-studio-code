@@ -273,11 +273,11 @@ Gate: the applicable skills are selected.`,
   // code, so no fleet/triage. The evolving blueprint accumulates via the <blueprint> tag; these
   // stages' gates read signals derived from it (bpName / bpStageCount / bpValid in Planning.tsx).
   purpose: {
-    name: "Purpose", glyph: "◆", gate: "purpose confirmed", deps: [],
+    name: "Purpose", glyph: "◆", gate: "identity-check", deps: [],
     gateRule: { require: [
-      { signal: "bpName", target: true, weight: 0, label: "name the blueprint + pick its lifecycle category" },
+      { signal: "bpName", target: true, weight: 0, label: "set a name, a one-line pitch, and at least one catalog tag" },
     ] },
-    blurb: "What this blueprint is for: lifecycle category, the projects it seeds, name + description.",
+    blurb: "Define what this blueprint is for, who it serves, and how it appears in the catalog.",
     prompt:
 `You are designing a NEW, reusable BLUEPRINT — a planning template others seed projects from (NOT a
 software project). Establish its PURPOSE: the lifecycle category (greenfield = create from a pitch,
@@ -288,11 +288,11 @@ and its name + one-line description. Propose, interrogate with the user, then re
 Gate: the blueprint has a name and a lifecycle category.`,
   },
   bp_stages: {
-    name: "Stages", glyph: "❑", gate: "stages designed", deps: ["purpose"],
+    name: "Stages", glyph: "❑", gate: "flow-check", deps: ["purpose"],
     gateRule: { require: [
-      { signal: "bpStageCount", target: 1, label: "design the blueprint's stages" },
+      { signal: "bpStagesReady", target: true, label: "compose ≥2 stages, each with a prompt module" },
     ] },
-    blurb: "The ordered stages the blueprint will drive — each with intent, prompt, gate, deps.",
+    blurb: "Compose the stage flow — order, dependencies, and the prompt module each stage runs.",
     prompt:
 `Design the STAGES the authored blueprint will drive, one at a time (propose → interrogate → record).
 For each stage define: a short key + name, its intent (blurb), the discovery PROMPT the planner runs
@@ -304,8 +304,8 @@ stage set firms up.
 Gate: at least one stage is designed, each confirmed with the user.`,
   },
   bp_capabilities: {
-    name: "Capabilities", glyph: "✦", gate: "skills + MCP attached", deps: ["bp_stages"], optional: true,
-    blurb: "Reusable skills/knowledge + MCP servers the blueprint attaches to projects it seeds.",
+    name: "Capabilities", glyph: "✦", gate: "skills + MCP wired", deps: ["bp_stages"], optional: true,
+    blurb: "Wire each stage's output disposition, attached skills/knowledge, and MCP servers.",
     prompt:
 `OPTIONAL. Decide the reusable SKILLS / knowledge and MCP servers this blueprint should attach so every
 project seeded from it inherits them. Attach them blueprint-wide or to a specific stage and fold them
@@ -315,11 +315,11 @@ stage if the blueprint needs no bundled capabilities.
 Gate: the applicable skills + MCP servers are attached (optional).`,
   },
   bp_review: {
-    name: "Review & publish", glyph: "⎙", gate: "blueprint valid", deps: ["bp_stages"],
+    name: "Review & publish", glyph: "⎙", gate: "lint", deps: ["bp_stages"],
     gateRule: { require: [
-      { signal: "bpValid", target: true, label: "the assembled blueprint validates" },
+      { signal: "bpValid", target: true, label: "all validation checks pass" },
     ] },
-    blurb: "Review the assembled blueprint end-to-end, then publish it to a gist.",
+    blurb: "Validate the blueprint, choose its visibility, and publish it to the catalog.",
     prompt:
 `Review the assembled blueprint with the user: purpose, every stage (intent, prompt, gate, deps,
 optional), and attached capabilities. Emit the FINAL, complete <blueprint> tag. When the user
@@ -571,6 +571,11 @@ export interface Blueprint {
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
   mode?: BlueprintMode;
+  /** Authoring metadata (#923, blueprint-author design): a one-line catalog pitch, the audience it
+   *  serves, and the publish visibility. `tags` doubles as the design's "best for" catalog tags. */
+  pitch?: string;
+  audience?: string;
+  visibility?: "local" | "private-gist" | "catalog";
   /** Deliverable / output lifecycle (#923). Absent ⇒ the normal software deliverable: the planner
    *  publishes repos + a project board + milestones + issues, then a fleet builds them. `"blueprint"`
    *  marks an AUTHORING lifecycle — the planner designs a reusable blueprint and "publish" ships it
@@ -585,16 +590,24 @@ export function isAuthoringBlueprint(bp: Blueprint | undefined): boolean {
 }
 
 /** The gate signals the blueprint-authoring stages read, derived from the in-progress blueprint the
- *  planner is designing (#923): it has a name + category (`bpName`), how many stages it has
- *  (`bpStageCount`), and whether it's structurally publishable (`bpValid` — id, name, ≥1 section that
- *  has a key + name; mirrors {@link coerceBlueprint}'s requirements without importing it, to avoid a
- *  module cycle). Pure. */
+ *  planner is designing (#923, gates per the blueprint-author design):
+ *  - `bpName` — Purpose gate: name + pitch + ≥1 catalog tag.
+ *  - `bpStageCount` — how many stages (display).
+ *  - `bpStagesReady` — Stages gate: ≥2 stages, each with a prompt module written.
+ *  - `bpValid` — Review gate: every publish check passes (identity + stages + prompts).
+ *  Pure; mirrors the design's validation without importing the editor. */
 export function authoringSignals(bp: Blueprint | undefined): Record<string, number | boolean> {
-  const validSections = (bp?.sections ?? []).filter((s) => !!s.key && !!s.name);
+  const sections = bp?.sections ?? [];
+  const hasName = !!bp?.name?.trim();
+  const hasPitch = !!bp?.pitch?.trim();
+  const hasTag = (bp?.tags?.length ?? 0) > 0;
+  const enoughStages = sections.length >= 2;
+  const everyPrompt = sections.length > 0 && sections.every((s) => !!s.prompt?.trim());
   return {
-    bpName: !!bp?.name?.trim() && !!bp?.category,
-    bpStageCount: bp?.sections?.length ?? 0,
-    bpValid: !!bp?.id && !!bp?.name?.trim() && validSections.length > 0,
+    bpName: hasName && hasPitch && hasTag,
+    bpStageCount: sections.length,
+    bpStagesReady: enoughStages && everyPrompt,
+    bpValid: hasName && hasPitch && hasTag && enoughStages && everyPrompt,
   };
 }
 
