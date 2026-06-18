@@ -396,7 +396,8 @@ export function Planning({ visible }: { visible: boolean }) {
   const sections = useMemo<Section[]>(() => {
     const keys = new Set<string>(ANCHOR_KEYS);
     for (const k of Object.keys(savedSections)) {
-      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY) keys.add(k);
+      // `blueprint` is the authored-blueprint JSON (#923), not a discovery section — never a card.
+      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== "blueprint") keys.add(k);
     }
     const { project, repos } = groupSections([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
@@ -1380,8 +1381,10 @@ export function Planning({ visible }: { visible: boolean }) {
   // to the store drives the derived `sections`/`skipped` — confirmed sections
   // stay frozen. This file poll is more reliable than the raw <plan_update>
   // stream and is what surfaces brand-new topics as their own cards.
+  const lastBpJsonRef = useRef<string>("");
   useEffect(() => {
     if (!visible) return;
+    lastBpJsonRef.current = ""; // reset the blueprint.json change-guard on project switch
 
     const poll = async () => {
       try {
@@ -1394,6 +1397,20 @@ export function Planning({ visible }: { visible: boolean }) {
         const confirmed = new Set(store.planConfirmedSections[effectiveProjectId] ?? []);
 
         for (const [rawKey, content] of entries) {
+          // The authoring planner writes `blueprint.json` to the hub — the reliable channel (like
+          // fleet.json), more dependable than the inline <blueprint> tag (#923). Parse it into the
+          // in-progress blueprint so the authoring panes render the stages it designed. Guard on the
+          // file content changing so a 2s re-read can't clobber a live UI edit; it's NOT a plan section.
+          if (rawKey === "blueprint") {
+            if (content && content !== lastBpJsonRef.current) {
+              lastBpJsonRef.current = content;
+              try {
+                const parsed = coerceBlueprint(JSON.parse(content), { allowEmptySections: true });
+                if (parsed) store.setAuthoredBlueprint(effectiveProjectId, parsed);
+              } catch { /* mid-write / invalid JSON — ignore, the planner re-writes */ }
+            }
+            continue;
+          }
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
           const key = canonicalSectionKey(rawKey);
