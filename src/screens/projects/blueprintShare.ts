@@ -61,11 +61,21 @@ export function coerceBlueprint(
     ? (str(o.category) as Blueprint["category"]) : undefined;
   const mode = (BP_MODES as readonly string[]).includes(str(o.mode))
     ? (str(o.mode) as Blueprint["mode"]) : undefined;
+  const VIS = ["local", "private-gist", "catalog"] as const;
+  const visibility = (VIS as readonly string[]).includes(str(o.visibility))
+    ? (str(o.visibility) as Blueprint["visibility"]) : undefined;
   return {
     id, name, desc: str(o.desc), sections,
     // Blueprint-wide attached capabilities (#897) + lifecycle metadata, preserved on import.
     skills: strArr(o.skills),
     mcp: strArr(o.mcp),
+    // Authoring metadata (#923): catalog pitch/audience/tags/visibility + accent hue/icon.
+    ...(str(o.pitch) ? { pitch: str(o.pitch) } : {}),
+    ...(str(o.audience) ? { audience: str(o.audience) } : {}),
+    ...(visibility ? { visibility } : {}),
+    ...(strArr(o.tags).length ? { tags: strArr(o.tags) } : {}),
+    ...(typeof o.h === "number" ? { h: o.h } : {}),
+    ...(str(o.icon) ? { icon: str(o.icon) } : {}),
     ...(category ? { category } : {}),
     ...(mode ? { mode } : {}),
   };

@@ -20,6 +20,9 @@ import {
   PhaseFooter as FocusedPhaseFooter,
 } from "./FocusedShell";
 import { FileIntakePane } from "./FileIntakePane";
+import { PurposeView, StagesView, CapabilitiesView, PublishView } from "./BlueprintAuthorViews";
+import type { BlueprintSkillItem } from "./blueprintSkills";
+import type { McpLibraryItem } from "./blueprintMcp";
 
 /* =================================================================
    types
@@ -1311,10 +1314,24 @@ function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: {
 // The Features board (#…): one card per user-facing capability the planner has written to
 // features.json, with a defined/drafting badge + its owning stream. The "easy way" the user
 // curates and watches each feature take shape.
-/** The authoring stages' body (#923): renders the in-progress blueprint the planner is designing —
- *  identity at Purpose, the growing stage list at Stages, capabilities, and a publish hint at Review. */
-function FocusedAuthoringBody({ bp, phaseKey }: { bp?: ProjectPaneData["authoredBlueprint"]; phaseKey: string }) {
-  if (!bp) {
+/** Authoring config (#923) threaded from Planning — the live blueprint edits flow back via onChange
+ *  (kept in sync with the planner's <blueprint> tag), plus the pickable libraries + publish. */
+export interface AuthoringWiring {
+  onChange: (bp: NonNullable<ProjectPaneData["authoredBlueprint"]>) => void;
+  skillLibrary?: BlueprintSkillItem[];
+  mcpLibrary?: McpLibraryItem[];
+  onPublish: () => void;
+  published: boolean;
+}
+
+/** The authoring stages' body (#923): the four interactive editor views (Purpose · Stages ·
+ *  Capabilities · Review & publish) over the in-progress blueprint, ported from the design. Holds
+ *  the selected-stage cursor for the Stages editor. */
+function FocusedAuthoringBody({ bp, phaseKey, wiring }: {
+  bp?: ProjectPaneData["authoredBlueprint"]; phaseKey: string; wiring?: AuthoringWiring;
+}) {
+  const [selStage, setSelStage] = useState<string | null>(null);
+  if (!bp || !wiring) {
     return (
       <div className="empty-state">
         <span className="empty-icon">⎙</span>
@@ -1322,36 +1339,15 @@ function FocusedAuthoringBody({ bp, phaseKey }: { bp?: ProjectPaneData["authored
       </div>
     );
   }
-  const stageCount = bp.sections?.length ?? 0;
-  return (
-    <div className="scroll" style={{ padding: 16, fontFamily: "var(--mono)", fontSize: 12, lineHeight: 1.5 }}>
-      <div style={{ fontFamily: "var(--sans)", fontSize: 15, fontWeight: 600, color: "var(--fg)" }}>{bp.name || "Untitled blueprint"}</div>
-      <div style={{ color: "var(--fg-muted)", margin: "4px 0 12px" }}>{bp.desc || "—"}</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-        <span className="tag">{bp.category ?? "greenfield"}</span>
-        <span className="tag">{bp.mode ?? "create"}</span>
-        <span className="tag">{stageCount} stage{stageCount === 1 ? "" : "s"}</span>
-        {(bp.skills?.length ?? 0) > 0 && <span className="tag">{bp.skills!.length} skill{bp.skills!.length === 1 ? "" : "s"}</span>}
-        {(bp.mcp?.length ?? 0) > 0 && <span className="tag">{bp.mcp!.length} MCP</span>}
-      </div>
-      {stageCount > 0 && (
-        <ol style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 8 }}>
-          {bp.sections!.map((s, i) => (
-            <li key={s.uid ?? s.key ?? i} style={{ color: "var(--fg-muted)" }}>
-              <span style={{ color: "var(--fg)" }}>{s.name || s.key}</span>
-              {s.optional && <span style={{ color: "var(--fg-dim)" }}> · optional</span>}
-              {s.blurb && <div style={{ color: "var(--fg-dim)", fontSize: 11 }}>{s.blurb}</div>}
-            </li>
-          ))}
-        </ol>
-      )}
-      {phaseKey === "bp_review" && (
-        <div style={{ marginTop: 14, color: "var(--fg-dim)", fontSize: 11 }}>
-          When the gate passes, publish this blueprint to a gist from the footer →
-        </div>
-      )}
-    </div>
-  );
+  const sel = selStage ?? bp.sections?.[0]?.uid ?? null;
+  const common = { bp, onChange: wiring.onChange, skillLibrary: wiring.skillLibrary, mcpLibrary: wiring.mcpLibrary };
+  switch (phaseKey) {
+    case "purpose":        return <PurposeView {...common} />;
+    case "bp_stages":      return <StagesView {...common} selectedUid={sel} onSelectStage={setSelStage} />;
+    case "bp_capabilities": return <CapabilitiesView {...common} />;
+    case "bp_review":      return <PublishView {...common} onPublish={wiring.onPublish} published={wiring.published} />;
+    default:               return null;
+  }
 }
 
 function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
@@ -1549,10 +1545,12 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
   );
 }
 
-function FocusedPhaseBody({ phase, data, projectId, onLinkRepo, onApprovePlan, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp }: {
+function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onApprovePlan, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
+  /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
+  authoring?: AuthoringWiring;
   onLinkRepo?: (r: string) => void;
   onApprovePlan?: () => void;
   onView?: (f: ContextFile) => void;
@@ -1587,12 +1585,12 @@ function FocusedPhaseBody({ phase, data, projectId, onLinkRepo, onApprovePlan, o
       return <FocusedAutomationsBody automations={data?.automations} />;
     case "skills":
       return <FocusedSkillsBody skills={data?.skills} />;
-    // Blueprint-authoring stages (#923): render the in-progress blueprint the planner is designing.
+    // Blueprint-authoring stages (#923): the interactive editor views over the in-progress blueprint.
     case "purpose":
     case "bp_stages":
     case "bp_capabilities":
     case "bp_review":
-      return <FocusedAuthoringBody bp={data?.authoredBlueprint} phaseKey={phase.key} />;
+      return <FocusedAuthoringBody bp={data?.authoredBlueprint} phaseKey={phase.key} wiring={authoring} />;
     default:
       return (
         <div className="empty-state">
@@ -1886,6 +1884,9 @@ export function ProjectPane({
     onPrimary: () => void;
     /** The project already has a GitHub board — the publish action reads as "Update GitHub" (#823). */
     published?: boolean;
+    /** Blueprint-authoring wiring (#923) — present only for an authoring project; drives the
+     *  interactive Purpose/Stages/Capabilities/Review editor views. */
+    authoring?: AuthoringWiring;
   };
   /** Callback to link a repository from the focused repos body (#677). */
   onLinkRepo?: (repo: string) => void;
@@ -1988,7 +1989,7 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing}
+          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing}
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} />
         </div>

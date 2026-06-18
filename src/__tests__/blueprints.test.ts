@@ -66,18 +66,26 @@ describe("blueprints — seed library", () => {
     expect(isAuthoringBlueprint(makeBlueprints().find((b) => b.id === "default"))).toBe(false);
   });
 
-  it("authoringSignals reflect name+category, stage count, and structural validity (#923)", () => {
-    expect(authoringSignals(undefined)).toEqual({ bpName: false, bpStageCount: 0, bpValid: false });
-    const empty = { id: "x", name: "", desc: "", sections: [] } as Blueprint;
-    expect(authoringSignals(empty)).toMatchObject({ bpName: false, bpStageCount: 0, bpValid: false });
-    const partial = { id: "x", name: "My BP", desc: "", category: "greenfield", sections: [] } as Blueprint;
-    // named + category, but no stages → bpName true, but not yet valid/publishable.
-    expect(authoringSignals(partial)).toMatchObject({ bpName: true, bpStageCount: 0, bpValid: false });
-    const full = {
-      id: "x", name: "My BP", desc: "", category: "greenfield",
-      sections: [mkSection("purpose"), mkSection("bp_stages")],
+  it("authoringSignals: identity (name+pitch+tag), stages (≥2 + prompts), publishable (#923)", () => {
+    expect(authoringSignals(undefined)).toEqual({ bpName: false, bpStageCount: 0, bpStagesReady: false, bpValid: false });
+    // identity needs name + pitch + ≥1 tag — name alone isn't enough.
+    const named = { id: "x", name: "My BP", desc: "", sections: [] } as Blueprint;
+    expect(authoringSignals(named)).toMatchObject({ bpName: false, bpValid: false });
+    const identity = { id: "x", name: "My BP", pitch: "ship it", tags: ["api"], sections: [] } as Blueprint;
+    // identity passes, but no stages → not ready / not publishable.
+    expect(authoringSignals(identity)).toMatchObject({ bpName: true, bpStagesReady: false, bpValid: false });
+    // ≥2 stages but a stage missing its prompt → stages gate fails.
+    const oneEmptyPrompt = {
+      ...identity,
+      sections: [{ ...mkSection("purpose"), prompt: "do x" }, { ...mkSection("bp_stages"), prompt: "" }],
     } as Blueprint;
-    expect(authoringSignals(full)).toMatchObject({ bpName: true, bpStageCount: 2, bpValid: true });
+    expect(authoringSignals(oneEmptyPrompt)).toMatchObject({ bpStageCount: 2, bpStagesReady: false, bpValid: false });
+    // identity + ≥2 stages all with prompts → ready + publishable.
+    const full = {
+      ...identity,
+      sections: [{ ...mkSection("purpose"), prompt: "do x" }, { ...mkSection("bp_stages"), prompt: "do y" }],
+    } as Blueprint;
+    expect(authoringSignals(full)).toMatchObject({ bpName: true, bpStageCount: 2, bpStagesReady: true, bpValid: true });
   });
 
   it("includes a headless 'mcp-server' greenfield blueprint with no UI stage (#825)", () => {
