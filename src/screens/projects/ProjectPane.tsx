@@ -20,6 +20,9 @@ import {
   PhaseFooter as FocusedPhaseFooter,
 } from "./FocusedShell";
 import { FileIntakePane } from "./FileIntakePane";
+import { PurposeView, StagesView, CapabilitiesView, PublishView } from "./BlueprintAuthorViews";
+import type { BlueprintSkillItem } from "./blueprintSkills";
+import type { McpLibraryItem } from "./blueprintMcp";
 
 /* =================================================================
    types
@@ -57,118 +60,9 @@ const PRESETS: Record<string, Perm> = {
   Full:   { read: "allow", edit: "allow", create: "allow", run: "allow", net: "allow", push: "allow", pkg: "allow" },
 };
 
-/* =================================================================
-   sample data (used when no real plan data is available)
-   ================================================================= */
-const AGENTS: Agent[] = [
-  { id: "planner", name: "@planner", role: "planner", status: "wait", repo: "acme/payments",
-    color: "oklch(0.72 0.10 230)", initial: "P",
-    owns: ["docs/**", "specs/**"], issues: ["M1", "M2"],
-    preset: "Plan", perm: { ...PRESETS.Plan },
-    flow: { autonomy: "confirm", push: "none", gate: "soft" }, ctx: 3 },
-
-  { id: "framer", name: "@framer", role: "worker", status: "run", repo: "acme/payments",
-    color: "oklch(0.80 0.14 70)", initial: "F",
-    owns: ["crates/ws-server/**"], issues: ["#418", "#416"], focus: true,
-    preset: "Build", perm: { ...PRESETS.Build },
-    flow: { autonomy: "checkpoint", push: "push-confirm", gate: "hard" }, ctx: 4 },
-
-  { id: "auth", name: "@auth", role: "worker", status: "run", repo: "acme/payments",
-    color: "oklch(0.78 0.13 50)", initial: "A",
-    owns: ["crates/auth/**", "crates/gh/**"], issues: ["#417", "#413"],
-    preset: "Build", perm: { ...PRESETS.Build, push: "allow" },
-    flow: { autonomy: "continuous", push: "auto-PR", gate: "hard" }, ctx: 5 },
-
-  { id: "tester", name: "@tester", role: "tester", status: "on", repo: "acme/payments",
-    color: "oklch(0.72 0.13 145)", initial: "T",
-    owns: ["tests/**"], issues: ["#408"],
-    preset: "Review", perm: { ...PRESETS.Review, run: "allow" },
-    flow: { autonomy: "continuous", push: "commit-only", gate: "hard" }, ctx: 2 },
-
-  { id: "triage", name: "@triage", role: "triage", status: "on", repo: "both",
-    color: "oklch(0.72 0.10 195)", initial: "Δ",
-    owns: ["— issues only"], issues: ["board"],
-    preset: "Triage", perm: { ...PRESETS.Triage },
-    flow: { autonomy: "continuous", push: "none", gate: "soft" }, ctx: 1 },
-
-  { id: "reviewer", name: "@reviewer", role: "reviewer", status: "idle", repo: "acme/web-dashboard",
-    color: "oklch(0.70 0.12 300)", initial: "R",
-    owns: ["src/**"], issues: ["#414"],
-    preset: "Review", perm: { ...PRESETS.Review },
-    flow: { autonomy: "checkpoint", push: "commit-only", gate: "hard" }, ctx: 2 },
-];
-
-const REPOS: Repo[] = [
-  { id: "acme/payments", branch: "main", ahead: 2, behind: 0,
-    agents: ["planner", "framer", "auth", "tester"], primary: true,
-    branches: [
-      { n: "feat/framing-v2",      issue: 418, state: "active", ahead: 5, behind: 2 },
-      { n: "feat/webhook-emitter", issue: 416, state: "draft",  ahead: 0, behind: 0 },
-      { n: "feat/hmac-mw",         issue: 417, state: "active", ahead: 3, behind: 0 },
-      { n: "fix/token-revocation", issue: 413, state: "review", ahead: 2, behind: 1 },
-    ] },
-  { id: "acme/web-dashboard", branch: "main", ahead: 0, behind: 0,
-    agents: ["reviewer", "triage"], primary: false,
-    branches: [
-      { n: "feat/live-updates", issue: 414, state: "review", ahead: 3, behind: 1 },
-      { n: "feat/cutover-flag", issue: 420, state: "draft",  ahead: 0, behind: 0 },
-    ] },
-];
-
-const STRUCTURE: Milestone[] = [
-  { id: "M1", title: "Publisher MVP", repo: "acme/payments", pct: 0.72, state: "doing",
-    epics: [
-      { id: "E1", title: "Framing v2", pct: 0.7, issues: [
-        { n: 418, t: "net: framing v2 + schema regen", state: "doing", owner: "framer",
-          ac: 3, branch: "feat/framing-v2", deps: [], sub: [
-            { t: "spec the v2 frame shape", done: true },
-            { t: "encoder + round-trip tests", done: false },
-            { t: "regen schema.json on build", done: false },
-          ] },
-        { n: 416, t: "worker → webhook emitter", state: "doing", owner: "framer",
-          ac: 2, branch: "feat/webhook-emitter", deps: [418], sub: [
-            { t: "emit on settlement event", done: false },
-            { t: "backpressure + retry", done: false },
-          ] },
-      ] },
-      { id: "E2", title: "Auth surface", pct: 0.5, issues: [
-        { n: 417, t: "HMAC verification middleware", state: "doing", owner: "auth",
-          ac: 4, branch: "feat/hmac-mw", deps: [], sub: [
-            { t: "verify signature header", done: true },
-            { t: "timing-safe compare", done: false },
-            { t: "key rotation hook", done: false },
-          ] },
-        { n: 413, t: "tokenized webhook path + revocation", state: "review", owner: "auth",
-          ac: 2, branch: "fix/token-revocation", deps: [417], sub: [] },
-      ] },
-    ] },
-  { id: "M2", title: "Dashboard live-update", repo: "acme/web-dashboard", pct: 0.32, state: "doing",
-    epics: [
-      { id: "E3", title: "Live updates", pct: 0.3, issues: [
-        { n: 414, t: "subscribe + render live deliveries", state: "review", owner: "reviewer",
-          ac: 3, branch: "feat/live-updates", deps: [], sub: [
-            { t: "websocket client hook", done: true },
-            { t: "optimistic row updates", done: false },
-          ] },
-        { n: 420, t: "cutover plan + flag wiring", state: "backlog", owner: "planner",
-          ac: 1, branch: "feat/cutover-flag", deps: [413, 414], sub: [] },
-      ] },
-    ] },
-];
-
-function structFor(repoId: string, structure: Milestone[] = STRUCTURE): Milestone[] {
+function structFor(repoId: string, structure: Milestone[] = []): Milestone[] {
   return structure.filter((m) => m.repo === repoId);
 }
-
-const CONTEXT: ContextFile[] = [
-  { name: "settlement-webhooks.spec.md", kind: "spec",   tok: "4.1k", pinned: true,  scope: "project", content: "# Settlement webhooks v2\n\nDelivery contract for settlement events." },
-  { name: "CLAUDE.md",                   kind: "claude", tok: "1.2k", pinned: true,  scope: "global",  content: "# CLAUDE.md\n\nProject-wide guidance for agents." },
-  { name: "blk_71fe · framing v2",       kind: "kb",     tok: "0.8k", pinned: true,  scope: "project", content: "Framing v2 — length-prefixed binary frames." },
-  { name: "blk_2199 · sqlite>lmdb",      kind: "kb",     tok: "0.6k", pinned: true,  scope: "project", content: "Decision: SQLite over LMDB." },
-  { name: "acme/payments · CLAUDE.md",   kind: "claude", tok: "0.9k", pinned: false, scope: "repo",    content: "# acme/payments\n\nRepo guidance." },
-  { name: "docs/architecture.md",        kind: "doc",    tok: "3.4k", pinned: false, scope: "repo",    content: "# Architecture\n\nWS server -> framer -> webhook emitter." },
-  { name: "blk_44a1 · retry policy",     kind: "kb",     tok: "0.5k", pinned: false, scope: "project", content: "Retry policy — exponential backoff." },
-];
 
 const CTX_KIND: Record<string, string> = {
   spec:   "oklch(0.72 0.10 230)",
@@ -379,7 +273,7 @@ function RoleChip({ role, mute }: { role: string; mute?: boolean }) {
   );
 }
 
-function Avatar({ id, sz = 17, agents = AGENTS }: { id: string; sz?: number; agents?: Agent[] }) {
+function Avatar({ id, sz = 17, agents = [] }: { id: string; sz?: number; agents?: Agent[] }) {
   const a = agents.find((x) => x.id === id);
   const color = a ? a.color : "var(--fg-dim)";
   const initial = a ? a.initial : "?";
@@ -560,7 +454,7 @@ function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void
   );
 }
 
-function ContextA({ context = CONTEXT, onTogglePin, onView }: {
+function ContextA({ context = [], onTogglePin, onView }: {
   context?: ContextFile[]; onTogglePin?: (name: string) => void; onView?: (f: ContextFile) => void;
 }) {
   const [items, setItems] = useState(context);
@@ -616,14 +510,14 @@ function MStateDot({ state }: { state: string }) {
   }} />;
 }
 
-function repoRollup(repoId: string, structure: Milestone[] = STRUCTURE): { ms: Milestone[]; iss: Issue[]; pct: number } {
+function repoRollup(repoId: string, structure: Milestone[] = []): { ms: Milestone[]; iss: Issue[]; pct: number } {
   const ms = structFor(repoId, structure);
   const iss = ms.flatMap((m) => m.epics.flatMap((e) => e.issues));
   const pct = ms.length ? ms.reduce((a, m) => a + m.pct, 0) / ms.length : 0;
   return { ms, iss, pct };
 }
 
-function RepoStructure({ structure = STRUCTURE, repos = REPOS, agents = AGENTS }: {
+function RepoStructure({ structure = [], repos = [], agents = [] }: {
   structure?: Milestone[]; repos?: Repo[]; agents?: Agent[];
 }) {
   const [openRepo, setOpenRepo] = useState<string | null>(repos[0]?.id ?? null);
@@ -835,7 +729,7 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
   );
 }
 
-function AgentsA({ agents = AGENTS, onPerm, onPreset, onFlow }: {
+function AgentsA({ agents = [], onPerm, onPreset, onFlow }: {
   agents?: Agent[];
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
@@ -1311,6 +1205,50 @@ function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: {
 // The Features board (#…): one card per user-facing capability the planner has written to
 // features.json, with a defined/drafting badge + its owning stream. The "easy way" the user
 // curates and watches each feature take shape.
+/** Authoring config (#923) threaded from Planning — the live blueprint edits flow back via onChange
+ *  (kept in sync with the planner's <blueprint> tag), plus the pickable libraries + publish. */
+export interface AuthoringWiring {
+  onChange: (bp: NonNullable<ProjectPaneData["authoredBlueprint"]>) => void;
+  skillLibrary?: BlueprintSkillItem[];
+  mcpLibrary?: McpLibraryItem[];
+  onPublish: () => void;
+  published: boolean;
+}
+
+/** The authoring stages' body (#923): the four interactive editor views (Purpose · Stages ·
+ *  Capabilities · Review & publish) over the in-progress blueprint, ported from the design. Holds
+ *  the selected-stage cursor for the Stages editor. */
+function FocusedAuthoringBody({ bp, phaseKey, wiring }: {
+  bp?: ProjectPaneData["authoredBlueprint"]; phaseKey: string; wiring?: AuthoringWiring;
+}) {
+  const [selStage, setSelStage] = useState<string | null>(null);
+  if (!bp || !wiring) {
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">⎙</span>
+        <span>As the planner designs the blueprint, it appears here.</span>
+      </div>
+    );
+  }
+  const sel = selStage ?? bp.sections?.[0]?.uid ?? null;
+  const common = { bp, onChange: wiring.onChange, skillLibrary: wiring.skillLibrary, mcpLibrary: wiring.mcpLibrary };
+  const view = (() => {
+    switch (phaseKey) {
+      case "purpose":         return <PurposeView {...common} />;
+      case "bp_stages":       return <StagesView {...common} selectedUid={sel} onSelectStage={setSelStage} />;
+      case "bp_capabilities": return <CapabilitiesView {...common} />;
+      case "bp_review":       return <PublishView {...common} onPublish={wiring.onPublish} published={wiring.published} />;
+      default:                return null;
+    }
+  })();
+  if (!view) return null;
+  // blueprints.css scopes every component rule under `.bp-page`; the focused pane has no such
+  // ancestor, so the views render unstyled without this wrapper. `bpwrap` neutralizes .bp-page's
+  // own page-level layout and adds the focused-pane label/spacing tweaks (#923, ported from ba.css).
+  // No own padding — `.fp .pp-scroll` already pads the body (14px 16px 18px), matching every pane.
+  return <div className="bp-page bpwrap">{view}</div>;
+}
+
 function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
   const list = features ?? [];
   // Auto-expand the first not-yet-defined feature — the one the workshop is actively driving down.
@@ -1506,10 +1444,12 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
   );
 }
 
-function FocusedPhaseBody({ phase, data, projectId, onLinkRepo, onApprovePlan, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp }: {
+function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onApprovePlan, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
+  /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
+  authoring?: AuthoringWiring;
   onLinkRepo?: (r: string) => void;
   onApprovePlan?: () => void;
   onView?: (f: ContextFile) => void;
@@ -1544,6 +1484,12 @@ function FocusedPhaseBody({ phase, data, projectId, onLinkRepo, onApprovePlan, o
       return <FocusedAutomationsBody automations={data?.automations} />;
     case "skills":
       return <FocusedSkillsBody skills={data?.skills} />;
+    // Blueprint-authoring stages (#923): the interactive editor views over the in-progress blueprint.
+    case "purpose":
+    case "bp_stages":
+    case "bp_capabilities":
+    case "bp_review":
+      return <FocusedAuthoringBody bp={data?.authoredBlueprint} phaseKey={phase.key} wiring={authoring} />;
     default:
       return (
         <div className="empty-state">
@@ -1837,6 +1783,11 @@ export function ProjectPane({
     onPrimary: () => void;
     /** The project already has a GitHub board — the publish action reads as "Update GitHub" (#823). */
     published?: boolean;
+    /** Override the footer publish label (#923) — "Publish blueprint" for an authoring project. */
+    publishLabel?: string;
+    /** Blueprint-authoring wiring (#923) — present only for an authoring project; drives the
+     *  interactive Purpose/Stages/Capabilities/Review editor views. */
+    authoring?: AuthoringWiring;
   };
   /** Callback to link a repository from the focused repos body (#677). */
   onLinkRepo?: (repo: string) => void;
@@ -1857,13 +1808,12 @@ export function ProjectPane({
   // Legacy flat view: fallback for render without sections (e.g. tests, standalone use).
   const stagedMode = sections !== undefined;
 
-  // Resolve data: use real plan data when provided, fall back to sample data.
-  // For #674: when sections are provided, use real (possibly empty) data — no sample fallback.
-  const hasData = !!data && (data.agents.length > 0 || data.structure.length > 0 || data.context.length > 0);
-  const agents:    Agent[]       = (stagedMode || hasData) ? (data?.agents    ?? []) : AGENTS;
-  const repos:     Repo[]        = (stagedMode || hasData) ? (data?.repos      ?? []) : REPOS;
-  const structure: Milestone[]   = (stagedMode || hasData) ? (data?.structure  ?? []) : STRUCTURE;
-  const context:   ContextFile[] = (stagedMode || hasData) ? (data?.context    ?? []) : CONTEXT;
+  // Resolve plan data straight from the live session — no sample/mock fallback (#…): a project
+  // with no data yet renders real empty-states, never a fictional fleet.
+  const agents:    Agent[]       = data?.agents    ?? [];
+  const repos:     Repo[]        = data?.repos      ?? [];
+  const structure: Milestone[]   = data?.structure  ?? [];
+  const context:   ContextFile[] = data?.context    ?? [];
   const linkedRepos: string[]    = linkedReposProp ?? [];
 
   // Stage navigation state (#652)
@@ -1939,11 +1889,11 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing}
+          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing}
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} />
         </div>
-        <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} onBack={focus.onBack} onPrimary={focus.onPrimary} />
+        <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} />
         {viewerModal}
       </div>
     );
@@ -1962,11 +1912,11 @@ export function ProjectPane({
           background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
         }} />
         <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)" }}>
-          {projectName || (hasData ? "Project" : "Settlement webhooks v2")}
+          {projectName || "Project"}
         </span>
         <span style={{ flex: 1 }} />
         <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
-          {projectId || (hasData ? "" : "prj_2fa")}
+          {projectId || ""}
         </span>
       </div>
 

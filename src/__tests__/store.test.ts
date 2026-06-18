@@ -1699,7 +1699,7 @@ describe("blueprints library (#513/#514)", () => {
     useAppStore.getState().setBlueprintSections("default", flipped);
     expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "context")!.enabled).toBe(false);
     // a sibling blueprint is untouched
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "mcp-server")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
   });
 
   it("updateBlueprintMeta edits name/desc", () => {
@@ -1735,6 +1735,7 @@ describe("clearPlan (#505)", () => {
     useAppStore.setState({
       planSections: { myproj: { goal: "# Goal" }, other: { scope: "# Scope" } },
       planConfirmedSections: { myproj: ["goal"], other: [] },
+      planAuthoredBlueprint: { myproj: { id: "bp", name: "BP", desc: "", sections: [] } },
       planKbAssignments: { myproj: ["kb-1"] },
       planAutomations: { myproj: [] },
       planStageConfig: {},
@@ -1756,6 +1757,7 @@ describe("clearPlan (#505)", () => {
     const s = useAppStore.getState();
     expect(s.planSections["myproj"]).toBeUndefined();
     expect(s.planConfirmedSections["myproj"]).toBeUndefined();
+    expect(s.planAuthoredBlueprint["myproj"]).toBeUndefined();
     expect(s.planKbAssignments["myproj"]).toBeUndefined();
     expect(s.planAutomations["myproj"]).toBeUndefined();
     expect(s.uiScreens["myproj"]).toBeUndefined();
@@ -1777,6 +1779,17 @@ describe("clearPlan (#505)", () => {
     useAppStore.getState().clearPlan("nonexistent");
     const s = useAppStore.getState();
     expect(s.planSections["myproj"]).toEqual({ goal: "# Goal" });
+  });
+
+  it("setAuthoredBlueprint records the in-progress blueprint per project (#923)", () => {
+    useAppStore.setState({ planAuthoredBlueprint: {} });
+    const bp = { id: "x", name: "Authored", desc: "", sections: [] };
+    useAppStore.getState().setAuthoredBlueprint("proj", bp);
+    expect(useAppStore.getState().planAuthoredBlueprint["proj"]).toEqual(bp);
+    // overwrite replaces (the planner re-emits the full blueprint)
+    const bp2 = { ...bp, name: "Authored v2" };
+    useAppStore.getState().setAuthoredBlueprint("proj", bp2);
+    expect(useAppStore.getState().planAuthoredBlueprint["proj"].name).toBe("Authored v2");
   });
 });
 

@@ -602,48 +602,55 @@ function UpcomingMilestones({ repoMilestones, loading }: {
 
 // ── Risk register (manual — from plan sessions) ───────────────────────────────
 
+interface Risk { sev: "high" | "med" | "low"; proj: string; r: string; own: string }
+
 function RiskRegister() {
-  const risks = [
-    { sev: "med", proj: "Settlement",    r: "HMAC secret leaks via env dump",             own: "alex" },
-    { sev: "med", proj: "Notion sync",   r: "Rate-limit on Notion's API on backfill",     own: "pete" },
-    { sev: "low", proj: "Settlement",    r: "Replay storm during cutover",                own: "alex" },
-    { sev: "low", proj: "Offline pair",  r: "Bonjour discovery on enterprise wifi",       own: "lina" },
-  ];
+  // Risks are logged manually during planning sessions; no live source is wired yet (#…), so this
+  // renders an honest empty state until one is — never fabricated entries.
+  const risks: Risk[] = [];
+  const med = risks.filter(r => r.sev === "med").length;
+  const low = risks.filter(r => r.sev === "low").length;
   return (
     <div className="card" style={{ padding: "14px 16px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Risk register</h3>
-        <span className="hint">2 medium · 2 low across active projects</span>
+        <span className="hint">{risks.length ? `${med} medium · ${low} low across active projects` : "logged during planning"}</span>
         <div style={{ flex: 1 }} />
-        <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}>view all</button>
+        {risks.length > 0 && <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}>view all</button>}
       </div>
-      <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-        <div style={{
-          display: "grid", gridTemplateColumns: "50px 110px 1fr 60px",
-          gap: 8, padding: "7px 12px",
-          background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
-          fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
-          textTransform: "uppercase", letterSpacing: ".06em",
-        }}>
-          <span>sev</span><span>project</span><span>risk</span><span>owner</span>
+      {risks.length === 0 ? (
+        <div style={{ padding: "18px 12px", textAlign: "center", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>
+          No risks logged yet.
         </div>
-        {risks.map((r, i) => (
-          <div key={i} style={{
+      ) : (
+        <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+          <div style={{
             display: "grid", gridTemplateColumns: "50px 110px 1fr 60px",
-            gap: 8, padding: "8px 12px", alignItems: "center",
-            background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)",
-            borderTop: i === 0 ? "0" : "1px solid var(--border-soft)",
-            fontSize: 11.5,
+            gap: 8, padding: "7px 12px",
+            background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
+            fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
+            textTransform: "uppercase", letterSpacing: ".06em",
           }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: r.sev === "high" ? "var(--danger)" : r.sev === "med" ? "var(--accent)" : "var(--fg-dim)" }}>
-              ● {r.sev}
-            </span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.proj}</span>
-            <span style={{ color: "var(--fg)" }}>{r.r}</span>
-            <Avatar login={r.own} />
+            <span>sev</span><span>project</span><span>risk</span><span>owner</span>
           </div>
-        ))}
-      </div>
+          {risks.map((r, i) => (
+            <div key={i} style={{
+              display: "grid", gridTemplateColumns: "50px 110px 1fr 60px",
+              gap: 8, padding: "8px 12px", alignItems: "center",
+              background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)",
+              borderTop: i === 0 ? "0" : "1px solid var(--border-soft)",
+              fontSize: 11.5,
+            }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: r.sev === "high" ? "var(--danger)" : r.sev === "med" ? "var(--accent)" : "var(--fg-dim)" }}>
+                ● {r.sev}
+              </span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.proj}</span>
+              <span style={{ color: "var(--fg)" }}>{r.r}</span>
+              <Avatar login={r.own} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

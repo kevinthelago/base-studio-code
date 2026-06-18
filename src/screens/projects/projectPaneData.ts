@@ -23,6 +23,7 @@ import type {
   PaneAutomation, PaneSkill,
 } from "./projectPane.types";
 import type { PlanFeature } from "./featureList";
+import type { Blueprint } from "./blueprints";
 import { buildSeamGraph as buildPlanSeamGraph } from "../../lib/planSeamGraph";
 import { buildMcpServers, type McpInstallState } from "./mcpPaneData";
 import type { ExtensionDef } from "../../lib/extensions";
@@ -51,6 +52,9 @@ export interface BuildProjectPaneInput {
   mcpInstallState?: McpInstallState;
   /** Features defined in the Features stage (parsed from features.json) (#…). */
   features?: PlanFeature[];
+  /** The in-progress blueprint an authoring project is designing (#923) — passed through to the
+   *  pane so the authoring stages can render it. */
+  authoredBlueprint?: Blueprint;
   sections: Section[];
   /** Context-file names the project has explicitly pinned in the pane (from the
    *  store). When present it drives each context file's `pinned` instead of the
@@ -339,6 +343,7 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     skills: input.skills ?? [],
     mcpServers: buildMcpServers(input.extensions ?? [], input.projectKey ?? "", input.fleet, input.mcpInstallState),
     features: input.features ?? [],
+    authoredBlueprint: input.authoredBlueprint,
     seamGraph: buildPlanSeamGraph(input.issues),
   };
 }

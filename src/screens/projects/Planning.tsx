@@ -49,7 +49,11 @@ import { buildProjectPaneData } from "./projectPaneData";
 // not a hardcoded stage list.
 import { derivePlanStageState, planStateToSignals, pendingStageConfirms } from "./planStageDerive";
 import { findPlanGaps } from "./lintPlan";
-import { mkSection, planSectionsComplete, type BlueprintSection } from "./blueprints";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, AUTHORING_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./blueprints";
+import { coerceBlueprint, blueprintToManifest } from "./blueprintShare";
+import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "./blueprintSkills";
+import { buildMcpLibrary } from "./blueprintMcp";
+import { publishGist } from "../../lib/extensions/gist";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, sectionForPhase } from "./focusedPlan";
 import { featureSectionsToIssues } from "./planFeatures";
 import { nextInjection, isStepDelivered, flattenPrompt } from "./plannerConductor";
@@ -269,10 +273,12 @@ export function Planning({ visible }: { visible: boolean }) {
     activeProjectRepos,
     projectLocalRepos,
     planSections, planConfirmedSections,
+    planAuthoredBlueprint, importBlueprint, setAuthoredBlueprint,
     planFleet,
     projectKeyAlias,
     pinnedContext,
     blueprints, activeBlueprintId, planStageConfig,
+    projectBlueprintId, setProjectBlueprintId,
     uiScreens, uiApproved, planAutomations,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
     togglePinnedContext,
@@ -283,6 +289,7 @@ export function Planning({ visible }: { visible: boolean }) {
   } = useAppStore();
   const autoPlanWithClaude = useAppStore(s => s.autoPlanWithClaude);
   const claudeApiKey = useAppStore(s => s.claudeApiKey);
+  const skillDefs = useAppStore(s => s.skills);
   // The extensions store drives the MCP stage pane (#878); the base dir is read on demand.
   const extensions = useAppStore(s => s.extensions);
 
@@ -297,6 +304,28 @@ export function Planning({ visible }: { visible: boolean }) {
   const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
   const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
+  // A project is bound to the blueprint it was created with (#647/#923): `projectBlueprintId`
+  // records it; the GLOBAL `activeBlueprintId` is only the fallback (default for a brand-new
+  // project that hasn't been bound yet). Resolving per-project here is what keeps an existing
+  // project on its own blueprint when the global active changes (or resets to default on restart)
+  // — instead of silently reverting to the default stage set.
+  // A project that has a DESIGNED blueprint (blueprint.json / the <blueprint> tag) IS an authoring
+  // project — resolve it to the authoring lifecycle even if its recorded binding is stale (e.g. a
+  // legacy project bound to "default" before authoring set per-project bindings) (#923). Otherwise
+  // resolve the project's own recorded blueprint, falling back to the global active only when the
+  // project hasn't been bound yet — what keeps an existing project on its blueprint across global /
+  // version changes (or a restart that resets the active to default) instead of reverting to default.
+  const isAuthoredProject = !!planAuthoredBlueprint[effectiveProjectId];
+  const effectiveBlueprintId = isAuthoredProject
+    ? AUTHORING_BLUEPRINT_ID
+    : (projectBlueprintId[effectiveProjectId] ?? activeBlueprintId);
+  // Bind the project to its blueprint the first time it's planned — so it never drifts later. Skip
+  // authoring projects (the poll binds them to the authoring lifecycle); once recorded, it wins.
+  useEffect(() => {
+    if (effectiveProjectId && !projectBlueprintId[effectiveProjectId] && activeBlueprintId && !isAuthoredProject) {
+      setProjectBlueprintId(effectiveProjectId, activeBlueprintId);
+    }
+  }, [effectiveProjectId, projectBlueprintId, activeBlueprintId, setProjectBlueprintId, isAuthoredProject]);
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
@@ -375,7 +404,8 @@ export function Planning({ visible }: { visible: boolean }) {
   const sections = useMemo<Section[]>(() => {
     const keys = new Set<string>(ANCHOR_KEYS);
     for (const k of Object.keys(savedSections)) {
-      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY) keys.add(k);
+      // `blueprint` is the authored-blueprint JSON (#923), not a discovery section — never a card.
+      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== "blueprint") keys.add(k);
     }
     const { project, repos } = groupSections([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
@@ -495,12 +525,13 @@ export function Planning({ visible }: { visible: boolean }) {
       repos:    publishRepos,
       sections,
       features: planFeatures,
+      authoredBlueprint: planAuthoredBlueprint[effectiveProjectId],
       pinned:   pinnedContext[effectiveProjectId],
       extensions,
       projectKey: effectiveProjectId,
       mcpInstallState,
     }),
-    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, extensions, mcpInstallState],
+    [planFleet, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, extensions, mcpInstallState],
   );
 
   // Probe each downloadable MCP server's on-disk state so the pane opens with real status
@@ -532,36 +563,36 @@ export function Planning({ visible }: { visible: boolean }) {
   // scopes existing, or adds); clones the downloadable (first-party) ones like the <mcp_assign>
   // handler. Re-runs when the project or the blueprint's attached-MCP set changes.
   const bpMcpKey = useMemo(() => {
-    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    const bp = blueprints.find(b => b.id === effectiveBlueprintId);
     return bp ? collectBlueprintMcp(bp).join("\n") : "";
-  }, [blueprints, activeBlueprintId]);
+  }, [blueprints, effectiveBlueprintId]);
   useEffect(() => {
     if (!effectiveProjectId || !bpMcpKey) return;
     const store = useAppStore.getState();
-    const bp = store.blueprints.find(b => b.id === activeBlueprintId);
+    const bp = store.blueprints.find(b => b.id === effectiveBlueprintId);
     if (!bp) return;
     for (const name of applyBlueprintMcp(store, bp, effectiveProjectId, store.bscBaseDir)) {
       const link = catalogLink(name);
       if (link) invoke("mcp_clone", { name: repoNameFromLink(link), url: link }).catch(() => {});
     }
-  }, [bpMcpKey, effectiveProjectId, activeBlueprintId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bpMcpKey, effectiveProjectId, effectiveBlueprintId]);
 
   // Write the active blueprint's attached SKILLS to the project hub's skills.md (#636 — the write
   // that was built but never wired). inject_skills (Rust) inlines that file into each worker's
   // CLAUDE.local.md and the planner reads it, so this is the skills counterpart to the MCP launch
   // wiring above. No-op when nothing is attached. Re-runs on project / attached-skill-set change.
   const bpSkillKey = useMemo(() => {
-    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    const bp = blueprints.find(b => b.id === effectiveBlueprintId);
     return bp ? collectBlueprintSkillIds(bp).join("\n") : "";
-  }, [blueprints, activeBlueprintId]);
+  }, [blueprints, effectiveBlueprintId]);
   useEffect(() => {
     if (!effectiveProjectId) return;
     const store = useAppStore.getState();
-    const bp = store.blueprints.find(b => b.id === activeBlueprintId);
+    const bp = store.blueprints.find(b => b.id === effectiveBlueprintId);
     if (!bp) return;
     void writeBlueprintSkillContext({ projectKey: effectiveProjectId, blueprint: bp, skills: store.skills, kb: store.kbBlocks })
       .catch((e) => console.warn("writeBlueprintSkillContext failed:", e));
-  }, [bpSkillKey, effectiveProjectId, activeBlueprintId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bpSkillKey, effectiveProjectId, effectiveBlueprintId]);
 
   // ── MCP stage handlers (#878) ──────────────────────────────────────────────
   const onToggleMcp = useCallback((id: string) => useAppStore.getState().toggleExtension(id), []);
@@ -648,10 +679,10 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, confirmedSet]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
-    const bp = blueprints.find(b => b.id === activeBlueprintId);
+    const bp = blueprints.find(b => b.id === effectiveBlueprintId);
     if (bp) return bp.sections;
     return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
-  }, [blueprints, activeBlueprintId, stageConfig]);
+  }, [blueprints, effectiveBlueprintId, stageConfig]);
   // lint-as-gate (#897 Phase 4b — lint-plan folded into the declarative gate). A WRITTEN section
   // (drafted/confirmed; pending ones aren't authored yet) must not carry a deliberate "fill this
   // in later" marker (TODO / TBD / FIXME / XXX / TKTK). Scanned ONLY over sections that belong to
@@ -664,7 +695,26 @@ export function Planning({ visible }: { visible: boolean }) {
     for (const s of sections) if (s.state !== "pending" && enabled.has(s.k)) written[`${s.k}.md`] = s.content ?? "";
     return findPlanGaps(written).some((g) => g.endsWith("unresolved placeholder"));
   }, [sections, planSecs]);
-  const signals = useMemo(() => ({ ...planStateToSignals(stageState), hasPlanGaps }), [stageState, hasPlanGaps]);
+  // Blueprint-authoring lifecycle (#923): this project DESIGNS a blueprint (the deliverable) rather
+  // than building software. The in-progress blueprint arrives via the planner's <blueprint> tag.
+  const activeBlueprint = useMemo(() => blueprints.find(b => b.id === effectiveBlueprintId), [blueprints, effectiveBlueprintId]);
+  const isAuthoring = isAuthoringBlueprint(activeBlueprint);
+  // Blueprint switching (#923): only a greenfield project may switch, and only to a transform/harden
+  // lifecycle. Offer the valid targets in a "switch lifecycle" control.
+  const switchTargets = useMemo(
+    () => blueprints.filter(b => canSwitchBlueprint(activeBlueprint, b)),
+    [blueprints, activeBlueprint]);
+  const canSwitch = canChangeBlueprint(activeBlueprint) && switchTargets.length > 0;
+  const [switchOpen, setSwitchOpen] = useState(false);
+  const authoredBp = planAuthoredBlueprint[effectiveProjectId];
+  // Signals the authoring stages' gates read (name+category, stage count, validity).
+  const authoringSig = useMemo(() => authoringSignals(authoredBp), [authoredBp]);
+  // Pickable libraries for the Capabilities stage's skill + MCP pickers.
+  const authorSkillLib = useMemo(() => buildSkillLibrary(skillDefs, kbBlocks), [skillDefs, kbBlocks]);
+  const authorMcpLib = useMemo(() => buildMcpLibrary(extensions), [extensions]);
+  const signals = useMemo(
+    () => ({ ...planStateToSignals(stageState), hasPlanGaps, ...(isAuthoring ? authoringSig : {}) }),
+    [stageState, hasPlanGaps, isAuthoring, authoringSig]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
   // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user
@@ -672,7 +722,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const phases = useMemo(() => phasesFrom(planSecs, signals), [planSecs, signals]);
   const focusActiveIdx = useMemo(() => activeIndex(phases), [phases]);
   const [focusSel, setFocusSel] = useState<number | null>(null);
-  useEffect(() => { setFocusSel(null); }, [effectiveProjectId, activeBlueprintId]);
+  useEffect(() => { setFocusSel(null); }, [effectiveProjectId, effectiveBlueprintId]);
   const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, phases.length);
   const focusGateReady = useMemo(() => currentGateReady(planSecs, signals), [planSecs, signals]);
   const planComplete = useMemo(() => planSectionsComplete(planSecs, signals), [planSecs, signals]);
@@ -749,7 +799,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // silently reverted a refactor/transform plan to the greenfield stage set. (#A — restored.)
   const stageIdsFor = (key: string): string[] => {
     const st = useAppStore.getState();
-    const bp = st.blueprints.find(b => b.id === st.activeBlueprintId);
+    // Resolve the project's OWN blueprint (#647/#923), falling back to the global active only when
+    // the project hasn't been bound — so an existing project keeps its stage set across version /
+    // active-blueprint changes instead of reverting to the default greenfield stages.
+    const bpId = st.projectBlueprintId[key] ?? st.activeBlueprintId;
+    const bp = st.blueprints.find(b => b.id === bpId);
     if (bp) return bp.sections.filter(s => s.enabled).map(s => s.key);
     return enabledOrderedStages(st.planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
   };
@@ -873,7 +927,7 @@ export function Planning({ visible }: { visible: boolean }) {
     pendingRef.current = null;
     setNudgeStep(null);
   }, []);
-  useEffect(() => { resetConductor(); }, [effectiveProjectId, activeBlueprintId, resetConductor]);
+  useEffect(() => { resetConductor(); }, [effectiveProjectId, effectiveBlueprintId, resetConductor]);
   // Re-send the current step (the nudge action + manual override): drop it from delivered + clear
   // pending/nudge so the next tick re-injects it.
   const resendCurrentStep = useCallback(() => {
@@ -976,6 +1030,7 @@ export function Planning({ visible }: { visible: boolean }) {
     const kbSnapshot      = kbBlocks;
     const repoSnapshot    = linkedRepos;  // string[] of full_names
     const isExistingSnap  = isExisting;
+    const isAuthoringSnap = isAuthoring;
     const projNameSnap    = activeProjectName;
     const projNumberSnap  = activeProjectNumber;
     const pitchSnap       = planningPitch;
@@ -1175,6 +1230,24 @@ export function Planning({ visible }: { visible: boolean }) {
           bufRef.current = stripMcpAssigns(bufRef.current);
         }
 
+        // ── <blueprint>{…JSON…}</blueprint> — the blueprint an AUTHORING project is designing (#923).
+        // The planner re-emits the full JSON as the design firms up; we validate with the same
+        // coerceBlueprint the import path uses (fresh uids, defensive coercion) and store it. The
+        // focused pane renders it and the Review stage publishes it to a gist. Take the LAST complete
+        // tag in the buffer (the most recent emission wins).
+        const bpRe = /<blueprint\s*>([\s\S]*?)<\/blueprint>/g;
+        let lastBpBody: string | null = null;
+        while ((m = bpRe.exec(bufRef.current)) !== null) lastBpBody = m[1];
+        if (lastBpBody !== null) {
+          try {
+            // Allow a section-less blueprint: at the Purpose stage the planner emits its identity
+            // (name/category) before any stages exist (#923).
+            const parsed = coerceBlueprint(JSON.parse(lastBpBody.trim()), { allowEmptySections: true });
+            if (parsed) useAppStore.getState().setAuthoredBlueprint(projIdSnap, parsed);
+          } catch { /* incomplete/invalid JSON — ignore; the planner re-emits */ }
+          bufRef.current = bufRef.current.replace(/<blueprint\s*>[\s\S]*?<\/blueprint>/g, "");
+        }
+
         // Cap buffer to prevent unbounded growth while preserving any partial
         // in-progress tag that hasn't received its closing counterpart yet.
         const MAX_BUF = 120_000;
@@ -1213,6 +1286,7 @@ export function Planning({ visible }: { visible: boolean }) {
           githubLogin:   ghLoginSnap,
           githubName:    ghNameSnap,
           enabledStages: stageIdsFor(projIdSnap), // scope the planner CLAUDE.md to the blueprint (#A)
+          authoring:     isAuthoringSnap,         // use the blueprint-author intro (#923)
         },
       ).catch((e: unknown) => {
         console.error("workspace setup failed:", e);
@@ -1322,8 +1396,10 @@ export function Planning({ visible }: { visible: boolean }) {
   // to the store drives the derived `sections`/`skipped` — confirmed sections
   // stay frozen. This file poll is more reliable than the raw <plan_update>
   // stream and is what surfaces brand-new topics as their own cards.
+  const lastBpJsonRef = useRef<string>("");
   useEffect(() => {
     if (!visible) return;
+    lastBpJsonRef.current = ""; // reset the blueprint.json change-guard on project switch
 
     const poll = async () => {
       try {
@@ -1336,6 +1412,28 @@ export function Planning({ visible }: { visible: boolean }) {
         const confirmed = new Set(store.planConfirmedSections[effectiveProjectId] ?? []);
 
         for (const [rawKey, content] of entries) {
+          // The authoring planner writes `blueprint.json` to the hub — the reliable channel (like
+          // fleet.json), more dependable than the inline <blueprint> tag (#923). Parse it into the
+          // in-progress blueprint so the authoring panes render the stages it designed. Guard on the
+          // file content changing so a 2s re-read can't clobber a live UI edit; it's NOT a plan section.
+          if (rawKey === "blueprint") {
+            if (content && content !== lastBpJsonRef.current) {
+              lastBpJsonRef.current = content;
+              try {
+                const parsed = coerceBlueprint(JSON.parse(content), { allowEmptySections: true });
+                if (parsed) {
+                  store.setAuthoredBlueprint(effectiveProjectId, parsed);
+                  // blueprint.json existing ⇒ this is an authoring project — pin its binding to the
+                  // authoring lifecycle so it can't revert to default on restart, correcting any stale
+                  // binding from a legacy session (#923).
+                  if (store.projectBlueprintId[effectiveProjectId] !== AUTHORING_BLUEPRINT_ID) {
+                    store.setProjectBlueprintId(effectiveProjectId, AUTHORING_BLUEPRINT_ID);
+                  }
+                }
+              } catch { /* mid-write / invalid JSON — ignore, the planner re-writes */ }
+            }
+            continue;
+          }
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
           const key = canonicalSectionKey(rawKey);
@@ -1380,6 +1478,7 @@ export function Planning({ visible }: { visible: boolean }) {
       githubLogin:   useAppStore.getState().githubUser?.login ?? "",
       githubName:    useAppStore.getState().githubUser?.name  ?? "",
       enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
+      authoring:     isAuthoring,                     // use the blueprint-author intro (#923)
     }).then(() => refreshSetupSig()).catch(console.error); // baseline updated (#756)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedRepos]);
@@ -1409,6 +1508,7 @@ export function Planning({ visible }: { visible: boolean }) {
         githubLogin: store.githubUser?.login ?? "",
         githubName:  store.githubUser?.name  ?? "",
         enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
+        authoring:   isAuthoring,                       // use the blueprint-author intro (#923)
       },
     ).catch((e: unknown) => { console.error("workspace setup failed:", e); return null; });
     refreshSetupSig(); // baseline updated (#756)
@@ -1455,6 +1555,22 @@ export function Planning({ visible }: { visible: boolean }) {
     const store = useAppStore.getState();
     await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
     store.clearPlan(effectiveProjectId);
+    store.setActiveProjectRepos([]);
+    setRepoLinkFullNames([]);
+    store.setPlanningContext(planningPitch, "");
+    void handleRestart();
+  }
+
+  // Switch the project to a transform/harden lifecycle (#923 — greenfield → transform|harden only;
+  // applyBlueprintToProject enforces the rule + re-seeds the stage config + clears the old progress).
+  // Wipe the on-disk plan files for the old stages, then restart the planner on the new blueprint.
+  async function doSwitchBlueprint(targetId: string) {
+    setSwitchOpen(false);
+    const store = useAppStore.getState();
+    const before = store.projectBlueprintId[effectiveProjectId];
+    store.applyBlueprintToProject(effectiveProjectId, targetId);
+    if (store.projectBlueprintId[effectiveProjectId] === before) return; // switch was refused — leave as-is
+    await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
     store.setActiveProjectRepos([]);
     setRepoLinkFullNames([]);
     store.setPlanningContext(planningPitch, "");
@@ -1575,7 +1691,44 @@ export function Planning({ visible }: { visible: boolean }) {
     }
   }
 
+  // Publish an AUTHORING project's deliverable (#923): land the designed blueprint in the library,
+  // then ship it to a gist per the chosen visibility — "local" stays library-only, "private-gist" is
+  // secret, "catalog" is public. No repos/board/milestones/issues/fleet.
+  async function publishAuthoredBlueprint() {
+    const bp = planAuthoredBlueprint[effectiveProjectId];
+    const valid = bp ? coerceBlueprint(bp) : null;
+    if (!valid) { setPublishPhase("error"); return; }
+    const visibility = valid.visibility ?? "private-gist";
+    if (visibility !== "local" && !githubToken) { setPublishPhase("error"); return; }
+    setGhStatus({ blueprint: { status: "running" } });
+    setPublishPhase("running");
+    try {
+      const store = useAppStore.getState();
+      // Land it in the local library so it's editable + re-publishable, and record which blueprint
+      // seeded this project so re-opening resolves to it.
+      const newId = importBlueprint(valid);
+      store.setProjectBlueprintId(effectiveProjectId, newId);
+      if (visibility === "local") {
+        setGhStatus({ blueprint: { status: "created", detail: `${valid.name} · saved to library` } });
+        setPublishPhase("done");
+        invoke("pty_write", { paneId, data: `[Blueprint "${valid.name}" saved to your local library.]\r` }).catch(console.error);
+        return;
+      }
+      // Bundle attached skill/KB content so the share is self-contained; MCP stays by reference.
+      const bundled = resolveBlueprintSkillPayloads(valid, store.skills, kbBlocks);
+      const res = await publishGist(githubToken, blueprintToManifest(valid, bundled), { public: visibility === "catalog" });
+      setGhStatus({ blueprint: { status: "created", detail: valid.name, url: res.htmlUrl } });
+      setPublishPhase("done");
+      const kind = visibility === "catalog" ? "public" : "secret";
+      invoke("pty_write", { paneId, data: `[Blueprint published to a ${kind} gist: ${res.htmlUrl}]\r` }).catch(console.error);
+    } catch (e) {
+      setGhStatus({ blueprint: { status: "error", detail: String(e) } });
+      setPublishPhase("error");
+    }
+  }
+
   async function handlePublish() {
+    if (isAuthoring) { await publishAuthoredBlueprint(); return; }
     if (!githubToken || publishRepos.length === 0) return;
     const token = githubToken;
 
@@ -2007,7 +2160,15 @@ _Auto-generated by base-studio-code planner._`,
         <button className="btn ghost danger" onClick={() => setShowClearConfirm(true)} title="Wipe this project's plan and restart the planner (#664)">
           clear plan
         </button>
-        {(() => {
+        {/* Greenfield → transform/harden lifecycle switch (#923). */}
+        {canSwitch && (
+          <button className="btn ghost" onClick={() => setSwitchOpen(true)} title="Move this project to a transform or harden lifecycle">
+            switch lifecycle
+          </button>
+        )}
+        {/* No execution side for an authoring blueprint (#923) — its deliverable is the published
+            blueprint gist, so there are no repos to triage / no fleet to launch. */}
+        {!isAuthoring && (() => {
           // Full gate (#444/#551): plan complete + published + repos + fleet, not starting.
           const gate = {
             published: !!activeProjectId,
@@ -2138,6 +2299,8 @@ _Auto-generated by base-studio-code planner._`,
                 // Once a board exists, the publish action reads as "Update GitHub" — a re-sync of
                 // the plan, not a first publish (handlePublish sets activeProjectId on create) (#823).
                 published: !!activeProjectId,
+                // An authoring project publishes a gist, not a GitHub board (#923).
+                publishLabel: isAuthoring ? "⎙ Publish blueprint" : undefined,
                 onBack: () => setFocusSel(clampIndex(focusSelectedIdx - 1, phases.length)),
                 onPrimary: () => {
                   if (focusFooter.kind === "publish") { void handlePublish(); return; }
@@ -2151,6 +2314,17 @@ _Auto-generated by base-studio-code planner._`,
                   }
                   setFocusSel(null); // re-follow the live phase
                 },
+                // Blueprint-authoring wiring (#923): the interactive editor views write edits back to
+                // the stored blueprint (kept in sync with the planner's <blueprint> tag) + publish.
+                authoring: isAuthoring ? {
+                  onChange: (bp: Blueprint) => setAuthoredBlueprint(effectiveProjectId, bp),
+                  skillLibrary: authorSkillLib,
+                  mcpLibrary: authorMcpLib,
+                  onPublish: () => { void handlePublish(); },
+                  // The focused pane only renders while idle; the publish-progress header takes over
+                  // once publishing starts, so "published" is always false within this view.
+                  published: false,
+                } : undefined,
               }}
             />
           ) : (
@@ -2220,6 +2394,31 @@ _Auto-generated by base-studio-code planner._`,
         >
           This wipes the entire plan for this project — sections, stage config, the fleet, and the
           on-disk plan files — then restarts the planner with a blank slate. This can't be undone.
+        </Dialog>
+      )}
+
+      {switchOpen && (
+        <Dialog
+          title="Switch lifecycle"
+          onDismiss={() => setSwitchOpen(false)}
+          actions={<button className="btn" onClick={() => setSwitchOpen(false)}>cancel</button>}
+        >
+          <div style={{ marginBottom: 12, color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
+            Move this project on to a new lifecycle. This re-seeds the plan for the chosen lifecycle and
+            <b> clears the current plan + progress</b> — this can't be undone. Pick a target:
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {switchTargets.map((bp) => (
+              <button key={bp.id} className="btn ghost" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3, height: "auto", padding: "10px 12px", textAlign: "left" }}
+                onClick={() => void doSwitchBlueprint(bp.id)}>
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "var(--fg)", fontWeight: 600 }}>{bp.name}</span>
+                  <span className="tag" style={{ fontSize: 9 }}>{blueprintCategory(bp)}</span>
+                </span>
+                {bp.desc && <span style={{ color: "var(--fg-dim)", fontSize: 11, fontFamily: "var(--sans)" }}>{bp.desc}</span>}
+              </button>
+            ))}
+          </div>
         </Dialog>
       )}
     </>
