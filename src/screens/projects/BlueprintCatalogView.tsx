@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import "../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
-import { hue, tint, DEFAULT_GIST_SOURCE } from "./blueprintCatalog";
+import { hue, tint, DEFAULT_GIST_SOURCE, gistUpdateAvailable } from "./blueprintCatalog";
 import { listBlueprintGists, type BlueprintGistItem } from "../../lib/extensions/gist";
 
 export interface CatalogViewProps {
@@ -13,9 +13,13 @@ export interface CatalogViewProps {
   source?: string;
   /** GitHub token — optional (public gists need none; raises rate limit + shows secret gists). */
   token?: string;
-  /** Gist ids already imported into the library (button shows ✓ Imported). */
-  importedIds?: string[];
-  onImport: (gistId: string) => void;
+  /** Gist id → the locally-imported copy's recorded upstream `updatedAt` (#955). A present entry
+   *  means it's already imported (no duplicate download); a newer item `updatedAt` ⇒ out of date,
+   *  so an "Update" button renders instead of "✓ Imported". */
+  importedById?: Record<string, { updatedAt?: string }>;
+  /** Import a new gist, OR update an already-imported one in place (dedupe by gist id). The current
+   *  gist `updatedAt` is passed so it's recorded for the next freshness check. */
+  onImport: (gistId: string, updatedAt?: string) => void;
   onBack: () => void;
   onManualImport: () => void;
 }
@@ -33,7 +37,7 @@ function timeAgo(iso: string): string {
 
 const hueFor = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
 
-export function CatalogView({ source = DEFAULT_GIST_SOURCE, token = "", importedIds = [], onImport, onBack, onManualImport }: CatalogViewProps) {
+export function CatalogView({ source = DEFAULT_GIST_SOURCE, token = "", importedById = {}, onImport, onBack, onManualImport }: CatalogViewProps) {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<BlueprintGistItem[] | null>(null); // null = loading
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -84,8 +88,13 @@ export function CatalogView({ source = DEFAULT_GIST_SOURCE, token = "", imported
           {q ? "No blueprints match your search." : <>No blueprint gists found for <b>{source}</b>. Publish one, or import by URL / ID.</>}
         </div>
       ) : rows.map((c, i) => {
-        const imported = importedIds.includes(c.id);
+        const local = importedById[c.id];
+        const imported = !!local;
+        // Out of date: the gist was re-published after we imported it (#955).
+        const stale = imported && gistUpdateAvailable(c.updatedAt, local.updatedAt);
+        const busy = busyId === c.id;
         const h = hueFor(c.id);
+        const act = () => { setBusyId(c.id); onImport(c.id, c.updatedAt); setTimeout(() => setBusyId(null), 1200); };
         return (
           <div className="cat-row" key={c.id} style={{ animationDelay: i * 0.03 + "s" }}>
             <div className="ci" style={{ background: tint(h, 0.16), color: hue(h) }}>{c.name[0]?.toUpperCase() ?? "B"}</div>
@@ -96,10 +105,20 @@ export function CatalogView({ source = DEFAULT_GIST_SOURCE, token = "", imported
             </div>
             <span style={{ flex: 1 }} />
             <div style={{ display: "flex", gap: 7 }}>
-              <button className="btn sm primary" disabled={imported || busyId === c.id}
-                onClick={() => { setBusyId(c.id); onImport(c.id); setTimeout(() => setBusyId(null), 1200); }}>
-                {imported ? "✓ Imported" : busyId === c.id ? "importing…" : <><Ic n="cloud_download" size={13} /> Import</>}
-              </button>
+              {stale ? (
+                // Already imported but the upstream gist is newer — offer an in-place update.
+                <button className="btn sm" disabled={busy} title="A newer version is available upstream" onClick={act}
+                  style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                  {busy ? "updating…" : <><Ic n="refresh" size={13} /> Update</>}
+                </button>
+              ) : imported ? (
+                // Already imported and up to date — no duplicate download.
+                <button className="btn sm" disabled>✓ Imported</button>
+              ) : (
+                <button className="btn sm primary" disabled={busy} onClick={act}>
+                  {busy ? "importing…" : <><Ic n="cloud_download" size={13} /> Import</>}
+                </button>
+              )}
             </div>
           </div>
         );
