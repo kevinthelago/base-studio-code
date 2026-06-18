@@ -19,6 +19,13 @@ function routeInvoke(opts: { localProjects?: unknown; deleteRejects?: boolean } 
   }) as unknown as typeof invoke);
 }
 
+// The draft delete now lives behind the card's ⋯ menu (Projects-tab redesign): open it, then
+// click "delete draft".
+function clickDeleteDraft() {
+  fireEvent.click(screen.getByTitle("More options"));
+  fireEvent.click(screen.getByText("delete draft"));
+}
+
 describe("ProjectsList — draft delete", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
@@ -33,7 +40,7 @@ describe("ProjectsList — draft delete", () => {
     routeInvoke({ localProjects: [] });
     render(<ProjectsList />);
     await screen.findByText("My Draft");
-    fireEvent.click(screen.getByTitle("Delete draft (removes its local plan files)"));
+    clickDeleteDraft();
     await waitFor(() => expect(screen.queryByText("My Draft")).toBeNull());
     expect(useAppStore.getState().localDraftProjects.my_draft).toBeUndefined();
   });
@@ -42,7 +49,7 @@ describe("ProjectsList — draft delete", () => {
     routeInvoke({ localProjects: [], deleteRejects: true });
     render(<ProjectsList />);
     await screen.findByText("My Draft");
-    fireEvent.click(screen.getByTitle("Delete draft (removes its local plan files)"));
+    clickDeleteDraft();
     // The card stays and an inline error appears; the app does not crash.
     await waitFor(() => expect(screen.getByText(/Couldn't delete the folder/)).toBeTruthy());
     expect(screen.getByText("My Draft")).toBeTruthy();
@@ -53,7 +60,7 @@ describe("ProjectsList — draft delete", () => {
     render(<ProjectsList />);
     // The draft from the store still renders; the null on-disk list must not throw.
     await screen.findByText("My Draft");
-    fireEvent.click(screen.getByTitle("Delete draft (removes its local plan files)"));
+    clickDeleteDraft();
     await waitFor(() => expect(screen.queryByText("My Draft")).toBeNull());
   });
 });
