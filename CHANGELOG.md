@@ -3,16 +3,167 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-> **Versioning:** the `0.x` series is a development preview. **`1.0.0` will be the
-> first official, general-availability release.** Until then, versions are bumped
-> conservatively so `1.0.0` stays a meaningful milestone.
+> **Versioning:** `1.0.0` was the first official, general-availability release. The `1.0.x`
+> line is bumped conservatively — patch for fixes, minor for feature releases. The full
+> release history lives in [GitHub Releases](https://github.com/kevinthelago/base-studio-code/releases).
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-06-18
+
 ### Added
-- ESLint + Prettier tooling with CI enforcement
-- MIT license, README, CONTRIBUTING, SECURITY docs
-- Dependabot for automated dependency updates
+- **Deploy** planning stage + pane, right after Repos — define how each service ships (target/hosting per service, environment ladder, CI/CD pipeline, config + secrets, release & rollback, health); the planner emits it as a `<deploy_config>` tag and it publishes as deployment issues owned by a `deploy` stream (#919)
+- Blueprint-authoring lifecycle — design a reusable blueprint in the planner and publish it to a gist; no fleet/triage (#923)
+- Data blueprints — **Data migration** and **Data collection** (web scraping / dataset fetch) into a canonical Data Model
+- Enterprise production-readiness dimensions baked into the planner (observability/SLOs, reliability + DR, data governance, release strategy, supply-chain integrity, …); accessibility + regulatory compliance routed to the Compliance MCP server
+
+### Changed
+- Projects tab redesigned into **Drafts / Projects / Blueprints** sections with search + recency/name sort; clicking a blueprint opens the planner
+- Published projects are flagged in place with a `.published` marker instead of relocating the hub directory (#922)
+- Optional planning stages are user-skippable instead of auto-skipped (#921)
+
+### Removed
+- Leftover mock/sample data from shipping screens (the `acme/payments` sample fleet, the fabricated risk register, dead KPI/plan-session samples)
+
+## [1.0.1] — 2026-06-16
+
+### Added
+- MCP servers throughout: a planning MCP Servers stage where the planner downloads + configures servers for the fleet, version checks with one-click download/in-place update, first-party servers in the Extensions catalog, and MCP Analytics + Hook Analytics tabs fed by real `mcp.log`/`hooks.log` telemetry (#878, #876, #885, #883, #879, #865, #867)
+- Data platform foundation — `crates/data` DuckDB Data Model store + connector framework, a Data Model authoring primitive/library/editor, a Tauri bridge to load CSVs, and multi-source reconciliation with per-field lineage (read-only migration) (#780, #781, #784, #785)
+- Repo presentation scaffolded at publish (topics, README + badges, community files) and per-stream GitHub assignees on published issues (#848, #847)
+- Rebindable keyboard shortcuts — console actions, screen-nav/zoom, and digit-range leader bindings in Settings → Keyboard (#771, #773)
+- AI CLI pane provider abstraction (#564), FCM push to the paired mobile app on `user_request` (#846), and a planner-driven blueprint-authoring lifecycle plus reliability eval harness (#568, #850)
+
+### Changed
+- Rail nav reordered; **Agents → Permissions**; Extensions page reorganized into **MCP** with Hooks moved into Automations (#872, #865)
+- Large `lib.rs` decomposition — extracted planner, pty, shell, github, oauth, config, githooks, tokens, docstore, and bsc helper modules; moved planner/document templates into `include_str!` markdown files (#758, #769)
+- Focused planner pane filled out — full Repos/Features/Context bodies, one-click whole-stage approval, real token budgets, no mock fallbacks (#674, #809, #811, #813); UI file-drop pane stages design files into `design/` (#829)
+- Planner posture defaults to the most complete, production-grade solution (#850)
+
+### Fixed
+- Linked repos no longer vanish on restart — union both project keys (#881, #833); local-project delete, serialization, and ErrorBoundary fixes (#789, #791, #793, #874)
+- Planner gate/section fixes — canonical key naming, context-stage gate, why-a-gate-is-blocked messaging, optional-stage skip nav (#803, #787, #797, #805, #676)
+- `ci(rust)` strip dependency debug info to fix the DuckDB link SIGBUS (#795)
+
+### Removed
+- Generic third-party MCP servers pruned from the catalog (#870)
+
+## [1.0.0] — 2026-06-11
+
+### Added
+- **GA release.** Planning autopilot — "Automate planning with Claude" as a Settings feature, running under its own minimal agent role with scripted/random/none strategies (#682, #702)
+- Per-stream profile assignment via dropdown and a minimal app-session role for the Blueprint Assistant (#681, #680)
+- Opt-in per-IP relay rate-limiting via KV (#473)
+
+### Changed
+- Blueprints made data-driven — optional skills/automations/UI/repos stages on the default blueprint, sequenced progress rail (V4) with banked-ahead + distinct "skipped" states, explicit Use-button selection with active badge (#700, #698, #676, #668, #662)
+- Planner brief driven by the blueprint's real stages; reset/clear starts a fresh Claude session and unlinks repos (#666, #664, #665)
+
+### Fixed
+- Grading consistency — unreviewed dead-code candidates no longer read as a clean A; one grade-color source of truth across chips and bars (#688, #686)
+- Permissions gate checks the assigned profile and generates profiles in-planning (#696); numerous rail-rendering fixes (#668)
+- Release workflow handoff/docs accuracy (#108)
+
+## [0.9.71] — 2026-06-09
+
+### Fixed
+- Planning-page polish — dropped restart/preview buttons, gated pipeline screens, hid empty context, and tagged greenfield built-ins `origin=built-in` (#654, #658)
+- `clear plan` also deletes the `.ui-skeleton` dir and wipes all plan state via a confirm modal (#650)
+
+### Added
+- Focused planner pane — phase model, shell components, reused section bodies, identity header, and pulsing incomplete phases in the stepper (#652)
+- Switch/reset a project's plan to a different blueprint; authored the transform blueprints; lifecycle categories + create/operate mode + library search & filter (#647, #645)
+
+## [0.9.7] — 2026-06-09
+
+### Added
+- **Blueprints page** — full library + editor: model/registries, inline-SVG icons, cards/hero/stats, stage-rail detail, catalog + gist modals, and a "Design with Claude" assistant drawer; real gist revisions for History + Sync (#609, #622, #624)
+- **Skills** attached to blueprint stages — model + editor, injected into both the planner context and worker context at launch; the assistant can author + attach new ones (#636)
+- **Extensions sharing** — extension envelope + blueprint CRUD, gist publish/install transport, blueprint export/import UI, and a capability-gated sandbox runtime for code pipelines (#598)
+- **Pipelines** — pipeline runtime engine (registry/dispatch/run state), render-preview pipeline (esbuild-wasm → sandboxed iframe), lint-plan/file-intake pipelines, and stage gates that block until a gate pipeline passes (#529, #531, #534, #604, #532)
+- **Plan grading** — grader contract + deterministic rubric grader, LLM "Claude review" rubric grader, report-card pipeline screen with per-section letter grades for issues/milestones/repos (#615, #445)
+- Refactor & Cleanup blueprint — scan-dead-code, verify-removal gate, refactor-unit generator, and fleet launch of cleanup units (#626)
+- Stage registry + per-project stage config, Blueprints tab, macro N-bar planning progress; General/Appearance/Keyboard settings pages; Skills page; per-screen UI approval with preview (#515, #485–#488, #495, #546)
+
+### Changed
+- Planner `CLAUDE.md` scoped to the blueprint's enabled stages; context-stale badge + restart `--continue`; feature-discovery gate (#542, #175, #490)
+- Projects list reworked to plan-first; GitHub Projects board moved to the GitHub page (#499, #498); README rebranded as a CDE (#571)
+
+### Fixed
+- GitHub device-flow connection survives navigating away from Settings (#594); planner version-prefixed phase-tag matching + publish pre-flight gate (#550)
+
+## [0.9.6] — 2026-06-04
+
+### Added
+- Per-repo feature plans, an MCP-assign planning step, and issuer coordination emitters (#177, #174, #376)
+- Host-env Diagnostics view + console-shell selection, plus a backend preflight probe for missing prerequisites (#446, #447, #456)
+- Relay "Test relay" `/health` probe button in Settings and an enforced absolute room TTL (#197)
+
+### Fixed
+- Planning adopts an existing GitHub board on re-sync and locks Triage until published; unified the canonical project key + title guard through shared helpers (#444, #380)
+- Stable per-tab `projectKey` — fleet/triage tabs reuse by key, not name (#457)
+
+## [0.9.5] — 2026-06-03
+
+### Fixed
+- Request the `project` scope (`read:project`) in GitHub SSO/PAT so the project board is readable (#467)
+
+## [0.9.4] — 2026-06-03
+
+### Added
+- Unified draggable + tear-off tab system across all pages (#461, #463, #430)
+- Knowledge Base UX rework + document-assignment model with fleet-runtime reliability improvements (#212)
+- Per-session token + cost accounting backend (#416); planner workshop step to dissect hard problems into reusable Skills (#371)
+
+### Fixed
+- External links open via the Tauri opener plugin (#460); live GitHub progress wired into `ProjectPane` (#429)
+
+## [0.9.3] — 2026-06-03
+
+### Added
+- GitHub OAuth Device Flow — secret-less SSO (#431)
+
+### Fixed
+- macOS release builds ad-hoc signed so the `.dmg` is produced (#440); Windows console-window flood suppressed + GitHub SSO enabled (#433)
+
+## [0.9.2] — 2026-06-02
+
+### Added
+- Analytics suite — Fleet analytics page + shared chart primitives, Repo Pulse (repo progress/changes folded into Repositories), Fleet live worker board + GitHub-derived throughput/merge-queue/time-to-land panels (#401, #402, #412, #415)
+- **Skills** reusable capability library — new rail screen with real CRUD/persistence, session injection, planner channel, and invocation telemetry (leaderboard, success, trend) (#400, #404, #406)
+- Persistent achievements registry + Settings page (super-user fires once ever) (#396); live issue progression in the structure pane with persisted GitHub issue linkage (#393)
+
+### Changed
+- Projects portfolio summary moved into the GitHub screen (#421)
+- Tooling: dependency bumps (rand 0.10, snow 0.10, tokio-tungstenite 0.29, windows-sys, npm group) + CI gate job for develop branch protection (#419, #425)
+
+## [0.9.1] — 2026-06-01
+
+### Fixed
+- Self-merge + no-stop is the fleet runtime default (#382); guarded draft delete + unified project repo key (#380)
+
+### Added
+- Planning-defined integration strategy for the fleet (#378)
+
+## [0.9.0] — 2026-06-01
+
+### Added
+- **Project planning → fleet orchestration** — the adaptive planning model (typed-node tree + shaping), feature workshop driving granular agent-ready `PlanIssue`s, the `ProjectPane` v4 right-pane (sections, GitHub Structure, persisted perms/preset/flow/pins), publish adapter that runs a `PublishOp[]` against GitHub (one issue per `PlanIssue`, milestone per phase), and draft projects with a user-pressed "Sync to GitHub" (#201, #311, #335, #226, #379)
+- **The fleet** — per-agent git worktrees + multi-tab launch, a director protocol with immediate question/answer injection (bracketed-paste, restart-safe), workers that defer to the director, CI watcher that resumes a worker on completion, and per-agent flows (autonomy + push policy) generated into kickoff prose (#154, #369, #373, #297)
+- **Coordination + pipelines** — lost-wakeup-safe readiness core, `bsc-blocked --on` structured events, satisfy/fail emitters, the live Coordination inbox, always-on auto-wake, and a staged conductor (pipeline state machine, event driver, Pipelines lane) with roles composed onto the capability gate (#199, #220)
+- **Session security** — role-scoped session capabilities + role gate at launch, least-privilege permission profiles (persisted/assignable/enforced) with an Activity audit log via a PreToolUse hook, repo-scoped GitHub credentials, and file-tool confinement to the repo root (#219, #236, #255, #257, #158)
+- **Mobile tunnel + relay** — transport-agnostic protocol contract, zero-knowledge Cloudflare relay Worker + Durable Object, desktop relay dial-out with Noise IK crypto, relay-aware pairing QR, view-only-until-granted input, and live pane metadata push while paired (#240, #241, #242, #243, #253)
+- **Extensions (real)** — MCP servers + hooks wired into sessions with an empty-state catalog CTA (#33); automations scheduler engine with cron recurrence wired to the real screen (#142, #171); multi-agent planning fleets (#173)
+- Real structured GitHub Actions view from workflow YAML, real per-repo git hooks, drag-resizable repo sidebar (#141, #265, #267); easter-egg Super User achievement on >10 live agents (#365)
+
+### Changed
+- Planner is plan-only — scope-guarded `CLAUDE.md`, plan-only mandate, deep feature workshop, slow one-unit-at-a-time workshop with new/existing modes, research + grounded approaches folded into issues (#318, #316, #350, #363, #371)
+- Console execution surface — mount every tab's panes (CSS-hide inactive), pause `xterm.write` for hidden panes, scrollback budget by total mounted panes, persist `paneWasClaude` + auto-resume claude, cross-tab focus queue (#199 wiring)
+
+### Fixed
+- PTY process trees killed on app exit via a Windows Job Object; never silently fall back to `$HOME` when a session cwd is missing (#367); `GH_TOKEN` exported into agent shells so workers can push + open PRs (#362); rc helpers get trailing newlines so they don't glue together (#296)
+- Tunnel reliability — rustls ring `CryptoProvider` install (stops relay-dial panic), bounded dial timeout, connection-lifecycle logging (#274, #272, #270)
+- Tooling: CodeQL + dependency-audit workflows, per-OS Rust suite on Linux/macOS, release notes from merged PRs, path-conditional CI jobs (#198, #121, #167)
 
 ## [0.6.0] — 2026-05-27
 
@@ -20,6 +171,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Extensions screen (mock): manage MCP servers (first-party + third-party) and hooks — Installed/Catalog views, Global/Project/Console scope, per-project matrix, and a config drawer (#33)
 - Automations screen rebuilt (mock): Schedules list + deep editor (when/target/action/guard/history) and a filterable cross-schedule History tab; the old Commands tab folds into a schedule's action (#142)
 - Resizable panes on the Knowledge Base screen — drag the document-list width and the preview height above the terminal (#43)
+
+### Changed
+- Consolidated the roadmap into a version-based `PROJECT_PLAN.md` and README roadmap (#157, #155, #151)
 
 ## [0.5.1] — 2026-05-27
 
@@ -29,6 +183,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   never saw the interactive shell's functions, so triage sessions couldn't persist their
   "where we left off" checkpoint. The helper is now installed via an rc file + `BASH_ENV`
   (the hyphenated name can't be `export -f`'d), so every agent subshell can run it (#148).
+- Keep the Projects summary mounted instead of derendering it; gate the app shell on store hydration to stop the initial-render flash (#144, #143)
+
+### Added
+- ETag-validated in-memory cache for `github_request` with a memory window + token-expiry handling, and a TTL cache for `github_graphql` with windowed summary queries (#135)
+
+## [0.5.0] — 2026-05-27
+
+### Added
+- Project header rework — Plan/Triage CTAs + a triage rerun-confirm modal (#134)
+- Triage sessions checkpoint their own startup script (#133)
+- Cross-tab focus queue — cycling hops to the tab with the waiting console
+
+### Changed
+- Removed the repo/branch auto-detection display (#34)
+- Retired legacy focus-steal so the queue governs console focus; only pass `--continue` when Claude has prior history for the cwd
+
+## [0.4.0] — 2026-05-26
+
+### Added
+- Real iteration burn-down from the Projects V2 Iteration field
+
+### Fixed
+- Resolve Git Bash for sessions instead of WSL's `bash`
+
+### Changed
+- Adopt React 19, xterm 6, Vite 7; target dependabot at `develop` with grouped minor/patch updates
+
+## [0.3.0] — 2026-05-26
+
+### Added
+- Projects screen with live GitHub API, planning PTY, and board navigation; a guided-dynamic planner with per-repo planning and reliable kickoff; isolated workspace directories for planning + Knowledge Base sessions; unified session storage (`projects/{project}/{repo}`) (#57)
+- Triage sessions resume the repo's prior conversation (`claude --continue`)
+- Console focus queue — `Ctrl+Shift+N` steps through waiting agents with auto-advance on reply and a settings toggle
+- Pane maximize/minimize controls, terminal font zoom (`Ctrl++/-/0`), and chained-digit pane selection for panes 10+
+- Allow-Bash + deny-dangerous session security with a Knowledge Base Commands section (#57); time-window + state filters for the Roadmap tab (#59); Claude Config settings section for managing `CLAUDE.md` and permissions
+
+### Fixed
+- Self-heal a corrupt `~/.claude.json` and stop corruption from concurrent session launches; persist console sessions across screen navigation; debounce auto-focus so sessions stop ping-ponging the cursor (#58)
+- Projects list fixes — row ⋯ menu mousedown race, persisted in-app removal, and delete for web-deleted projects
 
 ## [0.2.0] — 2026-05-23
 
