@@ -44,7 +44,7 @@ import { catalogLink, repoNameFromLink, mcpRepoName } from "../../lib/mcpInstall
 import { type McpInstallState } from "./mcpPaneData";
 import { EXT_CATALOG } from "../../data/extensions";
 import { buildProjectPaneData } from "./projectPaneData";
-import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag } from "./deployConfig";
+import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChecks } from "./deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
@@ -1291,7 +1291,15 @@ export function Planning({ visible }: { visible: boolean }) {
           // Forgiving parse: extract the {…} object so stray prose / a leaked closing tag in the
           // body doesn't drop the whole config (#919 follow-up).
           const cfg = parseDeployConfigTag(lastDcBody);
-          if (cfg) useAppStore.getState().setPlanDeployConfig(projIdSnap, cfg);
+          if (cfg) {
+            useAppStore.getState().setPlanDeployConfig(projIdSnap, cfg);
+            // Diagnostic (#919): surfaces in the WebView DevTools console so a stuck Deploy gate is
+            // debuggable — confirms the tag was ingested + shows which readiness checks pass.
+            console.debug("[deploy_config] parsed for", projIdSnap, "→",
+              deployChecks(cfg).map((c) => `${c.id}:${c.ok ? "ok" : "MISSING"}`).join("  "));
+          } else {
+            console.debug("[deploy_config] tag detected but no JSON object parsed from its body");
+          }
           bufRef.current = bufRef.current.replace(/<deploy_config\s*>[\s\S]*?<\/deploy_config>/g, "");
         }
 
