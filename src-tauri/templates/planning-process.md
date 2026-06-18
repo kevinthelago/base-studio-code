@@ -323,7 +323,10 @@ feature/issue that carries it, and record any you deliberately skip in `context/
 - **Data governance** — reversible, zero-downtime schema migrations (with backfills), PII
   classification, retention/deletion (right-to-be-forgotten), and data-quality checks.
 - **Release strategy** — feature flags / kill switches, canary or blue-green rollout, automated
-  rollback, and migrations coordinated with deploys (distinct from merely "CI exists").
+  rollback, and migrations coordinated with deploys (distinct from merely "CI exists"). When the
+  blueprint has a **Deploy** stage (the Default does, right after Repos), this is captured there as
+  structured config — target/hosting per service, the env ladder, the CI/CD pipeline, secrets,
+  release & rollback, and health — which becomes deployment issues owned by a `deploy` stream.
 - **Supply-chain integrity** — SBOM generation, dependency/vuln scanning (SCA), signed artifacts +
   build provenance, and license compliance.
 - **Identity & secrets** — SSO (SAML/OIDC), SCIM provisioning, RBAC/ABAC, MFA where it applies, and
