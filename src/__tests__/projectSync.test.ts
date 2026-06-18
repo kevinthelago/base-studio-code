@@ -4,6 +4,7 @@ import {
   ensureGithubProject,
   canLaunchTriage,
   triageLockReason,
+  publishBlockReason,
   type GithubProjectRef,
   type Gql,
 } from "../lib/projectSync";
@@ -96,5 +97,17 @@ describe("canLaunchTriage / triageLockReason (#444/#551 triage gate)", () => {
   });
   it("planReady lock precedes publish lock in the reason", () => {
     expect(triageLockReason({ ...ok, planReady: false, published: false })).toMatch(/plan/i);
+  });
+});
+
+describe("publishBlockReason (#969 — no silent publish no-op)", () => {
+  it("is null when a token + at least one repo are present (publish can proceed)", () => {
+    expect(publishBlockReason({ hasToken: true, repoCount: 1 })).toBeNull();
+  });
+  it("blocks (with a reason) when no GitHub token is connected", () => {
+    expect(publishBlockReason({ hasToken: false, repoCount: 1 })).toMatch(/token/i);
+  });
+  it("blocks (with a reason) when no repository is linked — the Repos-less blueprint case", () => {
+    expect(publishBlockReason({ hasToken: true, repoCount: 0 })).toMatch(/repository/i);
   });
 });

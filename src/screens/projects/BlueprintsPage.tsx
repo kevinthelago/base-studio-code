@@ -22,7 +22,7 @@ import {
 } from "./BlueprintModals";
 import { blueprintToManifest, manifestToBlueprint, bundledSkillsFromManifest } from "./blueprintShare";
 import { resolveBlueprintSkillPayloads } from "./blueprintSkills";
-import { publishGist, updateGist, installFromGist, gistRevisions, installFromGistRevision } from "../../lib/extensions/gist";
+import { publishGist, updateGist, installFromGist, gistRevisions, installFromGistRevision, gistIdFromUrl } from "../../lib/extensions/gist";
 import { diffBlueprints, type DiffLine } from "./blueprintDiff";
 
 const freshSections = (sections: BlueprintSection[]): BlueprintSection[] =>
@@ -170,9 +170,9 @@ export function BlueprintsPage() {
   }
 
   // ── import a blueprint gist from the source (#923) ──
-  function importFromGistId(id: string) {
+  function importFromGistId(id: string, updatedAt?: string) {
     void resolveImport(id)
-      .then(importPreview)
+      .then((p) => importPreview(p, { updatedAt }))
       .catch((e) => toast(e instanceof Error ? e.message : String(e)));
   }
 
@@ -216,19 +216,40 @@ export function BlueprintsPage() {
     const bp = bpRes.blueprint;
     // Carry the full coerced blueprint + embedded skill content through the preview so import
     // preserves blueprint-wide skills/mcp/category/mode and reconstitutes the skills (#897).
-    return { name: bp.name, icon: bp.icon ?? bp.name[0]?.toUpperCase() ?? "B", h: bp.h ?? 70, sections: bp.sections, blueprint: bp, bundled: bundledSkillsFromManifest(r.manifest) };
+    // Record the source gist id (#955) so a re-import is recognized (dedupe → update in place).
+    return { name: bp.name, icon: bp.icon ?? bp.name[0]?.toUpperCase() ?? "B", h: bp.h ?? 70, sections: bp.sections, blueprint: bp, bundled: bundledSkillsFromManifest(r.manifest), gistId: gistIdFromUrl(ref) ?? undefined };
   }
-  function importPreview(preview: PreviewBlueprint) {
+  function importPreview(preview: PreviewBlueprint, opts: { updatedAt?: string } = {}) {
     // Reconstitute the share's embedded skills into the library first (#897 Phase 5b) so the
     // blueprint's skill refs resolve once it's imported.
     if (preview.bundled?.length) installBundledSkills(preview.bundled);
     // Prefer the fully-coerced blueprint (keeps blueprint-wide skills/mcp/category/mode);
     // fall back to the lossy preview fields for older callers.
     const base = preview.blueprint;
+    const gId = preview.gistId;
+    // Dedupe (#955): a gist already in the library UPDATES in place instead of adding a duplicate —
+    // for both the catalog and manual URL import. The recorded `updatedAt` drives the next freshness
+    // check on the import page.
+    const existing = gId ? blueprints.find((b) => b.gist?.id === gId) : undefined;
+    if (existing) {
+      setBlueprintSections(existing.id, freshSections(base?.sections ?? preview.sections));
+      updateBlueprintMeta(existing.id, {
+        ...(base?.name ? { name: base.name } : {}),
+        gist: {
+          ...(existing.gist ?? { state: "synced" }), state: "synced", id: gId,
+          author: preview.author ?? existing.gist?.author, rev: preview.rev ?? existing.gist?.rev ?? "r1",
+          updatedAt: opts.updatedAt ?? existing.gist?.updatedAt, behind: false,
+        },
+      });
+      setModal(null);
+      toast("Updated from gist", true);
+      openBp(existing.id);
+      return;
+    }
     const bp: Blueprint = {
       ...(base ?? { id: "tmp", name: preview.name, desc: "Imported from gist.", sections: preview.sections }),
       icon: preview.icon, h: preview.h, origin: "imported", tags: ["imported"],
-      gist: { state: "synced", author: preview.author, rev: preview.rev ?? "r1", public: true },
+      gist: { state: "synced", id: gId, author: preview.author, rev: preview.rev ?? "r1", public: true, updatedAt: opts.updatedAt },
     };
     const id = importBlueprintStore(bp);
     setModal(null);
@@ -303,7 +324,7 @@ export function BlueprintsPage() {
       ) : view === "catalog" ? (
         <div className="scroll">
           <CatalogView source={DEFAULT_GIST_SOURCE} token={githubToken}
-            importedIds={blueprints.filter((b) => b.gist?.id).map((b) => b.gist!.id!)}
+            importedById={Object.fromEntries(blueprints.filter((b) => b.gist?.id).map((b) => [b.gist!.id!, { updatedAt: b.gist!.updatedAt }]))}
             onImport={importFromGistId}
             onBack={() => setView("library")} onManualImport={() => setModal({ type: "import" })} />
         </div>

@@ -493,6 +493,17 @@ mod tests {
     }
 
     #[test]
+    fn blueprint_author_intro_requires_repos_and_permissions_for_fleet() {
+        // A fleet-launching blueprint that omits a `permissions` stage produces no fleet, so its
+        // projects can never launch (the bug that motivated this guard). The author session must be
+        // told to always include `repos` + `permissions` for build/execution blueprints (#969).
+        let intro = super::PLANNING_BLUEPRINT_INTRO;
+        assert!(intro.contains("LAUNCHES A FLEET"), "author intro must call out fleet-launching blueprints");
+        assert!(intro.contains("`permissions` stage"), "author intro must require a permissions stage for fleets");
+        assert!(intro.contains("`repos` stage"), "author intro must require a repos stage for fleets");
+    }
+
+    #[test]
     fn planner_template_is_plan_only_no_git_mutations() {
         // The planner is plan-only (#503): it must not be instructed to create repos,
         // milestones, issues, or labels, nor commit/push. Publishing is ENTIRELY the user's

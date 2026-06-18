@@ -61,6 +61,29 @@ export function pendingStageConfirms(
   return [];
 }
 
+/**
+ * The section keys "approve & continue" must confirm for the active stage to advance (#954).
+ *
+ * A **gateless** ("informational") stage completes ONLY via its own `confirmed:<key>` signal — it has
+ * no `gateRule`, so the structure/context discovery anchors (which feed a GATE) don't apply to it.
+ * This is the common case for an IMPORTED blueprint, whose gateRules are stripped on import so EVERY
+ * stage is gateless: confirm the stage itself. Without this the focused pane left the approve button
+ * enabled (an empty gate reads as met) yet nothing advanced.
+ *
+ * A **gated** stage completes via its gate; confirm the drafted anchors its gate reads
+ * ({@link pendingStageConfirms}: structure → phases, context → the core discovery files).
+ */
+export function stageConfirmKeys(
+  activeStageKey: string | undefined,
+  sections: { k: string; state: SectionState }[],
+  activeHasGate: boolean,
+  activeAlreadyConfirmed: boolean,
+): string[] {
+  if (!activeStageKey) return [];
+  if (!activeHasGate) return activeAlreadyConfirmed ? [] : [activeStageKey];
+  return pendingStageConfirms(activeStageKey, sections);
+}
+
 export function derivePlanStageState(input: DerivePlanStageInput): PlanStageState {
   // Context = project-tier discovery sections, excluding the structure anchor
   // (`phases`). Skipped topics aren't surfaced as sections, so they're simply
