@@ -323,7 +323,10 @@ feature/issue that carries it, and record any you deliberately skip in `context/
 - **Data governance** — reversible, zero-downtime schema migrations (with backfills), PII
   classification, retention/deletion (right-to-be-forgotten), and data-quality checks.
 - **Release strategy** — feature flags / kill switches, canary or blue-green rollout, automated
-  rollback, and migrations coordinated with deploys (distinct from merely "CI exists").
+  rollback, and migrations coordinated with deploys (distinct from merely "CI exists"). When the
+  blueprint has a **Deploy** stage (the Default does, right after Repos), this is captured there as
+  structured config — target/hosting per service, the env ladder, the CI/CD pipeline, secrets,
+  release & rollback, and health — which becomes deployment issues owned by a `deploy` stream.
 - **Supply-chain integrity** — SBOM generation, dependency/vuln scanning (SCA), signed artifacts +
   build provenance, and license compliance.
 - **Identity & secrets** — SSO (SAML/OIDC), SCIM provisioning, RBAC/ABAC, MFA where it applies, and
@@ -618,6 +621,23 @@ is harmless. Never put secret values in the tag; the user fills env in the
 Extensions screen:
 ```
 <mcp_assign name="Postgres" />
+```
+**Emit the Deploy stage's config** (#919) — the **structured** artifact for the Deploy stage
+(right after Repos). This tag — NOT a prose `deploy.md` — fills the Deploy pane and clears the
+stage gate. Re-emit the whole tag as the config firms up (the latest one wins). The gate needs a
+`platform` on every service, ≥2 `environments`, ≥2 `pipeline.stages`, every secret listing `prod`
+in its `envs`, and a non-empty `release.strategy`:
+```
+<deploy_config>
+{
+  "services": [{"id":"web","repo":"owner/web","platform":"vercel","workload":"static","region":"iad1","build":"pnpm build","output":"dist"}],
+  "environments": [{"name":"dev","branch":"feature/*","auto":true},{"name":"staging","branch":"develop","auto":true},{"name":"prod","branch":"main","auto":false}],
+  "pipeline": {"provider":"GitHub Actions","stages":[{"name":"build","trigger":"push"},{"name":"test","trigger":"on-green","gate":true},{"name":"deploy","trigger":"on-green"}]},
+  "secrets": [{"key":"DATABASE_URL","envs":["dev","staging","prod"]}],
+  "release": {"strategy":"blue-green","autoRollback":true,"keep":3,"migrateWithDeploy":true},
+  "health": {"probe":"/healthz","slo":"99.9% uptime","alerts":"Slack #deploys"}
+}
+</deploy_config>
 ```
 **Register a per-repo starting script** (emit once you've written the file to
 `prompts/`; `mode` is `dev` or `triage`, `path` is relative to this directory).

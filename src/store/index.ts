@@ -36,6 +36,7 @@ import { defaultStageConfig, type StageConfig, type StageId } from "../screens/p
 import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import type { GradeResult } from "../screens/projects/grading";
 import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
+import type { DeployConfig } from "../screens/projects/deployConfig";
 import { seedDataModels, emptyDataModel, type DataModel } from "../screens/projects/dataModel";
 import { canonicalSectionKey } from "../screens/projects/planSections";
 import type { PaneDescriptor } from "../lib/tunnel";
@@ -673,6 +674,10 @@ interface AppStore {
    *  <blueprint> tag, rendered in the focused pane, and published to a gist at the Review stage. */
   planAuthoredBlueprint: Record<string, Blueprint>;
   setAuthoredBlueprint: (projectId: string, bp: Blueprint) => void;
+  /** Per-project deployment & infrastructure config (#919) — edited by the planner's Deploy
+   *  stage pane; the `deploymentDefined` gate signal derives from it. */
+  planDeployConfig: Record<string, DeployConfig>;
+  setPlanDeployConfig: (projectId: string, cfg: DeployConfig) => void;
   /** Optional stages the user deliberately SKIPPED (#921). The flow stops on every optional stage;
    *  skipping marks it resolved (frontier advances, never blocks completion) but renders distinctly. */
   planSkippedSections:  Record<string, string[]>;
@@ -1513,6 +1518,7 @@ export const useAppStore = create<AppStore>()(
             planSections:           byKey(s.planSections),
             planConfirmedSections:  byKey(s.planConfirmedSections),
             planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
+            planDeployConfig:       byKey(s.planDeployConfig),
             planSkippedSections:    byKey(s.planSkippedSections),
             planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
@@ -1546,7 +1552,7 @@ export const useAppStore = create<AppStore>()(
         }),
       resetProjectData: () =>
         set({
-          planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planSkippedSections: {}, planKbAssignments: {},
+          planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planSkippedSections: {}, planDeployConfig: {}, planKbAssignments: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
           projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
@@ -2072,6 +2078,9 @@ export const useAppStore = create<AppStore>()(
       planAuthoredBlueprint: {},
       setAuthoredBlueprint: (projectId, bp) =>
         set((s) => ({ planAuthoredBlueprint: { ...s.planAuthoredBlueprint, [projectId]: bp } })),
+      planDeployConfig: {},
+      setPlanDeployConfig: (projectId, cfg) =>
+        set((s) => ({ planDeployConfig: { ...s.planDeployConfig, [projectId]: cfg } })),
       planSkippedSections: {},
       skipPlanSection: (projectId, key) =>
         set((s) => {
@@ -2201,6 +2210,7 @@ export const useAppStore = create<AppStore>()(
             planSections:          drop(s.planSections),
             planConfirmedSections: drop(s.planConfirmedSections),
             planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
+            planDeployConfig:      drop(s.planDeployConfig),
             planSkippedSections:   drop(s.planSkippedSections),
             planKbAssignments:     drop(s.planKbAssignments),
             planAutomations:       drop(s.planAutomations),
@@ -2415,6 +2425,7 @@ export const useAppStore = create<AppStore>()(
           planSections:          omitKey(s.planSections),
           planConfirmedSections: omitKey(s.planConfirmedSections),
           planAuthoredBlueprint: omitKey(s.planAuthoredBlueprint),
+          planDeployConfig:      omitKey(s.planDeployConfig),
           planSkippedSections:   omitKey(s.planSkippedSections),
           planKbAssignments:     omitKey(s.planKbAssignments),
           planAutomations:       omitKey(s.planAutomations),
@@ -2663,6 +2674,7 @@ export const useAppStore = create<AppStore>()(
         planSections:          s.planSections,
         planConfirmedSections: s.planConfirmedSections,
         planAuthoredBlueprint: s.planAuthoredBlueprint,
+        planDeployConfig:      s.planDeployConfig,
         planSkippedSections:   s.planSkippedSections,
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,

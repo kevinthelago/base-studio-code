@@ -133,6 +133,27 @@ branch, and its role in the system. Write repos.json.
 
 Gate: at least one repository is linked.`,
   },
+  // Deploy (#919): how each service SHIPS — defined right after Repos so the rest of the plan is
+  // shaped knowing the deployment target. Its config is captured in the Deploy pane and lands as
+  // deployment issues owned by a `deploy` stream at publish.
+  deploy: {
+    name: "Deploy", glyph: "⎈", gate: "target, envs, pipeline, secrets & release defined", deps: ["repos"],
+    gateRule: { require: [{ signal: "deploymentDefined", target: true, label: "define target, environments, pipeline, secrets & release" }] },
+    output: "issues",
+    blurb: "How each service ships — target, environments, pipeline, secrets, release & health.",
+    prompt:
+`Define how this project SHIPS, per service (one per linked repo): the deploy TARGET (hosting
+platform + workload — static / serverless / container / long-running), the ENVIRONMENT ladder
+(dev → staging → prod, each mapped to a branch), the CI/CD PIPELINE (build → test → deploy, with
+the gating stage), CONFIG + SECRETS per environment (names only — values live in the host vault),
+the RELEASE strategy (recreate / rolling / blue-green / canary) + rollback policy, and HEALTH
+checks / observability. Propose sensible defaults from the stack, then interrogate the user and
+let them set the targets in the Deploy pane. These become deployment ISSUES owned by a \`deploy\`
+stream at publish.
+
+Gate: a target per service, ≥2 environments, a staged pipeline, secrets wired for every env, and
+a release strategy chosen.`,
+  },
   ui: {
     // UI runs AFTER Features (#825) so the screens are designed for the defined capabilities —
     // and so the stage can author a kickoff the user hands to Claude Design.
@@ -696,6 +717,8 @@ export function makeBlueprints(): Blueprint[] {
       sections: [
         mkSection("context"),
         mkSection("repos"),
+        // Deploy right after repos (#919): decide how each service ships before shaping the rest.
+        mkSection("deploy"),
         // Features before UI (#825): design the screens from the defined capabilities + author the Claude Design kickoff.
         mkSection("features"),
         mkSection("ui",          { optional: true }),
