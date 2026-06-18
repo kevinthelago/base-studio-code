@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { defaultDeployConfig, deployChecks, deploymentDefined, coerceDeployConfig } from "../screens/projects/deployConfig";
+import { defaultDeployConfig, deployChecks, deploymentDefined, coerceDeployConfig, parseDeployConfigTag } from "../screens/projects/deployConfig";
 import { makeBlueprints } from "../screens/projects/blueprints";
 
 describe("deployConfig (#919)", () => {
@@ -86,6 +86,27 @@ describe("coerceDeployConfig — the planner <deploy_config> channel (#919)", ()
     const bad = coerceDeployConfig({ services: [{ id: "web", platform: "fly" }], release: { strategy: "yolo" } });
     expect(bad.release.strategy).toBe("");
     expect(coerceDeployConfig(null).services.length).toBeGreaterThan(0); // never throws on garbage
+  });
+
+  it("parseDeployConfigTag survives stray content around the JSON (e.g. a leaked </parameter>)", () => {
+    // The real-world payload that wasn't clearing the gate: 2 envs, Fly containers, secrets wired
+    // for prod — but with junk inside the tag body that broke a raw JSON.parse.
+    const body = `
+{
+  "services": [{"id":"user","repo":"o/user","platform":"fly","workload":"container"}],
+  "environments": [{"name":"staging","branch":"develop"},{"name":"prod","branch":"main"}],
+  "pipeline": {"provider":"GitHub Actions","stages":[{"name":"test","gate":true},{"name":"deploy"}]},
+  "secrets": [{"key":"DATABASE_URL","envs":["staging","prod"]}],
+  "release": {"strategy":"rolling","autoRollback":true}
+}
+</parameter>`;
+    const cfg = parseDeployConfigTag(body);
+    expect(cfg).not.toBeNull();
+    expect(deploymentDefined(cfg!)).toBe(true);
+  });
+
+  it("parseDeployConfigTag returns null when there's no JSON object", () => {
+    expect(parseDeployConfigTag("no json here")).toBeNull();
   });
 });
 
