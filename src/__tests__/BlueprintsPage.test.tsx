@@ -21,8 +21,10 @@ describe("BlueprintsPage (#609 wiring)", () => {
     fireEvent.change(screen.getByPlaceholderText(/Internal tool/i), { target: { value: "My Tool" } });
     fireEvent.click(screen.getByRole("button", { name: /Create & open planner/i }));
     const s = useAppStore.getState();
-    // seeds the authoring lifecycle + opens the planner on a draft keyed by the name
-    expect(s.activeBlueprintId).toBe("blueprint-author");
+    // binds the draft to the authoring lifecycle PER-PROJECT (not the global active, which would
+    // leak into the next normal project), and opens the planner on a draft keyed by the name (#923)
+    expect(s.projectBlueprintId["My_Tool"]).toBe("blueprint-author");
+    expect(s.activeBlueprintId).toBe(DEFAULT_BLUEPRINT_ID); // global active untouched
     expect(s.planningSessionKey).toBe("My_Tool");
     expect(s.projectsView).toBe("planning");
     expect(s.localDraftProjects["My_Tool"]?.title).toBe("My Tool");
