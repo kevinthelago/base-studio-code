@@ -995,6 +995,7 @@ export function Planning({ visible }: { visible: boolean }) {
     const kbSnapshot      = kbBlocks;
     const repoSnapshot    = linkedRepos;  // string[] of full_names
     const isExistingSnap  = isExisting;
+    const isAuthoringSnap = isAuthoring;
     const projNameSnap    = activeProjectName;
     const projNumberSnap  = activeProjectNumber;
     const pitchSnap       = planningPitch;
@@ -1250,6 +1251,7 @@ export function Planning({ visible }: { visible: boolean }) {
           githubLogin:   ghLoginSnap,
           githubName:    ghNameSnap,
           enabledStages: stageIdsFor(projIdSnap), // scope the planner CLAUDE.md to the blueprint (#A)
+          authoring:     isAuthoringSnap,         // use the blueprint-author intro (#923)
         },
       ).catch((e: unknown) => {
         console.error("workspace setup failed:", e);
@@ -1417,6 +1419,7 @@ export function Planning({ visible }: { visible: boolean }) {
       githubLogin:   useAppStore.getState().githubUser?.login ?? "",
       githubName:    useAppStore.getState().githubUser?.name  ?? "",
       enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
+      authoring:     isAuthoring,                     // use the blueprint-author intro (#923)
     }).then(() => refreshSetupSig()).catch(console.error); // baseline updated (#756)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedRepos]);
@@ -1446,6 +1449,7 @@ export function Planning({ visible }: { visible: boolean }) {
         githubLogin: store.githubUser?.login ?? "",
         githubName:  store.githubUser?.name  ?? "",
         enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
+        authoring:   isAuthoring,                       // use the blueprint-author intro (#923)
       },
     ).catch((e: unknown) => { console.error("workspace setup failed:", e); return null; });
     refreshSetupSig(); // baseline updated (#756)
