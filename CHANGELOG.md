@@ -3,16 +3,26 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-> **Versioning:** the `0.x` series is a development preview. **`1.0.0` will be the
-> first official, general-availability release.** Until then, versions are bumped
-> conservatively so `1.0.0` stays a meaningful milestone.
+> **Versioning:** `1.0.0` was the first official, general-availability release. The `1.0.x`
+> line is bumped conservatively — patch for fixes, minor for feature releases. The full
+> release history lives in [GitHub Releases](https://github.com/kevinthelago/base-studio-code/releases).
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-06-18
+
 ### Added
-- ESLint + Prettier tooling with CI enforcement
-- MIT license, README, CONTRIBUTING, SECURITY docs
-- Dependabot for automated dependency updates
+- Blueprint-authoring lifecycle — design a reusable blueprint in the planner and publish it to a gist; no fleet/triage (#923)
+- Data blueprints — **Data migration** and **Data collection** (web scraping / dataset fetch) into a canonical Data Model
+- Enterprise production-readiness dimensions baked into the planner (observability/SLOs, reliability + DR, data governance, release strategy, supply-chain integrity, …); accessibility + regulatory compliance routed to the Compliance MCP server
+
+### Changed
+- Projects tab redesigned into **Drafts / Projects / Blueprints** sections with search + recency/name sort; clicking a blueprint opens the planner
+- Published projects are flagged in place with a `.published` marker instead of relocating the hub directory (#922)
+- Optional planning stages are user-skippable instead of auto-skipped (#921)
+
+### Removed
+- Leftover mock/sample data from shipping screens (the `acme/payments` sample fleet, the fabricated risk register, dead KPI/plan-session samples)
 
 ## [0.6.0] — 2026-05-27
 
