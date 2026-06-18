@@ -272,6 +272,9 @@ impl FcmSender {
 
     /// Send one combined notification+data push to `device_token`. Returns a `SendOutcome`
     /// telling the caller whether to drop the token (it was stale/invalid).
+    // The sender landed ahead of its caller — the FCM trigger (user_request / coordination
+    // pushes, #932/#936) wires it. Until then clippy's -D dead-code would fail CI, so allow it.
+    #[allow(dead_code)]
     pub async fn send(
         &self,
         device_token: &str,
