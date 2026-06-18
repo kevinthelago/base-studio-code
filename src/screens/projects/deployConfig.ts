@@ -275,15 +275,22 @@ export function coerceDeployConfig(raw: unknown, repos: string[] = []): DeployCo
   };
 }
 
-/** Parse the body of a `<deploy_config>` tag into a DeployConfig. Forgiving: the planner sometimes
- *  wraps the JSON in stray prose or tags (e.g. a leaked `</parameter>`), so we extract the outermost
- *  `{ … }` object rather than parsing the raw body — then coerce it. Returns null on no/invalid JSON
- *  (the caller ignores it; the planner re-emits). */
+/** Parse the body of a `<deploy_config>` tag into a DeployConfig. Forgiving on two fronts (#919):
+ *  (1) stray prose/tags around the JSON (e.g. a leaked `</parameter>`) — we extract the outermost
+ *  `{ … }` object; (2) the planner CLI's terminal line-WRAPS the big JSON block, injecting raw
+ *  newlines + indent that can land INSIDE string values (invalid JSON). When a clean parse fails we
+ *  collapse newline-spanning whitespace to a single space and retry, which repairs the wraps
+ *  (`"fly  \n  app"` → `"fly app"`). Returns null only if neither parse works. */
 export function parseDeployConfigTag(body: string, repos: string[] = []): DeployConfig | null {
   const json = body.match(/\{[\s\S]*\}/)?.[0];
   if (!json) return null;
+  const tryParse = (s: string): unknown => { try { return JSON.parse(s); } catch { return undefined; } };
+  // Raw newlines are only ever wrap artifacts inside a JSON string (real string newlines are escaped
+  // `\n`), so collapsing them is safe; between tokens it's just whitespace JSON ignores anyway.
+  const parsed = tryParse(json) ?? tryParse(json.replace(/[ \t]*[\r\n]+[ \t]*/g, " "));
+  if (parsed === undefined || parsed === null) return null;
   try {
-    return coerceDeployConfig(JSON.parse(json), repos);
+    return coerceDeployConfig(parsed, repos);
   } catch {
     return null;
   }
