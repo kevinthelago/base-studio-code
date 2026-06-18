@@ -383,7 +383,7 @@ fn list_local_projects() -> Result<Vec<LocalProject>, String> {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
-        let published = dir.join(".published").is_file();
+        let published = is_published(&key);
         out.push(LocalProject { key, title, has_plan, updated_at, published });
     }
     Ok(out)
