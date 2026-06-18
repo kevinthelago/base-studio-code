@@ -163,3 +163,39 @@ describe("sectionForPhase (#815)", () => {
     expect(sectionForPhase(SECTIONS, { key: "nope" } as Phase)).toBeUndefined();
   });
 });
+
+describe("imported blueprint — every stage gateless (#954, the 'Feature Add' repro)", () => {
+  // An IMPORTED blueprint loses its gateRules on import, so EVERY stage is gateless and completes
+  // only via its own confirmed:<key> signal. This mirrors the real "Feature Add" blueprint:
+  // context → architecture → structure → testing → docs(optional).
+  const IMPORTED: BlueprintSection[] = [
+    sec("context"),
+    sec("architecture", { deps: ["context"] }),
+    sec("structure", { deps: ["architecture"] }),
+    sec("testing", { deps: ["structure"] }),
+    sec("docs", { deps: ["structure"], optional: true }),
+  ];
+  const active = (s: PlanSignals): string | undefined => {
+    const ps = phasesFrom(IMPORTED, s);
+    return ps[activeIndex(ps)]?.key;
+  };
+
+  it("enables approve on the active gateless stage (evalGate of an absent gate is met)", () => {
+    expect(currentGateReady(IMPORTED, {})).toBe(true); // gateless context → button enabled
+  });
+
+  it("confirming each stage advances the frontier through the whole blueprint", () => {
+    const sig: PlanSignals = {};
+    expect(active(sig)).toBe("context");
+    sig[confirmedSignal("context")] = true;
+    expect(active(sig)).toBe("architecture");           // ← was stuck on context before #954
+    sig[confirmedSignal("architecture")] = true;
+    expect(active(sig)).toBe("structure");
+    sig[confirmedSignal("structure")] = true;
+    expect(active(sig)).toBe("testing");
+    sig[confirmedSignal("testing")] = true;
+    expect(active(sig)).toBe("docs");                    // optional — flow stops here until done/skipped (#921)
+    sig[confirmedSignal("docs")] = true;
+    expect(phasesFrom(IMPORTED, sig).every((p) => p.status === "complete")).toBe(true);
+  });
+});

@@ -62,13 +62,16 @@ export function pendingStageConfirms(
 }
 
 /**
- * The section keys "approve & continue" must confirm for the active stage to advance (#954). Starts
- * from {@link pendingStageConfirms} (the structure/context anchors), and otherwise falls back to the
- * active stage's OWN key when it's a **gateless** ("informational") stage awaiting confirmation: such
- * a stage has no `gateRule`, so it's done only once a `confirmed:<key>` signal is set — but the
- * focused pane's approve gesture had nothing to confirm for it, leaving the button enabled (its empty
- * gate reads as met) yet the frontier stuck. A GATED stage completes via its gate and needs nothing
- * confirmed here.
+ * The section keys "approve & continue" must confirm for the active stage to advance (#954).
+ *
+ * A **gateless** ("informational") stage completes ONLY via its own `confirmed:<key>` signal — it has
+ * no `gateRule`, so the structure/context discovery anchors (which feed a GATE) don't apply to it.
+ * This is the common case for an IMPORTED blueprint, whose gateRules are stripped on import so EVERY
+ * stage is gateless: confirm the stage itself. Without this the focused pane left the approve button
+ * enabled (an empty gate reads as met) yet nothing advanced.
+ *
+ * A **gated** stage completes via its gate; confirm the drafted anchors its gate reads
+ * ({@link pendingStageConfirms}: structure → phases, context → the core discovery files).
  */
 export function stageConfirmKeys(
   activeStageKey: string | undefined,
@@ -76,9 +79,9 @@ export function stageConfirmKeys(
   activeHasGate: boolean,
   activeAlreadyConfirmed: boolean,
 ): string[] {
-  const base = pendingStageConfirms(activeStageKey, sections);
-  if (base.length > 0 || !activeStageKey) return base;
-  return !activeHasGate && !activeAlreadyConfirmed ? [activeStageKey] : [];
+  if (!activeStageKey) return [];
+  if (!activeHasGate) return activeAlreadyConfirmed ? [] : [activeStageKey];
+  return pendingStageConfirms(activeStageKey, sections);
 }
 
 export function derivePlanStageState(input: DerivePlanStageInput): PlanStageState {
