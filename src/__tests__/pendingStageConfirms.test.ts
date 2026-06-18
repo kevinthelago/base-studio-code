@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pendingStageConfirms } from "../screens/projects/planStageDerive";
+import { pendingStageConfirms, stageConfirmKeys } from "../screens/projects/planStageDerive";
 import type { SectionState } from "../screens/projects/ghStructure";
 
 type S = { k: string; state: SectionState };
@@ -55,5 +55,40 @@ describe("pendingStageConfirms — one-click stage approval (#807-followup)", ()
   it("count-gated stages (permissions, features, …) have nothing to confirm by section", () => {
     expect(pendingStageConfirms("permissions", coreDrafted)).toEqual([]);
     expect(pendingStageConfirms(undefined, coreDrafted)).toEqual([]);
+  });
+});
+
+describe("stageConfirmKeys — gateless active-stage approval (#954)", () => {
+  it("confirms a GATELESS active stage by its own key so the frontier advances", () => {
+    // A gateless informational stage (no gateRule) with nothing for pendingStageConfirms to find:
+    // approve must confirm the stage itself.
+    expect(stageConfirmKeys("cleanup", [], /*activeHasGate*/ false, /*confirmed*/ false)).toEqual(["cleanup"]);
+  });
+
+  it("does NOT re-confirm a gateless stage that's already confirmed", () => {
+    expect(stageConfirmKeys("cleanup", [], false, true)).toEqual([]);
+  });
+
+  it("a GATED active stage confirms nothing extra by key (it completes via its gate)", () => {
+    expect(stageConfirmKeys("repos", [], /*activeHasGate*/ true, false)).toEqual([]);
+  });
+
+  it("a GATED structure/context stage confirms its gate's drafted anchors", () => {
+    // structure (gated) → the phases anchor
+    expect(stageConfirmKeys("structure", [sec("phases", "drafted")], /*activeHasGate*/ true, false)).toEqual(["phases"]);
+    // context (gated) → the core-four discovery files
+    expect(stageConfirmKeys("context", coreDrafted, /*activeHasGate*/ true, false).sort())
+      .toEqual(["architecture", "goal", "scope", "stack"]);
+  });
+
+  it("a GATELESS context/structure (e.g. an IMPORTED blueprint) confirms ITS OWN key, not the anchors", () => {
+    // Imported blueprints lose their gateRules, so even a `context`/`structure` stage is gateless and
+    // completes via confirmed:<its-key> — NOT the discovery/phases anchors (which feed a gate it lacks).
+    expect(stageConfirmKeys("context", coreDrafted, /*activeHasGate*/ false, false)).toEqual(["context"]);
+    expect(stageConfirmKeys("structure", [sec("phases", "drafted")], /*activeHasGate*/ false, false)).toEqual(["structure"]);
+  });
+
+  it("no active stage ⇒ nothing to confirm", () => {
+    expect(stageConfirmKeys(undefined, [], false, false)).toEqual([]);
   });
 });

@@ -34,7 +34,7 @@ import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./Proj
 import { publishFleetRoster } from "../../lib/fleetRoster";
 import { hubToCanonical } from "../../lib/plannerSync";
 import { tunnelSetPlanState } from "../../lib/tunnelClient";
-import { canLaunchTriage, triageLockReason } from "../../lib/projectSync";
+import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../lib/projectSync";
 import { effectiveProjectRepos, localReposFor } from "./projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
@@ -48,9 +48,9 @@ import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChe
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
-import { derivePlanStageState, planStateToSignals, pendingStageConfirms } from "./planStageDerive";
+import { derivePlanStageState, planStateToSignals, stageConfirmKeys } from "./planStageDerive";
 import { findPlanGaps } from "./lintPlan";
-import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, AUTHORING_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./blueprints";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./blueprints";
 import { coerceBlueprint, blueprintToManifest } from "./blueprintShare";
 import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "./blueprintSkills";
 import { buildMcpLibrary } from "./blueprintMcp";
@@ -734,9 +734,17 @@ export function Planning({ visible }: { visible: boolean }) {
     for (const k of skippedSet) out[skippedSignal(k)] = true;
     return out;
   }, [skippedSet]);
+  // A gateless ("informational") section is done only once CONFIRMED (#664) — `sectionDone` reads a
+  // `confirmed:<key>` signal. Surface those so a confirmed gateless stage (testing, cleanup, the data
+  // stages, a user-authored stage, …) reads as complete and the frontier advances (#954).
+  const confirmSignals = useMemo(() => {
+    const out: Record<string, boolean> = {};
+    for (const k of confirmedSet) out[confirmedSignal(k)] = true;
+    return out;
+  }, [confirmedSet]);
   const signals = useMemo(
-    () => ({ ...planStateToSignals(stageState), hasPlanGaps, deploymentDefined: deploymentDefined(deployCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals }),
-    [stageState, hasPlanGaps, deployCfg, isAuthoring, authoringSig, skipSignals]);
+    () => ({ ...planStateToSignals(stageState), hasPlanGaps, deploymentDefined: deploymentDefined(deployCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals }),
+    [stageState, hasPlanGaps, deployCfg, isAuthoring, authoringSig, skipSignals, confirmSignals]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
   // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user
@@ -751,9 +759,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // The active stage's drafted sections "approve & continue" confirms in one click (#807-followup)
   // — so the user approves a whole stage at once instead of confirming each discovery file (for
   // which the focused pane has no control). Empty ⇒ nothing pending (gate drives the button).
-  const pendingConfirm = useMemo(
-    () => pendingStageConfirms(phases[focusActiveIdx]?.key, sections),
-    [phases, focusActiveIdx, sections]);
+  const pendingConfirm = useMemo(() => {
+    const activeKey = phases[focusActiveIdx]?.key;
+    const activeSec = activeKey ? planSecs.find((s) => s.key === activeKey) : undefined;
+    return stageConfirmKeys(activeKey, sections, !!activeSec?.gateRule, !!activeKey && confirmedSet.has(activeKey));
+  }, [phases, focusActiveIdx, sections, planSecs, confirmedSet]);
   // The active phase is an enabled OPTIONAL stage the user hasn't decided yet — so the advance bar
   // offers a "Skip stage" control beside the primary action (#921). `phasesFrom` reports a not-yet
   // -decided optional stage at the frontier as "active"; a decided (done/skipped) one isn't.
@@ -1734,7 +1744,7 @@ export function Planning({ visible }: { visible: boolean }) {
       ));
       const failed = worktreeResults.filter(r => r.err || !r.path);
       if (failed.length > 0) {
-        setTriageError(`${failed[0].id}: ${failed[0].err ?? "empty path"}`);
+        setTriageError(`launch failed — ${failed[0].id}: ${failed[0].err ?? "empty path"}`);
         return;
       }
       // Carry the authoritative absolute paths into fleetStartProject (#905) so each pane's
@@ -1797,7 +1807,12 @@ export function Planning({ visible }: { visible: boolean }) {
 
   async function handlePublish() {
     if (isAuthoring) { await publishAuthoredBlueprint(); return; }
-    if (!githubToken || publishRepos.length === 0) return;
+    // Don't fail silently (#969): surface WHY publish can't proceed, so the user isn't left thinking
+    // they published when nothing happened (which then leaves the fleet-launch button locked with no
+    // explanation). The common case is a blueprint with no Repos stage ⇒ no repo ever linked.
+    const blocked = publishBlockReason({ hasToken: !!githubToken, repoCount: publishRepos.length });
+    if (blocked) { setTriageError(blocked); return; }
+    setTriageError(null);
     const token = githubToken;
 
     const repos       = publishRepos;
@@ -2258,7 +2273,7 @@ _Auto-generated by base-studio-code planner._`,
       </div>
       {triageError && (
         <div style={{ padding: "0 24px 8px", color: "var(--danger)", fontSize: 12, fontFamily: "var(--mono)" }}>
-          ⚠ launch failed — {triageError}
+          ⚠ {triageError}
         </div>
       )}
 

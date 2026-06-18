@@ -70,8 +70,14 @@ export function evalRequirement(r: Requirement, signals: PlanSignals): { pass: b
   if (r.of) {
     const v = asNumber(signals[r.signal]);
     const denom = asNumber(signals[r.of]);
-    const progress = denom > 0 ? Math.min(v / denom, 1) : 0;
-    const pass = denom > 0 && compare(v, denom, r.op ?? ">=");
+    // A zero denominator means there is nothing to resolve — the ratio is vacuously
+    // satisfied (you can't fail to resolve zero of zero items). Treating it as a failure
+    // deadlocks any gate whose denominator legitimately reaches 0 — e.g. the Context gate
+    // when a lighter blueprint surfaces no discovery topics (#953). An author who needs
+    // "at least one" should add a separate count requirement on the denominator signal.
+    if (denom <= 0) return { pass: true, progress: 1 };
+    const progress = Math.min(v / denom, 1);
+    const pass = compare(v, denom, r.op ?? ">=");
     return { pass, progress };
   }
   const target = r.target ?? true;
