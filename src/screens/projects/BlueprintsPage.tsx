@@ -22,7 +22,7 @@ import {
 } from "./BlueprintModals";
 import { blueprintToManifest, manifestToBlueprint, bundledSkillsFromManifest } from "./blueprintShare";
 import { resolveBlueprintSkillPayloads } from "./blueprintSkills";
-import { publishGist, installFromGist, gistRevisions, installFromGistRevision, gistIdFromUrl } from "../../lib/extensions/gist";
+import { publishGist, updateGist, installFromGist, gistRevisions, installFromGistRevision, gistIdFromUrl } from "../../lib/extensions/gist";
 import { diffBlueprints, type DiffLine } from "./blueprintDiff";
 
 const freshSections = (sections: BlueprintSection[]): BlueprintSection[] =>
@@ -43,9 +43,9 @@ function EditorHeader({ bp, active, onBack, onRename, onRedesc, onUse, onPublish
   onUse: () => void; onPublish: () => void; onAssistant: () => void; onMenu: (e: React.MouseEvent) => void;
 }) {
   const g: BlueprintGist = bp.gist ?? { state: "local" };
-  const publishLabel = g.state === "local" ? "Publish to gist"
-    : g.state === "dirty" ? "Publish update"
-    : "Published ✓";
+  // Once a gist exists (any non-local state), the action UPDATES it in place rather than publishing
+  // a duplicate (#970) — so it reads as "Update GitHub", matching the project planner's wording.
+  const publishLabel = g.state === "local" ? "Publish to gist" : "⟳ Update GitHub";
   const chipCls = g.state === "dirty" ? "gchip dirty" : g.state === "local" ? "gchip local" : "gchip synced";
   const chipLabel = g.state === "local" ? "local only" : g.state === "dirty" ? "unpublished changes" : "synced · " + (g.rev ?? "r1");
   const h = bp.h ?? 70;
@@ -182,13 +182,31 @@ export function BlueprintsPage() {
     // Bundle the attached skills' content (#897 Phase 5b) so the share is self-contained for
     // knowledge; MCP servers stay by reference (their names are already in the blueprint).
     const bundled = resolveBlueprintSkillPayloads(active, skillDefs, kbBlocks);
-    const res = await publishGist(githubToken, blueprintToManifest(active, bundled), { public: isPublic });
+    const manifest = blueprintToManifest(active, bundled);
+    // Update the ORIGINAL gist in place when one already exists (#970) — re-publishing must not mint
+    // a duplicate gist (the publish-side counterpart to the import dedupe in #955).
+    const existingId = active.gist?.id;
+    const res = existingId
+      ? await updateGist(githubToken, existingId, manifest)
+      : await publishGist(githubToken, manifest, { public: isPublic });
     return { url: res.htmlUrl, id: res.id, rev: "r1" };
   }
   function onPublished(r: PublishResult) {
-    if (active) updateBlueprintMeta(active.id, { gist: { state: "synced", id: r.id, url: r.url, public: r.public, rev: r.rev ?? "r1", author: "you" } });
+    if (active) {
+      const prior = active.gist;
+      const wasUpdate = !!prior?.id;
+      updateBlueprintMeta(active.id, {
+        // On an UPDATE (#970) keep the gist's original visibility — it can't change via PATCH —
+        // and its author/url rather than overwriting them with the modal's stale defaults.
+        gist: {
+          state: "synced", id: r.id, url: r.url ?? prior?.url,
+          public: wasUpdate ? prior?.public : r.public,
+          rev: r.rev ?? "r1", author: prior?.author ?? "you",
+        },
+      });
+    }
     setModal(null);
-    toast("Published to gist", true);
+    toast(active?.gist?.id ? "Updated on GitHub" : "Published to gist", true);
   }
   async function resolveImport(ref: string): Promise<PreviewBlueprint> {
     const r = await installFromGist(ref, githubToken);
