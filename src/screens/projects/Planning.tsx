@@ -44,7 +44,7 @@ import { catalogLink, repoNameFromLink, mcpRepoName } from "../../lib/mcpInstall
 import { type McpInstallState } from "./mcpPaneData";
 import { EXT_CATALOG } from "../../data/extensions";
 import { buildProjectPaneData } from "./projectPaneData";
-import { defaultDeployConfig, deploymentDefined, coerceDeployConfig } from "./deployConfig";
+import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag } from "./deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
@@ -1288,10 +1288,10 @@ export function Planning({ visible }: { visible: boolean }) {
         let lastDcBody: string | null = null;
         while ((m = dcRe.exec(bufRef.current)) !== null) lastDcBody = m[1];
         if (lastDcBody !== null) {
-          try {
-            const cfg = coerceDeployConfig(JSON.parse(lastDcBody.trim()));
-            useAppStore.getState().setPlanDeployConfig(projIdSnap, cfg);
-          } catch { /* mid-stream / invalid JSON — ignore; the planner re-emits */ }
+          // Forgiving parse: extract the {…} object so stray prose / a leaked closing tag in the
+          // body doesn't drop the whole config (#919 follow-up).
+          const cfg = parseDeployConfigTag(lastDcBody);
+          if (cfg) useAppStore.getState().setPlanDeployConfig(projIdSnap, cfg);
           bufRef.current = bufRef.current.replace(/<deploy_config\s*>[\s\S]*?<\/deploy_config>/g, "");
         }
 

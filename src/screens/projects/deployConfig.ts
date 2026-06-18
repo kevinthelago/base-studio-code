@@ -274,3 +274,17 @@ export function coerceDeployConfig(raw: unknown, repos: string[] = []): DeployCo
     release, health,
   };
 }
+
+/** Parse the body of a `<deploy_config>` tag into a DeployConfig. Forgiving: the planner sometimes
+ *  wraps the JSON in stray prose or tags (e.g. a leaked `</parameter>`), so we extract the outermost
+ *  `{ … }` object rather than parsing the raw body — then coerce it. Returns null on no/invalid JSON
+ *  (the caller ignores it; the planner re-emits). */
+export function parseDeployConfigTag(body: string, repos: string[] = []): DeployConfig | null {
+  const json = body.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) return null;
+  try {
+    return coerceDeployConfig(JSON.parse(json), repos);
+  } catch {
+    return null;
+  }
+}
