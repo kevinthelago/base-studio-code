@@ -8,6 +8,25 @@ import { invoke } from "@tauri-apps/api/core";
 import type { PaneDescriptor, SessionMeta, TunnelStatus } from "./tunnel";
 import type { CanonicalFile } from "./plannerCore";
 
+/** Structured result from `tunnelCheckRelay` (T3b). All error cases are in the `error`
+ *  field — the command never throws so the Settings card can render a result either way. */
+export interface RelayDiag {
+  /** Whether the relay's `/health` probe returned HTTP 200. */
+  reachable: boolean;
+  /** `service` from the relay `/health` body. */
+  service: string | null;
+  /** `version` from the relay `/health` body. */
+  version: string | null;
+  /** Round-trip latency for the probe (milliseconds). */
+  latencyMs: number;
+  /** Human-readable error message when the probe fails. */
+  error: string | null;
+  /** Whether the desktop's own relay WebSocket (host leg) is currently open. */
+  hostConnected: boolean;
+  /** Number of paired mobile clients (guest legs) connected right now. */
+  clientCount: number;
+}
+
 /** Mint a room + pairing secret and dial the relay. Returns the updated status. */
 export const tunnelStart = (relayUrl: string): Promise<TunnelStatus> =>
   invoke("tunnel_start", { relayUrl });
@@ -41,3 +60,13 @@ export const tunnelSetSessions = (sessions: SessionMeta[]): Promise<void> =>
  *  the canonical `proj-<hex>` id from `hubToCanonical`. */
 export const tunnelSetPlanState = (projectId: string, files: CanonicalFile[]): Promise<void> =>
   invoke("tunnel_set_plan_state", { projectId, files });
+
+/** Acknowledge a plan push from mobile after the frontend has applied the files to the
+ *  hub directory. Broadcasts `plan_sync_ack` back to the mobile client. */
+export const tunnelAckPlanPush = (projectId: string, applied: boolean): Promise<void> =>
+  invoke("tunnel_ack_plan_push", { projectId, applied });
+
+/** Probe the relay's `/health` endpoint and return per-leg connection diagnostics (T3b).
+ *  Always resolves (never rejects) — check `error` for failure details. */
+export const tunnelCheckRelay = (relayUrl: string): Promise<RelayDiag> =>
+  invoke("tunnel_check_relay", { relayUrl });

@@ -32,3 +32,7 @@
 - v1.0.0 GA cut: package.json + tauri.conf.json bumped to 1.0.0; docs/release-notes-v1.0.0.md written; release.yml preamble updated with unsigned warnings for macOS/Windows.
 - Both #551 and #552 are already fully implemented in the codebase. #552: owns-path text was never in the collapsed state (PostureBar only). #551: planReady gate + fail-closed worktree check already in launchTriage + tests in projectSync.test.ts.
 - Implemented #294 (seam/contract DAG graph view): buildSeamGraph + topological layout in planSeamGraph.ts (22 tests), SeamGraphView.tsx SVG renderer, graph lens in ProjectPane structure section; pushed to planner-platform branch under PR #563
+- T1b: waiting for tunnel-mobile to land T1a (shared Noise vector fixture). Will add snow vs noble byte-match test once the vector JSON is vendored.
+
+- PT2/F2/A2/M2/F4/A4: waiting for director go-ahead after tunnel-mobile lands PT1/F1/A1/M1.
+
