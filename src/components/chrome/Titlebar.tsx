@@ -20,7 +20,7 @@ async function windowAction(action: "close" | "minimize" | "toggleMaximize") {
   else await w.toggleMaximize();
 }
 
-export function Titlebar({ workspace = "orchestrator · acme/payments" }: TitlebarProps) {
+export function Titlebar({ workspace = "base-studio-code" }: TitlebarProps) {
   const title = `base-studio-code — ${workspace}`;
 
   if (platform === "mac") {

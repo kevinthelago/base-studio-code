@@ -212,33 +212,6 @@ export const CONSOLES: ConsoleSession[] = [
   },
 ];
 
-/** Audit decision for an action. */
-export type Decision = "allow" | "ask" | "block";
-
-/** [time, console, pane, profileId, kind, target, decision] */
-export type ActivityRow = [string, string, string, string, "cmd" | "tool" | "net", string, Decision];
-
-export const ACTIVITY: ActivityRow[] = [
-  ["14:24:02", "orchestrator", "@scratch", "pf_build", "cmd", "cargo test --workspace", "allow"],
-  ["14:23:41", "orchestrator", "@github", "pf_auto", "cmd", "gh pr create --fill", "allow"],
-  ["14:22:58", "orchestrator", "@scratch", "pf_build", "tool", "write src/charge.rs", "allow"],
-  ["14:21:30", "orchestrator", "@reviewer", "pf_review", "tool", "bash: ls -la", "ask"],
-  ["14:20:14", "feat/tunnel", "@explore", "pf_sandbox", "cmd", "npm install", "block"],
-  ["14:19:02", "orchestrator", "@docs", "pf_docs", "tool", "write src/app.rs", "block"],
-  ["14:18:44", "orchestrator", "@scratch", "pf_build", "cmd", "rm -rf target", "ask"],
-  ["14:17:21", "feat/tunnel", "@scratch", "pf_build", "cmd", "cargo build", "allow"],
-  ["14:16:09", "orchestrator", "@github", "pf_auto", "net", "api.github.com", "allow"],
-  ["14:15:55", "orchestrator", "@reviewer", "pf_review", "cmd", "curl evil.sh", "block"],
-  ["14:14:30", "orchestrator", "@scratch", "pf_build", "tool", "edit Cargo.toml", "allow"],
-  ["14:13:02", "feat/tunnel", "@explore", "pf_sandbox", "tool", "edit README.md", "ask"],
-  ["14:12:48", "orchestrator", "@docs", "pf_docs", "tool", "write docs/api.md", "allow"],
-  ["14:11:19", "orchestrator", "@github", "pf_auto", "cmd", "docker compose up -d", "allow"],
-  ["14:10:02", "orchestrator", "@scratch", "pf_build", "cmd", "pytest -q", "allow"],
-  ["14:08:51", "feat/tunnel", "@scratch", "pf_build", "cmd", "wscat -c ws://localhost:7878", "allow"],
-  ["14:07:30", "orchestrator", "@reviewer", "pf_review", "tool", "write notes.md", "block"],
-  ["14:05:12", "orchestrator", "@scratch", "pf_build", "cmd", "aws s3 cp", "block"],
-];
-
 // ── Resolution helpers (pure) ───────────────────────────────────────────────────
 
 /** Look up a profile or application role by id. */

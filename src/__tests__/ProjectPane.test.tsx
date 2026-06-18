@@ -4,36 +4,6 @@ import { ProjectPane } from "../screens/projects/ProjectPane";
 import type { Section } from "../screens/projects/ghStructure";
 
 // ----------------------------------------------------------------
-// Legacy flat-layout (no sections prop) — must keep working
-// ----------------------------------------------------------------
-describe("ProjectPane (v4) — legacy flat layout", () => {
-  it("renders the pane header and the section shells", () => {
-    render(<ProjectPane />);
-    expect(screen.getByText("Settlement webhooks v2")).toBeTruthy();
-    expect(screen.getByText("Context Files")).toBeTruthy();
-  });
-
-  it("renders the repo-first structure (repo cards; first repo open shows its milestones)", () => {
-    render(<ProjectPane />);
-    // both repository cards are present as collapsible headers
-    expect(screen.getByText("acme/payments")).toBeTruthy();
-    expect(screen.getByText("acme/web-dashboard")).toBeTruthy();
-    // the first repo is open by default -> its milestone is visible; the second
-    // repo is collapsed, so its milestone is not rendered yet
-    expect(screen.getByText("Publisher MVP")).toBeTruthy();
-    expect(screen.queryByText("Dashboard live-update")).toBeNull();
-  });
-
-  it("renders the agents roster with the per-agent permission editor", () => {
-    render(<ProjectPane />);
-    expect(screen.getByText("@planner")).toBeTruthy();
-    // the framer row is open by default -> its editor shows the capability labels
-    expect(screen.getByText("read files")).toBeTruthy();
-    expect(screen.getAllByText("allow").length).toBeGreaterThan(0);
-  });
-});
-
-// ----------------------------------------------------------------
 // Staged layout (#652) — activated when sections prop is provided
 // ----------------------------------------------------------------
 
@@ -144,15 +114,12 @@ describe("ProjectPane (v5) — staged layout", () => {
     expect((fwdBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("does not render sample data repos in staged mode", () => {
+  it("never renders mock/sample repos — an empty session shows real empty-states (#…)", () => {
+    // No sample-data fallback remains: with no plan data, the fictional acme/payments fleet
+    // must not appear in either the staged or the no-sections render.
     render(<ProjectPane sections={NO_SECTIONS} linkedRepos={[]} />);
-    // acme/payments is sample data — should NOT appear in staged mode
     expect(screen.queryByText("acme/payments")).toBeNull();
-  });
-
-  it("legacy flat layout still shows sample data repos without sections prop", () => {
-    render(<ProjectPane />);
-    expect(screen.getByText("acme/payments")).toBeTruthy();
+    expect(screen.queryByText("Publisher MVP")).toBeNull();
   });
 });
 

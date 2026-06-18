@@ -163,34 +163,6 @@ export const SKILL_CATALOG: SkillCatalogItem[] = [
   { name: "Release notes", by: "first-party", glyph: "¶", desc: "Draft notes from the merged-PR range since last tag." },
 ];
 
-// ── derived KPIs ───────────────────────────────────────────────────────────
-const totalInv = SKILLS.reduce((s, k) => s + k.invocations, 0);
-const wAvgSuccess = Math.round(
-  SKILLS.reduce((s, k) => s + k.success * k.invocations, 0) / totalInv,
-);
-const topSkill = [...SKILLS].sort((a, b) => b.invocations - a.invocations)[0];
-
-export interface SkillKpis {
-  total: number;
-  invToday: number;
-  invWeek: number;
-  avgSuccess: number;
-  top: string;
-  /** pinned (auto-available) count. */
-  enabled: number;
-  tokensSavedM: number;
-}
-
-export const SKILL_KPIS: SkillKpis = {
-  total: SKILLS.length,
-  invToday: 318,
-  invWeek: totalInv,
-  avgSuccess: wAvgSuccess,
-  top: topSkill.name,
-  enabled: SKILLS.filter(k => k.pinned).length,
-  tokensSavedM: 4.7,
-};
-
 /** Compact number formatter (e.g. 1234 → "1.2k") — mirrors the design's `fmt`. */
 export function fmtCount(n: number): string {
   return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n);
