@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pendingStageConfirms } from "../screens/projects/planStageDerive";
+import { pendingStageConfirms, stageConfirmKeys } from "../screens/projects/planStageDerive";
 import type { SectionState } from "../screens/projects/ghStructure";
 
 type S = { k: string; state: SectionState };
@@ -55,5 +55,33 @@ describe("pendingStageConfirms — one-click stage approval (#807-followup)", ()
   it("count-gated stages (permissions, features, …) have nothing to confirm by section", () => {
     expect(pendingStageConfirms("permissions", coreDrafted)).toEqual([]);
     expect(pendingStageConfirms(undefined, coreDrafted)).toEqual([]);
+  });
+});
+
+describe("stageConfirmKeys — gateless active-stage approval (#954)", () => {
+  it("confirms a GATELESS active stage by its own key so the frontier advances", () => {
+    // A gateless informational stage (no gateRule) with nothing for pendingStageConfirms to find:
+    // approve must confirm the stage itself.
+    expect(stageConfirmKeys("cleanup", [], /*activeHasGate*/ false, /*confirmed*/ false)).toEqual(["cleanup"]);
+  });
+
+  it("does NOT re-confirm a gateless stage that's already confirmed", () => {
+    expect(stageConfirmKeys("cleanup", [], false, true)).toEqual([]);
+  });
+
+  it("a GATED active stage confirms nothing by key (it completes via its gate)", () => {
+    expect(stageConfirmKeys("repos", [], /*activeHasGate*/ true, false)).toEqual([]);
+  });
+
+  it("still returns the structure/context anchors from pendingStageConfirms first", () => {
+    // structure anchor takes precedence over the gateless fallback
+    expect(stageConfirmKeys("structure", [sec("phases", "drafted")], false, false)).toEqual(["phases"]);
+    // context core-four drafted → those, not the stage key
+    expect(stageConfirmKeys("context", coreDrafted, false, false).sort())
+      .toEqual(["architecture", "goal", "scope", "stack"]);
+  });
+
+  it("no active stage ⇒ nothing to confirm", () => {
+    expect(stageConfirmKeys(undefined, [], false, false)).toEqual([]);
   });
 });

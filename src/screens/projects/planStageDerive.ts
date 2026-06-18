@@ -61,6 +61,26 @@ export function pendingStageConfirms(
   return [];
 }
 
+/**
+ * The section keys "approve & continue" must confirm for the active stage to advance (#954). Starts
+ * from {@link pendingStageConfirms} (the structure/context anchors), and otherwise falls back to the
+ * active stage's OWN key when it's a **gateless** ("informational") stage awaiting confirmation: such
+ * a stage has no `gateRule`, so it's done only once a `confirmed:<key>` signal is set — but the
+ * focused pane's approve gesture had nothing to confirm for it, leaving the button enabled (its empty
+ * gate reads as met) yet the frontier stuck. A GATED stage completes via its gate and needs nothing
+ * confirmed here.
+ */
+export function stageConfirmKeys(
+  activeStageKey: string | undefined,
+  sections: { k: string; state: SectionState }[],
+  activeHasGate: boolean,
+  activeAlreadyConfirmed: boolean,
+): string[] {
+  const base = pendingStageConfirms(activeStageKey, sections);
+  if (base.length > 0 || !activeStageKey) return base;
+  return !activeHasGate && !activeAlreadyConfirmed ? [activeStageKey] : [];
+}
+
 export function derivePlanStageState(input: DerivePlanStageInput): PlanStageState {
   // Context = project-tier discovery sections, excluding the structure anchor
   // (`phases`). Skipped topics aren't surfaced as sections, so they're simply
