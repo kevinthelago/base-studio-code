@@ -138,18 +138,18 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(onGenerateProfiles).toHaveBeenCalled();
   });
 
-  it("renders the Plan review (phases + seam graph) and fires approval (#…)", () => {
-    const onApprovePlan = vi.fn();
+  it("renders the Plan review (phases + seam graph) with no in-body approve button (#949)", () => {
+    // The Structure stage's only approve control is the footer's "approve & continue" — the
+    // duplicate in-body "Approve milestones & seams" button was removed (#949).
     const data = { agents: [], repos: [], structure: [], context: [], issues: [],
       phaseStructure: [{ id: "p1", name: "Phase 1 — MVP", total: 3, issues: [], closed: 0, pct: 0, order: 0, doneWhen: "" }],
       seamGraph: { nodes: [], edges: [], layerCount: 0, danglingCount: 0 },
     } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-    render(<ProjectPane data={data} onApprovePlan={onApprovePlan} focus={baseFocus({
+    render(<ProjectPane data={data} focus={baseFocus({
       phases: [ph("structure", "Plan", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText("Phase 1 — MVP")).toBeInTheDocument();
-    fireEvent.click(screen.getByText(/Approve milestones/));
-    expect(onApprovePlan).toHaveBeenCalled();
+    expect(screen.queryByText(/Approve milestones/)).not.toBeInTheDocument();
   });
 
   it("renders the automations + skills bodies from real data, with empty states", () => {
