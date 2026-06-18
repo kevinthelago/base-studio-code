@@ -12,6 +12,19 @@ import type { PlanSignals } from "./stageGate";
 /** The four discovery topics the planner template always confirms. */
 const CORE = ["goal", "scope", "stack", "architecture"];
 
+// datamodel.json contract
+// Path:    ~/.base-studio-code/projects/<key>/datamodel.json
+// Writer:  source-experience stream
+// Reader:  planner-plumbing (this file) — absent artifact or missing fields read as false
+// Shape (all fields optional at the top level; absent ⇒ false):
+// {
+//   "sourceReachable": boolean,  // source system is reachable and has been inventoried
+//   "modelInferred":   boolean,  // entities, fields, and identity key have been proposed
+//   "schemaRefined":   boolean,  // user has confirmed / revised the proposed schema
+//   "mappingComplete": boolean,  // field-by-field source→model mapping is complete
+//   "loadVerified":    boolean   // load run has been verified against expectations
+// }
+
 export interface DerivePlanStageInput {
   /** Every surfaced plan section with its state (from the dynamic section model). */
   sections: { k: string; state: SectionState }[];
@@ -28,6 +41,16 @@ export interface DerivePlanStageInput {
   uiRouted?: boolean;
   /** User-facing capabilities defined in the Features stage (each becomes a stream). */
   features: { count: number; allConfirmed: boolean };
+  /** Whether a data migration source pipeline is active for this project. Absent ⇒ false. */
+  migrationSourceEnabled?: boolean;
+  /** Parsed datamodel.json artifact from the source-experience stream. Absent ⇒ all-false. */
+  datamodelArtifact?: {
+    sourceReachable?: boolean;
+    modelInferred?: boolean;
+    schemaRefined?: boolean;
+    mappingComplete?: boolean;
+    loadVerified?: boolean;
+  };
 }
 
 /**
@@ -103,6 +126,7 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
   });
   const phasesConfirmed = byKey.get("phases") === "confirmed";
 
+  const art = input.datamodelArtifact ?? {};
   return buildPlanStageState({
     context: { resolved, total, coreConfirmed },
     repoCount: input.repoCount,
@@ -114,6 +138,14 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
     fleet: { streams: input.fleetStreams, profilesComplete: input.fleetProfilesComplete },
     automationsAck: input.automationsAck,
     skillsAck: input.skillsAck,
+    migrationSourceEnabled: input.migrationSourceEnabled ?? false,
+    datamodel: {
+      sourceReachable: art.sourceReachable ?? false,
+      modelInferred:   art.modelInferred   ?? false,
+      schemaRefined:   art.schemaRefined   ?? false,
+      mappingComplete: art.mappingComplete  ?? false,
+      loadVerified:    art.loadVerified     ?? false,
+    },
   });
 }
 
@@ -143,5 +175,11 @@ export function planStateToSignals(s: PlanStageState): PlanSignals {
     profilesComplete: s.fleet.profilesComplete,
     automationsAck: s.automationsAck,
     skillsAck: s.skillsAck,
+    // datamodel.json signals (source-experience stream writes the artifact; absent ⇒ false).
+    sourceReachable: s.datamodel.sourceReachable,
+    modelInferred:   s.datamodel.modelInferred,
+    schemaRefined:   s.datamodel.schemaRefined,
+    mappingComplete: s.datamodel.mappingComplete,
+    loadVerified:    s.datamodel.loadVerified,
   };
 }

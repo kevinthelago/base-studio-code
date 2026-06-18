@@ -7,16 +7,20 @@
 // Blueprint schema (#514): a Blueprint is a named, reusable configuration of
 // which stages are active and what per-stage options apply. See Blueprints.tsx.
 
-/** All valid stage identifiers, in pipeline order. */
+/** All valid stage identifiers, in pipeline order.
+ *  `load` is signal-only — it has no PLAN_STAGES entry and is never shown in the bar,
+ *  but exists in the union so other stages and signal consumers can reference it by name. */
 export type StageId =
   | "context"
   | "repos"
-  | "ui"
+  | "source"
   | "features"
+  | "ui"
   | "structure"
   | "permissions"
   | "automations"
-  | "skills";
+  | "skills"
+  | "load";
 
 /**
  * Normalized snapshot the gates read. A later slice builds this from the live plan
@@ -48,6 +52,18 @@ export interface PlanStageState {
   automationsAck: boolean;
   /** Skills assigned/acknowledged (may legitimately be zero). */
   skillsAck: boolean;
+  /** Whether a migration source pipeline is active for this project — drives the source
+   *  stage's applicability. False for projects with no data migration component. */
+  migrationSourceEnabled: boolean;
+  /** Signals derived from datamodel.json (written by the source-experience stream).
+   *  Absent artifact reads as all-false. */
+  datamodel: {
+    sourceReachable: boolean;
+    modelInferred: boolean;
+    schemaRefined: boolean;
+    mappingComplete: boolean;
+    loadVerified: boolean;
+  };
 }
 
 /** Status of a stage for rendering. `na` = not applicable to this project. */
@@ -110,6 +126,24 @@ export const PLAN_STAGES: Stage[] = [
     dependsOn: [],
     defaultEnabled: true,
     gate: (s) => ({ done: s.repoCount > 0, fraction: s.repoCount > 0 ? 1 : 0 }),
+  },
+  {
+    // source: connects the migration source, infers the data model, and confirms the schema.
+    // Signal-only sibling `load` (StageId "load") is NOT in this array — it has no bar entry.
+    id: "source",
+    label: "Source",
+    description: "Migration source — inventory it, infer the data model, confirm the schema",
+    optional: true,
+    hasOutputFile: true,  // datamodel.json
+    dependsOn: ["context", "repos"],
+    defaultEnabled: true,
+    // Only applicable when the project has an active data migration source pipeline.
+    applies: (s) => s.migrationSourceEnabled,
+    gate: (s) => {
+      const m = s.datamodel.modelInferred;
+      const r = s.datamodel.schemaRefined;
+      return { done: m && r, fraction: (m ? 0.5 : 0) + (r ? 0.5 : 0) };
+    },
   },
   {
     id: "features",
@@ -216,6 +250,14 @@ export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageS
     fleet: p.fleet ?? { streams: 0, profilesComplete: false },
     automationsAck: p.automationsAck ?? false,
     skillsAck: p.skillsAck ?? false,
+    migrationSourceEnabled: p.migrationSourceEnabled ?? false,
+    datamodel: p.datamodel ?? {
+      sourceReachable: false,
+      modelInferred: false,
+      schemaRefined: false,
+      mappingComplete: false,
+      loadVerified: false,
+    },
   };
 }
 
@@ -307,6 +349,8 @@ export interface PermissionsStageOptions {
 export interface StageOptionsMap {
   context?:     ContextStageOptions;
   repos?:       Record<string, never>;
+  source?:      Record<string, never>;
+  features?:    Record<string, never>;
   ui?:          UiStageOptions;
   structure?:   StructureStageOptions;
   permissions?: PermissionsStageOptions;
