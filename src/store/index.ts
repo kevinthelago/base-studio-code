@@ -35,7 +35,7 @@ import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/project
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
 import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import type { GradeResult } from "../screens/projects/grading";
-import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
+import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, canChangeBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/projects/blueprints";
 import { seedDataModels, emptyDataModel, type DataModel } from "../screens/projects/dataModel";
 import { canonicalSectionKey } from "../screens/projects/planSections";
 import type { PaneDescriptor } from "../lib/tunnel";
@@ -2167,6 +2167,10 @@ export const useAppStore = create<AppStore>()(
         set((s) => {
           const bp = s.blueprints.find((b) => b.id === blueprintId);
           if (!bp) return {};
+          // A project locked to its blueprint (#923 — the blueprint-author lifecycle) can't be
+          // switched: its blueprint overrides any other, so refuse to re-seed it.
+          const current = s.blueprints.find((b) => b.id === s.projectBlueprintId[projectId]);
+          if (!canChangeBlueprint(current)) return {};
           const drop = <T,>(m: Record<string, T>): Record<string, T> => {
             const n = { ...m }; delete n[projectId]; return n;
           };
