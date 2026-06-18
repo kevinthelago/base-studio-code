@@ -153,6 +153,64 @@ describe("planStages — currentStage (reached frontier)", () => {
   });
 });
 
+describe("planStages — source stage (pp-stage)", () => {
+  it("source is N/A when migrationSourceEnabled is false (default)", () => {
+    expect(status("source", buildPlanStageState({ migrationSourceEnabled: false }))).toBe("na");
+  });
+
+  it("source is in-progress when enabled but artifact is empty", () => {
+    const s = buildPlanStageState({
+      migrationSourceEnabled: true,
+      repoCount: 1,
+      context: { resolved: 1, total: 1, coreConfirmed: true },
+    });
+    expect(status("source", s)).toBe("in-progress");
+  });
+
+  it("source is locked until context + repos deps are satisfied", () => {
+    const s = buildPlanStageState({
+      migrationSourceEnabled: true,
+      repoCount: 0,   // repos not done
+      context: { resolved: 0, total: 0, coreConfirmed: false },
+    });
+    expect(status("source", s)).toBe("locked");
+  });
+
+  it("source completes when modelInferred AND schemaRefined are both true", () => {
+    const s = buildPlanStageState({
+      migrationSourceEnabled: true,
+      repoCount: 1,
+      context: { resolved: 1, total: 1, coreConfirmed: true },
+      datamodel: { sourceReachable: true, modelInferred: true, schemaRefined: true, mappingComplete: false, loadVerified: false },
+    });
+    expect(status("source", s)).toBe("complete");
+  });
+
+  it("source stays in-progress when only modelInferred is true", () => {
+    const s = buildPlanStageState({
+      migrationSourceEnabled: true,
+      repoCount: 1,
+      context: { resolved: 1, total: 1, coreConfirmed: true },
+      datamodel: { sourceReachable: false, modelInferred: true, schemaRefined: false, mappingComplete: false, loadVerified: false },
+    });
+    expect(status("source", s)).toBe("in-progress");
+  });
+
+  it("load is in StageId but has no PLAN_STAGES entry (signal-only)", () => {
+    // "load" is a valid StageId for signal reference only — it intentionally has no bar entry.
+    expect(STAGE_BY_ID["load" as StageId]).toBeUndefined();
+  });
+
+  it("source appears in PLAN_STAGES between repos and features", () => {
+    const ids = PLAN_STAGES.map((s) => s.id);
+    const reposIdx = ids.indexOf("repos");
+    const sourceIdx = ids.indexOf("source");
+    const featuresIdx = ids.indexOf("features");
+    expect(sourceIdx).toBeGreaterThan(reposIdx);
+    expect(sourceIdx).toBeLessThan(featuresIdx);
+  });
+});
+
 describe("planStages — BUILT_IN_BLUEPRINTS (#666/#458)", () => {
   it("includes a 'refactor' blueprint without the structure stage", () => {
     const refactor = BUILT_IN_BLUEPRINTS.find((b) => b.id === "refactor");

@@ -412,6 +412,31 @@ gaps, secret handling, input validation, dependency CVEs, and transport/storage 
 Rank findings by severity and produce concrete, testable fixes — not just observations.`,
   },
 
+  // Greenfield source section — distinct from the standalone `dataSource` used in the
+  // data-migration blueprint. This appears in the Default blueprint as an OPTIONAL,
+  // skippable step (#676) for projects that have a migration component alongside new
+  // features. The source-experience stream writes datamodel.json; this section reads its
+  // signals (`modelInferred`, `schemaRefined`) for the gate.
+  source: {
+    name: "Source", glyph: "⇲", gate: "model inferred + schema confirmed", deps: ["context", "repos"],
+    optional: true,
+    blurb: "Migration source — inventory it, infer the data model, confirm the schema.",
+    gateRule: { require: [
+      { signal: "modelInferred", target: true, label: "data model inferred from source" },
+      { signal: "schemaRefined", target: true, label: "schema reviewed and confirmed" },
+    ] },
+    prompt:
+`Identify the migration source (database, SaaS export, or API) and inventory what exists
+there: its objects/tables, their schemas, and a small representative sample of rows.
+Then propose the canonical data model this project will load into — entities, fields with
+types, and the identity key (the fields that decide when two records describe the same
+real-world thing). Write the model to datamodel.json and set modelInferred to true.
+Walk the proposed schema with the user and refine it; when confirmed, set schemaRefined
+to true.
+
+Gate: datamodel.json present with modelInferred and schemaRefined both true.`,
+  },
+
   // ── data-platform stages (#782/#783): acquire → model → clean → load into a canonical
   // Data Model. Informational (no signal gate yet — declarative licensing/quality gates are
   // #783) and plan/data-only: the planner designs the pipeline + writes datamodel.json, it
@@ -723,6 +748,9 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("repos"),
         // Deploy right after repos (#919): decide how each service ships before shaping the rest.
         mkSection("deploy"),
+        // Optional migration source step (#pp-section): skippable for projects with no migration
+        // component; never blocks the rest of the plan. Signals read from datamodel.json.
+        mkSection("source",      { optional: true }),
         // Features before UI (#825): design the screens from the defined capabilities + author the Claude Design kickoff.
         mkSection("features"),
         mkSection("ui",          { optional: true }),
