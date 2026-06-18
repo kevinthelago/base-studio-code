@@ -9,7 +9,7 @@ import type { Blueprint } from "../screens/projects/blueprints";
 import type { SkillDef } from "../lib/skills";
 import type { KbBlock } from "../data/mock";
 
-const sample = () => makeBlueprints().find((b) => b.id === "fullstack")!;
+const sample = () => makeBlueprints().find((b) => b.id === "default")!;
 
 describe("blueprintShare (#598)", () => {
   it("round-trips a blueprint through the manifest (content preserved, fresh uids)", () => {

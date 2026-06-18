@@ -670,7 +670,11 @@ export function mkSection(
 export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
   const fresh = makeBlueprints();
   const byId = new Map(fresh.map((b) => [b.id, b]));
-  const merged = persisted.map((b) => (b.origin === "built-in" && byId.has(b.id) ? byId.get(b.id)! : b));
+  // Drop persisted built-ins that no longer exist in code (removed templates), refresh the rest by
+  // id, and leave user-created / forked / imported blueprints untouched (#923 cleanup).
+  const merged = persisted
+    .filter((b) => b.origin !== "built-in" || byId.has(b.id))
+    .map((b) => (b.origin === "built-in" && byId.has(b.id) ? byId.get(b.id)! : b));
   for (const b of fresh) if (!merged.some((x) => x.id === b.id)) merged.push(b);
   return merged;
 }
@@ -690,39 +694,6 @@ export function makeBlueprints(): Blueprint[] {
         mkSection("mcp",         { optional: true }),
         mkSection("automations", { optional: true }),
         mkSection("skills",      { optional: true }),
-      ],
-    },
-    {
-      id: "fullstack", name: "Full-stack web app", desc: "Web client + API + DB", origin: "built-in", category: "greenfield", mode: "create",
-      sections: [
-        mkSection("context"), mkSection("repos"),
-        mkSection("features"),
-        mkSection("ui"),
-        mkSection("structure"),
-        mkSection("testing"), mkSection("permissions"),
-        mkSection("mcp", { optional: true }),
-        mkSection("automations"), mkSection("skills"),
-      ],
-    },
-    {
-      id: "mobile", name: "Mobile MVP", desc: "Single app, ship fast", origin: "built-in", category: "greenfield", mode: "create",
-      sections: [
-        mkSection("context"),
-        mkSection("features"),
-        mkSection("ui"),
-        mkSection("structure"),
-        mkSection("permissions"), mkSection("mcp", { optional: true }), mkSection("skills"),
-      ],
-    },
-    {
-      id: "api", name: "API microservice", desc: "Headless service, no UI", origin: "built-in", category: "greenfield", mode: "create",
-      sections: [
-        mkSection("context"), mkSection("repos"),
-        mkSection("features"),
-        mkSection("structure"),
-        mkSection("testing"), mkSection("permissions"),
-        mkSection("mcp", { optional: true }),
-        mkSection("automations"),
       ],
     },
     {

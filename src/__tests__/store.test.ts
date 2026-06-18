@@ -1699,7 +1699,7 @@ describe("blueprints library (#513/#514)", () => {
     useAppStore.getState().setBlueprintSections("default", flipped);
     expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "context")!.enabled).toBe(false);
     // a sibling blueprint is untouched
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "fullstack")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "mcp-server")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
   });
 
   it("updateBlueprintMeta edits name/desc", () => {

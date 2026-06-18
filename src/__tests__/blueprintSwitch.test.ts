@@ -26,9 +26,9 @@ describe("blueprint-per-project + reset (#647)", () => {
   });
 
   it("applyBlueprintToProject re-seeds the config, records the blueprint, and clears progress", () => {
-    useAppStore.getState().applyBlueprintToProject("p", "fullstack");
+    useAppStore.getState().applyBlueprintToProject("p", "mcp-server");
     const s = useAppStore.getState();
-    expect(s.projectBlueprintId["p"]).toBe("fullstack");
+    expect(s.projectBlueprintId["p"]).toBe("mcp-server");
     expect(s.planStageConfig["p"]).toBeTruthy();
     expect(s.planStageConfig["p"].order.length).toBeGreaterThan(0);
     // progress keyed to the old arc is wiped
@@ -63,7 +63,7 @@ describe("blueprint-per-project + reset (#647)", () => {
   it("won't switch a project locked to the blueprint-author lifecycle (#923)", () => {
     // bind the project to the authoring lifecycle, then try to switch it away
     useAppStore.getState().setProjectBlueprintId("p", "blueprint-author");
-    useAppStore.getState().applyBlueprintToProject("p", "fullstack");
+    useAppStore.getState().applyBlueprintToProject("p", "mcp-server");
     const s = useAppStore.getState();
     // the switch is refused — the authoring blueprint overrides + locks the project
     expect(s.projectBlueprintId["p"]).toBe("blueprint-author");

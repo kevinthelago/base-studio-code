@@ -43,7 +43,7 @@ describe("blueprints — seed library", () => {
   it("adds an optional MCP Servers stage after Permissions in the greenfield blueprints (#878)", () => {
     expect(SECTION_DEFS.mcp).toBeTruthy();
     expect(SECTION_DEFS.mcp.optional).toBe(true);
-    for (const id of ["default", "fullstack", "mobile", "api"]) {
+    for (const id of ["default"]) {
       const bp = makeBlueprints().find((b) => b.id === id)!;
       const keys = bp.sections.map((s) => s.key);
       expect(keys, `${id} has an mcp stage`).toContain("mcp");
@@ -234,7 +234,8 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
 
   it("blueprintToStageConfig maps enabled+order over known stages, dropping non-registry sections", () => {
     const known = new Set(PLAN_STAGES.map((s) => s.id));
-    const bp = makeBlueprints().find((b) => b.id === "fullstack")!; // includes "testing"
+    // a blueprint including "testing" (a non-registry stage) — dropped from the stage config order.
+    const bp = { id: "t", name: "T", desc: "", sections: [mkSection("context"), mkSection("repos"), mkSection("structure"), mkSection("testing")] } as Blueprint;
     const cfg = blueprintToStageConfig(bp);
     // order only contains registry stage ids, in blueprint order
     expect(cfg.order.every((id) => known.has(id))).toBe(true);
