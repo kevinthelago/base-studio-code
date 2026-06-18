@@ -134,6 +134,7 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 **✅ Shipped — `1.0.x` (current)**
 - Planning → blueprints → parallel agent **fleet** (least-privilege workers in git worktrees, coordinated by a director)
 - **Blueprints & Pipelines** — lifecycle categories, the drag-reorder editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, file intake, gist sharing, and **authoring your own blueprint** in the planner
+- **Deploy** planning stage + pane — define how each service ships (hosting target, environments, CI/CD pipeline, secrets, release & rollback, health), generated as deployment issues
 - Parallel **console** sessions, **Knowledge Store**, **GitHub** integration, **automations**, **MCP extensions**
 - Optional **mobile tunnel** (zero-knowledge Cloudflare relay, Noise IK E2E)
 - Enterprise-grade planning dimensions baked into the planner (observability, reliability/DR, data governance, supply-chain, release strategy, …)

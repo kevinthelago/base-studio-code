@@ -12,6 +12,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [1.0.2] — 2026-06-18
 
 ### Added
+- **Deploy** planning stage + pane, right after Repos — define how each service ships (target/hosting per service, environment ladder, CI/CD pipeline, config + secrets, release & rollback, health); the planner emits it as a `<deploy_config>` tag and it publishes as deployment issues owned by a `deploy` stream (#919)
 - Blueprint-authoring lifecycle — design a reusable blueprint in the planner and publish it to a gist; no fleet/triage (#923)
 - Data blueprints — **Data migration** and **Data collection** (web scraping / dataset fetch) into a canonical Data Model
 - Enterprise production-readiness dimensions baked into the planner (observability/SLOs, reliability + DR, data governance, release strategy, supply-chain integrity, …); accessibility + regulatory compliance routed to the Compliance MCP server
