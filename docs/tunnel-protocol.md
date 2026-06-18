@@ -140,6 +140,32 @@ thread in `src-tauri/src/lib.rs` into the tunnel's in-process bus (a no-op while
 is connected) and drained by the relay transport (#242). Inbound input/resize is routed
 back into the PTY.
 
+## Relay test / health probe (`tunnel_check_relay`)
+
+The Settings card can probe any relay URL for liveness via the `tunnelCheckRelay` Tauri
+command (T3b, `src-tauri/src/tunnel.rs`). The command GETs `<relayUrl>/health` with a 5 s
+timeout and returns a `RelayDiag`:
+
+| Field | Meaning |
+|---|---|
+| `reachable` | `true` when the relay responded with HTTP 200. |
+| `service`, `version` | Fields from the relay's `/health` JSON body. |
+| `latencyMs` | Round-trip time for the probe. |
+| `error` | Error message when the probe failed (`null` on success). |
+| `hostConnected` | Whether the desktop's own relay WebSocket (host leg) is open. |
+| `clientCount` | Number of paired mobile clients (guest legs) right now. |
+
+## Relay idle / TTL recovery (T5)
+
+The relay's Durable Object closes rooms after `IDLE_TIMEOUT_MS` (5 min) of no traffic and
+after `ROOM_TTL_MS` (1 h) regardless of activity (`relay/src/room.ts`). When the desktop
+receives a close frame with reason `"room idle timeout"` or `"room lifetime exceeded"` it:
+
+1. Emits `tunnel://room-expired` to the frontend (for UI prompt to re-scan).
+2. Returns a clean exit from the session, resetting the reconnect backoff.
+3. Re-dials the relay on the **same** room id — the DO resets after TTL so the same id
+   creates a fresh session; the existing QR is still valid for re-pairing.
+
 ## Status
 
 - **#240** landed the transport-agnostic contract: the wire types, the pure store→wire
@@ -148,8 +174,16 @@ back into the PTY.
   blind pipe.
 - **#242** landed the desktop side: the protocol serde + Noise IK crypto (#242a) and the
   relay dial-out client transport — `tunnel_start`/`tunnel_stop`, the responder
-  handshake, auth, replay, and the bus pump (#242b). The desktop now connects to a relay
-  and serves a paired mobile client end-to-end.
-- **#243** (next) generates the pairing QR after the relay connects and adds the Settings
-  relay section. The **mobile** client (relay initiator + Noise + scan-to-pair) lives in
-  `mobile-studio-code`. See #197 for the full architecture.
+  handshake, auth, replay, and the bus pump (#242b). The desktop connects to a relay and
+  serves a paired mobile client end-to-end.
+- **#243** landed the pairing QR generation and Settings relay section; `tunnelClient.ts`
+  exposes all Tauri commands. The **mobile** client (relay initiator + Noise + scan-to-pair)
+  lives in `mobile-studio-code`. See #197 for the full architecture.
+- **T3b** added the `tunnel_check_relay` / `tunnelCheckRelay` diagnostic command: relay
+  reachability + per-leg (host/guest) connection state in a single call.
+- **T5** added relay idle/TTL close detection: `tunnel://room-expired` event and clean-exit
+  reconnect so the backoff resets after a normal room expiry.
+- **T6** added FCM out-of-band push for `user_request` transitions so a backgrounded phone
+  receives the notification even when off the relay (`src-tauri/src/fcm.rs`).
+- **T2b** wired all Rust commands into `tunnelClient.ts`, including the previously missing
+  `tunnelAckPlanPush`.

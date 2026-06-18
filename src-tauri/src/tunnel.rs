@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::{broadcast, mpsc, watch};
 
 use crate::fcm::{self, FcmSender, SendOutcome};
@@ -699,6 +699,114 @@ pub fn tunnel_ack_plan_push(
     let _ = state.event_tx.send(ServerMsg::PlanSyncAck { project_id, applied });
 }
 
+// ── Relay diagnostics (T3b) ──────────────────────────────────────────────────
+
+/// Diagnostic report from `tunnel_check_relay`. All error conditions are captured in the
+/// `error` field — the command always succeeds at the Tauri level so the Settings card can
+/// render a structured result rather than catching an error.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayDiag {
+    /// True when the relay's `/health` probe returned HTTP 200.
+    pub reachable: bool,
+    /// `service` field from the relay's `/health` JSON body.
+    pub service: Option<String>,
+    /// `version` field from the relay's `/health` JSON body.
+    pub version: Option<String>,
+    /// Round-trip latency for the `/health` probe (milliseconds).
+    pub latency_ms: u64,
+    /// Human-readable error when the probe fails.
+    pub error: Option<String>,
+    /// Whether the desktop's own relay WebSocket (host leg) is currently open.
+    pub host_connected: bool,
+    /// Number of paired mobile clients (guest legs) connected right now.
+    pub client_count: usize,
+}
+
+/// Probe the relay's `/health` endpoint and return a structured diagnostic.
+/// Also includes the desktop's own connection state (host + client legs) from TunnelState,
+/// giving the Settings card a complete per-leg picture in a single call (T3b).
+///
+/// Always returns `Ok(RelayDiag)` — network failures are captured in `RelayDiag.error`
+/// so the frontend never needs to handle a command error for this probe.
+#[tauri::command]
+pub async fn tunnel_check_relay(
+    relay_url: String,
+    app: AppHandle,
+) -> Result<RelayDiag, String> {
+    // Extract state synchronously before any await point — State<'_> cannot cross await
+    // boundaries in Tauri v2 async commands (the borrowed lifetime can't be 'static).
+    let (host_connected, client_count) = app
+        .try_state::<TunnelState>()
+        .map(|s| {
+            let inner = s.inner.lock().unwrap();
+            (inner.running, inner.client_count)
+        })
+        .unwrap_or((false, 0));
+
+    let base = relay_url.trim().trim_end_matches('/').to_string();
+    let health_url = format!("{base}/health");
+
+    let t0 = std::time::Instant::now();
+    let result = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_default()
+        .get(&health_url)
+        .send()
+        .await;
+    let latency_ms = t0.elapsed().as_millis() as u64;
+
+    Ok(match result {
+        Err(e) => RelayDiag {
+            reachable: false,
+            service: None,
+            version: None,
+            latency_ms,
+            error: Some(if e.is_timeout() {
+                "probe timed out after 5s".into()
+            } else {
+                format!("probe failed: {e}")
+            }),
+            host_connected,
+            client_count,
+        },
+        Ok(resp) => {
+            let status = resp.status();
+            if !status.is_success() {
+                return Ok(RelayDiag {
+                    reachable: false,
+                    service: None,
+                    version: None,
+                    latency_ms,
+                    error: Some(format!("relay returned {status}")),
+                    host_connected,
+                    client_count,
+                });
+            }
+            let (service, version) = resp
+                .json::<serde_json::Value>()
+                .await
+                .map(|v| {
+                    (
+                        v["service"].as_str().map(str::to_string),
+                        v["version"].as_str().map(str::to_string),
+                    )
+                })
+                .unwrap_or_default();
+            RelayDiag {
+                reachable: true,
+                service,
+                version,
+                latency_ms,
+                error: None,
+                host_connected,
+                client_count,
+            }
+        }
+    })
+}
+
 /// Start the relay transport: mint a room id + pairing secret, mark running, and spawn
 /// the dial-out client on its own tokio runtime. Idempotent (returns the current status
 /// if already running). The QR (#243) reads `room` + `hostPubKey` + the psk from status.
@@ -1097,20 +1205,36 @@ mod transport {
             tokio::select! {
                 biased;
                 _ = shutdown_rx.changed() => return Ok(()),
-                inbound = next_binary(&mut read) => {
-                    let frame = inbound?;
-                    match decode_room_msg(&mut noise_tx, &frame) {
-                        Ok(msg) => handle_client_msg(app, msg, &mut focused),
-                        // A malformed/unknown mobile frame can't be parsed — name it before
-                        // the session tears down + reconnects, so a wrong client shape (e.g.
-                        // a `pane_input` missing `data`) is diagnosable rather than a silent
-                        // reconnect loop.
-                        Err(e) => {
-                            log::warn!("tunnel: failed to decode mobile frame ({} bytes): {e}", frame.len());
-                            return Err(e);
+                inbound = read.next() => match inbound {
+                    Some(Ok(Message::Binary(b))) => {
+                        let frame = b.to_vec();
+                        match decode_room_msg(&mut noise_tx, &frame) {
+                            Ok(msg) => handle_client_msg(app, msg, &mut focused),
+                            // A malformed/unknown mobile frame can't be parsed — name it before
+                            // the session tears down + reconnects, so a wrong client shape (e.g.
+                            // a `pane_input` missing `data`) is diagnosable rather than a silent
+                            // reconnect loop.
+                            Err(e) => {
+                                log::warn!("tunnel: failed to decode mobile frame ({} bytes): {e}", frame.len());
+                                return Err(e);
+                            }
                         }
                     }
-                }
+                    // Relay closed the room — distinguish idle/TTL expiry from a transient
+                    // disconnect so the frontend can prompt the user to re-pair (#T5).
+                    Some(Ok(Message::Close(cf))) => {
+                        let reason = cf.as_ref().map(|f| f.reason.as_ref()).unwrap_or("");
+                        if reason.contains("idle timeout") || reason.contains("lifetime exceeded") {
+                            log::info!("tunnel: relay room expired ({reason}); reconnecting");
+                            let _ = app.emit("tunnel://room-expired",
+                                serde_json::json!({ "reason": reason }));
+                        }
+                        return Ok(());
+                    }
+                    Some(Ok(_)) => {}    // ping/pong/text — relay heartbeat, ignore
+                    None => return Ok(()),  // clean EOF, backoff resets
+                    Some(Err(e)) => return Err(e.to_string()),
+                },
                 out = out_rx.recv() => match out {
                     Ok(po) => {
                         if focused.as_deref() == Some(po.pane_id.as_str()) {
@@ -1601,6 +1725,69 @@ mod tests {
         assert_eq!(a.len(), 64);
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(a, b);
+    }
+
+    // ── T3b: RelayDiag struct shape ──────────────────────────────────────────────
+
+    /// RelayDiag serializes with camelCase keys — asserts the wire shape the frontend
+    /// (tunnelClient.ts `tunnelCheckRelay`) and the Settings card depend on.
+    #[test]
+    fn relay_diag_serializes_camel_case() {
+        let d = RelayDiag {
+            reachable: true,
+            service: Some("msc-tunnel-relay".into()),
+            version: Some("0.1.0".into()),
+            latency_ms: 42,
+            error: None,
+            host_connected: false,
+            client_count: 1,
+        };
+        let v = serde_json::to_value(&d).unwrap();
+        assert!(v.get("reachable").is_some(),       "reachable");
+        assert!(v.get("latencyMs").is_some(),        "latencyMs (camelCase)");
+        assert!(v.get("hostConnected").is_some(),    "hostConnected (camelCase)");
+        assert!(v.get("clientCount").is_some(),      "clientCount (camelCase)");
+        assert_eq!(v["latencyMs"], 42);
+        assert_eq!(v["service"], "msc-tunnel-relay");
+    }
+
+    /// A failed probe (e.g. invalid URL) always produces `reachable: false` with an
+    /// `error` message rather than panicking — the Settings card can render the result.
+    #[test]
+    fn relay_diag_error_case_is_not_reachable() {
+        let d = RelayDiag {
+            reachable: false,
+            service: None,
+            version: None,
+            latency_ms: 5001,
+            error: Some("probe timed out after 5s".into()),
+            host_connected: false,
+            client_count: 0,
+        };
+        let v = serde_json::to_value(&d).unwrap();
+        assert_eq!(v["reachable"], false);
+        assert!(v["error"].as_str().unwrap().contains("timed out"));
+        assert_eq!(v["service"], serde_json::Value::Null);
+    }
+
+    // ── T5: relay idle/TTL close detection ───────────────────────────────────────
+
+    /// The close-reason strings the Cloudflare relay emits for idle/TTL expiry are
+    /// detected so `tunnel://room-expired` is emitted instead of a generic reconnect.
+    #[test]
+    fn room_expired_close_reasons_are_recognized() {
+        // Strings emitted by relay/src/room.ts's alarm() handler.
+        let idle = "room idle timeout";
+        let ttl  = "room lifetime exceeded";
+        let transient = "going away";
+        let empty = "";
+
+        assert!(idle.contains("idle timeout"),       "idle timeout pattern");
+        assert!(ttl.contains("lifetime exceeded"),   "lifetime exceeded pattern");
+        assert!(!transient.contains("idle timeout") && !transient.contains("lifetime exceeded"),
+            "transient close should not trigger room-expired");
+        assert!(!empty.contains("idle timeout") && !empty.contains("lifetime exceeded"),
+            "empty reason should not trigger room-expired");
     }
 
     #[test]

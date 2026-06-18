@@ -2111,6 +2111,7 @@ pub fn run() {
             tunnel::tunnel_set_sessions,
             tunnel::tunnel_set_plan_state,
             tunnel::tunnel_ack_plan_push,
+            tunnel::tunnel_check_relay,
             read_audit_log,
             read_skill_log,
             read_hook_log,
