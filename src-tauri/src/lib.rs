@@ -2052,6 +2052,7 @@ pub fn run() {
             kb_chat,
             github::github_request,
             github::gist_create,
+            github::gist_update,
             github::github_cache_clear,
             github::github_graphql,
             github::github_post,
