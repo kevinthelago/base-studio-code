@@ -1286,21 +1286,34 @@ export function Planning({ visible }: { visible: boolean }) {
         // gate clears from the plan, not only from manual pane edits. Last complete tag wins.
         const dcRe = /<deploy_config\s*>([\s\S]*?)<\/deploy_config>/g;
         let lastDcBody: string | null = null;
-        while ((m = dcRe.exec(bufRef.current)) !== null) lastDcBody = m[1];
+        let dcMatchedComplete = false;
+        while ((m = dcRe.exec(bufRef.current)) !== null) { lastDcBody = m[1]; dcMatchedComplete = true; }
+        // Fallback (#919): the closing tag can be mangled / line-wrapped / never arrive. If an
+        // opening tag is present, parse from it to the buffer end — parseDeployConfigTag extracts the
+        // {…} object, so the config still lands without a clean </deploy_config>.
+        if (lastDcBody === null) {
+          const openIdx = bufRef.current.lastIndexOf("<deploy_config");
+          if (openIdx >= 0) {
+            const gt = bufRef.current.indexOf(">", openIdx);
+            if (gt >= 0) lastDcBody = bufRef.current.slice(gt + 1);
+          }
+        }
         if (lastDcBody !== null) {
-          // Forgiving parse: extract the {…} object so stray prose / a leaked closing tag in the
-          // body doesn't drop the whole config (#919 follow-up).
           const cfg = parseDeployConfigTag(lastDcBody);
           if (cfg) {
             useAppStore.getState().setPlanDeployConfig(projIdSnap, cfg);
-            // Diagnostic (#919): surfaces in the WebView DevTools console so a stuck Deploy gate is
-            // debuggable — confirms the tag was ingested + shows which readiness checks pass.
-            console.debug("[deploy_config] parsed for", projIdSnap, "→",
+            // Diagnostic (#919): console.log (NOT console.debug, which DevTools hides at its default
+            // level) — confirms the tag was ingested + shows which readiness checks pass / are MISSING.
+            console.log("[deploy_config] parsed for", projIdSnap, "→",
               deployChecks(cfg).map((c) => `${c.id}:${c.ok ? "ok" : "MISSING"}`).join("  "));
           } else {
-            console.debug("[deploy_config] tag detected but no JSON object parsed from its body");
+            // Diagnostic (#919): the tag was captured but its body isn't parseable JSON — dump it
+            // ESCAPED so terminal-mangling (inserted newlines, box-drawing chars, indentation) is visible.
+            console.log("[deploy_config] body NOT parseable. Escaped first 800 chars:\n", JSON.stringify(lastDcBody.slice(0, 800)));
           }
-          bufRef.current = bufRef.current.replace(/<deploy_config\s*>[\s\S]*?<\/deploy_config>/g, "");
+          // Only strip a fully-closed tag; an unclosed one is left so a later chunk can complete it
+          // (re-parsing the same config is idempotent).
+          if (dcMatchedComplete) bufRef.current = bufRef.current.replace(/<deploy_config\s*>[\s\S]*?<\/deploy_config>/g, "");
         }
 
         // Cap buffer to prevent unbounded growth while preserving any partial
