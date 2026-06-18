@@ -6,10 +6,9 @@
 import { useEffect, useMemo, useState } from "react";
 import "../../styles/blueprints.css";
 import { useAppStore } from "../../store";
-import { tint, hue, CATALOG_FLOW_KINDS, type CatalogEntry } from "./blueprintCatalog";
+import { tint, hue, DEFAULT_GIST_SOURCE } from "./blueprintCatalog";
 import { uid, type Blueprint, type BlueprintSection, type BlueprintGist } from "./blueprints";
 import { sanitizeProjectKey } from "../../lib/projectPaths";
-import { mkStageSection } from "./blueprintEdit";
 import { LibraryView, type CardMenuAction } from "./BlueprintLibrary";
 import { CatalogView } from "./BlueprintCatalogView";
 import { BlueprintEditorView } from "./BlueprintEditor";
@@ -18,7 +17,7 @@ import { buildMcpLibrary } from "./blueprintMcp";
 import { blankSkill } from "../../lib/skills";
 import { BlueprintAssistant } from "./BlueprintAssistant";
 import {
-  PublishModal, ImportModal, PreviewModal, NewBlueprintModal, HistoryModal, SyncModal,
+  PublishModal, ImportModal, NewBlueprintModal, HistoryModal, SyncModal,
   type PreviewBlueprint, type PublishResult, type Revision,
 } from "./BlueprintModals";
 import { blueprintToManifest, manifestToBlueprint, bundledSkillsFromManifest } from "./blueprintShare";
@@ -32,7 +31,6 @@ const freshSections = (sections: BlueprintSection[]): BlueprintSection[] =>
 type View = "library" | "catalog" | "editor";
 type Modal =
   | { type: "new" } | { type: "import" } | { type: "publish" }
-  | { type: "preview"; cat: CatalogEntry }
   | { type: "history"; bp: Blueprint; revs: Revision[] }
   | { type: "sync"; bp: Blueprint; diff: DiffLine[]; upstream: Blueprint }
   | null;
@@ -105,8 +103,6 @@ export function BlueprintsPage() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const active = blueprints.find((b) => b.id === activeId) ?? null;
-  // forked blueprints carry their source catalog id in tags (e.g. "cat_rust").
-  const forkedIds = blueprints.flatMap((b) => (b.tags ?? []).filter((t) => t.startsWith("cat_")));
 
   function toast(text: string, accent = false) {
     const id = uid("t");
@@ -173,18 +169,11 @@ export function BlueprintsPage() {
     if (g && (g.state === "synced" || g.state === "forked")) updateBlueprintMeta(active.id, { gist: { ...g, state: "dirty" } });
   }
 
-  // ── catalog fork ──
-  function forkCatalog(cat: CatalogEntry) {
-    const sections = CATALOG_FLOW_KINDS.slice(0, cat.stageCount).map((k) => mkStageSection(k));
-    const bp: Blueprint = {
-      id: "tmp", name: cat.name, desc: cat.desc, sections,
-      icon: cat.icon, h: cat.h, origin: "forked", tags: [...cat.tags, "forked", cat.id],
-      gist: { state: "forked", author: cat.author, id: cat.gistId, rev: "r1", public: true },
-    };
-    const id = importBlueprintStore(bp);
-    setModal(null);
-    toast(`Forked "${cat.name}" into your library`, true);
-    openBp(id);
+  // ── import a blueprint gist from the source (#923) ──
+  function importFromGistId(id: string) {
+    void resolveImport(id)
+      .then(importPreview)
+      .catch((e) => toast(e instanceof Error ? e.message : String(e)));
   }
 
   // ── gist publish / import ──
@@ -295,8 +284,9 @@ export function BlueprintsPage() {
         </>
       ) : view === "catalog" ? (
         <div className="scroll">
-          <CatalogView forkedIds={forkedIds} onFork={forkCatalog}
-            onPreview={(c) => setModal({ type: "preview", cat: c })}
+          <CatalogView source={DEFAULT_GIST_SOURCE} token={githubToken}
+            importedIds={blueprints.filter((b) => b.gist?.id).map((b) => b.gist!.id!)}
+            onImport={importFromGistId}
             onBack={() => setView("library")} onManualImport={() => setModal({ type: "import" })} />
         </div>
       ) : (
@@ -312,7 +302,6 @@ export function BlueprintsPage() {
       {modal?.type === "new" && <NewBlueprintModal onClose={() => setModal(null)} onCreate={authorBlueprint} />}
       {modal?.type === "import" && <ImportModal onClose={() => setModal(null)} onResolve={resolveImport} onImport={importPreview} />}
       {modal?.type === "publish" && active && <PublishModal bp={active} onClose={() => setModal(null)} onPublish={doPublish} onPublished={onPublished} />}
-      {modal?.type === "preview" && <PreviewModal cat={modal.cat} forked={forkedIds.includes(modal.cat.id)} onClose={() => setModal(null)} onFork={forkCatalog} />}
       {modal?.type === "history" && <HistoryModal bp={modal.bp} revs={modal.revs} onClose={() => setModal(null)} onRestore={(r) => void restoreRev(modal.bp, r)} />}
       {modal?.type === "sync" && <SyncModal bp={modal.bp} diff={modal.diff} onClose={() => setModal(null)} onPull={() => pullUpstream(modal.bp, modal.upstream)} />}
 

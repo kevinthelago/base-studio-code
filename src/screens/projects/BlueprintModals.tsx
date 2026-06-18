@@ -5,8 +5,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import "../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
-import { stageKind, tint, hue, type CatalogEntry, CATALOG_FLOW_KINDS } from "./blueprintCatalog";
-import { mkStageSection } from "./blueprintEdit";
+import { stageKind, tint, hue } from "./blueprintCatalog";
 import { type DiffLine } from "./blueprintDiff";
 import { type Blueprint, type BlueprintSection } from "./blueprints";
 import { type SkillPayload } from "./blueprintSkills";
@@ -179,26 +178,6 @@ export function ImportModal({ onClose, onResolve, onImport }: {
           {phase === "error" && <div style={{ color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11, marginTop: 10 }}>Couldn't resolve: {err}</div>}
         </div>
       )}
-    </Modal>
-  );
-}
-
-/* ── Preview (catalog) ── */
-export function PreviewModal({ cat, forked, onClose, onFork }: {
-  cat: CatalogEntry; forked: boolean; onClose: () => void; onFork: (cat: CatalogEntry) => void;
-}) {
-  const sections = CATALOG_FLOW_KINDS.slice(0, cat.stageCount).map((k) => mkStageSection(k));
-  return (
-    <Modal lg icon={cat.icon} iconBg={tint(cat.h, 0.16)} iconColor={hue(cat.h)} title={cat.name}
-      sub={`by ${cat.author} · ★ ${cat.stars.toLocaleString()} · ${cat.stageCount} stages`} onClose={onClose}
-      foot={<><span className="hint mono">gist.github.com/{cat.author}/{cat.gistId}</span><span style={{ flex: 1 }} /><button className="btn ghost" onClick={onClose}>Close</button><button className="btn primary" disabled={forked} onClick={() => onFork(cat)}>{forked ? "✓ In your library" : "⑂ Fork to my library"}</button></>}>
-      <div className="hbody" style={{ marginBottom: 14 }}>{cat.desc}</div>
-      <div className="seclabel">Stage flow<span className="ln" /><span className="dim mono">{sections.length}</span></div>
-      <div className="card" style={{ padding: 13 }}><StageSummary sections={sections} /></div>
-      <div style={{ display: "flex", gap: 7, marginTop: 12, flexWrap: "wrap" }}>
-        {cat.tags.map((t) => <span className="tag" key={t}>{t}</span>)}
-        <span className="tag green">public gist</span>
-      </div>
     </Modal>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { BlueprintsPage } from "../screens/projects/BlueprintsPage";
 import { useAppStore } from "../store";
 import { makeBlueprints, DEFAULT_BLUEPRINT_ID } from "../screens/projects/blueprints";
@@ -45,21 +45,13 @@ describe("BlueprintsPage (#609 wiring)", () => {
     expect(def.sections[0].prompt).toBe("Edited prompt.");
   });
 
-  it("navigates to the community catalog and back", () => {
+  it("navigates to the import-from-gist screen and back (#923)", () => {
     render(<BlueprintsPage />);
     fireEvent.click(screen.getByRole("button", { name: /Import from gist/i }));
     expect(screen.getByRole("heading", { name: /Import from gist/, level: 1 })).toBeInTheDocument();
-    expect(screen.getByText("Rust CLI tool")).toBeInTheDocument();
+    // the gist source is shown (no mock catalog); navigate back
+    expect(screen.getByText(/gist source ·/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Blueprints$/i }));
     expect(screen.getByRole("heading", { name: "Blueprints", level: 1 })).toBeInTheDocument();
-  });
-
-  it("forks a catalog entry into the library", () => {
-    render(<BlueprintsPage />);
-    fireEvent.click(screen.getByRole("button", { name: /Import from gist/i }));
-    const rustRow = screen.getByText("Rust CLI tool").closest(".cat-row") as HTMLElement;
-    fireEvent.click(within(rustRow).getByRole("button", { name: /Fork/i }));
-    // lands in editor on the forked copy; store has it tagged with the catalog id
-    expect(useAppStore.getState().blueprints.some((b) => b.tags?.includes("cat_rust"))).toBe(true);
   });
 });
