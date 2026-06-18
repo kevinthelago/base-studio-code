@@ -1890,11 +1890,10 @@ export function Planning({ visible }: { visible: boolean }) {
             // opening it from the board later resolves to the SAME on-disk hub instead of keying
             // fresh state under the node id (the split that scattered repos/plan across two keys).
             useAppStore.getState().setProjectKeyAlias(pv.id, effectiveProjectId);
-            // Promote the hub draft/<key> → projects/<key> now that it's published (#904).
-            // Best-effort: on Windows a rename fails while a session holds the dir as its cwd —
-            // the Projects-page reconciliation retries when it's free, and project_dir resolves
-            // either location meanwhile, so nothing breaks.
-            invoke("promote_project", { projectKey: effectiveProjectId }).catch((e) => console.warn("promote_project failed (will retry on Projects page):", e));
+            // Mark the hub published (#922): write projects/<key>/.published in place. Unlike the
+            // old promote-rename, this can't fail while the planner holds the hub as its cwd, and
+            // the hub never moves — so Claude's --continue history survives.
+            invoke("mark_published", { projectKey: effectiveProjectId }).catch((e) => console.warn("mark_published failed (Projects page reconciles it):", e));
             // Drop the store's draft entry so the project can't linger as a ghost draft card now
             // that it's published (the key-based dedup also excludes it, this keeps the map clean).
             useAppStore.getState().removeDraftProject(effectiveProjectId);
