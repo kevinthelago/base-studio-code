@@ -1354,7 +1354,8 @@ function FocusedAuthoringBody({ bp, phaseKey, wiring }: {
   // blueprints.css scopes every component rule under `.bp-page`; the focused pane has no such
   // ancestor, so the views render unstyled without this wrapper. `bpwrap` neutralizes .bp-page's
   // own page-level layout and adds the focused-pane label/spacing tweaks (#923, ported from ba.css).
-  return <div className="bp-page bpwrap" style={{ padding: 16 }}>{view}</div>;
+  // No own padding — `.fp .pp-scroll` already pads the body (14px 16px 18px), matching every pane.
+  return <div className="bp-page bpwrap">{view}</div>;
 }
 
 function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
