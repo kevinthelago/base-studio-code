@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { CatalogView } from "../screens/projects/BlueprintCatalogView";
 import { NewBlueprintModal, PublishModal, ImportModal, type PreviewBlueprint } from "../screens/projects/BlueprintModals";
 import { mkStageSection } from "../screens/projects/blueprintEdit";
+import { gistUpdateAvailable } from "../screens/projects/blueprintCatalog";
 import type { Blueprint } from "../screens/projects/blueprints";
 
 vi.mock("../lib/extensions/gist", () => ({ listBlueprintGists: vi.fn() }));
@@ -29,22 +30,48 @@ describe("CatalogView (#923 — gist source)", () => {
     expect(screen.queryByText("Data Pipeline")).not.toBeInTheDocument();
   });
 
-  it("imports a gist by id and disables already-imported ones", async () => {
+  it("imports a gist by id (passing its updatedAt) and disables an up-to-date already-imported one", async () => {
     mockList.mockResolvedValue(gists);
     const onImport = vi.fn();
-    render(<CatalogView source="kevinthelago" importedIds={["abc1234567"]} onImport={onImport} onBack={noop} onManualImport={noop} />);
+    // abc imported and CURRENT (recorded updatedAt === the gist's) → disabled "✓ Imported".
+    render(<CatalogView source="kevinthelago" importedById={{ abc1234567: { updatedAt: gists[0].updatedAt } }} onImport={onImport} onBack={noop} onManualImport={noop} />);
     await screen.findByText("Realtime API");
     const realtimeRow = screen.getByText("Realtime API").closest(".cat-row") as HTMLElement;
     expect(within(realtimeRow).getByRole("button", { name: /Imported/i })).toBeDisabled();
     const dataRow = screen.getByText("Data Pipeline").closest(".cat-row") as HTMLElement;
     fireEvent.click(within(dataRow).getByRole("button", { name: /^Import$/i }));
-    expect(onImport).toHaveBeenCalledWith("def7654321");
+    expect(onImport).toHaveBeenCalledWith("def7654321", gists[1].updatedAt);
+  });
+
+  it("renders an Update button (not Import) when the imported copy is out of date (#955)", async () => {
+    mockList.mockResolvedValue(gists);
+    const onImport = vi.fn();
+    // abc imported with an OLDER updatedAt than the gist now has → out of date → "Update".
+    render(<CatalogView source="kevinthelago" importedById={{ abc1234567: { updatedAt: "2000-01-01T00:00:00Z" } }} onImport={onImport} onBack={noop} onManualImport={noop} />);
+    await screen.findByText("Realtime API");
+    const realtimeRow = screen.getByText("Realtime API").closest(".cat-row") as HTMLElement;
+    expect(within(realtimeRow).queryByRole("button", { name: /^Import$/i })).toBeNull();
+    fireEvent.click(within(realtimeRow).getByRole("button", { name: /Update/i }));
+    expect(onImport).toHaveBeenCalledWith("abc1234567", gists[0].updatedAt);
   });
 
   it("shows an empty state when the source has no blueprint gists", async () => {
     mockList.mockResolvedValue([]);
     render(<CatalogView source="kevinthelago" onImport={noop} onBack={noop} onManualImport={noop} />);
     expect(await screen.findByText(/No blueprint gists found/i)).toBeInTheDocument();
+  });
+});
+
+describe("gistUpdateAvailable (#955)", () => {
+  it("is true only when the gist's current updatedAt is strictly newer than the imported one", () => {
+    expect(gistUpdateAvailable("2026-06-18T12:00:00Z", "2026-06-01T00:00:00Z")).toBe(true);
+    expect(gistUpdateAvailable("2026-06-01T00:00:00Z", "2026-06-18T12:00:00Z")).toBe(false); // older upstream
+    expect(gistUpdateAvailable("2026-06-01T00:00:00Z", "2026-06-01T00:00:00Z")).toBe(false); // same ⇒ current
+  });
+  it("can't tell (⇒ not stale) when either timestamp is missing or unparseable", () => {
+    expect(gistUpdateAvailable(undefined, "2026-06-01T00:00:00Z")).toBe(false);
+    expect(gistUpdateAvailable("2026-06-18T12:00:00Z", undefined)).toBe(false);
+    expect(gistUpdateAvailable("not-a-date", "2026-06-01T00:00:00Z")).toBe(false);
   });
 });
 
