@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkSection, computeStatus, reorder, cloneSections, blueprintToStageConfig,
   sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal,
-  isAuthoringBlueprint, authoringSignals, canChangeBlueprint,
+  isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint,
   SECTION_DEFS, type BlueprintSection, type Blueprint,
 } from "../screens/projects/blueprints";
 import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
@@ -66,17 +66,29 @@ describe("blueprints — seed library", () => {
     expect(isAuthoringBlueprint(makeBlueprints().find((b) => b.id === "default"))).toBe(false);
   });
 
-  it("canChangeBlueprint: standard categories switchable, blueprint-author locked (#923)", () => {
-    // every built-in standard-lifecycle blueprint is switchable…
-    for (const bp of makeBlueprints().filter((b) => b.deliverable !== "blueprint")) {
-      expect(canChangeBlueprint(bp), `${bp.id} should be switchable`).toBe(true);
-    }
-    // …but the blueprint-author lifecycle is locked (its special deliverable tag overrides).
-    const author = makeBlueprints().find((b) => b.id === "blueprint-author")!;
-    expect(canChangeBlueprint(author)).toBe(false);
-    expect(isAuthoringBlueprint(author)).toBe(true);
-    // an undefined blueprint (unbound project) is treated as switchable.
-    expect(canChangeBlueprint(undefined)).toBe(true);
+  it("canChangeBlueprint: only greenfield projects can switch; others + blueprint-author locked (#923)", () => {
+    const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
+    expect(canChangeBlueprint(by("default"))).toBe(true);       // greenfield → switchable
+    expect(canChangeBlueprint(by("refactor"))).toBe(false);     // transform → locked
+    expect(canChangeBlueprint(by("harden"))).toBe(false);       // harden → locked
+    expect(canChangeBlueprint(by("blueprint-author"))).toBe(false); // authoring → locked
+  });
+
+  it("canSwitchBlueprint: greenfield → transform | harden only (#923)", () => {
+    const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
+    // greenfield can move on to transform or harden
+    expect(canSwitchBlueprint(by("default"), by("refactor"))).toBe(true);   // → transform
+    expect(canSwitchBlueprint(by("default"), by("harden"))).toBe(true);     // → harden
+    // greenfield → another greenfield / data / itself is NOT allowed
+    expect(canSwitchBlueprint(by("default"), by("mcp-server"))).toBe(false); // → greenfield
+    expect(canSwitchBlueprint(by("default"), by("data-migration"))).toBe(false); // → data
+    // a non-greenfield origin can't switch at all
+    expect(canSwitchBlueprint(by("refactor"), by("harden"))).toBe(false);
+    // anything touching the authoring lifecycle is refused
+    expect(canSwitchBlueprint(by("blueprint-author"), by("refactor"))).toBe(false);
+    expect(canSwitchBlueprint(by("default"), by("blueprint-author"))).toBe(false);
+    // unbound (no current) can't "switch"
+    expect(canSwitchBlueprint(undefined, by("refactor"))).toBe(false);
   });
 
   it("authoringSignals: identity (name+pitch+tag), stages (≥2 + prompts), publishable (#923)", () => {
