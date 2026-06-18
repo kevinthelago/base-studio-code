@@ -589,6 +589,17 @@ export function isAuthoringBlueprint(bp: Blueprint | undefined): boolean {
   return bp?.deliverable === "blueprint";
 }
 
+/** Whether a project bound to this blueprint may CHANGE / switch to a different blueprint (#923).
+ *  Decided by the lifecycle category — the standard categories (greenfield, transform, harden,
+ *  maintain, data) are switchable. The blueprint-author lifecycle carries a special marker
+ *  (`deliverable: "blueprint"`) that makes this FALSE: a project on it is LOCKED — the authoring
+ *  blueprint overrides any other and can never be swapped out. */
+export function canChangeBlueprint(bp: Blueprint | undefined): boolean {
+  if (!bp) return true;
+  if (isAuthoringBlueprint(bp)) return false;        // special tag → locked, overrides others
+  return BLUEPRINT_CATEGORIES.includes(blueprintCategory(bp));
+}
+
 /** The gate signals the blueprint-authoring stages read, derived from the in-progress blueprint the
  *  planner is designing (#923, gates per the blueprint-author design):
  *  - `bpName` — Purpose gate: name + pitch + ≥1 catalog tag.

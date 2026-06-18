@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkSection, computeStatus, reorder, cloneSections, blueprintToStageConfig,
   sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal,
-  isAuthoringBlueprint, authoringSignals,
+  isAuthoringBlueprint, authoringSignals, canChangeBlueprint,
   SECTION_DEFS, type BlueprintSection, type Blueprint,
 } from "../screens/projects/blueprints";
 import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
@@ -64,6 +64,19 @@ describe("blueprints — seed library", () => {
     expect(keys).not.toContain("permissions");
     // a normal blueprint is NOT an authoring one
     expect(isAuthoringBlueprint(makeBlueprints().find((b) => b.id === "default"))).toBe(false);
+  });
+
+  it("canChangeBlueprint: standard categories switchable, blueprint-author locked (#923)", () => {
+    // every built-in standard-lifecycle blueprint is switchable…
+    for (const bp of makeBlueprints().filter((b) => b.deliverable !== "blueprint")) {
+      expect(canChangeBlueprint(bp), `${bp.id} should be switchable`).toBe(true);
+    }
+    // …but the blueprint-author lifecycle is locked (its special deliverable tag overrides).
+    const author = makeBlueprints().find((b) => b.id === "blueprint-author")!;
+    expect(canChangeBlueprint(author)).toBe(false);
+    expect(isAuthoringBlueprint(author)).toBe(true);
+    // an undefined blueprint (unbound project) is treated as switchable.
+    expect(canChangeBlueprint(undefined)).toBe(true);
   });
 
   it("authoringSignals: identity (name+pitch+tag), stages (≥2 + prompts), publishable (#923)", () => {
