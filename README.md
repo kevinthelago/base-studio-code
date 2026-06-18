@@ -1,6 +1,6 @@
 > ⚠️ **This application creates issues, milestones, repositories, etc. by default — please be aware!** The project planning page will show you everything that will be done before it happens.
 
-> 📍 **Where we are:** the core feature set is largely in place. Current development focus is **data models and data collection**, **project planning bugs and polish** on the road to `1.0.2`.
+> 📍 **Where we are:** `1.0.2` is the current release — the platform's core is in place: planning → blueprints → parallel agent fleet, console, Knowledge Store, GitHub integration, automations, MCP extensions, and the optional mobile tunnel. **Next up is `1.0.3` — the _data_ release:** fully implementing and testing the canonical **data models** and the **web-scraping / data-collection** feature, plus rounding out the lifecycle **blueprints** for more seamless application development. See the [Roadmap](#roadmap).
 
 # base-studio-code
 
@@ -20,7 +20,7 @@ Pairs **optionally** with **mobile-studio-code**, a standalone companion app tha
 
 *A core feature of the platform.* Planning is built from two composable pieces.
 
-**Blueprints** are reusable planning templates. A Blueprint is an ordered list of planning **stages** — context, repos, UI design, structure, permissions, automations, skills — each with its own prompt module and attached pipelines. Pick one — built-ins now span the project lifecycle: **greenfield** (Default, Full-stack web app, Mobile MVP, API microservice), **transform** (Refactor & Cleanup, Split / Combine microservices, Migrate), and **harden** (Harden security), searchable and filterable by category — and it seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
+**Blueprints** are reusable planning templates. A Blueprint is an ordered list of planning **stages** — context, repos, UI design, structure, permissions, automations, skills — each with its own prompt module and attached pipelines. Pick one — built-ins span the project lifecycle: **greenfield** (Default, MCP server), **transform** (Refactor & Cleanup, Split / Combine microservices, Migrate stack), **harden** (Harden security), and **data** (Data migration, Data collection) — searchable and filterable by category, and it seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. You can also **author your own blueprint** in the planner and publish it to a gist to share. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
 
 **Pipelines** are pluggable actions that run on a stage's output — on entering a stage, when an artifact changes, on completion, or manually. Some are **gates**: the stage can't complete until the pipeline passes. Built-ins include:
 
@@ -39,7 +39,10 @@ Together they drive the planning arc: **pitch → plan, stage by stage → live 
 - **Live git context** — repo name, branch, and dirty status auto-detected from the shell's working directory
 - **Knowledge Store** — named markdown blocks tagged by tech stack, injected into agent system prompts
 - **GitHub integration** — OAuth/PAT auth, repo overview, Actions workflows, and webhook management
+- **Extensions (MCP)** — attach Model Context Protocol servers per project, pre-trusted into every agent session
+- **Custom blueprints** — author a reusable planning template in the planner and publish it to a gist
 - **Automations** — cron-scheduled commands and knowledge injections across panes
+- **Data models** *(in progress — `1.0.3`)* — a canonical schema layer the data blueprints (migration, scraping) map into
 - **Persist & restore** — workspace layout, pane names, and working directories survive restarts
 
 ## Tech Stack
@@ -124,11 +127,29 @@ base-studio-code (desktop host)
 └── UI Shell             — Tauri WebView + React frontend
 ```
 
+## Roadmap
+
+A snapshot of where the platform is and where it's headed. (Dates aren't promised; sequence is.)
+
+**✅ Shipped — `1.0.x` (current)**
+- Planning → blueprints → parallel agent **fleet** (least-privilege workers in git worktrees, coordinated by a director)
+- **Blueprints & Pipelines** — lifecycle categories, the drag-reorder editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, file intake, gist sharing, and **authoring your own blueprint** in the planner
+- Parallel **console** sessions, **Knowledge Store**, **GitHub** integration, **automations**, **MCP extensions**
+- Optional **mobile tunnel** (zero-knowledge Cloudflare relay, Noise IK E2E)
+- Enterprise-grade planning dimensions baked into the planner (observability, reliability/DR, data governance, supply-chain, release strategy, …)
+
+**🔜 Next — `1.0.3` · the _data_ release**
+- **Data models** — fully implement and test the canonical schema layer
+- **Data collection / scraping** — finish and harden the web-scraping & dataset-fetch feature (the *Data collection* blueprint) into the data models
+- **Blueprints for seamless app development** — round out the lifecycle blueprints so going from a pitch to a running app is even smoother
+
+**🗺️ Later**
+- The execution-side **conductor** (staged build → test → review → integrate)
+- Expanded blueprint catalog and richer per-stage pipelines
+
 ## Versioning & Releases
 
-base-studio-code is pre-1.0 and under active development. The `0.x` series is a **development preview** — features and internals may change between releases, and builds are published as previews for testing rather than general use.
-
-**`1.0.0` will be the first official release** — the first version considered stable and ready for general use. Until then, versions are bumped conservatively (patch bumps for fixes, minor for features) so that `1.0.0` stays a meaningful milestone rather than just the next number.
+base-studio-code is at the **`1.0.x`** series and under active development. **`1.0.0` was the first official release** — the first version considered stable and ready for general use. The `1.0.x` line is bumped conservatively: **patch** bumps for fixes and small improvements, **minor** bumps for feature releases (e.g. the data release lands as `1.0.3`).
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
 
