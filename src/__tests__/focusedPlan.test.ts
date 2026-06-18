@@ -3,7 +3,7 @@ import {
   phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, connectorKind,
   sectionForPhase, type Phase, type PhaseStatus,
 } from "../screens/projects/focusedPlan";
-import { confirmedSignal, type BlueprintSection } from "../screens/projects/blueprints";
+import { confirmedSignal, skippedSignal, type BlueprintSection } from "../screens/projects/blueprints";
 import type { PlanSignals } from "../screens/projects/stageGate";
 
 const sec = (key: string, over: Partial<BlueprintSection> = {}): BlueprintSection => ({
@@ -65,19 +65,25 @@ describe("ahead (banked) + connectorKind (#668)", () => {
     expect(connectorKind(list, 3)).toBe("dashed"); // upcoming → ahead   (banked)
   });
 
-  it("marks an optional section the cursor has passed as 'skipped' (#678)", () => {
+  it("STOPS on a reached optional stage (active); only a USER-skip renders it 'skipped' (#921)", () => {
     const secs: BlueprintSection[] = [
       sec("a", { gateRule: { require: [{ signal: "a", target: true }] } }),
       sec("opt", { optional: true, gateRule: { require: [{ signal: "opt", target: true }] } }),
       sec("b", { deps: ["a"], gateRule: { require: [{ signal: "b", target: true }] } }),
     ];
+    // The flow now STOPS on the reached optional stage — it's "active", not auto-skipped (#921),
+    // so the planner addresses it and the user decides. `b` isn't reached until `opt` is decided.
     const p = phasesFrom(secs, { a: true } as unknown as PlanSignals);
     expect(p.find((x) => x.key === "a")!.status).toBe("complete");
-    expect(p.find((x) => x.key === "opt")!.status).toBe("skipped"); // optional, passed, unfinished
-    expect(p.find((x) => x.key === "b")!.status).toBe("active");
-    // an optional section the cursor HASN'T reached yet stays "upcoming", not "skipped"
-    const p2 = phasesFrom([sec("a"), sec("opt", { optional: true })], {} as PlanSignals);
-    expect(p2.find((x) => x.key === "opt")!.status).toBe("upcoming");
+    expect(p.find((x) => x.key === "opt")!.status).toBe("active");
+    expect(p.find((x) => x.key === "b")!.status).toBe("upcoming");
+    // A deliberately user-skipped optional stage renders 'skipped' and the frontier advances past it.
+    const p2 = phasesFrom(secs, { a: true, [skippedSignal("opt")]: true } as unknown as PlanSignals);
+    expect(p2.find((x) => x.key === "opt")!.status).toBe("skipped");
+    expect(p2.find((x) => x.key === "b")!.status).toBe("active");
+    // An optional stage the cursor hasn't reached isn't 'skipped' — only a deliberate skip is.
+    const p3 = phasesFrom([sec("a", { gateRule: { require: [{ signal: "a", target: true }] } }), sec("opt", { optional: true })], {} as PlanSignals);
+    expect(p3.find((x) => x.key === "opt")!.status).not.toBe("skipped");
   });
 
   it("the connector leaving a SKIPPED section before the active stays green (#668)", () => {
@@ -115,8 +121,17 @@ describe("footerAction (#652)", () => {
     expect(footerAction(2, 1, false, false).kind).toBe("back-to-current");
     expect(footerAction(0, 1, false, false).kind).toBe("jump-to-current");
     expect(footerAction(1, 1, true, false)).toEqual({ kind: "publish", enabled: true });
-    expect(footerAction(1, 1, false, true)).toEqual({ kind: "approve-continue", enabled: true });
-    expect(footerAction(1, 1, false, false)).toEqual({ kind: "approve-continue", enabled: false });
+    expect(footerAction(1, 1, false, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: false });
+    expect(footerAction(1, 1, false, false)).toEqual({ kind: "approve-continue", enabled: false, canSkip: false });
+  });
+
+  it("offers a skip control on the active OPTIONAL stage (#921)", () => {
+    // The active phase is an enabled optional stage the user hasn't decided — `canSkip` lights up
+    // alongside "approve & continue" so the USER, not the app, decides whether to skip it.
+    expect(footerAction(1, 1, false, false, true)).toEqual({ kind: "approve-continue", enabled: false, canSkip: true });
+    expect(footerAction(1, 1, false, true, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
+    // Browsing away from the active phase never offers skip.
+    expect(footerAction(2, 1, false, false, true).kind).toBe("back-to-current");
   });
 });
 

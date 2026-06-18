@@ -919,14 +919,26 @@ export type SectionRenderStatus = "locked" | "in-progress" | "complete" | "na";
 /** The signal that marks an informational (gateless) section confirmed/complete (#664). */
 export const confirmedSignal = (key: string) => `confirmed:${key}`;
 
-/** Whether a section is done. A section WITH a declarative gate uses {@link evalGate}. A
- *  gateless ("informational") section is NOT vacuously complete — it's done only when the
- *  planner confirms it (a `confirmed:<key>` signal), so a fresh/cleared plan shows it as
- *  in-progress rather than ✓ (#664). */
+/** The signal that marks an OPTIONAL section the user deliberately SKIPPED (#921). A skipped
+ *  section counts as resolved — the flow advances past it and it never blocks completion — but
+ *  it renders distinctly ("skipped", not "complete"). */
+export const skippedSignal = (key: string) => `skipped:${key}`;
+
+/** Whether a section is done/resolved. A user-SKIPPED section (#921) is resolved regardless of
+ *  its gate. Otherwise: a section WITH a declarative gate uses {@link evalGate}; a gateless
+ *  ("informational") section is done only when confirmed (a `confirmed:<key>` signal), so a
+ *  fresh/cleared plan shows it as in-progress rather than ✓ (#664). */
 export function sectionDone(section: BlueprintSection, signals: PlanSignals): { done: boolean; fraction: number } {
+  if (signals[skippedSignal(section.key)] === true) return { done: true, fraction: 1 };
   if (section.gateRule) return evalGate(section.gateRule, signals);
   const ok = signals[confirmedSignal(section.key)] === true;
   return { done: ok, fraction: ok ? 1 : 0 };
+}
+
+/** Whether a section was resolved by a deliberate user SKIP (vs genuinely completed) — drives the
+ *  distinct "skipped" rendering. (#921) */
+export function sectionSkipped(section: BlueprintSection, signals: PlanSignals): boolean {
+  return signals[skippedSignal(section.key)] === true;
 }
 
 /** A dependency is satisfied when the blueprint omits it, it's disabled, it's N/A, or
@@ -964,10 +976,12 @@ export function enabledSections(sections: BlueprintSection[]): BlueprintSection[
   return sections.filter((s) => s.enabled);
 }
 
-/** Whether every enabled, applicable section is complete — the triage readiness gate. */
+/** Whether every enabled, applicable section is resolved — the triage readiness gate. An OPTIONAL
+ *  section must be DECIDED (completed or user-skipped) just like a required one; a user-skip marks
+ *  it done (#921). This is what lets the user, not the app, decide whether to skip an optional
+ *  stage — the plan isn't "complete" until each enabled optional stage has been addressed. */
 export function planSectionsComplete(sections: BlueprintSection[], signals: PlanSignals): boolean {
   return enabledSections(sections).every((s) => {
-    if (s.optional) return true;        // optional sections never block completion (#676)
     const { status } = sectionStatus(s, sections, signals);
     return status === "complete" || status === "na";
   });
@@ -979,9 +993,10 @@ export function planSectionsComplete(sections: BlueprintSection[], signals: Plan
  * one. Drives which pipelines' second screens render.
  */
 export function currentSection(sections: BlueprintSection[], signals: PlanSignals): BlueprintSection | undefined {
-  // Optional sections are off the critical path — they never become the "current" stage,
-  // so an unfinished optional section (e.g. UI) doesn't stall the flow (#676).
-  const applicable = enabledSections(sections).filter((s) => !s.optional && gateApplies(s.appliesWhen, signals));
+  // The flow STOPS on an optional stage too, so the USER decides whether to do or skip it (#921) —
+  // a skipped optional section is `sectionDone` ⇒ not "in-progress", so the frontier advances past
+  // it. Optional sections bypass `appliesWhen` (always shown), matching `sectionStatus`.
+  const applicable = enabledSections(sections).filter((s) => s.optional || gateApplies(s.appliesWhen, signals));
   const active = applicable.find((s) => sectionStatus(s, sections, signals).status === "in-progress");
   return active ?? applicable[applicable.length - 1];
 }
