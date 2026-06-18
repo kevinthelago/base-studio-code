@@ -20,6 +20,8 @@ import {
   PhaseFooter as FocusedPhaseFooter,
 } from "./FocusedShell";
 import { FileIntakePane } from "./FileIntakePane";
+import { FocusedDeployBody } from "./DeployView";
+import type { DeployConfig } from "./deployConfig";
 import { PurposeView, StagesView, CapabilitiesView, PublishView } from "./BlueprintAuthorViews";
 import type { BlueprintSkillItem } from "./blueprintSkills";
 import type { McpLibraryItem } from "./blueprintMcp";
@@ -1444,13 +1446,15 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
   );
 }
 
-function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onApprovePlan, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp }: {
+function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onApprovePlan, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
   /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
   authoring?: AuthoringWiring;
   onLinkRepo?: (r: string) => void;
+  /** Deploy stage (#919): persist the edited deployment config. */
+  onDeployChange?: (next: DeployConfig) => void;
   onApprovePlan?: () => void;
   onView?: (f: ContextFile) => void;
   onPerm?: (streamId: string, perm: Perm) => void;
@@ -1465,6 +1469,8 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onApp
   switch (phase.key) {
     case "repos":
       return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} />;
+    case "deploy":
+      return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} />;
     case "context":
       return <FocusedContextBody context={data?.context} onView={onView} />;
     case "ui":
@@ -1756,6 +1762,7 @@ export function ProjectPane({
   onBuildMcp,
   onAddMcp,
   onRemoveMcp,
+  onDeployChange,
 }: {
   data?: ProjectPaneData;
   projectName?: string;
@@ -1804,6 +1811,8 @@ export function ProjectPane({
   onBuildMcp?: (s: McpServer) => void;
   onAddMcp?: (input: string) => void;
   onRemoveMcp?: (id: string) => void;
+  /** Deploy stage (#919): persist the edited deployment config. */
+  onDeployChange?: (next: DeployConfig) => void;
 }) {
   // Determine whether to show the staged view or the legacy flat view.
   // Staged view: when sections prop is provided (real planning session).
@@ -1893,7 +1902,7 @@ export function ProjectPane({
         <div className="pp-scroll">
           <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onApprovePlan={onApprovePlan} onView={setViewing}
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles}
-            onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} />
+            onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} />
         </div>
         <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
         {viewerModal}
