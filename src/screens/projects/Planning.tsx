@@ -49,7 +49,7 @@ import { buildProjectPaneData } from "./projectPaneData";
 // not a hardcoded stage list.
 import { derivePlanStageState, planStateToSignals, pendingStageConfirms } from "./planStageDerive";
 import { findPlanGaps } from "./lintPlan";
-import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, type BlueprintSection, type Blueprint } from "./blueprints";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, AUTHORING_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./blueprints";
 import { coerceBlueprint, blueprintToManifest } from "./blueprintShare";
 import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "./blueprintSkills";
 import { buildMcpLibrary } from "./blueprintMcp";
@@ -309,15 +309,23 @@ export function Planning({ visible }: { visible: boolean }) {
   // project that hasn't been bound yet). Resolving per-project here is what keeps an existing
   // project on its own blueprint when the global active changes (or resets to default on restart)
   // — instead of silently reverting to the default stage set.
-  const effectiveBlueprintId = projectBlueprintId[effectiveProjectId] ?? activeBlueprintId;
-  // Bind the project to its blueprint the first time it's planned — so it never drifts to a
-  // different (or default) blueprint when the global active changes later (#647/#923). Once
-  // recorded, the binding wins; we never overwrite it here.
+  // A project that has a DESIGNED blueprint (blueprint.json / the <blueprint> tag) IS an authoring
+  // project — resolve it to the authoring lifecycle even if its recorded binding is stale (e.g. a
+  // legacy project bound to "default" before authoring set per-project bindings) (#923). Otherwise
+  // resolve the project's own recorded blueprint, falling back to the global active only when the
+  // project hasn't been bound yet — what keeps an existing project on its blueprint across global /
+  // version changes (or a restart that resets the active to default) instead of reverting to default.
+  const isAuthoredProject = !!planAuthoredBlueprint[effectiveProjectId];
+  const effectiveBlueprintId = isAuthoredProject
+    ? AUTHORING_BLUEPRINT_ID
+    : (projectBlueprintId[effectiveProjectId] ?? activeBlueprintId);
+  // Bind the project to its blueprint the first time it's planned — so it never drifts later. Skip
+  // authoring projects (the poll binds them to the authoring lifecycle); once recorded, it wins.
   useEffect(() => {
-    if (effectiveProjectId && !projectBlueprintId[effectiveProjectId] && activeBlueprintId) {
+    if (effectiveProjectId && !projectBlueprintId[effectiveProjectId] && activeBlueprintId && !isAuthoredProject) {
       setProjectBlueprintId(effectiveProjectId, activeBlueprintId);
     }
-  }, [effectiveProjectId, projectBlueprintId, activeBlueprintId, setProjectBlueprintId]);
+  }, [effectiveProjectId, projectBlueprintId, activeBlueprintId, setProjectBlueprintId, isAuthoredProject]);
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
@@ -1406,7 +1414,15 @@ export function Planning({ visible }: { visible: boolean }) {
               lastBpJsonRef.current = content;
               try {
                 const parsed = coerceBlueprint(JSON.parse(content), { allowEmptySections: true });
-                if (parsed) store.setAuthoredBlueprint(effectiveProjectId, parsed);
+                if (parsed) {
+                  store.setAuthoredBlueprint(effectiveProjectId, parsed);
+                  // blueprint.json existing ⇒ this is an authoring project — pin its binding to the
+                  // authoring lifecycle so it can't revert to default on restart, correcting any stale
+                  // binding from a legacy session (#923).
+                  if (store.projectBlueprintId[effectiveProjectId] !== AUTHORING_BLUEPRINT_ID) {
+                    store.setProjectBlueprintId(effectiveProjectId, AUTHORING_BLUEPRINT_ID);
+                  }
+                }
               } catch { /* mid-write / invalid JSON — ignore, the planner re-writes */ }
             }
             continue;

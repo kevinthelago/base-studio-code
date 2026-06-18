@@ -583,6 +583,9 @@ export interface Blueprint {
   deliverable?: "blueprint";
 }
 
+/** The built-in blueprint-author lifecycle's id (#923). */
+export const AUTHORING_BLUEPRINT_ID = "blueprint-author";
+
 /** Whether a blueprint's deliverable is a blueprint itself (#923) — the authoring lifecycle:
  *  publish → gist, and no fleet / triage. */
 export function isAuthoringBlueprint(bp: Blueprint | undefined): boolean {
@@ -826,7 +829,7 @@ export function makeBlueprints(): Blueprint[] {
     },
     // ── meta: author a reusable blueprint, publish to a gist (#923) ──
     {
-      id: "blueprint-author", name: "Blueprint Author",
+      id: AUTHORING_BLUEPRINT_ID, name: "Blueprint Author",
       desc: "Design a reusable blueprint and publish it to a gist",
       origin: "built-in", icon: "⎙", h: 160, category: "greenfield", mode: "create",
       deliverable: "blueprint",
