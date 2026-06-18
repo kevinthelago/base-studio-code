@@ -25,10 +25,11 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(useAppStore.getState().projectBlueprintId["p"]).toBe("api");
   });
 
-  it("applyBlueprintToProject re-seeds the config, records the blueprint, and clears progress", () => {
-    useAppStore.getState().applyBlueprintToProject("p", "mcp-server");
+  it("applyBlueprintToProject re-seeds the config, records the blueprint, and clears progress (greenfield → transform)", () => {
+    useAppStore.getState().setProjectBlueprintId("p", "default"); // greenfield origin
+    useAppStore.getState().applyBlueprintToProject("p", "refactor"); // → transform (allowed)
     const s = useAppStore.getState();
-    expect(s.projectBlueprintId["p"]).toBe("mcp-server");
+    expect(s.projectBlueprintId["p"]).toBe("refactor");
     expect(s.planStageConfig["p"]).toBeTruthy();
     expect(s.planStageConfig["p"].order.length).toBeGreaterThan(0);
     // progress keyed to the old arc is wiped
@@ -69,5 +70,16 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(s.projectBlueprintId["p"]).toBe("blueprint-author");
     expect(s.sectionGrades["p"]).toBeTruthy();      // progress NOT wiped
     expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
+  });
+
+  it("won't switch greenfield outside transform/harden, nor switch a non-greenfield origin (#923)", () => {
+    // greenfield → data is not an allowed target
+    useAppStore.getState().setProjectBlueprintId("p", "default");
+    useAppStore.getState().applyBlueprintToProject("p", "data-migration");
+    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("default"); // refused
+    // a transform-origin project can't switch at all
+    useAppStore.getState().setProjectBlueprintId("p", "refactor");
+    useAppStore.getState().applyBlueprintToProject("p", "harden");
+    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("refactor"); // refused
   });
 });
