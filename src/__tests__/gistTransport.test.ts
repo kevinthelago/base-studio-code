@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { gistIdFromUrl, pickManifestContent, publishGist, installFromGist, MANIFEST_FILENAME } from "../lib/extensions/gist";
+import { gistIdFromUrl, pickManifestContent, publishGist, updateGist, installFromGist, MANIFEST_FILENAME } from "../lib/extensions/gist";
 import { wrapExtension } from "../lib/extensions/manifest";
 
 describe("gist transport — pure helpers (#598)", () => {
@@ -33,6 +33,18 @@ describe("gist transport — invoke-backed (#598)", () => {
     expect(cmd).toBe("gist_create");
     expect((args as { files: Record<string, string> }).files[MANIFEST_FILENAME]).toContain("\"id\": \"bp\"");
     expect((args as { public: boolean }).public).toBe(false); // secret by default
+  });
+
+  it("updateGist PATCHes an existing gist by id and returns id + url (#970)", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({ id: "gid", html_url: "https://gist.github.com/u/gid", files: {} });
+    const m = wrapExtension("blueprint", "bp", "My BP", "1.0.0", { x: 2 });
+    const res = await updateGist("tok", "gid", m, { description: "d2" });
+    expect(res).toEqual({ id: "gid", htmlUrl: "https://gist.github.com/u/gid" });
+    const [cmd, args] = vi.mocked(invoke).mock.calls[0];
+    expect(cmd).toBe("gist_update");                                  // updates in place, not gist_create
+    expect((args as { id: string }).id).toBe("gid");
+    expect((args as { files: Record<string, string> }).files[MANIFEST_FILENAME]).toContain("\"id\": \"bp\"");
+    expect((args as Record<string, unknown>).public).toBeUndefined(); // visibility is fixed on update
   });
 
   it("installFromGist fetches the gist and validates its manifest", async () => {

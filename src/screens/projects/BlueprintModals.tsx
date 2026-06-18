@@ -87,6 +87,9 @@ export function PublishModal({ bp, onClose, onPublish, onPublished }: {
   const [copied, setCopied] = useState(false);
   const caps = bp.sections.reduce((n, s) => n + (s.skills?.length ?? 0) + (s.mcp?.length ?? 0), 0)
     + (bp.skills?.length ?? 0) + (bp.mcp?.length ?? 0);
+  // Already on a gist ⇒ this re-publish UPDATES it in place rather than creating a new one (#970);
+  // a gist's visibility is fixed at creation, so the public/secret selector is hidden on update.
+  const isUpdate = !!bp.gist?.id;
 
   async function go() {
     setPhase("publishing");
@@ -97,11 +100,14 @@ export function PublishModal({ bp, onClose, onPublish, onPublished }: {
   }
 
   return (
-    <Modal icon={<Ic n="upload" size={15} />} title={phase === "done" ? "Published" : "Publish to gist"}
-      sub={phase === "done" ? "Your blueprint is live and shareable" : "Share this blueprint as a GitHub gist"} onClose={onClose}
+    <Modal icon={<Ic n="upload" size={15} />} title={phase === "done" ? (isUpdate ? "Updated" : "Published") : (isUpdate ? "Update GitHub" : "Publish to gist")}
+      sub={phase === "done" ? (isUpdate ? "Your blueprint gist is updated" : "Your blueprint is live and shareable") : (isUpdate ? "Push your changes to the existing gist" : "Share this blueprint as a GitHub gist")} onClose={onClose}
       foot={phase === "done"
         ? <><span style={{ flex: 1 }} /><button className="btn primary" onClick={() => onPublished({ ...info, public: pub })}>Done</button></>
-        : <><span className="hint">Published as <b className="mono" style={{ color: pub ? "var(--success)" : "var(--fg-muted)" }}>{pub ? "public" : "secret"}</b> gist</span><span style={{ flex: 1 }} /><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={phase === "publishing"} onClick={go}>{phase === "publishing" ? "Publishing…" : "Publish gist"}</button></>}>
+        : <>{isUpdate
+            ? <span className="hint">Updating the existing gist <b className="mono">in place</b> (visibility unchanged)</span>
+            : <span className="hint">Published as <b className="mono" style={{ color: pub ? "var(--success)" : "var(--fg-muted)" }}>{pub ? "public" : "secret"}</b> gist</span>}
+            <span style={{ flex: 1 }} /><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={phase === "publishing"} onClick={go}>{phase === "publishing" ? (isUpdate ? "Updating…" : "Publishing…") : (isUpdate ? "⟳ Update GitHub" : "Publish gist")}</button></>}>
       {phase === "done" ? (
         <>
           <div className="hint" style={{ marginBottom: 10 }}>Share this link — recipients can preview the stage flow and fork it into their own library.</div>
@@ -122,18 +128,20 @@ export function PublishModal({ bp, onClose, onPublish, onPublished }: {
             </div>
             <StageSummary sections={bp.sections} />
           </div>
-          <div className="field"><label style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Visibility</label>
-            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <div className={"disp" + (pub ? " on" : "")} style={{ flex: 1 }} onClick={() => setPub(true)}>
-                <span className="dgl" style={{ background: tint(145, 0.16), color: hue(145) }}>◉</span>
-                <span className="dtxt"><div className="dt">Public</div><div className="dd">Listed &amp; forkable by anyone</div></span>
-              </div>
-              <div className={"disp" + (!pub ? " on" : "")} style={{ flex: 1 }} onClick={() => setPub(false)}>
-                <span className="dgl" style={{ background: tint(250, 0.16), color: hue(250) }}>○</span>
-                <span className="dtxt"><div className="dt">Secret</div><div className="dd">Only people with the link</div></span>
+          {!isUpdate && (
+            <div className="field"><label style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Visibility</label>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <div className={"disp" + (pub ? " on" : "")} style={{ flex: 1 }} onClick={() => setPub(true)}>
+                  <span className="dgl" style={{ background: tint(145, 0.16), color: hue(145) }}>◉</span>
+                  <span className="dtxt"><div className="dt">Public</div><div className="dd">Listed &amp; forkable by anyone</div></span>
+                </div>
+                <div className={"disp" + (!pub ? " on" : "")} style={{ flex: 1 }} onClick={() => setPub(false)}>
+                  <span className="dgl" style={{ background: tint(250, 0.16), color: hue(250) }}>○</span>
+                  <span className="dtxt"><div className="dt">Secret</div><div className="dd">Only people with the link</div></span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </Modal>

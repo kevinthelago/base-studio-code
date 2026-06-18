@@ -121,6 +121,21 @@ export async function publishGist(
 }
 
 /**
+ * Update an EXISTING gist's manifest in place (#970) — PATCH so re-publishing a blueprint that's
+ * already on a gist updates the original instead of minting a duplicate. Throws on failure (bad
+ * token / not the owner / network).
+ */
+export async function updateGist(
+  token: string, id: string, manifest: ExtensionManifest, opts: { description?: string } = {},
+): Promise<PublishResult> {
+  const files = { [MANIFEST_FILENAME]: JSON.stringify(manifest, null, 2) };
+  const description = opts.description ?? `${manifest.kind}: ${manifest.name}`;
+  const res = (await invoke("gist_update", { token, id, files, description })) as GistApiResponse;
+  if (!res.id || !res.html_url) throw new Error("gist_update returned no id/url");
+  return { id: res.id, htmlUrl: res.html_url };
+}
+
+/**
  * Install from a gist URL/id: fetch the gist (no auth needed for public/secret), pull
  * its manifest file, and validate it. `token` is optional (used only to raise rate
  * limits / read a private gist).

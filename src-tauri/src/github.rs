@@ -331,6 +331,56 @@ pub(crate) async fn gist_create(
     Ok(json)
 }
 
+/// Update an EXISTING gist (#970) — PATCH `gists/<id>` with new file content + description, so
+/// re-publishing a blueprint updates its original gist instead of minting a duplicate. Requires the
+/// `gist` scope and ownership of the gist. Returns the updated gist JSON (`id`, `html_url`, …).
+#[tauri::command]
+pub(crate) async fn gist_update(
+    token: String,
+    id: String,
+    files: std::collections::HashMap<String, String>,
+    description: String,
+) -> Result<serde_json::Value, String> {
+    let _perf = PerfSpan::new("gist_update");
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
+    if id.trim().is_empty() {
+        return Err("gist_update: no gist id".to_string());
+    }
+    if files.is_empty() {
+        return Err("gist_update: no files to publish".to_string());
+    }
+    let files_json: serde_json::Map<String, serde_json::Value> = files
+        .into_iter()
+        .map(|(name, content)| (name, serde_json::json!({ "content": content })))
+        .collect();
+    // `public` is omitted: a gist's visibility is fixed at creation and can't be changed via PATCH.
+    let body = serde_json::json!({ "description": description, "files": files_json });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .patch(format!("https://api.github.com/gists/{id}"))
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "base-studio-code/0.2.0")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("gist_update request failed: {e}"))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("gist_update: failed to parse response: {e}"))?;
+    if !status.is_success() {
+        let msg = json["message"].as_str().unwrap_or("unknown error");
+        return Err(format!("gist_update HTTP {status}: {msg}"));
+    }
+    Ok(json)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{cache_is_fresh, apply_github_response, CachedGet};
