@@ -56,6 +56,12 @@ export interface BuildProjectPaneInput {
   /** The in-progress blueprint an authoring project is designing (#923) — passed through to the
    *  pane so the authoring stages can render it. */
   authoredBlueprint?: Blueprint;
+  /** Per-project coordination-topology override (#…) — set in the Permissions pane,
+   *  wins over the planner's `fleet.json` topology. */
+  topologyOverride?: import("./relationshipGraph").Topology;
+  /** Per-project director-drive override (#…) — set in the Permissions pane, wins over
+   *  `fleet.json`'s `director.drive`. */
+  directorDriveOverride?: import("./directorDrive").DirectorDrive;
   /** The project's deployment & infrastructure config (#919) — the Deploy stage pane's state. */
   deployConfig?: DeployConfig;
   sections: Section[];
@@ -339,7 +345,7 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     director: {
       enabled: input.fleet?.director.enabled ?? false,
       role: input.fleet?.director.role,
-      drive: resolveDirectorDrive(input.fleet?.director.drive),
+      drive: resolveDirectorDrive(input.directorDriveOverride ?? input.fleet?.director.drive),
     },
     fleetStrategy: input.fleet?.strategy,
     automations: (input.automations ?? []).map(a => ({ name: a.name, command: a.command, schedule: a.schedule })),
@@ -349,5 +355,10 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     authoredBlueprint: input.authoredBlueprint,
     deploy: input.deployConfig,
     seamGraph: buildPlanSeamGraph(input.issues),
+    // Coordination topology: the user's per-project override wins over the planner's
+    // fleet.json default, falling back to hybrid (#…).
+    topology: input.topologyOverride ?? input.fleet?.topology ?? "hybrid",
+    relationshipArtifacts: input.fleet?.artifacts ?? [],
+    relationships: input.fleet?.edges ?? [],
   };
 }

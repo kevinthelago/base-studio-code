@@ -239,7 +239,17 @@ Then STOP and ask the user to APPROVE the phases + the seam/dependency graph bef
 of it as final. Leave no TODO / TBD / FIXME / XXX / TKTK markers in the written plan — the gate
 blocks on them.
 
-Gate: phases approved, and every feature decomposed into agent-ready issues.`,
+Also record the AGENT RELATIONSHIPS in fleet.json so the Structure pane renders them: each cross-
+stream artifact a stream produces and others consume (\`artifacts\`: [{ "id", "name", "kind":
+"schema"|"contract"|"types"|"tokens"|"fixture"|"other", "producer": <streamId>, "consumers":
+[<streamId>], "status": "pending"|"ready" }]), and the typed \`edges\`: [{ "id", "from", "to",
+"kind": "handoff"|"blocking"|"sequence"|"review"|"notify"|"mutex"|"shared", "artifact": <artifactId>,
+"hardness": "blocking"|"soft"|"notify", "via": "director"|"direct", "note" }]. A handoff edge with an
+artifact becomes the \`contract:<id>\` coordination latch the consumer blocks on. Keep the ordering
+edges (handoff/blocking/sequence/review) ACYCLIC — a cycle is a deadlock and blocks the gate.
+
+Gate: phases approved, every feature decomposed into agent-ready issues, and the relationship graph
+has no dependency cycle.`,
   },
   permissions: {
     name: "Permissions", glyph: "⛉", gate: "every stream scoped", deps: ["structure"],
@@ -252,6 +262,11 @@ Gate: phases approved, and every feature decomposed into agent-ready issues.`,
 `For every work stream, derive a least-privilege profile: allowed commands,
 write-path globs, network access, and a git/gh push policy. Map each to a role
 (worker / director / triage). Write the per-stream permission set.
+
+Choose the coordination TOPOLOGY in fleet.json (\`topology\`): "director" (hub-and-spoke — every
+relationship routes through the director), "peer" (mesh — agents hand off directly), or "hybrid"
+(per-edge, using each edge's \`via\`). Set the director \`drive\` when one is enabled. The user can
+flip this in the Permissions pane and the Structure relationship graph re-routes live.
 
 Gate: every stream has a scoped profile and a role.`,
   },
@@ -473,7 +488,11 @@ anything yet — this stage just establishes what exists.`,
 `Map the source onto the Data Model, one object at a time. For each source object, bind it to a
 Data Model entity and map every field — or explicitly mark it DROPPED, with a reason. Note the
 transforms each field needs (type coercion, unit/format normalization, lookups). The output is a
-complete mapping spec; nothing is left ambiguous for the load stage.`,
+complete mapping spec; nothing is left ambiguous for the load stage.
+
+Write \`dataMap.json\`: { "mapped": [{ "from": "Source.field", "to": "Entity.field", "auto":
+true|false, "note" }], "droppedSource": [{ "field", "why" }], "unmappedModel": [{ "field", "why" }] }.
+The Mapping pane renders the bindings, the dropped source fields, and the net-new model fields.`,
     substeps: [
       { key: "map-objects", label: "Bind objects to entities", gate: "each source object bound to an entity", prompt:
 `Bind each source object to a Data Model entity (or mark it out of scope). Confirm the set of
@@ -495,7 +514,11 @@ recording the transform each needs. Write the mapping spec, then confirm.` },
 `Declare the external data sources to collect from — websites to scrape, or datasets/APIs to fetch
 (name them: the URLs, dataset identifiers, or endpoints). For each, note the mode (scrape vs fetch)
 and what entities of the Data Model it's expected to populate. Confirm the target list with the
-user before checking legitimacy.`,
+user before checking legitimacy.
+
+Write \`collectTargets.json\`: { "sources": [{ "id", "mode": "scrape"|"fetch", "label", "loc",
+"type", "feeds": [entity names], "scope": { "start", "pattern", "bound" } }], "dataModel": {
+"name", "entities": [{ "name", "fields": [field names] }] } }. The Targets pane renders it.`,
   },
   sourceLicensing: {
     name: "Source legitimacy", glyph: "⚖", gate: "every source cleared for use", deps: ["collectTargets"],
@@ -504,7 +527,12 @@ user before checking legitimacy.`,
 `Before acquiring anything, clear each source for the intended use: site Terms of Service and
 robots.txt for scraping, and the license for any dataset (can it be used commercially? does it
 require attribution?). Record a per-source verdict — cleared / restricted / blocked — with the
-reason. A source that isn't cleared must NOT be acquired. Surface anything ambiguous to the user.`,
+reason. A source that isn't cleared must NOT be acquired. Surface anything ambiguous to the user.
+
+Write \`sourceLicensing.json\`: { "sources": [{ "id", "mode", "label", "loc" }], "clearance": {
+"<id>": { "status": "cleared"|"needs review"|"blocked", "reason", "robots": { "delay", "rules":
+[{ "path", "allow": true|false }] }, "terms": { "kind", "text", "attribution", "license" } } },
+"intendedUse" }. The Source-legitimacy pane renders it; a "blocked" source hard-stops Acquire.`,
   },
   dataAcquire: {
     name: "Acquire", glyph: "⤓", gate: "raw artifacts captured", deps: ["sourceLicensing"],
@@ -513,7 +541,13 @@ reason. A source that isn't cleared must NOT be acquired. Surface anything ambig
 `Design the acquisition for each cleared source. SCRAPE mode: a crawl that respects robots.txt and
 rate limits, with retry/backoff, capturing raw HTML/responses. FETCH mode: download the file or
 page the API, capturing the raw artifacts. Record provenance for every artifact (source, when,
-under which license) — this seeds the lineage the load stage records.`,
+under which license) — this seeds the lineage the load stage records.
+
+Write \`dataAcquire.json\`: { "sources": [{ "id", "mode": "scrape"|"fetch", "label", "status":
+"ready"|"running"|"not run", "estimate", "captured", scrape→ "crawl": { "start": [urls], "depth",
+"include", "exclude" }, "rate": { "rps", "concurrency", "delay" }, "options": { "jsRender" }, fetch→
+"endpoint", "auth", "paging": { "kind", "pageSize" }, "format", "schedule" }] }. The Acquire pane
+renders it (and a live progress bar from an optional per-source "run": { "note", "done", "total" }).`,
   },
   dataExtract: {
     name: "Extract", glyph: "⛏", gate: "structured rows produced", deps: ["dataAcquire"],
@@ -521,7 +555,13 @@ under which license) — this seeds the lineage the load stage records.`,
     prompt:
 `Turn the raw artifacts into structured rows: parse HTML/DOM, or ingest the fetched CSV/JSON/Parquet.
 Define the parse rules and the row shape produced, keeping each row tied to its provenance. The
-output is structured-but-uncleaned rows for the shared cleaning stage.`,
+output is structured-but-uncleaned rows for the shared cleaning stage.
+
+Write \`dataExtract.json\`: { "sources": [{ "id", "mode", "label", "kind": "HTML"|"JSON", "artifact",
+"rules": [{ "sel", "field": "Entity.field", "entity", "ref", "ok": true|false }] }], "gaps": {
+"unmappedModel": [{ "field", "why" }], "unmappedSource": [{ "sel", "why" }] }, "sample": { "cols":
+[..], "rows": [{..}] }, "coverage": { "parsed", "total", "pct", "gaps": [{ "field", "why" }] } }.
+The Extract pane renders the rules, gaps, a sample preview, and coverage.`,
   },
 
   // Shared back half — both pipelines converge here.
@@ -533,7 +573,11 @@ output is structured-but-uncleaned rows for the shared cleaning stage.`,
 addresses, casing), and validate against each field's rules. Decide the QUALITY BAR — the
 confidence threshold a row must clear to be allowed into the Data Model — and how failures are
 quarantined for review. External (collected) data is dirtier than a system of record, so set the
-bar higher for collection.`,
+bar higher for collection.
+
+Write \`dataClean.json\`: { "qualityBar": <percent>, "rules": [{ "field", "rule", "kind":
+"coerce"|"standardize"|"validate", "note" }], "validationPct": <percent>, "quarantine": { "count",
+"policy" } }. The Cleaning pane renders the bar, the rules by kind, and the quarantine policy.`,
   },
   dataLoad: {
     name: "Load & reconcile", glyph: "⤧", gate: "load verified + lineage complete", deps: ["dataClean"],
@@ -543,7 +587,12 @@ bar higher for collection.`,
 records are MERGED by the entity's identity key; conflicts resolve by a declared source-PRECEDENCE
 rule (state it). Every loaded value records LINEAGE — which source, when, under what license — so
 the result is auditable. Define the verification that confirms the load matched expectations before
-it's treated as done.`,
+it's treated as done.
+
+Write \`dataLoad.json\`: { "total", "entities", "lineage": <pct>, "validation": <pct>, "conflicts",
+"precedence": [source ids, highest first], "per": [{ "entity", "rows", "nulls", "valid", "src":
+[ids], "merged", "conflict", "note" }], "artifacts": [{ "name", "detail", "glyph" }], "issues":
+[{ "t", "tag" }] }. The Load pane renders the headline totals, per-entity merge, artifacts & issues.`,
   },
 };
 
