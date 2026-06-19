@@ -93,6 +93,25 @@ pub(crate) fn to_bash_path(p: &str) -> String {
     p.to_string()
 }
 
+/// Inverse of [`to_bash_path`]: a git-bash drive path (`/c/Users/...`, as reported by a
+/// bash shell's OSC-7 cwd and then persisted) back to a native `C:/Users/...` path, so
+/// Windows fs/process APIs (`Path::is_dir`, `Command::cwd`) can resolve it. Without this a
+/// restored pane whose worktree/dir genuinely EXISTS reads as "missing" and fails to launch
+/// (#979). Already-native and non-drive paths pass through unchanged; no-op off Windows.
+pub(crate) fn to_native_path(p: &str) -> String {
+    #[cfg(windows)]
+    {
+        let b = p.as_bytes();
+        if b.len() >= 3 && b[0] == b'/' && b[2] == b'/' && (b[1] as char).is_ascii_alphabetic() {
+            let drive = (b[1] as char).to_ascii_uppercase();
+            return format!("{drive}:/{}", &p[3..]);
+        }
+        p.to_string()
+    }
+    #[cfg(not(windows))]
+    p.to_string()
+}
+
 /// The nearest existing ancestor directory of `path` (native form), or "" if none
 /// exists. Used by `pty_create` to avoid the silent $HOME fallback when a session's
 /// configured cwd is missing — we land in the closest real directory instead (#367).
@@ -2220,6 +2239,22 @@ mod tests {
             .map(|(_, rest)| format!("/{}", rest))
             .unwrap_or_default();
         assert_eq!(stripped, "/c/Users/Kevin/project");
+    }
+
+    #[test]
+    fn to_native_path_resolves_git_bash_drive_paths_on_windows() {
+        // The OSC-7 cwd a bash shell reports (and the app persists) — must round back to a native
+        // path so pty_create's is_dir/Command::cwd resolve an EXISTING worktree on restore (#979).
+        let bash = "/c/Users/Kevin/.base-studio-code/worktrees/studio-code/base-studio-code--source-experience";
+        let got = super::to_native_path(bash);
+        if cfg!(windows) {
+            assert_eq!(got, "C:/Users/Kevin/.base-studio-code/worktrees/studio-code/base-studio-code--source-experience");
+        } else {
+            assert_eq!(got, bash); // no-op off Windows
+        }
+        // Non-drive POSIX paths and already-native paths pass through unchanged everywhere.
+        assert_eq!(super::to_native_path("/usr/local/bin"), "/usr/local/bin");
+        assert_eq!(super::to_native_path("C:/already/native"), "C:/already/native");
     }
 
     use super::{bash_ansi_c_quote, sanitize_project_key, claude_launch, claude_project_dir_name};
