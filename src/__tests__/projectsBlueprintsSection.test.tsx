@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { ProjectsList } from "../screens/projects/ProjectsList";
 import { useAppStore } from "../store";
@@ -63,6 +63,25 @@ describe("ProjectsList — Blueprints section", () => {
     expect(screen.getByText("Normal Project")).toBeTruthy();
     expect(screen.getByText("Designed Blueprint")).toBeTruthy();
     expect(screen.queryByText("Author Session")).toBeNull();
+  });
+
+  it("binds the SELECTED blueprint AT CREATION — not on a later open (#988)", async () => {
+    // Regression: opening a project used to adopt the transient global selection. The binding must
+    // be captured once, when the project is created, from whatever is selected then.
+    useAppStore.setState({
+      blueprints: [bp({ id: "fullstack", name: "Full-stack", origin: "local", category: "greenfield" })],
+      activeBlueprintId: "fullstack",
+    });
+    render(<ProjectsList />);
+    await screen.findByText("Blueprints");
+    fireEvent.click(screen.getByText("+ New project"));
+    fireEvent.change(screen.getByPlaceholderText("project title…"), { target: { value: "My New App" } });
+    fireEvent.click(screen.getByText("start planning →"));
+    await waitFor(() => {
+      const s = useAppStore.getState();
+      expect(s.planningSessionKey).toBe("My_New_App");
+      expect(s.projectBlueprintId["My_New_App"]).toBe("fullstack"); // bound to the selection at creation
+    });
   });
 
   it("clicking a saved blueprint opens the project planning page in authoring mode", async () => {

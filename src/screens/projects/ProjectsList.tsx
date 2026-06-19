@@ -4,7 +4,7 @@ import { ExternalLink, MoreHorizontal, Trash2, Pencil, Search, Layers, GitFork, 
 import { useAppStore } from "../../store";
 import { useFleetLive } from "../../hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../lib/projectPaths";
-import { AUTHORING_BLUEPRINT_ID, CATEGORY_META, type Blueprint, type BlueprintGist, type BlueprintCategory } from "./blueprints";
+import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, type Blueprint, type BlueprintGist, type BlueprintCategory } from "./blueprints";
 
 // A published project's lifecycle, derived from GitHub state: open ⇒ active, closed ⇒ shipped.
 // (Local, not-yet-on-GitHub work lives in the separate Drafts section.)
@@ -433,7 +433,7 @@ function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, planAuthoredBlueprint, setAuthoredBlueprint, blueprints, removeBlueprint } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, planAuthoredBlueprint, setAuthoredBlueprint, blueprints, activeBlueprintId, removeBlueprint } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -613,6 +613,10 @@ export function ProjectsList() {
     setPlanningContext(pitch.trim(), "");
     setActiveProjectMeta(null, "", "", 0);
     addDraftProject(draftKey, { title: titleTrimmed, pitch: pitch.trim(), createdAt: Date.now() });
+    // Bind the blueprint AT CREATION (#988) — the explicit consent point — capturing whatever's
+    // selected now. Opening the project later never adopts the (freely-changing) global selection,
+    // so its blueprint can't switch without the user's intent.
+    setProjectBlueprintId(draftKey, activeBlueprintId || DEFAULT_BLUEPRINT_ID);
     setPlanningSession(draftKey);
     setNewOpen(false);
     setTitle("");
