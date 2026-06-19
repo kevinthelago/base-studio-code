@@ -135,6 +135,16 @@ fn infer_entity(obj: &SourceObject, rows: &RowSet, known_entities: &HashSet<Stri
 
     let identity = propose_identity(&fields, &provenances);
 
+    // Identity fields are merge keys and must round-trip as text — force String
+    // regardless of what the value-type detector chose (e.g. "1"/"2" → Number).
+    let identity_set: std::collections::HashSet<&str> =
+        identity.iter().map(String::as_str).collect();
+    for f in &mut fields {
+        if identity_set.contains(f.key.as_str()) && !matches!(f.ty, FieldType::Ref) {
+            f.ty = FieldType::String;
+        }
+    }
+
     EntityInference {
         entity: Entity {
             key: entity_key,
