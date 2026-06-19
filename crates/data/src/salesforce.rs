@@ -83,12 +83,16 @@ impl From<&SalesforceObject> for SourceObject {
 ///     Ok(body)
 /// });
 /// ```
+/// A URL → parsed-JSON fetch closure. Owns any auth (bearer token / API key); the connector
+/// never sees or stores credentials.
+type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
+
 pub struct SalesforceConnector {
     name: String,
     instance_url: String,
     api_version: String,
     /// GET `url` → parsed JSON body. Owns the access token; the connector never sees it.
-    fetch: Box<dyn Fn(&str) -> Result<Value> + Send + Sync>,
+    fetch: FetchFn,
 }
 
 impl SalesforceConnector {

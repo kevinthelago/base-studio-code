@@ -256,7 +256,7 @@ pub fn data_infer_model(csv_path: String, model_name: String) -> Result<DataMode
     let entity_label = entity_raw.to_string();
 
     let n_sample = rs.rows.len().min(20);
-    let fields: Vec<Field> = rs.columns.iter().enumerate().map(|(ci, col)| {
+    let mut fields: Vec<Field> = rs.columns.iter().enumerate().map(|(ci, col)| {
         let samples: Vec<&str> = rs.rows[..n_sample]
             .iter()
             .filter_map(|row| row.get(ci).map(String::as_str))
@@ -273,6 +273,13 @@ pub fn data_infer_model(csv_path: String, model_name: String) -> Result<DataMode
     }).collect();
 
     let identity = fields.first().map(|f| vec![f.key.clone()]).unwrap_or_default();
+    // Identity fields are merge keys and must round-trip as text — force String (matching
+    // crates/data::infer), so a numeric-looking key like `id` joins/dedupes as a key, not a number.
+    for f in fields.iter_mut() {
+        if identity.iter().any(|k| k == &f.key) && !matches!(f.ty, FieldType::Ref) {
+            f.ty = FieldType::String;
+        }
+    }
     Ok(DataModel {
         name: model_name,
         version: 1,
