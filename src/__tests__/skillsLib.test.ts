@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   seedSkills, resolveSkills, toSkillCfgs, skillSlug, defFromCatalog, blankSkill,
-  parseSkillsFile, deriveSkillKpis, type SkillDef,
+  parseSkillsFile, deriveSkillKpis, refreshPackagedSkills, type SkillDef,
 } from "../lib/skills";
 
 function def(p: Partial<SkillDef> = {}): SkillDef {
@@ -59,8 +59,8 @@ describe("toSkillCfgs", () => {
 
 describe("defFromCatalog / blankSkill", () => {
   it("catalog entry comes disabled + global with the catalog description", () => {
-    const d = defFromCatalog("Add DB migration");
-    expect(d.name).toBe("Add DB migration");
+    const d = defFromCatalog("ISO 27001 control mapping");
+    expect(d.name).toBe("ISO 27001 control mapping");
     expect(d.enabled).toBe(false);
     expect(d.projects).toEqual([]);
     expect(d.desc.length).toBeGreaterThan(0);
@@ -99,6 +99,38 @@ describe("parseSkillsFile", () => {
     expect(parseSkillsFile("not json")).toEqual([]);
     expect(parseSkillsFile(JSON.stringify({ name: "x" }))).toEqual([]);
     expect(parseSkillsFile("")).toEqual([]);
+  });
+});
+
+describe("refreshPackagedSkills (#677-style)", () => {
+  const seedId = seedSkills()[0].id;
+
+  it("prunes legacy packaged skills and seeds the current packaged set", () => {
+    const legacy = def({ id: "open-pr", name: "Open a clean PR", packaged: undefined });
+    const out = refreshPackagedSkills([legacy]);
+    expect(out.some((s) => s.id === "open-pr")).toBe(false);       // legacy built-in pruned
+    expect(out.some((s) => s.id === seedId)).toBe(true);            // current packaged seeded
+    expect(out.every((s) => s.packaged)).toBe(true);               // only packaged remain
+  });
+
+  it("keeps user-created / imported skills untouched", () => {
+    const mine = def({ id: "mine", name: "My skill", source: "imported", packaged: undefined });
+    const out = refreshPackagedSkills([mine]);
+    expect(out.find((s) => s.id === "mine")).toEqual(mine);
+  });
+
+  it("preserves the user's enabled/pinned/projects on a refreshed packaged skill", () => {
+    const customized = def({ id: seedId, enabled: false, pinned: true, projects: ["p1"], desc: "stale", packaged: true });
+    const refreshed = refreshPackagedSkills([customized]).find((s) => s.id === seedId)!;
+    expect(refreshed.enabled).toBe(false);
+    expect(refreshed.pinned).toBe(true);
+    expect(refreshed.projects).toEqual(["p1"]);
+    expect(refreshed.desc).not.toBe("stale");                      // content refreshed from code
+  });
+
+  it("prunes a packaged skill removed from code (by the packaged flag)", () => {
+    const removed = def({ id: "gone-packaged", packaged: true });
+    expect(refreshPackagedSkills([removed]).some((s) => s.id === "gone-packaged")).toBe(false);
   });
 });
 

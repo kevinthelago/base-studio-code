@@ -13,6 +13,7 @@ import type { PlanFeature } from "./featureList";
 import type { SeamGraph } from "../../lib/planSeamGraph";
 import type { Blueprint } from "./blueprints";
 import type { DeployConfig } from "./deployConfig";
+import type { Topology, RelationshipArtifact, AgentRelationship } from "./relationshipGraph";
 
 export type { PlanGrade };
 
@@ -153,6 +154,13 @@ export interface ProjectPaneData {
   deploy?: DeployConfig;
   /** The feature seam/dependency DAG (#…) — the Plan stage's approval surface. */
   seamGraph?: SeamGraph;
+  /** Agent-coordination topology (#…) — the effective director/peer/hybrid mode, the
+   *  Permissions stage configures it and the Structure graph reflects it. */
+  topology?: Topology;
+  /** Declared produced artifacts (schemas/contracts) one stream hands to others. */
+  relationshipArtifacts?: RelationshipArtifact[];
+  /** Typed relationship edges between streams — the Structure relationship graph. */
+  relationships?: AgentRelationship[];
   // The agent-readiness grade (#445) is no longer carried on the pane data: it is now
   // produced by the grade-plan pipeline and read from the store (sectionGrades, as the
   // structure "agent-readiness" grader's detail) by the pane directly. PlanGrade is

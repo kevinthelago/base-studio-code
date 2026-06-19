@@ -75,18 +75,6 @@ function FleetPill({ running, paused }: { running: number; paused: number }) {
   );
 }
 
-/** Top-level section divider (Drafts · Projects · Blueprints). */
-function SectionHeader({ label, count, note }: { label: string; count: number; note: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9, margin: "0 0 10px" }}>
-      <span style={{ fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>{label}</span>
-      <span style={{ padding: "0 6px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{count}</span>
-      <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{note}</span>
-      <span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
-    </div>
-  );
-}
-
 /** Lifecycle sub-group header within the Projects section (Active · Drafting · Shipped). */
 function GroupHeader({ label, count, dot }: { label: string; count: number; dot: string }) {
   return (
@@ -273,77 +261,8 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
 
 interface DraftRow { key: string; title: string; pitch: string; sort: number }
 
-/** A planning draft not yet on GitHub — dashed card with resume + ⋯ (edit plan / delete draft). */
-function DraftCard({ d, onResume, onDelete, menuOpenId, setMenuOpenId }: {
-  d: DraftRow;
-  onResume: (d: DraftRow) => void;
-  onDelete: (key: string) => void;
-  menuOpenId: string | null;
-  setMenuOpenId: (id: string | null) => void;
-}) {
-  const id = "draft:" + d.key;
-  const isOpen = menuOpenId === id;
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState(false);
-  useEffect(() => {
-    if (!isOpen) return;
-    function onDown(e: MouseEvent) { if (!menuRef.current?.contains(e.target as Node)) setMenuOpenId(null); }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [isOpen, setMenuOpenId]);
-
-  return (
-    <div
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{
-        display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
-        background: "var(--bg-elev)", border: "1px dashed " + (hover ? "var(--accent-dim)" : "var(--border-soft)"),
-        borderRadius: "var(--r-md)",
-      }}>
-      <div onClick={() => onResume(d)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-          <span className="tag amber" style={{ fontSize: 9.5 }}>draft</span>
-          <span style={{ fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>{d.title}</span>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>no board yet</span>
-        </div>
-        {d.pitch && (
-          <div style={{ marginTop: 5, color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 560 }}>{d.pitch}</div>
-        )}
-        <div style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>updated {timeAgoMs(d.sort)}</div>
-      </div>
-      <button
-        className="btn ghost"
-        style={{ height: 24, padding: "0 10px", fontSize: 10.5, color: "var(--fg-muted)" }}
-        onClick={() => onResume(d)}
-      >resume →</button>
-      <div ref={menuRef} style={{ position: "relative" }}>
-        <button
-          className="btn ghost"
-          style={{ height: 26, width: 26, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-          onClick={() => setMenuOpenId(isOpen ? null : id)}
-          title="More options"
-        ><MoreHorizontal size={14} /></button>
-        {isOpen && (
-          <div style={{
-            position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-            borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 168, boxShadow: "0 6px 22px rgba(0,0,0,0.45)",
-          }}>
-            <button className="menu-item" onClick={() => { setMenuOpenId(null); onResume(d); }}>
-              <Pencil size={12} /> edit plan
-            </button>
-            <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
-            <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(d.key); }}>
-              <Trash2 size={12} /> delete draft
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** A reusable plan template — hued icon tile + category/visibility/gist metadata + ⋯ menu. */
+/** A compact blueprint card for the right rail — hued icon tile + name + ⋯ menu, then a
+ *  category / stages / visibility meta row and an optional gist link. */
 function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
   b: BpItem;
   onOpen: (b: BpItem) => void;
@@ -354,7 +273,6 @@ function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
   const menuId = "bp:" + b.id;
   const isOpen = menuOpenId === menuId;
   const menuRef = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState(false);
   useEffect(() => {
     if (!isOpen) return;
     function onDown(e: MouseEvent) { if (!menuRef.current?.contains(e.target as Node)) setMenuOpenId(null); }
@@ -368,66 +286,54 @@ function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
 
   return (
     <div
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      onClick={() => onOpen(b)}
       style={{
-        display: "flex", alignItems: "center", gap: 14, padding: "13px 14px",
-        background: hover ? "var(--bg-elev)" : "var(--bg-panel)",
-        border: "1px solid " + (hover ? "var(--border)" : "var(--border-soft)"), borderRadius: "var(--r-lg)",
+        padding: "12px 13px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+        borderRadius: 9, cursor: "pointer", position: "relative",
       }}>
-      <div style={{
-        width: 42, height: 42, flex: "0 0 42px", borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center",
-        background: `color-mix(in oklch, ${hue}, transparent 88%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 70%)`, color: hue,
-      }}>
-        <Icon size={18} />
-      </div>
-      <div onClick={() => onOpen(b)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>{b.name}</span>
-          <span style={{
-            padding: "1px 7px", borderRadius: 99, fontFamily: "var(--mono)", fontSize: 9.5, color: hue,
-            background: `color-mix(in oklch, ${hue}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
-          }}>{b.category}</span>
-        </div>
-        {b.pitch && (
-          <div style={{ marginTop: 4, color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 560 }}>{b.pitch}</div>
-        )}
-        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
-          <span><b style={{ color: "var(--fg-muted)", fontWeight: 600 }}>{b.stages}</b> stage{b.stages !== 1 ? "s" : ""}</span>
-          <span style={{
-            padding: "1px 7px", borderRadius: 99, fontSize: 9, color: vis.color,
-            background: `color-mix(in oklch, ${vis.color}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${vis.color}, transparent 75%)`,
-          }}>{vis.label}</span>
-          {b.gistLabel && (
-            <span style={{ color: "var(--info)", display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <Link2 size={11} />{b.gistLabel}
-            </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 9 }}>
+        <span style={{
+          width: 30, height: 30, flex: "0 0 30px", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
+          background: `color-mix(in oklch, ${hue}, transparent 88%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 70%)`, color: hue,
+        }}><Icon size={15} /></span>
+        <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
+        <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
+          <button
+            className="btn ghost"
+            style={{ height: 22, width: 22, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={() => setMenuOpenId(isOpen ? null : menuId)}
+            title="More options"
+          ><MoreHorizontal size={13} /></button>
+          {isOpen && (
+            <div style={{
+              position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
+              background: "var(--bg-elev2)", border: "1px solid var(--border-soft)",
+              borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 158, boxShadow: "0 6px 22px rgba(0,0,0,0.45)",
+            }}>
+              <button className="menu-item" onClick={() => { setMenuOpenId(null); onOpen(b); }}>
+                <Pencil size={12} /> open &amp; edit
+              </button>
+              <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+              <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(b); }}>
+                <Trash2 size={12} /> delete blueprint
+              </button>
+            </div>
           )}
-          {b.sort > 0 && <span>updated {b.updatedLabel}</span>}
         </div>
       </div>
-      <div ref={menuRef} style={{ position: "relative" }}>
-        <button
-          className="btn ghost"
-          style={{ height: 26, width: 26, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-          onClick={() => setMenuOpenId(isOpen ? null : menuId)}
-          title="More options"
-        ><MoreHorizontal size={14} /></button>
-        {isOpen && (
-          <div style={{
-            position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-            borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 172, boxShadow: "0 6px 22px rgba(0,0,0,0.45)",
-          }}>
-            <button className="menu-item" onClick={() => { setMenuOpenId(null); onOpen(b); }}>
-              <Pencil size={12} /> open &amp; edit
-            </button>
-            <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
-            <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(b); }}>
-              <Trash2 size={12} /> delete blueprint
-            </button>
-          </div>
-        )}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+        <span style={{
+          padding: "1px 6px", borderRadius: 99, color: hue,
+          background: `color-mix(in oklch, ${hue}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
+        }}>{b.category}</span>
+        <span><b style={{ color: "var(--fg-muted)", fontWeight: 600 }}>{b.stages}</b> stage{b.stages !== 1 ? "s" : ""}</span>
+        <span style={{ color: vis.color }}>{vis.label}</span>
       </div>
+      {b.gistLabel && (
+        <div style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5 }}>
+          <Link2 size={10} />{b.gistLabel}
+        </div>
+      )}
     </div>
   );
 }
@@ -441,6 +347,8 @@ export function ProjectsList() {
   const [title, setTitle]         = useState("");
   const [pitch, setPitch]         = useState("");
   const [newOpen, setNewOpen]     = useState(false);
+  const [bpNewOpen, setBpNewOpen] = useState(false);   // rail "+ author a blueprint" inline form
+  const [bpTitle, setBpTitle]     = useState("");
   const [query, setQuery]         = useState("");
   const [sort, setSort]           = useState<"recency" | "name">("recency");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -770,7 +678,9 @@ export function ProjectsList() {
 
   const publishedCount = grouped.active.length + grouped.shipped.length;
   const grandTotal = publishedCount + fDrafts.length + fBlueprints.length;
-  const noResults = grandTotal === 0;
+  // The main (projects) column is empty when there are no projects or drafts; the
+  // blueprints rail shows its own empty state independently.
+  const projectsEmpty = publishedCount === 0 && fDrafts.length === 0;
 
   // "open & edit" a blueprint always lands in the project planning page (#…): an in-progress
   // authoring draft resumes its session; a saved library blueprint re-opens an authoring session
@@ -796,6 +706,23 @@ export function ProjectsList() {
     else removeBlueprint(b.id);
   }
 
+  // The rail "+" authors a NEW blueprint: bind a fresh key to the authoring lifecycle and open the
+  // planner seeded for it (mirrors BlueprintsPage.authorBlueprint), which designs + publishes a gist.
+  function startNewBlueprint() {
+    const title = bpTitle.trim();
+    if (!title) return;
+    const key = sanitizeProjectKey(title);
+    setProjectBlueprintId(key, AUTHORING_BLUEPRINT_ID);
+    setPlanningTitle(title);
+    setPlanningContext("Design a reusable blueprint to publish as a gist.", "");
+    setActiveProjectMeta(null, "", "", 0);
+    addDraftProject(key, { title, pitch: "Design a reusable blueprint.", createdAt: Date.now() });
+    setPlanningSession(key);
+    setBpNewOpen(false);
+    setBpTitle("");
+    setProjectsView("planning");
+  }
+
   const totalSummary = `${visibleProjects.length} published · ${normalDrafts.length} draft${normalDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
   const sortBtn = (active: boolean) => ({
     height: 28, padding: "0 11px", border: 0, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5,
@@ -803,190 +730,242 @@ export function ProjectsList() {
   } as const);
 
   return (
-    <section style={{ flex: 1, overflow: "auto", padding: "24px 32px", minWidth: 0 }}>
-      <div style={{ maxWidth: 1040, margin: "0 auto" }}>
-        {/* header */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 16 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600, color: "var(--fg)" }}>Projects</h2>
-              <span style={{ padding: "1px 7px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 10, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{grandTotal}</span>
+    <section style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", overflow: "hidden" }}>
+      {/* ░░ MAIN — projects ░░ */}
+      <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column" }}>
+        {/* fixed header: title · summary · sync/new · new-project form · search+sort */}
+        <div style={{ flex: "0 0 auto", padding: "20px 28px 0" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 19, fontWeight: 600, color: "var(--fg)" }}>Projects</h2>
+                <span style={{ padding: "1px 7px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 10, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{publishedCount + fDrafts.length}</span>
+              </div>
+              <div style={{ color: "var(--fg-muted)", fontSize: 11.5, marginTop: 7, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontFamily: "var(--mono)" }}>
+                <span style={{ color: "var(--success)" }}>● github connected</span>
+                <span style={{ color: "var(--fg-dim)" }}>·</span>
+                <span>{totalSummary}</span>
+                {lastSync && (
+                  <>
+                    <span style={{ color: "var(--fg-dim)" }}>·</span>
+                    <span style={{ color: "var(--fg-dim)" }}>last sync {timeAgo(lastSync.toISOString())}</span>
+                  </>
+                )}
+              </div>
             </div>
-            <div style={{ color: "var(--fg-muted)", fontSize: 11.5, marginTop: 5, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontFamily: "var(--mono)" }}>
-              <span style={{ color: "var(--success)" }}>● github connected</span>
-              <span style={{ color: "var(--fg-dim)" }}>·</span>
-              <span>{totalSummary}</span>
-              {lastSync && (
-                <>
-                  <span style={{ color: "var(--fg-dim)" }}>·</span>
-                  <span style={{ color: "var(--fg-dim)" }}>last sync {timeAgo(lastSync.toISOString())}</span>
-                </>
+            <button className="btn ghost" onClick={fetchProjects} disabled={loading}>
+              {loading ? "syncing…" : "↻ sync"}
+            </button>
+            <button className="btn primary" onClick={() => { setNewOpen(o => !o); setTitle(""); setPitch(""); }}>+ New project</button>
+          </div>
+
+          {/* new project — inline, toggled by "+ New project" */}
+          {newOpen && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginTop: 14,
+              background: "var(--bg-panel)", border: "1px solid var(--accent-dim)", borderRadius: 8,
+            }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>+ plan</span>
+              <input
+                autoFocus
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); if (e.key === "Escape") { setNewOpen(false); setTitle(""); setPitch(""); } }}
+                placeholder="project title…"
+                style={{
+                  flex: "0 0 200px", background: "none", border: "none", outline: "none",
+                  fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
+                  borderRight: "1px solid var(--border-soft)", paddingRight: 8,
+                }}
+              />
+              {titleConflict && (
+                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>⚠ exists</span>
               )}
+              <input
+                value={pitch}
+                onChange={e => setPitch(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); }}
+                placeholder="describe what you want to build… (optional)"
+                style={{ flex: 1, background: "none", border: "none", outline: "none", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}
+              />
+              <button
+                onClick={handleStartPlanning}
+                disabled={!titleTrimmed || !!titleConflict}
+                className="btn primary"
+                style={{ height: 24, fontSize: 10.5, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4, whiteSpace: "nowrap" }}
+              >start planning →</button>
+              <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }} onClick={() => { setNewOpen(false); setTitle(""); setPitch(""); }}>cancel</button>
             </div>
+          )}
+
+          {/* search + sort */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16, paddingBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, height: 30, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", flex: "0 0 300px" }}>
+              <Search size={13} style={{ color: "var(--fg-dim)" }} />
+              <input
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="search projects & blueprints…"
+                style={{ flex: 1, background: "none", border: "none", outline: "none", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>sort</span>
+              <div style={{ display: "flex", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+                <button onClick={() => setSort("recency")} style={sortBtn(sort === "recency")}>recency</button>
+                <span style={{ width: 1, background: "var(--border-soft)" }} />
+                <button onClick={() => setSort("name")} style={sortBtn(sort === "name")}>name</button>
+              </div>
+            </div>
+            {q && <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{grandTotal} match{grandTotal !== 1 ? "es" : ""}</span>}
           </div>
-          <button className="btn ghost" onClick={fetchProjects} disabled={loading}>
-            {loading ? "syncing…" : "↻ sync"}
-          </button>
-          <button className="btn primary" onClick={() => { setNewOpen(o => !o); setTitle(""); setPitch(""); }}>+ New project</button>
         </div>
 
-        {/* new project — inline, toggled by "+ New project" */}
-        {newOpen && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 14,
-            background: "var(--bg-panel)", border: "1px solid var(--accent-dim)", borderRadius: 8,
-          }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>+ plan</span>
-            <input
-              autoFocus
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); if (e.key === "Escape") { setNewOpen(false); setTitle(""); setPitch(""); } }}
-              placeholder="project title…"
-              style={{
-                flex: "0 0 200px", background: "none", border: "none", outline: "none",
-                fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
-                borderRight: "1px solid var(--border-soft)", paddingRight: 8,
-              }}
-            />
-            {titleConflict && (
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>⚠ exists</span>
-            )}
-            <input
-              value={pitch}
-              onChange={e => setPitch(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); }}
-              placeholder="describe what you want to build… (optional)"
-              style={{ flex: 1, background: "none", border: "none", outline: "none", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}
-            />
-            <button
-              onClick={handleStartPlanning}
-              disabled={!titleTrimmed || !!titleConflict}
-              className="btn primary"
-              style={{ height: 24, fontSize: 10.5, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4, whiteSpace: "nowrap" }}
-            >start planning →</button>
-            <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }} onClick={() => { setNewOpen(false); setTitle(""); setPitch(""); }}>cancel</button>
-          </div>
-        )}
-
-        {/* search + sort */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, height: 30, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", flex: "0 0 300px" }}>
-            <Search size={13} style={{ color: "var(--fg-dim)" }} />
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="search projects & blueprints…"
-              style={{ flex: 1, background: "none", border: "none", outline: "none", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}
-            />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>sort</span>
-            <div style={{ display: "flex", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
-              <button onClick={() => setSort("recency")} style={sortBtn(sort === "recency")}>recency</button>
-              <span style={{ width: 1, background: "var(--border-soft)" }} />
-              <button onClick={() => setSort("name")} style={sortBtn(sort === "name")}>name</button>
+        {/* scroll area: errors · drafts chips · active/shipped groups · empty */}
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 28px 28px" }}>
+          {error && (
+            <div style={{
+              padding: "12px 16px", borderRadius: 6, marginBottom: 16,
+              background: "color-mix(in oklch, var(--danger), transparent 88%)",
+              border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
+              fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
+            }}>
+              {error.includes("read:project")
+                ? 'This token lacks the "read:project" scope. Re-authenticate in Settings → GitHub with project access.'
+                : error}
             </div>
-          </div>
-          {q && <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{grandTotal} match{grandTotal !== 1 ? "es" : ""}</span>}
-        </div>
+          )}
 
-        {error && (
-          <div style={{
-            padding: "12px 16px", borderRadius: 6, marginBottom: 16,
-            background: "color-mix(in oklch, var(--danger), transparent 88%)",
-            border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-            fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
-          }}>
-            {error.includes("read:project")
-              ? 'This token lacks the "read:project" scope. Re-authenticate in Settings → GitHub with project access.'
-              : error}
-          </div>
-        )}
+          {loading && visibleProjects.length === 0 && (
+            <div style={{ textAlign: "center", padding: "40px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+              Loading projects…
+            </div>
+          )}
 
-        {loading && visibleProjects.length === 0 && (
-          <div style={{ textAlign: "center", padding: "40px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
-            Loading projects…
-          </div>
-        )}
+          {draftError && (
+            <div style={{
+              padding: "8px 12px", borderRadius: "var(--r-md)", marginBottom: 12, fontFamily: "var(--mono)", fontSize: 11,
+              color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)",
+              border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
+            }}>{draftError}</div>
+          )}
 
-        {draftError && (
-          <div style={{
-            padding: "8px 12px", borderRadius: "var(--r-md)", marginBottom: 12, fontFamily: "var(--mono)", fontSize: 11,
-            color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)",
-            border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
-          }}>{draftError}</div>
-        )}
-
-        {/* ── SECTION A · DRAFTS ── */}
-        {fDrafts.length > 0 && (
-          <>
-            <SectionHeader label="Drafts" count={fDrafts.length} note="not yet on github" />
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 26 }}>
+          {/* drafts — compact chips (click = resume · ✕ = delete) */}
+          {fDrafts.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 20, flexWrap: "wrap" }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>
+                {fDrafts.length} draft{fDrafts.length !== 1 ? "s" : ""}
+              </span>
               {fDrafts.map(d => (
-                <DraftCard key={d.key} d={d} onResume={reopenDraft} onDelete={deleteDraft} menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId} />
+                <span
+                  key={d.key}
+                  onClick={() => reopenDraft(d)}
+                  title={d.pitch || undefined}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 7, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
+                >
+                  <span style={{ width: 5, height: 5, borderRadius: 99, background: "var(--accent)", flexShrink: 0 }} />
+                  {d.title}
+                  <span style={{ color: "var(--fg-dim)" }}>{timeAgoMs(d.sort)}</span>
+                  <span
+                    onClick={e => { e.stopPropagation(); void deleteDraft(d.key); }}
+                    title="delete draft"
+                    style={{ color: "var(--fg-dim)", cursor: "pointer", paddingLeft: 2 }}
+                  >✕</span>
+                </span>
               ))}
             </div>
-          </>
-        )}
+          )}
 
-        {/* ── SECTION B · PROJECTS (published) ── */}
-        {publishedCount > 0 && (
-          <>
-            <SectionHeader label="Projects" count={publishedCount} note="on github · grouped by lifecycle" />
-            {(["active", "shipped"] as ProjStatus[]).map(status => {
-              const items = grouped[status];
-              if (items.length === 0) return null;
-              return (
-                <div key={status} style={{ marginTop: status === "active" ? 14 : 18 }}>
-                  <GroupHeader label={STATUS_META[status].label} count={items.length} dot={STATUS_META[status].dot} />
-                  <div style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "hidden", opacity: status === "shipped" ? 0.82 : 1 }}>
-                    {items.map((p, i) => (
-                      <div key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
-                        <ProjectRow
-                          p={p}
-                          running={fleetByProject[p.id]?.running ?? 0}
-                          paused={fleetByProject[p.id]?.paused ?? 0}
-                          onPlan={handleEditPlan}
-                          onBoard={handleOpenGithubBoard}
-                          onDelete={setDeleteTarget}
-                          menuOpenId={menuOpenId}
-                          setMenuOpenId={setMenuOpenId}
-                        />
-                      </div>
-                    ))}
-                  </div>
+          {/* published projects, grouped by lifecycle */}
+          {(["active", "shipped"] as ProjStatus[]).map(status => {
+            const items = grouped[status];
+            if (items.length === 0) return null;
+            return (
+              <div key={status} style={{ marginBottom: 22 }}>
+                <GroupHeader label={STATUS_META[status].label} count={items.length} dot={STATUS_META[status].dot} />
+                <div style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "visible", opacity: status === "shipped" ? 0.82 : 1 }}>
+                  {items.map((p, i) => (
+                    <div key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
+                      <ProjectRow
+                        p={p}
+                        running={fleetByProject[p.id]?.running ?? 0}
+                        paused={fleetByProject[p.id]?.paused ?? 0}
+                        onPlan={handleEditPlan}
+                        onBoard={handleOpenGithubBoard}
+                        onDelete={setDeleteTarget}
+                        menuOpenId={menuOpenId}
+                        setMenuOpenId={setMenuOpenId}
+                      />
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
-            <div style={{ height: 26 }} />
-          </>
-        )}
+              </div>
+            );
+          })}
 
-        {/* ── SECTION C · BLUEPRINTS ── */}
-        {fBlueprints.length > 0 && (
-          <>
-            <SectionHeader label="Blueprints" count={fBlueprints.length} note="reusable plan templates · published as gists" />
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {fBlueprints.map(b => (
-                <BlueprintCard key={b.id} b={b} onOpen={openBlueprint} onDelete={deleteBlueprint} menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId} />
-              ))}
-            </div>
-          </>
-        )}
+          {/* empty (main column only — the rail has its own) */}
+          {!loading && projectsEmpty && (
+            q ? (
+              <div style={{ textAlign: "center", padding: "48px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+                No projects match “{query}”.
+              </div>
+            ) : !error && (
+              <div style={{ textAlign: "center", padding: "48px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+                Nothing here yet. Start a plan with <b style={{ color: "var(--fg-muted)" }}>+ New project</b>.
+              </div>
+            )
+          )}
+        </div>
+      </div>
 
-        {/* no results / empty */}
-        {!loading && noResults && (
-          q ? (
-            <div style={{ textAlign: "center", padding: "48px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
-              No projects or blueprints match “{query}”.
+      {/* ░░ RAIL — blueprints ░░ */}
+      <div style={{ flex: "0 0 344px", display: "flex", flexDirection: "column", background: "var(--bg-panel)", borderLeft: "1px solid var(--border-soft)" }}>
+        <div style={{ flex: "0 0 auto", padding: "20px 18px 14px", borderBottom: "1px solid var(--border-soft)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <span style={{ width: 23, height: 23, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>
+              <Layers size={13} />
+            </span>
+            <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Blueprints</h3>
+            <span style={{ padding: "0 6px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{fBlueprints.length}</span>
+            <span style={{ flex: 1 }} />
+            <button
+              className="btn ghost"
+              title="Author a new blueprint"
+              onClick={() => { setBpNewOpen(o => !o); setBpTitle(""); }}
+              style={{ height: 24, width: 24, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}
+            >+</button>
+          </div>
+          {bpNewOpen && (
+            <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+              <input
+                autoFocus
+                value={bpTitle}
+                onChange={e => setBpTitle(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") startNewBlueprint(); if (e.key === "Escape") { setBpNewOpen(false); setBpTitle(""); } }}
+                placeholder="blueprint name…"
+                style={{ flex: 1, minWidth: 0, height: 26, padding: "0 8px", background: "var(--bg-canvas)", border: "1px solid var(--accent-dim)", borderRadius: 6, outline: "none", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}
+              />
+              <button
+                className="btn primary"
+                onClick={startNewBlueprint}
+                disabled={!bpTitle.trim()}
+                style={{ height: 26, fontSize: 10, whiteSpace: "nowrap", opacity: bpTitle.trim() ? 1 : 0.4 }}
+              >author →</button>
             </div>
-          ) : !error && (
-            <div style={{ textAlign: "center", padding: "48px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
-              Nothing here yet. Start a plan with <b style={{ color: "var(--fg-muted)" }}>+ New project</b>.
+          )}
+          <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 9, lineHeight: 1.5 }}>reusable plan templates · published as gists</div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 9 }}>
+          {fBlueprints.length === 0 ? (
+            <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.6, padding: "6px 2px" }}>
+              {q ? "No blueprints match your search." : <>No blueprints yet. Press <b style={{ color: "var(--fg-muted)" }}>+</b> to author one.</>}
             </div>
-          )
-        )}
+          ) : (
+            fBlueprints.map(b => (
+              <BlueprintCard key={b.id} b={b} onOpen={openBlueprint} onDelete={deleteBlueprint} menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId} />
+            ))
+          )}
+        </div>
       </div>
 
       {/* Delete confirmation dialog */}

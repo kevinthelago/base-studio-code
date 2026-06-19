@@ -19,11 +19,10 @@ function routeInvoke(opts: { localProjects?: unknown; deleteRejects?: boolean } 
   }) as unknown as typeof invoke);
 }
 
-// The draft delete now lives behind the card's ⋯ menu (Projects-tab redesign): open it, then
-// click "delete draft".
+// Drafts are now compact chips (Planner two-pane redesign): the chip carries a ✕ titled
+// "delete draft" — click it directly (no ⋯ menu).
 function clickDeleteDraft() {
-  fireEvent.click(screen.getByTitle("More options"));
-  fireEvent.click(screen.getByText("delete draft"));
+  fireEvent.click(screen.getByTitle("delete draft"));
 }
 
 describe("ProjectsList — draft delete", () => {

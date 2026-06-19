@@ -1,10 +1,12 @@
-// Typed data for the Skills library, transcribed from
-// design/fleet-github-skills/js/skillsData.jsx.
+// Typed data for the Skills library.
 //
 // A "skill" is a reusable capability bundle — a named procedure (prompt +
 // bundled tools + guardrails) any worker running an allowed permission-profile
-// can invoke. Shaped to mirror the Extensions data model (see data/extensions.ts)
-// so swapping in live data later is a drop-in. Stats are fleet-wide, last 7d.
+// can invoke. The packaged set ships compliance & standards procedures (SOC 2,
+// GDPR, accessibility, i18n, …) — the cross-cutting obligations almost every
+// product carries. Shaped to mirror the Extensions data model (see
+// data/extensions.ts) so swapping in live data later is a drop-in. Stats are
+// fleet-wide, last 7d.
 
 /** Capability kind — drives the card glyph + accent color. */
 export type SkillKind = "workflow" | "scaffold" | "codemod" | "review" | "docs";
@@ -21,6 +23,9 @@ export interface Skill {
   kind: SkillKind;
   source: SkillSource;
   desc: string;
+  /** The full authored procedure (the SKILL.md body). When absent, the seeded
+   *  SkillDef falls back to `desc`. Packaged skills carry a real procedure here. */
+  body?: string;
   /** Tool names bundled with the skill, rendered as kbd chips. */
   tools: string[];
   /** Permission profiles allowed to invoke it. */
@@ -90,78 +95,162 @@ export const SOURCE_TAG: Record<SkillSource, SourceTag> = {
   community:     { label: "community",    cls: "" },
 };
 
+// The packaged skills are compliance & standards procedures — the cross-cutting
+// obligations (security attestation, data protection, accessibility, localization)
+// that apply to nearly every product, so they ship enabled + global. Each carries
+// a real authored `body` (the SKILL.md procedure) the fleet runs verbatim.
 export const SKILLS: Skill[] = [
   {
-    id: "scaffold-tauri-cmd", name: "Scaffold Tauri command", kind: "scaffold", source: "first-party",
-    desc: "Adds a #[tauri::command], wires it into the invoke handler, generates the TS binding, and stubs a test.",
-    tools: ["write_file", "edit", "repo_map", "rust_check"],
-    profiles: ["build", "auto"], invocations: 142, success: 96, avgTokensK: 18, lastUsed: "3m ago",
-    trend: [12, 18, 14, 22, 19, 28, 29], pinned: true,
+    id: "soc2-readiness", name: "SOC 2 readiness review", kind: "review", source: "first-party",
+    desc: "Audits code + config against the SOC 2 Trust Services Criteria (security, availability, confidentiality) and reports each gap with a remediation.",
+    body: [
+      "Read-only audit of the codebase and infrastructure config against the SOC 2 Trust Services Criteria. Do not change code — produce a findings report.",
+      "1. Inventory the controls in scope: access control (authn/authz, RBAC, MFA), change management (PR review, CI gates, branch protection), encryption (at rest + in transit), logging & monitoring, backup/DR, and incident response.",
+      "2. For each criterion, locate the implementing code/config (or its absence). Cite file:line.",
+      "3. Map each finding to the criterion (CC6 logical access, CC7 monitoring, CC8 change mgmt, A1 availability, C1 confidentiality).",
+      "4. Rate severity (blocker / gap / observation) and give a concrete remediation per finding.",
+      "5. Output a table: criterion · status (met/partial/missing) · evidence · remediation. Flag any secret material committed to the repo as a blocker.",
+    ].join("\n"),
+    tools: ["git_diff", "rank_files", "repo_map", "get_pr"],
+    profiles: ["review"], invocations: 47, success: 95, avgTokensK: 22, lastUsed: "8m ago",
+    trend: [4, 6, 5, 8, 7, 9, 11], pinned: true,
   },
   {
-    id: "add-screen-slice", name: "Add screen + store slice", kind: "scaffold", source: "first-party",
-    desc: "Creates a screen folder, a Zustand slice, the rail entry, and a smoke test — following the existing screens/ layout.",
-    tools: ["write_file", "edit", "related_files"],
-    profiles: ["build"], invocations: 88, success: 92, avgTokensK: 24, lastUsed: "21m ago",
-    trend: [6, 9, 8, 14, 11, 16, 18],
+    id: "gdpr-review", name: "GDPR data-protection review", kind: "review", source: "first-party",
+    desc: "Maps personal-data flows and checks lawful basis, consent, data-subject rights (access/erasure/portability), and retention — flagging each violation.",
+    body: [
+      "Read-only data-protection review against the GDPR. Produce a findings report; do not modify code.",
+      "1. Map the personal-data flows: what PII is collected, where it is stored, who it is shared with (third parties, sub-processors), and cross-border transfers.",
+      "2. For each flow confirm a lawful basis (Art. 6) and, for special-category data, an Art. 9 condition.",
+      "3. Verify the data-subject rights are technically supported: access/export (Art. 15/20), erasure (Art. 17), rectification, and objection — find the endpoint/handler or flag it missing.",
+      "4. Check consent capture (granular, opt-in, withdrawable) and retention limits (data deleted/anonymized after its purpose ends).",
+      "5. Check data-minimization and that PII isn't logged in plaintext.",
+      "6. Output: data-flow inventory + a violations table (article · issue · file:line · fix).",
+    ].join("\n"),
+    tools: ["git_diff", "rank_files", "repo_map"],
+    profiles: ["review"], invocations: 39, success: 93, avgTokensK: 24, lastUsed: "20m ago",
+    trend: [3, 5, 4, 7, 6, 8, 9], pinned: true,
   },
   {
-    id: "open-pr", name: "Open a clean PR", kind: "workflow", source: "first-party",
-    desc: "Writes a conventional-commit title, a summary + test-plan body from the diff, links the issue, and requests review.",
-    tools: ["create_pr", "get_pr", "git_diff"],
-    profiles: ["build", "auto", "review"], invocations: 261, success: 99, avgTokensK: 7, lastUsed: "42s ago",
-    trend: [22, 28, 25, 34, 31, 40, 47], pinned: true,
+    id: "wcag-audit", name: "WCAG 2.2 AA accessibility audit", kind: "review", source: "first-party",
+    desc: "Checks the UI against WCAG 2.2 AA — semantics, ARIA, contrast, keyboard nav, focus order — listing each failure against its success criterion.",
+    body: [
+      "Read-only accessibility audit of the UI against WCAG 2.2 level AA. Report failures; do not edit components.",
+      "1. Perceivable: text alternatives for non-text content (1.1.1), color not the sole signal (1.4.1), contrast ≥ 4.5:1 / 3:1 large (1.4.3), and resizable/reflowing text (1.4.4/1.4.10).",
+      "2. Operable: full keyboard access with no traps (2.1.1/2.1.2), visible focus (2.4.7), logical focus order (2.4.3), and target size ≥ 24px (2.5.8).",
+      "3. Understandable: labelled inputs (3.3.2), error identification (3.3.1), consistent navigation (3.2.3).",
+      "4. Robust: valid name/role/value via semantic HTML or correct ARIA (4.1.2), status messages announced (4.1.3).",
+      "5. For each failure cite the component file:line and the exact success criterion, and give the minimal fix.",
+    ].join("\n"),
+    tools: ["git_diff", "rank_files", "repo_map"],
+    profiles: ["review"], invocations: 31, success: 90, avgTokensK: 19, lastUsed: "1h ago",
+    trend: [2, 4, 3, 5, 6, 5, 8],
   },
   {
-    id: "triage-failing-test", name: "Triage a failing test", kind: "workflow", source: "team",
-    desc: "Reproduces the failure, bisects the offending change, proposes a minimal fix, and re-runs the suite before handing back.",
-    tools: ["rust_check", "run_tests", "git_diff", "repo_map"],
-    profiles: ["build", "auto"], invocations: 64, success: 81, avgTokensK: 41, lastUsed: "1h ago",
-    trend: [4, 7, 6, 9, 8, 12, 11],
+    id: "hipaa-safeguards", name: "HIPAA safeguards review", kind: "review", source: "first-party",
+    desc: "Reviews PHI handling against the HIPAA Security Rule — encryption, access controls, audit logging, and minimum-necessary — citing each gap.",
+    body: [
+      "Read-only review of PHI handling against the HIPAA Security Rule technical safeguards. Report findings only.",
+      "1. Access control (§164.312(a)): unique user identification, RBAC scoped to minimum-necessary, automatic logoff.",
+      "2. Audit controls (§164.312(b)): tamper-evident logging of PHI access — who accessed which record, when.",
+      "3. Integrity (§164.312(c)): protections against improper PHI alteration/destruction.",
+      "4. Transmission security (§164.312(e)) + encryption at rest: TLS in transit, encrypted storage; flag any PHI in logs, URLs, or analytics.",
+      "5. Confirm a path for Business Associate Agreements with any third party that touches PHI.",
+      "6. Output a safeguards table (§ · control · status · evidence file:line · remediation).",
+    ].join("\n"),
+    tools: ["git_diff", "rank_files", "repo_map"],
+    profiles: ["review"], invocations: 14, success: 88, avgTokensK: 23, lastUsed: "3h ago",
+    trend: [1, 2, 2, 3, 4, 3, 5],
   },
   {
-    id: "bump-dep-safely", name: "Bump dependency safely", kind: "codemod", source: "team",
-    desc: "Updates one crate/package, reads the changelog for breaking changes, applies codemods, and gates on a green build.",
-    tools: ["edit", "run_tests", "rust_check"],
-    profiles: ["build"], invocations: 37, success: 78, avgTokensK: 33, lastUsed: "2h ago",
-    trend: [2, 4, 3, 6, 5, 8, 7],
+    id: "pci-dss-review", name: "PCI-DSS cardholder-data review", kind: "review", source: "first-party",
+    desc: "Verifies cardholder-data handling against PCI-DSS — no PAN/CVV storage, tokenization, scoped network, TLS — and flags scope creep.",
+    body: [
+      "Read-only review of cardholder-data handling against PCI-DSS v4.0. Report findings only.",
+      "1. Storage (Req. 3): confirm the PAN is never stored in the clear and the CVV/CVC/track data is NEVER stored post-authorization. Prefer tokenization / a hosted payment field so card data never touches the server.",
+      "2. Transmission (Req. 4): strong TLS for any cardholder data in transit; no card data in URLs or logs.",
+      "3. Access (Req. 7/8): need-to-know access, unique IDs, MFA for the cardholder-data environment.",
+      "4. Scope: identify every component that touches card data and flag scope creep (analytics, logs, error trackers receiving PAN).",
+      "5. Output: a requirement-by-requirement table (req · status · evidence file:line · remediation), blockers first.",
+    ].join("\n"),
+    tools: ["git_diff", "rank_files", "repo_map"],
+    profiles: ["review"], invocations: 11, success: 91, avgTokensK: 20, lastUsed: "5h ago",
+    trend: [1, 1, 2, 2, 3, 2, 4],
   },
   {
-    id: "wire-mcp-tool", name: "Wire a new MCP tool", kind: "workflow", source: "first-party",
-    desc: "Registers an MCP tool in the extension manifest, adds the transport config, and posts a usage example to the knowledge store.",
-    tools: ["write_file", "edit", "kb_write"],
-    profiles: ["build", "auto"], invocations: 29, success: 90, avgTokensK: 21, lastUsed: "4h ago",
-    trend: [1, 3, 2, 4, 5, 6, 8],
+    id: "i18n-extract", name: "Internationalize the UI (i18n)", kind: "codemod", source: "first-party",
+    desc: "Extracts hardcoded strings into a message catalog, wires the i18n framework, and handles locale, pluralization, RTL, and date/number formatting.",
+    body: [
+      "Internationalize the UI. Make code changes on a branch and verify with a typecheck.",
+      "1. Pick/confirm the framework already in use (e.g. i18next, react-intl, FormatJS); if none, propose one and wire the provider at the app root.",
+      "2. Sweep components for user-visible hardcoded strings (JSX text, placeholders, aria-labels, titles, alt). Skip logs and developer-only text.",
+      "3. Replace each with a translation call keyed by a stable id; collect the defaults into the source-locale catalog (e.g. `en.json`).",
+      "4. Handle plurals and interpolation (ICU MessageFormat) — never concatenate translated fragments.",
+      "5. Locale-aware dates/numbers/currency via Intl; set `dir`/logical CSS properties so RTL locales mirror correctly.",
+      "6. Add a missing-key check and verify the build/typecheck is green. Report the extracted-key count and any strings that need human translation.",
+    ].join("\n"),
+    tools: ["edit", "write_file", "repo_map", "rank_files"],
+    profiles: ["build"], invocations: 26, success: 86, avgTokensK: 30, lastUsed: "47m ago",
+    trend: [2, 3, 5, 4, 6, 7, 9],
   },
   {
-    id: "security-review", name: "Security review pass", kind: "review", source: "first-party",
-    desc: "Read-only sweep for secrets, unsafe blocks, missing auth checks, and injection sinks — leaves inline review comments only.",
-    tools: ["git_diff", "get_pr", "rank_files"],
-    profiles: ["review"], invocations: 53, success: 94, avgTokensK: 16, lastUsed: "12m ago",
-    trend: [5, 6, 7, 8, 9, 10, 8],
+    id: "compliance-docs", name: "Compliance docs pack", kind: "docs", source: "first-party",
+    desc: "Generates the compliance document set — privacy policy, DPA, and a Record of Processing Activities — from the codebase's actual data flows.",
+    body: [
+      "Generate the compliance document set from the codebase's real data flows. Write Markdown to /docs and open a docs-only PR.",
+      "1. Derive the data inventory: every category of personal data the app collects, its purpose, lawful basis, storage location, and retention period — cite the code that handles each.",
+      "2. Privacy policy: what is collected, why, who it is shared with (sub-processors), user rights, and contact — in plain language.",
+      "3. Data Processing Agreement (DPA) skeleton: processing scope, sub-processor list, security measures, breach-notification terms.",
+      "4. Record of Processing Activities (RoPA, GDPR Art. 30): a table of processing activities, categories, recipients, transfers, and retention.",
+      "5. Cross-link the docs and flag any data flow with no documented purpose or basis. These are drafts for legal review — say so explicitly.",
+    ].join("\n"),
+    tools: ["write_file", "repo_map", "kb_write"],
+    profiles: ["docs"], invocations: 18, success: 94, avgTokensK: 17, lastUsed: "2h ago",
+    trend: [1, 2, 3, 3, 4, 5, 6],
   },
   {
-    id: "api-docs", name: "Generate API docs", kind: "docs", source: "first-party",
-    desc: "Derives reference docs + a changelog entry from a merged contract, writes them to /docs, and opens a docs-only PR.",
-    tools: ["write_file", "git_diff", "kb_write"],
-    profiles: ["docs"], invocations: 41, success: 97, avgTokensK: 12, lastUsed: "34m ago",
-    trend: [3, 4, 5, 6, 5, 7, 11],
-  },
-  {
-    id: "rename-symbol", name: "Project-wide rename", kind: "codemod", source: "imported",
-    desc: "Type-aware symbol rename across Rust + TS, updates imports and call-sites, and verifies with a typecheck.",
-    tools: ["edit", "repo_map", "rust_check"],
-    profiles: ["build", "sandbox"], invocations: 19, success: 84, avgTokensK: 28, lastUsed: "6h ago",
-    trend: [1, 2, 2, 3, 4, 3, 4],
+    id: "audit-consent-scaffold", name: "Scaffold audit logging + consent gate", kind: "scaffold", source: "first-party",
+    desc: "Scaffolds tamper-evident audit logging and a consent/preferences gate — the cross-cutting plumbing SOC 2, HIPAA, and GDPR all require.",
+    body: [
+      "Scaffold the cross-cutting compliance plumbing. Make code changes on a branch and stub tests.",
+      "1. Audit log: an append-only, tamper-evident record (actor, action, resource, timestamp, request id) for every access/mutation of sensitive data. Add a single choke-point helper and wire it into the data-access layer; never log the sensitive payload itself.",
+      "2. Consent gate: a consent/preferences store (purpose-scoped, opt-in, withdrawable, versioned) plus a guard the UI and API call before any non-essential processing.",
+      "3. Data-subject hooks: stub export and erasure entry points that enumerate a user's data across stores.",
+      "4. Add tests for the audit-write path and the consent guard's allow/deny. Document the new surfaces in /docs.",
+    ].join("\n"),
+    tools: ["write_file", "edit", "repo_map", "run_tests"],
+    profiles: ["build", "auto"], invocations: 9, success: 89, avgTokensK: 27, lastUsed: "6h ago",
+    trend: [1, 1, 2, 2, 3, 4, 4],
   },
 ];
 
+// Additional standards a team can add to the library on demand.
 export const SKILL_CATALOG: SkillCatalogItem[] = [
-  { name: "Add DB migration", by: "first-party", glyph: "▤", desc: "Scaffold a reversible migration + model update." },
-  { name: "Flaky-test quarantine", by: "team", glyph: "◇", desc: "Tag and isolate intermittently-failing tests." },
-  { name: "Perf profiling pass", by: "community", glyph: "↻", desc: "Profile a hot path and propose targeted fixes." },
-  { name: "Release notes", by: "first-party", glyph: "¶", desc: "Draft notes from the merged-PR range since last tag." },
+  { name: "ISO 27001 control mapping", by: "first-party", glyph: "◇", desc: "Map controls to ISO 27001 Annex A and flag the unaddressed ones." },
+  { name: "CCPA / CPRA consumer-rights review", by: "first-party", glyph: "◇", desc: "Check know/delete/correct/opt-out rights and sale-share disclosures." },
+  { name: "OWASP ASVS verification", by: "community", glyph: "◇", desc: "Verify the app against OWASP ASVS L1/L2 security requirements." },
+  { name: "Cookie consent & ePrivacy", by: "team", glyph: "◇", desc: "Audit cookie/tracker consent against ePrivacy and the TCF." },
+  { name: "Data retention & erasure policy", by: "first-party", glyph: "¶", desc: "Draft retention schedules and automated-erasure rules per data class." },
 ];
+
+/** A packaged {@link Skill} → a catalog row, so the packaged set and the add-on
+ *  extras present as ONE pool in the Skills screen's "add a skill" surfaces. */
+function skillToCatalogItem(s: Skill): SkillCatalogItem {
+  return { name: s.name, by: s.source, glyph: KIND[s.kind].glyph, desc: s.desc };
+}
+
+/**
+ * The single catalog the Skills screen offers under "add a skill": every packaged
+ * skill plus the add-on standards, deduped by name. The library is seeded from the
+ * same packaged set ({@link SKILLS}), so the catalog and the main list draw from one
+ * source — the screen then hides whatever is already in the user's library.
+ */
+export function skillCatalog(): SkillCatalogItem[] {
+  const items = SKILLS.map(skillToCatalogItem);
+  const seen = new Set(items.map((i) => i.name));
+  for (const c of SKILL_CATALOG) if (!seen.has(c.name)) items.push(c);
+  return items;
+}
 
 /** Compact number formatter (e.g. 1234 → "1.2k") — mirrors the design's `fmt`. */
 export function fmtCount(n: number): string {

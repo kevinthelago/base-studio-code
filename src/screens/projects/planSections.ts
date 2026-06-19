@@ -2,6 +2,63 @@ import type { AgentFlow } from "./agentFlow";
 import { flowOrUndefined } from "./agentFlow";
 import { type DirectorDrive, normalizeDirectorDrive, DEFAULT_DIRECTOR_DRIVE } from "./directorDrive";
 import { type IntegrationStrategy, normalizeStrategy } from "./integrationStrategy";
+import {
+  type Topology, type RelationshipArtifact, type AgentRelationship,
+  type EdgeKind, type Hardness, type Via, type ArtifactKind,
+} from "./relationshipGraph";
+
+const TOPOLOGIES: Topology[] = ["director", "peer", "hybrid"];
+const EDGE_KINDS: EdgeKind[] = ["handoff", "blocking", "sequence", "review", "notify", "mutex", "shared"];
+const HARDNESSES: Hardness[] = ["blocking", "soft", "notify"];
+const ARTIFACT_KINDS: ArtifactKind[] = ["schema", "contract", "types", "tokens", "fixture", "other"];
+
+/** Coerce a raw fleet.json `topology` value (default "hybrid"). */
+export function normalizeTopology(raw: unknown): Topology {
+  return typeof raw === "string" && (TOPOLOGIES as string[]).includes(raw.trim().toLowerCase())
+    ? (raw.trim().toLowerCase() as Topology) : "hybrid";
+}
+
+function parseArtifacts(raw: unknown): RelationshipArtifact[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RelationshipArtifact[] = [];
+  for (const a of raw) {
+    if (!a || typeof a !== "object") continue;
+    const o = a as Record<string, unknown>;
+    const id = typeof o.id === "string" ? o.id.trim() : "";
+    const producer = typeof o.producer === "string" ? o.producer.trim() : "";
+    if (!id || !producer) continue;
+    const kind = typeof o.kind === "string" && (ARTIFACT_KINDS as string[]).includes(o.kind) ? o.kind as ArtifactKind : "other";
+    out.push({
+      id, producer, kind,
+      name: typeof o.name === "string" && o.name.trim() ? o.name.trim() : id,
+      consumers: Array.isArray(o.consumers) ? o.consumers.filter((c): c is string => typeof c === "string") : [],
+      status: o.status === "ready" ? "ready" : o.status === "pending" ? "pending" : undefined,
+    });
+  }
+  return out;
+}
+
+function parseEdges(raw: unknown): AgentRelationship[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AgentRelationship[] = [];
+  for (const e of raw) {
+    if (!e || typeof e !== "object") continue;
+    const o = e as Record<string, unknown>;
+    const from = typeof o.from === "string" ? o.from.trim() : "";
+    const to = typeof o.to === "string" ? o.to.trim() : "";
+    if (!from || !to) continue;
+    out.push({
+      id: typeof o.id === "string" && o.id.trim() ? o.id.trim() : `${from}>${to}`,
+      from, to,
+      kind: typeof o.kind === "string" && (EDGE_KINDS as string[]).includes(o.kind) ? o.kind as EdgeKind : "blocking",
+      hardness: typeof o.hardness === "string" && (HARDNESSES as string[]).includes(o.hardness) ? o.hardness as Hardness : "blocking",
+      via: o.via === "director" ? "director" : ("direct" as Via),
+      artifact: typeof o.artifact === "string" && o.artifact.trim() ? o.artifact.trim() : undefined,
+      note: typeof o.note === "string" && o.note.trim() ? o.note.trim() : undefined,
+    });
+  }
+  return out;
+}
 // Pure helpers for the dynamic, guided project planner.
 //
 // The planner no longer has a fixed list of sections. Claude documents whatever
@@ -113,6 +170,12 @@ export interface FleetPlan {
   director: FleetDirector;
   /** Project-default integration strategy (#378). Unset ⇒ DEFAULT_STRATEGY. */
   strategy?: IntegrationStrategy;
+  /** Coordination topology (#…): director-orchestrated, peer mesh, or hybrid (per-edge). */
+  topology?: Topology;
+  /** Produced contracts/schemas one stream hands to others. */
+  artifacts?: RelationshipArtifact[];
+  /** Typed relationship edges between streams (beyond plain `dependsOn`). */
+  edges?: AgentRelationship[];
 }
 
 /** An empty fleet — the default before the planner has designed one. */
@@ -401,5 +464,8 @@ export function parseFleetFile(raw: string): FleetPlan | null {
     streams,
     director,
     strategy: normalizeStrategy(o.strategy),
+    topology: o.topology !== undefined ? normalizeTopology(o.topology) : undefined,
+    artifacts: parseArtifacts(o.artifacts),
+    edges: parseEdges(o.edges),
   };
 }
