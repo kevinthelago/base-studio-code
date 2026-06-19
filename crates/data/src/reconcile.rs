@@ -132,6 +132,48 @@ pub fn reconcile(entity: &Entity, loads: &[SourceLoad], prec: &Precedence) -> Re
     Reconciled { entity: entity.key.clone(), records, conflicts }
 }
 
+/// Outcome of a completeness check on a [`Reconciled`] result (#ls-lineage-verify).
+///
+/// A complete result has lineage for every non-empty field of every record. Missing entries
+/// signal a bug in the reconcile path, not a data-quality issue (those are quarantine, not
+/// lineage gaps), so `is_complete` being false is treated as a hard gate.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VerifyResult {
+    pub total_records: usize,
+    /// Fields that have both a value and a lineage entry.
+    pub fields_with_lineage: usize,
+    /// (identity, field_key) pairs where a non-empty value exists but lineage is absent.
+    pub missing_lineage: Vec<(String, String)>,
+}
+
+impl VerifyResult {
+    pub fn is_complete(&self) -> bool {
+        self.missing_lineage.is_empty()
+    }
+}
+
+/// Verify that every non-empty field in every record of `rec` has a lineage entry.
+/// Returns a [`VerifyResult`] — callers treat `!is_complete()` as a load-gate failure.
+pub fn verify_reconciled(entity: &Entity, rec: &Reconciled) -> VerifyResult {
+    let mut fields_with_lineage = 0;
+    let mut missing_lineage = Vec::new();
+
+    for r in &rec.records {
+        for f in &entity.fields {
+            if r.values.contains_key(&f.key) {
+                if r.lineage.contains_key(&f.key) {
+                    fields_with_lineage += 1;
+                } else {
+                    missing_lineage.push((r.identity.clone(), f.key.clone()));
+                }
+            }
+            // absent value → no lineage expected; skip silently
+        }
+    }
+
+    VerifyResult { total_records: rec.records.len(), fields_with_lineage, missing_lineage }
+}
+
 impl Reconciled {
     /// The canonical records as a [`RowSet`] aligned to the entity's fields (missing values
     /// blank) — ready to load into the store.
@@ -214,6 +256,42 @@ mod tests {
         assert_eq!(rsout.rows.len(), 2);
         // phone column present but blank
         assert_eq!(rsout.rows[0], vec!["1", "Acme", ""]);
+    }
+
+    #[test]
+    fn verify_complete_result_has_no_missing_lineage() {
+        let crm = SourceLoad { source: "crm".into(), rows: rs(&["id", "name"], &[&["1", "Acme"]]) };
+        let dir = SourceLoad { source: "dir".into(), rows: rs(&["id", "phone"], &[&["1", "555"]]) };
+        let out = reconcile(&account(), &[crm, dir], &Precedence(vec!["crm".into(), "dir".into()]));
+        let v = verify_reconciled(&account(), &out);
+        assert!(v.is_complete(), "missing: {:?}", v.missing_lineage);
+        assert_eq!(v.total_records, 1);
+        // id, name, phone all have values + lineage
+        assert_eq!(v.fields_with_lineage, 3);
+    }
+
+    #[test]
+    fn verify_flags_missing_lineage_for_fields_with_values() {
+        // Construct a Reconciled where a field has a value but no lineage — simulates a bug.
+        let mut r = MergedRecord { identity: "1".into(), values: Default::default(), lineage: Default::default() };
+        r.values.insert("id".into(), "1".into());
+        r.values.insert("name".into(), "Acme".into());
+        r.lineage.insert("id".into(), "crm".into());
+        // name has a value but no lineage entry
+        let rec = Reconciled { entity: "account".into(), records: vec![r], conflicts: 0 };
+        let v = verify_reconciled(&account(), &rec);
+        assert!(!v.is_complete());
+        assert_eq!(v.missing_lineage, vec![("1".into(), "name".into())]);
+        assert_eq!(v.fields_with_lineage, 1);
+    }
+
+    #[test]
+    fn verify_empty_result_is_complete() {
+        let rec = Reconciled { entity: "account".into(), records: vec![], conflicts: 0 };
+        let v = verify_reconciled(&account(), &rec);
+        assert!(v.is_complete());
+        assert_eq!(v.total_records, 0);
+        assert_eq!(v.fields_with_lineage, 0);
     }
 
     #[test]

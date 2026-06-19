@@ -96,26 +96,43 @@ impl DataStore {
     }
 
     /// Load a reconciled (merged) result into `entity_key` (#785): writes the canonical
-    /// rows plus PER-FIELD lineage (which source won each field). Returns the record count.
-    pub fn load_reconciled(&mut self, entity_key: &str, rec: &Reconciled, loaded_at: &str) -> Result<usize> {
+    /// rows plus PER-FIELD lineage (source, loaded_at, license). Idempotent — a re-run
+    /// deletes existing canonical rows and their lineage first, so counts never inflate.
+    /// The `license` column in `_field_lineage` is set to `""` for reconcile loads because
+    /// per-source license metadata is only available in the single-source load path.
+    pub fn load_reconciled(
+        &mut self,
+        entity_key: &str,
+        rec: &Reconciled,
+        loaded_at: &str,
+    ) -> Result<usize> {
+        let license = "";
         let entity = self
             .model
             .entity(entity_key)
             .ok_or_else(|| DataError::Schema(format!("unknown entity `{entity_key}`")))?
             .clone();
         let rs = rec.to_rowset(&entity);
+        let del_entity  = format!("DELETE FROM {}", ddl::quote_ident(entity_key)?);
+        let del_lineage = format!(
+            "DELETE FROM {} WHERE entity = ?",
+            ddl::FIELD_LINEAGE_TABLE
+        );
         let field_insert = format!(
-            "INSERT INTO {} (entity, identity, field, source, loaded_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO {} (entity, identity, field, source, loaded_at, license) VALUES (?, ?, ?, ?, ?, ?)",
             ddl::FIELD_LINEAGE_TABLE
         );
 
         let tx = self.conn.transaction()?;
+        // Idempotent: clear prior canonical rows and per-field lineage before reloading.
+        tx.execute_batch(&del_entity)?;
+        tx.execute(&del_lineage, params![entity_key])?;
         insert_rowset(&tx, &entity, &rs)?;
         {
             let mut fstmt = tx.prepare(&field_insert)?;
             for r in &rec.records {
                 for (field, source) in &r.lineage {
-                    fstmt.execute(params![entity_key, r.identity, field, source, loaded_at])?;
+                    fstmt.execute(params![entity_key, r.identity, field, source, loaded_at, license])?;
                 }
             }
         }
@@ -301,5 +318,27 @@ mod tests {
         assert_eq!(store.value_count("account", "name", "Acme").unwrap(), 1);
         // per-field lineage: id, name, balance each attributed to a source
         assert_eq!(store.field_lineage_count().unwrap(), 3);
+    }
+
+    #[test]
+    fn load_reconciled_is_idempotent_no_duplicate_rows_or_lineage() {
+        use crate::reconcile::{reconcile, Precedence, SourceLoad};
+        let mut store = DataStore::open_in_memory(model()).unwrap();
+
+        let crm = SourceLoad { source: "crm".into(), rows: RowSet {
+            columns: vec!["id".into(), "name".into()], rows: vec![vec!["1".into(), "Acme".into()]] } };
+        let rec = reconcile(
+            store.model.entity("account").unwrap(),
+            &[crm],
+            &Precedence(vec!["crm".into()]),
+        );
+
+        // Run twice — counts should not inflate.
+        store.load_reconciled("account", &rec, "2026-06-13T00:00:00Z").unwrap();
+        store.load_reconciled("account", &rec, "2026-06-13T00:00:01Z").unwrap();
+
+        assert_eq!(store.count("account").unwrap(), 1, "entity rows should not duplicate");
+        // id and name both have lineage; balance is absent (no value → no lineage)
+        assert_eq!(store.field_lineage_count().unwrap(), 2, "lineage rows should not duplicate");
     }
 }
