@@ -3,7 +3,7 @@
 // (extracted from lib.rs, #758).
 
 use crate::{
-    bsc_base_dir, to_bash_path, nearest_existing_ancestor, claude_launch, claude_model_flag,
+    bsc_base_dir, to_bash_path, to_native_path, nearest_existing_ancestor, claude_launch, claude_model_flag,
     has_claude_history, split_utf8_at_boundary,
 };
 use crate::bsc::{
@@ -283,6 +283,11 @@ pub(crate) async fn pty_create(
     // otherwise have the agent quietly working in the wrong place. Detect the missing
     // dir, start in its nearest existing ancestor instead, and surface it loudly in the
     // pane (see cd_prefix below) so a misplaced session can't go unnoticed.
+    // Normalize a git-bash drive path (`/c/Users/...`, as a bash shell reports via OSC-7 and the
+    // app persists) back to native (`C:/Users/...`) so `is_dir` / `Command::cwd` resolve it on
+    // Windows — otherwise an EXISTING worktree/dir reads as "missing" on restore (#979). No-op off
+    // Windows and for already-native paths.
+    let cwd = to_native_path(&cwd);
     let cwd_missing = !cwd.is_empty() && !std::path::Path::new(&cwd).is_dir();
     if cwd_missing {
         log::error!("pty[{pane_id}] configured cwd does not exist: {cwd} — refusing the silent home fallback");
