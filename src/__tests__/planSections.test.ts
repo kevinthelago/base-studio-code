@@ -186,6 +186,9 @@ describe("parseFleetFile", () => {
         { id: "auth-ui", name: "Auth UI", repo: "own/web", owns: ["src/auth/**"], issues: ["#1", "#2"], dependsOn: [], prompt: "prompts/auth-ui-kickoff.md" },
         { id: "api", name: "api", repo: "own/api", owns: [], issues: [], dependsOn: [], prompt: undefined },
       ],
+      // Agent-relationship fields default to empty when the fleet declares none (#…).
+      artifacts: [],
+      edges: [],
     });
   });
 

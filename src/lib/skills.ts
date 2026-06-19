@@ -39,6 +39,10 @@ export interface SkillDef {
   enabled: boolean;
   /** Pinned skills are auto-available to the fleet. */
   pinned: boolean;
+  /** Code-owned packaged skill (seeded from {@link seedSkills}). Lets a load-time
+   *  refresh replace it from code and prune any packaged skill dropped from the
+   *  library, while never touching user-created / imported / catalog skills. */
+  packaged?: boolean;
   // ── display-only telemetry (not yet live; see #404 follow-up) ──
   invocations: number;
   success: number;
@@ -77,14 +81,15 @@ function fromSample(s: Skill): SkillDef {
     kind: s.kind,
     source: s.source,
     desc: s.desc,
-    // The sample library has no authored body; the description is a sane default
-    // the user/planner can refine. Real skills carry a full procedure.
-    prompt: s.desc,
+    // Packaged skills carry a full authored procedure in `body`; fall back to the
+    // description for any skill that doesn't (the user/planner can refine it).
+    prompt: s.body ?? s.desc,
     tools: [...s.tools],
     profiles: [...s.profiles],
     projects: [],
     enabled: true,
     pinned: !!s.pinned,
+    packaged: true,
     invocations: 0,
     success: 0,
     avgTokensK: 0,
@@ -95,6 +100,40 @@ function fromSample(s: Skill): SkillDef {
 /** The initial skills library — the sample set, made editable. */
 export function seedSkills(): SkillDef[] {
   return SKILLS.map(fromSample);
+}
+
+/** Packaged skill ids retired before the {@link SkillDef.packaged} marker existed.
+ *  An already-seeded store persisted these as plain skills with no way to tell they
+ *  were code-owned — list them here so {@link refreshPackagedSkills} prunes them.
+ *  (Going forward, removing a packaged skill needs no entry: the `packaged` flag
+ *  prunes it automatically.) */
+const RETIRED_PACKAGED_SKILL_IDS = new Set([
+  "scaffold-tauri-cmd", "add-screen-slice", "open-pr", "triage-failing-test",
+  "bump-dep-safely", "wire-mcp-tool", "security-review", "api-docs", "rename-symbol",
+]);
+
+/**
+ * Reconcile a persisted skills library with the code-owned packaged set on load
+ * (mirrors blueprints' `refreshBuiltIns`, #677). The packaged skills are code-owned
+ * but `skills` is persisted, so a store seeded before the library changed would keep
+ * the old set forever. This:
+ *   • refreshes each current packaged skill from code (preserving the user's
+ *     enabled / pinned / project-scoping toggles),
+ *   • prunes packaged skills dropped from the library (by the `packaged` flag or the
+ *     retired-id list), and
+ *   • leaves user-created / imported / catalog-added skills untouched.
+ */
+export function refreshPackagedSkills(persisted: SkillDef[]): SkillDef[] {
+  const fresh = seedSkills();
+  const seedIds = new Set(fresh.map((s) => s.id));
+  const packaged = fresh.map((f) => {
+    const prev = persisted.find((s) => s.id === f.id);
+    return prev ? { ...f, enabled: prev.enabled, pinned: prev.pinned, projects: prev.projects } : f;
+  });
+  const user = persisted.filter(
+    (s) => !seedIds.has(s.id) && !s.packaged && !RETIRED_PACKAGED_SKILL_IDS.has(s.id),
+  );
+  return [...packaged, ...user];
 }
 
 /**
@@ -139,6 +178,13 @@ export function skillSlug(name: string): string {
 /** A ready-to-add SkillDef (minus id) for a catalog entry — disabled + global by
  *  default; the caller assigns the id and the user fills the prompt/tools. */
 export function defFromCatalog(name: string): Omit<SkillDef, "id"> {
+  // A packaged skill (re-)added from the catalog restores its full def — body,
+  // tools, kind, profiles — not just the one-line description.
+  const packaged = SKILLS.find(s => s.name === name);
+  if (packaged) {
+    const { id: _id, ...rest } = fromSample(packaged);
+    return { ...rest, enabled: false };
+  }
   const c = SKILL_CATALOG.find(x => x.name === name);
   const kind = c ? kindForGlyph(c.glyph) : "workflow";
   return {

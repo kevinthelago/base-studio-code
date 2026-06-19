@@ -8,7 +8,7 @@ import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import {
-  KIND, PROFILE_COLOR, SOURCE_TAG, SKILL_CATALOG, fmtCount,
+  KIND, PROFILE_COLOR, SOURCE_TAG, skillCatalog, fmtCount,
   type SkillKind, type SkillSource, type SkillProfile,
 } from "../../data/skills";
 import {
@@ -29,6 +29,8 @@ const PROJECTS_QUERY = `{ viewer { projectsV2(first: 50) { nodes { id title numb
 const KIND_KEYS = Object.keys(KIND) as SkillKind[];
 const PROFILE_KEYS = Object.keys(PROFILE_COLOR) as SkillProfile[];
 const SOURCE_KEYS: SkillSource[] = ["first-party", "team", "imported", "community"];
+/** Sentinel id for the in-progress new-skill draft (not yet in the store). */
+const DRAFT_ID = "__draft__";
 
 /** Success-rate → semantic color (matches the design thresholds). */
 function successColor(success: number): string {
@@ -107,7 +109,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const removeSkill      = useAppStore(s => s.removeSkill);
   const toggleSkillPin   = useAppStore(s => s.toggleSkillPin);
   const upsertSkills     = useAppStore(s => s.upsertSkills);
-  const setSkillProjects = useAppStore(s => s.setSkillProjects);
   const githubToken      = useAppStore(s => s.githubToken);
 
   const [filter, setFilter] = useState<"all" | SkillKind>("all");
@@ -117,6 +118,10 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   // pins the view for a torn-off window.
   const mode: Mode = (sectionOverride ?? activeId) as Mode;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The unsaved new-skill draft. While non-null the drawer edits it locally; it
+  // only enters the store when the user presses "done" (#…). `+ new skill` no
+  // longer creates a skill up front.
+  const [draft, setDraft] = useState<SkillDef | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // The user's GitHub Projects for per-skill scoping (mirrors Extensions). No
@@ -171,8 +176,20 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const leastReliable = merged.filter(s => s.invocations > 0)
     .reduce<SkillDef | null>((a, s) => (!a || s.success < a.success ? s : a), null);
 
-  function patch(id: string, p: Partial<SkillDef>) { updateSkill(id, p); }
-  function newSkill() { setSelectedId(addSkill(blankSkill())); }
+  // Drawer edits route to the draft while it's open, otherwise to the store skill.
+  function patch(id: string, p: Partial<SkillDef>) {
+    if (draft && id === DRAFT_ID) setDraft(d => (d ? { ...d, ...p } : d));
+    else updateSkill(id, p);
+  }
+  // `+ new skill` opens the drawer on a fresh draft — nothing is created until "done".
+  function newSkill() { setSelectedId(null); setDraft({ ...blankSkill(), id: DRAFT_ID }); }
+  function commitDraft() {
+    if (!draft) return;
+    const { id: _id, ...def } = draft;
+    addSkill(def);
+    setDraft(null);
+  }
+  function closeDrawer() { setSelectedId(null); setDraft(null); }
   function addFromCatalog(name: string) { setSelectedId(addSkill(defFromCatalog(name))); }
 
   function importSkills(file: File) {
@@ -198,7 +215,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   }
   function toggleProject(s: SkillDef, pid: string) {
     const next = s.projects.includes(pid) ? s.projects.filter(x => x !== pid) : [...s.projects, pid];
-    setSkillProjects(s.id, next);
+    patch(s.id, { projects: next });
   }
 
   function drawerBody(s: SkillDef) {
@@ -271,7 +288,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
             <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b>
             <div style={{ flex: 1 }} />
             <div className={"toggle" + (isGlobal ? " on" : "")} title={isGlobal ? "global" : "scoped"}
-              onClick={() => setSkillProjects(s.id, isGlobal ? (projects[0] ? [projects[0].id] : []) : [])} />
+              onClick={() => patch(s.id, { projects: isGlobal ? (projects[0] ? [projects[0].id] : []) : [] })} />
           </div>
           {!isGlobal && (
             projects.length === 0
@@ -323,15 +340,22 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
     [merged],
   );
 
-  // ── Catalog view: the browsable catalog, filtered + flagged when already added.
+  // ── Catalog ("add a skill"): one pool, sourced from the same packaged set that
+  // seeds the library, with anything already in the library removed (so an added
+  // skill is never offered again). Both the right-rail card and the Catalog tab
+  // draw from `availableCatalog`.
   const existingSkillNames = useMemo(() => new Set(skills.map(s => s.name)), [skills]);
+  const availableCatalog = useMemo(
+    () => skillCatalog().filter(c => !existingSkillNames.has(c.name)),
+    [existingSkillNames],
+  );
   const catalogList = useMemo(() => {
     const q = catalogQuery.trim().toLowerCase();
     return q
-      ? SKILL_CATALOG.filter(c =>
+      ? availableCatalog.filter(c =>
           c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q) || c.by.toLowerCase().includes(q))
-      : SKILL_CATALOG;
-  }, [catalogQuery]);
+      : availableCatalog;
+  }, [catalogQuery, availableCatalog]);
 
   // KPI row — shown on both the Library and Runs views.
   const kpiRow = (
@@ -506,19 +530,23 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
               </div>
 
               <div className="card">
-                <CardHead title="Add a skill" hint="from the catalog" right={<button className="btn ghost" style={{ height: 22, fontSize: 10 }} onClick={() => select("catalog")}>browse all</button>} />
-                <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-                  {SKILL_CATALOG.map((c, i) => (
-                    <div key={c.name} className="hrow" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                      <span style={{ width: 22, height: 22, borderRadius: 5, flexShrink: 0, background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{c.glyph}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>{c.name}</div>
-                        <div style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.desc}</div>
+                <CardHead title="Add a skill" hint="not yet in your library" right={<button className="btn ghost" style={{ height: 22, fontSize: 10 }} onClick={() => select("catalog")}>browse all</button>} />
+                {availableCatalog.length === 0 ? (
+                  <p className="hint" style={{ margin: 0, fontSize: 11 }}>Every catalog skill is already in your library.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+                    {availableCatalog.slice(0, 6).map((c, i) => (
+                      <div key={c.name} className="hrow" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
+                        <span style={{ width: 22, height: 22, borderRadius: 5, flexShrink: 0, background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{c.glyph}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>{c.name}</div>
+                          <div style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.desc}</div>
+                        </div>
+                        <button className="btn" style={{ height: 22, fontSize: 10, padding: "0 8px" }} onClick={() => addFromCatalog(c.name)}>add</button>
                       </div>
-                      <button className="btn" style={{ height: 22, fontSize: 10, padding: "0 8px" }} onClick={() => addFromCatalog(c.name)}>add</button>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -576,34 +604,32 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
               <input className="input" placeholder="Search the catalog…" value={catalogQuery}
                 onChange={e => setCatalogQuery(e.target.value)} style={{ maxWidth: 320 }} />
-              <span className="hint">{catalogList.length} of {SKILL_CATALOG.length} skills</span>
+              <span className="hint">{catalogList.length} of {availableCatalog.length} skills</span>
             </div>
             {catalogList.length === 0 ? (
               <div className="empty">
-                <h3 style={{ margin: 0 }}>No matches</h3>
-                <p className="hint" style={{ margin: 0 }}>Nothing in the catalog matches your search.</p>
+                <h3 style={{ margin: 0 }}>{availableCatalog.length === 0 ? "Library complete" : "No matches"}</h3>
+                <p className="hint" style={{ margin: 0 }}>
+                  {availableCatalog.length === 0
+                    ? "Every catalog skill is already in your library."
+                    : "Nothing in the catalog matches your search."}
+                </p>
               </div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                {catalogList.map(c => {
-                  const added = existingSkillNames.has(c.name);
-                  return (
-                    <div key={c.name} className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-                      <div style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
-                        <span style={{ width: 30, height: 30, borderRadius: 7, flexShrink: 0, background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 15, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{c.glyph}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", fontWeight: 600 }}>{c.name}</div>
-                          <div className="hint" style={{ fontSize: 9.5 }}>by {c.by}</div>
-                        </div>
+                {catalogList.map(c => (
+                  <div key={c.name} className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
+                      <span style={{ width: 30, height: 30, borderRadius: 7, flexShrink: 0, background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 15, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{c.glyph}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", fontWeight: 600 }}>{c.name}</div>
+                        <div className="hint" style={{ fontSize: 9.5 }}>by {c.by}</div>
                       </div>
-                      <p style={{ margin: 0, fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5, flex: 1 }}>{c.desc}</p>
-                      <button className="btn" disabled={added} onClick={() => addFromCatalog(c.name)}
-                        style={added ? { opacity: 0.6, cursor: "default" } : undefined}>
-                        {added ? "✓ added" : "add to library"}
-                      </button>
                     </div>
-                  );
-                })}
+                    <p style={{ margin: 0, fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5, flex: 1 }}>{c.desc}</p>
+                    <button className="btn" onClick={() => addFromCatalog(c.name)}>add to library</button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -611,25 +637,38 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
         </div>
       </section>
 
-      {/* edit drawer */}
-      <div className={"scrim" + (selected ? " on" : "")} onClick={() => setSelectedId(null)} />
-      <div className={"drawer" + (selected ? " on" : "")}>
-        {selected && (
+      {/* edit / new-skill drawer — `editing` is the draft when creating, else the
+          selected store skill. The draft is committed only on "done". */}
+      {(() => {
+        const editing = draft ?? selected;
+        const isDraft = !!draft;
+        return (
           <>
-            <div className="dr-head">
-              <SkillIcon kind={selected.kind} size={20} />
-              <div className="name">{selected.name || "Untitled skill"}</div>
-              <button className="x" title="close" onClick={() => setSelectedId(null)}>×</button>
-            </div>
-            <div className="dr-body">{drawerBody(selected)}</div>
-            <div className="dr-foot">
-              <button className="btn ghost danger" onClick={() => { removeSkill(selected.id); setSelectedId(null); }}>remove</button>
-              <div className="spacer" />
-              <button className="btn primary" onClick={() => setSelectedId(null)}>done</button>
+            <div className={"scrim" + (editing ? " on" : "")} onClick={closeDrawer} />
+            <div className={"drawer" + (editing ? " on" : "")}>
+              {editing && (
+                <>
+                  <div className="dr-head">
+                    <SkillIcon kind={editing.kind} size={20} />
+                    <div className="name">{editing.name || (isDraft ? "New skill" : "Untitled skill")}</div>
+                    <button className="x" title="close" onClick={closeDrawer}>×</button>
+                  </div>
+                  <div className="dr-body">{drawerBody(editing)}</div>
+                  <div className="dr-foot">
+                    {isDraft
+                      ? <button className="btn ghost" onClick={closeDrawer}>cancel</button>
+                      : <button className="btn ghost danger" onClick={() => { removeSkill(editing.id); closeDrawer(); }}>remove</button>}
+                    <div className="spacer" />
+                    {isDraft
+                      ? <button className="btn primary" disabled={!editing.name.trim()} onClick={commitDraft}>done</button>
+                      : <button className="btn primary" onClick={closeDrawer}>done</button>}
+                  </div>
+                </>
+              )}
             </div>
           </>
-        )}
-      </div>
+        );
+      })()}
     </div>
   );
 }

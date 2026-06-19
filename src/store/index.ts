@@ -32,6 +32,7 @@ import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/projects/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/projects/planSections";
+import type { Topology } from "../screens/projects/relationshipGraph";
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/projects/planStages";
 import type { PipelineRunState } from "../screens/projects/pipelineRuntime";
 import type { GradeResult } from "../screens/projects/grading";
@@ -44,7 +45,7 @@ import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategy
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/projects/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
-import { resolveSkills, seedSkills, skillFromPayload, type SkillDef } from "../lib/skills";
+import { resolveSkills, seedSkills, refreshPackagedSkills, skillFromPayload, type SkillDef } from "../lib/skills";
 import { type SkillPayload } from "../screens/projects/blueprintSkills";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -793,6 +794,14 @@ interface AppStore {
    *  scoped to that stream's resolved toolchain. Idempotent. */
   generateFleetProfiles: (projectId: string) => void;
   setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string, strategy?: IntegrationStrategy) => void;
+  /** Per-project coordination-topology override (#…), set in the Permissions pane. Wins
+   *  over the planner's fleet.json topology and survives a fleet re-poll. */
+  planFleetTopology:     Record<string, Topology>;
+  setPlanFleetTopology:  (projectId: string, topology: Topology) => void;
+  /** Per-project director-drive override (#…), set in the Permissions pane alongside the
+   *  topology. Wins over fleet.json's `director.drive` and survives a fleet re-poll. */
+  planFleetDirectorDrive:    Record<string, DirectorDrive>;
+  setPlanFleetDirectorDrive: (projectId: string, drive: DirectorDrive) => void;
   setPlanDirector:       (projectId: string, enabled: boolean, role?: string) => void;
   setPlanDirectorDrive:  (projectId: string, drive: DirectorDrive) => void;
   clearPlanFleet:        (projectId: string) => void;
@@ -2325,6 +2334,12 @@ export const useAppStore = create<AppStore>()(
         }),
       setPlanFleet: (projectId, fleet) =>
         set((s) => ({ planFleet: { ...s.planFleet, [projectId]: fleet } })),
+      planFleetTopology: {},
+      setPlanFleetTopology: (projectId, topology) =>
+        set((s) => ({ planFleetTopology: { ...s.planFleetTopology, [projectId]: topology } })),
+      planFleetDirectorDrive: {},
+      setPlanFleetDirectorDrive: (projectId, drive) =>
+        set((s) => ({ planFleetDirectorDrive: { ...s.planFleetDirectorDrive, [projectId]: drive } })),
       addPlanAgentStream: (projectId, stream) =>
         set((s) => {
           const cur = s.planFleet[projectId] ?? emptyFleet();
@@ -2701,6 +2716,8 @@ export const useAppStore = create<AppStore>()(
         activeDataModelId:     s.activeDataModelId,
         loadVerified:          s.loadVerified,
         planFleet:             s.planFleet,
+        planFleetTopology:     s.planFleetTopology,
+        planFleetDirectorDrive: s.planFleetDirectorDrive,
         pinnedContext:         s.pinnedContext,
         extensions:            s.extensions,
         skills:                s.skills,
@@ -2733,6 +2750,12 @@ export const useAppStore = create<AppStore>()(
         // imported blueprints are left untouched.
         if (state?.blueprints) {
           state.blueprints = refreshBuiltIns(state.blueprints);
+        }
+        // Same for the packaged skills (#677-style): replace the code-owned set from
+        // code and prune any retired packaged skill, so a store seeded with the old
+        // dev-workflow skills picks up the compliance/standards library on next load.
+        if (state?.skills) {
+          state.skills = refreshPackagedSkills(state.skills);
         }
         // Release the gate once hydration settles — on success or error — so the
         // shell never hangs on a blank canvas (on error the store keeps defaults).

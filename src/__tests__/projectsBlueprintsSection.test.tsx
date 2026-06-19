@@ -58,8 +58,8 @@ describe("ProjectsList — Blueprints section", () => {
       planAuthoredBlueprint: { author1: bp({ id: "draft-bp", name: "Designed Blueprint", category: "transform", sections: [{} as never, {} as never] }) },
     });
     render(<ProjectsList />);
-    await screen.findByText("Drafts");
-    // Normal draft stays in Drafts; the authoring draft surfaces in Blueprints under its design name.
+    // Normal draft stays in the Drafts chips; the authoring draft surfaces in the Blueprints rail.
+    await screen.findByText("Normal Project");
     expect(screen.getByText("Normal Project")).toBeTruthy();
     expect(screen.getByText("Designed Blueprint")).toBeTruthy();
     expect(screen.queryByText("Author Session")).toBeNull();
@@ -74,7 +74,8 @@ describe("ProjectsList — Blueprints section", () => {
     });
     render(<ProjectsList />);
     await screen.findByText("Blueprints");
-    fireEvent.click(screen.getByText("+ New project"));
+    // Target the header button by role — the empty projects column also prints "+ New project".
+    fireEvent.click(screen.getByRole("button", { name: "+ New project" }));
     fireEvent.change(screen.getByPlaceholderText("project title…"), { target: { value: "My New App" } });
     fireEvent.click(screen.getByText("start planning →"));
     await waitFor(() => {
