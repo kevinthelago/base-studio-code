@@ -3,6 +3,13 @@ name = "base-studio-code"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Source-experience stage: inventory / sample / infer-model / persist-model commands.
+# Enabled by default; disable with --no-default-features for builds that exclude the
+# data-platform source commands (e.g. minimal CI builds).
+source-stage = []
+default = ["source-stage"]
+
 [package.metadata.bundle]
 identifier = "com.basestudio.code"
 
