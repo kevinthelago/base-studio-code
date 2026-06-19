@@ -322,7 +322,7 @@ fn is_date(v: &str) -> bool {
 fn is_numeric(v: &str) -> bool {
     // Strip an optional leading currency symbol, then remove thousands-separator commas
     // before parsing. Only letters in the value (e.g. "C1", "ACC001") must disqualify it.
-    let stripped = v.trim_start_matches(|c: char| matches!(c, '$' | '€' | '£' | '¥' | ' '));
+    let stripped = v.trim_start_matches(['$', '€', '£', '¥', ' ']);
     let no_commas = stripped.replace(',', "");
     no_commas.parse::<f64>().is_ok()
 }
@@ -444,7 +444,7 @@ mod tests {
         }
     }
 
-    fn field_ty<'a>(fields: &'a [Field], key: &str) -> Option<FieldType> {
+    fn field_ty(fields: &[Field], key: &str) -> Option<FieldType> {
         fields.iter().find(|f| f.key == key).map(|f| f.ty)
     }
 
