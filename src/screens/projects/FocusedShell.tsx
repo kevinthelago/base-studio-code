@@ -4,6 +4,69 @@
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
 import { Fragment, useState } from "react";
 import { connectorKind, type Phase, type GatePill, type FooterKind } from "./focusedPlan";
+import type { StagePrompt } from "./plannerConductor";
+
+/** The per-stage prompt helper (#…): the "?" affordance in the focused-pane header. The app no
+ *  longer auto-injects prompts; instead this lists every injectable prompt for the stage and the
+ *  user picks one to send into the planner chat. Renders nothing when the stage has no prompts. */
+export function StagePromptHelp({ prompts, onInject }: {
+  prompts: StagePrompt[];
+  onInject: (text: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  if (prompts.length === 0) return null;
+  return (
+    <>
+      <button
+        title="Inject a prompt for this stage"
+        aria-label="Stage prompt helper"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          position: "absolute", top: 12, right: 14, zIndex: 42,
+          width: 26, height: 26, display: "inline-flex", alignItems: "center", justifyContent: "center",
+          borderRadius: 999, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 14, fontWeight: 700,
+          background: open ? "color-mix(in oklch, var(--accent), transparent 84%)" : "var(--bg-elev)",
+          border: `1px solid ${open ? "var(--accent)" : "var(--border)"}`,
+          color: open ? "var(--accent)" : "var(--fg-muted)",
+        }}
+      >?</button>
+      {open && (
+        <>
+          {/* click-away catcher */}
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 41 }} />
+          <div role="menu" style={{
+            position: "absolute", top: 44, right: 14, zIndex: 42, width: 360, maxHeight: 380, overflowY: "auto",
+            background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)",
+            boxShadow: "0 16px 48px rgba(0,0,0,.5)", padding: 6,
+          }}>
+            <div style={{
+              padding: "6px 8px 8px", fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: ".06em",
+              textTransform: "uppercase", color: "var(--fg-dim)",
+            }}>Inject a prompt for this stage</div>
+            {prompts.map((p, i) => (
+              <button
+                key={i}
+                onClick={() => { onInject(p.text); setOpen(false); }}
+                title="Inject into the planner chat"
+                style={{
+                  display: "block", width: "100%", textAlign: "left", cursor: "pointer",
+                  background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)",
+                  padding: "8px 10px", marginBottom: 5, color: "var(--fg)",
+                }}
+              >
+                <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, fontWeight: 600, marginBottom: 3 }}>{p.label}</div>
+                <div style={{
+                  fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-muted)",
+                  display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+                }}>{p.text}</div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
 
 /** Format one unmet requirement: "resolve the discovery topics (3 of 5)". */
 function reasonText(u: { label: string; detail?: string }): string {
@@ -59,14 +122,20 @@ export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
 
 /** Eyebrow + title + blurb + gate pill for the focused phase. The pill surfaces WHY the
  *  gate isn't met (#805): a hover tooltip + a click-to-toggle popover of what's still needed. */
-export function PhaseHeader({ phase, pill }: { phase: Phase; pill: GatePill }) {
+export function PhaseHeader({ phase, pill, promptHelp }: {
+  phase: Phase;
+  pill: GatePill;
+  /** Injectable prompts for this stage + the inject handler — drives the "?" helper (#…). */
+  promptHelp?: { prompts: StagePrompt[]; onInject: (text: string) => void };
+}) {
   const [showReasons, setShowReasons] = useState(false);
   const unmet = phase.unmet ?? [];
   // Only offer reasons while the gate isn't passing and there's something to explain.
   const hasReasons = pill !== "pass" && unmet.length > 0;
   const tip = hasReasons ? "Still needed: " + unmet.map(reasonText).join("; ") : undefined;
   return (
-    <div className="ph-head">
+    <div className="ph-head" style={{ position: "relative" }}>
+      {promptHelp && <StagePromptHelp prompts={promptHelp.prompts} onInject={promptHelp.onInject} />}
       <div className="ph-eyebrow">
         <span className="num">PHASE {String(phase.index + 1).padStart(2, "0")} / {String(phase.total).padStart(2, "0")}</span>
         <span>·</span><span>{phase.key}</span>
