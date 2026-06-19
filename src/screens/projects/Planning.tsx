@@ -64,6 +64,34 @@ import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "../../lib/claudeComplete";
 import { fleetProfilesComplete } from "../../lib/profileGen";
 import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "../../lib/issueProvenance";
+import type { DataModel } from "./dataModel";
+
+// ── <data_model> tag parser (#se-persist) ────────────────────────────────────
+// The planner emits <data_model>{"name":"...","entities":[...]}</data_model> to hand
+// off an inferred canonical schema. Exported for unit-testing in isolation.
+
+/** Extract and JSON-parse the first <data_model> tag content. Returns null on missing or malformed JSON. */
+export function parseDataModelTag(buf: string): DataModel | null {
+  const m = /<data_model>([\s\S]*?)<\/data_model>/.exec(buf);
+  if (!m) return null;
+  try {
+    const parsed = JSON.parse(m[1].trim()) as unknown;
+    if (
+      parsed !== null && typeof parsed === "object" &&
+      "name" in (parsed as object) && "entities" in (parsed as object)
+    ) {
+      return parsed as DataModel;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Strip all <data_model>…</data_model> tags from a buffer. */
+export function stripDataModelTags(buf: string): string {
+  return buf.replace(/<data_model>[\s\S]*?<\/data_model>/g, "");
+}
 
 const TERM_THEME: import("@xterm/xterm").ITheme = {
   background:          "#181a1f",
@@ -1324,6 +1352,20 @@ export function Planning({ visible }: { visible: boolean }) {
           // Only strip a fully-closed tag; an unclosed one is left so a later chunk can complete it
           // (re-parsing the same config is idempotent).
           if (dcMatchedComplete) bufRef.current = bufRef.current.replace(/<deploy_config\s*>[\s\S]*?<\/deploy_config>/g, "");
+        }
+
+        // ── <data_model>{"name":"...","entities":[...]}</data_model> ──────────
+        // Persists the planner's inferred Data Model as datamodel.json in the project
+        // hub (#se-persist). `refined` starts false; the source pane sets it to true
+        // once the user confirms/refines the model interactively.
+        const dm = parseDataModelTag(bufRef.current);
+        if (dm) {
+          invoke("data_persist_model", {
+            projectKey: projIdSnap,
+            model: dm,
+            refined: false,
+          }).catch((e: unknown) => console.warn("data_persist_model failed:", e));
+          bufRef.current = stripDataModelTags(bufRef.current);
         }
 
         // Cap buffer to prevent unbounded growth while preserving any partial

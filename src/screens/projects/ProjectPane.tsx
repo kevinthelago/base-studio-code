@@ -25,6 +25,7 @@ import type { DeployConfig } from "./deployConfig";
 import { PurposeView, StagesView, CapabilitiesView, PublishView } from "./BlueprintAuthorViews";
 import type { BlueprintSkillItem } from "./blueprintSkills";
 import type { McpLibraryItem } from "./blueprintMcp";
+import { FocusedSourceBody } from "./FocusedSourceBody";
 
 /* =================================================================
    types
@@ -1460,6 +1461,8 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
   onRemoveMcp?: (id: string) => void;
 }) {
   switch (phase.key) {
+    case "source":
+      return <FocusedSourceBody projectId={projectId} />;
     case "repos":
       return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} />;
     case "deploy":
