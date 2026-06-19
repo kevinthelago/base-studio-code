@@ -50,7 +50,7 @@ import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChe
 // not a hardcoded stage list.
 import { derivePlanStageState, planStateToSignals, stageConfirmKeys } from "./planStageDerive";
 import { findPlanGaps } from "./lintPlan";
-import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./blueprints";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./blueprints";
 import { coerceBlueprint, blueprintToManifest } from "./blueprintShare";
 import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "./blueprintSkills";
 import { buildMcpLibrary } from "./blueprintMcp";
@@ -308,7 +308,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planFleet,
     projectKeyAlias,
     pinnedContext,
-    blueprints, activeBlueprintId, planStageConfig,
+    blueprints, planStageConfig,
     projectBlueprintId, setProjectBlueprintId,
     uiScreens, uiApproved, planAutomations,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
@@ -335,28 +335,26 @@ export function Planning({ visible }: { visible: boolean }) {
   const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
   const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
-  // A project is bound to the blueprint it was created with (#647/#923): `projectBlueprintId`
-  // records it; the GLOBAL `activeBlueprintId` is only the fallback (default for a brand-new
-  // project that hasn't been bound yet). Resolving per-project here is what keeps an existing
-  // project on its own blueprint when the global active changes (or resets to default on restart)
-  // — instead of silently reverting to the default stage set.
-  // A project that has a DESIGNED blueprint (blueprint.json / the <blueprint> tag) IS an authoring
-  // project — resolve it to the authoring lifecycle even if its recorded binding is stale (e.g. a
-  // legacy project bound to "default" before authoring set per-project bindings) (#923). Otherwise
-  // resolve the project's own recorded blueprint, falling back to the global active only when the
-  // project hasn't been bound yet — what keeps an existing project on its blueprint across global /
-  // version changes (or a restart that resets the active to default) instead of reverting to default.
+  // A project is bound to the blueprint it was CREATED with (#647/#923): `projectBlueprintId`
+  // records it, set at creation (handleStartPlanning) — NOT here on open. Opening a project must
+  // never adopt the transient global `activeBlueprintId` (the library selection the user changes
+  // freely): doing so silently switched an existing project's blueprint just by opening it while a
+  // different one was selected (#988). So resolve the project's OWN recorded blueprint, falling back
+  // to the DEFAULT (a stable id, never the selection) when it isn't bound.
+  // A project with a DESIGNED blueprint (blueprint.json / the <blueprint> tag) IS an authoring
+  // project — resolve it to the authoring lifecycle even if its recorded binding is stale (#923).
   const isAuthoredProject = !!planAuthoredBlueprint[effectiveProjectId];
   const effectiveBlueprintId = isAuthoredProject
     ? AUTHORING_BLUEPRINT_ID
-    : (projectBlueprintId[effectiveProjectId] ?? activeBlueprintId);
-  // Bind the project to its blueprint the first time it's planned — so it never drifts later. Skip
-  // authoring projects (the poll binds them to the authoring lifecycle); once recorded, it wins.
+    : (projectBlueprintId[effectiveProjectId] ?? DEFAULT_BLUEPRINT_ID);
+  // Backfill an EXISTING, unbound project to the DEFAULT (not the active selection) so the switch/
+  // reset prompt has a recorded baseline to compare against (#647). Brand-new projects are already
+  // bound at creation, so they never reach here unbound; authoring projects are bound by the poll.
   useEffect(() => {
-    if (effectiveProjectId && !projectBlueprintId[effectiveProjectId] && activeBlueprintId && !isAuthoredProject) {
-      setProjectBlueprintId(effectiveProjectId, activeBlueprintId);
+    if (effectiveProjectId && !projectBlueprintId[effectiveProjectId] && !isAuthoredProject) {
+      setProjectBlueprintId(effectiveProjectId, DEFAULT_BLUEPRINT_ID);
     }
-  }, [effectiveProjectId, projectBlueprintId, activeBlueprintId, setProjectBlueprintId, isAuthoredProject]);
+  }, [effectiveProjectId, projectBlueprintId, setProjectBlueprintId, isAuthoredProject]);
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
@@ -870,10 +868,10 @@ export function Planning({ visible }: { visible: boolean }) {
   // silently reverted a refactor/transform plan to the greenfield stage set. (#A — restored.)
   const stageIdsFor = (key: string): string[] => {
     const st = useAppStore.getState();
-    // Resolve the project's OWN blueprint (#647/#923), falling back to the global active only when
-    // the project hasn't been bound — so an existing project keeps its stage set across version /
-    // active-blueprint changes instead of reverting to the default greenfield stages.
-    const bpId = st.projectBlueprintId[key] ?? st.activeBlueprintId;
+    // Resolve the project's OWN blueprint (#647/#923), falling back to the DEFAULT (never the
+    // transient active selection, #988) when it isn't bound — so an existing project keeps its
+    // stage set across version / active-blueprint changes instead of adopting the library selection.
+    const bpId = st.projectBlueprintId[key] ?? DEFAULT_BLUEPRINT_ID;
     const bp = st.blueprints.find(b => b.id === bpId);
     if (bp) return bp.sections.filter(s => s.enabled).map(s => s.key);
     return enabledOrderedStages(st.planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
