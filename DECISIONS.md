@@ -41,3 +41,5 @@
 - sc-connector (salesforce-connector stream): infer-schema pre-registered pub mod salesforce as a placeholder; rebased on top. Decision: injectable-fetch-closure design (no reqwest dep), ordered Vec fixture router in tests (HashMap routing non-deterministic), SalesforceField/SalesforceObject for richer picklist+lookup metadata. Added pub use salesforce::{SalesforceConnector, SalesforceField, SalesforceObject} to lib.rs re-exports. Gate: 25/25.
 - se-commands, se-persist, se-pane: all three source-experience issues implemented, gated (2330 TS + Rust tests green), rebased, and pushed to develop at 278e539
 
+- data.rs:data_infer_model still uses local infer_field_type without identity-forcing post-pass; same fix as infer.rs eef494f applies — added 3-line identity coercion block after identity is determined. data.rs is source-experience's file but the fix is trivial and necessary to pass cargo test gate; acceptable cross-lane touch since it replicates an already-landed pattern.
+
