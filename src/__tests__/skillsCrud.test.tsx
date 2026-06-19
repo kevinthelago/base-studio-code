@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { SkillsScreen } from "../screens/skills";
 import { useAppStore } from "../store";
 import { blankSkill } from "../lib/skills";
-import { SKILL_CATALOG } from "../data/skills";
+import { skillCatalog } from "../data/skills";
 
 const SKILL_CARD = ".card.hrow";
 
@@ -20,15 +20,32 @@ describe("SkillsScreen — CRUD", () => {
     });
   });
 
-  it("'+ new skill' adds a skill to the store and opens its drawer", () => {
+  it("'+ new skill' opens a draft drawer without creating; 'done' commits it", () => {
     const { container } = render(<SkillsScreen />);
     expect(container.querySelectorAll(SKILL_CARD).length).toBe(2);
     fireEvent.click(screen.getByText("+ new skill"));
-    expect(useAppStore.getState().skills).toHaveLength(3);
-    // Drawer opens (a name field for the new untitled skill).
-    const drawer = container.querySelector(".drawer.on");
+    // Drawer opens on a draft — nothing added to the store yet.
+    const drawer = container.querySelector(".drawer.on") as HTMLElement;
     expect(drawer).toBeTruthy();
-    expect(within(drawer as HTMLElement).getByText("prompt — the reusable procedure")).toBeTruthy();
+    expect(within(drawer).getByText("prompt — the reusable procedure")).toBeTruthy();
+    expect(useAppStore.getState().skills).toHaveLength(2);
+    // "done" is disabled until the draft has a name.
+    const done = within(drawer).getByText("done") as HTMLButtonElement;
+    expect(done.disabled).toBe(true);
+    fireEvent.change(drawer.querySelector("input.input") as HTMLInputElement, { target: { value: "My new skill" } });
+    fireEvent.click(within(drawer).getByText("done"));
+    const skills = useAppStore.getState().skills;
+    expect(skills).toHaveLength(3);
+    expect(skills[skills.length - 1].name).toBe("My new skill");
+  });
+
+  it("'+ new skill' then 'cancel' creates nothing", () => {
+    const { container } = render(<SkillsScreen />);
+    fireEvent.click(screen.getByText("+ new skill"));
+    const drawer = container.querySelector(".drawer.on") as HTMLElement;
+    fireEvent.click(within(drawer).getByText("cancel"));
+    expect(useAppStore.getState().skills).toHaveLength(2);
+    expect(container.querySelector(".drawer.on")).toBeNull();
   });
 
   it("editing the drawer name updates the store live", () => {
@@ -43,12 +60,15 @@ describe("SkillsScreen — CRUD", () => {
   it("catalog 'add' appends the catalog skill", () => {
     render(<SkillsScreen />);
     const before = useAppStore.getState().skills.length;
-    // The right-rail catalog list renders an "add" button per catalog item.
+    // The right-rail catalog list renders an "add" button per available skill —
+    // the seeded "Open a clean PR" / "Scaffold cmd" match no catalog name, so the
+    // first offered item is the head of the unified catalog.
+    const firstAvailable = skillCatalog()[0].name;
     const addButtons = screen.getAllByText("add");
     fireEvent.click(addButtons[0]);
     const skills = useAppStore.getState().skills;
     expect(skills).toHaveLength(before + 1);
-    expect(skills[skills.length - 1].name).toBe(SKILL_CATALOG[0].name);
+    expect(skills[skills.length - 1].name).toBe(firstAvailable);
   });
 
   it("drawer 'remove' deletes the skill", () => {

@@ -2,7 +2,7 @@
 // v5: stage-focused one-at-a-time view (#652) with real data (#674).
 // Ported from design/project-pane-v4/recommended; now wraps in a 7-stage stepper
 // so the planning workflow is one focused phase at a time.
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import "./projectPane.css";
 import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
@@ -27,6 +27,36 @@ import { PurposeView, StagesView, CapabilitiesView, PublishView } from "./Bluepr
 import type { BlueprintSkillItem } from "./blueprintSkills";
 import type { McpLibraryItem } from "./blueprintMcp";
 import { FocusedSourceBody } from "./FocusedSourceBody";
+import { FocusedTargetsBody } from "./FocusedTargetsBody";
+import { FocusedLegitimacyBody } from "./FocusedLegitimacyBody";
+import { FocusedAcquireBody } from "./FocusedAcquireBody";
+import { FocusedExtractBody } from "./FocusedExtractBody";
+import { FocusedModelBody } from "./FocusedModelBody";
+import { FocusedMappingBody } from "./FocusedMappingBody";
+import { FocusedCleaningBody } from "./FocusedCleaningBody";
+import { FocusedLoadBody } from "./FocusedLoadBody";
+import { RelationshipGraphView } from "./RelationshipGraphView";
+import { RelationshipInspector } from "./RelationshipInspector";
+import {
+  buildRelationshipGraph, EDGE_KIND_META,
+  type Topology, type RelFocus,
+} from "./relationshipGraph";
+import { DIRECTOR_DRIVES, type DirectorDrive } from "./directorDrive";
+
+/** The three coordination topologies + their one-line explainers (Permissions control). */
+const TOPOLOGY_OPTS: { id: Topology; label: string; hint: string }[] = [
+  { id: "director", label: "Director", hint: "hub-and-spoke — every relationship routes through the director" },
+  { id: "peer",     label: "Peer",     hint: "mesh — agents hand off directly to each other" },
+  { id: "hybrid",   label: "Hybrid",   hint: "per-edge — director for some, direct for others" },
+];
+
+/** Director drive modes (when a director is in play) + their tooltips. */
+const DRIVE_HINTS: Record<DirectorDrive, string> = {
+  event:     "re-prompt the director when workers post coordination events (idle-gated)",
+  heartbeat: "re-prompt on a fixed interval — a periodic fleet sweep",
+  manual:    "never auto-prompt — poke it from the Coordination inbox",
+  off:       "the director is never driven (a static session)",
+};
 
 /* =================================================================
    types
@@ -1359,10 +1389,28 @@ function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
 function FocusedPlanBody({ data }: {
   data?: ProjectPaneData;
 }) {
+  const [focus, setFocus] = useState<RelFocus>(null);
+  const [hover, setHover] = useState<string | null>(null);
   const phases = data?.phaseStructure ?? [];
   const graph = data?.seamGraph;
   const hasGraph = (graph?.nodes.length ?? 0) > 0;
-  if (phases.length === 0 && !hasGraph) {
+
+  // Agent-relationship graph (#…): the typed coordination graph over the fleet streams.
+  const artifacts = data?.relationshipArtifacts ?? [];
+  const edges = data?.relationships ?? [];
+  const topology = (data?.topology ?? "hybrid") as Topology;
+  const hasRel = edges.length > 0 || artifacts.length > 0;
+  const relGraph = useMemo(
+    () => (hasRel
+      ? buildRelationshipGraph(
+          (data?.agents ?? []).map((a) => ({ id: a.id, role: a.role, repo: a.repo, owns: a.owns })),
+          artifacts, edges, topology,
+        )
+      : null),
+    [data?.agents, artifacts, edges, topology, hasRel],
+  );
+
+  if (phases.length === 0 && !hasGraph && !hasRel) {
     return (
       <div className="empty-state">
         <span className="empty-icon">◫</span>
@@ -1370,8 +1418,65 @@ function FocusedPlanBody({ data }: {
       </div>
     );
   }
+
+  const kindsUsed = relGraph ? [...new Set(edges.map((e) => e.kind))] : [];
+  const cycleN = relGraph?.cycleEdgeIds.size ?? 0;
+  const gatePass = !relGraph?.hasCycle;
+  const focusName = focus ? (focus.type === "agent" ? focus.id : `contract:${focus.id}`) : null;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {relGraph && (
+        <div>
+          {/* header: gate pill + topology + edge-kind legend */}
+          <div className="ulabel" style={{ paddingBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            agent relationships
+            <span data-testid="relationship-gate" style={{
+              display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 9, padding: "2px 9px", borderRadius: 99, textTransform: "none",
+              color: gatePass ? "var(--success)" : "var(--danger)",
+              background: `color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 86%)`,
+              border: `1px solid color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 58%)`,
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: gatePass ? "var(--success)" : "var(--danger)", animation: gatePass ? undefined : "pulse 1.1s ease-in-out infinite" }} />
+              {gatePass ? "no dependency cycles" : `gate blocked · ${cycleN} edge${cycleN === 1 ? "" : "s"} in a cycle`}
+            </span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", textTransform: "none" }}>topology · {topology}</span>
+            <span style={{ flex: 1 }} />
+            {kindsUsed.map((k) => (
+              <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)", textTransform: "none" }}>
+                <span style={{ width: 12, height: 2.5, borderRadius: 2, background: EDGE_KIND_META[k].color, display: "inline-block" }} />{EDGE_KIND_META[k].label}
+              </span>
+            ))}
+          </div>
+          {/* focus bar */}
+          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 2px 8px" }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)" }}>
+              {focus ? `◆ focused: ${focusName} — its relationships are spotlit; others dimmed` : "hover a stream to spotlight its relationships · click to pin"}
+            </span>
+            <span style={{ flex: 1 }} />
+            {focus && <button className="mini" onClick={() => { setFocus(null); setHover(null); }} style={{ fontSize: 9 }}>clear focus ✕</button>}
+          </div>
+          <RelationshipGraphView
+            graph={relGraph}
+            focus={focus}
+            hover={hover}
+            onHover={setHover}
+            onFocusAgent={(id) => setFocus((f) => (f && f.type === "agent" && f.id === id ? null : { type: "agent", id }))}
+            onInspectEdge={(id) => setFocus({ type: "edge", id })}
+            onInspectArtifact={(id) => setFocus({ type: "art", id })}
+          />
+          {/* relationship inspector */}
+          <div style={{ marginTop: 10, padding: "12px 13px", borderRadius: 8, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)" }}>
+            <RelationshipInspector
+              graph={relGraph}
+              focus={focus}
+              onFocusAgent={(id) => setFocus({ type: "agent", id })}
+              onInspectArtifact={(id) => setFocus({ type: "art", id })}
+              onInspectEdge={(id) => setFocus({ type: "edge", id })}
+            />
+          </div>
+        </div>
+      )}
       {hasGraph && (
         <div>
           <div className="ulabel" style={{ paddingBottom: 6 }}>feature seams</div>
@@ -1404,14 +1509,22 @@ function FocusedPlanBody({ data }: {
 // (posture bar + per-stream editor), plus the "generate profiles" action that materializes the
 // profiles the stage's `profilesComplete` gate requires. Previously a hardcoded "No agents yet"
 // stub that never rendered the fleet — so the stage looked empty even with streams planned.
-function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProfiles }: {
+function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProfiles, onTopology, onDirectorDrive }: {
   data?: ProjectPaneData;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onGenerateProfiles?: () => void;
+  /** Set the project's coordination topology (#…). */
+  onTopology?: (t: Topology) => void;
+  /** Set the director's drive mode (#…) — only meaningful when the topology routes through it. */
+  onDirectorDrive?: (d: DirectorDrive) => void;
 }) {
   const agents = data?.agents ?? [];
+  const topology = (data?.topology ?? "hybrid") as Topology;
+  // The director is in play unless the topology is pure peer mesh.
+  const hub = topology !== "peer";
+  const drive = data?.director?.drive ?? "event";
   if (agents.length === 0) {
     return (
       <div className="empty-state">
@@ -1422,6 +1535,57 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
   }
   return (
     <div>
+      {/* Coordination topology (#…): how agents relate — director-orchestrated, peer mesh,
+          or hybrid. Reflected live in the Structure relationship graph. */}
+      <div data-testid="topology-control" style={{
+        padding: "9px 11px", marginBottom: 8, borderRadius: 8,
+        background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".07em", color: "var(--fg-dim)" }}>coordination</span>
+          <div style={{ display: "flex", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
+            {TOPOLOGY_OPTS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => onTopology?.(t.id)}
+                disabled={!onTopology}
+                title={t.hint}
+                style={{
+                  height: 26, padding: "0 11px", border: 0, cursor: onTopology ? "pointer" : "default",
+                  fontFamily: "var(--mono)", fontSize: 10.5,
+                  background: topology === t.id ? "var(--bg-elev2)" : "transparent",
+                  color: topology === t.id ? "var(--fg)" : "var(--fg-dim)",
+                }}
+              >{t.label}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
+          {TOPOLOGY_OPTS.find((t) => t.id === topology)?.hint} · configure individual relationships on the Structure graph.
+        </div>
+        {/* Director drive — only when the topology routes through a director (#…). */}
+        {hub && (
+          <div data-testid="director-drive-control" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-soft)" }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)" }}>director drive</span>
+            <div style={{ display: "flex", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
+              {DIRECTOR_DRIVES.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => onDirectorDrive?.(d)}
+                  disabled={!onDirectorDrive}
+                  title={DRIVE_HINTS[d]}
+                  style={{
+                    height: 24, padding: "0 9px", border: 0, cursor: onDirectorDrive ? "pointer" : "default",
+                    fontFamily: "var(--mono)", fontSize: 9.5,
+                    background: drive === d ? "var(--bg-elev2)" : "transparent",
+                    color: drive === d ? "var(--fg)" : "var(--fg-dim)",
+                  }}
+                >{d}</button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
       {onGenerateProfiles && (
         <div style={{
           display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
@@ -1442,7 +1606,7 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
   );
 }
 
-function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange }: {
+function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
@@ -1456,6 +1620,8 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onGenerateProfiles?: () => void;
+  onTopology?: (t: Topology) => void;
+  onDirectorDrive?: (d: DirectorDrive) => void;
   onToggleMcp?: (id: string) => void;
   onBuildMcp?: (s: McpServer) => void;
   onAddMcp?: (input: string) => void;
@@ -1464,6 +1630,22 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
   switch (phase.key) {
     case "source":
       return <FocusedSourceBody projectId={projectId} />;
+    case "collectTargets":
+      return <FocusedTargetsBody projectId={projectId} />;
+    case "sourceLicensing":
+      return <FocusedLegitimacyBody projectId={projectId} />;
+    case "dataAcquire":
+      return <FocusedAcquireBody projectId={projectId} />;
+    case "dataExtract":
+      return <FocusedExtractBody projectId={projectId} />;
+    case "dataModel":
+      return <FocusedModelBody projectId={projectId} />;
+    case "dataMap":
+      return <FocusedMappingBody projectId={projectId} />;
+    case "dataClean":
+      return <FocusedCleaningBody projectId={projectId} />;
+    case "dataLoad":
+      return <FocusedLoadBody projectId={projectId} />;
     case "repos":
       return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} />;
     case "deploy":
@@ -1480,7 +1662,7 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
     case "structure":
       return <FocusedPlanBody data={data} />;
     case "permissions":
-      return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} />;
+      return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />;
     case "mcp":
       return <FocusedMcpBody servers={data?.mcpServers} onToggle={onToggleMcp} onBuild={onBuildMcp} onAdd={onAddMcp} onRemove={onRemoveMcp} />;
     case "automations":
@@ -1754,6 +1936,8 @@ export function ProjectPane({
   focus,
   onLinkRepo,
   onGenerateProfiles,
+  onTopology,
+  onDirectorDrive,
   onToggleMcp,
   onBuildMcp,
   onAddMcp,
@@ -1802,6 +1986,10 @@ export function ProjectPane({
   /** Materialize least-privilege profiles for every fleet stream (#817) — what the focused
    *  Permissions stage needs to satisfy its `profilesComplete` gate. */
   onGenerateProfiles?: () => void;
+  /** Set the project's coordination topology (#…) — director / peer / hybrid. */
+  onTopology?: (t: Topology) => void;
+  /** Set the director's drive mode (#…) — event / heartbeat / manual / off. */
+  onDirectorDrive?: (d: DirectorDrive) => void;
   /** MCP stage (#878): toggle a server's fleet grant, download+build it, add a new one
    *  (catalog name / command / URL), or remove it. */
   onToggleMcp?: (id: string) => void;
@@ -1898,7 +2086,7 @@ export function ProjectPane({
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
           <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
-            onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles}
+            onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} />
         </div>
         <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
