@@ -6,6 +6,28 @@
 // ConductorState) lives in Planning.tsx. No React/Tauri — unit-testable.
 import type { BlueprintSection } from "./blueprints";
 
+export interface StagePrompt {
+  /** Human label for the picker row (the stage name, or a substep's label/key). */
+  label: string;
+  /** The full prompt text to inject when the user picks it. */
+  text: string;
+}
+
+/**
+ * The injectable prompts for a stage, surfaced in the focused pane's "?" helper so the USER can
+ * pick what to inject (the app no longer auto-injects). The stage's own overview prompt comes
+ * first, then each substep's prompt in order. Prompts that are empty/whitespace are skipped.
+ */
+export function stagePrompts(section: BlueprintSection | undefined): StagePrompt[] {
+  if (!section) return [];
+  const out: StagePrompt[] = [];
+  if (section.prompt?.trim()) out.push({ label: `${section.name} — overview`, text: section.prompt });
+  for (const sub of section.substeps ?? []) {
+    if (sub.prompt?.trim()) out.push({ label: sub.label || sub.key, text: sub.prompt });
+  }
+  return out;
+}
+
 export interface Injection {
   /** Stable id for the injected-once guard. Forms: `${stage}:_stage`, `${stage}:${substep}`,
    *  or `${stage}:${substep}:${itemId}` for one iteration of a loop substep. */

@@ -19,6 +19,7 @@ import {
   LockBanner as FocusedLockBanner,
   PhaseFooter as FocusedPhaseFooter,
 } from "./FocusedShell";
+import type { StagePrompt } from "./plannerConductor";
 import { FileIntakePane } from "./FileIntakePane";
 import { FocusedDeployBody } from "./DeployView";
 import type { DeployConfig } from "./deployConfig";
@@ -1792,6 +1793,9 @@ export function ProjectPane({
     /** Blueprint-authoring wiring (#923) — present only for an authoring project; drives the
      *  interactive Purpose/Stages/Capabilities/Review editor views. */
     authoring?: AuthoringWiring;
+    /** The selected stage's injectable prompts + inject handler — drives the header "?" helper (#…),
+     *  replacing the removed auto-injecting conductor. */
+    promptHelp?: { prompts: StagePrompt[]; onInject: (text: string) => void };
   };
   /** Callback to link a repository from the focused repos body (#677). */
   onLinkRepo?: (repo: string) => void;
@@ -1890,7 +1894,7 @@ export function ProjectPane({
     return (
       <div className="pp fp">
         <FocusedStepper phases={focus.phases} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} />
-        <FocusedPhaseHeader phase={selected} pill={focus.pill} />
+        <FocusedPhaseHeader phase={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
           <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}

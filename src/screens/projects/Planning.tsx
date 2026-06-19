@@ -24,7 +24,7 @@ import {
   ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
 } from "./planSections";
-import { parseFeaturesFile, featuresSummary, featureDefined } from "./featureList";
+import { parseFeaturesFile, featuresSummary } from "./featureList";
 import { buildWorkerScope } from "./workerScope";
 import { resolveIssueAssignee } from "./fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "./repoScaffold";
@@ -56,9 +56,9 @@ import { coerceBlueprint, blueprintToManifest } from "./blueprintShare";
 import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "./blueprintSkills";
 import { buildMcpLibrary } from "./blueprintMcp";
 import { publishGist } from "../../lib/extensions/gist";
-import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, sectionForPhase } from "./focusedPlan";
+import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
 import { featureSectionsToIssues } from "./planFeatures";
-import { nextInjection, isStepDelivered, flattenPrompt } from "./plannerConductor";
+import { flattenPrompt, stagePrompts } from "./plannerConductor";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -810,6 +810,12 @@ export function Planning({ visible }: { visible: boolean }) {
     : footerRaw;
   const focusSelPhase = phases[focusSelectedIdx];
   const focusPill = focusSelPhase ? gatePill(focusSelPhase) : "wait";
+  // Injectable prompts for the SELECTED stage — the header "?" helper lists them and the user picks
+  // one to inject (the app no longer auto-injects). Resolve the section BY KEY (phases is a filtered
+  // subset of planSecs, #815).
+  const focusStagePrompts = useMemo(
+    () => stagePrompts(planSecs.find(s => s.key === focusSelPhase?.key)),
+    [planSecs, focusSelPhase]);
 
   const [restarting, setRestarting] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false); // clear-plan confirmation modal (#…)
@@ -962,54 +968,12 @@ export function Planning({ visible }: { visible: boolean }) {
   };
   const autopilot = usePlanAutopilot(autopilotDeps, { enabled: autoPlanWithClaude && !!claudeApiKey });
 
-  // ── Planning conductor (#…): drive the planner step by step ─────────────────────────────
-  // Instead of front-loading the whole spec, inject ONE prompt at a time — the active stage's
-  // prompt (orientation), then each substep in turn — as the plan progresses. `nextInjection`
-  // (pure) decides what's next from the blueprint sections + confirmed artifacts; this effect
-  // owns the timing: send only when the planner's output has settled (so the text lands at the
-  // prompt, not mid-stream), and once-per-step via `injectedRef`. Resets on project/blueprint
-  // switch and on restart. NOTE: until the CLAUDE.md is slimmed to a bootstrap (a later slice),
-  // these injections supplement the front-loaded spec rather than replace it.
-  // What the conductor treats as "done" per substep: a confirmed discovery section, the
-  // features "propose" step once the list exists, and the per-feature loop items (each done when
-  // the feature is fully defined). Drives loop-by-loop advancement through the Features stage.
-  const conductorState = useMemo(() => {
-    const doneSubsteps = new Set<string>(confirmedSet);
-    if (planFeatures.length > 0) doneSubsteps.add("propose");
-    return {
-      doneSubsteps,
-      loops: { features: planFeatures.map(f => ({ id: f.slug, label: f.name, done: featureDefined(f) })) },
-    };
-  }, [confirmedSet, planFeatures]);
-  // ── Resilient delivery (#…) ─────────────────────────────────────────────────
-  // A step isn't "done" the moment we send it — sends get lost (the user types over it, the
-  // planner wanders). So we track DELIVERY: a step stays pending until the planner acts on it
-  // (its artifact appears, or — for steps with no measurable artifact — output simply grew in
-  // response). If a step isn't delivered within the idle window we re-inject ONCE silently; if it
-  // still doesn't land we stop and surface a "re-send" nudge. A pause toggle + manual re-send
-  // cover anything auto-recovery can't.
-  const deliveredRef = useRef<Set<string>>(new Set());
-  const pendingRef = useRef<{ id: string; prompt: string; atLen: number; quiet: number; retried: boolean } | null>(null);
-  const [nudgeStep, setNudgeStep] = useState<string | null>(null);
-  const [conductorPaused, setConductorPaused] = useState(false);
-  const resetConductor = useCallback(() => {
-    deliveredRef.current = new Set();
-    pendingRef.current = null;
-    setNudgeStep(null);
-  }, []);
-  useEffect(() => { resetConductor(); }, [effectiveProjectId, effectiveBlueprintId, resetConductor]);
-  // Re-send the current step (the nudge action + manual override): drop it from delivered + clear
-  // pending/nudge so the next tick re-injects it.
-  const resendCurrentStep = useCallback(() => {
-    const id = pendingRef.current?.id ?? nudgeStep;
-    if (id) deliveredRef.current.delete(id);
-    pendingRef.current = null;
-    setNudgeStep(null);
-  }, [nudgeStep]);
-
-  // Send a step's prompt to the planner: flatten to ONE line so the trailing Enter actually
-  // submits it (a multi-line paste just sits in the input). If it's already in the input bar
-  // (pasted but unsent), submit it instead of pasting a duplicate.
+  // Inject a prompt into the planner session on demand (#…). The app no longer AUTO-injects stage
+  // prompts (the old "conductor" caused too many problems — it typed over the user, re-sent lost
+  // steps, wandered). Instead the focused pane's "?" helper lists each stage's injectable prompts
+  // and the USER picks which to inject. Flatten to ONE line so the trailing Enter actually submits
+  // it (a multi-line paste just sits in the input); if it's already in the input bar (pasted but
+  // unsent), submit it instead of pasting a duplicate.
   const sendPrompt = useCallback((prompt: string) => {
     const line = flattenPrompt(prompt);
     if (terminalShows(termRef.current, line.slice(0, 40))) {
@@ -1019,56 +983,6 @@ export function Planning({ visible }: { visible: boolean }) {
     }
   }, [paneId]);
 
-  const conductorTickRef = useRef({ len: 0, stable: 0 });
-  useEffect(() => {
-    if (!visible || conductorPaused) return;
-    const tick = () => {
-      const len = autopilotTxRef.current.length;
-      // Hold until the session is live (Claude has produced output) and — for fresh sessions —
-      // the pitch has been sent, so the first inject can't race the kickoff.
-      if (len === 0 || (!isExisting && !initSentRef.current)) return;
-
-      // A step is in flight — has it landed, or is it lost?
-      if (pendingRef.current) {
-        const p = pendingRef.current;
-        const delivered = isStepDelivered(p.id, {
-          outputGrew: len > p.atLen,
-          sectionKeys: new Set(Object.entries(savedSections).filter(([, v]) => !!v?.trim()).map(([k]) => k)),
-          startedFeatures: new Set(planFeatures.filter(f => f.behavior || (f.acceptance?.length ?? 0) > 0).map(f => f.slug)),
-          featuresExist: planFeatures.length > 0,
-        });
-        if (delivered) { deliveredRef.current.add(p.id); pendingRef.current = null; return; }
-        p.quiet += 1;
-        if (p.quiet < 2) return;             // give it a moment before deciding it's lost
-        if (!p.retried) {                    // one silent retry (re-submits if it's still sitting unsent)
-          p.retried = true; p.quiet = 0; p.atLen = len;
-          sendPrompt(p.prompt);
-        } else {                             // still lost → hand off to the user
-          setNudgeStep(p.id); pendingRef.current = null;
-        }
-        return;
-      }
-
-      // Nothing in flight — what's next? Resolve the active blueprint section BY KEY: phases is a
-      // filtered subset of planSecs (disabled / not-applicable sections like `ui` are dropped), so
-      // indexing planSecs with focusActiveIdx (a phases index) injects the WRONG stage's prompt
-      // once any earlier section is dropped (#815).
-      const activeSection = sectionForPhase(planSecs, phases[focusActiveIdx]);
-      const next = nextInjection(activeSection, deliveredRef.current, conductorState);
-      if (!next) { conductorTickRef.current.stable = 0; conductorTickRef.current.len = len; return; }
-      if (nudgeStep === next.id) return;     // blocked on a failed step, awaiting the user's re-send
-      // Idle gate: inject only after ~2 quiet ticks so we land at the prompt, not mid-stream.
-      const grew = len > conductorTickRef.current.len;
-      conductorTickRef.current.len = len;
-      conductorTickRef.current.stable = grew ? 0 : conductorTickRef.current.stable + 1;
-      if (conductorTickRef.current.stable < 2) return;
-      conductorTickRef.current.stable = 0;
-      pendingRef.current = { id: next.id, prompt: next.prompt, atLen: len, quiet: 0, retried: false };
-      sendPrompt(next.prompt);
-    };
-    const id = setInterval(tick, 1500);
-    return () => clearInterval(id);
-  }, [visible, conductorPaused, planSecs, phases, focusActiveIdx, conductorState, paneId, isExisting, nudgeStep, savedSections, planFeatures, sendPrompt]);
 
   // Mount xterm.js and spawn the planning PTY (once per Planning screen lifecycle).
   // pty_kill is called on unmount so navigating away ends the session cleanly.
@@ -1639,8 +1553,6 @@ export function Planning({ visible }: { visible: boolean }) {
     if (!term || restarting) return;
     setRestarting(true);
     bufRef.current = "";
-    resetConductor();                        // re-drive the conductor from the top on a fresh session
-    conductorTickRef.current = { len: 0, stable: 0 };
     term.clear();
     await invoke("pty_kill", { paneId: paneId }).catch(console.error);
     const paths = await regenerateWorkspace();
@@ -2280,6 +2192,10 @@ _Auto-generated by base-studio-code planner._`,
             title="The project's blueprint / planner template changed since this session started — choose how to update (#827)"
           >{restarting ? "restarting…" : "blueprint updated · review"}</button>
         )}
+        <button className="btn ghost" onClick={handleRestart} disabled={restarting}
+          title="Restart the planner session (re-spawns Claude)">
+          {restarting ? "restarting…" : "↺ restart"}
+        </button>
         <button className="btn ghost" onClick={() => setProjectsView("list")}>
           save & exit
         </button>
@@ -2325,53 +2241,6 @@ _Auto-generated by base-studio-code planner._`,
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", borderTop: "1px solid var(--border-soft)" }}>
         {/* Claude CLI terminal */}
         <section style={{ flex: "1 1 0", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRight: "1px solid var(--border-soft)" }}>
-          <div style={{
-            padding: "10px 18px", background: "var(--bg-panel)",
-            borderBottom: "1px solid var(--border-soft)",
-            display: "flex", alignItems: "center", gap: 8,
-            fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
-          }}>
-            <span style={{ color: "var(--accent)" }}>▸ claude cli · planning session</span>
-            <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 10, color: "var(--fg-dim)" }}>
-              emit{" "}
-              <code style={{ color: "var(--fg)", background: "var(--bg-elev)", padding: "0 4px", borderRadius: 3 }}>
-                &lt;plan_update section="goal"&gt;…&lt;/plan_update&gt;
-              </code>
-              {" "}to populate sections →
-            </span>
-            <button
-              onClick={resendCurrentStep}
-              title={nudgeStep ? "A step didn't land — re-send it to the planner" : "Re-send the current step's prompt to the planner"}
-              style={{
-                padding: "2px 8px", borderRadius: 3, cursor: "pointer",
-                background: nudgeStep ? "color-mix(in oklch, var(--accent), transparent 86%)" : "transparent",
-                border: `1px solid ${nudgeStep ? "var(--accent)" : "var(--border-soft)"}`,
-                color: nudgeStep ? "var(--accent)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
-              }}
-            >{nudgeStep ? "↻ re-send (lost)" : "↻ re-send step"}</button>
-            <button
-              onClick={() => setConductorPaused(p => !p)}
-              title={conductorPaused ? "Resume step-by-step guidance" : "Pause step-by-step guidance to free-form"}
-              style={{
-                padding: "2px 8px", borderRadius: 3, cursor: "pointer",
-                background: "transparent", border: "1px solid var(--border-soft)",
-                color: conductorPaused ? "var(--accent)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
-              }}
-            >{conductorPaused ? "▶ resume" : "⏸ conductor"}</button>
-            <button
-              onClick={handleRestart}
-              disabled={restarting}
-              style={{
-                padding: "2px 8px", borderRadius: 3, cursor: restarting ? "not-allowed" : "pointer",
-                background: "transparent", border: "1px solid var(--border-soft)",
-                color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
-                opacity: restarting ? 0.5 : 1,
-              }}
-            >{restarting ? "restarting…" : "↺ restart"}</button>
-          </div>
-
-
           <div
             ref={containerRef}
             style={{
@@ -2422,6 +2291,9 @@ _Auto-generated by base-studio-code planner._`,
                 onSelect: (i) => setFocusSel(i),
                 pill: focusPill,
                 footer: focusFooter,
+                // Per-stage "?" prompt helper (#…): the user injects a stage prompt on demand
+                // (the auto-injecting conductor was removed).
+                promptHelp: { prompts: focusStagePrompts, onInject: sendPrompt },
                 // Once a board exists, the publish action reads as "Update GitHub" — a re-sync of
                 // the plan, not a first publish (handlePublish sets activeProjectId on create) (#823).
                 published: !!activeProjectId,
