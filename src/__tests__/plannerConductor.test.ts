@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nextInjection, isStepDelivered, flattenPrompt, type ConductorState, type DeliverySignals } from "../screens/projects/plannerConductor";
+import { nextInjection, isStepDelivered, flattenPrompt, stagePrompts, type ConductorState, type DeliverySignals } from "../screens/projects/plannerConductor";
 import { mkSection } from "../screens/projects/blueprints";
 
 const sig = (over: Partial<DeliverySignals> = {}): DeliverySignals => ({
@@ -8,6 +8,24 @@ const sig = (over: Partial<DeliverySignals> = {}): DeliverySignals => ({
 
 const emptyState = (): ConductorState => ({ doneSubsteps: new Set(), loops: {} });
 const state = (over: Partial<ConductorState> = {}): ConductorState => ({ doneSubsteps: new Set(), loops: {}, ...over });
+
+describe("stagePrompts — the on-demand '?' helper list (#…)", () => {
+  it("lists the stage overview prompt first, then each substep prompt", () => {
+    const context = mkSection("context");
+    const list = stagePrompts(context);
+    expect(list.length).toBeGreaterThanOrEqual(2);
+    expect(list[0].label).toContain("overview");
+    expect(list[0].text).toBe(context.prompt);
+    // every listed prompt has non-empty text, and the core discovery substeps are present
+    expect(list.every((p) => p.text.trim().length > 0)).toBe(true);
+    const labels = list.map((p) => p.label.toLowerCase()).join(" ");
+    expect(labels).toMatch(/goal/);
+  });
+
+  it("returns [] for no section", () => {
+    expect(stagePrompts(undefined)).toEqual([]);
+  });
+});
 
 describe("nextInjection — stage + static substeps", () => {
   const context = mkSection("context"); // _stage + goal/scope/stack/architecture + dimensions(loop)
