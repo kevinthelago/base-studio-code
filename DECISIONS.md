@@ -39,3 +39,5 @@
 - T2b/T3b/T5/T6/T8 landed on develop (e5dfbb6). T1b blocked on T1a (tunnel-mobile Noise vector fixture). PT2/F2/A2/M2/F4/A4 blocked on director go-ahead after tunnel-mobile lands PT1/F1/A1/M1.
 
 - sc-connector (salesforce-connector stream): infer-schema pre-registered pub mod salesforce as a placeholder; rebased on top. Decision: injectable-fetch-closure design (no reqwest dep), ordered Vec fixture router in tests (HashMap routing non-deterministic), SalesforceField/SalesforceObject for richer picklist+lookup metadata. Added pub use salesforce::{SalesforceConnector, SalesforceField, SalesforceObject} to lib.rs re-exports. Gate: 25/25.
+- se-commands, se-persist, se-pane: all three source-experience issues implemented, gated (2330 TS + Rust tests green), rebased, and pushed to develop at 278e539
+
