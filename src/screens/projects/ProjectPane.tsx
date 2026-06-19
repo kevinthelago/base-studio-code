@@ -1399,7 +1399,9 @@ function FocusedPlanBody({ data }: {
   const artifacts = data?.relationshipArtifacts ?? [];
   const edges = data?.relationships ?? [];
   const topology = (data?.topology ?? "hybrid") as Topology;
-  const hasRel = edges.length > 0 || artifacts.length > 0;
+  // Renders for ANY planned fleet (≥1 stream) — `relationships` falls back to dependsOn-
+  // derived edges in projectPaneData, so it shows before the planner authors explicit ones.
+  const hasRel = (data?.agents?.length ?? 0) > 0;
   const relGraph = useMemo(
     () => (hasRel
       ? buildRelationshipGraph(

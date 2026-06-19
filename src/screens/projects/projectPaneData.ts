@@ -6,7 +6,8 @@
 // falls back to its own sample consts when a project has none of this yet.
 
 import type { AgentProfile, Tier, ToolKey } from "../agents/agentProfiles";
-import type { FleetPlan } from "./planSections";
+import type { FleetPlan, AgentStream } from "./planSections";
+import type { AgentRelationship } from "./relationshipGraph";
 import type { PlanIssue } from "./planIssues";
 import type { Section } from "./ghStructure";
 import type { NodeProgress } from "./ghProgress";
@@ -359,6 +360,25 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     // fleet.json default, falling back to hybrid (#…).
     topology: input.topologyOverride ?? input.fleet?.topology ?? "hybrid",
     relationshipArtifacts: input.fleet?.artifacts ?? [],
-    relationships: input.fleet?.edges ?? [],
+    // Use the planner's explicit typed edges when present; otherwise derive blocking
+    // edges from the streams' `dependsOn` so the relationship graph shows for any planned
+    // fleet, not only ones with hand-authored relationships (#…).
+    relationships: input.fleet?.edges?.length
+      ? input.fleet.edges
+      : deriveRelationships(input.fleet?.streams ?? []),
   };
+}
+
+/** Derive a blocking relationship edge from each stream's `dependsOn` (a → b means b waits
+ *  on a). The fallback that lights up the Structure swimlane before the planner authors
+ *  explicit artifacts/edges. */
+function deriveRelationships(streams: AgentStream[]): AgentRelationship[] {
+  const ids = new Set(streams.map((s) => s.id));
+  const out: AgentRelationship[] = [];
+  for (const s of streams) {
+    for (const dep of s.dependsOn ?? []) {
+      if (ids.has(dep)) out.push({ id: `${dep}>${s.id}`, from: dep, to: s.id, kind: "blocking", hardness: "blocking", via: "direct" });
+    }
+  }
+  return out;
 }
