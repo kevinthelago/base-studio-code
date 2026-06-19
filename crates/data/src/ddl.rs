@@ -71,11 +71,12 @@ pub fn lineage_ddl() -> String {
 }
 
 /// `CREATE TABLE IF NOT EXISTS` for the per-field lineage table — one row per reconciled
-/// (record, field) recording which source won (#785).
+/// (record, field) recording which source won (#785). Includes `license` for full provenance.
 pub fn field_lineage_ddl() -> String {
     format!(
         "CREATE TABLE IF NOT EXISTS {FIELD_LINEAGE_TABLE} \
-         (entity VARCHAR, identity VARCHAR, field VARCHAR, source VARCHAR, loaded_at VARCHAR)"
+         (entity VARCHAR, identity VARCHAR, field VARCHAR, \
+          source VARCHAR, loaded_at VARCHAR, license VARCHAR)"
     )
 }
 
