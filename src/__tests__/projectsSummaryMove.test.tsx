@@ -17,10 +17,10 @@ describe("GitHub mode strip", () => {
 });
 
 describe("Projects mode strip", () => {
-  it("no longer offers Summary — just Projects + Fleet", () => {
+  it("no longer offers Summary — just Planner + Fleet", () => {
     render(<ProjectsPageModeStrip />);
     expect(screen.queryByText("Summary")).toBeNull();
-    expect(screen.getByText("Projects")).toBeTruthy();
+    expect(screen.getByText("Planner")).toBeTruthy();
     expect(screen.getByText("Fleet")).toBeTruthy();
   });
 });
