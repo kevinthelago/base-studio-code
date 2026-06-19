@@ -25,6 +25,7 @@ pub use schema::{DataModel, Entity, Field, FieldType};
 pub use connector::{Connector, CsvConnector, RowSet, SourceObject};
 pub use reconcile::{reconcile, MergedRecord, Precedence, Reconciled, SourceLoad};
 pub use infer::{infer, EntityInference, FieldProvenance, InferResult};
+pub use salesforce::{SalesforceConnector, SalesforceField, SalesforceObject};
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
