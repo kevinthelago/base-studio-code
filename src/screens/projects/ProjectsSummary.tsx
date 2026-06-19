@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { useAppStore } from "../../store";
 import { githubRequest, githubGraphql } from "../../lib/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "./burndown";
+import { TabBar, type TabItem } from "../../components/chrome/TabBar";
+import { openDetachedSection } from "../../lib/detachWindow";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -196,40 +198,26 @@ function useProjectsSummaryData() {
 
 // ── Shared page-mode strip ────────────────────────────────────────────────────
 
+/** The page-mode tabs. Same TabBar the other pages use, so each mode can be torn off
+ *  into its own window (#430/#463) by dragging it out of the strip. */
+const PROJECT_MODES: TabItem[] = [
+  { id: "projects",   label: "Planner",     hint: "plan a project" },
+  { id: "fleet",      label: "Fleet",       hint: "live orchestration" },
+  { id: "blueprints", label: "Blueprints",  hint: "planning presets" },
+  { id: "dataModels", label: "Data Models", hint: "canonical schemas" },
+];
+
 export function ProjectsPageModeStrip() {
   const { projectsPageMode, setProjectsPageMode } = useAppStore();
-  const modes = [
-    { k: "projects",   label: "Planner",     hint: "plan a project" },
-    { k: "fleet",      label: "Fleet",       hint: "live orchestration" },
-    { k: "blueprints", label: "Blueprints",  hint: "planning presets" },
-    { k: "dataModels", label: "Data Models", hint: "canonical schemas" },
-  ] as const;
   return (
-    <div style={{
-      padding: "0 24px",
-      borderBottom: "1px solid var(--border-soft)",
-      background: "var(--bg-panel)",
-      display: "flex", alignItems: "center", gap: 6,
-      fontFamily: "var(--mono)", fontSize: 11.5,
-      height: 34, flex: "0 0 34px",
-    }}>
-      {modes.map(m => {
-        const on = m.k === projectsPageMode;
-        return (
-          <div key={m.k} onClick={() => setProjectsPageMode(m.k)} style={{
-            padding: "0 12px", height: 34,
-            display: "flex", alignItems: "center", gap: 8,
-            borderBottom: "2px solid " + (on ? "var(--accent)" : "transparent"),
-            color: on ? "var(--accent)" : "var(--fg-muted)",
-            cursor: "pointer",
-          }}>
-            {m.label}
-            {on && <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>· {m.hint}</span>}
-          </div>
-        );
-      })}
-      <div style={{ flex: 1 }} />
-    </div>
+    <TabBar
+      tabs={PROJECT_MODES}
+      activeId={projectsPageMode}
+      onSelect={(id) => setProjectsPageMode(id as typeof projectsPageMode)}
+      onTearOff={(id) => openDetachedSection(
+        "projects", id, PROJECT_MODES.find(m => m.id === id)?.label,
+      )}
+    />
   );
 }
 
