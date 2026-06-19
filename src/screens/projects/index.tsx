@@ -34,14 +34,16 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
   const rawPlanningKey = planningSessionKey || activeProjectId || `${planningTitle}::${planningPitch}`;
   const planningKey = projectKeyAlias[rawPlanningKey] ?? rawPlanningKey;
 
-  // The Projects page is plan/list/fleet only (#499): the GitHub-published board
-  // moved to the GitHub page (#498), and Coordination/Pipelines/Hooks were removed
-  // (coordination is handled per-agent / through the console). No detached board
-  // sections remain here.
+  // A torn-off tab (#430/#463): render just that one section, no mode strip. The
+  // Planner tab detaches to the project list (a live planning PTY can't follow into
+  // a second window); the rest map straight to their pages.
   if (sectionOverride) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <ProjectsList />
+        {sectionOverride === "fleet" ? <Fleet />
+          : sectionOverride === "blueprints" ? <BlueprintsPage />
+          : sectionOverride === "dataModels" ? <DataModelsPage />
+          : <ProjectsList />}
       </div>
     );
   }
