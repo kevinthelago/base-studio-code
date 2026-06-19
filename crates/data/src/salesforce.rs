@@ -264,7 +264,6 @@ impl Connector for SalesforceConnector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
     // ── Fixtures ──────────────────────────────────────────────────────
@@ -329,13 +328,17 @@ mod tests {
     }"#;
 
     /// Build a fixture-backed connector that routes by URL suffix.
+    ///
+    /// Routes are checked in declaration order — most-specific first so that
+    /// `/sobjects/Account/describe/` is matched before the catch-all `/sobjects/`.
     fn fixture_connector() -> SalesforceConnector {
-        let mut routes: HashMap<&'static str, &'static str> = HashMap::new();
-        routes.insert("/sobjects/",                    GLOBAL_DESCRIBE);
-        routes.insert("/sobjects/Account/describe/",   ACCOUNT_DESCRIBE);
-        routes.insert("/sobjects/Contact/describe/",   CONTACT_DESCRIBE);
-        routes.insert("/sobjects/Widget__c/describe/", WIDGET_DESCRIBE);
-        routes.insert("/query",                        ACCOUNT_QUERY);
+        let routes: Vec<(&'static str, &'static str)> = vec![
+            ("/sobjects/Account/describe/",   ACCOUNT_DESCRIBE),
+            ("/sobjects/Contact/describe/",   CONTACT_DESCRIBE),
+            ("/sobjects/Widget__c/describe/", WIDGET_DESCRIBE),
+            ("/query",                        ACCOUNT_QUERY),
+            ("/sobjects/",                    GLOBAL_DESCRIBE), // least-specific last
+        ];
 
         SalesforceConnector::new(
             "test-org",
