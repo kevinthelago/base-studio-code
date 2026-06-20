@@ -8,7 +8,7 @@ import {
   type Gap,
 } from "../screens/planner/discoverability";
 import type { PlanNode, NodeKind, Maturity } from "../screens/planner/planNode";
-import type { Shape } from "../screens/planner/shape";
+import type { Shape } from "../screens/planner/data/shape";
 
 function n(id: string, kind: NodeKind, maturity: Maturity, children: PlanNode[] = [], summary?: string): PlanNode {
   return { id, kind, title: id.replace(/^layer:/, ""), maturity, summary, children };

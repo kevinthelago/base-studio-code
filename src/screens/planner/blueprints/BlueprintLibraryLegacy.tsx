@@ -1,7 +1,7 @@
 // Blueprint library UX (#662, #670, #664) — card grid + inline editor + reset modal.
 import { useState } from "react";
-import { BUILTIN_ARCHETYPES } from "../shape";
-import type { Shape } from "../shape";
+import { BUILTIN_ARCHETYPES } from "../data/shape";
+import type { Shape } from "../data/shape";
 
 export interface BlueprintResetModalProps {
   blueprintName: string;

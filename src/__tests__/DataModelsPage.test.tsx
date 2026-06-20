@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DataModelsPage } from "../screens/planner/DataModelsPage";
-import { seedDataModels } from "../screens/planner/dataModel";
+import { DataModelsPage } from "../screens/planner/data/DataModelsPage";
+import { seedDataModels } from "../screens/planner/data/dataModel";
 import { useAppStore } from "../store";
 
 describe("DataModelsPage (#780)", () => {

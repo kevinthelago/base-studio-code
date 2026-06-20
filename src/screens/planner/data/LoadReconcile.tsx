@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
+import { useAppStore } from "../../../store";
 import type { DataModel, Field } from "./dataModel";
 
 const mono = "var(--mono)";

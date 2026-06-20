@@ -11,7 +11,7 @@ import {
   FIELD_TYPES, checkDataModel,
   updateField, removeField, toggleIdentity,
   type DataModel, type Field, type FieldType,
-} from "../dataModel";
+} from "../data/dataModel";
 
 // ── Tauri response shapes ─────────────────────────────────────────────────────
 

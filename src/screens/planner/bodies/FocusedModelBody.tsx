@@ -9,7 +9,7 @@
 
 import { useStageJson } from "./dataCollection";
 import { Card } from "./DataCollectionPrimitives";
-import type { DataModel, Entity, Field } from "../dataModel";
+import type { DataModel, Entity, Field } from "../data/dataModel";
 
 const mono = "var(--mono)";
 

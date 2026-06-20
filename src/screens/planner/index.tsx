@@ -6,7 +6,7 @@ import { Planning } from "./Planning";
 import { ProjectsPageModeStrip } from "./ProjectsSummary";
 import { Fleet } from "./fleet/Fleet";
 import { BlueprintsPage } from "./blueprints/BlueprintsPage";
-import { DataModelsPage } from "./DataModelsPage";
+import { DataModelsPage } from "./data/DataModelsPage";
 import { useProjectScan } from "./useProjectScan";
 
 export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {

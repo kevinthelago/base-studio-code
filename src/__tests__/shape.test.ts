@@ -6,7 +6,7 @@ import {
   validateShapePolicy,
   BUILTIN_ARCHETYPES,
   type Shape,
-} from "../screens/planner/shape";
+} from "../screens/planner/data/shape";
 
 function shape(id: string, layers: Shape["layers"], over: Partial<Shape> = {}): Shape {
   return { id, name: id, source: "builtin", layers, ...over };
