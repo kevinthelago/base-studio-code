@@ -19,21 +19,21 @@ import {
   PhaseFooter as FocusedPhaseFooter,
 } from "./FocusedShell";
 import type { StagePrompt } from "./plannerConductor";
-import { FileIntakePane } from "./FileIntakePane";
-import { FocusedDeployBody } from "./DeployView";
+import { FileIntakePane } from "./bodies/FileIntakePane";
+import { FocusedDeployBody } from "./bodies/DeployView";
 import type { DeployConfig } from "./deployConfig";
 import { PurposeView, StagesView, CapabilitiesView, PublishView } from "./BlueprintAuthorViews";
 import type { BlueprintSkillItem } from "./blueprintSkills";
 import type { McpLibraryItem } from "./blueprintMcp";
-import { FocusedSourceBody } from "./FocusedSourceBody";
-import { FocusedTargetsBody } from "./FocusedTargetsBody";
-import { FocusedLegitimacyBody } from "./FocusedLegitimacyBody";
-import { FocusedAcquireBody } from "./FocusedAcquireBody";
-import { FocusedExtractBody } from "./FocusedExtractBody";
-import { FocusedModelBody } from "./FocusedModelBody";
-import { FocusedMappingBody } from "./FocusedMappingBody";
-import { FocusedCleaningBody } from "./FocusedCleaningBody";
-import { FocusedLoadBody } from "./FocusedLoadBody";
+import { FocusedSourceBody } from "./bodies/FocusedSourceBody";
+import { FocusedTargetsBody } from "./bodies/FocusedTargetsBody";
+import { FocusedLegitimacyBody } from "./bodies/FocusedLegitimacyBody";
+import { FocusedAcquireBody } from "./bodies/FocusedAcquireBody";
+import { FocusedExtractBody } from "./bodies/FocusedExtractBody";
+import { FocusedModelBody } from "./bodies/FocusedModelBody";
+import { FocusedMappingBody } from "./bodies/FocusedMappingBody";
+import { FocusedCleaningBody } from "./bodies/FocusedCleaningBody";
+import { FocusedLoadBody } from "./bodies/FocusedLoadBody";
 import { RelationshipGraphView } from "./relationship/RelationshipGraphView";
 import { RelationshipInspector } from "./relationship/RelationshipInspector";
 import {
