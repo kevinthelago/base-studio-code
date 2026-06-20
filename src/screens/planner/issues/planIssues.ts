@@ -9,6 +9,14 @@
 // <plan_issue .../> tags. Pure (no React/Tauri) so it's unit-testable and shared
 // by the parser, validator, structure builder, and publisher.
 
+/** Execution-status lifecycle (#plan-db), mirrored from plan.db. A worker moves its issue
+ *  open → in_progress → complete (pushed/PR'd); the director then checks CI and moves it
+ *  complete → verified (green) or failed (red). `blocked` ⇒ waiting on an unmet dependency.
+ *  Mirrors the Rust `STATUSES` in `crates/plandb`. */
+export type PlanIssueStatus = "open" | "in_progress" | "blocked" | "complete" | "verified" | "failed";
+
+export const PLAN_ISSUE_STATUSES: PlanIssueStatus[] = ["open", "in_progress", "blocked", "complete", "verified", "failed"];
+
 /** One decomposed unit of work — becomes exactly one GitHub issue. */
 export interface PlanIssue {
   /** Stable planner-local ref (e.g. "F1", "auth-login"). Used for dependsOn links
@@ -37,6 +45,9 @@ export interface PlanIssue {
   parent?: string;
   /** Extra prose/context beyond the acceptance list. */
   body?: string;
+  /** Execution status from plan.db (#plan-db) — set by workers/director during the build.
+   *  Absent on a freshly-planned issue (treated as "open"). */
+  status?: PlanIssueStatus;
 }
 
 const toStr = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
@@ -77,6 +88,7 @@ export function parseIssuesFile(raw: string): PlanIssue[] {
       stream:     toStr(o.stream) || undefined,
       parent:     toStr(o.parent) || undefined,
       body:       toStr(o.body) || undefined,
+      status:     (PLAN_ISSUE_STATUSES as string[]).includes(toStr(o.status)) ? (toStr(o.status) as PlanIssueStatus) : undefined,
     });
   }
   return out;

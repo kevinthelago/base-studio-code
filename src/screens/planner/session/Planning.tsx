@@ -29,7 +29,7 @@ import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
 import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";
-import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "../issues/planIssues";
+import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks, type PlanIssue } from "../issues/planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "../pane/ProjectPane";
 import { publishFleetRoster } from "../../../lib/fleet/fleetRoster";
 import { hubToCanonical } from "../../../lib/planner/plannerSync";
@@ -1059,6 +1059,10 @@ export function Planning({ visible }: { visible: boolean }) {
         while ((m = planRe.exec(bufRef.current)) !== null) {
           const key     = canonicalSectionKey(m[1]);
           const content = m[2].trim();
+          foundPlan = true;
+          // Issues live in plan.db now (#plan-db); ignore any inline issues section text so it
+          // can't clobber the DB-sourced "issues" content (the planner writes via `bsc-plan`).
+          if (key === "issues") continue;
           // Any \w+ key is a valid section (dynamic planner). Persist to the
           // store unless the user already confirmed it — confirmed sections are
           // frozen. The derived `sections`/`skipped` pick the change up on the
@@ -1068,7 +1072,6 @@ export function Planning({ visible }: { visible: boolean }) {
           if (!confirmed.has(key)) {
             useAppStore.getState().setPlanSection(projIdSnap, key, content);
           }
-          foundPlan = true;
         }
         if (foundPlan) {
           bufRef.current = bufRef.current.replace(
@@ -1440,13 +1443,21 @@ export function Planning({ visible }: { visible: boolean }) {
 
     const poll = async () => {
       try {
-        const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
-        const entries = Object.entries(result);
-        if (entries.length === 0) return;
-
         const store = useAppStore.getState();
         const saved = store.planSections[effectiveProjectId] ?? {};
         const confirmed = new Set(store.planConfirmedSections[effectiveProjectId] ?? []);
+
+        // Issues are owned by plan.db now (#plan-db) — the canonical store, not an issues.json
+        // file. Read them straight from the DB and reflect into the "issues" section so every
+        // downstream consumer (publish, structure card, grading, the mobile mirror) is unchanged.
+        try {
+          const dbIssues = await invoke<PlanIssue[]>("plan_list_issues", { projectKey: effectiveProjectId });
+          const json = JSON.stringify(dbIssues ?? []);
+          if (json !== (saved["issues"] ?? "")) store.setPlanSection(effectiveProjectId, "issues", json);
+        } catch { /* plan.db not created until the planner adds its first issue — ignore */ }
+
+        const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
+        const entries = Object.entries(result);
 
         for (const [rawKey, content] of entries) {
           // The authoring planner writes `blueprint.json` to the hub — the reliable channel (like
@@ -1474,6 +1485,7 @@ export function Planning({ visible }: { visible: boolean }) {
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
           const key = canonicalSectionKey(rawKey);
+          if (key === "issues") continue; // DB-owned (#plan-db) — sourced from plan.db above, not a file
           if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
             store.setPlanSection(effectiveProjectId, key, content);
           }
