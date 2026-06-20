@@ -26,7 +26,6 @@ export interface ShortcutDef {
  *  The Keyboard settings page derives its reference list from this registry. */
 export const SHORTCUT_REGISTRY: ShortcutDef[] = [
   { id: "screen-console",      label: "Go to Console",            keys: "F1",                  description: "Switch to the Console screen" },
-  { id: "screen-knowledge",    label: "Go to Knowledge Store",    keys: "F2",                  description: "Switch to the Knowledge Store screen" },
   { id: "screen-automation",   label: "Go to Automations",        keys: "F3",                  description: "Switch to the Automations screen" },
   { id: "screen-github",       label: "Go to GitHub",             keys: "F4",                  description: "Switch to the GitHub screen" },
   { id: "screen-projects",     label: "Go to Projects",           keys: "F5",                  description: "Switch to the Projects screen" },

@@ -1,12 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../../store";
-import { sanitizeProjectKey, projectRepoCwd } from "../../../lib/core/projectPaths";
+import { projectRepoCwd } from "../../../lib/core/projectPaths";
 import { TabBar, type TabItem } from "../../../components/chrome/TabBar";
 import { usePageTabs } from "../../../hooks/usePageTabs";
-
-/** Mirror of the Rust sanitize_project_key: ASCII alnum/dash kept, else `_`, capped 80. */
-const sanitizeKey = sanitizeProjectKey;
 
 export interface ActiveProjectInfo {
   id: string;
@@ -205,19 +202,11 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   const {
     setProjectsView, setPlanningContext, setPlanningSession,
-    setScreen, setKbProjectScope, githubBoardTab, setGithubBoardTab, closeGithubBoard,
+    setScreen, githubBoardTab, setGithubBoardTab, closeGithubBoard,
   } = useAppStore();
   const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
     usePageTabs("github-board", GITHUB_BOARD_TABS,
       { activeId: githubBoardTab, setActive: (id) => setGithubBoardTab(id as GithubTab) });
-
-  // Open the Knowledge Base scoped to this project's documents, keyed by the
-  // canonical (title-derived) folder the planner writes to. We intentionally do
-  // NOT reference the legacy node-id-keyed folder.
-  function handleViewDocuments() {
-    setKbProjectScope({ keys: [sanitizeKey(project.name)], label: project.name });
-    setScreen("knowledge");
-  }
 
   function handlePlan() {
     setPlanningContext(
@@ -262,12 +251,6 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            className="btn ghost"
-            onClick={handleViewDocuments}
-            title="View this project's documents in the Knowledge Base"
-            style={{ fontFamily: "var(--mono)", fontSize: 11 }}
-          >📄 documents</button>
           <button
             className="btn primary"
             onClick={handlePlan}

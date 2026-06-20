@@ -3,51 +3,16 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { type Automation, appendRun, computeNextRun } from "../../lib/automations/scheduler";
-import type { KbBlock, Schedule, Command } from "../../data/mock";
+import type { Schedule, Command } from "../../data/mock";
 
 type AutomationsSlice = Pick<AppStore,
-  "kbBlocks" | "claudeApiKey" | "setClaudeApiKey" | "applyKbTag" | "removeKbTag" | "renameKbBlock" | "updateKbBlockContent" | "addKbBlock" | "removeKbBlock" | "schedules" | "addSchedule" | "updateSchedule" | "removeSchedule" | "commands" | "addCommand" | "updateCommand" | "removeCommand" | "automations" | "addAutomation" | "updateAutomation" | "removeAutomation" | "setAutomationArmed" | "recordAutomationRun" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "removeDraftProject"
+  "kbBlocks" | "claudeApiKey" | "setClaudeApiKey" | "schedules" | "addSchedule" | "updateSchedule" | "removeSchedule" | "commands" | "addCommand" | "updateCommand" | "removeCommand" | "automations" | "addAutomation" | "updateAutomation" | "removeAutomation" | "setAutomationArmed" | "recordAutomationRun" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "removeDraftProject"
 >;
 
 export const createAutomationsSlice: StateCreator<AppStore, [], [], AutomationsSlice> = (set) => ({
       kbBlocks: [],
       claudeApiKey: "",
       setClaudeApiKey: (key) => set({ claudeApiKey: key }),
-      applyKbTag: (blockId, tag) =>
-        set((s) => ({
-          kbBlocks: s.kbBlocks.map((b) =>
-            b.id === blockId && !b.tags.includes(tag)
-              ? { ...b, tags: [...b.tags, tag] }
-              : b
-          ),
-        })),
-      removeKbTag: (blockId, tag) =>
-        set((s) => ({
-          kbBlocks: s.kbBlocks.map((b) =>
-            b.id === blockId ? { ...b, tags: b.tags.filter((t) => t !== tag) } : b
-          ),
-        })),
-      renameKbBlock: (blockId, title) =>
-        set((s) => ({
-          kbBlocks: s.kbBlocks.map((b) => (b.id === blockId ? { ...b, title } : b)),
-        })),
-      updateKbBlockContent: (blockId, content) =>
-        set((s) => ({
-          kbBlocks: s.kbBlocks.map((b) =>
-            b.id === blockId
-              ? { ...b, content, lines: content.split("\n").length }
-              : b
-          ),
-        })),
-      addKbBlock: () =>
-        set((s) => {
-          const id = `blk_${Math.random().toString(36).slice(2, 6)}`;
-          const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-          const block: KbBlock = { id, title: "Untitled block", tags: [], updated: now, lines: 1, content: "" };
-          return { kbBlocks: [...s.kbBlocks, block] };
-        }),
-      removeKbBlock: (blockId) =>
-        set((s) => ({ kbBlocks: s.kbBlocks.filter((b) => b.id !== blockId) })),
 
       schedules: [],
       addSchedule: () =>

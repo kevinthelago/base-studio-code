@@ -20,7 +20,6 @@ export interface ScreenHotkey {
  *  reference derive from. */
 export const SCREEN_HOTKEYS: ScreenHotkey[] = [
   { key: "F1", screen: "console",    label: "Console" },
-  { key: "F2", screen: "knowledge",  label: "Knowledge" },
   { key: "F3", screen: "automation", label: "Automations" },
   { key: "F4", screen: "github",     label: "GitHub" },
   { key: "F5", screen: "projects",   label: "Projects" },

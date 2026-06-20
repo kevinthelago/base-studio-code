@@ -149,6 +149,9 @@ export const useAppStore = create<AppStore>()(
         // Migrate the legacy unified `extensions` list → split `mcpServers` / `hooks` slices and
         // the renamed MCP route key (#mcp-hooks-split). One-time; no-op once migrated.
         migrateLegacyExtensions(state);
+        // The Knowledge Store screen was removed; send a user whose last screen was it
+        // back to the console rather than a blank canvas.
+        if (state && (state.activeScreen as string) === "knowledge") state.activeScreen = "console";
         // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned
         // templates, but `blueprints` is persisted — so improvements to a built-in (the
         // `optional` UI stage, enabled repos, updated prompts, …) would never reach a user
