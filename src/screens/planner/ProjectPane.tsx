@@ -34,12 +34,12 @@ import { FocusedModelBody } from "./FocusedModelBody";
 import { FocusedMappingBody } from "./FocusedMappingBody";
 import { FocusedCleaningBody } from "./FocusedCleaningBody";
 import { FocusedLoadBody } from "./FocusedLoadBody";
-import { RelationshipGraphView } from "./RelationshipGraphView";
-import { RelationshipInspector } from "./RelationshipInspector";
+import { RelationshipGraphView } from "./relationship/RelationshipGraphView";
+import { RelationshipInspector } from "./relationship/RelationshipInspector";
 import {
   buildRelationshipGraph, EDGE_KIND_META,
   type Topology, type RelFocus,
-} from "./relationshipGraph";
+} from "./relationship/relationshipGraph";
 import { DIRECTOR_DRIVES, type DirectorDrive } from "./directorDrive";
 
 /** The three coordination topologies + their one-line explainers (Permissions control). */

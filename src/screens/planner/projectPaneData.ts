@@ -7,7 +7,7 @@
 
 import type { AgentProfile, Tier, ToolKey } from "../agents/agentProfiles";
 import type { FleetPlan, AgentStream } from "./planSections";
-import type { AgentRelationship } from "./relationshipGraph";
+import type { AgentRelationship } from "./relationship/relationshipGraph";
 import type { PlanIssue } from "./planIssues";
 import type { Section } from "./ghStructure";
 import type { NodeProgress } from "./ghProgress";
@@ -58,7 +58,7 @@ export interface BuildProjectPaneInput {
   authoredBlueprint?: Blueprint;
   /** Per-project coordination-topology override (#…) — set in the Permissions pane,
    *  wins over the planner's `fleet.json` topology. */
-  topologyOverride?: import("./relationshipGraph").Topology;
+  topologyOverride?: import("./relationship/relationshipGraph").Topology;
   /** Per-project director-drive override (#…) — set in the Permissions pane, wins over
    *  `fleet.json`'s `director.drive`. */
   directorDriveOverride?: import("./directorDrive").DirectorDrive;
