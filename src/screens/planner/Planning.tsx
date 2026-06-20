@@ -49,7 +49,7 @@ import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChe
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
 import { derivePlanStageState, planStateToSignals, stageConfirmKeys } from "./planStageDerive";
-import { findPlanGaps } from "./lintPlan";
+import { findPlanGaps } from "./grading/lintPlan";
 import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./blueprints";
 import { Ic } from "./blueprints/blueprintIcons";
 import { coerceBlueprint, blueprintToManifest } from "./blueprints/blueprintShare";

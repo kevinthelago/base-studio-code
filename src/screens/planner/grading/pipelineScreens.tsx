@@ -12,13 +12,13 @@
 
 import type { ComponentType } from "react";
 // Preview module: import renderers (side-effects) + the new shell component (#581).
-import "./preview/renderers/htmlRenderer";
-import "./preview/renderers/gltfRenderer";
-import "./preview/renderers/canvasRenderer";
-import { PreviewPaneShell } from "./preview/PreviewPaneShell";
-import { RENDER_PREVIEW_ID } from "./renderPreview";
-import { FileIntakePane } from "./bodies/FileIntakePane";
-import { FILE_INTAKE_ID } from "./fileIntake";
+import "../preview/renderers/htmlRenderer";
+import "../preview/renderers/gltfRenderer";
+import "../preview/renderers/canvasRenderer";
+import { PreviewPaneShell } from "../preview/PreviewPaneShell";
+import { RENDER_PREVIEW_ID } from "../renderPreview";
+import { FileIntakePane } from "../bodies/FileIntakePane";
+import { FILE_INTAKE_ID } from "../fileIntake";
 import { GradeReportPane } from "./GradeReportPane";
 import { GRADE_RUBRIC_ID } from "./gradeDispatch";
 import { GRADE_LLM_ID } from "./gradeLLM";

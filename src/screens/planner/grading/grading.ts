@@ -6,8 +6,8 @@
 // WAN-distributable, exactly like the gate rules. Pure; the pipeline screen renders the
 // result and the runtime persists it (slice b).
 
-import { type PlanSignals, type StageGate, evalGate } from "./stageGate";
-import { letterFromScore, type Letter } from "../../lib/planGrade";
+import { type PlanSignals, type StageGate, evalGate } from "../stageGate";
+import { letterFromScore, type Letter } from "../../../lib/planGrade";
 
 export type Severity = "info" | "warn" | "error";
 export interface GradeFinding { severity: Severity; message: string; fix?: string }

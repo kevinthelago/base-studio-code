@@ -4,8 +4,8 @@
 // takes an injected `complete` so it's testable; runSectionGradeLLM wires it to kb_chat.
 
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
-import { letterFromScore } from "../../lib/planGrade";
+import { useAppStore } from "../../../store";
+import { letterFromScore } from "../../../lib/planGrade";
 import { rubricForSection, type GradeResult, type GradeDimension, type GradeFinding, type Severity, type Rubric } from "./grading";
 
 export const GRADE_LLM_ID = "grade-llm";

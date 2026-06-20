@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parsePipelineTags, stripPipelineTags } from "../screens/planner/pipelineTag";
+import { parsePipelineTags, stripPipelineTags } from "../screens/planner/grading/pipelineTag";
 
 describe("pipelineTag — parse", () => {
   it("parses id + cmd and collects the rest as args", () => {

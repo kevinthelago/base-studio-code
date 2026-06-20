@@ -8,7 +8,7 @@ import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { PreviewFrame, type PreviewStatus } from "./PreviewFrame";
-import { PipelineScreenFrame } from "./PipelineScreenFrame";
+import { PipelineScreenFrame } from "./grading/PipelineScreenFrame";
 import { dispatchRenderPreview, RENDER_PREVIEW_ID } from "./renderPreview";
 import { buildClaudeDesignBrief } from "./claudeDesignBrief";
 
