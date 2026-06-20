@@ -1,10 +1,17 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ExternalLink, MoreHorizontal, Trash2, Pencil, Check, Search, Layers, GitFork, Shield, Wrench, Database, Link2 } from "lucide-react";
+import { ExternalLink, MoreHorizontal, Trash2, Pencil, Check, Search, Layers, GitFork, Shield, Wrench, Database, Link2, Download } from "lucide-react";
 import { useAppStore } from "../../../store";
 import { useFleetLive } from "../../../hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../../lib/core/projectPaths";
-import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, type Blueprint, type BlueprintGist, type BlueprintCategory } from "../stages/blueprints";
+import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, uid, type Blueprint, type BlueprintGist, type BlueprintCategory, type BlueprintSection } from "../stages/blueprints";
+import { PlanGateRow } from "../pane/PlanStageBar";
+import { ImportModal, type PreviewBlueprint } from "../blueprints/BlueprintModals";
+import { CatalogView } from "../blueprints/BlueprintCatalogView";
+import { DEFAULT_GIST_SOURCE } from "../blueprints/blueprintCatalog";
+import { manifestToBlueprint, bundledSkillsFromManifest } from "../blueprints/blueprintShare";
+import { installFromGist, gistIdFromUrl } from "../../../lib/planner/gist/gist";
+import { useDragResize } from "../../../hooks/useDragResize";
 
 // A published project's lifecycle, derived from GitHub state: open ⇒ active, closed ⇒ shipped.
 // (Local, not-yet-on-GitHub work lives in the separate Drafts section.)
@@ -52,6 +59,7 @@ interface BpItem {
   pitch: string;
   category: BlueprintCategory;
   stages: number;
+  sections: BlueprintSection[];   // the blueprint's sections — drives the gate-row preview
   vis: Visibility;
   builtIn?: boolean;   // a code-owned app template (can't be deleted)
   gistLabel?: string;
@@ -344,6 +352,9 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
         {b.builtIn && <span style={{ color: "var(--fg-dim)" }}>built-in</span>}
         {isActive && <span style={{ color: "var(--accent)", fontWeight: 600 }}>✓ selected</span>}
       </div>
+      {/* Gated-stage progression (#blueprints): one segment per enabled, applicable section,
+          colored by gate status — a preview of the lifecycle this blueprint walks through. */}
+      <PlanGateRow sections={b.sections} signals={{}} />
       {b.gistLabel && (
         <div style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5 }}>
           <Link2 size={10} />{b.gistLabel}
@@ -354,7 +365,7 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, planAuthoredBlueprint, setAuthoredBlueprint, blueprints, activeBlueprintId, setActiveBlueprint, removeBlueprint } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, planAuthoredBlueprint, setAuthoredBlueprint, blueprints, activeBlueprintId, setActiveBlueprint, removeBlueprint, setBlueprintSections, updateBlueprintMeta, importBlueprint, installBundledSkills, githubUser } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -364,6 +375,12 @@ export function ProjectsList() {
   const [newOpen, setNewOpen]     = useState(false);
   const [bpNewOpen, setBpNewOpen] = useState(false);   // rail "+ author a blueprint" inline form
   const [bpTitle, setBpTitle]     = useState("");
+  const [importOpen, setImportOpen]   = useState(false); // manual "paste a gist URL / ID" modal
+  const [catalogOpen, setCatalogOpen] = useState(false); // browse-my-gists catalog overlay
+  // Drag-resizable blueprints rail (mirrors the GitHub / planning splitters). It sits on the
+  // right, so it grows as the pointer moves left → invert. Wider default to seat each card's
+  // gated-icon progression comfortably.
+  const blueprintsRail = useDragResize({ initial: 460, min: 340, max: 760, axis: "x", invert: true });
   const [query, setQuery]         = useState("");
   const [sort, setSort]           = useState<"recency" | "name">("recency");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -639,7 +656,7 @@ export function ProjectsList() {
         id: b.id, kind: "library", name: b.name,
         pitch: b.pitch ?? b.desc ?? "",
         category: b.category ?? "greenfield",
-        stages: b.sections.length, vis,
+        stages: b.sections.length, sections: b.sections, vis,
         builtIn: b.origin === "built-in",
         gistLabel: hasGist ? prettyGist(b.gist) : undefined,
         updatedLabel: timeAgoMs(sortMs), sort: sortMs,
@@ -653,7 +670,7 @@ export function ProjectsList() {
         id: "draft:" + d.key, kind: "draft", draftKey: d.key, draftTitle: d.title, draftPitch: d.pitch,
         name, pitch: bp?.pitch ?? bp?.desc ?? d.pitch ?? "",
         category: bp?.category ?? "greenfield",
-        stages: bp?.sections?.length ?? 0, vis: "draft",
+        stages: bp?.sections?.length ?? 0, sections: bp?.sections ?? [], vis: "draft",
         updatedLabel: timeAgoMs(d.sort), sort: d.sort,
       });
     }
@@ -737,6 +754,53 @@ export function ProjectsList() {
     setBpNewOpen(false);
     setBpTitle("");
     setProjectsView("planning");
+  }
+
+  // ── Import a blueprint from a gist (#blueprints): the only piece kept from the removed
+  // Blueprints tab — resolve a gist ref to a previewable blueprint, then add/update it in the
+  // library (dedupe by source gist id, #955). Editing happens via "modify in planner".
+  const freshSections = (s: BlueprintSection[]): BlueprintSection[] => s.map((x) => ({ ...x, uid: uid("sec") }));
+  async function resolveBlueprintImport(ref: string): Promise<PreviewBlueprint> {
+    const r = await installFromGist(ref, githubToken);
+    if (!r.ok) throw new Error(r.error);
+    const bpRes = manifestToBlueprint(r.manifest);
+    if (!bpRes.ok) throw new Error(bpRes.error);
+    const bp = bpRes.blueprint;
+    return {
+      name: bp.name, icon: bp.icon ?? bp.name[0]?.toUpperCase() ?? "B", h: bp.h ?? 70,
+      sections: bp.sections, blueprint: bp,
+      bundled: bundledSkillsFromManifest(r.manifest), gistId: gistIdFromUrl(ref) ?? undefined,
+    };
+  }
+  function importBlueprintPreview(preview: PreviewBlueprint, opts: { updatedAt?: string } = {}) {
+    // Reconstitute the share's embedded skills so the blueprint's skill refs resolve once imported.
+    if (preview.bundled?.length) installBundledSkills(preview.bundled);
+    const base = preview.blueprint;
+    const gId = preview.gistId;
+    // Dedupe (#955): a gist already in the library updates in place rather than duplicating.
+    const existing = gId ? blueprints.find((b) => b.gist?.id === gId) : undefined;
+    if (existing) {
+      setBlueprintSections(existing.id, freshSections(base?.sections ?? preview.sections));
+      updateBlueprintMeta(existing.id, {
+        ...(base?.name ? { name: base.name } : {}),
+        gist: {
+          ...(existing.gist ?? { state: "synced" }), state: "synced", id: gId,
+          author: preview.author ?? existing.gist?.author, rev: preview.rev ?? existing.gist?.rev ?? "r1",
+          updatedAt: opts.updatedAt ?? existing.gist?.updatedAt, behind: false,
+        },
+      });
+      setImportOpen(false);
+      setCatalogOpen(false);
+      return;
+    }
+    const bp: Blueprint = {
+      ...(base ?? { id: "tmp", name: preview.name, desc: "Imported from gist.", sections: preview.sections }),
+      icon: preview.icon, h: preview.h, origin: "imported", tags: ["imported"],
+      gist: { state: "synced", id: gId, author: preview.author, rev: preview.rev ?? "r1", public: true, updatedAt: opts.updatedAt },
+    };
+    importBlueprint(bp);
+    setImportOpen(false);
+    setCatalogOpen(false);
   }
 
   const totalSummary = `${visibleProjects.length} published · ${normalDrafts.length} draft${normalDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
@@ -934,8 +998,9 @@ export function ProjectsList() {
         </div>
       </div>
 
-      {/* ░░ RAIL — blueprints ░░ */}
-      <div style={{ flex: "0 0 344px", display: "flex", flexDirection: "column", background: "var(--bg-panel)", borderLeft: "1px solid var(--border-soft)" }}>
+      {/* ░░ RAIL — blueprints ░░ (drag-resizable; wider default to seat each card's gate-row, #blueprints) */}
+      <div className="resize-x" {...blueprintsRail.handleProps} title="Drag to resize" />
+      <div style={{ flex: `0 0 ${blueprintsRail.size}px`, display: "flex", flexDirection: "column", background: "var(--bg-panel)", borderLeft: "1px solid var(--border-soft)" }}>
         <div style={{ flex: "0 0 auto", padding: "20px 18px 14px", borderBottom: "1px solid var(--border-soft)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <span style={{ width: 23, height: 23, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>
@@ -944,6 +1009,12 @@ export function ProjectsList() {
             <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Blueprints</h3>
             <span style={{ padding: "0 6px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{fBlueprints.length}</span>
             <span style={{ flex: 1 }} />
+            <button
+              className="btn ghost"
+              title="Import a blueprint from a gist"
+              onClick={() => setCatalogOpen(true)}
+              style={{ height: 24, width: 24, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+            ><Download size={12} /></button>
             <button
               className="btn ghost"
               title="Author a new blueprint"
@@ -983,6 +1054,28 @@ export function ProjectsList() {
           )}
         </div>
       </div>
+
+      {/* Import a blueprint from a gist (moved here from the removed Blueprints tab) */}
+      {catalogOpen && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+          onClick={e => { if (e.target === e.currentTarget) setCatalogOpen(false); }}
+        >
+          <div style={{ background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", width: 780, maxWidth: "92vw", height: "82vh", overflow: "auto" }}>
+            <CatalogView
+              source={githubUser?.login ?? DEFAULT_GIST_SOURCE}
+              token={githubToken}
+              importedById={Object.fromEntries(blueprints.filter(b => b.gist?.id).map(b => [b.gist!.id!, { updatedAt: b.gist!.updatedAt }]))}
+              onImport={(gistId, updatedAt) => { void resolveBlueprintImport(gistId).then(p => importBlueprintPreview(p, { updatedAt })).catch(() => {}); }}
+              onBack={() => setCatalogOpen(false)}
+              onManualImport={() => { setCatalogOpen(false); setImportOpen(true); }}
+            />
+          </div>
+        </div>
+      )}
+      {importOpen && (
+        <ImportModal onClose={() => setImportOpen(false)} onResolve={resolveBlueprintImport} onImport={importBlueprintPreview} />
+      )}
 
       {/* Delete confirmation dialog */}
       {deleteTarget && (

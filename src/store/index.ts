@@ -153,6 +153,9 @@ export const useAppStore = create<AppStore>()(
         // The Knowledge Store screen was removed; send a user whose last screen was it
         // back to the console rather than a blank canvas.
         if (state && (state.activeScreen as string) === "knowledge") state.activeScreen = "console";
+        // The Blueprints page-mode was folded into the Planner tab's blueprint rail (#blueprints);
+        // a user whose last mode was it would otherwise land on a blank canvas.
+        if (state && (state.projectsPageMode as string) === "blueprints") state.projectsPageMode = "projects";
         // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned
         // templates, but `blueprints` is persisted — so improvements to a built-in (the
         // `optional` UI stage, enabled repos, updated prompts, …) would never reach a user
