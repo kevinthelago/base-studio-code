@@ -19,7 +19,7 @@ import {
 } from "./blueprintEdit";
 import { resolveBlueprintSkills, type BlueprintSkillItem } from "./blueprintSkills";
 import { resolveBlueprintMcp, type McpLibraryItem } from "./blueprintMcp";
-import { type BlueprintSection } from "../blueprints";
+import { type BlueprintSection } from "../stages/blueprints";
 
 export interface EditorRibbon { author?: string; label: string; summary: string }
 

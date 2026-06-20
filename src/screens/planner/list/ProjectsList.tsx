@@ -4,7 +4,7 @@ import { ExternalLink, MoreHorizontal, Trash2, Pencil, Search, Layers, GitFork, 
 import { useAppStore } from "../../../store";
 import { useFleetLive } from "../../../hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../../lib/projectPaths";
-import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, type Blueprint, type BlueprintGist, type BlueprintCategory } from "../blueprints";
+import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, type Blueprint, type BlueprintGist, type BlueprintCategory } from "../stages/blueprints";
 
 // A published project's lifecycle, derived from GitHub state: open ⇒ active, closed ⇒ shipped.
 // (Local, not-yet-on-GitHub work lives in the separate Drafts section.)

@@ -10,7 +10,7 @@ import type { DirectorDrive } from "./fleet/directorDrive";
 import type { IntegrationStrategy } from "./shared/integrationStrategy";
 import type { PlanGrade } from "../../lib/planGrade";
 import type { PlanFeature } from "./issues/featureList";
-import type { Blueprint } from "./blueprints";
+import type { Blueprint } from "./stages/blueprints";
 import type { DeployConfig } from "./shared/deployConfig";
 import type { Topology, RelationshipArtifact, AgentRelationship } from "./relationship/relationshipGraph";
 

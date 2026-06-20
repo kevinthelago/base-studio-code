@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { buildProjectPaneData } from "../screens/planner/projectPaneData";
 import type { BuildProjectPaneInput } from "../screens/planner/projectPaneData";
-import { emptyFleet } from "../screens/planner/planSections";
-import type { FleetPlan } from "../screens/planner/planSections";
+import { emptyFleet } from "../screens/planner/stages/planSections";
+import type { FleetPlan } from "../screens/planner/stages/planSections";
 import type { PlanIssue } from "../screens/planner/issues/planIssues";
 import type { Section } from "../screens/planner/github/ghStructure";
 import { PROFILES } from "../screens/agents/agentProfiles";

@@ -3,7 +3,7 @@
 // advance bar. Pure presentational (props in, callbacks out); the phase model + footer
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
 import { Fragment, useState } from "react";
-import { connectorKind, type Phase, type GatePill, type FooterKind } from "./focusedPlan";
+import { connectorKind, type Phase, type GatePill, type FooterKind } from "./stages/focusedPlan";
 import type { StagePrompt } from "./plannerConductor";
 
 /** The per-stage prompt helper (#…): the "?" affordance in the focused-pane header. The app no

@@ -7,7 +7,7 @@ import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import { stageKind, tint, hue } from "./blueprintCatalog";
 import { type DiffLine } from "./blueprintDiff";
-import { type Blueprint, type BlueprintSection } from "../blueprints";
+import { type Blueprint, type BlueprintSection } from "../stages/blueprints";
 import { type SkillPayload } from "./blueprintSkills";
 
 /** A resolved import/preview blueprint (subset enough to preview + import). */

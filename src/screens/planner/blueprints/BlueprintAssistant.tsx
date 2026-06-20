@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import { tint, hue } from "./blueprintCatalog";
-import { type BlueprintSection } from "../blueprints";
+import { type BlueprintSection } from "../stages/blueprints";
 import {
   planActions, applyAssistantActions, actionLine, proseFor, explainActions, ASSISTANT_SUGGESTIONS,
   isCreateSkillRequest, isAttachSkillRequest, inferSkillKind, authorSkill,

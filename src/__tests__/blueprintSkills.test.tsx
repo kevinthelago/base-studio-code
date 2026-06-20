@@ -5,7 +5,7 @@ import { addSkill, removeSkill, mkStageSection } from "../screens/planner/bluepr
 import { BlueprintEditorView } from "../screens/planner/blueprints/BlueprintEditor";
 import type { SkillDef } from "../lib/skills";
 import type { KbBlock } from "../data/mock";
-import type { BlueprintSection } from "../screens/planner/blueprints";
+import type { BlueprintSection } from "../screens/planner/stages/blueprints";
 
 const skillDef = (id: string, name: string): SkillDef => ({
   id, name, kind: "procedure", source: "local", desc: `${name} desc`, prompt: "", tools: [], profiles: [],

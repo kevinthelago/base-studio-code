@@ -3,7 +3,7 @@ import { resolveSkillContent, buildSkillContext, collectBlueprintSkillIds } from
 import { mkStageSection } from "../screens/planner/blueprints/blueprintEdit";
 import type { SkillDef } from "../lib/skills";
 import type { KbBlock } from "../data/mock";
-import type { Blueprint } from "../screens/planner/blueprints";
+import type { Blueprint } from "../screens/planner/stages/blueprints";
 
 const skill = (id: string, name: string, prompt: string): SkillDef => ({
   id, name, kind: "procedure", source: "local", desc: "", prompt, tools: [], profiles: [],

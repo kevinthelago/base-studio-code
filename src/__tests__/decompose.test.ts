@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { decompose } from "../screens/planner/issues/decompose";
 import { renderFeatureContract } from "../screens/planner/issues/featureContract";
-import type { PlanNode, NodeKind, Maturity } from "../screens/planner/planNode";
+import type { PlanNode, NodeKind, Maturity } from "../screens/planner/stages/planNode";
 
 function n(id: string, kind: NodeKind, maturity: Maturity, children: PlanNode[] = [], summary?: string): PlanNode {
   return { id, kind, title: id.replace(/^layer:/, ""), maturity, summary, children };

@@ -8,7 +8,7 @@ import { type SkillDef } from "../../../lib/skills";
 import { type SkillKind } from "../../../data/skills";
 import { type KbBlock } from "../../../data/mock";
 import { writeProjectFile } from "../../../lib/projectFiles";
-import { type Blueprint } from "../blueprints";
+import { type Blueprint } from "../stages/blueprints";
 
 /** One pickable library item, from either library. */
 export interface BlueprintSkillItem {

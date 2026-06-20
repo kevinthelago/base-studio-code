@@ -9,9 +9,9 @@ import type {
   ProjectPaneData, PaneAutomation, PaneSkill, McpServer,
 } from "./projectPaneData";
 import type { Section } from "./github/ghStructure";
-import type { FleetPlan } from "./planSections";
+import type { FleetPlan } from "./stages/planSections";
 import { featureDefined, type PlanFeature } from "./issues/featureList";
-import type { Phase, GatePill, FooterKind } from "./focusedPlan";
+import type { Phase, GatePill, FooterKind } from "./stages/focusedPlan";
 import {
   Stepper as FocusedStepper,
   PhaseHeader as FocusedPhaseHeader,

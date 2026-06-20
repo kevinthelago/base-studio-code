@@ -6,7 +6,7 @@
 // v1 is a deterministic HEURISTIC (no network) — useful on its own. Wiring the prose to
 // the real Claude API is a follow-up; the actions are real either way.
 
-import { type BlueprintSection } from "../blueprints";
+import { type BlueprintSection } from "../stages/blueprints";
 import { stageKind } from "./blueprintCatalog";
 import { addStage, deleteStage, addSkill } from "./blueprintEdit";
 

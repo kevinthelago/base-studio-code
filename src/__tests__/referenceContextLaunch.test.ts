@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "../store";
-import type { FleetPlan } from "../screens/planner/planSections";
+import type { FleetPlan } from "../screens/planner/stages/planSections";
 
 // Launch-time resolution of reference context (#326): the store lifts its flat
 // refContext* assignment fields into the assignments-module cascade and stamps

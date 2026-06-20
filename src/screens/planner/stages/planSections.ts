@@ -1,11 +1,11 @@
-import type { AgentFlow } from "./fleet/agentFlow";
-import { flowOrUndefined } from "./fleet/agentFlow";
-import { type DirectorDrive, normalizeDirectorDrive, DEFAULT_DIRECTOR_DRIVE } from "./fleet/directorDrive";
-import { type IntegrationStrategy, normalizeStrategy } from "./shared/integrationStrategy";
+import type { AgentFlow } from "../fleet/agentFlow";
+import { flowOrUndefined } from "../fleet/agentFlow";
+import { type DirectorDrive, normalizeDirectorDrive, DEFAULT_DIRECTOR_DRIVE } from "../fleet/directorDrive";
+import { type IntegrationStrategy, normalizeStrategy } from "../shared/integrationStrategy";
 import {
   type Topology, type RelationshipArtifact, type AgentRelationship,
   type EdgeKind, type Hardness, type Via, type ArtifactKind,
-} from "./relationship/relationshipGraph";
+} from "../relationship/relationshipGraph";
 
 const TOPOLOGIES: Topology[] = ["director", "peer", "hybrid"];
 const EDGE_KINDS: EdgeKind[] = ["handoff", "blocking", "sequence", "review", "notify", "mutex", "shared"];

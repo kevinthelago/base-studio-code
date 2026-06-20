@@ -6,7 +6,7 @@
 // falls back to its own sample consts when a project has none of this yet.
 
 import type { AgentProfile, Tier, ToolKey } from "../agents/agentProfiles";
-import type { FleetPlan, AgentStream } from "./planSections";
+import type { FleetPlan, AgentStream } from "./stages/planSections";
 import type { AgentRelationship } from "./relationship/relationshipGraph";
 import type { PlanIssue } from "./issues/planIssues";
 import type { Section } from "./github/ghStructure";
@@ -24,7 +24,7 @@ import type {
   PaneAutomation, PaneSkill,
 } from "./projectPane.types";
 import type { PlanFeature } from "./issues/featureList";
-import type { Blueprint } from "./blueprints";
+import type { Blueprint } from "./stages/blueprints";
 import type { DeployConfig } from "./shared/deployConfig";
 import { buildMcpServers, type McpInstallState } from "./shared/mcpPaneData";
 import type { ExtensionDef } from "../../lib/extensions";

@@ -10,7 +10,7 @@ import { useAppStore } from "../../../store";
 import { writeProjectFile } from "../../../lib/projectFiles";
 import { publishFleetRoster } from "../../../lib/fleetRoster";
 import { type AgentFlow } from "./agentFlow";
-import { type FleetPlan, type AgentStream } from "../planSections";
+import { type FleetPlan, type AgentStream } from "../stages/planSections";
 import { type RefactorUnit, type RefactorTier, generateRefactorUnits } from "../../../lib/refactorUnits";
 import { type VerifiedFinding } from "../../../lib/deadcodeVerify";
 

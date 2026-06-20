@@ -11,7 +11,7 @@
 // tier rules, and policy validation. Free of React / xterm / Tauri imports
 // (matches planNode.ts / shaping.ts).
 
-import type { Maturity, PlanNode } from "../planNode";
+import type { Maturity, PlanNode } from "../stages/planNode";
 import { layerTitle, type DimensionId, type LayerId } from "./shaping";
 
 /** Advisory default vs mandatory policy. Policy is sticky across the cascade. */

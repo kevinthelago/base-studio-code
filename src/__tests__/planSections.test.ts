@@ -11,7 +11,7 @@ import {
   SKIPPED_KEY,
   FLEET_KEY,
   parseReposFile,
-} from "../screens/planner/planSections";
+} from "../screens/planner/stages/planSections";
 
 describe("parseSectionKey", () => {
   it("treats a bare key as a project-tier section", () => {

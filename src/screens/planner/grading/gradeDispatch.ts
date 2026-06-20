@@ -4,7 +4,7 @@
 // the agent-readiness + LLM graders, which persist the same way.
 
 import { useAppStore } from "../../../store";
-import { type PlanSignals } from "../stageGate";
+import { type PlanSignals } from "../stages/stageGate";
 import { gradeWithRubric, rubricForSection, type GradeResult, type Severity } from "./grading";
 import { type PlanGrade, type Priority } from "../../../lib/planGrade";
 

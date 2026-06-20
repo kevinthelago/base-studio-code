@@ -23,7 +23,7 @@ import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/se
 import {
   ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
-} from "./planSections";
+} from "./stages/planSections";
 import { parseFeaturesFile, featuresSummary } from "./issues/featureList";
 import { buildWorkerScope } from "./fleet/workerScope";
 import { resolveIssueAssignee } from "./fleet/fleetAssignee";
@@ -36,7 +36,7 @@ import { hubToCanonical } from "../../lib/plannerSync";
 import { tunnelSetPlanState } from "../../lib/tunnelClient";
 import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../lib/projectSync";
 import { effectiveProjectRepos, localReposFor } from "./list/projectRepos";
-import { defaultStageConfig, enabledOrderedStages } from "./planStages";
+import { defaultStageConfig, enabledOrderedStages } from "./stages/planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./shared/planExtensions";
 import { applyBlueprintMcp, collectBlueprintMcp } from "./blueprints/blueprintMcp";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "./blueprints/blueprintSkills";
@@ -48,15 +48,15 @@ import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChe
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
-import { derivePlanStageState, planStateToSignals, stageConfirmKeys } from "./planStageDerive";
+import { derivePlanStageState, planStateToSignals, stageConfirmKeys } from "./stages/planStageDerive";
 import { findPlanGaps } from "./grading/lintPlan";
-import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./blueprints";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./stages/blueprints";
 import { Ic } from "./blueprints/blueprintIcons";
 import { coerceBlueprint, blueprintToManifest } from "./blueprints/blueprintShare";
 import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "./blueprints/blueprintSkills";
 import { buildMcpLibrary } from "./blueprints/blueprintMcp";
 import { publishGist } from "../../lib/extensions/gist";
-import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
+import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./stages/focusedPlan";
 import { featureSectionsToIssues } from "./issues/planFeatures";
 import { flattenPrompt, stagePrompts } from "./plannerConductor";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in

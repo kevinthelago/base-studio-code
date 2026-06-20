@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useAppStore } from "../../../store";
 import { scanProjectRepos, scanPlanSections } from "./projectScan";
-import { canonicalSectionKey } from "../planSections";
+import { canonicalSectionKey } from "../stages/planSections";
 
 /**
  * Refreshes the active project's linked repositories and plan whenever the

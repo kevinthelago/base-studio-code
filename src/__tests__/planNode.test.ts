@@ -11,7 +11,7 @@ import {
   type PlanNode,
   type NodeKind,
   type Maturity,
-} from "../screens/planner/planNode";
+} from "../screens/planner/stages/planNode";
 
 function n(id: string, kind: NodeKind, maturity: Maturity, children: PlanNode[] = []): PlanNode {
   return { id, kind, title: id, maturity, children };
