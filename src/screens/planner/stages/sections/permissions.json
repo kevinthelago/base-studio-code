@@ -1,0 +1,24 @@
+{
+  "name": "Permissions",
+  "glyph": "⛉",
+  "gate": "every stream scoped",
+  "deps": [
+    "structure"
+  ],
+  "gateRule": {
+    "require": [
+      {
+        "signal": "fleetStreams",
+        "target": 1,
+        "label": "plan the agent fleet"
+      },
+      {
+        "signal": "profilesComplete",
+        "target": true,
+        "label": "set a profile for every stream"
+      }
+    ]
+  },
+  "blurb": "Least-privilege profile per work stream.",
+  "prompt": "For every work stream, derive a least-privilege profile: allowed commands,\nwrite-path globs, network access, and a git/gh push policy. Map each to a role\n(worker / director / triage). Write the per-stream permission set.\n\nChoose the coordination TOPOLOGY in fleet.json (`topology`): \"director\" (hub-and-spoke — every\nrelationship routes through the director), \"peer\" (mesh — agents hand off directly), or \"hybrid\"\n(per-edge, using each edge's `via`). Set the director `drive` when one is enabled. The user can\nflip this in the Permissions pane and the Structure relationship graph re-routes live.\n\nGate: every stream has a scoped profile and a role."
+}
