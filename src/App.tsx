@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { markBoot, logStartupTrace } from "./lib/core/startupTrace";
 import { invoke } from "@tauri-apps/api/core";
 import { LayoutGrid } from "lucide-react";
 import { Titlebar } from "./components/chrome/Titlebar";
@@ -178,6 +179,15 @@ export default function App() {
     root.style.setProperty("--accent", a);
     root.style.setProperty("--accent-dim", accentDim);
   }, [accent]);
+
+  // Startup timing trace (#perf): mark the gate commit, then the first paint of the
+  // real UI once the store rehydrates — logStartupTrace emits the breakdown once.
+  useEffect(() => { markBoot("mounted"); }, []);
+  useEffect(() => {
+    if (!hasHydrated) return;
+    markBoot("hydrated");
+    requestAnimationFrame(() => { markBoot("painted"); logStartupTrace(); });
+  }, [hasHydrated]);
 
   // Detached tab window (#430): when opened via tear-off (?detachTab=<id>), this
   // window renders only that console tab — pinned by stable id (resolved to an
