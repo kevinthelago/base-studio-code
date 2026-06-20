@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { reposFromItems, scanProjectRepos, scanPlanSections, type ProjectItemNode } from "../screens/planner/projectScan";
+import { reposFromItems, scanProjectRepos, scanPlanSections, type ProjectItemNode } from "../screens/planner/list/projectScan";
 
 const item = (nameWithOwner?: string): ProjectItemNode =>
   nameWithOwner === undefined ? { content: null } : { content: { repository: { nameWithOwner } } };

@@ -1,4 +1,4 @@
-import { useAppStore } from "../../store";
+import { useAppStore } from "../../../store";
 
 /**
  * GitHub-not-connected state for the Projects page — the leaner of the two

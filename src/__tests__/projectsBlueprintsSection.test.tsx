@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { ProjectsList } from "../screens/planner/ProjectsList";
+import { ProjectsList } from "../screens/planner/list/ProjectsList";
 import { useAppStore } from "../store";
 import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../screens/planner/blueprints";
 

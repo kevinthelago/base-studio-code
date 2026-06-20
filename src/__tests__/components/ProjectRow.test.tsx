@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ProjectRow } from "../../screens/planner/ProjectsList";
+import { ProjectRow } from "../../screens/planner/list/ProjectsList";
 
 const mockProject = {
   id: "PVT_1",

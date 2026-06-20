@@ -1,13 +1,13 @@
 import { useRef } from "react";
 import { useAppStore } from "../../store";
-import { ProjectsEmpty } from "./Empty";
-import { ProjectsList } from "./ProjectsList";
+import { ProjectsEmpty } from "./list/Empty";
+import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./Planning";
-import { ProjectsPageModeStrip } from "./ProjectsSummary";
+import { ProjectsPageModeStrip } from "./list/ProjectsSummary";
 import { Fleet } from "./fleet/Fleet";
 import { BlueprintsPage } from "./blueprints/BlueprintsPage";
 import { DataModelsPage } from "./data/DataModelsPage";
-import { useProjectScan } from "./useProjectScan";
+import { useProjectScan } from "./list/useProjectScan";
 
 export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   // Re-resolve the active project's repos + plan on tab open / project change.
