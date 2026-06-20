@@ -1,0 +1,7 @@
+/* Animations for the Blueprint import-from-gist modal (#blueprints). Scoped names so
+   they don't collide with the app's generic `pulse`/`spin` keyframes. */
+@keyframes bim-pop { from { transform: translateY(12px) scale(.985); } to { transform: none; } }
+@keyframes bim-row { from { transform: translateY(7px); } to { transform: none; } }
+@keyframes bim-spin { to { transform: rotate(360deg); } }
+@keyframes bim-shimmer { 0% { background-position: -260px 0; } 100% { background-position: 260px 0; } }
+@keyframes bim-toast { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
