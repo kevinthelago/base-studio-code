@@ -35,7 +35,7 @@ describe("ProjectsList — Blueprints section", () => {
     });
   });
 
-  it("shows a saved (non-built-in) blueprint and hides built-ins", async () => {
+  it("shows ALL blueprints — saved AND built-in (#blueprints)", async () => {
     useAppStore.setState({
       blueprints: [
         bp({ id: "mine", name: "My Greenfield", origin: "local", category: "greenfield" }),
@@ -45,7 +45,7 @@ describe("ProjectsList — Blueprints section", () => {
     render(<ProjectsList />);
     await screen.findByText("Blueprints");
     expect(screen.getByText("My Greenfield")).toBeTruthy();
-    expect(screen.queryByText("Stock Built-in")).toBeNull();
+    expect(screen.getByText("Stock Built-in")).toBeTruthy(); // built-ins are surfaced here too now
   });
 
   it("routes an authoring draft into Blueprints (not Drafts) using its designed blueprint", async () => {
@@ -85,16 +85,29 @@ describe("ProjectsList — Blueprints section", () => {
     });
   });
 
-  it("clicking a saved blueprint opens the project planning page in authoring mode", async () => {
+  it("clicking a blueprint SELECTS it (sets active) — it does NOT open the planner (#blueprints)", async () => {
     useAppStore.setState({
       blueprints: [bp({ id: "mine", name: "My Greenfield", origin: "local", category: "greenfield" })],
+      projectsView: "list",
     });
     render(<ProjectsList />);
     await screen.findByText("Blueprints");
     fireEvent.click(screen.getByText("My Greenfield"));
     const s = useAppStore.getState();
-    expect(s.projectsView).toBe("planning");                              // → planner, not the Blueprints tab
-    expect(s.planningSessionKey).toBe("My_Greenfield");                   // authoring session keyed by name
+    expect(s.activeBlueprintId).toBe("mine");        // selecting sets it active for the next project
+    expect(s.projectsView).toBe("list");             // …without opening the planner
+  });
+
+  it("'modify in planner' (card menu) opens the planner authoring session (#blueprints)", async () => {
+    useAppStore.setState({
+      blueprints: [bp({ id: "mine", name: "My Greenfield", origin: "local", category: "greenfield" })],
+    });
+    render(<ProjectsList />);
+    await screen.findByText("Blueprints");
+    fireEvent.click(screen.getByTitle("More options"));     // open the card's menu
+    fireEvent.click(screen.getByText("modify in planner"));
+    const s = useAppStore.getState();
+    expect(s.projectsView).toBe("planning");                              // → planner
     expect(s.projectBlueprintId["My_Greenfield"]).toBe(AUTHORING_BLUEPRINT_ID);
     expect(s.planAuthoredBlueprint["My_Greenfield"]?.name).toBe("My Greenfield"); // seeded with the blueprint
   });

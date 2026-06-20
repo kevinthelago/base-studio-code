@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ExternalLink, MoreHorizontal, Trash2, Pencil, Search, Layers, GitFork, Shield, Wrench, Database, Link2 } from "lucide-react";
+import { ExternalLink, MoreHorizontal, Trash2, Pencil, Check, Search, Layers, GitFork, Shield, Wrench, Database, Link2 } from "lucide-react";
 import { useAppStore } from "../../../store";
 import { useFleetLive } from "../../../hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../../lib/core/projectPaths";
@@ -53,6 +53,7 @@ interface BpItem {
   category: BlueprintCategory;
   stages: number;
   vis: Visibility;
+  builtIn?: boolean;   // a code-owned app template (can't be deleted)
   gistLabel?: string;
   updatedLabel: string;
   sort: number;        // recency key (epoch ms)
@@ -263,13 +264,16 @@ interface DraftRow { key: string; title: string; pitch: string; sort: number }
 
 /** A compact blueprint card for the right rail — hued icon tile + name + ⋯ menu, then a
  *  category / stages / visibility meta row and an optional gist link. */
-function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
+function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMenuOpenId }: {
   b: BpItem;
+  onUse: (id: string) => void;
   onOpen: (b: BpItem) => void;
   onDelete: (b: BpItem) => void;
+  activeId?: string;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
 }) {
+  const isActive = b.id === activeId;
   const menuId = "bp:" + b.id;
   const isOpen = menuOpenId === menuId;
   const menuRef = useRef<HTMLDivElement>(null);
@@ -286,9 +290,11 @@ function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
 
   return (
     <div
-      onClick={() => onOpen(b)}
+      onClick={() => onUse(b.id)}
+      title={isActive ? "Selected — new projects use this blueprint" : "Select this blueprint for new projects"}
       style={{
-        padding: "12px 13px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+        padding: "12px 13px", background: isActive ? "var(--bg-elev2)" : "var(--bg-elev)",
+        border: "1px solid " + (isActive ? "var(--accent)" : "var(--border-soft)"),
         borderRadius: 9, cursor: "pointer", position: "relative",
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 9 }}>
@@ -310,13 +316,20 @@ function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
               background: "var(--bg-elev2)", border: "1px solid var(--border-soft)",
               borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 158, boxShadow: "0 6px 22px rgba(0,0,0,0.45)",
             }}>
+              <button className="menu-item" onClick={() => { setMenuOpenId(null); onUse(b.id); }}>
+                <Check size={12} /> use for new projects
+              </button>
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onOpen(b); }}>
-                <Pencil size={12} /> open &amp; edit
+                <Pencil size={12} /> modify in planner
               </button>
-              <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
-              <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(b); }}>
-                <Trash2 size={12} /> delete blueprint
-              </button>
+              {!b.builtIn && (
+                <>
+                  <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+                  <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(b); }}>
+                    <Trash2 size={12} /> delete blueprint
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -328,6 +341,8 @@ function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
         }}>{b.category}</span>
         <span><b style={{ color: "var(--fg-muted)", fontWeight: 600 }}>{b.stages}</b> stage{b.stages !== 1 ? "s" : ""}</span>
         <span style={{ color: vis.color }}>{vis.label}</span>
+        {b.builtIn && <span style={{ color: "var(--fg-dim)" }}>built-in</span>}
+        {isActive && <span style={{ color: "var(--accent)", fontWeight: 600 }}>✓ selected</span>}
       </div>
       {b.gistLabel && (
         <div style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5 }}>
@@ -339,7 +354,7 @@ function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, planAuthoredBlueprint, setAuthoredBlueprint, blueprints, activeBlueprintId, removeBlueprint } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, planAuthoredBlueprint, setAuthoredBlueprint, blueprints, activeBlueprintId, setActiveBlueprint, removeBlueprint } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -608,14 +623,14 @@ export function ProjectsList() {
   const normalDrafts = useMemo(() => allDrafts.filter(d => !isAuthoringKey(d.key)), [allDrafts, isAuthoringKey]);
   const authoringDrafts = useMemo(() => allDrafts.filter(d => isAuthoringKey(d.key)), [allDrafts, isAuthoringKey]);
 
-  // ── Blueprints surfaced here: the user's saved library blueprints (built-ins stay in the
-  // Blueprints tab), plus any in-progress authoring drafts not yet saved to the library. The
-  // saved/published version wins the dedup (by name) over a still-open authoring draft.
+  // ── Blueprints surfaced here: ALL blueprints — the built-in app templates AND the user's saved
+  // library — so a blueprint can be SELECTED for the next project right here (#blueprints), plus any
+  // in-progress authoring drafts not yet saved. The saved/published version wins the dedup (by name)
+  // over a still-open authoring draft.
   const blueprintItems = useMemo<BpItem[]>(() => {
     const items: BpItem[] = [];
     const seen = new Set<string>();
     for (const b of blueprints) {
-      if (b.origin === "built-in") continue;
       seen.add(b.name.toLowerCase());
       const hasGist = !!b.gist?.id;
       const vis: Visibility = hasGist ? (b.gist?.public ? "public" : "private") : "draft";
@@ -625,6 +640,7 @@ export function ProjectsList() {
         pitch: b.pitch ?? b.desc ?? "",
         category: b.category ?? "greenfield",
         stages: b.sections.length, vis,
+        builtIn: b.origin === "built-in",
         gistLabel: hasGist ? prettyGist(b.gist) : undefined,
         updatedLabel: timeAgoMs(sortMs), sort: sortMs,
       });
@@ -962,7 +978,7 @@ export function ProjectsList() {
             </div>
           ) : (
             fBlueprints.map(b => (
-              <BlueprintCard key={b.id} b={b} onOpen={openBlueprint} onDelete={deleteBlueprint} menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId} />
+              <BlueprintCard key={b.id} b={b} onUse={setActiveBlueprint} onOpen={openBlueprint} onDelete={deleteBlueprint} activeId={activeBlueprintId} menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId} />
             ))
           )}
         </div>
