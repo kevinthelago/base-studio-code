@@ -9,7 +9,7 @@
 // Pure — no React / Tauri / AI. Runs in CI against fixture plans; fails closed
 // on contract violations. Reuses validateIssues (planIssues.ts) for issue checks.
 
-import { parseIssuesFile, validateIssues } from "../../screens/planner/planIssues";
+import { parseIssuesFile, validateIssues } from "../../screens/planner/issues/planIssues";
 import { parseFleetFile } from "../../screens/planner/planSections";
 import { parsePhases } from "../../screens/planner/github/ghStructure";
 

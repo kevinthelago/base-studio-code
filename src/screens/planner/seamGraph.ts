@@ -4,7 +4,7 @@
 // a producer with no inbound seam; higher layers are closer to the final product), so a
 // renderer can lay the path-to-product out left→right. Dangling/duplicate seams are
 // surfaced via the existing validateContracts. Pure (no UI) so it's fully testable.
-import { type FeatureContract, validateContracts, type ContractValidation } from "./featureContract";
+import { type FeatureContract, validateContracts, type ContractValidation } from "./issues/featureContract";
 
 export interface SeamNode {
   id: string;

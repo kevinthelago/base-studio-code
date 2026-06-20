@@ -3,7 +3,7 @@
 // is unit-testable without a live app or GitHub.
 
 import type { FleetPlan, AgentStream } from "../screens/planner/planSections";
-import type { PlanIssue } from "../screens/planner/planIssues";
+import type { PlanIssue } from "../screens/planner/issues/planIssues";
 
 // ── Lifecycle state ───────────────────────────────────────────────────────────
 
