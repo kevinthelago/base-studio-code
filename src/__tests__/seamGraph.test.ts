@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSeamGraph } from "../screens/planner/seamGraph";
+import { buildSeamGraph } from "../screens/planner/shared/seamGraph";
 import type { FeatureContract } from "../screens/planner/issues/featureContract";
 
 const ref = (name: string) => ({ name, definedIn: "x.ts", signature: "type X" });
