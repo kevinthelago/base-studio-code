@@ -2168,7 +2168,6 @@ pub fn run() {
             plan_db::plan_list_issues,
             plan_db::plan_remove_issue,
             plan_db::plan_set_issue_status,
-            plan_db::plan_write_issues_json,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

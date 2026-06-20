@@ -21,6 +21,17 @@ describe("parseIssuesFile", () => {
     expect(parseIssuesFile(JSON.stringify({ issues: [{ id: "X", title: "t" }] }))[0].ref).toBe("X");
   });
 
+  it("parses the execution status from plan.db, ignoring an unknown value (#plan-db)", () => {
+    const out = parseIssuesFile(JSON.stringify([
+      { ref: "F1", title: "done", status: "complete" },
+      { ref: "F2", title: "fresh" },              // absent ⇒ undefined (treated as open)
+      { ref: "F3", title: "typo", status: "done" }, // not a known status ⇒ undefined
+    ]));
+    expect(out[0].status).toBe("complete");
+    expect(out[1].status).toBeUndefined();
+    expect(out[2].status).toBeUndefined();
+  });
+
   it("parses the parent ref for sub-issues (#…)", () => {
     const out = parseIssuesFile(JSON.stringify([
       { ref: "invite", title: "Invite teammates" },

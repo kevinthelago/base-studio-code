@@ -49,9 +49,3 @@ pub fn plan_set_issue_status(project_key: String, issue_ref: String, status: Str
     }
 }
 
-/// Materialize `issues.json` in the project hub from the DB (the render-on-launch projection).
-#[tauri::command]
-pub fn plan_write_issues_json(project_key: String) -> Result<(), String> {
-    let json = open(&project_key)?.render_issues_json().map_err(|e| e.to_string())?;
-    std::fs::write(crate::project_dir(&project_key).join("issues.json"), json).map_err(|e| e.to_string())
-}
