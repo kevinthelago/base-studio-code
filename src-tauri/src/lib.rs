@@ -517,6 +517,64 @@ fn clear_project_plan_files(project_key: String) -> Result<u32, String> {
     Ok(removed)
 }
 
+// ── User blueprint storage (#blueprints) ────────────────────────────────────────────
+// User-generated blueprints (authored + imported) live as JSON files under
+// `~/.base-studio-code/blueprints/<id>.json` — a durable home separate from the project hubs, so
+// they survive a store reset and a download has somewhere real to land. Built-in app blueprints are
+// bundled in the frontend and never written here. The store hydrates from this dir + the built-ins.
+
+/// A user blueprint's on-disk path; the id is slugified so it can't escape the dir.
+fn blueprint_file(id: &str) -> Result<std::path::PathBuf, String> {
+    let safe: String = id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    if safe.is_empty() || safe == "." || safe == ".." {
+        return Err("blueprint id is empty/invalid".into());
+    }
+    Ok(bsc_base_dir().join("blueprints").join(format!("{safe}.json")))
+}
+
+/// The JSON of every user blueprint on disk (the library hydrates from this + the bundled built-ins).
+/// Skips unreadable/empty files; a missing dir ⇒ empty.
+#[tauri::command]
+fn list_blueprints() -> Vec<String> {
+    let dir = bsc_base_dir().join("blueprints");
+    let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) == Some("json") {
+            if let Ok(s) = std::fs::read_to_string(&p) {
+                if !s.trim().is_empty() {
+                    out.push(s);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Persist a user blueprint to `blueprints/<id>.json` (written verbatim — the frontend owns the shape).
+#[tauri::command]
+fn write_blueprint(id: String, json: String) -> Result<(), String> {
+    let path = blueprint_file(&id)?;
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    std::fs::write(&path, json).map_err(|e| format!("write_blueprint: {e}"))
+}
+
+/// Remove a user blueprint's file (no-op if absent).
+#[tauri::command]
+fn delete_blueprint(id: String) -> Result<(), String> {
+    let path = blueprint_file(&id)?;
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("delete_blueprint: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Reject a relative path that would escape the project hub: absolute paths, a Windows
 /// drive prefix, a root component, or any `..` segment. Shared by the pipeline file
 /// primitives so a pipeline can never write/read outside its own project dir.
@@ -2130,6 +2188,9 @@ pub fn run() {
             mark_published,
             clear_all_plan_files,
             clear_project_plan_files,
+            list_blueprints,
+            write_blueprint,
+            delete_blueprint,
             list_local_projects,
             write_project_file,
             write_project_file_bytes,
@@ -2891,6 +2952,28 @@ mod tests {
         assert!(store.list(None, None).unwrap().is_empty(), "issues cleared from the DB");
         assert!(store.feature_list().unwrap().is_empty(), "features cleared from the DB");
 
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn blueprint_storage_round_trips_and_stays_in_its_dir() {
+        // User blueprints live as files under ~/.base-studio-code/blueprints/ (#blueprints).
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("bp");
+        super::write_blueprint("bp-1".into(), r#"{"id":"bp-1","name":"Mine"}"#.into()).unwrap();
+        super::write_blueprint("bp-2".into(), r#"{"id":"bp-2","name":"Other"}"#.into()).unwrap();
+        let all = super::list_blueprints();
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().any(|s| s.contains("Mine")));
+        super::delete_blueprint("bp-1".into()).unwrap();
+        let after = super::list_blueprints();
+        assert_eq!(after.len(), 1);
+        assert!(after.iter().all(|s| !s.contains("Mine")), "deleted blueprint is gone");
+        // A slashy/dotty id is slugified (`.`/`/` → `_`) so it can never escape the blueprints dir,
+        // and an empty id is rejected outright.
+        let escaped = super::blueprint_file("../../etc/passwd").unwrap();
+        assert!(escaped.starts_with(super::bsc_base_dir().join("blueprints")), "must stay under blueprints/");
+        assert!(super::blueprint_file("").is_err());
         std::fs::remove_dir_all(&home).ok();
     }
 
