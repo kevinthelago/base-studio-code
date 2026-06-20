@@ -92,6 +92,12 @@ export function FocusedDeployBody({ deploy, onChange }: { deploy?: DeployConfig;
 
   const setSvc = (patch: Partial<typeof svc>) => svc && set({ services: d.services.map((s) => s.id === svc.id ? { ...s, ...patch } : s) });
   const pickPlatform = (pid: string) => {
+    // Toggle: clicking the already-selected platform clears it, so an accidental pick is reversible
+    // (back to "no target") rather than locked in.
+    if (svc?.platform === pid) {
+      setSvc({ platform: "", proposed: false });
+      return;
+    }
     const p = platform(pid);
     const wl: Workload = svc && p.kinds.includes(svc.workload) ? svc.workload : (p.kinds[0] ?? "static");
     setSvc({ platform: pid, proposed: false, workload: wl });
