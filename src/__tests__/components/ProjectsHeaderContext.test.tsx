@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ProjectsHeader } from "../../screens/projects/ProjectsHeader";
-import type { ActiveProjectInfo } from "../../screens/projects/ProjectsHeader";
+import { ProjectsHeader } from "../../screens/planner/ProjectsHeader";
+import type { ActiveProjectInfo } from "../../screens/planner/ProjectsHeader";
 import { useAppStore } from "../../store";
 
 const project: ActiveProjectInfo = {

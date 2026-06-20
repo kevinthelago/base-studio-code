@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   mkStageSection, reorderStages, addStage, duplicateStage, deleteStage,
   toggleDep, setOutput, setStageField, depCandidates,
-} from "../screens/projects/blueprintEdit";
-import { STAGE_KINDS, DISPOSITIONS, defaultDisposition } from "../screens/projects/blueprintCatalog";
-import { SECTION_DEFS } from "../screens/projects/blueprints";
+} from "../screens/planner/blueprintEdit";
+import { STAGE_KINDS, DISPOSITIONS, defaultDisposition } from "../screens/planner/blueprintCatalog";
+import { SECTION_DEFS } from "../screens/planner/blueprints";
 
 describe("blueprintCatalog (#609)", () => {
   it("uses our `ui` key (not the design's `ux`)", () => {

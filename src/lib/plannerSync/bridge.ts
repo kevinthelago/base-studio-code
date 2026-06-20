@@ -7,7 +7,7 @@
 
 import type { CanonicalFile, PlanMeta, CanonicalSectionState } from "../plannerCore/types";
 import { projectId as mintProjectId } from "../plannerCore/ids";
-import { parseSkipped } from "../../screens/projects/planSections";
+import { parseSkipped } from "../../screens/planner/planSections";
 
 /** In-memory representation of the plan hub's current state (from the Zustand store). */
 export interface HubSnapshot {

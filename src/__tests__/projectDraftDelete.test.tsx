@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { ProjectsList } from "../screens/projects/ProjectsList";
+import { ProjectsList } from "../screens/planner/ProjectsList";
 import { useAppStore } from "../store";
 
 // Repro for the draft-delete crash (#…): pressing the trash button on a "draft" project

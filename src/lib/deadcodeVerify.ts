@@ -8,7 +8,7 @@
 
 import { letterFromScore } from "./planGrade";
 import { type DeadCodeFinding, type DeadCodeKind } from "./deadcode";
-import { type GradeResult, type GradeDimension, type GradeFinding } from "../screens/projects/grading";
+import { type GradeResult, type GradeDimension, type GradeFinding } from "../screens/planner/grading";
 
 export type Verdict = "confirmed" | "false-positive" | "uncertain";
 export interface VerifiedFinding extends DeadCodeFinding { verdict: Verdict; reason: string }

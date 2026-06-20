@@ -4,11 +4,11 @@ import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { usePageTabs } from "../../hooks/usePageTabs";
 import { GitHubEmpty } from "./Empty";
 import { GitHubSummary } from "./GitHubSummary";
-import { ProjectsSummary } from "../projects/ProjectsSummary";
-import { ProjectBoard } from "../projects/ProjectBoard";
-import { Roadmap } from "../projects/Roadmap";
-import { Issues } from "../projects/Issues";
-import { Insights } from "../projects/Insights";
+import { ProjectsSummary } from "../planner/ProjectsSummary";
+import { ProjectBoard } from "../planner/ProjectBoard";
+import { Roadmap } from "../planner/Roadmap";
+import { Issues } from "../planner/Issues";
+import { Insights } from "../planner/Insights";
 import { Pulse } from "./Pulse";
 
 const GITHUB_TABS: TabItem[] = [

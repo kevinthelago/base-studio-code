@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { derivePlanStageState, planStateToSignals, type DerivePlanStageInput } from "../screens/projects/planStageDerive";
+import { derivePlanStageState, planStateToSignals, type DerivePlanStageInput } from "../screens/planner/planStageDerive";
 
 const BASE_INPUT: DerivePlanStageInput = {
   sections: [],

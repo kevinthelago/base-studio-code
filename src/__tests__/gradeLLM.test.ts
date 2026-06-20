@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseLLMGrade, gradeWithLLM, buildGradePrompt, GRADE_LLM_ID } from "../screens/projects/gradeLLM";
-import { rubricForSection } from "../screens/projects/grading";
+import { parseLLMGrade, gradeWithLLM, buildGradePrompt, GRADE_LLM_ID } from "../screens/planner/gradeLLM";
+import { rubricForSection } from "../screens/planner/grading";
 
 describe("gradeLLM — parseLLMGrade (#615 slice d)", () => {
   it("parses a valid JSON grade", () => {

@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, bundledSkillsFromManifest } from "../screens/projects/blueprintShare";
-import { resolveBlueprintSkillPayloads, type SkillPayload } from "../screens/projects/blueprintSkills";
+import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, bundledSkillsFromManifest } from "../screens/planner/blueprintShare";
+import { resolveBlueprintSkillPayloads, type SkillPayload } from "../screens/planner/blueprintSkills";
 import { skillFromPayload } from "../lib/skills";
 import { encodeShareCode, decodeShareCode, wrapExtension } from "../lib/extensions/manifest";
-import { makeBlueprints } from "../screens/projects/blueprints";
+import { makeBlueprints } from "../screens/planner/blueprints";
 import { useAppStore } from "../store";
-import type { Blueprint } from "../screens/projects/blueprints";
+import type { Blueprint } from "../screens/planner/blueprints";
 import type { SkillDef } from "../lib/skills";
 import type { KbBlock } from "../data/mock";
 

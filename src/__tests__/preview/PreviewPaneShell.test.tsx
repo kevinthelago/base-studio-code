@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { useAppStore } from '../../store';
 
-vi.mock('../../screens/projects/previewBundle', () => ({
+vi.mock('../../screens/planner/previewBundle', () => ({
   bundleSkeleton: vi.fn().mockResolvedValue('BUNDLE_JS'),
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
   DEFAULT_IMPORTMAP: { react: 'https://esm.sh/react@18.3.1' },
@@ -12,8 +12,8 @@ vi.mock('../../screens/projects/previewBundle', () => ({
 }));
 
 // Register the html renderer so the shell can mount it.
-import '../../screens/projects/preview/renderers/htmlRenderer';
-import { PreviewPaneShell } from '../../screens/projects/preview/PreviewPaneShell';
+import '../../screens/planner/preview/renderers/htmlRenderer';
+import { PreviewPaneShell } from '../../screens/planner/preview/PreviewPaneShell';
 
 describe('PreviewPaneShell (#581)', () => {
   beforeEach(() => {

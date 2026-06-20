@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { buildClaudeDesignBrief } from "../screens/projects/claudeDesignBrief";
-import { makeBlueprints } from "../screens/projects/blueprints";
-import { PlanPreviewPane } from "../screens/projects/PlanPreviewPane";
+import { buildClaudeDesignBrief } from "../screens/planner/claudeDesignBrief";
+import { makeBlueprints } from "../screens/planner/blueprints";
+import { PlanPreviewPane } from "../screens/planner/PlanPreviewPane";
 import { useAppStore } from "../store";
 
 describe("buildClaudeDesignBrief (#634)", () => {

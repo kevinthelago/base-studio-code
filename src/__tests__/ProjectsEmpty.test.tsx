@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ProjectsEmpty } from "../screens/projects/Empty";
+import { ProjectsEmpty } from "../screens/planner/Empty";
 import { useAppStore } from "../store";
 
 describe("ProjectsEmpty — Connect with GitHub", () => {

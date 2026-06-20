@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildSeamGraph, type SeamGraph } from "../lib/planSeamGraph";
-import type { PlanIssue } from "../screens/projects/planIssues";
+import type { PlanIssue } from "../screens/planner/planIssues";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

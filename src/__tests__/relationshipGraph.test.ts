@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   buildRelationshipGraph, effectiveVia,
   type RelStream, type RelationshipArtifact, type AgentRelationship,
-} from "../screens/projects/relationshipGraph";
-import { parseFleetFile, normalizeTopology } from "../screens/projects/planSections";
+} from "../screens/planner/relationshipGraph";
+import { parseFleetFile, normalizeTopology } from "../screens/planner/planSections";
 
 const STREAMS: RelStream[] = [
   { id: "schema", role: "worker", repo: "core" },

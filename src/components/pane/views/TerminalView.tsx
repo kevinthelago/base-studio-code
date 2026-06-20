@@ -16,7 +16,7 @@ import { PendingPtyData } from "../../../lib/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/resumeClaude";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
-import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/projects/flowPermissions";
+import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/planner/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus, type SessionVerdict } from "../../../lib/diagnostics";
 import { SessionReadinessBanner } from "../../SessionReadinessBanner";

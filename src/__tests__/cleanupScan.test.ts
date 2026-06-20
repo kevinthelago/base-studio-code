@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { runCleanupScan } from "../screens/projects/cleanupScan";
+import { runCleanupScan } from "../screens/planner/cleanupScan";
 import { useAppStore } from "../store";
-import { makeBlueprints } from "../screens/projects/blueprints";
+import { makeBlueprints } from "../screens/planner/blueprints";
 
 // Route invoke by command: the JS scanners return one unused dep/export each; kb_chat
 // (verification) confirms them.

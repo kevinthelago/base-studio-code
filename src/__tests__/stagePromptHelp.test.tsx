@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { StagePromptHelp } from "../screens/projects/FocusedShell";
+import { StagePromptHelp } from "../screens/planner/FocusedShell";
 
 // The per-stage "?" helper replaced the auto-injecting conductor: it lists a stage's injectable
 // prompts and the USER picks one to inject into the planner chat.

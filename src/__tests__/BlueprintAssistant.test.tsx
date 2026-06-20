@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { BlueprintAssistant } from "../screens/projects/BlueprintAssistant";
-import { mkStageSection } from "../screens/projects/blueprintEdit";
-import type { BlueprintSection } from "../screens/projects/blueprints";
+import { BlueprintAssistant } from "../screens/planner/BlueprintAssistant";
+import { mkStageSection } from "../screens/planner/blueprintEdit";
+import type { BlueprintSection } from "../screens/planner/blueprints";
 
 function Harness({ onApplied }: { onApplied?: (s: BlueprintSection[]) => void }) {
   const [sections, setSections] = useState<BlueprintSection[]>([mkStageSection("context"), mkStageSection("stack")]);

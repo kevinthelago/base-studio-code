@@ -4,10 +4,10 @@ import {
   sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal, skippedSignal,
   isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, sectionDone,
   SECTION_DEFS, type BlueprintSection, type Blueprint,
-} from "../screens/projects/blueprints";
-import { PLAN_STAGES, buildPlanStageState } from "../screens/projects/planStages";
-import { planStateToSignals } from "../screens/projects/planStageDerive";
-import { evalGate } from "../screens/projects/stageGate";
+} from "../screens/planner/blueprints";
+import { PLAN_STAGES, buildPlanStageState } from "../screens/planner/planStages";
+import { planStateToSignals } from "../screens/planner/planStageDerive";
+import { evalGate } from "../screens/planner/stageGate";
 
 const sig = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
   planStateToSignals(buildPlanStageState(over));

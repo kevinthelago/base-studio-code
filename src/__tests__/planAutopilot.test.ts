@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   decideAutopilotAction, buildUserSimPrompt, staticReply, autopilotProgress,
   type AutopilotContext,
-} from "../screens/projects/planAutopilot";
-import type { Phase } from "../screens/projects/focusedPlan";
+} from "../screens/planner/planAutopilot";
+import type { Phase } from "../screens/planner/focusedPlan";
 
 const ctx = (over: Partial<AutopilotContext> = {}): AutopilotContext => ({
   planReady: false, published: false, confirmKeys: [], plannerAwaiting: false,

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "../store";
-import type { GradeResult } from "../screens/projects/grading";
+import type { GradeResult } from "../screens/planner/grading";
 
 describe("blueprint-per-project + reset (#647)", () => {
   beforeEach(() => {

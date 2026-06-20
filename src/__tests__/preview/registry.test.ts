@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   registerRenderer, getRenderer, hasRenderer, _resetRegistry,
-} from '../../screens/projects/preview/registry';
-import type { PreviewRenderer } from '../../screens/projects/preview/registry';
-import type { RenderableKind, RenderableChunk } from '../../screens/projects/preview/types';
+} from '../../screens/planner/preview/registry';
+import type { PreviewRenderer } from '../../screens/planner/preview/registry';
+import type { RenderableKind, RenderableChunk } from '../../screens/planner/preview/types';
 
 function makeRenderer(kinds: RenderableKind | RenderableKind[]): PreviewRenderer {
   return {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findPlanGaps } from "../screens/projects/lintPlan";
+import { findPlanGaps } from "../screens/planner/lintPlan";
 
 describe("lintPlan — findPlanGaps", () => {
   it("flags empty files and the deliberate fill-in markers (TODO/TBD/FIXME/XXX/TKTK)", () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveMemPath, lookupMem, bootstrapSource, buildPreviewSrcDoc, DEFAULT_IMPORTMAP, PREVIEW_EXTERNALS,
-} from "../screens/projects/previewBundle";
+} from "../screens/planner/previewBundle";
 
 describe("previewBundle — resolveMemPath", () => {
   it("resolves a sibling import from the entry", () => {

@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { useAppStore } from "../store";
-import { runSectionGrade, GRADE_RUBRIC_ID, planGradeToResult } from "../screens/projects/gradeDispatch";
+import { runSectionGrade, GRADE_RUBRIC_ID, planGradeToResult } from "../screens/planner/gradeDispatch";
 import type { PlanGrade } from "../lib/planGrade";
-import { GradeReportPane } from "../screens/projects/GradeReportPane";
-import type { GradeResult } from "../screens/projects/grading";
+import { GradeReportPane } from "../screens/planner/GradeReportPane";
+import type { GradeResult } from "../screens/planner/grading";
 
 const fakeGrade = (graderId: string, letter: GradeResult["letter"], score: number): GradeResult => ({
   graderId, graderLabel: `${graderId} rubric`, sectionKey: "context", score, letter, dimensions: [], findings: [],

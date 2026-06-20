@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { Ic, ICONS } from "../screens/projects/blueprintIcons";
+import { Ic, ICONS } from "../screens/planner/blueprintIcons";
 
 describe("blueprint icons (#609)", () => {
   it("renders an inline SVG for a known glyph", () => {

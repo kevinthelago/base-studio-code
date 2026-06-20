@@ -1,13 +1,15 @@
-// Per-repo seam/contract DAG visualization (#294). Pure (no React / Tauri) so
-// the graph builder and layout are unit-testable. The visualization layer lives
-// in SeamGraphView.tsx.
+// Per-repo seam/contract DAG builder (#294). Pure (no React / Tauri) so the
+// builder and layout are unit-testable. NOTE: the Structure pane's seam-graph
+// visualization was removed in favor of the agent-relationship swimlane
+// (relationshipGraph.ts / RelationshipGraphView.tsx); this builder is retained
+// for its tests + seamGraph.ts.
 //
 // When full FeatureContract seam data is available the graph shows produce→consume
 // edges; without it (the common case for projects that haven't authored explicit
 // contracts) the graph falls back to `PlanIssue.dependsOn` dependency edges —
 // still a useful topological picture of the build order.
 
-import type { PlanIssue } from "../screens/projects/planIssues";
+import type { PlanIssue } from "../screens/planner/planIssues";
 
 // ── Node maturity ─────────────────────────────────────────────────────────────
 

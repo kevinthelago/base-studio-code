@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeDirectorDrive, resolveDirectorDrive, decideDirectorAction,
   eventDirectorPrompt, DEFAULT_DIRECTOR_DRIVE, askKey, pendingAskPrompt,
-} from "../screens/projects/directorDrive";
+} from "../screens/planner/directorDrive";
 
 const TS = "2026-06-01T00:00:00Z";
 const line = (session: string, kind: string, a = "", b = "") => `${TS}	${session}	${kind}	${a}	${b}`;

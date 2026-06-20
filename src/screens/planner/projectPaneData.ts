@@ -26,7 +26,6 @@ import type {
 import type { PlanFeature } from "./featureList";
 import type { Blueprint } from "./blueprints";
 import type { DeployConfig } from "./deployConfig";
-import { buildSeamGraph as buildPlanSeamGraph } from "../../lib/planSeamGraph";
 import { buildMcpServers, type McpInstallState } from "./mcpPaneData";
 import type { ExtensionDef } from "../../lib/extensions";
 
@@ -355,30 +354,51 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     features: input.features ?? [],
     authoredBlueprint: input.authoredBlueprint,
     deploy: input.deployConfig,
-    seamGraph: buildPlanSeamGraph(input.issues),
     // Coordination topology: the user's per-project override wins over the planner's
     // fleet.json default, falling back to hybrid (#…).
     topology: input.topologyOverride ?? input.fleet?.topology ?? "hybrid",
     relationshipArtifacts: input.fleet?.artifacts ?? [],
-    // Use the planner's explicit typed edges when present; otherwise derive blocking
-    // edges from the streams' `dependsOn` so the relationship graph shows for any planned
-    // fleet, not only ones with hand-authored relationships (#…).
+    // Use the planner's explicit typed edges when present; otherwise DERIVE them so the
+    // graph shows for any planned fleet. The derivation aggregates the granular ISSUE
+    // dependency tree (issues.json — the same data the seam graph uses) up to the stream
+    // level, so the relationship graph has the same dependency depth (and thus phase
+    // layers) as the seam graph, plus any explicit stream-level `dependsOn` (#…).
     relationships: input.fleet?.edges?.length
       ? input.fleet.edges
-      : deriveRelationships(input.fleet?.streams ?? []),
+      : deriveRelationships(input.fleet?.streams ?? [], input.issues),
   };
 }
 
-/** Derive a blocking relationship edge from each stream's `dependsOn` (a → b means b waits
- *  on a). The fallback that lights up the Structure swimlane before the planner authors
- *  explicit artifacts/edges. */
-function deriveRelationships(streams: AgentStream[]): AgentRelationship[] {
-  const ids = new Set(streams.map((s) => s.id));
+/**
+ * Derive cross-stream blocking edges. A dependency between two ISSUES owned by different
+ * streams (issue I in stream A `dependsOn` issue J in stream B) becomes a stream edge B→A.
+ * This captures the full dependency structure the seam graph shows, aggregated to streams —
+ * so the swimlane layers (its "phases") match. Explicit stream-level `dependsOn` is merged in.
+ */
+function deriveRelationships(streams: AgentStream[], issues: PlanIssue[]): AgentRelationship[] {
+  const streamIds = new Set(streams.map((s) => s.id));
+  const norm = (r: string) => String(r).replace(/^#/, "").trim();
+  // issue ref → owning stream id (the stream's declared issue list, then PlanIssue.stream).
+  const ownerOf = new Map<string, string>();
+  for (const s of streams) for (const ref of s.issues ?? []) ownerOf.set(norm(ref), s.id);
+  for (const i of issues) if (i.stream && streamIds.has(i.stream)) ownerOf.set(norm(i.ref), i.stream);
+
+  const seen = new Set<string>();
   const out: AgentRelationship[] = [];
-  for (const s of streams) {
-    for (const dep of s.dependsOn ?? []) {
-      if (ids.has(dep)) out.push({ id: `${dep}>${s.id}`, from: dep, to: s.id, kind: "blocking", hardness: "blocking", via: "direct" });
-    }
+  const add = (from: string | undefined, to: string) => {
+    if (!from || !streamIds.has(from) || !streamIds.has(to) || from === to) return;
+    const key = `${from}>${to}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ id: key, from, to, kind: "blocking", hardness: "blocking", via: "direct" });
+  };
+  // cross-stream edges from the issue dependency tree
+  for (const i of issues) {
+    const to = ownerOf.get(norm(i.ref));
+    if (!to) continue;
+    for (const dep of i.dependsOn ?? []) add(ownerOf.get(norm(dep)), to);
   }
+  // plus any explicit stream-level dependsOn
+  for (const s of streams) for (const dep of s.dependsOn ?? []) add(norm(dep), s.id);
   return out;
 }

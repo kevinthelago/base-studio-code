@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { FocusedSourceBody } from "../screens/projects/FocusedSourceBody";
+import { FocusedSourceBody } from "../screens/planner/FocusedSourceBody";
 
 // setup.ts already provides a global invoke mock (mockResolvedValue(null));
 // override per-test with mockResolvedValueOnce.

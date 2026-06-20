@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { collectEntry, collectDroppedEntries, type FsEntryLike } from "../screens/projects/dropFiles";
+import { collectEntry, collectDroppedEntries, type FsEntryLike } from "../screens/planner/dropFiles";
 
 // Minimal fakes for the FileSystemEntry tree (no real DataTransfer needed).
 function fileEntry(name: string): FsEntryLike {

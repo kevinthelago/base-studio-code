@@ -10,7 +10,6 @@ import type { DirectorDrive } from "./directorDrive";
 import type { IntegrationStrategy } from "./integrationStrategy";
 import type { PlanGrade } from "../../lib/planGrade";
 import type { PlanFeature } from "./featureList";
-import type { SeamGraph } from "../../lib/planSeamGraph";
 import type { Blueprint } from "./blueprints";
 import type { DeployConfig } from "./deployConfig";
 import type { Topology, RelationshipArtifact, AgentRelationship } from "./relationshipGraph";
@@ -152,8 +151,6 @@ export interface ProjectPaneData {
   authoredBlueprint?: Blueprint;
   /** The deployment & infrastructure config (#919) — the Deploy stage pane's editable state. */
   deploy?: DeployConfig;
-  /** The feature seam/dependency DAG (#…) — the Plan stage's approval surface. */
-  seamGraph?: SeamGraph;
   /** Agent-coordination topology (#…) — the effective director/peer/hybrid mode, the
    *  Permissions stage configures it and the Structure graph reflects it. */
   topology?: Topology;

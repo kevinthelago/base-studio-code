@@ -7,7 +7,7 @@ import {
   featureDiscoveryComplete,
   incompleteFeatureSections,
   FEATURE_LABEL,
-} from "../screens/projects/planFeatures";
+} from "../screens/planner/planFeatures";
 
 describe("isFeatureKey / featureSlug", () => {
   it("recognizes a repo-tier feature key and extracts its slug", () => {

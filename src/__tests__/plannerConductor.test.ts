@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { nextInjection, isStepDelivered, flattenPrompt, stagePrompts, type ConductorState, type DeliverySignals } from "../screens/projects/plannerConductor";
-import { mkSection } from "../screens/projects/blueprints";
+import { nextInjection, isStepDelivered, flattenPrompt, stagePrompts, type ConductorState, type DeliverySignals } from "../screens/planner/plannerConductor";
+import { mkSection } from "../screens/planner/blueprints";
 
 const sig = (over: Partial<DeliverySignals> = {}): DeliverySignals => ({
   outputGrew: false, sectionKeys: new Set(), startedFeatures: new Set(), featuresExist: false, ...over,

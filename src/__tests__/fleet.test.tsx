@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Fleet } from "../screens/projects/Fleet";
+import { Fleet } from "../screens/planner/Fleet";
 import { useAppStore } from "../store";
 import {
   statusForPane, buildLiveWorkers, statusCounts, deriveFleetKpis, tabOfPane,
 } from "../lib/fleetLive";
 import { emptyCoordState, type CoordState } from "../lib/coordination";
-import type { AgentStream } from "../screens/projects/planSections";
+import type { AgentStream } from "../screens/planner/planSections";
 
 function stream(p: Partial<AgentStream> = {}): AgentStream {
   return { id: "s", name: "api", repo: "o/r", owns: [], issues: ["#1", "#2"], dependsOn: [], ...p };

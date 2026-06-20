@@ -4,7 +4,7 @@ import {
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
   parseAllowCommands, stripAllowCommands,
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
-} from "../screens/projects/planningSession";
+} from "../screens/planner/planningSession";
 
 describe("parsePlanFocus", () => {
   it("extracts the section key from a focus tag", () => {

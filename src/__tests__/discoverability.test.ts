@@ -6,9 +6,9 @@ import {
   rankRelevant,
   searchNodes,
   type Gap,
-} from "../screens/projects/discoverability";
-import type { PlanNode, NodeKind, Maturity } from "../screens/projects/planNode";
-import type { Shape } from "../screens/projects/shape";
+} from "../screens/planner/discoverability";
+import type { PlanNode, NodeKind, Maturity } from "../screens/planner/planNode";
+import type { Shape } from "../screens/planner/shape";
 
 function n(id: string, kind: NodeKind, maturity: Maturity, children: PlanNode[] = [], summary?: string): PlanNode {
   return { id, kind, title: id.replace(/^layer:/, ""), maturity, summary, children };

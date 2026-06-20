@@ -3,7 +3,7 @@ import {
   renderFeatureContract,
   validateContracts,
   type FeatureContract,
-} from "../screens/projects/featureContract";
+} from "../screens/planner/featureContract";
 
 function base(overrides: Partial<FeatureContract> = {}): FeatureContract {
   return {

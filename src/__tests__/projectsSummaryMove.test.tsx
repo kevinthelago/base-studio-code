@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GitHubPageModeStrip } from "../screens/github/GitHubSummary";
-import { ProjectsPageModeStrip } from "../screens/projects/ProjectsSummary";
+import { ProjectsPageModeStrip } from "../screens/planner/ProjectsSummary";
 
 // #421: the Projects portfolio summary moved into the GitHub screen, between
 // Summary and Repositories. The Projects tab drops its Summary mode.
