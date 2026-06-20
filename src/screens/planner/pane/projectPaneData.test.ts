@@ -163,6 +163,19 @@ describe("buildProjectPaneData", () => {
     ]);
   });
 
+  it("derives the stream graph from FEATURES when no fleet is authored yet (#plan-db)", () => {
+    // No fleet (Structure stage, pre-Permissions): a feature IS a stream, so its dependsOn DAG
+    // becomes the stream edges — the graph renders without waiting on fleet.json.
+    const features = [
+      { slug: "kernel", name: "Kernel", dependsOn: [] },
+      { slug: "sketcher", name: "Sketcher", dependsOn: ["kernel"] },
+    ];
+    const d = buildProjectPaneData(base({ features }));
+    expect(d.relationships).toEqual([
+      { id: "kernel>sketcher", from: "kernel", to: "sketcher", kind: "blocking", hardness: "blocking", via: "direct" },
+    ]);
+  });
+
   it("uses the planner's explicit fleet edges over derivation when present (#…)", () => {
     const fleet: FleetPlan = {
       ...fleetWith([{ id: "a", name: "@a", repo: "o/r", owns: [], issues: [], dependsOn: [] }]),

@@ -365,8 +365,26 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     // layers) as the seam graph, plus any explicit stream-level `dependsOn` (#…).
     relationships: input.fleet?.edges?.length
       ? input.fleet.edges
-      : deriveRelationships(input.fleet?.streams ?? [], input.issues),
+      : deriveRelationships(effectiveStreams(input), input.issues),
   };
+}
+
+/**
+ * The streams to render the relationship graph from: the authored fleet when it exists, otherwise
+ * derived straight from the features (#plan-db). A feature IS a stream — slug = id, `dependsOn` =
+ * the edges — so the stream graph shows in the Structure pane as soon as features are defined,
+ * instead of staying blank until the Permissions stage authors `fleet.json`.
+ */
+function effectiveStreams(input: BuildProjectPaneInput): AgentStream[] {
+  if (input.fleet?.streams?.length) return input.fleet.streams;
+  return (input.features ?? []).map((f) => ({
+    id: f.slug,
+    name: f.name || f.slug,
+    repo: input.repos[0] ?? "",
+    owns: [],
+    issues: [],
+    dependsOn: f.dependsOn ?? [],
+  }));
 }
 
 /**
