@@ -740,7 +740,7 @@ export function ProjectsList() {
   }
 
   // The rail "+" authors a NEW blueprint: bind a fresh key to the authoring lifecycle and open the
-  // planner seeded for it (mirrors BlueprintsPage.authorBlueprint), which designs + publishes a gist.
+  // planner seeded for it (the blueprint-author lifecycle), which designs + publishes a gist.
   function startNewBlueprint() {
     const title = bpTitle.trim();
     if (!title) return;
