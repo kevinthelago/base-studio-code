@@ -5,6 +5,7 @@ mod tunnel;
 mod fcm;
 mod perf;
 mod docstore;
+mod plan_db;
 mod tokens;
 mod githooks;
 mod oauth;
@@ -2163,6 +2164,10 @@ pub fn run() {
             perf::perf_record_frontend_sample,
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
+            plan_db::plan_upsert_issue,
+            plan_db::plan_list_issues,
+            plan_db::plan_remove_issue,
+            plan_db::plan_write_issues_json,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
