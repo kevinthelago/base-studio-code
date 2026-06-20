@@ -7,7 +7,7 @@ import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../../l
 import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, uid, type Blueprint, type BlueprintGist, type BlueprintCategory, type BlueprintSection } from "../stages/blueprints";
 import { PlanGateRow } from "../pane/PlanStageBar";
 import { ImportModal, type PreviewBlueprint } from "../blueprints/BlueprintModals";
-import { CatalogView } from "../blueprints/BlueprintCatalogView";
+import { BlueprintImportModal } from "../blueprints/BlueprintImportModal";
 import { DEFAULT_GIST_SOURCE } from "../blueprints/blueprintCatalog";
 import { manifestToBlueprint, bundledSkillsFromManifest } from "../blueprints/blueprintShare";
 import { installFromGist, gistIdFromUrl } from "../../../lib/planner/gist/gist";
@@ -789,8 +789,8 @@ export function ProjectsList() {
           updatedAt: opts.updatedAt ?? existing.gist?.updatedAt, behind: false,
         },
       });
+      // Close only the manual paste dialog; the catalog stays open so its rows update live.
       setImportOpen(false);
-      setCatalogOpen(false);
       return;
     }
     const bp: Blueprint = {
@@ -800,7 +800,6 @@ export function ProjectsList() {
     };
     importBlueprint(bp);
     setImportOpen(false);
-    setCatalogOpen(false);
   }
 
   const totalSummary = `${visibleProjects.length} published · ${normalDrafts.length} draft${normalDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
@@ -1057,21 +1056,14 @@ export function ProjectsList() {
 
       {/* Import a blueprint from a gist (moved here from the removed Blueprints tab) */}
       {catalogOpen && (
-        <div
-          style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
-          onClick={e => { if (e.target === e.currentTarget) setCatalogOpen(false); }}
-        >
-          <div style={{ background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", width: 780, maxWidth: "92vw", height: "82vh", overflow: "auto" }}>
-            <CatalogView
-              source={githubUser?.login ?? DEFAULT_GIST_SOURCE}
-              token={githubToken}
-              importedById={Object.fromEntries(blueprints.filter(b => b.gist?.id).map(b => [b.gist!.id!, { updatedAt: b.gist!.updatedAt }]))}
-              onImport={(gistId, updatedAt) => { void resolveBlueprintImport(gistId).then(p => importBlueprintPreview(p, { updatedAt })).catch(() => {}); }}
-              onBack={() => setCatalogOpen(false)}
-              onManualImport={() => { setCatalogOpen(false); setImportOpen(true); }}
-            />
-          </div>
-        </div>
+        <BlueprintImportModal
+          source={githubUser?.login ?? DEFAULT_GIST_SOURCE}
+          token={githubToken}
+          importedById={Object.fromEntries(blueprints.filter(b => b.gist?.id).map(b => [b.gist!.id!, { updatedAt: b.gist!.updatedAt }]))}
+          onImport={(gistId, updatedAt) => { void resolveBlueprintImport(gistId).then(p => importBlueprintPreview(p, { updatedAt })).catch(() => {}); }}
+          onManualImport={() => { setCatalogOpen(false); setImportOpen(true); }}
+          onClose={() => setCatalogOpen(false)}
+        />
       )}
       {importOpen && (
         <ImportModal onClose={() => setImportOpen(false)} onResolve={resolveBlueprintImport} onImport={importBlueprintPreview} />
