@@ -6,10 +6,10 @@
 // tool list, and the existing applyMcpAssign/{dir} machinery scopes them to the project at
 // launch. Pure (no React/Tauri) so it's unit-testable and shared by the editor + launch path.
 
-import { defFromCatalog, type ExtensionDef } from "../../../lib/extensions";
-import { EXT_CATALOG } from "../../../data/extensions";
-import { catalogLink } from "../../../lib/mcpInstall";
-import { applyMcpAssign, type ExtensionStoreLike } from "../shared/planExtensions";
+import { type McpServer } from "../../../lib/session/mcpServers";
+import { MCP_CATALOG } from "../../../data/mcpCatalog";
+import { catalogLink } from "../../../lib/session/mcpInstall";
+import { applyMcpAssign, type McpStoreLike } from "../shared/planExtensions";
 import { type Blueprint } from "../stages/blueprints";
 
 /** One pickable MCP server. `id` is the server NAME (the portable ref stored in a blueprint). */
@@ -23,10 +23,10 @@ export interface McpLibraryItem {
 
 /**
  * The pickable MCP-server library for the editor: every MCP server in the catalog (first-party +
- * known) plus any installed MCP extension not already in the catalog. Hooks are excluded (the
- * catalog also holds hook templates). Deduped by name (case-insensitive), catalog first.
+ * known) plus any installed MCP server not already in the catalog. Deduped by name
+ * (case-insensitive), catalog first.
  */
-export function buildMcpLibrary(extensions: ExtensionDef[], catalog = EXT_CATALOG): McpLibraryItem[] {
+export function buildMcpLibrary(servers: McpServer[], catalog = MCP_CATALOG): McpLibraryItem[] {
   const out: McpLibraryItem[] = [];
   const seen = new Set<string>();
   const add = (name: string, desc: string | undefined, downloadable: boolean) => {
@@ -35,14 +35,8 @@ export function buildMcpLibrary(extensions: ExtensionDef[], catalog = EXT_CATALO
     seen.add(key);
     out.push({ id: name, name, desc, downloadable });
   };
-  for (const c of catalog) {
-    if (defFromCatalog(c.name).kind !== "mcp") continue; // skip hook templates
-    add(c.name, c.desc, !!c.link);
-  }
-  for (const e of extensions) {
-    if (e.kind !== "mcp") continue;
-    add(e.name, undefined, !!catalogLink(e.name));
-  }
+  for (const c of catalog) add(c.name, c.desc, !!c.link);
+  for (const e of servers) add(e.name, undefined, !!catalogLink(e.name));
   return out;
 }
 
@@ -91,7 +85,7 @@ export function collectBlueprintMcp(bp: Blueprint): string[] {
  * resolves the `{dir}` placeholder for first-party servers.
  */
 export function applyBlueprintMcp(
-  store: ExtensionStoreLike,
+  store: McpStoreLike,
   bp: Blueprint,
   projectId: string,
   baseDir = "",

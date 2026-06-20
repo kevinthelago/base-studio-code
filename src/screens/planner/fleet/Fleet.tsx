@@ -10,8 +10,8 @@ import { STATUS } from "../../../data/fleet";
 import { useFleetLive } from "../../../hooks/useFleetLive";
 import { useFleetGithub, type FleetGithub } from "../../../hooks/useFleetGithub";
 import { WorkerDetail } from "./WorkerDetail";
-import type { LiveWorker } from "../../../lib/fleetLive";
-import type { ThroughputSlice } from "../../../lib/fleetGithub";
+import type { LiveWorker } from "../../../lib/fleet/fleetLive";
+import type { ThroughputSlice } from "../../../lib/github/fleetGithub";
 
 const GRID = "150px 96px 1fr 70px 22px";
 

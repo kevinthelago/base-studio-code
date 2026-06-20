@@ -3,7 +3,7 @@
 // kickoff, idles forever; this config + the runtime pump (useDirectorPump) decide when to
 // re-prompt it so it actually reviews/merges worker PRs and resolves coordination events.
 // Pure + unit-tested; mirrors agentFlow.ts (the per-stream flow config pattern).
-import { parseCoordLine, type CoordEvent, type CoordRef, type AskingSession } from "../../../lib/coordination";
+import { parseCoordLine, type CoordEvent, type CoordRef, type AskingSession } from "../../../lib/fleet/coordination";
 
 /**
  * - `event`     -- re-prompt the director whenever workers post new coordination events

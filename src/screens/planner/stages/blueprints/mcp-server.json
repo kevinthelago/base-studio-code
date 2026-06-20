@@ -1,0 +1,36 @@
+{
+  "order": 1,
+  "id": "mcp-server",
+  "name": "MCP server",
+  "desc": "Headless Model Context Protocol server — tools/resources, no UI",
+  "origin": "built-in",
+  "icon": "⚇",
+  "category": "greenfield",
+  "mode": "create",
+  "sections": [
+    {
+      "key": "context"
+    },
+    {
+      "key": "repos"
+    },
+    {
+      "key": "features"
+    },
+    {
+      "key": "structure"
+    },
+    {
+      "key": "testing"
+    },
+    {
+      "key": "permissions"
+    },
+    {
+      "key": "automations"
+    },
+    {
+      "key": "skills"
+    }
+  ]
+}

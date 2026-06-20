@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ExternalLink, MoreHorizontal, Trash2, Pencil, Search, Layers, GitFork, Shield, Wrench, Database, Link2 } from "lucide-react";
 import { useAppStore } from "../../../store";
 import { useFleetLive } from "../../../hooks/useFleetLive";
-import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../../lib/projectPaths";
+import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../../lib/core/projectPaths";
 import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, type Blueprint, type BlueprintGist, type BlueprintCategory } from "../stages/blueprints";
 
 // A published project's lifecycle, derived from GitHub state: open ⇒ active, closed ⇒ shipped.

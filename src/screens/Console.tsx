@@ -7,15 +7,15 @@ import { BranchesView } from "../components/pane/views/BranchesView";
 import { ChangesView } from "../components/pane/views/ChangesView";
 import { LogView } from "../components/pane/views/LogView";
 import { useAppStore } from "../store";
-import { recordRender } from "../lib/perf";
-import { resetLaunchGate } from "../lib/launchGate";
-import { shouldAdvanceOnReply } from "../lib/consoleFocus";
+import { recordRender } from "../lib/core/perf";
+import { resetLaunchGate } from "../lib/fleet/launchGate";
+import { shouldAdvanceOnReply } from "../lib/console/consoleFocus";
 import type { ViewKey } from "../components/pane/ViewTabs";
-import { useCoordinator } from "../lib/useCoordinator";
-import { useWorkflowConductor } from "../lib/useWorkflowConductor";
-import { useDirectorPump } from "../lib/useDirectorPump";
-import { useIdleReaper } from "../lib/useIdleReaper";
-import { useCiWatcher } from "../lib/useCiWatcher";
+import { useCoordinator } from "../lib/fleet/useCoordinator";
+import { useWorkflowConductor } from "../lib/fleet/useWorkflowConductor";
+import { useDirectorPump } from "../lib/fleet/useDirectorPump";
+import { useIdleReaper } from "../lib/console/useIdleReaper";
+import { useCiWatcher } from "../lib/github/useCiWatcher";
 
 function resolvePaneName(
   tabIdx: number,

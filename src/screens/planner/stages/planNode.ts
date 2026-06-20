@@ -131,4 +131,4 @@ export function progress(root: PlanNode): { ready: number; total: number; percen
 
 // ── Stable ids (#588 PS-ids) ──────────────────────────────────────────────────
 
-export { nodeId as mintNodeId } from "../../../lib/plannerCore/ids";
+export { nodeId as mintNodeId } from "../../../lib/planner/plannerCore/ids";

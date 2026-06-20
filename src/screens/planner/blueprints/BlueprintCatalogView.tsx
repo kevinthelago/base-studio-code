@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import { hue, tint, DEFAULT_GIST_SOURCE, gistUpdateAvailable } from "./blueprintCatalog";
-import { listBlueprintGists, type BlueprintGistItem } from "../../../lib/extensions/gist";
+import { listBlueprintGists, type BlueprintGistItem } from "../../../lib/planner/gist/gist";
 
 export interface CatalogViewProps {
   /** GitHub account to pull blueprint gists from (defaults to the maintainer's). */

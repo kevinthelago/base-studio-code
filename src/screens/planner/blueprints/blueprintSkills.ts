@@ -4,10 +4,10 @@
 // into one pickable list and resolves attached ids (so the editor can show what's
 // attached + warn about anything missing). Pure.
 
-import { type SkillDef } from "../../../lib/skills";
+import { type SkillDef } from "../../../lib/session/skills";
 import { type SkillKind } from "../../../data/skills";
 import { type KbBlock } from "../../../data/mock";
-import { writeProjectFile } from "../../../lib/projectFiles";
+import { writeProjectFile } from "../../../lib/core/projectFiles";
 import { type Blueprint } from "../stages/blueprints";
 
 /** One pickable library item, from either library. */

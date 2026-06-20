@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import type { ConfigProfile } from "../../store";
-import { projectRepoCwd, isKnownPublishedKey } from "../../lib/projectPaths";
+import { projectRepoCwd, isKnownPublishedKey } from "../../lib/core/projectPaths";
 
 const TOOL_PRESETS: Array<{ label: string; allow: string[]; deny: string[] }> = [
   { label: "read-only",  allow: ["Read", "Glob", "Grep"],                        deny: ["Write", "Edit", "MultiEdit", "Bash", "WebFetch", "WebSearch"] },

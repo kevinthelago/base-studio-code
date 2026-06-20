@@ -15,7 +15,7 @@ import { resolvePhaseIndex } from "../issues/planIssues";
 import { resolveFlow } from "../fleet/agentFlow";
 import { resolveDirectorDrive } from "../fleet/directorDrive";
 
-export type { PlanGrade, IssueGrade, MilestoneGrade, RepoGrade, Letter } from "../../../lib/planGrade";
+export type { PlanGrade, IssueGrade, MilestoneGrade, RepoGrade, Letter } from "../../../lib/planner/planGrade";
 // The render-shape contract lives in projectPane.types (#356, the shared pane
 // types). This adapter imports those shapes and re-exports them so existing
 // import sites that reach for them via "./projectPaneData" keep working.
@@ -27,7 +27,7 @@ import type { PlanFeature } from "../issues/featureList";
 import type { Blueprint } from "../stages/blueprints";
 import type { DeployConfig } from "../shared/deployConfig";
 import { buildMcpServers, type McpInstallState } from "../shared/mcpPaneData";
-import type { ExtensionDef } from "../../../lib/extensions";
+import type { McpServer as McpServerDef } from "../../../lib/session/mcpServers";
 
 export type {
   Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone, PhaseGroup,
@@ -46,8 +46,8 @@ export interface BuildProjectPaneInput {
   automations?: PaneAutomation[];
   /** Skills/knowledge attached to the project's blueprint, pre-resolved (#674). */
   skills?: PaneSkill[];
-  /** The full extensions store + the project key, to build the MCP pane (#878). */
-  extensions?: ExtensionDef[];
+  /** The full MCP-servers store + the project key, to build the MCP pane (#878). */
+  mcpServers?: McpServerDef[];
   projectKey?: string;
   /** Per-server install lifecycle (probe + build button), keyed by extension id (#878). */
   mcpInstallState?: McpInstallState;
@@ -350,7 +350,7 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     fleetStrategy: input.fleet?.strategy,
     automations: (input.automations ?? []).map(a => ({ name: a.name, command: a.command, schedule: a.schedule })),
     skills: input.skills ?? [],
-    mcpServers: buildMcpServers(input.extensions ?? [], input.projectKey ?? "", input.fleet, input.mcpInstallState),
+    mcpServers: buildMcpServers(input.mcpServers ?? [], input.projectKey ?? "", input.fleet, input.mcpInstallState),
     features: input.features ?? [],
     authoredBlueprint: input.authoredBlueprint,
     deploy: input.deployConfig,

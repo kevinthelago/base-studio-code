@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../../store";
-import { sanitizeProjectKey, projectRepoCwd } from "../../../lib/projectPaths";
+import { sanitizeProjectKey, projectRepoCwd } from "../../../lib/core/projectPaths";
 import { TabBar, type TabItem } from "../../../components/chrome/TabBar";
 import { usePageTabs } from "../../../hooks/usePageTabs";
 

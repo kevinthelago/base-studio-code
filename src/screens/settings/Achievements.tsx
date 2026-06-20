@@ -1,5 +1,5 @@
 import { useAppStore } from "../../store";
-import { ACHIEVEMENTS, isUnlocked } from "../../lib/achievements";
+import { ACHIEVEMENTS, isUnlocked } from "../../lib/core/achievements";
 
 // Settings > Achievements: the persistent trophy case. Each achievement shows its
 // icon (full-color when unlocked, dimmed + grayscale when locked) and, once earned,

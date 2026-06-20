@@ -4,7 +4,7 @@
 // missing from the session shell. The user must install the missing tool and
 // retry — the session cannot proceed without these.
 
-import type { ReadinessCheck } from "../lib/diagnostics";
+import type { ReadinessCheck } from "../lib/core/diagnostics";
 
 interface SessionFailureProps {
   critical: ReadinessCheck[];

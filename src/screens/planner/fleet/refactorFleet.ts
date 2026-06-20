@@ -7,12 +7,12 @@
 // writes the kickoffs and hands the plan to the store's fleet launch.
 
 import { useAppStore } from "../../../store";
-import { writeProjectFile } from "../../../lib/projectFiles";
-import { publishFleetRoster } from "../../../lib/fleetRoster";
+import { writeProjectFile } from "../../../lib/core/projectFiles";
+import { publishFleetRoster } from "../../../lib/fleet/fleetRoster";
 import { type AgentFlow } from "./agentFlow";
 import { type FleetPlan, type AgentStream } from "../stages/planSections";
-import { type RefactorUnit, type RefactorTier, generateRefactorUnits } from "../../../lib/refactorUnits";
-import { type VerifiedFinding } from "../../../lib/deadcodeVerify";
+import { type RefactorUnit, type RefactorTier, generateRefactorUnits } from "../../../lib/cleanup/refactorUnits";
+import { type VerifiedFinding } from "../../../lib/cleanup/deadcodeVerify";
 
 /** Flow per risk tier: safe removals open their own PR continuously; risky ones pause at
  *  each PR for human review (the push command isn't auto-approved — a hard gate). */

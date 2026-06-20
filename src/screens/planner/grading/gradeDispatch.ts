@@ -6,7 +6,7 @@
 import { useAppStore } from "../../../store";
 import { type PlanSignals } from "../stages/stageGate";
 import { gradeWithRubric, rubricForSection, type GradeResult, type Severity } from "./grading";
-import { type PlanGrade, type Priority } from "../../../lib/planGrade";
+import { type PlanGrade, type Priority } from "../../../lib/planner/planGrade";
 
 /** The built-in rubric grader's pipeline id (attachable in the blueprint editor). */
 export const GRADE_RUBRIC_ID = "grade-rubric";

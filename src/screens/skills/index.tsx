@@ -13,8 +13,8 @@ import {
 } from "../../data/skills";
 import {
   blankSkill, defFromCatalog, deriveSkillKpis, parseSkillsFile, skillSlug, type SkillDef,
-} from "../../lib/skills";
-import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "../../lib/skillTelemetry";
+} from "../../lib/session/skills";
+import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "../../lib/session/skillTelemetry";
 import { Spark, HBars, type HBarRow } from "./SkillsCharts";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { usePageTabs } from "../../hooks/usePageTabs";

@@ -1,0 +1,49 @@
+{
+  "order": 0,
+  "id": "default",
+  "name": "Default",
+  "desc": "Balanced starting point",
+  "origin": "built-in",
+  "category": "greenfield",
+  "mode": "create",
+  "sections": [
+    {
+      "key": "context"
+    },
+    {
+      "key": "repos"
+    },
+    {
+      "key": "deploy"
+    },
+    {
+      "key": "source",
+      "optional": true
+    },
+    {
+      "key": "features"
+    },
+    {
+      "key": "ui",
+      "optional": true
+    },
+    {
+      "key": "structure"
+    },
+    {
+      "key": "permissions"
+    },
+    {
+      "key": "mcp",
+      "optional": true
+    },
+    {
+      "key": "automations",
+      "optional": true
+    },
+    {
+      "key": "skills",
+      "optional": true
+    }
+  ]
+}

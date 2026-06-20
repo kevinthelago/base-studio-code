@@ -4,8 +4,8 @@
 // bundled tools + guardrails) any worker running an allowed permission-profile
 // can invoke. The packaged set ships compliance & standards procedures (SOC 2,
 // GDPR, accessibility, i18n, …) — the cross-cutting obligations almost every
-// product carries. Shaped to mirror the Extensions data model (see
-// data/extensions.ts) so swapping in live data later is a drop-in. Stats are
+// product carries. Shaped to mirror the MCP catalog data model (see
+// data/mcpCatalog.ts) so swapping in live data later is a drop-in. Stats are
 // fleet-wide, last 7d.
 
 /** Capability kind — drives the card glyph + accent color. */

@@ -7,7 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../../../store";
 import { Dialog } from "../../../components/Dialog";
 import { BlueprintUpdateModal } from "../blueprints/BlueprintUpdateModal";
-import { sanitizeProjectKey } from "../../../lib/projectPaths";
+import { sanitizeProjectKey } from "../../../lib/core/projectPaths";
 import { useDragResize } from "../../../hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "../github/ghStructure";
 import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "../github/ghStructure";
@@ -18,8 +18,8 @@ import {
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
   buildSectionConfirmMessage, buildSectionSkipMessage,
 } from "./planningSession";
-import { parseCommandsFile } from "../../../lib/allowedCommands";
-import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
+import { parseCommandsFile } from "../../../lib/session/allowedCommands";
+import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/session/sessionRoles";
 import {
   ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
@@ -31,18 +31,18 @@ import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "..
 import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "../issues/planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "../pane/ProjectPane";
-import { publishFleetRoster } from "../../../lib/fleetRoster";
-import { hubToCanonical } from "../../../lib/plannerSync";
-import { tunnelSetPlanState } from "../../../lib/tunnelClient";
-import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../../lib/projectSync";
+import { publishFleetRoster } from "../../../lib/fleet/fleetRoster";
+import { hubToCanonical } from "../../../lib/planner/plannerSync";
+import { tunnelSetPlanState } from "../../../lib/tunnel/tunnelClient";
+import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../../lib/github/projectSync";
 import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "../shared/planExtensions";
 import { applyBlueprintMcp, collectBlueprintMcp } from "../blueprints/blueprintMcp";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
-import { catalogLink, repoNameFromLink, mcpRepoName } from "../../../lib/mcpInstall";
+import { catalogLink, repoNameFromLink, mcpRepoName } from "../../../lib/session/mcpInstall";
 import { type McpInstallState } from "../shared/mcpPaneData";
-import { EXT_CATALOG } from "../../../data/extensions";
+import { MCP_CATALOG } from "../../../data/mcpCatalog";
 import { buildProjectPaneData } from "../pane/projectPaneData";
 import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChecks } from "../shared/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
@@ -55,16 +55,16 @@ import { Ic } from "../blueprints/blueprintIcons";
 import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
 import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "../blueprints/blueprintSkills";
 import { buildMcpLibrary } from "../blueprints/blueprintMcp";
-import { publishGist } from "../../../lib/extensions/gist";
+import { publishGist } from "../../../lib/planner/gist/gist";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt, stagePrompts } from "./plannerConductor";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
-import { oneShotComplete } from "../../../lib/claudeComplete";
-import { fleetProfilesComplete } from "../../../lib/profileGen";
-import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "../../../lib/issueProvenance";
+import { oneShotComplete } from "../../../lib/core/claudeComplete";
+import { fleetProfilesComplete } from "../../../lib/session/profileGen";
+import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "../../../lib/github/issueProvenance";
 import type { DataModel } from "../data/dataModel";
 
 // ── <data_model> tag parser (#se-persist) ────────────────────────────────────
@@ -325,7 +325,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const claudeApiKey = useAppStore(s => s.claudeApiKey);
   const skillDefs = useAppStore(s => s.skills);
   // The extensions store drives the MCP stage pane (#878); the base dir is read on demand.
-  const extensions = useAppStore(s => s.extensions);
+  const mcpServers = useAppStore(s => s.mcpServers);
 
   // The session key (set once at session entry) is the single source of truth
   // for the planning directory, PTY slot, and plan buckets — identical to the
@@ -571,13 +571,13 @@ export function Planning({ visible }: { visible: boolean }) {
       authoredBlueprint: planAuthoredBlueprint[effectiveProjectId],
       deployConfig: deployCfg,
       pinned:   pinnedContext[effectiveProjectId],
-      extensions,
+      mcpServers,
       projectKey: effectiveProjectId,
       mcpInstallState,
       topologyOverride: planFleetTopology[effectiveProjectId],
       directorDriveOverride: planFleetDirectorDrive[effectiveProjectId],
     }),
-    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, extensions, mcpInstallState],
+    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, mcpServers, mcpInstallState],
   );
 
   // Probe each downloadable MCP server's on-disk state so the pane opens with real status
@@ -641,22 +641,22 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [bpSkillKey, effectiveProjectId, effectiveBlueprintId]);
 
   // ── MCP stage handlers (#878) ──────────────────────────────────────────────
-  const onToggleMcp = useCallback((id: string) => useAppStore.getState().toggleExtension(id), []);
-  const onRemoveMcp = useCallback((id: string) => useAppStore.getState().removeExtension(id), []);
+  const onToggleMcp = useCallback((id: string) => useAppStore.getState().toggleMcpServer(id), []);
+  const onRemoveMcp = useCallback((id: string) => useAppStore.getState().removeMcpServer(id), []);
   const onAddMcp = useCallback((input: string) => {
     const store = useAppStore.getState();
     // A bare catalog name maps to its template; anything with a scheme is a remote URL; else a
     // stdio command line. New servers are enabled + scoped to this project so the fleet gets them.
     const link = catalogLink(input);
-    if (link || EXT_CATALOG.some(c => c.name.toLowerCase() === input.toLowerCase())) {
-      const name = EXT_CATALOG.find(c => c.name.toLowerCase() === input.toLowerCase())?.name ?? input;
+    if (link || MCP_CATALOG.some(c => c.name.toLowerCase() === input.toLowerCase())) {
+      const name = MCP_CATALOG.find(c => c.name.toLowerCase() === input.toLowerCase())?.name ?? input;
       applyMcpAssign(store, name, effectiveProjectId, store.bscBaseDir);
       if (link) invoke("mcp_clone", { name: repoNameFromLink(link), url: link }).catch(() => {});
       return;
     }
     const isUrl = /^https?:\/\//i.test(input);
-    store.addExtension({
-      kind: "mcp", name: input.split(/\s+/)[0].slice(0, 40) || "server", enabled: true, projects: [effectiveProjectId],
+    store.addMcpServer({
+      name: input.split(/\s+/)[0].slice(0, 40) || "server", enabled: true, projects: [effectiveProjectId],
       transport: isUrl ? "http" : "stdio",
       ...(isUrl ? { url: input } : { command: input.split(/\s+/)[0], args: input.split(/\s+/).slice(1).join(" ") }),
       env: [],
@@ -757,7 +757,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const authoringSig = useMemo(() => authoringSignals(authoredBp), [authoredBp]);
   // Pickable libraries for the Capabilities stage's skill + MCP pickers.
   const authorSkillLib = useMemo(() => buildSkillLibrary(skillDefs, kbBlocks), [skillDefs, kbBlocks]);
-  const authorMcpLib = useMemo(() => buildMcpLibrary(extensions), [extensions]);
+  const authorMcpLib = useMemo(() => buildMcpLibrary(mcpServers), [mcpServers]);
   // User-skipped optional stages (#921) surface as `skipped:<key>` signals so the data-driven
   // gate model (`sectionDone`) treats them as resolved.
   const skipSignals = useMemo(() => {
