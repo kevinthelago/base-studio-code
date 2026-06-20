@@ -290,6 +290,13 @@ impl Store {
     pub fn render_features_json(&self) -> rusqlite::Result<String> {
         Ok(serde_json::to_string_pretty(&self.feature_list()?).unwrap_or_else(|_| "[]".into()))
     }
+
+    /// Empty the whole plan store — every issue and feature (#plan-db). Backs the "clear plan"
+    /// reset: without it the cleared file/store state would be re-populated from the DB on the next
+    /// poll. Truncates rather than dropping the file, so it works even with the db open (WAL).
+    pub fn clear(&self) -> rusqlite::Result<()> {
+        self.conn.execute_batch("DELETE FROM issues; DELETE FROM features;")
+    }
 }
 
 // ── schema ───────────────────────────────────────────────────────────────────────
@@ -572,6 +579,16 @@ mod tests {
         s.feature_upsert(&feat("X")).unwrap();
         s.feature_remove("x").unwrap();
         assert!(s.feature_list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn clear_empties_issues_and_features() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk("F1", "an issue")).unwrap();
+        s.feature_upsert(&feat("A feature")).unwrap();
+        s.clear().unwrap();
+        assert!(s.list(None, None).unwrap().is_empty(), "issues cleared");
+        assert!(s.feature_list().unwrap().is_empty(), "features cleared");
     }
 
     #[test]

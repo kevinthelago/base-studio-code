@@ -508,6 +508,11 @@ fn clear_project_plan_files(project_key: String) -> Result<u32, String> {
     if skeleton.is_dir() && std::fs::remove_dir_all(&skeleton).is_ok() {
         removed += 1;
     }
+    // Empty the plan store too (#plan-db): issues + features live in plan.db, not files, so a
+    // file-only clear would be undone when the next poll re-reads the DB. Best-effort.
+    if let Err(e) = plan_db::clear(&project_key) {
+        log::warn!("clear_project_plan_files({project_key}): clearing plan.db failed: {e}");
+    }
     log::info!("clear_project_plan_files({project_key}): removed {removed} files");
     Ok(removed)
 }
@@ -2864,6 +2869,27 @@ mod tests {
         // Missing project -> Ok(0), no panic.
         let n = super::clear_project_plan_files("no-such-bsc-cpf-key".to_string()).unwrap();
         assert_eq!(n, 0);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn clear_project_plan_files_empties_the_plan_db() {
+        // The plan now lives in plan.db, not files — clearing must empty it too, or the next poll
+        // re-reads the DB and the plan reappears (#plan-db).
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("cpfdb");
+        let key = "test-clear-plan-db".to_string();
+        let db = super::project_dir(&key).join("plan.db");
+        {
+            let store = plandb::Store::open(&db).unwrap();
+            store.upsert(&plandb::PlanIssue { r#ref: "F1".into(), title: "issue".into(), ..Default::default() }).unwrap();
+            store.feature_upsert(&plandb::PlanFeature { name: "Feature".into(), ..Default::default() }).unwrap();
+        }
+        super::clear_project_plan_files(key.clone()).unwrap();
+        let store = plandb::Store::open(&db).unwrap();
+        assert!(store.list(None, None).unwrap().is_empty(), "issues cleared from the DB");
+        assert!(store.feature_list().unwrap().is_empty(), "features cleared from the DB");
 
         std::fs::remove_dir_all(&home).ok();
     }
