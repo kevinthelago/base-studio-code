@@ -1,8 +1,9 @@
 import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "../lib/core/storage";
 import {       deriveTabIdentity } from "../lib/core/projectPaths";
-import {  refreshBuiltIns } from "../screens/planner/stages/blueprints";
+import {  refreshBuiltIns, type Blueprint } from "../screens/planner/stages/blueprints";
 import { migrateLegacyExtensions } from "../lib/session/migrateExtensions";
 import {  refreshPackagedSkills } from "../lib/session/skills";
 
@@ -161,6 +162,32 @@ export const useAppStore = create<AppStore>()(
         if (state?.blueprints) {
           state.blueprints = refreshBuiltIns(state.blueprints);
         }
+        // Hydrate user blueprints from their on-disk dir (#blueprints): union them in (so one that
+        // survived a store reset or a fresh download appears), and migrate any persisted-but-not-yet-
+        // on-disk user blueprint forward to the dir. The dir is the durable home; the persisted list
+        // is a cache; built-ins stay code-owned. Async — runs after hydration settles.
+        void invoke<string[]>("list_blueprints").then((rows) => {
+          const parse = (s: string): Blueprint | undefined => {
+            try {
+              const b = JSON.parse(s);
+              return b && typeof b.id === "string" && Array.isArray(b.sections) ? (b as Blueprint) : undefined;
+            } catch { return undefined; }
+          };
+          const fromDir = (rows ?? []).map(parse).filter((b): b is Blueprint => !!b && b.origin !== "built-in");
+          const onDiskIds = new Set(fromDir.map((b) => b.id));
+          if (fromDir.length) {
+            useAppStore.setState((s) => {
+              const byId = new Map(s.blueprints.map((b) => [b.id, b]));
+              for (const b of fromDir) byId.set(b.id, b); // the dir wins for user blueprints
+              return { blueprints: [...byId.values()] };
+            });
+          }
+          for (const b of useAppStore.getState().blueprints) {
+            if (b.origin !== "built-in" && !onDiskIds.has(b.id)) {
+              void invoke("write_blueprint", { id: b.id, json: JSON.stringify(b) }).catch(() => {});
+            }
+          }
+        }).catch(() => {});
         // Same for the packaged skills (#677-style): replace the code-owned set from
         // code and prune any retired packaged skill, so a store seeded with the old
         // dev-workflow skills picks up the compliance/standards library on next load.

@@ -1,6 +1,7 @@
 // PlanSlice — extracted from the store implementation (store split, stage 2).
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkSection, cloneSections, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "../../screens/planner/stages/blueprints";
 import { canonicalSectionKey, emptyFleet } from "../../screens/planner/stages/planSections";
@@ -15,7 +16,19 @@ type PlanSlice = Pick<AppStore,
   "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planKbAssignments" | "addPlanKbAssignment" | "removePlanKbAssignment" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintSections" | "removeBlueprint" | "importBlueprint" | "stagePipelineRuns" | "setStagePipelineRun" | "stagePreview" | "setStagePreview" | "sectionGrades" | "setSectionGrade" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPerm" | "setPlanAgentStreamPreset" | "generateFleetProfiles" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
-export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set) => ({
+// User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
+// <id>.json so they survive a store reset and a download has a real home (#blueprints). Best-effort,
+// fire-and-forget — the store stays the in-memory source; the dir is the durable copy.
+const syncBlueprintFile = (bp?: Blueprint) => {
+  if (bp && bp.origin !== "built-in") {
+    void invoke("write_blueprint", { id: bp.id, json: JSON.stringify(bp) }).catch(() => {});
+  }
+};
+const deleteBlueprintFile = (id: string) => {
+  void invoke("delete_blueprint", { id }).catch(() => {});
+};
+
+export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, get) => ({
       configProfiles: [],
       addConfigProfile: (profile) =>
         set((s) => ({
@@ -217,12 +230,12 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set) 
         }),
       addBlueprint: () => {
         const id = `bp-${Date.now().toString(36)}`;
-        set((s) => ({
-          blueprints: [...s.blueprints, {
-            id, name: "Untitled blueprint", desc: "New configuration",
-            sections: [mkSection("context", { expanded: true })],
-          }],
-        }));
+        const bp: Blueprint = {
+          id, name: "Untitled blueprint", desc: "New configuration",
+          sections: [mkSection("context", { expanded: true })],
+        };
+        set((s) => ({ blueprints: [...s.blueprints, bp] }));
+        syncBlueprintFile(bp);
         return id;
       },
       duplicateBlueprint: (id) => {
@@ -236,23 +249,32 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set) 
           blueprints.splice(i + 1, 0, copy);
           return { blueprints };
         });
+        syncBlueprintFile(get().blueprints.find((b) => b.id === nid));
         return nid;
       },
-      updateBlueprintMeta: (id, patch) =>
-        set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, ...patch } : b)) })),
-      setBlueprintSections: (id, sections) =>
-        set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, sections } : b)) })),
-      removeBlueprint: (id) =>
+      updateBlueprintMeta: (id, patch) => {
+        set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, ...patch } : b)) }));
+        syncBlueprintFile(get().blueprints.find((b) => b.id === id));
+      },
+      setBlueprintSections: (id, sections) => {
+        set((s) => ({ blueprints: s.blueprints.map((b) => (b.id === id ? { ...b, sections } : b)) }));
+        syncBlueprintFile(get().blueprints.find((b) => b.id === id));
+      },
+      removeBlueprint: (id) => {
         set((s) => {
           const blueprints = s.blueprints.filter((b) => b.id !== id);
           const activeBlueprintId = s.activeBlueprintId === id
             ? (blueprints[0]?.id ?? DEFAULT_BLUEPRINT_ID)
             : s.activeBlueprintId;
           return { blueprints, activeBlueprintId };
-        }),
+        });
+        deleteBlueprintFile(id);
+      },
       importBlueprint: (bp) => {
         const id = `bp-${Date.now().toString(36)}`;
-        set((s) => ({ blueprints: [...s.blueprints, { ...bp, id, sections: cloneSections(bp.sections) }] }));
+        const created: Blueprint = { ...bp, id, sections: cloneSections(bp.sections) };
+        set((s) => ({ blueprints: [...s.blueprints, created] }));
+        syncBlueprintFile(created);
         return id;
       },
 
