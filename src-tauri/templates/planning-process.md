@@ -430,14 +430,17 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
 
 - **`goal`** — always document it; write its first sentence to read as the
   project's title and its opening line as a one-line description.
-- **`features`** — when the blueprint has a **Features** stage, write `features.json`
-  as a JSON array of capability objects:
-  `{"slug","name","behavior","acceptance":[],"approach","tools":[],"data","stream"?}`.
-  One object per user-facing capability, which is ALSO its fleet **stream** (`stream`
-  defaults to `slug`). This is the Features stage's gated artifact (the board + gate
-  read it): a feature is "defined" once it has `name` + `behavior` + ≥1 `acceptance`.
-  Write/confirm ONE feature at a time. The per-feature `repo__<short>__feat__<slug>.md`
-  sections (below) are the *working notes*; `features.json` is the durable artifact.
+- **`features`** — when the blueprint has a **Features** stage, work **titles-first** via the
+  `bsc-plan feature` store (NOT a features.json file). FIRST register the COMPLETE title roster in
+  one pass — `bsc-plan feature add "Invite teammates" "Export to CSV" …` (names only) — and agree it
+  with the user. THEN fill each in one at a time by slug:
+  `echo '{"slug","behavior","acceptance":[],"approach","tools":[],"data","stream"?}' | bsc-plan feature add`
+  (merges in place — never resend the `name`). One feature per user-facing capability, which is ALSO
+  its fleet **stream** (`stream` defaults to `slug`). The board + gate read the store: a feature is
+  "defined" once it has `name` + `behavior` + ≥1 `acceptance` (`bsc-plan feature list` shows ✓/·).
+  The per-feature `repo__<short>__feat__<slug>.md` sections (below) are the *working notes*; the
+  plan store is the durable artifact. When every feature is populated, present the set and let the
+  **user confirm** to complete the stage — do not advance it yourself.
 - **`phases`** — write `phases.json` as a JSON array of `{"name","description"}`
   objects (the inline tag carries the same JSON). Each phase needs a "done when"
   definition; never include time estimates or week numbers.

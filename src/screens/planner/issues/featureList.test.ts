@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFeaturesFile, featureDefined, featuresSummary } from "./featureList";
+import { parseFeaturesFile, featureDefined, featuresSummary, featuresGateComplete, featuresAwaitingConfirm } from "./featureList";
 
 describe("parseFeaturesFile", () => {
   it("returns [] for empty / bad JSON / non-array", () => {
@@ -55,5 +55,19 @@ describe("featureDefined / featuresSummary", () => {
     expect(featuresSummary([])).toEqual({ count: 0, allConfirmed: false });
     expect(featuresSummary([full])).toEqual({ count: 1, allConfirmed: true });
     expect(featuresSummary([full, { slug: "b", name: "B" }])).toEqual({ count: 2, allConfirmed: false });
+  });
+});
+
+describe("featuresGateComplete / featuresAwaitingConfirm (#plan-db — the auto-complete fix)", () => {
+  it("a single fully-populated feature does NOT complete the stage until the user confirms", () => {
+    const populated = { allConfirmed: true }; // even one defined feature reports all-defined
+    expect(featuresGateComplete(populated, false)).toBe(false); // the old auto-complete is gone
+    expect(featuresGateComplete(populated, true)).toBe(true);   // completes once the user confirms
+  });
+
+  it("offers the confirm only once everything is populated, not mid-population", () => {
+    expect(featuresAwaitingConfirm({ allConfirmed: false }, false)).toBe(false); // still populating → no offer
+    expect(featuresAwaitingConfirm({ allConfirmed: true }, false)).toBe(true);   // all populated → offer confirm
+    expect(featuresAwaitingConfirm({ allConfirmed: true }, true)).toBe(false);   // already confirmed → nothing pending
   });
 });

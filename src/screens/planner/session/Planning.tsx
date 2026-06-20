@@ -24,7 +24,7 @@ import {
   ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
 } from "../stages/planSections";
-import { parseFeaturesFile, featuresSummary } from "../issues/featureList";
+import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, type PlanFeature } from "../issues/featureList";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
@@ -721,7 +721,10 @@ export function Planning({ visible }: { visible: boolean }) {
       // Routing dropped design files to the project completes the UI stage — recorded as a
       // confirmation of the `ui` section so it persists (#837).
       uiRouted: confirmedSet.has("ui"),
-      features: featureState,
+      // Features completes ONLY when every feature is populated AND the user has confirmed the set
+      // (#plan-db) — `allConfirmed` (all-defined) alone used to auto-advance after a single feature.
+      // Folding the user-confirm in here keeps the gate signal (`featuresConfirmed`) unchanged.
+      features: { count: featureState.count, allConfirmed: featuresGateComplete(featureState, confirmedSet.has(FEATURES_KEY)) },
     });
   }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, confirmedSet]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
@@ -794,8 +797,15 @@ export function Planning({ visible }: { visible: boolean }) {
   const pendingConfirm = useMemo(() => {
     const activeKey = phases[focusActiveIdx]?.key;
     const activeSec = activeKey ? planSecs.find((s) => s.key === activeKey) : undefined;
-    return stageConfirmKeys(activeKey, sections, !!activeSec?.gateRule, !!activeKey && confirmedSet.has(activeKey));
-  }, [phases, focusActiveIdx, sections, planSecs, confirmedSet]);
+    const base = stageConfirmKeys(activeKey, sections, !!activeSec?.gateRule, !!activeKey && confirmedSet.has(activeKey));
+    // Features (#plan-db): once every feature in the roster is populated, offer the one-click
+    // confirm that completes the stage. Until then the gate holds (titles-first → count = N), so a
+    // single populated feature can no longer auto-advance.
+    if (activeKey === FEATURES_KEY && featuresAwaitingConfirm(featureState, confirmedSet.has(FEATURES_KEY))) {
+      return base.includes(FEATURES_KEY) ? base : [...base, FEATURES_KEY];
+    }
+    return base;
+  }, [phases, focusActiveIdx, sections, planSecs, confirmedSet, featureState]);
   // The active phase is an enabled OPTIONAL stage the user hasn't decided yet — so the advance bar
   // offers a "Skip stage" control beside the primary action (#921). `phasesFrom` reports a not-yet
   // -decided optional stage at the frontier as "active"; a decided (done/skipped) one isn't.
@@ -1065,9 +1075,9 @@ export function Planning({ visible }: { visible: boolean }) {
           const key     = canonicalSectionKey(m[1]);
           const content = m[2].trim();
           foundPlan = true;
-          // Issues live in plan.db now (#plan-db); ignore any inline issues section text so it
-          // can't clobber the DB-sourced "issues" content (the planner writes via `bsc-plan`).
-          if (key === "issues") continue;
+          // Issues + features live in plan.db now (#plan-db); ignore any inline section text for
+          // them so it can't clobber the DB-sourced content (the planner writes via `bsc-plan`).
+          if (key === "issues" || key === FEATURES_KEY) continue;
           // Any \w+ key is a valid section (dynamic planner). Persist to the
           // store unless the user already confirmed it — confirmed sections are
           // frozen. The derived `sections`/`skipped` pick the change up on the
@@ -1461,6 +1471,14 @@ export function Planning({ visible }: { visible: boolean }) {
           if (json !== (saved["issues"] ?? "")) store.setPlanSection(effectiveProjectId, "issues", json);
         } catch { /* plan.db not created until the planner adds its first issue — ignore */ }
 
+        // Features are DB-owned too (#plan-db) — titles-first roster in plan.db, not a features.json
+        // file. Reflect them into the "features" section so the Features board + gate read unchanged.
+        try {
+          const dbFeatures = await invoke<PlanFeature[]>("plan_list_features", { projectKey: effectiveProjectId });
+          const json = JSON.stringify(dbFeatures ?? []);
+          if (json !== (saved[FEATURES_KEY] ?? "")) store.setPlanSection(effectiveProjectId, FEATURES_KEY, json);
+        } catch { /* plan.db not created until the planner registers its first feature — ignore */ }
+
         const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
         const entries = Object.entries(result);
 
@@ -1490,7 +1508,7 @@ export function Planning({ visible }: { visible: boolean }) {
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
           const key = canonicalSectionKey(rawKey);
-          if (key === "issues") continue; // DB-owned (#plan-db) — sourced from plan.db above, not a file
+          if (key === "issues" || key === FEATURES_KEY) continue; // DB-owned (#plan-db) — sourced from plan.db above, not a file
           if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
             store.setPlanSection(effectiveProjectId, key, content);
           }

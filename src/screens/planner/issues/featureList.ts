@@ -74,3 +74,18 @@ export function featureDefined(f: PlanFeature): boolean {
 export function featuresSummary(features: PlanFeature[]): { count: number; allConfirmed: boolean } {
   return { count: features.length, allConfirmed: features.length > 0 && features.every(featureDefined) };
 }
+
+/**
+ * Whether the Features stage may COMPLETE (#plan-db): every feature populated AND the user has
+ * confirmed the set. The user-confirm is the boundary that stops a single fully-populated feature
+ * from auto-advancing the stage — the planner works titles-first, then the user confirms at the end.
+ */
+export function featuresGateComplete(summary: { allConfirmed: boolean }, userConfirmed: boolean): boolean {
+  return summary.allConfirmed && userConfirmed;
+}
+
+/** Whether to OFFER the one-click confirm: every feature is populated but the user hasn't confirmed
+ *  yet. While features are still being populated, no confirm is offered (the gate stays closed). */
+export function featuresAwaitingConfirm(summary: { allConfirmed: boolean }, userConfirmed: boolean): boolean {
+  return summary.allConfirmed && !userConfirmed;
+}
