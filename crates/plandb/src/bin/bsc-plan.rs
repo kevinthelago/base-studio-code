@@ -17,7 +17,7 @@
 //!   bsc-plan render                   # print the issues.json projection to stdout
 //! Global flags: --db <path>, --json
 
-use plandb::{is_valid_status, PlanIssue, Store, STATUSES};
+use plandb::{is_valid_status, PlanFeature, PlanIssue, Store, STATUSES};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -144,6 +144,65 @@ fn run() -> Result<(), String> {
             println!("{}", s.render_issues_json().map_err(|e| e.to_string())?);
             Ok(())
         }
+        "feature" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `feature add <name>...` registers titles (the roster); with no names it reads a
+                // feature object/array on stdin (the detail-fill path, merged by slug).
+                "add" => {
+                    let names: Vec<&String> = args.positional.iter().skip(2).collect();
+                    let slugs = if names.is_empty() {
+                        cmd_feature_add(&s)?
+                    } else {
+                        names
+                            .iter()
+                            .map(|n| s.feature_upsert(&PlanFeature { name: (*n).clone(), ..Default::default() }))
+                            .collect::<rusqlite::Result<Vec<_>>>()
+                            .map_err(|e| e.to_string())?
+                    };
+                    if args.json {
+                        println!("{}", serde_json::to_string(&slugs).unwrap_or_else(|_| "[]".into()));
+                    } else {
+                        for sl in &slugs {
+                            println!("{sl}");
+                        }
+                    }
+                    Ok(())
+                }
+                "list" => {
+                    let feats = s.feature_list().map_err(|e| e.to_string())?;
+                    if args.json {
+                        println!("{}", serde_json::to_string(&feats).unwrap_or_else(|_| "[]".into()));
+                    } else if feats.is_empty() {
+                        println!("(no features)");
+                    } else {
+                        for f in &feats {
+                            println!("{}", render_feature_line(f));
+                        }
+                    }
+                    Ok(())
+                }
+                "get" => {
+                    let slug = args.positional.get(2).ok_or("usage: bsc-plan feature get <slug>")?;
+                    match s.feature_get(slug).map_err(|e| e.to_string())? {
+                        Some(f) if args.json => println!("{}", serde_json::to_string_pretty(&f).unwrap_or_default()),
+                        Some(f) => print!("{}", render_feature(&f)),
+                        None => return Err(format!("no feature with slug '{slug}'")),
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let slug = args.positional.get(2).ok_or("usage: bsc-plan feature remove <slug>")?;
+                    s.feature_remove(slug).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("removed {slug}");
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown feature command '{other}'\n\n{USAGE}")),
+            }
+        }
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
 }
@@ -187,6 +246,65 @@ fn cmd_add(s: &Store) -> Result<Vec<String>, String> {
 
 fn to_json(issue: &PlanIssue) -> String {
     serde_json::to_string_pretty(issue).unwrap_or_else(|_| "{}".into())
+}
+
+/// Read JSON from stdin (one feature object or an array) and merge-upsert each; return the slugs.
+/// Used for the detail-fill phase (`{"slug":"…","behavior":…}`) — title rows are added by name.
+fn cmd_feature_add(s: &Store) -> Result<Vec<String>, String> {
+    let mut buf = String::new();
+    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+    let buf = buf.trim();
+    if buf.is_empty() {
+        return Err("feature add: pass title name(s) as args, or a feature object/array as JSON on stdin".into());
+    }
+    let feats: Vec<PlanFeature> = if buf.starts_with('[') {
+        serde_json::from_str(buf).map_err(|e| format!("parsing feature array: {e}"))?
+    } else {
+        vec![serde_json::from_str(buf).map_err(|e| format!("parsing feature: {e}"))?]
+    };
+    let mut slugs = Vec::new();
+    for f in &feats {
+        if f.slug.trim().is_empty() && f.name.trim().is_empty() {
+            return Err("feature add: each feature needs a \"slug\" or a \"name\"".into());
+        }
+        slugs.push(s.feature_upsert(f).map_err(|e| e.to_string())?);
+    }
+    Ok(slugs)
+}
+
+/// A one-line feature entry: `invite-teammates  ✓ Invite teammates   (auth)` — ✓ = fully defined.
+fn render_feature_line(f: &PlanFeature) -> String {
+    let defined = !f.name.is_empty() && f.behavior.as_deref().map(|b| !b.trim().is_empty()).unwrap_or(false) && !f.acceptance.is_empty();
+    let mark = if defined { "✓" } else { "·" };
+    let stream = f.stream.as_deref().map(|s| format!("   ({s})")).unwrap_or_default();
+    format!("{:<24} {} {}{}", f.slug, mark, f.name, stream)
+}
+
+/// The full human-readable spec of one feature (for `feature get`).
+fn render_feature(f: &PlanFeature) -> String {
+    let mut out = format!("{}  {}\n", f.slug, f.name);
+    if let Some(s) = &f.stream {
+        out.push_str(&format!("  stream: {s}\n"));
+    }
+    if let Some(b) = &f.behavior {
+        out.push_str(&format!("  behavior: {b}\n"));
+    }
+    if let Some(a) = &f.approach {
+        out.push_str(&format!("  approach: {a}\n"));
+    }
+    if let Some(d) = &f.data {
+        out.push_str(&format!("  data: {d}\n"));
+    }
+    if !f.tools.is_empty() {
+        out.push_str(&format!("  tools: {}\n", f.tools.join(", ")));
+    }
+    if !f.acceptance.is_empty() {
+        out.push_str("  acceptance:\n");
+        for a in &f.acceptance {
+            out.push_str(&format!("    - {a}\n"));
+        }
+    }
+    out
 }
 
 /// A one-line list entry: `F3  [in_progress]  Add login   (auth)`.
@@ -254,6 +372,13 @@ COMMANDS:
   status <ref> <status>     set status: open|in_progress|blocked|complete|verified|failed
   remove <ref>              delete an issue
   render                    print the issues.json projection to stdout
+
+FEATURES (titles-first):
+  feature add <name>...     register feature title(s) — the roster (slug derived from name)
+  feature add               (no names) merge details from a feature object/array on stdin, by slug
+  feature list              list features (· = title only, ✓ = fully defined)
+  feature get <slug>        print one feature's full spec
+  feature remove <slug>     delete a feature
 
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 ";
