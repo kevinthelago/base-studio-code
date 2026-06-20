@@ -10,7 +10,7 @@ import { defFromCatalog, type ExtensionDef } from "../../../lib/extensions";
 import { EXT_CATALOG } from "../../../data/extensions";
 import { catalogLink } from "../../../lib/mcpInstall";
 import { applyMcpAssign, type ExtensionStoreLike } from "../shared/planExtensions";
-import { type Blueprint } from "../blueprints";
+import { type Blueprint } from "../stages/blueprints";
 
 /** One pickable MCP server. `id` is the server NAME (the portable ref stored in a blueprint). */
 export interface McpLibraryItem {

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { BlueprintAssistant } from "../screens/planner/blueprints/BlueprintAssistant";
 import { mkStageSection } from "../screens/planner/blueprints/blueprintEdit";
-import type { BlueprintSection } from "../screens/planner/blueprints";
+import type { BlueprintSection } from "../screens/planner/stages/blueprints";
 
 function Harness({ onApplied }: { onApplied?: (s: BlueprintSection[]) => void }) {
   const [sections, setSections] = useState<BlueprintSection[]>([mkStageSection("context"), mkStageSection("stack")]);

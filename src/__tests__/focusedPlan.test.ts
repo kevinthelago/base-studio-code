@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, connectorKind,
   sectionForPhase, type Phase, type PhaseStatus,
-} from "../screens/planner/focusedPlan";
-import { confirmedSignal, skippedSignal, type BlueprintSection } from "../screens/planner/blueprints";
-import type { PlanSignals } from "../screens/planner/stageGate";
+} from "../screens/planner/stages/focusedPlan";
+import { confirmedSignal, skippedSignal, type BlueprintSection } from "../screens/planner/stages/blueprints";
+import type { PlanSignals } from "../screens/planner/stages/stageGate";
 
 const sec = (key: string, over: Partial<BlueprintSection> = {}): BlueprintSection => ({
   uid: key, key, name: key.toUpperCase(), glyph: "•", gate: `${key} gate`,

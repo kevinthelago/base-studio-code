@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import {
   blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
   type Blueprint,
-} from "../screens/planner/blueprints";
+} from "../screens/planner/stages/blueprints";
 import { LibraryView } from "../screens/planner/blueprints/BlueprintLibrary";
 
 const bp = (id: string, name: string, over: Partial<Blueprint> = {}): Blueprint =>

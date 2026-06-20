@@ -4,7 +4,7 @@
 // through the items one by one as each completes. This file is the pure decision ("what to
 // inject next"); the wiring (pty_write + idle timing + the injected-once guard + building the
 // ConductorState) lives in Planning.tsx. No React/Tauri — unit-testable.
-import type { BlueprintSection } from "./blueprints";
+import type { BlueprintSection } from "./stages/blueprints";
 
 export interface StagePrompt {
   /** Human label for the picker row (the stage name, or a substep's label/key). */

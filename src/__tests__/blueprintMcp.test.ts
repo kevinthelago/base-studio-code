@@ -3,7 +3,7 @@ import { buildMcpLibrary, resolveBlueprintMcp, collectBlueprintMcp, applyBluepri
 import { addMcpServer, removeMcpServer } from "../screens/planner/blueprints/blueprintEdit";
 import { type ExtensionStoreLike } from "../screens/planner/shared/planExtensions";
 import type { ExtensionDef } from "../lib/extensions";
-import type { Blueprint, BlueprintSection } from "../screens/planner/blueprints";
+import type { Blueprint, BlueprintSection } from "../screens/planner/stages/blueprints";
 
 const sec = (over: Partial<BlueprintSection>): BlueprintSection => ({
   uid: over.uid ?? "u", key: over.key ?? "context", name: "S", glyph: "◆", gate: "", deps: [],

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pendingStageConfirms, stageConfirmKeys } from "../screens/planner/planStageDerive";
+import { pendingStageConfirms, stageConfirmKeys } from "../screens/planner/stages/planStageDerive";
 import type { SectionState } from "../screens/planner/github/ghStructure";
 
 type S = { k: string; state: SectionState };

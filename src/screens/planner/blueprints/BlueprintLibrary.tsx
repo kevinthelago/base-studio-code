@@ -11,7 +11,7 @@ import { stageKind, tint, hue } from "./blueprintCatalog";
 import {
   blueprintCategory, filterBlueprints, isAuthoringBlueprint, CATEGORY_META, BLUEPRINT_CATEGORIES,
   type Blueprint, type BlueprintSection, type BlueprintGist, type BlueprintOrigin, type BlueprintCategory,
-} from "../blueprints";
+} from "../stages/blueprints";
 
 const HUES = [70, 230, 295, 195, 145, 350, 25];
 

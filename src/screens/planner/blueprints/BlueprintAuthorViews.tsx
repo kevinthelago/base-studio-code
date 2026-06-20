@@ -14,7 +14,7 @@ import {
   reorderStages, addStage, deleteStage, toggleDep, setOutput, setStageField,
   addSkill, removeSkill, addMcpServer, removeMcpServer, depCandidates,
 } from "./blueprintEdit";
-import type { Blueprint, BlueprintSection } from "../blueprints";
+import type { Blueprint, BlueprintSection } from "../stages/blueprints";
 import type { BlueprintSkillItem } from "./blueprintSkills";
 import type { McpLibraryItem } from "./blueprintMcp";
 

@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "../store";
-import type { AgentStream, FleetPlan } from "../screens/planner/planSections";
+import type { AgentStream, FleetPlan } from "../screens/planner/stages/planSections";
 import { sanitizeProjectKey } from "../lib/projectPaths";
 
 const LOAD_STREAM_OWNS = [

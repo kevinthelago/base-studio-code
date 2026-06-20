@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { authoringChecks } from "../screens/planner/blueprints/BlueprintAuthorViews";
-import { mkSection, type Blueprint } from "../screens/planner/blueprints";
+import { mkSection, type Blueprint } from "../screens/planner/stages/blueprints";
 
 describe("authoringChecks (#923 — Review-stage lint)", () => {
   const base = (over: Partial<Blueprint>): Blueprint =>

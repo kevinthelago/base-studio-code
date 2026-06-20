@@ -3,7 +3,7 @@ import {
   decideAutopilotAction, buildUserSimPrompt, staticReply, autopilotProgress,
   type AutopilotContext,
 } from "../screens/planner/planAutopilot";
-import type { Phase } from "../screens/planner/focusedPlan";
+import type { Phase } from "../screens/planner/stages/focusedPlan";
 
 const ctx = (over: Partial<AutopilotContext> = {}): AutopilotContext => ({
   planReady: false, published: false, confirmKeys: [], plannerAwaiting: false,

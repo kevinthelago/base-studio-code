@@ -7,7 +7,7 @@ import {
   searchNodes,
   type Gap,
 } from "../screens/planner/shared/discoverability";
-import type { PlanNode, NodeKind, Maturity } from "../screens/planner/planNode";
+import type { PlanNode, NodeKind, Maturity } from "../screens/planner/stages/planNode";
 import type { Shape } from "../screens/planner/data/shape";
 
 function n(id: string, kind: NodeKind, maturity: Maturity, children: PlanNode[] = [], summary?: string): PlanNode {

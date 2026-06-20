@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Stepper, PhaseHeader, PhaseFooter, LockBanner, DoneBanner } from "../screens/planner/FocusedShell";
-import type { Phase } from "../screens/planner/focusedPlan";
+import type { Phase } from "../screens/planner/stages/focusedPlan";
 
 const phase = (over: Partial<Phase> = {}): Phase => ({
   key: "context", name: "Context", glyph: "◆", blurb: "Discovery", gate: "all topics resolved",

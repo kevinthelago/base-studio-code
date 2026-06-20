@@ -3,7 +3,7 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/extensions/manifest.ts.
 
-import { type Blueprint, type BlueprintSection, uid } from "../blueprints";
+import { type Blueprint, type BlueprintSection, uid } from "../stages/blueprints";
 import { wrapExtension, type ExtensionManifest } from "../../../lib/extensions/manifest";
 import { type SkillPayload } from "./blueprintSkills";
 

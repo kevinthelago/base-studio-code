@@ -4,7 +4,7 @@ import { CatalogView } from "../screens/planner/blueprints/BlueprintCatalogView"
 import { NewBlueprintModal, PublishModal, ImportModal, type PreviewBlueprint } from "../screens/planner/blueprints/BlueprintModals";
 import { mkStageSection } from "../screens/planner/blueprints/blueprintEdit";
 import { gistUpdateAvailable } from "../screens/planner/blueprints/blueprintCatalog";
-import type { Blueprint } from "../screens/planner/blueprints";
+import type { Blueprint } from "../screens/planner/stages/blueprints";
 
 vi.mock("../lib/extensions/gist", () => ({ listBlueprintGists: vi.fn() }));
 import { listBlueprintGists } from "../lib/extensions/gist";

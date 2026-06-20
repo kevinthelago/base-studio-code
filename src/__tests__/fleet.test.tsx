@@ -6,7 +6,7 @@ import {
   statusForPane, buildLiveWorkers, statusCounts, deriveFleetKpis, tabOfPane,
 } from "../lib/fleetLive";
 import { emptyCoordState, type CoordState } from "../lib/coordination";
-import type { AgentStream } from "../screens/planner/planSections";
+import type { AgentStream } from "../screens/planner/stages/planSections";
 
 function stream(p: Partial<AgentStream> = {}): AgentStream {
   return { id: "s", name: "api", repo: "o/r", owns: [], issues: ["#1", "#2"], dependsOn: [], ...p };

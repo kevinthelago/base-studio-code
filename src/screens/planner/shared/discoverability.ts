@@ -10,7 +10,7 @@
 // signal); everything else is PULL. Pure model core — the UI affordances build on
 // it. Free of React / xterm / Tauri imports (matches planNode/shape/shaping).
 
-import { flatten, type PlanNode } from "../planNode";
+import { flatten, type PlanNode } from "../stages/planNode";
 import { validateShapePolicy, type Shape } from "../data/shape";
 import { DIMENSIONS, type DimensionId } from "../data/shaping";
 

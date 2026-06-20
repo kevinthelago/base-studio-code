@@ -3,9 +3,9 @@ import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, bundledSkill
 import { resolveBlueprintSkillPayloads, type SkillPayload } from "../screens/planner/blueprints/blueprintSkills";
 import { skillFromPayload } from "../lib/skills";
 import { encodeShareCode, decodeShareCode, wrapExtension } from "../lib/extensions/manifest";
-import { makeBlueprints } from "../screens/planner/blueprints";
+import { makeBlueprints } from "../screens/planner/stages/blueprints";
 import { useAppStore } from "../store";
-import type { Blueprint } from "../screens/planner/blueprints";
+import type { Blueprint } from "../screens/planner/stages/blueprints";
 import type { SkillDef } from "../lib/skills";
 import type { KbBlock } from "../data/mock";
 

@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import "../../../styles/blueprints.css";
 import { useAppStore } from "../../../store";
 import { tint, hue, DEFAULT_GIST_SOURCE } from "./blueprintCatalog";
-import { uid, type Blueprint, type BlueprintSection, type BlueprintGist } from "../blueprints";
+import { uid, type Blueprint, type BlueprintSection, type BlueprintGist } from "../stages/blueprints";
 import { sanitizeProjectKey } from "../../../lib/projectPaths";
 import { LibraryView, type CardMenuAction } from "./BlueprintLibrary";
 import { CatalogView } from "./BlueprintCatalogView";

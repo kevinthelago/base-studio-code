@@ -14,7 +14,7 @@
 // Pure (no React/Tauri) so the parsing is unit-testable and shared between Planning.tsx
 // and its tests.
 
-import { parseSectionKey } from "../planSections";
+import { parseSectionKey } from "../stages/planSections";
 import type { PlanIssue } from "./planIssues";
 
 /** The repo-tier topic prefix that marks a section as a feature (`feat__{slug}`). */

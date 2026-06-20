@@ -7,7 +7,7 @@
 // here), and the app (confirms sections, advances, publishes). The driver decides, each
 // tick, what the user/app should do next given the planning state.
 
-import type { Phase } from "./focusedPlan";
+import type { Phase } from "./stages/focusedPlan";
 
 /** How the simulated user answers the planner. Phase 1 wires `llm`; the rest are Phase 2. */
 export type AutopilotStrategy = "llm" | "scripted" | "random" | "none";

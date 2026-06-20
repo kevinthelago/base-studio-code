@@ -3,7 +3,7 @@ import {
   buildRelationshipGraph, effectiveVia,
   type RelStream, type RelationshipArtifact, type AgentRelationship,
 } from "../screens/planner/relationship/relationshipGraph";
-import { parseFleetFile, normalizeTopology } from "../screens/planner/planSections";
+import { parseFleetFile, normalizeTopology } from "../screens/planner/stages/planSections";
 
 const STREAMS: RelStream[] = [
   { id: "schema", role: "worker", repo: "core" },

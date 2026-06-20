@@ -3,7 +3,7 @@
 // Free of React / xterm / Tauri imports so the tag parsing and message building
 // can be unit-tested in isolation and shared with Planning.tsx.
 
-import type { AgentStream } from "./planSections";
+import type { AgentStream } from "./stages/planSections";
 import { flowOrUndefined } from "./fleet/agentFlow";
 import { type IntegrationStrategy, normalizeStrategy } from "./shared/integrationStrategy";
 

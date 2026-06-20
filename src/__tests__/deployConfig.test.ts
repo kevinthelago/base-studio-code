@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { defaultDeployConfig, deployChecks, deploymentDefined, coerceDeployConfig, parseDeployConfigTag } from "../screens/planner/shared/deployConfig";
-import { makeBlueprints } from "../screens/planner/blueprints";
+import { makeBlueprints } from "../screens/planner/stages/blueprints";
 
 describe("deployConfig (#919)", () => {
   it("seeds one proposed service per repo + a default env/pipeline ladder", () => {

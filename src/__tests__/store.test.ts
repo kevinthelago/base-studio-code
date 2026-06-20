@@ -3,10 +3,10 @@ import { useAppStore, TRIAGE_PROMPT } from "../store";
 import { fleetProfilesComplete } from "../lib/profileGen";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { QueuedPane } from "../lib/focusQueue";
-import type { FleetPlan } from "../screens/planner/planSections";
+import type { FleetPlan } from "../screens/planner/stages/planSections";
 import type { ExtensionDef } from "../lib/extensions";
-import { defaultStageConfig } from "../screens/planner/planStages";
-import { makeBlueprints } from "../screens/planner/blueprints";
+import { defaultStageConfig } from "../screens/planner/stages/planStages";
+import { makeBlueprints } from "../screens/planner/stages/blueprints";
 
 const RESET_STATE = {
   tabs: [

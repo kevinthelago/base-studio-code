@@ -3,7 +3,7 @@ import { useState } from "react";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { BlueprintEditorView } from "../screens/planner/blueprints/BlueprintEditor";
 import { mkStageSection } from "../screens/planner/blueprints/blueprintEdit";
-import type { BlueprintSection } from "../screens/planner/blueprints";
+import type { BlueprintSection } from "../screens/planner/stages/blueprints";
 
 /** A controlled harness so edits flow through onChange like the real page. */
 function Harness({ initial, onChangeSpy }: { initial: BlueprintSection[]; onChangeSpy?: (s: BlueprintSection[]) => void }) {
