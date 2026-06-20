@@ -24,7 +24,7 @@ import {
   ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
 } from "../stages/planSections";
-import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
+import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
@@ -2031,10 +2031,16 @@ export function Planning({ visible }: { visible: boolean }) {
         }
       }
 
-      // ── 4. Issues — one GitHub issue per granular PlanIssue (#311), pinned to its
-      //      milestone and added to the board, with its labels. Falls back to one
-      //      tracking issue per phase when the planner defined none. Idempotent. ──
-      const planIssues = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
+      // ── 4. Issues — generated from the FEATURES (one issue per feature, #plan-db): issues are
+      //      never authored during planning, so publish is where they come into existence. Each is
+      //      pinned to its milestone + added to the board. Falls back to one tracking issue per
+      //      phase when there are no features. Idempotent. ──
+      const planIssues = featuresToPlanIssues(parseFeaturesFile(sections.find(s => s.k === "features")?.content ?? ""));
+      // Materialize them into the plan store too, so the fleet/director have issues to coordinate on
+      // (the execution substrate) — publish populates the DB issues table from the DB features.
+      for (const iss of planIssues) {
+        await invoke("plan_upsert_issue", { projectKey: effectiveProjectId, issue: iss }).catch((e) => console.warn(`plan_upsert_issue ${iss.ref}: ${e}`));
+      }
       const phaseNames = phases.map(p => p.name);
       for (const [repoIdx, fullName] of repos.entries()) {
         // Check what already exists BEFORE creating so a re-sync never duplicates.

@@ -1,7 +1,10 @@
 // The feature list (#…): the authoritative artifact of the Features stage. Each entry is a
-// user-facing capability AND a fleet stream. The planner writes `features.json` (surfaced by the
-// poll as the `features` section); the Features board renders it and the gate signal reads it.
+// capability AND a fleet stream, carrying a dependency DAG (`dependsOn`). The planner writes them to
+// plan.db (surfaced by the poll as the `features` section); the Features board renders it and the
+// gate signal reads it. Issues are generated FROM features at publish — `featuresToPlanIssues`.
 // Pure + tolerant of partial/malformed input — no React/Tauri.
+
+import type { PlanIssue } from "./planIssues";
 
 export interface PlanFeature {
   /** Stable slug / stream id (kebab-case). */
@@ -104,6 +107,38 @@ export function featuresAwaitingConfirm(summary: { allConfirmed: boolean }, user
  *  signal now that issues are a publish-time artifact (it replaces the old "≥1 issue authored"). */
 export function featuresAllPhased(features: PlanFeature[]): boolean {
   return features.length > 0 && features.every((f) => f.phase !== undefined && f.phase !== "");
+}
+
+/** The extra prose (beyond acceptance/owns/dependsOn, which `renderIssueBody` adds) for a feature's
+ *  published issue: its behavior + approach + data + tools. */
+function featureBody(f: PlanFeature): string | undefined {
+  const parts: string[] = [];
+  if (f.behavior?.trim()) parts.push(f.behavior.trim());
+  if (f.approach?.trim()) parts.push(`## Approach\n${f.approach.trim()}`);
+  if (f.data?.trim()) parts.push(`## Data\n${f.data.trim()}`);
+  if (f.tools?.length) parts.push(`## Tools\n${f.tools.map((t) => `- ${t}`).join("\n")}`);
+  return parts.join("\n\n").trim() || undefined;
+}
+
+/**
+ * Project features into the issues published from them (#plan-db) — ONE issue per feature. Issues
+ * aren't authored during planning; this is what publish (and the structure card) generate from the
+ * DB features. The feature's slug becomes the issue `ref`, so a `dependsOn` between features is a
+ * `dependsOn` between issues; phase/acceptance carry over; behavior/approach/data/tools become the
+ * body. `owns`/`labels` are left to the fleet (assigned to the stream in the Permissions stage).
+ */
+export function featuresToPlanIssues(features: PlanFeature[]): PlanIssue[] {
+  return features.map((f) => ({
+    ref: f.slug,
+    title: f.name || f.slug,
+    phase: f.phase,
+    acceptance: f.acceptance ?? [],
+    owns: [],
+    dependsOn: f.dependsOn ?? [],
+    labels: [],
+    stream: f.stream ?? f.slug,
+    body: featureBody(f),
+  }));
 }
 
 /**
