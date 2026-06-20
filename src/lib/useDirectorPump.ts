@@ -22,7 +22,7 @@ import { ingestCoordLog, emptyCoordState } from "./coordination";
 import {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
-} from "../screens/planner/directorDrive";
+} from "../screens/planner/fleet/directorDrive";
 
 const POLL_MS = 1000;
 

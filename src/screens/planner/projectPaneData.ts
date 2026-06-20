@@ -12,8 +12,8 @@ import type { PlanIssue } from "./planIssues";
 import type { Section } from "./ghStructure";
 import type { NodeProgress } from "./ghProgress";
 import { resolvePhaseIndex } from "./planIssues";
-import { resolveFlow } from "./agentFlow";
-import { resolveDirectorDrive } from "./directorDrive";
+import { resolveFlow } from "./fleet/agentFlow";
+import { resolveDirectorDrive } from "./fleet/directorDrive";
 
 export type { PlanGrade, IssueGrade, MilestoneGrade, RepoGrade, Letter } from "../../lib/planGrade";
 // The render-shape contract lives in projectPane.types (#356, the shared pane
@@ -61,7 +61,7 @@ export interface BuildProjectPaneInput {
   topologyOverride?: import("./relationship/relationshipGraph").Topology;
   /** Per-project director-drive override (#…) — set in the Permissions pane, wins over
    *  `fleet.json`'s `director.drive`. */
-  directorDriveOverride?: import("./directorDrive").DirectorDrive;
+  directorDriveOverride?: import("./fleet/directorDrive").DirectorDrive;
   /** The project's deployment & infrastructure config (#919) — the Deploy stage pane's state. */
   deployConfig?: DeployConfig;
   sections: Section[];

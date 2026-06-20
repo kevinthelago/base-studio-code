@@ -6,7 +6,7 @@
 // that maps the real plan store into these shapes); projectPaneData re-exports
 // them for back-compat with existing import sites.
 
-import type { DirectorDrive } from "./directorDrive";
+import type { DirectorDrive } from "./fleet/directorDrive";
 import type { IntegrationStrategy } from "./integrationStrategy";
 import type { PlanGrade } from "../../lib/planGrade";
 import type { PlanFeature } from "./featureList";

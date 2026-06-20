@@ -5,13 +5,13 @@
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { CardHead, StatCard, Avatar } from "../../components/charts";
-import { useAppStore } from "../../store";
-import { STATUS } from "../../data/fleet";
+import { CardHead, StatCard, Avatar } from "../../../components/charts";
+import { useAppStore } from "../../../store";
+import { STATUS } from "../../../data/fleet";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
-import { parseAuditLog, type AuditRecord } from "../agents/auditLog";
-import type { LiveWorker } from "../../lib/fleetLive";
+import { parseAuditLog, type AuditRecord } from "../../agents/auditLog";
+import type { LiveWorker } from "../../../lib/fleetLive";
 
 const TIER_COLOR: Record<string, string> = {
   allow: "var(--success)", ask: "var(--accent)", deny: "var(--danger)",

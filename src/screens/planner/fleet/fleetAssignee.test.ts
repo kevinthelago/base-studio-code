@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveIssueAssignee } from "./fleetAssignee";
-import type { AgentStream } from "./planSections";
+import type { AgentStream } from "../planSections";
 
 const stream = (over: Partial<AgentStream>): AgentStream => ({
   id: "auth-ui", name: "Auth UI", repo: "own/web", owns: [], issues: [], dependsOn: [], ...over,

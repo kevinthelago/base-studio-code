@@ -25,10 +25,10 @@ import {
   parseFleetFile, canonicalSectionKey,
 } from "./planSections";
 import { parseFeaturesFile, featuresSummary } from "./featureList";
-import { buildWorkerScope } from "./workerScope";
-import { resolveIssueAssignee } from "./fleetAssignee";
+import { buildWorkerScope } from "./fleet/workerScope";
+import { resolveIssueAssignee } from "./fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "./repoScaffold";
-import type { FlowAutonomy, FlowPush, FlowGate } from "./agentFlow";
+import type { FlowAutonomy, FlowPush, FlowGate } from "./fleet/agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
 import { publishFleetRoster } from "../../lib/fleetRoster";
