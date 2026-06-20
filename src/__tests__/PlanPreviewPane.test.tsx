@@ -4,7 +4,7 @@ import { useAppStore } from "../store";
 
 // Mock the bundler so the render-preview pipeline runs without esbuild-wasm (its
 // module load fails under jsdom).
-vi.mock("../screens/planner/previewBundle", () => ({
+vi.mock("../screens/planner/preview/previewBundle", () => ({
   bundleSkeleton: vi.fn().mockResolvedValue("BUNDLE_JS"),
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
 }));

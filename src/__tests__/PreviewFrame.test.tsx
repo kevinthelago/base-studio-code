@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { PreviewFrame } from "../screens/planner/PreviewFrame";
+import { PreviewFrame } from "../screens/planner/preview/PreviewFrame";
 
 describe("PreviewFrame", () => {
   it("renders nothing without a srcDoc", () => {

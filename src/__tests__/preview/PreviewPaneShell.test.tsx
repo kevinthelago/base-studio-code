@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { useAppStore } from '../../store';
 
-vi.mock('../../screens/planner/previewBundle', () => ({
+vi.mock('../../screens/planner/preview/previewBundle', () => ({
   bundleSkeleton: vi.fn().mockResolvedValue('BUNDLE_JS'),
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
   DEFAULT_IMPORTMAP: { react: 'https://esm.sh/react@18.3.1' },

@@ -16,7 +16,7 @@ import "../preview/renderers/htmlRenderer";
 import "../preview/renderers/gltfRenderer";
 import "../preview/renderers/canvasRenderer";
 import { PreviewPaneShell } from "../preview/PreviewPaneShell";
-import { RENDER_PREVIEW_ID } from "../renderPreview";
+import { RENDER_PREVIEW_ID } from "../preview/renderPreview";
 import { FileIntakePane } from "../bodies/FileIntakePane";
 import { FILE_INTAKE_ID } from "../shared/fileIntake";
 import { GradeReportPane } from "./GradeReportPane";

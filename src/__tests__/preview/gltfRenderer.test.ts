@@ -3,7 +3,7 @@ import { getRenderer } from '../../screens/planner/preview/registry';
 import type { RendererHandle } from '../../screens/planner/preview/registry';
 import type { RenderableChunk } from '../../screens/planner/preview/types';
 
-vi.mock('../../screens/planner/previewBundle', () => ({
+vi.mock('../../screens/planner/preview/previewBundle', () => ({
   DEFAULT_IMPORTMAP: { three: 'https://esm.sh/three@0.169.0' },
   bundleSkeleton: vi.fn(),
   buildPreviewSrcDoc: (js: string) => `<html>${js}</html>`,

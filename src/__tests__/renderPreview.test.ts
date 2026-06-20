@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../screens/planner/previewBundle", () => ({
+vi.mock("../screens/planner/preview/previewBundle", () => ({
   bundleSkeleton: vi.fn().mockResolvedValue("BUNDLE_JS"),
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
 }));
 
-import { resolveEntry, renderPreviewHandler, dispatchRenderPreview, RENDER_PREVIEW_ID } from "../screens/planner/renderPreview";
+import { resolveEntry, renderPreviewHandler, dispatchRenderPreview, RENDER_PREVIEW_ID } from "../screens/planner/preview/renderPreview";
 import { useAppStore } from "../store";
 
 const ctx = (over: Record<string, unknown> = {}) => ({

@@ -17,7 +17,7 @@ import type { PreviewRenderer, RendererHandle } from '../registry';
 import type { RenderableChunk, PreviewStatus } from '../types';
 import { registerRenderer } from '../registry';
 import { buildStreamingFrameHtml } from '../streamingRuntime';
-import { DEFAULT_IMPORTMAP } from '../../previewBundle';
+import { DEFAULT_IMPORTMAP } from '../previewBundle';
 
 type HtmlPayload =
   | { srcDoc: string; bundleJs?: never }

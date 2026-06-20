@@ -7,7 +7,7 @@ import type { RenderableChunk } from '../../screens/planner/preview/types';
 import '../../screens/planner/preview/renderers/htmlRenderer';
 
 // previewBundle is used by streamingRuntime; mock it so no esm.sh or wasm loads.
-vi.mock('../../screens/planner/previewBundle', () => ({
+vi.mock('../../screens/planner/preview/previewBundle', () => ({
   DEFAULT_IMPORTMAP: { react: 'https://esm.sh/react@18.3.1' },
   bundleSkeleton: vi.fn().mockResolvedValue('BUNDLE_JS'),
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
