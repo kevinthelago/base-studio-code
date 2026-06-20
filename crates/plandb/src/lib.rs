@@ -61,6 +61,54 @@ pub struct PlanIssue {
     pub status: String,
 }
 
+/// A planned feature — a user-facing capability AND a fleet stream (#plan-db). The Features stage
+/// works titles-first: the planner registers the whole roster (name only), then fills each in one
+/// at a time. Mirrors the frontend `PlanFeature`; `serde` emits the camelCase JSON
+/// `parseFeaturesFile` reads. A feature is "defined" once it has a name, behavior, and ≥1 acceptance.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanFeature {
+    /// Stable slug / stream id (kebab-case). Derived from `name` when omitted. Optional on input so
+    /// a detail-fill payload can carry just the slug (the merge keeps the stored name).
+    #[serde(default)]
+    pub slug: String,
+    /// User-facing capability name ("Invite teammates"). Optional on input for the same reason.
+    #[serde(default)]
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub behavior: Option<String>,
+    #[serde(default)]
+    pub acceptance: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approach: Option<String>,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    /// The fleet stream that owns it (defaults to the slug — a feature IS a stream).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream: Option<String>,
+}
+
+/// kebab-case slug from a name (mirrors the frontend `slugify`).
+pub fn slugify(name: &str) -> String {
+    let mut s = String::new();
+    let mut prev_dash = false;
+    for c in name.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() {
+            s.push(c);
+            prev_dash = false;
+        } else if !prev_dash && !s.is_empty() {
+            s.push('-');
+            prev_dash = true;
+        }
+    }
+    while s.ends_with('-') {
+        s.pop();
+    }
+    s.chars().take(60).collect()
+}
+
 /// The per-project plan store — a thin owner of the SQLite connection plus the issue CRUD/render.
 pub struct Store {
     conn: Connection,
@@ -173,6 +221,67 @@ impl Store {
         let issues = self.list(None, None)?;
         Ok(serde_json::to_string_pretty(&issues).unwrap_or_else(|_| "[]".into()))
     }
+
+    // ── features (#plan-db) ──────────────────────────────────────────────────────
+    // Titles-first: `feature add {name}` registers a roster entry; later `add`s carrying details
+    // (keyed by slug) MERGE in place — an empty/absent field never clobbers an existing value — so
+    // the planner can lay out the whole list, then populate each one at a time without losing work.
+
+    /// Insert or merge a feature by `slug` (derived from `name` when blank). On conflict each
+    /// supplied non-empty field overwrites; empty/absent fields keep the stored value, so detailing
+    /// a previously-registered title doesn't wipe the name (and vice-versa). Returns the slug used.
+    pub fn feature_upsert(&self, feature: &PlanFeature) -> rusqlite::Result<String> {
+        let slug = if feature.slug.trim().is_empty() { slugify(&feature.name) } else { feature.slug.trim().to_string() };
+        let pos: i64 = self
+            .conn
+            .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM features", [], |r| r.get(0))?;
+        self.conn.execute(
+            "INSERT INTO features (slug, name, behavior, approach, data, stream, acceptance, tools, position, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, strftime('%s','now'))
+             ON CONFLICT(slug) DO UPDATE SET
+                name       = CASE WHEN excluded.name != ''                          THEN excluded.name       ELSE features.name       END,
+                behavior   = CASE WHEN COALESCE(excluded.behavior, '') != ''         THEN excluded.behavior   ELSE features.behavior   END,
+                approach   = CASE WHEN COALESCE(excluded.approach, '') != ''         THEN excluded.approach   ELSE features.approach   END,
+                data       = CASE WHEN COALESCE(excluded.data, '') != ''             THEN excluded.data       ELSE features.data       END,
+                stream     = CASE WHEN COALESCE(excluded.stream, '') != ''           THEN excluded.stream     ELSE features.stream     END,
+                acceptance = CASE WHEN excluded.acceptance != '[]'                   THEN excluded.acceptance ELSE features.acceptance END,
+                tools      = CASE WHEN excluded.tools != '[]'                        THEN excluded.tools      ELSE features.tools      END,
+                updated_at = excluded.updated_at",
+            params![
+                slug, feature.name, feature.behavior, feature.approach, feature.data,
+                feature.stream, arr_to_json(&feature.acceptance), arr_to_json(&feature.tools), pos,
+            ],
+        )?;
+        Ok(slug)
+    }
+
+    /// Fetch one feature by `slug`, or `None`.
+    pub fn feature_get(&self, slug: &str) -> rusqlite::Result<Option<PlanFeature>> {
+        let mut stmt = self.conn.prepare(&format!("{FEATURE_COLS} WHERE slug = ?1"))?;
+        let mut rows = stmt.query_map(params![slug], row_to_feature)?;
+        match rows.next() {
+            Some(r) => Ok(Some(r?)),
+            None => Ok(None),
+        }
+    }
+
+    /// List every feature in stable roster order.
+    pub fn feature_list(&self) -> rusqlite::Result<Vec<PlanFeature>> {
+        let mut stmt = self.conn.prepare(&format!("{FEATURE_COLS} ORDER BY position, slug"))?;
+        let out: rusqlite::Result<Vec<PlanFeature>> = stmt.query_map([], row_to_feature)?.collect();
+        out
+    }
+
+    /// Delete a feature by `slug` (no-op if absent).
+    pub fn feature_remove(&self, slug: &str) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM features WHERE slug = ?1", params![slug])?;
+        Ok(())
+    }
+
+    /// Render every feature to the `features.json` shape the frontend reads.
+    pub fn render_features_json(&self) -> rusqlite::Result<String> {
+        Ok(serde_json::to_string_pretty(&self.feature_list()?).unwrap_or_else(|_| "[]".into()))
+    }
 }
 
 // ── schema ───────────────────────────────────────────────────────────────────────
@@ -193,6 +302,18 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             depends_on  TEXT NOT NULL DEFAULT '[]',
             labels      TEXT NOT NULL DEFAULT '[]',
             status      TEXT NOT NULL DEFAULT 'open',
+            position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS features (
+            slug        TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            behavior    TEXT,
+            approach    TEXT,
+            data        TEXT,
+            stream      TEXT,
+            acceptance  TEXT NOT NULL DEFAULT '[]',
+            tools       TEXT NOT NULL DEFAULT '[]',
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
          );",
@@ -235,6 +356,22 @@ fn row_to_issue(r: &rusqlite::Row) -> rusqlite::Result<PlanIssue> {
         depends_on: json_to_arr(&r.get::<_, String>(9)?),
         labels: json_to_arr(&r.get::<_, String>(10)?),
         status: r.get(11)?,
+    })
+}
+
+const FEATURE_COLS: &str =
+    "SELECT slug, name, behavior, approach, data, stream, acceptance, tools FROM features";
+
+fn row_to_feature(r: &rusqlite::Row) -> rusqlite::Result<PlanFeature> {
+    Ok(PlanFeature {
+        slug: r.get(0)?,
+        name: r.get(1)?,
+        behavior: r.get(2)?,
+        approach: r.get(3)?,
+        data: r.get(4)?,
+        stream: r.get(5)?,
+        acceptance: json_to_arr(&r.get::<_, String>(6)?),
+        tools: json_to_arr(&r.get::<_, String>(7)?),
     })
 }
 
@@ -361,5 +498,68 @@ mod tests {
     fn is_valid_status_guards_the_lifecycle() {
         assert!(is_valid_status("verified"));
         assert!(!is_valid_status("done"));
+    }
+
+    // ── features ──────────────────────────────────────────────────────────────────
+
+    fn feat(name: &str) -> PlanFeature {
+        PlanFeature { name: name.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn feature_add_derives_a_slug_and_keeps_roster_order() {
+        let s = Store::open_in_memory().unwrap();
+        assert_eq!(s.feature_upsert(&feat("Invite teammates")).unwrap(), "invite-teammates");
+        s.feature_upsert(&feat("Export to CSV")).unwrap();
+        let list = s.feature_list().unwrap();
+        assert_eq!(list.iter().map(|f| f.slug.as_str()).collect::<Vec<_>>(), vec!["invite-teammates", "export-to-csv"]);
+    }
+
+    #[test]
+    fn titles_first_then_detail_merges_without_clobbering() {
+        let s = Store::open_in_memory().unwrap();
+        // Phase 1: lay out the whole roster (names only).
+        s.feature_upsert(&feat("Invite teammates")).unwrap();
+        s.feature_upsert(&feat("Export")).unwrap();
+        // Phase 2: detail one by slug — name is NOT resent and must survive.
+        s.feature_upsert(&PlanFeature {
+            slug: "invite-teammates".into(),
+            behavior: Some("send an email invite".into()),
+            acceptance: vec!["invite email sent".into()],
+            ..Default::default()
+        }).unwrap();
+        let f = s.feature_get("invite-teammates").unwrap().unwrap();
+        assert_eq!(f.name, "Invite teammates", "detailing must not wipe the title");
+        assert_eq!(f.behavior.as_deref(), Some("send an email invite"));
+        assert_eq!(f.acceptance, vec!["invite email sent"]);
+        // The untouched feature is still just a title (not yet defined).
+        let exp = s.feature_get("export").unwrap().unwrap();
+        assert!(exp.behavior.is_none() && exp.acceptance.is_empty());
+    }
+
+    #[test]
+    fn render_features_matches_the_features_json_shape() {
+        let s = Store::open_in_memory().unwrap();
+        s.feature_upsert(&PlanFeature {
+            name: "Invite teammates".into(),
+            behavior: Some("b".into()),
+            acceptance: vec!["a".into()],
+            tools: vec!["resend".into()],
+            ..Default::default()
+        }).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s.render_features_json().unwrap()).unwrap();
+        let row = &v.as_array().unwrap()[0];
+        assert_eq!(row["slug"], "invite-teammates");
+        assert_eq!(row["acceptance"], serde_json::json!(["a"]));
+        assert_eq!(row["tools"], serde_json::json!(["resend"]));
+        assert!(row.get("approach").is_none()); // omitted when absent
+    }
+
+    #[test]
+    fn feature_remove_drops_it() {
+        let s = Store::open_in_memory().unwrap();
+        s.feature_upsert(&feat("X")).unwrap();
+        s.feature_remove("x").unwrap();
+        assert!(s.feature_list().unwrap().is_empty());
     }
 }

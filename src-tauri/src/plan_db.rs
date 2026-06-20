@@ -2,7 +2,7 @@
 // the Tauri-free `plandb` crate (shared with the `bsc-plan` agent CLI); this module only resolves the
 // project key → `projects/<key>/plan.db` and adapts the `Store` API to Tauri commands for the UI.
 
-use plandb::{PlanIssue, Store, STATUSES};
+use plandb::{PlanFeature, PlanIssue, Store, STATUSES};
 use std::path::PathBuf;
 
 fn db_path(project_key: &str) -> PathBuf {
@@ -47,5 +47,23 @@ pub fn plan_set_issue_status(project_key: String, issue_ref: String, status: Str
     } else {
         Ok(())
     }
+}
+
+// ── features (#plan-db) ───────────────────────────────────────────────────────────
+
+/// Merge-upsert a feature (titles-first: register titles, then fill detail by slug). Returns the slug.
+#[tauri::command]
+pub fn plan_upsert_feature(project_key: String, feature: PlanFeature) -> Result<String, String> {
+    open(&project_key)?.feature_upsert(&feature).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_list_features(project_key: String) -> Result<Vec<PlanFeature>, String> {
+    open(&project_key)?.feature_list().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_remove_feature(project_key: String, slug: String) -> Result<(), String> {
+    open(&project_key)?.feature_remove(&slug).map_err(|e| e.to_string())
 }
 
