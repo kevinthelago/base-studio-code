@@ -24,12 +24,12 @@ import {
   ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
 } from "./planSections";
-import { parseFeaturesFile, featuresSummary } from "./featureList";
+import { parseFeaturesFile, featuresSummary } from "./issues/featureList";
 import { buildWorkerScope } from "./fleet/workerScope";
 import { resolveIssueAssignee } from "./fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "./repoScaffold";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./fleet/agentFlow";
-import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./planIssues";
+import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./issues/planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
 import { publishFleetRoster } from "../../lib/fleetRoster";
 import { hubToCanonical } from "../../lib/plannerSync";
@@ -57,7 +57,7 @@ import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "./blueprints/b
 import { buildMcpLibrary } from "./blueprints/blueprintMcp";
 import { publishGist } from "../../lib/extensions/gist";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./focusedPlan";
-import { featureSectionsToIssues } from "./planFeatures";
+import { featureSectionsToIssues } from "./issues/planFeatures";
 import { flattenPrompt, stagePrompts } from "./plannerConductor";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.

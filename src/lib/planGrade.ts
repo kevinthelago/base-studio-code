@@ -4,7 +4,7 @@
 // linked repos) — no LLM or async I/O. Advisory only: the caller shows the grade
 // and may prompt a soft confirm below a threshold, but never hard-blocks.
 
-import type { PlanIssue } from "../screens/planner/planIssues";
+import type { PlanIssue } from "../screens/planner/issues/planIssues";
 
 // ── Letter grade ─────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFeaturesFile, featureDefined, featuresSummary } from "../screens/planner/featureList";
+import { parseFeaturesFile, featureDefined, featuresSummary } from "../screens/planner/issues/featureList";
 
 describe("parseFeaturesFile", () => {
   it("returns [] for empty / bad JSON / non-array", () => {

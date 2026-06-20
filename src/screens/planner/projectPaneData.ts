@@ -8,10 +8,10 @@
 import type { AgentProfile, Tier, ToolKey } from "../agents/agentProfiles";
 import type { FleetPlan, AgentStream } from "./planSections";
 import type { AgentRelationship } from "./relationship/relationshipGraph";
-import type { PlanIssue } from "./planIssues";
+import type { PlanIssue } from "./issues/planIssues";
 import type { Section } from "./github/ghStructure";
 import type { NodeProgress } from "./github/ghProgress";
-import { resolvePhaseIndex } from "./planIssues";
+import { resolvePhaseIndex } from "./issues/planIssues";
 import { resolveFlow } from "./fleet/agentFlow";
 import { resolveDirectorDrive } from "./fleet/directorDrive";
 
@@ -23,7 +23,7 @@ import type {
   Posture, Perm, Agent, Repo, Issue, Milestone, PhaseGroup, ContextFile, ProjectPaneData,
   PaneAutomation, PaneSkill,
 } from "./projectPane.types";
-import type { PlanFeature } from "./featureList";
+import type { PlanFeature } from "./issues/featureList";
 import type { Blueprint } from "./blueprints";
 import type { DeployConfig } from "./deployConfig";
 import { buildMcpServers, type McpInstallState } from "./mcpPaneData";

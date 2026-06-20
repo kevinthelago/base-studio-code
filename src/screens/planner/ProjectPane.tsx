@@ -10,7 +10,7 @@ import type {
 } from "./projectPaneData";
 import type { Section } from "./github/ghStructure";
 import type { FleetPlan } from "./planSections";
-import { featureDefined, type PlanFeature } from "./featureList";
+import { featureDefined, type PlanFeature } from "./issues/featureList";
 import type { Phase, GatePill, FooterKind } from "./focusedPlan";
 import {
   Stepper as FocusedStepper,

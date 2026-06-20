@@ -8,7 +8,7 @@ import {
   gradeRepo,
   gradePlan,
 } from "../lib/planGrade";
-import type { PlanIssue } from "../screens/planner/planIssues";
+import type { PlanIssue } from "../screens/planner/issues/planIssues";
 
 describe("grade color is one source of truth (#686)", () => {
   it("gradeColor routes a score through the letter tiers — so a bar matches its chip", () => {

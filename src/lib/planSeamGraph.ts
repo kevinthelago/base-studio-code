@@ -9,7 +9,7 @@
 // contracts) the graph falls back to `PlanIssue.dependsOn` dependency edges —
 // still a useful topological picture of the build order.
 
-import type { PlanIssue } from "../screens/planner/planIssues";
+import type { PlanIssue } from "../screens/planner/issues/planIssues";
 
 // ── Node maturity ─────────────────────────────────────────────────────────────
 

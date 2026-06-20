@@ -7,7 +7,7 @@
 //
 // Pure transform. Free of React / xterm / Tauri imports.
 
-import { kickableNodes, type PlanNode, type NodeKind } from "./planNode";
+import { kickableNodes, type PlanNode, type NodeKind } from "../planNode";
 import type { FeatureContract } from "./featureContract";
 
 export interface DecomposeOptions {

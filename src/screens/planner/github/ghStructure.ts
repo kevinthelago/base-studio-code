@@ -3,7 +3,7 @@
 // Kept free of React / xterm / Tauri imports so the derivation logic can be unit
 // tested in isolation and shared between Planning.tsx and its tests.
 
-import { parseIssuesFile } from "../planIssues";
+import { parseIssuesFile } from "../issues/planIssues";
 import type { FleetPlan } from "../planSections";
 
 // The planner is dynamic: Claude documents whatever topics a project warrants,
