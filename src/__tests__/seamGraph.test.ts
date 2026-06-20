@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildSeamGraph } from "../screens/projects/seamGraph";
-import type { FeatureContract } from "../screens/projects/featureContract";
+import { buildSeamGraph } from "../screens/planner/seamGraph";
+import type { FeatureContract } from "../screens/planner/featureContract";
 
 const ref = (name: string) => ({ name, definedIn: "x.ts", signature: "type X" });
 function fc(id: string, produces: string[], consumes: string[]): FeatureContract {

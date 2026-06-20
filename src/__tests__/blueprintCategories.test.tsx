@@ -3,8 +3,8 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import {
   blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
   type Blueprint,
-} from "../screens/projects/blueprints";
-import { LibraryView } from "../screens/projects/BlueprintLibrary";
+} from "../screens/planner/blueprints";
+import { LibraryView } from "../screens/planner/BlueprintLibrary";
 
 const bp = (id: string, name: string, over: Partial<Blueprint> = {}): Blueprint =>
   ({ id, name, desc: "", sections: [], ...over });

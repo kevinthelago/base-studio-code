@@ -6,7 +6,7 @@ import {
   mapConcept,
   summarizeMapping,
   ladderFor,
-} from "../screens/projects/capabilityMapping";
+} from "../screens/planner/capabilityMapping";
 
 describe("profiles", () => {
   it("personal has sub-issues but not issue types", () => {

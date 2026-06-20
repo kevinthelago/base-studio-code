@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildGhStructure, parsePhases, type Section } from "../screens/projects/ghStructure";
+import { buildGhStructure, parsePhases, type Section } from "../screens/planner/ghStructure";
 
 // Minimal section factory — only `k` and `content` matter to the structure.
 const sec = (k: Section["k"], content = ""): Section => ({

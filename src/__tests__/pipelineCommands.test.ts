@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   registerPipeline, dispatchPipelineCommand, hasPipelineModule, isPipelineCommand,
   _resetPipelineModules, PIPELINE_COMMANDS, type PipelineCommand,
-} from "../screens/projects/pipelineCommands";
+} from "../screens/planner/pipelineCommands";
 
 describe("pipelineCommands — bus", () => {
   beforeEach(() => _resetPipelineModules());
@@ -58,12 +58,12 @@ describe("pipelineCommands — render-preview module", () => {
   it("render-preview registers a command module on import", async () => {
     // Mock the bundler so importing renderPreview's transitive deps is jsdom-safe.
     vi.resetModules();
-    vi.doMock("../screens/projects/previewBundle", () => ({
+    vi.doMock("../screens/planner/previewBundle", () => ({
       bundleSkeleton: vi.fn().mockResolvedValue("BUNDLE_JS"),
       buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
     }));
-    const { RENDER_PREVIEW_ID } = await import("../screens/projects/renderPreview");
-    const { hasPipelineModule: has } = await import("../screens/projects/pipelineCommands");
+    const { RENDER_PREVIEW_ID } = await import("../screens/planner/renderPreview");
+    const { hasPipelineModule: has } = await import("../screens/planner/pipelineCommands");
     expect(has(RENDER_PREVIEW_ID)).toBe(true);
   });
 });

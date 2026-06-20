@@ -6,7 +6,7 @@ import {
   branchNameFor,
   slugify,
   type ExecutionStrategy,
-} from "../screens/projects/executionTopology";
+} from "../screens/planner/executionTopology";
 
 describe("presets", () => {
   it("every preset is coherent", () => {

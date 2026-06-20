@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildMcpLibrary, resolveBlueprintMcp, collectBlueprintMcp, applyBlueprintMcp } from "../screens/projects/blueprintMcp";
-import { addMcpServer, removeMcpServer } from "../screens/projects/blueprintEdit";
-import { type ExtensionStoreLike } from "../screens/projects/planExtensions";
+import { buildMcpLibrary, resolveBlueprintMcp, collectBlueprintMcp, applyBlueprintMcp } from "../screens/planner/blueprintMcp";
+import { addMcpServer, removeMcpServer } from "../screens/planner/blueprintEdit";
+import { type ExtensionStoreLike } from "../screens/planner/planExtensions";
 import type { ExtensionDef } from "../lib/extensions";
-import type { Blueprint, BlueprintSection } from "../screens/projects/blueprints";
+import type { Blueprint, BlueprintSection } from "../screens/planner/blueprints";
 
 const sec = (over: Partial<BlueprintSection>): BlueprintSection => ({
   uid: over.uid ?? "u", key: over.key ?? "context", name: "S", glyph: "◆", gate: "", deps: [],

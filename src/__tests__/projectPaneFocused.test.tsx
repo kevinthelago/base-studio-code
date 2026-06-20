@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ProjectPane } from "../screens/projects/ProjectPane";
-import type { Phase } from "../screens/projects/focusedPlan";
+import { ProjectPane } from "../screens/planner/ProjectPane";
+import type { Phase } from "../screens/planner/focusedPlan";
 
 const ph = (key: string, name: string, status: Phase["status"], index: number, total: number): Phase =>
   ({ key, name, glyph: "•", blurb: `${name} blurb`, gate: "gate", index, total, status, fraction: 0 });

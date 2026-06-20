@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { buildMcpServers } from "../screens/projects/mcpPaneData";
+import { buildMcpServers } from "../screens/planner/mcpPaneData";
 import type { ExtensionDef } from "../lib/extensions";
-import type { FleetPlan } from "../screens/projects/planSections";
+import type { FleetPlan } from "../screens/planner/planSections";
 
 const mcp = (over: Partial<ExtensionDef>): ExtensionDef => ({
   id: "e", kind: "mcp", name: "x", enabled: true, projects: [], transport: "stdio", command: "", args: "", env: [], ...over,

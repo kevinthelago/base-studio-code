@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getRenderer } from '../../screens/projects/preview/registry';
-import type { RendererHandle } from '../../screens/projects/preview/registry';
-import type { RenderableChunk } from '../../screens/projects/preview/types';
+import { getRenderer } from '../../screens/planner/preview/registry';
+import type { RendererHandle } from '../../screens/planner/preview/registry';
+import type { RenderableChunk } from '../../screens/planner/preview/types';
 
-import '../../screens/projects/preview/renderers/canvasRenderer';
+import '../../screens/planner/preview/renderers/canvasRenderer';
 
 function makeContainer(): HTMLDivElement {
   const div = document.createElement('div');

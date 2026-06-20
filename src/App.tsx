@@ -20,7 +20,7 @@ import { AutomationsScreen } from "./screens/automations";
 import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
 import { ExtensionsScreen } from "./screens/extensions";
 import { SettingsScreen } from "./screens/settings";
-import { ProjectsScreen } from "./screens/projects";
+import { ProjectsScreen } from "./screens/planner";
 import { SkillsScreen } from "./screens/skills";
 import { AgentsScreen } from "./screens/agents";
 import { SkillsStatus } from "./screens/skills/SkillsStatus";

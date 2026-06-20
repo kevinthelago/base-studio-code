@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { CatalogView } from "../screens/projects/BlueprintCatalogView";
-import { NewBlueprintModal, PublishModal, ImportModal, type PreviewBlueprint } from "../screens/projects/BlueprintModals";
-import { mkStageSection } from "../screens/projects/blueprintEdit";
-import { gistUpdateAvailable } from "../screens/projects/blueprintCatalog";
-import type { Blueprint } from "../screens/projects/blueprints";
+import { CatalogView } from "../screens/planner/BlueprintCatalogView";
+import { NewBlueprintModal, PublishModal, ImportModal, type PreviewBlueprint } from "../screens/planner/BlueprintModals";
+import { mkStageSection } from "../screens/planner/blueprintEdit";
+import { gistUpdateAvailable } from "../screens/planner/blueprintCatalog";
+import type { Blueprint } from "../screens/planner/blueprints";
 
 vi.mock("../lib/extensions/gist", () => ({ listBlueprintGists: vi.fn() }));
 import { listBlueprintGists } from "../lib/extensions/gist";

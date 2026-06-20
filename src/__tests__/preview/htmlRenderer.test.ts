@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getRenderer } from '../../screens/projects/preview/registry';
-import type { RendererHandle } from '../../screens/projects/preview/registry';
-import type { RenderableChunk } from '../../screens/projects/preview/types';
+import { getRenderer } from '../../screens/planner/preview/registry';
+import type { RendererHandle } from '../../screens/planner/preview/registry';
+import type { RenderableChunk } from '../../screens/planner/preview/types';
 
 // Import renderer — side-effect registers it in the module-level registry.
-import '../../screens/projects/preview/renderers/htmlRenderer';
+import '../../screens/planner/preview/renderers/htmlRenderer';
 
 // previewBundle is used by streamingRuntime; mock it so no esm.sh or wasm loads.
-vi.mock('../../screens/projects/previewBundle', () => ({
+vi.mock('../../screens/planner/previewBundle', () => ({
   DEFAULT_IMPORTMAP: { react: 'https://esm.sh/react@18.3.1' },
   bundleSkeleton: vi.fn().mockResolvedValue('BUNDLE_JS'),
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,

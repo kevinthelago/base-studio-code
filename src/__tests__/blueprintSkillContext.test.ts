@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { resolveSkillContent, buildSkillContext, collectBlueprintSkillIds } from "../screens/projects/blueprintSkills";
-import { mkStageSection } from "../screens/projects/blueprintEdit";
+import { resolveSkillContent, buildSkillContext, collectBlueprintSkillIds } from "../screens/planner/blueprintSkills";
+import { mkStageSection } from "../screens/planner/blueprintEdit";
 import type { SkillDef } from "../lib/skills";
 import type { KbBlock } from "../data/mock";
-import type { Blueprint } from "../screens/projects/blueprints";
+import type { Blueprint } from "../screens/planner/blueprints";
 
 const skill = (id: string, name: string, prompt: string): SkillDef => ({
   id, name, kind: "procedure", source: "local", desc: "", prompt, tools: [], profiles: [],

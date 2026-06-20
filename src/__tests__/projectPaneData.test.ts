@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildProjectPaneData } from "../screens/projects/projectPaneData";
-import type { BuildProjectPaneInput } from "../screens/projects/projectPaneData";
-import { emptyFleet } from "../screens/projects/planSections";
-import type { FleetPlan } from "../screens/projects/planSections";
-import type { PlanIssue } from "../screens/projects/planIssues";
-import type { Section } from "../screens/projects/ghStructure";
+import { buildProjectPaneData } from "../screens/planner/projectPaneData";
+import type { BuildProjectPaneInput } from "../screens/planner/projectPaneData";
+import { emptyFleet } from "../screens/planner/planSections";
+import type { FleetPlan } from "../screens/planner/planSections";
+import type { PlanIssue } from "../screens/planner/planIssues";
+import type { Section } from "../screens/planner/ghStructure";
 import { PROFILES } from "../screens/agents/agentProfiles";
 
 function base(over: Partial<BuildProjectPaneInput> = {}): BuildProjectPaneInput {
@@ -145,6 +145,31 @@ describe("buildProjectPaneData", () => {
     const m2 = d.structure[1];
     expect(m2.pct).toBe(1);
     expect(m2.epics[0].issues[0].state).toBe("done");
+  });
+
+  it("derives cross-stream relationship edges from the issue dependency tree (#…)", () => {
+    const fleet = fleetWith([
+      { id: "schema", name: "@schema", repo: "o/core", owns: [], issues: ["S1"], dependsOn: [] },
+      { id: "auth", name: "@auth", repo: "o/api", owns: [], issues: ["A1"], dependsOn: [] },
+    ]);
+    // A1 (auth) depends on S1 (schema) → a stream edge schema → auth.
+    const issues: PlanIssue[] = [
+      { ref: "S1", title: "schema", phase: 1, acceptance: [], owns: [], dependsOn: [], labels: [], stream: "schema" },
+      { ref: "A1", title: "auth", phase: 2, acceptance: [], owns: [], dependsOn: ["S1"], labels: [], stream: "auth" },
+    ];
+    const d = buildProjectPaneData(base({ fleet, issues }));
+    expect(d.relationships).toEqual([
+      { id: "schema>auth", from: "schema", to: "auth", kind: "blocking", hardness: "blocking", via: "direct" },
+    ]);
+  });
+
+  it("uses the planner's explicit fleet edges over derivation when present (#…)", () => {
+    const fleet: FleetPlan = {
+      ...fleetWith([{ id: "a", name: "@a", repo: "o/r", owns: [], issues: [], dependsOn: [] }]),
+      edges: [{ id: "e", from: "a", to: "b", kind: "handoff", hardness: "soft", via: "direct" }],
+    };
+    const d = buildProjectPaneData(base({ fleet }));
+    expect(d.relationships).toEqual([{ id: "e", from: "a", to: "b", kind: "handoff", hardness: "soft", via: "direct" }]);
   });
 
   it("live progress overlay drives done-state + pct, overriding the static label (#429)", () => {

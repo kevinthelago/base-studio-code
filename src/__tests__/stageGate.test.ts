@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evalGate, evalRequirement, gateApplies, gateReasons, type StageGate } from "../screens/projects/stageGate";
+import { evalGate, evalRequirement, gateApplies, gateReasons, type StageGate } from "../screens/planner/stageGate";
 
 describe("stageGate — evalRequirement", () => {
   it("boolean target matches identity; missing reads as false", () => {

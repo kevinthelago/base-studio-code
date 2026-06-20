@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getRenderer } from '../../screens/projects/preview/registry';
-import type { RendererHandle } from '../../screens/projects/preview/registry';
-import type { RenderableChunk } from '../../screens/projects/preview/types';
+import { getRenderer } from '../../screens/planner/preview/registry';
+import type { RendererHandle } from '../../screens/planner/preview/registry';
+import type { RenderableChunk } from '../../screens/planner/preview/types';
 
-vi.mock('../../screens/projects/previewBundle', () => ({
+vi.mock('../../screens/planner/previewBundle', () => ({
   DEFAULT_IMPORTMAP: { three: 'https://esm.sh/three@0.169.0' },
   bundleSkeleton: vi.fn(),
   buildPreviewSrcDoc: (js: string) => `<html>${js}</html>`,
@@ -12,7 +12,7 @@ vi.mock('../../screens/projects/previewBundle', () => ({
   lookupMem: () => null,
 }));
 
-import '../../screens/projects/preview/renderers/gltfRenderer';
+import '../../screens/planner/preview/renderers/gltfRenderer';
 
 function makeContainer(): HTMLDivElement {
   const div = document.createElement('div');

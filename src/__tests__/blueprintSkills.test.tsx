@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { buildSkillLibrary, resolveBlueprintSkills } from "../screens/projects/blueprintSkills";
-import { addSkill, removeSkill, mkStageSection } from "../screens/projects/blueprintEdit";
-import { BlueprintEditorView } from "../screens/projects/BlueprintEditor";
+import { buildSkillLibrary, resolveBlueprintSkills } from "../screens/planner/blueprintSkills";
+import { addSkill, removeSkill, mkStageSection } from "../screens/planner/blueprintEdit";
+import { BlueprintEditorView } from "../screens/planner/BlueprintEditor";
 import type { SkillDef } from "../lib/skills";
 import type { KbBlock } from "../data/mock";
-import type { BlueprintSection } from "../screens/projects/blueprints";
+import type { BlueprintSection } from "../screens/planner/blueprints";
 
 const skillDef = (id: string, name: string): SkillDef => ({
   id, name, kind: "procedure", source: "local", desc: `${name} desc`, prompt: "", tools: [], profiles: [],

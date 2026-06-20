@@ -8,10 +8,54 @@
 
 import {
   EDGE_KIND_META, ARTIFACT_COLOR, ROLE_COLOR, hardStyle, restOpacity, computeSpotlight,
-  type RelationshipGraph, type RelFocus,
+  type RelationshipGraph, type RelFocus, type RelStream,
 } from "./relationshipGraph";
 
-const LW = 104, COL = 152, PAD = 16, LH = 58, TOP = 30, NW = 116, NH = 30;
+const PAD = 16, LH = 58, TOP = 30, NH = 30;
+const LABEL_X = 14;   // left inset of the label text
+const LABEL_PAD = 14; // gap between the longest label and the divider / first node
+const MIN_GUTTER = 96;
+const ID_FONT = '600 11px "JetBrains Mono", ui-monospace, monospace';
+const REPO_FONT = '400 7.5px "JetBrains Mono", ui-monospace, monospace';
+// Station-node sizing — the rect is measured to fit its id so the text never overflows it.
+const NODE_FONT = '600 10.5px "JetBrains Mono", ui-monospace, monospace';
+const NODE_TEXT_X = 22;   // id text inset (after the role dot)
+const NODE_PAD_R = 13;    // right padding inside the node rect
+const MIN_NODE_W = 72;
+const COL_GAP = 46;       // gap after a node before the next phase column (fits artifact tokens)
+const MIN_COL = 124;
+
+// Measure rendered text width. Uses a shared canvas (accurate for the real font); falls back
+// to a monospace estimate when canvas isn't available (jsdom / SSR), which is exact enough for
+// the mono font. Memoizes the 2d context so we probe getContext at most once.
+let _ctx: CanvasRenderingContext2D | null | undefined;
+function measureText(text: string, font: string): number {
+  if (_ctx === undefined) {
+    try { _ctx = document.createElement("canvas").getContext("2d"); }
+    catch { _ctx = null; }
+  }
+  if (_ctx) { _ctx.font = font; return _ctx.measureText(text).width; }
+  const px = parseFloat(font) || 11;
+  return text.length * px * 0.6; // monospace advance ≈ 0.6em
+}
+
+/** Width the left gutter must be to fit the widest "id + ⎇ repo" label across all streams. */
+function measureGutter(streams: RelStream[]): number {
+  let w = 0;
+  for (const s of streams) {
+    const idW = measureText(s.id, ID_FONT);
+    const repoW = s.repo ? measureText(`⎇ ${s.repo}`, REPO_FONT) : 0;
+    w = Math.max(w, idW, repoW);
+  }
+  return Math.max(MIN_GUTTER, Math.ceil(LABEL_X + w + LABEL_PAD));
+}
+
+/** Width the station-node rect must be to fit the widest stream id (role dot + id + padding). */
+function measureNodeWidth(streams: RelStream[]): number {
+  let w = 0;
+  for (const s of streams) w = Math.max(w, measureText(s.id, NODE_FONT));
+  return Math.max(MIN_NODE_W, Math.ceil(NODE_TEXT_X + w + NODE_PAD_R));
+}
 
 function Arrow({ x, y, ang, c, op }: { x: number; y: number; ang: number; c: string; op: number }) {
   const s = 5.2;
@@ -31,9 +75,18 @@ export function RelationshipGraphView({ graph, focus, hover, onFocusAgent, onIns
   onHover: (id: string | null) => void;
 }) {
   const { streams, artifacts, edges, sids, layerOf, cycleEdgeIds } = graph;
+  // Size the left label gutter to the widest measured "id + ⎇ repo" so the phase track (and
+  // the station-node rects) always start clear of the labels — nothing overlaps the text.
+  const LW = measureGutter(streams);
+  // Size the node rect to the widest id, and space the phase columns to fit a node + its
+  // artifact token, so the text never overflows its rect nor the next column.
+  const NW = measureNodeWidth(streams);
+  const COL = Math.max(MIN_COL, NW + COL_GAP);
   const order = [...streams].sort((a, b) => (layerOf[a.id] - layerOf[b.id]) || a.id.localeCompare(b.id));
+  // Lane vertical center = the band's center (the band is LH-8 tall starting at TOP+i*LH), so
+  // the station-node rect, its edges, and the labels all align to the middle of the row.
   const laneY: Record<string, number> = {};
-  order.forEach((s, i) => { laneY[s.id] = TOP + i * LH + LH / 2; });
+  order.forEach((s, i) => { laneY[s.id] = TOP + i * LH + (LH - 8) / 2; });
   const maxL = Math.max(0, ...sids.map((id) => layerOf[id] ?? 0));
   const nodeX = (id: string) => LW + PAD + (layerOf[id] ?? 0) * COL;
   const colX = (l: number) => LW + PAD + l * COL;
@@ -52,6 +105,8 @@ export function RelationshipGraphView({ graph, focus, hover, onFocusAgent, onIns
     els.push(<text key={`pl${l}`} x={x + NW / 2} y={16} textAnchor="middle" fontFamily="var(--mono)" fontSize={8} fill="var(--fg-dim)">phase {l}</text>);
     els.push(<line key={`pg${l}`} x1={x + NW / 2} y1={22} x2={x + NW / 2} y2={H - 6} stroke="var(--border-soft)" strokeWidth={1} strokeDasharray="2 5" opacity={0.5} />);
   }
+  // divider between the stream-label gutter and the phase track
+  els.push(<line key="gutter-div" x1={LW + 4} y1={TOP - 4} x2={LW + 4} y2={H - 6} stroke="var(--border-soft)" strokeWidth={1} opacity={0.7} />);
 
   // lane bands + labels (hover/click targets)
   order.forEach((s, i) => {
@@ -62,8 +117,8 @@ export function RelationshipGraphView({ graph, focus, hover, onFocusAgent, onIns
       <g key={`lane${s.id}`} onMouseEnter={() => onHover(s.id)} onMouseLeave={() => onHover(null)} onClick={() => onFocusAgent(s.id)} style={{ cursor: "pointer" }} opacity={laneOp(s.id)}>
         <rect x={2} y={y} width={W - 4} height={LH - 8} rx={7} fill={i % 2 ? "color-mix(in oklch, var(--bg-canvas), transparent 25%)" : "var(--bg-canvas)"} stroke={isFocus ? rc : "var(--border-soft)"} strokeWidth={isFocus ? 1.4 : 1} />
         <rect x={2} y={y} width={3.5} height={LH - 8} rx={2} fill={rc} />
-        <text x={14} y={y + (LH - 8) / 2 - 2} fontFamily="var(--mono)" fontSize={11} fontWeight={600} fill="var(--fg)">{s.id}</text>
-        {s.repo && <text x={14} y={y + (LH - 8) / 2 + 11} fontFamily="var(--mono)" fontSize={7.5} fill="var(--fg-dim)">⎇ {s.repo}</text>}
+        <text x={LABEL_X} y={y + (LH - 8) / 2 - 2} fontFamily="var(--mono)" fontSize={11} fontWeight={600} fill="var(--fg)">{s.id}</text>
+        {s.repo && <text x={LABEL_X} y={y + (LH - 8) / 2 + 11} fontFamily="var(--mono)" fontSize={7.5} fill="var(--fg-dim)">⎇ {s.repo}</text>}
       </g>,
     );
   });

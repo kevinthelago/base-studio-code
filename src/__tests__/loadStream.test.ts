@@ -6,13 +6,13 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "../store";
-import type { AgentStream, FleetPlan } from "../screens/projects/planSections";
+import type { AgentStream, FleetPlan } from "../screens/planner/planSections";
 import { sanitizeProjectKey } from "../lib/projectPaths";
 
 const LOAD_STREAM_OWNS = [
   "src/store/index.ts",
   "src-tauri/src/lib.rs",
-  "src/screens/projects/LoadReconcile.tsx",
+  "src/screens/planner/LoadReconcile.tsx",
   "crates/data/src/reconcile.rs",
   "crates/data/src/ddl.rs",
   "prompts/load-stream-kickoff.md",

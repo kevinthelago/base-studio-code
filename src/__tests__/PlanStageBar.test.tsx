@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { PlanStageBar } from "../screens/projects/PlanStageBar";
-import { makeBlueprints, type BlueprintSection } from "../screens/projects/blueprints";
-import { planStateToSignals } from "../screens/projects/planStageDerive";
-import { buildPlanStageState } from "../screens/projects/planStages";
+import { PlanStageBar } from "../screens/planner/PlanStageBar";
+import { makeBlueprints, type BlueprintSection } from "../screens/planner/blueprints";
+import { planStateToSignals } from "../screens/planner/planStageDerive";
+import { buildPlanStageState } from "../screens/planner/planStages";
 
 function titlesIn(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll("[title]")).map((el) => el.getAttribute("title") ?? "");

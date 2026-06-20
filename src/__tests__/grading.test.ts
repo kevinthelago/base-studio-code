@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   scoreContentRule, gradeWithRubric, rubricForSection, RUBRICS, type Rubric,
-} from "../screens/projects/grading";
+} from "../screens/planner/grading";
 
 describe("grading — content rules (#615)", () => {
   it("min-length scales toward the target", () => {

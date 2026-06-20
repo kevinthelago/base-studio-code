@@ -2,8 +2,8 @@
 // refactor/optimization fleet generation. Pure (no React / Tauri) so everything
 // is unit-testable without a live app or GitHub.
 
-import type { FleetPlan, AgentStream } from "../screens/projects/planSections";
-import type { PlanIssue } from "../screens/projects/planIssues";
+import type { FleetPlan, AgentStream } from "../screens/planner/planSections";
+import type { PlanIssue } from "../screens/planner/planIssues";
 
 // ── Lifecycle state ───────────────────────────────────────────────────────────
 

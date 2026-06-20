@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeStrategy, resolveStrategy, strategySettings,
   STRATEGY_SETTINGS, DEFAULT_STRATEGY, INTEGRATION_STRATEGIES,
-} from "../screens/projects/integrationStrategy";
+} from "../screens/planner/integrationStrategy";
 
 describe("normalizeStrategy (#378)", () => {
   it("accepts the three valid strategies", () => {

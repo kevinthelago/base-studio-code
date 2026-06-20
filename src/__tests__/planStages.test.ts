@@ -3,7 +3,7 @@ import {
   PLAN_STAGES, STAGE_BY_ID, defaultStageConfig, buildPlanStageState,
   stageStatus, enabledOrderedStages, currentStage, BUILT_IN_BLUEPRINTS, resolveEnabledStages,
   type StageConfig, type StageId,
-} from "../screens/projects/planStages";
+} from "../screens/planner/planStages";
 
 function cfg(over: Partial<StageConfig> = {}): StageConfig {
   const d = defaultStageConfig();

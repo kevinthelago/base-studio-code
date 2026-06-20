@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { BlueprintsPage } from "../screens/projects/BlueprintsPage";
+import { BlueprintsPage } from "../screens/planner/BlueprintsPage";
 import { useAppStore } from "../store";
-import { makeBlueprints, DEFAULT_BLUEPRINT_ID } from "../screens/projects/blueprints";
+import { makeBlueprints, DEFAULT_BLUEPRINT_ID } from "../screens/planner/blueprints";
 
 describe("BlueprintsPage (#609 wiring)", () => {
   beforeEach(() => {

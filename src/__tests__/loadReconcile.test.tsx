@@ -6,8 +6,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
-import { LoadReconcile, runQualityGate, type ReconcileResponse } from "../screens/projects/LoadReconcile";
-import type { DataModel } from "../screens/projects/dataModel";
+import { LoadReconcile, runQualityGate, type ReconcileResponse } from "../screens/planner/LoadReconcile";
+import type { DataModel } from "../screens/planner/dataModel";
 
 const mockInvoke = vi.mocked(invoke);
 

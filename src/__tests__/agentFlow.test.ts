@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_FLOW, normalizeFlow, flowOrUndefined, resolveFlow,
   FLOW_AUTONOMY, FLOW_PUSH, FLOW_TRIGGER, FLOW_GATE,
-} from "../screens/projects/agentFlow";
-import { parseFleetFile } from "../screens/projects/planSections";
-import { parseAgentAssigns } from "../screens/projects/planningSession";
+} from "../screens/planner/agentFlow";
+import { parseFleetFile } from "../screens/planner/planSections";
+import { parseAgentAssigns } from "../screens/planner/planningSession";
 
 describe("agentFlow model", () => {
   it("DEFAULT_FLOW is continuous / auto-pr / per-issue / hard", () => {

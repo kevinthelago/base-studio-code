@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { buildPublishPlan, summarizePlan, type PublishInput } from "../screens/projects/publishAdapter";
-import { personalProfile, orgProfile } from "../screens/projects/capabilityMapping";
-import { STRATEGY_PRESETS } from "../screens/projects/executionTopology";
+import { buildPublishPlan, summarizePlan, type PublishInput } from "../screens/planner/publishAdapter";
+import { personalProfile, orgProfile } from "../screens/planner/capabilityMapping";
+import { STRATEGY_PRESETS } from "../screens/planner/executionTopology";
 
 function input(over: Partial<PublishInput> = {}): PublishInput {
   return {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { activeSubstep, substepDone } from "../screens/projects/planSubsteps";
-import { SECTION_DEFS, mkSection, makeBlueprints, type SubStep } from "../screens/projects/blueprints";
-import { derivePlanStageState, planStateToSignals } from "../screens/projects/planStageDerive";
+import { activeSubstep, substepDone } from "../screens/planner/planSubsteps";
+import { SECTION_DEFS, mkSection, makeBlueprints, type SubStep } from "../screens/planner/blueprints";
+import { derivePlanStageState, planStateToSignals } from "../screens/planner/planStageDerive";
 
 const STATIC: SubStep[] = [
   { key: "goal", label: "Goal", prompt: "g" },

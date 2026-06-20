@@ -11,7 +11,6 @@ import type {
 import type { Section } from "./ghStructure";
 import type { FleetPlan } from "./planSections";
 import { featureDefined, type PlanFeature } from "./featureList";
-import { SeamGraphView } from "./SeamGraphView";
 import type { Phase, GatePill, FooterKind } from "./focusedPlan";
 import {
   Stepper as FocusedStepper,
@@ -1392,8 +1391,6 @@ function FocusedPlanBody({ data }: {
   const [focus, setFocus] = useState<RelFocus>(null);
   const [hover, setHover] = useState<string | null>(null);
   const phases = data?.phaseStructure ?? [];
-  const graph = data?.seamGraph;
-  const hasGraph = (graph?.nodes.length ?? 0) > 0;
 
   // Agent-relationship graph (#…): the typed coordination graph over the fleet streams.
   const artifacts = data?.relationshipArtifacts ?? [];
@@ -1412,7 +1409,7 @@ function FocusedPlanBody({ data }: {
     [data?.agents, artifacts, edges, topology, hasRel],
   );
 
-  if (phases.length === 0 && !hasGraph && !hasRel) {
+  if (phases.length === 0 && !hasRel) {
     return (
       <div className="empty-state">
         <span className="empty-icon">◫</span>
@@ -1477,12 +1474,6 @@ function FocusedPlanBody({ data }: {
               onInspectEdge={(id) => setFocus({ type: "edge", id })}
             />
           </div>
-        </div>
-      )}
-      {hasGraph && (
-        <div>
-          <div className="ulabel" style={{ paddingBottom: 6 }}>feature seams</div>
-          <SeamGraphView graph={graph!} />
         </div>
       )}
       {phases.length > 0 && (

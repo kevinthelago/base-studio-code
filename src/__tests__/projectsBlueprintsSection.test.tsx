@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { ProjectsList } from "../screens/projects/ProjectsList";
+import { ProjectsList } from "../screens/planner/ProjectsList";
 import { useAppStore } from "../store";
-import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../screens/projects/blueprints";
+import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../screens/planner/blueprints";
 
 // The Projects-tab redesign adds a dedicated Blueprints section: the user's saved library
 // blueprints (built-ins excluded) plus in-progress authoring drafts, kept out of the normal
