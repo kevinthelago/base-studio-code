@@ -16,13 +16,13 @@ import {
 import type { AgentProfile, ConsoleSession, ConsolePane, Tier, ToolKey } from "./agentProfiles";
 import { resolveProfileSettings } from "./profileEnforcement";
 import { parseAuditLog, toRow, decideAudit, type AuditDecision, type AuditKind, type ResolvedGate } from "./auditLog";
-import { roleCapability, roleWriteRules } from "../../lib/sessionRoles";
+import { roleCapability, roleWriteRules } from "../../lib/session/sessionRoles";
 import {
   ingestCoordLog, coordinationSummary, wakePromptFor, emptyCoordState,
   type BlockedView, type Waiter, type CoordState,
-} from "../../lib/coordination";
-import { actuateWake } from "../../lib/coordinatorActuate";
-import type { WorkflowRun } from "../../lib/conductor";
+} from "../../lib/fleet/coordination";
+import { actuateWake } from "../../lib/fleet/coordinatorActuate";
+import type { WorkflowRun } from "../../lib/fleet/conductor";
 import { useAppStore } from "../../store";
 import "./agents.css";
 

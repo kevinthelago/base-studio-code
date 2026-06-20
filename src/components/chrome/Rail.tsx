@@ -1,17 +1,16 @@
-import { TerminalSquare, BookOpen, Zap, Server, GitFork, FolderKanban, ShieldCheck, Sparkles, Settings } from "lucide-react";
+import { TerminalSquare, Zap, Server, GitFork, FolderKanban, ShieldCheck, Sparkles, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type Screen = "console" | "knowledge" | "automation" | "extensions" | "github" | "projects" | "skills" | "agents" | "settings";
+export type Screen = "console" | "automation" | "mcp" | "github" | "projects" | "skills" | "agents" | "settings";
 
 const NAV: Array<{ key: Screen; Icon: LucideIcon; title: string }> = [
   { key: "console",    Icon: TerminalSquare, title: "Console"         },
   { key: "projects",   Icon: FolderKanban,   title: "Projects"        },
   { key: "github",     Icon: GitFork,        title: "GitHub"          },
   { key: "agents",     Icon: ShieldCheck,    title: "Permissions"     },
-  { key: "extensions", Icon: Server,         title: "MCP"             },
+  { key: "mcp",        Icon: Server,         title: "MCP"             },
   { key: "skills",     Icon: Sparkles,       title: "Skills"          },
   { key: "automation", Icon: Zap,            title: "Automations"     },
-  { key: "knowledge",  Icon: BookOpen,       title: "Knowledge Store" },
   { key: "settings",   Icon: Settings,       title: "Settings"        },
 ];
 

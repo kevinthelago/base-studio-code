@@ -1,0 +1,24 @@
+{
+  "name": "UI",
+  "glyph": "▣",
+  "gate": "design routed",
+  "deps": [
+    "context",
+    "features"
+  ],
+  "appliesWhen": {
+    "signal": "requiresUi",
+    "target": true
+  },
+  "gateRule": {
+    "require": [
+      {
+        "signal": "uiDone",
+        "target": true,
+        "label": "route the design to the project"
+      }
+    ]
+  },
+  "blurb": "Screens, states, and primary flows — designed from the features.",
+  "prompt": "With the features defined, design the UI that delivers them. Walk the features and, for each\nscreen a feature needs, capture its purpose, key states, and the components it needs from the\ndesign system. Produce ui.md plus a screen inventory the Render preview pipeline can visualize.\n\nThen author a **Claude Design kickoff** at `prompts/ui-kickoff.md` — a self-contained brief the\nuser can paste into a Claude Design session: the product goal, the feature → screen map, each\nscreen's states and flows, and the design-system constraints. This is the handoff that turns the\nplan's features into visual designs.\n\nGate: every primary flow has its screens and states defined."
+}

@@ -3,7 +3,7 @@
 // (#413 merge): self-fetching now (commits + branches + compares via the
 // ETag-cached githubRequest) so it drops straight into the Pulse dashboard.
 import { useState, useEffect } from "react";
-import { githubRequest } from "../../lib/github";
+import { githubRequest } from "../../lib/github/github";
 import { useAppStore, type GithubRepo } from "../../store";
 
 interface GhCommit {

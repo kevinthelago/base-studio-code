@@ -1,0 +1,39 @@
+/* ba.css — Blueprint Author shell tweaks.
+   Reuses planner.css (shell, terminal, stepper, fp, phase header/footer)
+   and blueprints.css (stage rail, pipes, dispositions, dep chips, cards).
+   blueprints.css scopes its component rules under .bp-page; we reuse the
+   pane body as that scope but must neutralize .bp-page's own page layout. */
+
+.ph-body.bpwrap {
+  /* override .bp-page { flex:1; display:flex; flex-direction:column; background:... } */
+  flex: 1 1 auto;
+  display: block;
+  background: none;
+}
+
+/* the stepper has 4 nodes here — give labels a touch more room */
+.fp .step-label { max-width: 88px; }
+
+/* tighten card default padding inside the focused pane */
+.fp .bpwrap .card { border-radius: 9px; }
+
+/* pipeline trigger seg can get tight in 560px — allow wrap */
+.fp .bpwrap .pipe { flex-wrap: wrap; row-gap: 8px; }
+.fp .bpwrap .pipe .ptrig { margin-left: auto; }
+
+/* disposition grid: 2-up reads fine in the pane */
+.fp .bpwrap .disp .dd { line-height: 1.35; }
+
+/* keep the inline stage detail readable */
+.fp .bpwrap .stage-conn { margin-left: 34px; }
+
+/* standalone .lbl (not inside .d-block) — match the editor's label layout so
+   the divider line grows and the hint sits to the right */
+.fp .bpwrap .lbl {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--fg-muted);
+  margin-bottom: 9px; display: flex; align-items: center; gap: 9px;
+}
+.fp .bpwrap .lbl .ln { flex: 1; height: 1px; background: var(--border-soft); }
+.fp .bpwrap .lbl .lhint { text-transform: none; letter-spacing: 0; color: var(--fg-dim); font-size: 10px; }
+

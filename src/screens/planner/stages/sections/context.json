@@ -1,0 +1,61 @@
+{
+  "name": "Context",
+  "glyph": "◆",
+  "gate": "all topics resolved",
+  "deps": [],
+  "gateRule": {
+    "require": [
+      {
+        "signal": "coreConfirmed",
+        "target": true,
+        "weight": 0,
+        "label": "confirm goal, scope, stack & architecture"
+      },
+      {
+        "signal": "topicsResolved",
+        "of": "topicsTotal",
+        "label": "resolve the discovery topics"
+      },
+      {
+        "signal": "hasPlanGaps",
+        "target": false,
+        "weight": 0,
+        "label": "resolve TODO/FIXME markers in the written sections"
+      }
+    ]
+  },
+  "blurb": "Discovery — goal, scope, stack, architecture (+ applicable dimensions).",
+  "prompt": "Walk the discovery checklist one topic at a time, using the canonical key as each\nfile's stem. The gate REQUIRES these four written and confirmed: goal, scope, stack,\narchitecture. Cover other dimensions ONLY where they genuinely apply (canonical keys:\nusers, ux, schema, api, auth, security, testing, …) and record the rest in _skipped.md.\nEach file you create is a gate item the user confirms — don't create tangential files.\nFinish each section fully — do NOT leave TODO / TBD / FIXME / XXX / TKTK markers in a written\nsection; the gate blocks on them. (Ordinary prose like \"...\" or the word \"placeholder\" is fine.)\n\nGate: goal/scope/stack/architecture confirmed, and every documented topic confirmed\n(skipped dimensions don't count).",
+  "substeps": [
+    {
+      "key": "goal",
+      "label": "Goal",
+      "gate": "goal.md written and confirmed",
+      "prompt": "Establish the goal: the single outcome this project must achieve, and who it's for. Propose\nit, interrogate it with the user, then write goal.md. Stop and confirm before moving on."
+    },
+    {
+      "key": "scope",
+      "label": "Scope",
+      "gate": "scope.md written and confirmed",
+      "prompt": "Define what's in scope and — just as important — what's explicitly out of scope. Write\nscope.md, then confirm."
+    },
+    {
+      "key": "stack",
+      "label": "Stack",
+      "gate": "stack.md written and confirmed",
+      "prompt": "Decide the technology stack — languages, frameworks, datastores — and the reasoning behind\neach choice. Write it to the file named exactly `stack.md` (not \"tech stack.md\" or a titled\nvariant — the gate looks for `stack.md`), then confirm."
+    },
+    {
+      "key": "architecture",
+      "label": "Architecture",
+      "gate": "architecture.md written and confirmed",
+      "prompt": "Describe the high-level architecture: the major components and how they interact. Write\narchitecture.md, then confirm."
+    },
+    {
+      "key": "dimensions",
+      "label": "Applicable dimensions",
+      "loop": "topics",
+      "prompt": "Now cover any remaining dimension that genuinely applies — one at a time — using the canonical\nkey as the file stem (users, ux, schema, api, auth, security, testing, …). Record every\ndimension you don't document in _skipped.md. Don't create files for tangential topics."
+    }
+  ]
+}

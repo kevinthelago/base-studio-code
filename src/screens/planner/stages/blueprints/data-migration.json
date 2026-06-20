@@ -1,0 +1,31 @@
+{
+  "order": 7,
+  "id": "data-migration",
+  "name": "Data migration",
+  "desc": "Move data from an existing system into a canonical Data Model",
+  "origin": "built-in",
+  "icon": "⇲",
+  "h": 280,
+  "category": "data",
+  "mode": "operate",
+  "sections": [
+    {
+      "key": "context"
+    },
+    {
+      "key": "dataSource"
+    },
+    {
+      "key": "dataModel"
+    },
+    {
+      "key": "dataMap"
+    },
+    {
+      "key": "dataClean"
+    },
+    {
+      "key": "dataLoad"
+    }
+  ]
+}

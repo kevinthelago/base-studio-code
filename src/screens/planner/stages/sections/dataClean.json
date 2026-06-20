@@ -1,0 +1,11 @@
+{
+  "name": "Cleaning",
+  "glyph": "✦",
+  "gate": "rows pass the quality bar",
+  "deps": [
+    "dataMap",
+    "dataExtract"
+  ],
+  "blurb": "Coerce, standardize, validate against the Data Model's rules.",
+  "prompt": "Clean the rows against the Data Model: coerce types, standardize formats (dates, currency,\naddresses, casing), and validate against each field's rules. Decide the QUALITY BAR — the\nconfidence threshold a row must clear to be allowed into the Data Model — and how failures are\nquarantined for review. External (collected) data is dirtier than a system of record, so set the\nbar higher for collection.\n\nWrite `dataClean.json`: { \"qualityBar\": <percent>, \"rules\": [{ \"field\", \"rule\", \"kind\":\n\"coerce\"|\"standardize\"|\"validate\", \"note\" }], \"validationPct\": <percent>, \"quarantine\": { \"count\",\n\"policy\" } }. The Cleaning pane renders the bar, the rules by kind, and the quarantine policy."
+}

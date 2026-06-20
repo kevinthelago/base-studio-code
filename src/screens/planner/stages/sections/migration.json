@@ -1,0 +1,10 @@
+{
+  "name": "Migration plan",
+  "glyph": "⇄",
+  "gate": "from→to mapped",
+  "deps": [
+    "repos"
+  ],
+  "blurb": "The from→to mapping and an incremental, reversible cutover.",
+  "prompt": "Define the migration: the from→to (framework / language / protocol / datastore), an\nequivalence mapping, and an incremental cutover — run old + new in parallel, migrate\nslice by slice, verify, then retire the old. Call out breaking changes and the\ncompatibility shims that bridge them."
+}

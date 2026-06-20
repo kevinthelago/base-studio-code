@@ -2,14 +2,14 @@
 // aggregated across the fleet's repos via the ETag-cached githubRequest. Pure
 // mapping is in lib/fleetGithub; this is the fetch orchestration.
 import { useState, useEffect } from "react";
-import { githubRequest, isGithubAuthError } from "../lib/github";
+import { githubRequest, isGithubAuthError } from "../lib/github/github";
 import { useAppStore } from "../store";
 import {
   mapThroughput, mapMergeQueue, mapTimeToLand, deriveThroughputKpis,
   type ThroughputSlice, type MergeQueueRow, type FleetThroughputKpis,
   type GhIssueItem, type GhStatusState,
-} from "../lib/fleetGithub";
-import type { GhPull } from "../lib/repoPulseLive";
+} from "../lib/github/fleetGithub";
+import type { GhPull } from "../lib/github/repoPulseLive";
 
 const WINDOW_DAYS = 14;
 /** Cap on open PRs we fetch a CI status for (one call each). */

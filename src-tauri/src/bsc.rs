@@ -166,6 +166,16 @@ pub(crate) const BSC_FLEET_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-plan` wrapper (#plan-db): a thin shell function over the compiled plan-store CLI, so the
+/// planner/director/workers invoke it like any other bsc-* helper — no PATH changes. Unlike the
+/// others it can't be pure shell (it needs SQLite), so the function execs the real binary by its
+/// absolute path in `$BSC_PLAN_BIN` (set per-session in pty_create, alongside `$BSC_PLAN_DB` = the
+/// project's plan.db). Falls back to a bare `bsc-plan` on PATH if the var is unset.
+pub(crate) const BSC_PLAN_RC: &str = concat!(
+    r#"bsc-plan() { "${BSC_PLAN_BIN:-bsc-plan}" "$@"; }"#,
+    "\n",
+);
+
 #[cfg(test)]
 mod tests {
 
@@ -373,7 +383,7 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
@@ -385,6 +395,7 @@ mod tests {
             super::BSC_COORD_EMIT_RC,
             super::BSC_DEFER_RC,
             super::BSC_FLEET_RC,
+            super::BSC_PLAN_RC,
         );
         let dir = std::env::temp_dir().join(format!("bsc-rc-syntax-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

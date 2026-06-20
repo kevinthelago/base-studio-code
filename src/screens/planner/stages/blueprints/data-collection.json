@@ -1,0 +1,37 @@
+{
+  "order": 8,
+  "id": "data-collection",
+  "name": "Data collection",
+  "desc": "Scrape the web or fetch datasets into a canonical Data Model",
+  "origin": "built-in",
+  "icon": "⇱",
+  "h": 300,
+  "category": "data",
+  "mode": "create",
+  "sections": [
+    {
+      "key": "context"
+    },
+    {
+      "key": "collectTargets"
+    },
+    {
+      "key": "dataModel"
+    },
+    {
+      "key": "sourceLicensing"
+    },
+    {
+      "key": "dataAcquire"
+    },
+    {
+      "key": "dataExtract"
+    },
+    {
+      "key": "dataClean"
+    },
+    {
+      "key": "dataLoad"
+    }
+  ]
+}

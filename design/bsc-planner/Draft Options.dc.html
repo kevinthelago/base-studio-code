@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;background:#e7e5df;}
+  *{box-sizing:border-box;}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:oklch(0.38 0.006 250 / .6);border-radius:99px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</helmet>
+<div style="--bg-canvas:oklch(0.13 0.005 250); --bg-panel:oklch(0.17 0.005 250); --bg-elev:oklch(0.21 0.006 250); --bg-elev2:oklch(0.26 0.006 250); --border:oklch(0.30 0.006 250); --border-soft:oklch(0.24 0.006 250); --fg:oklch(0.94 0.004 250); --fg-muted:oklch(0.66 0.008 250); --fg-dim:oklch(0.46 0.008 250); --accent:oklch(0.80 0.14 70); --accent-dim:oklch(0.55 0.10 70); --success:oklch(0.74 0.13 145); --info:oklch(0.72 0.10 230); --danger:oklch(0.68 0.18 25); --mono:'JetBrains Mono',ui-monospace,monospace; --sans:'Inter',system-ui,sans-serif; min-width:100%; min-height:100vh; width:max-content; box-sizing:border-box; padding:48px; background:#e7e5df; display:flex; flex-direction:column; gap:32px; font-family:var(--sans);">
+
+  <div style="flex:none; max-width:900px;">
+    <div style="font-family:var(--mono); font-size:13px; font-weight:700; color:#2b2825;">Drafts — four treatments</div>
+    <div style="font-family:var(--mono); font-size:11.5px; color:#6b6660; margin-top:5px;">Each frame shows the top of the Projects column. Drafts = plans not yet pushed to GitHub. Same content, four ways to surface it.</div>
+  </div>
+
+  <div style="display:flex; gap:32px; align-items:flex-start;">
+
+    <!-- ░░ A · Chip strip (current) ░░ -->
+    <div style="flex:none; width:600px;">
+      <div style="display:flex; align-items:baseline; gap:9px; margin-bottom:10px;">
+        <span style="font-family:var(--mono); font-size:12px; font-weight:700; color:#2b2825;">A · Inline chip strip</span>
+        <span style="font-family:var(--mono); font-size:10.5px; color:#6b6660;">current · compact, low priority</span>
+      </div>
+      <div style="background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.18); padding:18px 20px;">
+        <div style="display:flex; align-items:center; gap:10px; padding:11px 14px; margin-bottom:18px; background:color-mix(in oklch, var(--accent), var(--bg-canvas) 92%); border:1px dashed color-mix(in oklch, var(--accent), transparent 60%); border-radius:8px; flex-wrap:wrap;">
+          <span style="font-family:var(--mono); font-size:9.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.07em;">2 drafts</span>
+          <span style="display:inline-flex; align-items:center; gap:7px; padding:5px 11px; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:99px; font-family:var(--mono); font-size:10.5px; color:var(--fg);">Celebritea <span style="color:var(--fg-dim);">· 1h ago</span> <span style="color:var(--accent);">resume →</span></span>
+          <span style="display:inline-flex; align-items:center; gap:7px; padding:5px 11px; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:99px; font-family:var(--mono); font-size:10.5px; color:var(--fg);">Note AI <span style="color:var(--fg-dim);">· 4d ago</span> <span style="color:var(--accent);">resume →</span></span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin:0 0 9px;"><span style="width:6px; height:6px; border-radius:99px; background:var(--success);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.07em;">active</span><span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">3</span></div>
+        <div style="border:1px solid var(--border-soft); border-radius:10px; overflow:hidden;">
+          <div style="padding:13px 16px; background:var(--bg-panel);"><div style="display:flex; align-items:center; gap:9px; margin-bottom:5px;"><span style="width:7px; height:7px; border-radius:99px; background:var(--success);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">#14</span><span style="font-size:14px; font-weight:600; color:var(--fg);">Chirp</span><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--success); background:color-mix(in oklch, var(--success), transparent 90%); border:1px solid color-mix(in oklch, var(--success), transparent 75%);">active</span></div><div style="color:var(--fg-muted); font-size:12px;">A Twitter clone — web, mobile, three microservices.</div></div>
+          <div style="padding:13px 16px; background:var(--bg-panel); border-top:1px solid var(--border-soft);"><div style="display:flex; align-items:center; gap:9px; margin-bottom:5px;"><span style="width:7px; height:7px; border-radius:99px; background:var(--success);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">#9</span><span style="font-size:14px; font-weight:600; color:var(--fg);">Stock Explorer</span><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--success); background:color-mix(in oklch, var(--success), transparent 90%); border:1px solid color-mix(in oklch, var(--success), transparent 75%);">active</span></div><div style="color:var(--fg-muted); font-size:12px;">Multi-asset market explorer with live trading.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ░░ B · Drafting group ░░ -->
+    <div style="flex:none; width:600px;">
+      <div style="display:flex; align-items:baseline; gap:9px; margin-bottom:10px;">
+        <span style="font-family:var(--mono); font-size:12px; font-weight:700; color:#2b2825;">B · Drafting group</span>
+        <span style="font-family:var(--mono); font-size:10.5px; color:#6b6660;">full cards · mirrors Active / Shipped groups</span>
+      </div>
+      <div style="background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.18); padding:18px 20px;">
+        <div style="display:flex; align-items:center; gap:8px; margin:0 0 9px;"><span style="width:6px; height:6px; border-radius:99px; background:var(--accent);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.07em;">drafting</span><span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">2</span></div>
+        <div style="display:flex; flex-direction:column; gap:9px; margin-bottom:20px;">
+          <div style="display:flex; align-items:center; gap:12px; padding:11px 14px; background:var(--bg-elev); border:1px dashed var(--border-soft); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="display:flex; align-items:center; gap:9px;"><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--accent); background:color-mix(in oklch, var(--accent), transparent 90%); border:1px solid color-mix(in oklch, var(--accent), transparent 75%);">draft</span><span style="font-size:13.5px; font-weight:600; color:var(--fg);">Celebritea</span><span style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim);">no board yet · 1h ago</span></div><div style="margin-top:5px; color:var(--fg-muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">LLM-filtered celebrity news feed — Kotlin API + mobile.</div></div><span style="font-family:var(--mono); font-size:10.5px; color:var(--fg-muted);">resume →</span><span style="color:var(--fg-dim); font-size:14px;">⋯</span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:11px 14px; background:var(--bg-elev); border:1px dashed var(--border-soft); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="display:flex; align-items:center; gap:9px;"><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--accent); background:color-mix(in oklch, var(--accent), transparent 90%); border:1px solid color-mix(in oklch, var(--accent), transparent 75%);">draft</span><span style="font-size:13.5px; font-weight:600; color:var(--fg);">Note AI</span><span style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim);">no board yet · 4d ago</span></div><div style="margin-top:5px; color:var(--fg-muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">AI note-taking with a liquid blob radial UI on Skia.</div></div><span style="font-family:var(--mono); font-size:10.5px; color:var(--fg-muted);">resume →</span><span style="color:var(--fg-dim); font-size:14px;">⋯</span></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin:0 0 9px;"><span style="width:6px; height:6px; border-radius:99px; background:var(--success);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.07em;">active</span><span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">3</span></div>
+        <div style="border:1px solid var(--border-soft); border-radius:10px; overflow:hidden;">
+          <div style="padding:13px 16px; background:var(--bg-panel);"><div style="display:flex; align-items:center; gap:9px; margin-bottom:5px;"><span style="width:7px; height:7px; border-radius:99px; background:var(--success);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">#14</span><span style="font-size:14px; font-weight:600; color:var(--fg);">Chirp</span><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--success); background:color-mix(in oklch, var(--success), transparent 90%); border:1px solid color-mix(in oklch, var(--success), transparent 75%);">active</span></div><div style="color:var(--fg-muted); font-size:12px;">A Twitter clone — web, mobile, three microservices.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ░░ C · Unified list ░░ -->
+    <div style="flex:none; width:600px;">
+      <div style="display:flex; align-items:baseline; gap:9px; margin-bottom:10px;">
+        <span style="font-family:var(--mono); font-size:12px; font-weight:700; color:#2b2825;">C · One unified list</span>
+        <span style="font-family:var(--mono); font-size:10.5px; color:#6b6660;">drafts are first-class rows, dashed left edge</span>
+      </div>
+      <div style="background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.18); padding:18px 20px;">
+        <div style="border:1px solid var(--border-soft); border-radius:10px; overflow:hidden;">
+          <div style="padding:13px 16px; display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; background:color-mix(in oklch, var(--accent), var(--bg-panel) 94%); border-left:2px dashed var(--accent);"><div><div style="display:flex; align-items:center; gap:9px; margin-bottom:4px;"><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--accent); background:color-mix(in oklch, var(--accent), transparent 90%); border:1px solid color-mix(in oklch, var(--accent), transparent 75%);">draft</span><span style="font-size:14px; font-weight:600; color:var(--fg);">Celebritea</span><span style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim);">no board yet</span></div><div style="color:var(--fg-muted); font-size:12px;">LLM-filtered celebrity news feed — Kotlin API + mobile.</div></div><span style="font-family:var(--mono); font-size:10.5px; color:var(--accent); white-space:nowrap;">resume →</span></div>
+          <div style="padding:13px 16px; display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; background:color-mix(in oklch, var(--accent), var(--bg-panel) 94%); border-top:1px solid var(--border-soft); border-left:2px dashed var(--accent);"><div><div style="display:flex; align-items:center; gap:9px; margin-bottom:4px;"><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--accent); background:color-mix(in oklch, var(--accent), transparent 90%); border:1px solid color-mix(in oklch, var(--accent), transparent 75%);">draft</span><span style="font-size:14px; font-weight:600; color:var(--fg);">Note AI</span><span style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim);">no board yet</span></div><div style="color:var(--fg-muted); font-size:12px;">AI note-taking with a liquid blob radial UI on Skia.</div></div><span style="font-family:var(--mono); font-size:10.5px; color:var(--accent); white-space:nowrap;">resume →</span></div>
+          <div style="padding:13px 16px; display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; background:var(--bg-panel); border-top:1px solid var(--border-soft); border-left:2px solid transparent;"><div><div style="display:flex; align-items:center; gap:9px; margin-bottom:4px;"><span style="width:7px; height:7px; border-radius:99px; background:var(--success);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">#14</span><span style="font-size:14px; font-weight:600; color:var(--fg);">Chirp</span><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--success); background:color-mix(in oklch, var(--success), transparent 90%); border:1px solid color-mix(in oklch, var(--success), transparent 75%);">active</span></div><div style="color:var(--fg-muted); font-size:12px;">A Twitter clone — web, mobile, three microservices.</div></div><span style="font-family:var(--mono); font-size:10.5px; color:var(--fg-dim); white-space:nowrap;">open planning →</span></div>
+          <div style="padding:13px 16px; display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; background:var(--bg-panel); border-top:1px solid var(--border-soft); border-left:2px solid transparent;"><div><div style="display:flex; align-items:center; gap:9px; margin-bottom:4px;"><span style="width:7px; height:7px; border-radius:99px; background:var(--success);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">#9</span><span style="font-size:14px; font-weight:600; color:var(--fg);">Stock Explorer</span><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--success); background:color-mix(in oklch, var(--success), transparent 90%); border:1px solid color-mix(in oklch, var(--success), transparent 75%);">active</span></div><div style="color:var(--fg-muted); font-size:12px;">Multi-asset market explorer with live trading.</div></div><span style="font-family:var(--mono); font-size:10.5px; color:var(--fg-dim); white-space:nowrap;">open planning →</span></div>
+        </div>
+        <div style="margin-top:9px; font-family:var(--mono); font-size:9.5px; color:var(--fg-dim);">drafts float to the top until pushed to GitHub, then drop into Active</div>
+      </div>
+    </div>
+
+    <!-- ░░ D · In the rail ░░ -->
+    <div style="flex:none; width:760px;">
+      <div style="display:flex; align-items:baseline; gap:9px; margin-bottom:10px;">
+        <span style="font-family:var(--mono); font-size:12px; font-weight:700; color:#2b2825;">D · Out of the main list</span>
+        <span style="font-family:var(--mono); font-size:10.5px; color:#6b6660;">drafts live in the right rail · main list = published only</span>
+      </div>
+      <div style="background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.18); display:flex; height:420px;">
+        <!-- main -->
+        <div style="flex:1 1 0; min-width:0; padding:18px 20px;">
+          <div style="display:flex; align-items:center; gap:8px; margin:0 0 9px;"><span style="width:6px; height:6px; border-radius:99px; background:var(--success);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.07em;">active</span><span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">3</span></div>
+          <div style="border:1px solid var(--border-soft); border-radius:10px; overflow:hidden;">
+            <div style="padding:13px 16px; background:var(--bg-panel);"><div style="display:flex; align-items:center; gap:9px; margin-bottom:5px;"><span style="width:7px; height:7px; border-radius:99px; background:var(--success);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">#14</span><span style="font-size:14px; font-weight:600; color:var(--fg);">Chirp</span><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--success); background:color-mix(in oklch, var(--success), transparent 90%); border:1px solid color-mix(in oklch, var(--success), transparent 75%);">active</span></div><div style="color:var(--fg-muted); font-size:12px;">A Twitter clone — web, mobile, three microservices.</div></div>
+            <div style="padding:13px 16px; background:var(--bg-panel); border-top:1px solid var(--border-soft);"><div style="display:flex; align-items:center; gap:9px; margin-bottom:5px;"><span style="width:7px; height:7px; border-radius:99px; background:var(--success);"></span><span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">#9</span><span style="font-size:14px; font-weight:600; color:var(--fg);">Stock Explorer</span><span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--success); background:color-mix(in oklch, var(--success), transparent 90%); border:1px solid color-mix(in oklch, var(--success), transparent 75%);">active</span></div><div style="color:var(--fg-muted); font-size:12px;">Multi-asset market explorer with live trading.</div></div>
+          </div>
+        </div>
+        <!-- rail -->
+        <div style="flex:0 0 270px; background:var(--bg-panel); border-left:1px solid var(--border-soft); display:flex; flex-direction:column;">
+          <div style="padding:16px 16px 12px; border-bottom:1px solid var(--border-soft);">
+            <div style="display:flex; align-items:center; gap:8px;"><span style="font-family:var(--mono); font-size:9.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.07em;">drafts</span><span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">2</span><span style="flex:1;"></span><span style="font-family:var(--mono); font-size:10px; color:var(--accent);">+ new</span></div>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-top:11px;">
+              <div style="padding:9px 11px; background:var(--bg-elev); border:1px dashed var(--border-soft); border-radius:6px;"><div style="display:flex; align-items:center; gap:7px;"><span style="font-size:12.5px; font-weight:600; color:var(--fg);">Celebritea</span></div><div style="margin-top:4px; font-family:var(--mono); font-size:9px; color:var(--fg-dim);">1h ago · <span style="color:var(--accent);">resume →</span></div></div>
+              <div style="padding:9px 11px; background:var(--bg-elev); border:1px dashed var(--border-soft); border-radius:6px;"><div style="display:flex; align-items:center; gap:7px;"><span style="font-size:12.5px; font-weight:600; color:var(--fg);">Note AI</span></div><div style="margin-top:4px; font-family:var(--mono); font-size:9px; color:var(--fg-dim);">4d ago · <span style="color:var(--accent);">resume →</span></div></div>
+            </div>
+          </div>
+          <div style="padding:14px 16px 10px;">
+            <div style="display:flex; align-items:center; gap:8px;"><span style="width:18px; height:18px; border-radius:5px; display:flex; align-items:center; justify-content:center; background:var(--bg-elev2); border:1px solid var(--border-soft); color:var(--fg-muted); font-size:10px;">◫</span><span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--fg);">Blueprints</span><span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">4</span></div>
+            <div style="display:flex; flex-direction:column; gap:7px; margin-top:11px;">
+              <div style="padding:9px 11px; background:var(--bg-elev); border:1px solid var(--border-soft); border-radius:7px; display:flex; align-items:center; gap:8px;"><span style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; background:color-mix(in oklch, oklch(0.75 0.13 145), transparent 88%); border:1px solid color-mix(in oklch, oklch(0.75 0.13 145), transparent 70%); color:oklch(0.75 0.13 145); font-size:11px;">◫</span><span style="font-size:12px; font-weight:600; color:var(--fg);">Greenfield SaaS</span></div>
+              <div style="padding:9px 11px; background:var(--bg-elev); border:1px solid var(--border-soft); border-radius:7px; display:flex; align-items:center; gap:8px;"><span style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; background:color-mix(in oklch, oklch(0.75 0.13 230), transparent 88%); border:1px solid color-mix(in oklch, oklch(0.75 0.13 230), transparent 70%); color:oklch(0.75 0.13 230); font-size:11px;">◫</span><span style="font-size:12px; font-weight:600; color:var(--fg);">Microservice mesh</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

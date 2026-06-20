@@ -6,8 +6,8 @@ import { PaneMenu, type ModelId } from "./PaneMenu";
 
 // The canonical pane-status vocabulary lives in lib/paneStatus (#435); re-exported
 // here so existing PaneShell importers keep their import path.
-export type { PaneStatus } from "../../lib/paneStatus";
-import type { PaneStatus } from "../../lib/paneStatus";
+export type { PaneStatus } from "../../lib/console/paneStatus";
+import type { PaneStatus } from "../../lib/console/paneStatus";
 
 interface PaneShellProps {
   agent: string;
