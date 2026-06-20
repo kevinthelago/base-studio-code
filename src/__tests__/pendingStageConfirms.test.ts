@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { pendingStageConfirms, stageConfirmKeys } from "../screens/planner/planStageDerive";
-import type { SectionState } from "../screens/planner/ghStructure";
+import type { SectionState } from "../screens/planner/github/ghStructure";
 
 type S = { k: string; state: SectionState };
 const sec = (k: string, state: SectionState): S => ({ k, state });

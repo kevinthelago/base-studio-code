@@ -5,10 +5,10 @@ import { usePageTabs } from "../../hooks/usePageTabs";
 import { GitHubEmpty } from "./Empty";
 import { GitHubSummary } from "./GitHubSummary";
 import { ProjectsSummary } from "../planner/ProjectsSummary";
-import { ProjectBoard } from "../planner/ProjectBoard";
-import { Roadmap } from "../planner/Roadmap";
-import { Issues } from "../planner/Issues";
-import { Insights } from "../planner/Insights";
+import { ProjectBoard } from "../planner/github/ProjectBoard";
+import { Roadmap } from "../planner/github/Roadmap";
+import { Issues } from "../planner/github/Issues";
+import { Insights } from "../planner/github/Insights";
 import { Pulse } from "./Pulse";
 
 const GITHUB_TABS: TabItem[] = [

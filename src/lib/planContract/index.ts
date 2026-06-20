@@ -11,7 +11,7 @@
 
 import { parseIssuesFile, validateIssues } from "../../screens/planner/planIssues";
 import { parseFleetFile } from "../../screens/planner/planSections";
-import { parsePhases } from "../../screens/planner/ghStructure";
+import { parsePhases } from "../../screens/planner/github/ghStructure";
 
 // ── Blueprint types ─────────────────────────────────────────────────────────────
 

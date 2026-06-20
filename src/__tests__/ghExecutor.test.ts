@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { executePublish, type GhRequest, type GhResponse, type Performer } from "../screens/planner/ghExecutor";
-import type { PublishOp } from "../screens/planner/publishAdapter";
+import { executePublish, type GhRequest, type GhResponse, type Performer } from "../screens/planner/github/ghExecutor";
+import type { PublishOp } from "../screens/planner/github/publishAdapter";
 
 /** Mock performer: records requests; issues/milestones get sequential numbers,
  *  issues also a database id. */

@@ -8,7 +8,7 @@ import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
   ProjectPaneData, PaneAutomation, PaneSkill, McpServer,
 } from "./projectPaneData";
-import type { Section } from "./ghStructure";
+import type { Section } from "./github/ghStructure";
 import type { FleetPlan } from "./planSections";
 import { featureDefined, type PlanFeature } from "./featureList";
 import type { Phase, GatePill, FooterKind } from "./focusedPlan";

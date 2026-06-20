@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildGantt, windowStartFrom, weeksBetween, tickIntervalWeeks,
   type GhMilestone,
-} from "../screens/planner/roadmapGantt";
+} from "../screens/planner/github/roadmapGantt";
 
 const NOW = new Date("2026-06-01T00:00:00Z");
 const WEEK = 7 * 24 * 3600 * 1000;

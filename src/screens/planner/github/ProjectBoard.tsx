@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
-import { ProjectsHeader } from "./ProjectsHeader";
-import type { ActiveProjectInfo } from "./ProjectsHeader";
-import { reposFromItems } from "./projectScan";
+import { useAppStore } from "../../../store";
+import { ProjectsHeader } from "../ProjectsHeader";
+import type { ActiveProjectInfo } from "../ProjectsHeader";
+import { reposFromItems } from "../projectScan";
 
 // ── GitHub data types ─────────────────────────────────────────────────────────
 

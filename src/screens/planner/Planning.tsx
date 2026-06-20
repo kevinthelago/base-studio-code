@@ -9,8 +9,8 @@ import { Dialog } from "../../components/Dialog";
 import { BlueprintUpdateModal } from "./blueprints/BlueprintUpdateModal";
 import { sanitizeProjectKey } from "../../lib/projectPaths";
 import { useDragResize } from "../../hooks/useDragResize";
-import { buildGhStructure, parsePhases } from "./ghStructure";
-import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./ghStructure";
+import { buildGhStructure, parsePhases } from "./github/ghStructure";
+import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./github/ghStructure";
 import {
   parsePlanFocus, stripPlanFocus,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,

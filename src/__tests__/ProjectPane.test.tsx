@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ProjectPane } from "../screens/planner/ProjectPane";
-import type { Section } from "../screens/planner/ghStructure";
+import type { Section } from "../screens/planner/github/ghStructure";
 
 // ----------------------------------------------------------------
 // Staged layout (#652) — activated when sections prop is provided
