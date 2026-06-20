@@ -6,7 +6,7 @@
 import {
   PLATFORMS, platform, WORKLOAD, PIPE_TRIGGERS, RELEASE_STRATEGIES, deployChecks,
   type DeployConfig, type Workload, type ReleaseStrategy,
-} from "./deployConfig";
+} from "../deployConfig";
 
 const MONO = "var(--mono)";
 const card: React.CSSProperties = {

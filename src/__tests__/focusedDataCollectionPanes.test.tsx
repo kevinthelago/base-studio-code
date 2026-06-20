@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { FocusedTargetsBody } from "../screens/planner/FocusedTargetsBody";
-import { FocusedLegitimacyBody } from "../screens/planner/FocusedLegitimacyBody";
-import { FocusedAcquireBody } from "../screens/planner/FocusedAcquireBody";
-import { FocusedExtractBody } from "../screens/planner/FocusedExtractBody";
-import { FocusedModelBody } from "../screens/planner/FocusedModelBody";
-import { FocusedMappingBody } from "../screens/planner/FocusedMappingBody";
-import { FocusedCleaningBody } from "../screens/planner/FocusedCleaningBody";
-import { FocusedLoadBody } from "../screens/planner/FocusedLoadBody";
-import { parseStageJson, modeSummary, type CollectSource } from "../screens/planner/dataCollection";
+import { FocusedTargetsBody } from "../screens/planner/bodies/FocusedTargetsBody";
+import { FocusedLegitimacyBody } from "../screens/planner/bodies/FocusedLegitimacyBody";
+import { FocusedAcquireBody } from "../screens/planner/bodies/FocusedAcquireBody";
+import { FocusedExtractBody } from "../screens/planner/bodies/FocusedExtractBody";
+import { FocusedModelBody } from "../screens/planner/bodies/FocusedModelBody";
+import { FocusedMappingBody } from "../screens/planner/bodies/FocusedMappingBody";
+import { FocusedCleaningBody } from "../screens/planner/bodies/FocusedCleaningBody";
+import { FocusedLoadBody } from "../screens/planner/bodies/FocusedLoadBody";
+import { parseStageJson, modeSummary, type CollectSource } from "../screens/planner/bodies/dataCollection";
 
 // The collection panes self-fetch their planner-written JSON via `read_plan_sections`
 // (a map of section stem → file content). Route that command per test.

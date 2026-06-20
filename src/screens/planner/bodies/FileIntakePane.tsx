@@ -5,14 +5,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
-import { PipelineScreenFrame } from "./PipelineScreenFrame";
+import { useAppStore } from "../../../store";
+import { PipelineScreenFrame } from "../PipelineScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
   INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
-} from "./fileIntake";
-import type { PipelineScreenProps } from "./pipelineScreens";
-import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "./dropFiles";
+} from "../fileIntake";
+import type { PipelineScreenProps } from "../pipelineScreens";
+import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "../dropFiles";
 
 const KIND_COLOR: Record<IntakeKind, string> = {
   image: "var(--violet, oklch(0.72 0.12 300))", vector: "var(--violet, oklch(0.72 0.12 300))",
