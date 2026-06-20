@@ -241,10 +241,12 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     const secs = setEnabled(baseSecs(), "ui", false); // drop ui to simplify
     expect(planSectionsComplete(secs, sig(doneCtx))).toBe(false); // structure/permissions/skills unmet
     const allDone = {
-      ...doneCtx, phasesConfirmed: true, issueCount: 3,
+      ...doneCtx, phasesConfirmed: true,
       fleet: { streams: 2, profilesComplete: true }, skillsAck: true,
     };
-    expect(planSectionsComplete(secs, sig(allDone))).toBe(true);
+    // featuresPhased is an extra signal (added in Planning.tsx alongside hasPlanGaps), not part of
+    // planStateToSignals — supply it the same way the app does (#plan-db).
+    expect(planSectionsComplete(secs, { ...sig(allDone), featuresPhased: true })).toBe(true);
   });
 
   it("currentSection is the first in-progress section, skipping N/A", () => {

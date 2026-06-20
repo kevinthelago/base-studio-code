@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFeaturesFile, featureDefined, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featureDependencyCycle, type PlanFeature } from "./featureList";
+import { parseFeaturesFile, featureDefined, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featureDependencyCycle, type PlanFeature } from "./featureList";
 
 describe("parseFeaturesFile", () => {
   it("returns [] for empty / bad JSON / non-array", () => {
@@ -79,6 +79,15 @@ describe("featuresGateComplete / featuresAwaitingConfirm (#plan-db — the auto-
     expect(featuresAwaitingConfirm({ allConfirmed: false }, false)).toBe(false); // still populating → no offer
     expect(featuresAwaitingConfirm({ allConfirmed: true }, false)).toBe(true);   // all populated → offer confirm
     expect(featuresAwaitingConfirm({ allConfirmed: true }, true)).toBe(false);   // already confirmed → nothing pending
+  });
+});
+
+describe("featuresAllPhased (#plan-db — the Plan-stage gate)", () => {
+  const f = (slug: string, phase?: number | string): PlanFeature => ({ slug, name: slug, phase });
+  it("true only when every feature has a phase", () => {
+    expect(featuresAllPhased([])).toBe(false);
+    expect(featuresAllPhased([f("a", 1), f("b", "Phase 2")])).toBe(true);
+    expect(featuresAllPhased([f("a", 1), f("b")])).toBe(false); // b unphased
   });
 });
 
