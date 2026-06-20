@@ -29,7 +29,13 @@ type ProjectsSlice = Pick<AppStore,
 export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> = (set, get) => ({
       deleteLocalProject: (keys) =>
         set((s) => {
-          const keySet = new Set(keys.filter(Boolean));
+          // Resolve each passed key (project title OR GitHub node id) to its data key via the alias,
+          // so the per-project maps — keyed by the sanitized slug (`effectiveProjectId`) — are
+          // actually dropped, not just the raw title/id. Deleting a PUBLISHED project passes its node
+          // id; without this the slug-keyed planSections/planFleet/… leak (#997).
+          const keySet = new Set(
+            keys.flatMap((k) => (k ? [k, s.projectKeyAlias[k]] : [])).filter(Boolean) as string[],
+          );
           // Drop entries whose key is the project key. `m ?? {}` guards a slice that's
           // missing/null in a long-lived persisted store — `Object.entries(undefined)`
           // would throw and (without a boundary) crash the whole app on delete (#874).
@@ -38,7 +44,14 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // Drop repo-scoped entries (`<projectKey>::<repo>`) for this project.
           const byRepoKey = <T,>(m: Record<string, T>): Record<string, T> =>
             Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => !keySet.has(k.split("::")[0])));
-          const clearActive = s.activeProjectId != null && keySet.has(s.activeProjectId);
+          // Clear the active project AND the planning session when the deleted project is either.
+          // The Planning pane is mounted once (only CSS-hidden); if `planningSessionKey` still points
+          // at the deleted project, its `effectiveProjectId` keeps resolving there and it renders
+          // against now-gone data → crash. A published delete passes the node id (== activeProjectId),
+          // which is why only published deletes hit this (#997).
+          const clearActive =
+            (s.activeProjectId != null && keySet.has(s.activeProjectId)) ||
+            (!!s.planningSessionKey && keySet.has(s.planningSessionKey));
           return {
             planSections:           byKey(s.planSections),
             planConfirmedSections:  byKey(s.planConfirmedSections),
@@ -72,7 +85,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             refContextProject:      byKey(s.refContextProject),
             refContextRepo:         byRepoKey(s.refContextRepo),
             ...(clearActive
-              ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], projectsView: "list" as const }
+              ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], planningSessionKey: "", projectsView: "list" as const }
               : {}),
           };
         }),
