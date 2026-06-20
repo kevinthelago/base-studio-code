@@ -9,7 +9,7 @@
 //
 // Free of React / xterm / Tauri imports (matches planNode.ts / planSections.ts).
 
-import type { Maturity, PlanNode } from "./planNode";
+import type { Maturity, PlanNode } from "../planNode";
 
 /** The canonical layers a project can decompose into. */
 export type LayerId =

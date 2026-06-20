@@ -6,7 +6,7 @@ import {
   layerTitle,
   LAYER_ORDER,
   DIMENSIONS,
-} from "../screens/planner/shaping";
+} from "../screens/planner/data/shaping";
 
 describe("proposeLayers", () => {
   it("always includes the core domain layer, even with no answers", () => {

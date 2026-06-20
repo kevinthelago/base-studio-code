@@ -65,7 +65,7 @@ import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "../../lib/claudeComplete";
 import { fleetProfilesComplete } from "../../lib/profileGen";
 import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "../../lib/issueProvenance";
-import type { DataModel } from "./dataModel";
+import type { DataModel } from "./data/dataModel";
 
 // ── <data_model> tag parser (#se-persist) ────────────────────────────────────
 // The planner emits <data_model>{"name":"...","entities":[...]}</data_model> to hand

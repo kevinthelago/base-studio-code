@@ -3,7 +3,7 @@ import {
   emptyDataModel, checkDataModel, seedDataModels,
   addEntity, updateEntity, removeEntity, addField, updateField, removeField, toggleIdentity,
   type DataModel,
-} from "../screens/planner/dataModel";
+} from "../screens/planner/data/dataModel";
 
 const base = (): DataModel => ({
   id: "m1", name: "M", version: 1,

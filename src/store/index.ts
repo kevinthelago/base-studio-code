@@ -38,7 +38,7 @@ import type { PipelineRunState } from "../screens/planner/grading/pipelineRuntim
 import type { GradeResult } from "../screens/planner/grading/grading";
 import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/planner/blueprints";
 import type { DeployConfig } from "../screens/planner/deployConfig";
-import { seedDataModels, emptyDataModel, type DataModel } from "../screens/planner/dataModel";
+import { seedDataModels, emptyDataModel, type DataModel } from "../screens/planner/data/dataModel";
 import { canonicalSectionKey } from "../screens/planner/planSections";
 import type { PaneDescriptor } from "../lib/tunnel";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/planner/integrationStrategy";
