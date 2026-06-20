@@ -2022,6 +2022,10 @@ pub fn run() {
     // `ring` explicitly before any TLS; Err just means one is already installed.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
+    // Startup timing (#perf): wall clock from here to `setup` ≈ native + plugin init, before the
+    // WebView even loads our page. The frontend logs the doc→paint portion separately.
+    let boot_start = std::time::Instant::now();
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -2056,7 +2060,8 @@ pub fn run() {
         .manage(crate::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
-        .setup(|app| {
+        .setup(move |app| {
+            log::info!("[startup] process→setup {}ms (native + plugin init)", boot_start.elapsed().as_millis());
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
