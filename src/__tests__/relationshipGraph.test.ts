@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildRelationshipGraph, effectiveVia,
   type RelStream, type RelationshipArtifact, type AgentRelationship,
-} from "../screens/planner/relationshipGraph";
+} from "../screens/planner/relationship/relationshipGraph";
 import { parseFleetFile, normalizeTopology } from "../screens/planner/planSections";
 
 const STREAMS: RelStream[] = [

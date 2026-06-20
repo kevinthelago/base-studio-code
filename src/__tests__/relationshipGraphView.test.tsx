@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
-import { RelationshipGraphView } from "../screens/planner/RelationshipGraphView";
-import { RelationshipInspector } from "../screens/planner/RelationshipInspector";
+import { RelationshipGraphView } from "../screens/planner/relationship/RelationshipGraphView";
+import { RelationshipInspector } from "../screens/planner/relationship/RelationshipInspector";
 import {
   buildRelationshipGraph, computeSpotlight, hardLabel, restOpacity, runtimeNote,
   type RelStream, type RelationshipArtifact, type AgentRelationship,
-} from "../screens/planner/relationshipGraph";
+} from "../screens/planner/relationship/relationshipGraph";
 
 const STREAMS: RelStream[] = [
   { id: "schema", role: "worker", repo: "core", owns: ["packages/schema/**"] },

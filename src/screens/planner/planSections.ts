@@ -5,7 +5,7 @@ import { type IntegrationStrategy, normalizeStrategy } from "./integrationStrate
 import {
   type Topology, type RelationshipArtifact, type AgentRelationship,
   type EdgeKind, type Hardness, type Via, type ArtifactKind,
-} from "./relationshipGraph";
+} from "./relationship/relationshipGraph";
 
 const TOPOLOGIES: Topology[] = ["director", "peer", "hybrid"];
 const EDGE_KINDS: EdgeKind[] = ["handoff", "blocking", "sequence", "review", "notify", "mutex", "shared"];

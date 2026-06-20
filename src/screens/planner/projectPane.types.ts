@@ -12,7 +12,7 @@ import type { PlanGrade } from "../../lib/planGrade";
 import type { PlanFeature } from "./featureList";
 import type { Blueprint } from "./blueprints";
 import type { DeployConfig } from "./deployConfig";
-import type { Topology, RelationshipArtifact, AgentRelationship } from "./relationshipGraph";
+import type { Topology, RelationshipArtifact, AgentRelationship } from "./relationship/relationshipGraph";
 
 export type { PlanGrade };
 

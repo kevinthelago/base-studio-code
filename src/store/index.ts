@@ -32,7 +32,7 @@ import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
 import { scriptDocRelpath } from "../screens/planner/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/planner/planSections";
-import type { Topology } from "../screens/planner/relationshipGraph";
+import type { Topology } from "../screens/planner/relationship/relationshipGraph";
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/planner/planStages";
 import type { PipelineRunState } from "../screens/planner/pipelineRuntime";
 import type { GradeResult } from "../screens/planner/grading";
