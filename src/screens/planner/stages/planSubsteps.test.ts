@@ -50,8 +50,10 @@ describe("authored substeps (built-in sections)", () => {
     expect(subs.map((s) => s.key)).toEqual(["propose", "features"]);
     expect(subs.find((s) => s.key === "features")?.loop).toBe("features");
   });
-  it("Structure (Plan) is autonomous — no substeps", () => {
-    expect(SECTION_DEFS.structure.substeps ?? []).toEqual([]);
+  it("Structure (Plan) exposes a sequence step then a per-feature decompose loop", () => {
+    const subs = SECTION_DEFS.structure.substeps ?? [];
+    expect(subs.map((s) => s.key)).toEqual(["sequence", "decompose"]);
+    expect(subs.find((s) => s.key === "decompose")?.loop).toBe("features");
   });
   it("no built-in substep prompt mentions publishing (user owns publish)", () => {
     for (const def of Object.values(SECTION_DEFS)) {

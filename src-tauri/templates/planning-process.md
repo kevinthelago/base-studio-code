@@ -478,11 +478,13 @@ is skipped. Do NOT sketch the whole project at once.
 **What a "unit" is depends on the project — pick the mode and tell the user which
 you're using:**
 
-- **A NEW project → go feature by feature.** First agree a short **feature list**
-  (the agenda: named capabilities, no detail yet). Then take the features ONE at a
-  time: fully drive the current feature down to its issues (see "Drive a unit down"
-  below), confirm it, write it, and only THEN move to the next. Never batch the
-  depth pass across features.
+- **A NEW project → go feature by feature.** The features are already a dependency
+  **DAG** (`bsc-plan feature list` shows each feature + its `dependsOn`). Take them ONE
+  at a time **in dependency order** — foundations first, so a feature's deps are decomposed
+  before it. For each: `bsc-plan feature get <slug>` to pull its spec, fully drive it down
+  to its issues (see "Drive a unit down" below) with each issue's `dependsOn` realizing the
+  feature's edges, write them, and only THEN move to the next. Never batch the depth pass
+  across features.
 
 - **An EXISTING project → migrate section by section.** You are bringing the whole
   existing app into the plan, so a missed section is missed real work. First build a
