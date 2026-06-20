@@ -13,6 +13,17 @@ fn open(project_key: &str) -> Result<Store, String> {
     Store::open(&db_path(project_key)).map_err(|e| e.to_string())
 }
 
+/// Empty the project's plan store (issues + features) — backs "clear plan" (#plan-db). No-op when
+/// the db doesn't exist (don't create one just to clear it). Called from `clear_project_plan_files`
+/// so a reset isn't undone by the next poll re-reading the DB.
+pub(crate) fn clear(project_key: &str) -> Result<(), String> {
+    let path = db_path(project_key);
+    if !path.exists() {
+        return Ok(());
+    }
+    Store::open(&path).and_then(|s| s.clear()).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn plan_upsert_issue(project_key: String, issue: PlanIssue) -> Result<(), String> {
     open(&project_key)?.upsert(&issue).map_err(|e| e.to_string())
