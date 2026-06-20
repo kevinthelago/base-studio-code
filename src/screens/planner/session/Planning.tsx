@@ -4,13 +4,13 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { useAppStore } from "../../store";
-import { Dialog } from "../../components/Dialog";
-import { BlueprintUpdateModal } from "./blueprints/BlueprintUpdateModal";
-import { sanitizeProjectKey } from "../../lib/projectPaths";
-import { useDragResize } from "../../hooks/useDragResize";
-import { buildGhStructure, parsePhases } from "./github/ghStructure";
-import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "./github/ghStructure";
+import { useAppStore } from "../../../store";
+import { Dialog } from "../../../components/Dialog";
+import { BlueprintUpdateModal } from "../blueprints/BlueprintUpdateModal";
+import { sanitizeProjectKey } from "../../../lib/projectPaths";
+import { useDragResize } from "../../../hooks/useDragResize";
+import { buildGhStructure, parsePhases } from "../github/ghStructure";
+import type { Section, SectionState, GhNode, GhRepoNode, GhStructure } from "../github/ghStructure";
 import {
   parsePlanFocus, stripPlanFocus,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
@@ -18,54 +18,54 @@ import {
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
   buildSectionConfirmMessage, buildSectionSkipMessage,
 } from "./planningSession";
-import { parseCommandsFile } from "../../lib/allowedCommands";
-import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../lib/sessionRoles";
+import { parseCommandsFile } from "../../../lib/allowedCommands";
+import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
 import {
   ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
-} from "./stages/planSections";
-import { parseFeaturesFile, featuresSummary } from "./issues/featureList";
-import { buildWorkerScope } from "./fleet/workerScope";
-import { resolveIssueAssignee } from "./fleet/fleetAssignee";
-import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "./shared/repoScaffold";
-import type { FlowAutonomy, FlowPush, FlowGate } from "./fleet/agentFlow";
-import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./issues/planIssues";
-import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
-import { publishFleetRoster } from "../../lib/fleetRoster";
-import { hubToCanonical } from "../../lib/plannerSync";
-import { tunnelSetPlanState } from "../../lib/tunnelClient";
-import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../lib/projectSync";
-import { effectiveProjectRepos, localReposFor } from "./list/projectRepos";
-import { defaultStageConfig, enabledOrderedStages } from "./stages/planStages";
-import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./shared/planExtensions";
-import { applyBlueprintMcp, collectBlueprintMcp } from "./blueprints/blueprintMcp";
-import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "./blueprints/blueprintSkills";
-import { catalogLink, repoNameFromLink, mcpRepoName } from "../../lib/mcpInstall";
-import { type McpInstallState } from "./shared/mcpPaneData";
-import { EXT_CATALOG } from "../../data/extensions";
-import { buildProjectPaneData } from "./projectPaneData";
-import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChecks } from "./shared/deployConfig";
+} from "../stages/planSections";
+import { parseFeaturesFile, featuresSummary } from "../issues/featureList";
+import { buildWorkerScope } from "../fleet/workerScope";
+import { resolveIssueAssignee } from "../fleet/fleetAssignee";
+import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
+import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";
+import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "../issues/planIssues";
+import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "../ProjectPane";
+import { publishFleetRoster } from "../../../lib/fleetRoster";
+import { hubToCanonical } from "../../../lib/plannerSync";
+import { tunnelSetPlanState } from "../../../lib/tunnelClient";
+import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../../lib/projectSync";
+import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
+import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
+import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "../shared/planExtensions";
+import { applyBlueprintMcp, collectBlueprintMcp } from "../blueprints/blueprintMcp";
+import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
+import { catalogLink, repoNameFromLink, mcpRepoName } from "../../../lib/mcpInstall";
+import { type McpInstallState } from "../shared/mcpPaneData";
+import { EXT_CATALOG } from "../../../data/extensions";
+import { buildProjectPaneData } from "../projectPaneData";
+import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChecks } from "../shared/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
-import { derivePlanStageState, planStateToSignals, stageConfirmKeys } from "./stages/planStageDerive";
-import { findPlanGaps } from "./grading/lintPlan";
-import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "./stages/blueprints";
-import { Ic } from "./blueprints/blueprintIcons";
-import { coerceBlueprint, blueprintToManifest } from "./blueprints/blueprintShare";
-import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "./blueprints/blueprintSkills";
-import { buildMcpLibrary } from "./blueprints/blueprintMcp";
-import { publishGist } from "../../lib/extensions/gist";
-import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "./stages/focusedPlan";
-import { featureSectionsToIssues } from "./issues/planFeatures";
+import { derivePlanStageState, planStateToSignals, stageConfirmKeys } from "../stages/planStageDerive";
+import { findPlanGaps } from "../grading/lintPlan";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
+import { Ic } from "../blueprints/blueprintIcons";
+import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
+import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "../blueprints/blueprintSkills";
+import { buildMcpLibrary } from "../blueprints/blueprintMcp";
+import { publishGist } from "../../../lib/extensions/gist";
+import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "../stages/focusedPlan";
+import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt, stagePrompts } from "./plannerConductor";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
-import { oneShotComplete } from "../../lib/claudeComplete";
-import { fleetProfilesComplete } from "../../lib/profileGen";
-import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "../../lib/issueProvenance";
-import type { DataModel } from "./data/dataModel";
+import { oneShotComplete } from "../../../lib/claudeComplete";
+import { fleetProfilesComplete } from "../../../lib/profileGen";
+import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "../../../lib/issueProvenance";
+import type { DataModel } from "../data/dataModel";
 
 // ── <data_model> tag parser (#se-persist) ────────────────────────────────────
 // The planner emits <data_model>{"name":"...","entities":[...]}</data_model> to hand

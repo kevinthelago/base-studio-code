@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useAppStore } from "../../store";
 import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
-import { Planning } from "./Planning";
+import { Planning } from "./session/Planning";
 import { ProjectsPageModeStrip } from "./list/ProjectsSummary";
 import { Fleet } from "./fleet/Fleet";
 import { BlueprintsPage } from "./blueprints/BlueprintsPage";

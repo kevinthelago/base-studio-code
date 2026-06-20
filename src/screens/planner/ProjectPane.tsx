@@ -18,7 +18,7 @@ import {
   LockBanner as FocusedLockBanner,
   PhaseFooter as FocusedPhaseFooter,
 } from "./FocusedShell";
-import type { StagePrompt } from "./plannerConductor";
+import type { StagePrompt } from "./session/plannerConductor";
 import { FileIntakePane } from "./bodies/FileIntakePane";
 import { FocusedDeployBody } from "./bodies/DeployView";
 import type { DeployConfig } from "./shared/deployConfig";
