@@ -350,12 +350,6 @@ export interface AppStore {
   kbBlocks: KbBlock[];
   claudeApiKey: string;
   setClaudeApiKey: (key: string) => void;
-  applyKbTag: (blockId: string, tag: string) => void;
-  removeKbTag: (blockId: string, tag: string) => void;
-  renameKbBlock: (blockId: string, title: string) => void;
-  updateKbBlockContent: (blockId: string, content: string) => void;
-  addKbBlock: () => void;
-  removeKbBlock: (blockId: string) => void;
 
   // Automations
   schedules: Schedule[];
@@ -440,8 +434,6 @@ export interface AppStore {
   // When set, the Knowledge Base screen shows only this project's documents
   // (its `keys` are the candidate folder keys — title- and id-derived). Set when
   // navigating from a project's "documents" button. Transient — NOT persisted.
-  kbProjectScope: { keys: string[]; label: string } | null;
-  setKbProjectScope: (scope: { keys: string[]; label: string } | null) => void;
   // The GitHub page's active top tab (summary | projects | repos), store-controlled
   // so other screens can deep-link to it (e.g. the Projects list signpost → projects).
   githubTab: string;

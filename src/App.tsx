@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { LayoutGrid } from "lucide-react";
 import { Titlebar } from "./components/chrome/Titlebar";
@@ -14,7 +14,6 @@ import { useTunnelSync } from "./hooks/useTunnelSync";
 import { startPerfMonitor, recordStoreWrite } from "./lib/core/perf";
 import { log } from "./lib/core/log";
 import { ConsoleScreen } from "./screens/Console";
-import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
 import { AutomationsScreen } from "./screens/automations";
 import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
@@ -189,12 +188,6 @@ export default function App() {
   // that page's section, no chrome. Computed once per window load.
   const [detSection] = useState(() => detachedSection());
 
-  // Mount the Knowledge Store (and spawn its claude session) lazily on first
-  // visit, then keep it mounted so the PTY survives navigation. Avoids launching
-  // a background claude at app startup for a screen that may never be opened.
-  const knowledgeEverShown = useRef(false);
-  if (activeScreen === "knowledge") knowledgeEverShown.current = true;
-
   // Fetch the app-managed base directory once so the rest of the UI can
   // compute repo local paths deterministically without round-tripping Rust.
   useEffect(() => {
@@ -224,8 +217,6 @@ export default function App() {
         if (tabs[activeTabIdx]?.name) parts.push(tabs[activeTabIdx].name);
         if (focusedAgentName) parts.push(focusedAgentName);
         break;
-      case "knowledge":
-        parts.push("Knowledge Store");
         break;
       case "github":
         parts.push("GitHub");
@@ -407,15 +398,8 @@ export default function App() {
           {activeScreen === "console" && tabs.length === 0 && (
             <ConsoleEmptyState onNew={() => setShowNewTab(true)} />
           )}
-          {/* KnowledgeStore and Projects stay mounted so local state and PTY
-              sessions survive screen switches. CSS hides them when inactive.
-              KnowledgeStore is mounted lazily on first visit (see above) so its
-              claude session isn't spawned at startup. */}
-          {knowledgeEverShown.current && (
-            <div style={{ display: activeScreen === "knowledge" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
-              <KnowledgeStoreScreen />
-            </div>
-          )}
+          {/* Projects stays mounted so local state + PTY sessions survive screen
+              switches. CSS hides it when inactive. */}
           <div style={{ display: activeScreen === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
             <ProjectsScreen />
           </div>

@@ -26,9 +26,8 @@ describe("ProjectsHeader (GitHub board header, #499)", () => {
     expect(screen.queryByText("Hooks")).toBeNull();
   });
 
-  it("offers the plan jump + documents", () => {
+  it("offers the plan jump", () => {
     render(<ProjectsHeader project={project} />);
     expect(screen.getByText("⌘ plan →")).toBeTruthy();
-    expect(screen.getByText("📄 documents")).toBeTruthy();
   });
 });

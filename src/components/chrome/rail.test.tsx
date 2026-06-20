@@ -6,7 +6,7 @@ import { Rail } from "./Rail";
 // reorder is caught. Buttons carry the screen label as their `title`.
 const ORDER = [
   "Console", "Projects", "GitHub", "Permissions", "MCP",
-  "Skills", "Automations", "Knowledge Store", "Settings",
+  "Skills", "Automations", "Settings",
 ];
 
 describe("Rail", () => {
