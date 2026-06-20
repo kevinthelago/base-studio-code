@@ -7,7 +7,7 @@ vi.mock("../screens/planner/previewBundle", () => ({
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
 }));
 
-import { pipelineScreen, hasPipelineScreen, registerPipelineScreen } from "../screens/planner/pipelineScreens";
+import { pipelineScreen, hasPipelineScreen, registerPipelineScreen } from "../screens/planner/grading/pipelineScreens";
 import { RENDER_PREVIEW_ID } from "../screens/planner/renderPreview";
 
 describe("pipelineScreens registry", () => {

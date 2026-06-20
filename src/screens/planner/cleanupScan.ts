@@ -9,7 +9,7 @@ import { useAppStore } from "../../store";
 import { oneShotComplete } from "../../lib/claudeComplete";
 import { scanDeadCode, DEAD_CODE_SCANNERS, type DeadCodeFinding } from "../../lib/deadcode";
 import { verifyFindings, findingsToGrade, type VerifiedFinding } from "../../lib/deadcodeVerify";
-import { type GradeResult } from "./grading";
+import { type GradeResult } from "./grading/grading";
 
 export interface CleanupScanArgs {
   projectKey: string;

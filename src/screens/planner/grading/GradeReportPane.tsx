@@ -6,12 +6,12 @@
 
 import { useState } from "react";
 import { PipelineScreenFrame } from "./PipelineScreenFrame";
-import { useAppStore } from "../../store";
+import { useAppStore } from "../../../store";
 import { runSectionGrade } from "./gradeDispatch";
 import { runSectionGradeLLM } from "./gradeLLM";
 import type { GradeResult, Severity } from "./grading";
 import type { PipelineScreenProps } from "./pipelineScreens";
-import { letterColor, gradeColor } from "../../lib/planGrade";
+import { letterColor, gradeColor } from "../../../lib/planGrade";
 
 const EMPTY: GradeResult[] = [];
 

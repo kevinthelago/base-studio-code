@@ -3,10 +3,10 @@
 // what this writes. The rubric grader is the deterministic default; later slices add
 // the agent-readiness + LLM graders, which persist the same way.
 
-import { useAppStore } from "../../store";
-import { type PlanSignals } from "./stageGate";
+import { useAppStore } from "../../../store";
+import { type PlanSignals } from "../stageGate";
 import { gradeWithRubric, rubricForSection, type GradeResult, type Severity } from "./grading";
-import { type PlanGrade, type Priority } from "../../lib/planGrade";
+import { type PlanGrade, type Priority } from "../../../lib/planGrade";
 
 /** The built-in rubric grader's pipeline id (attachable in the blueprint editor). */
 export const GRADE_RUBRIC_ID = "grade-rubric";

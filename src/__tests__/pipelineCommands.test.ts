@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   registerPipeline, dispatchPipelineCommand, hasPipelineModule, isPipelineCommand,
   _resetPipelineModules, PIPELINE_COMMANDS, type PipelineCommand,
-} from "../screens/planner/pipelineCommands";
+} from "../screens/planner/grading/pipelineCommands";
 
 describe("pipelineCommands — bus", () => {
   beforeEach(() => _resetPipelineModules());
@@ -63,7 +63,7 @@ describe("pipelineCommands — render-preview module", () => {
       buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
     }));
     const { RENDER_PREVIEW_ID } = await import("../screens/planner/renderPreview");
-    const { hasPipelineModule: has } = await import("../screens/planner/pipelineCommands");
+    const { hasPipelineModule: has } = await import("../screens/planner/grading/pipelineCommands");
     expect(has(RENDER_PREVIEW_ID)).toBe(true);
   });
 });
