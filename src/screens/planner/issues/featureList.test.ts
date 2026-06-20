@@ -20,6 +20,16 @@ describe("parseFeaturesFile", () => {
     expect(f[0].stream).toBe("invite"); // defaults to slug
   });
 
+  it("parses phase + dependsOn (number or name) (#plan-db)", () => {
+    const f = parseFeaturesFile(JSON.stringify([
+      { slug: "kernel", name: "Kernel", phase: 1 },
+      { slug: "sketcher", name: "Sketcher", phase: "Phase 2", dependsOn: ["kernel"] },
+    ]));
+    expect(f[0].phase).toBe(1);
+    expect(f[1].phase).toBe("Phase 2");
+    expect(f[1].dependsOn).toEqual(["kernel"]);
+  });
+
   it("derives a slug from the name when missing, and an explicit stream wins", () => {
     const f = parseFeaturesFile(JSON.stringify([{ name: "Export to CSV", stream: "exporter" }]));
     expect(f[0].slug).toBe("export-to-csv");
