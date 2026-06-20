@@ -5,7 +5,7 @@ import {
   parseProjectIteration,
   type BurndownIteration,
   type BurndownItem,
-} from "../screens/planner/burndown";
+} from "../screens/planner/github/burndown";
 
 const NOW = new Date("2026-01-08T12:00:00").getTime(); // day 7 of an iteration starting 2026-01-01
 

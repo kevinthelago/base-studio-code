@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { useAppStore } from "../../store";
 import { githubRequest, githubGraphql } from "../../lib/github";
-import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "./burndown";
+import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "./github/burndown";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { openDetachedSection } from "../../lib/detachWindow";
 

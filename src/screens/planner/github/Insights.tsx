@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
-import { ProjectsHeader } from "./ProjectsHeader";
-import type { ActiveProjectInfo } from "./ProjectsHeader";
+import { useAppStore } from "../../../store";
+import { ProjectsHeader } from "../ProjectsHeader";
+import type { ActiveProjectInfo } from "../ProjectsHeader";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

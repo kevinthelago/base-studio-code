@@ -6,7 +6,7 @@
 
 import { buildPlanStageState, type PlanStageState } from "./planStages";
 import { parseSectionKey } from "./planSections";
-import type { SectionState } from "./ghStructure";
+import type { SectionState } from "./github/ghStructure";
 import type { PlanSignals } from "./stageGate";
 
 /** The four discovery topics the planner template always confirms. */

@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildGhStructure, type Section } from "../screens/planner/ghStructure";
+import { buildGhStructure, type Section } from "../screens/planner/github/ghStructure";
 import {
   buildProgressOverlay,
   type IssueState,
   type MilestoneState,
-} from "../screens/planner/ghProgress";
+} from "../screens/planner/github/ghProgress";
 
 // Minimal section factory - only `k` and `content` matter to the structure.
 const sec = (k: Section["k"], content = ""): Section => ({

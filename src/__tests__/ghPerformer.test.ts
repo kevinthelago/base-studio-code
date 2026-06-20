@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { tauriPerformer, publishViaTauri } from "../screens/planner/ghPerformer";
+import { tauriPerformer, publishViaTauri } from "../screens/planner/github/ghPerformer";
 import { personalProfile } from "../screens/planner/capabilityMapping";
 import { STRATEGY_PRESETS } from "../screens/planner/fleet/executionTopology";
-import type { PublishInput } from "../screens/planner/publishAdapter";
+import type { PublishInput } from "../screens/planner/github/publishAdapter";
 
 const mockInvoke = vi.mocked(invoke);
 

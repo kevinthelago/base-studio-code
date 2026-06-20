@@ -3,8 +3,8 @@
 // Kept free of React / xterm / Tauri imports so the derivation logic can be unit
 // tested in isolation and shared between Planning.tsx and its tests.
 
-import { parseIssuesFile } from "./planIssues";
-import type { FleetPlan } from "./planSections";
+import { parseIssuesFile } from "../planIssues";
+import type { FleetPlan } from "../planSections";
 
 // The planner is dynamic: Claude documents whatever topics a project warrants,
 // so a section key is any file stem (`goal`, `security`, `data_lifecycle`, or a

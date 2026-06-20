@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { githubRequest } from "../../lib/github";
-import { useAppStore } from "../../store";
-import { ProjectsHeader } from "./ProjectsHeader";
-import type { ActiveProjectInfo } from "./ProjectsHeader";
+import { githubRequest } from "../../../lib/github";
+import { useAppStore } from "../../../store";
+import { ProjectsHeader } from "../ProjectsHeader";
+import type { ActiveProjectInfo } from "../ProjectsHeader";
 import {
   buildGantt, tickIntervalWeeks, tickLabel, windowStartFrom,
   WINDOW_PRESETS, DEFAULT_WINDOW_WEEKS,
