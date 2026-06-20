@@ -3,9 +3,9 @@
 // Free of React / xterm / Tauri imports so the tag parsing and message building
 // can be unit-tested in isolation and shared with Planning.tsx.
 
-import type { AgentStream } from "./stages/planSections";
-import { flowOrUndefined } from "./fleet/agentFlow";
-import { type IntegrationStrategy, normalizeStrategy } from "./shared/integrationStrategy";
+import type { AgentStream } from "../stages/planSections";
+import { flowOrUndefined } from "../fleet/agentFlow";
+import { type IntegrationStrategy, normalizeStrategy } from "../shared/integrationStrategy";
 
 // Quote-flexible class: straight ("), and curly (“ ”) so an LLM emitting smart
 // quotes doesn't silently break tag detection. Mirrors the other planner tags.

@@ -30,7 +30,7 @@ import { generateAgentProfile } from "../lib/profileGen";
 import { stagePrompt } from "../lib/workflowDriver";
 import type { AgentProfile } from "../screens/agents/agentProfiles";
 import { PROFILES } from "../screens/agents/agentProfiles";
-import { scriptDocRelpath } from "../screens/planner/planningSession";
+import { scriptDocRelpath } from "../screens/planner/session/planningSession";
 import { emptyFleet, type FleetPlan, type AgentStream } from "../screens/planner/stages/planSections";
 import type { Topology } from "../screens/planner/relationship/relationshipGraph";
 import { defaultStageConfig, type StageConfig, type StageId } from "../screens/planner/stages/planStages";

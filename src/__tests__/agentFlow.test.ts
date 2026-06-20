@@ -4,7 +4,7 @@ import {
   FLOW_AUTONOMY, FLOW_PUSH, FLOW_TRIGGER, FLOW_GATE,
 } from "../screens/planner/fleet/agentFlow";
 import { parseFleetFile } from "../screens/planner/stages/planSections";
-import { parseAgentAssigns } from "../screens/planner/planningSession";
+import { parseAgentAssigns } from "../screens/planner/session/planningSession";
 
 describe("agentFlow model", () => {
   it("DEFAULT_FLOW is continuous / auto-pr / per-issue / hard", () => {
