@@ -1,0 +1,10 @@
+{
+  "name": "Security hardening",
+  "glyph": "⛨",
+  "gate": "threats triaged",
+  "deps": [
+    "repos"
+  ],
+  "blurb": "Threat model, an authz/secrets/deps audit, and concrete fixes.",
+  "prompt": "Threat-model the system (assets, entry points, trust boundaries), then audit: authn/authz\ngaps, secret handling, input validation, dependency CVEs, and transport/storage crypto.\nRank findings by severity and produce concrete, testable fixes — not just observations."
+}

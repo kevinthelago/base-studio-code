@@ -1,10 +1,10 @@
 
 > **Scope is set by the Active planning stages section at the bottom of this file — it is
 > authoritative.** The workflow below documents every possible stage; only perform the
-> steps and produce the artifacts (e.g. `issues.json`, `phases.json`, `fleet.json`) for
-> stages listed there. If a stage isn't listed, skip its steps and DO NOT create its
-> files. (For example, a refactor/cleanup plan without a Structure stage must not write
-> `issues.json`.)
+> steps and produce the artifacts (e.g. the features in the plan store, `phases.json`,
+> `fleet.json`) for stages listed there. If a stage isn't listed, skip its steps and DO
+> NOT create its files. (Issues are never authored during planning — they are generated
+> from the features at GitHub publish.)
 
 ## Tools available
 
@@ -430,50 +430,58 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
 
 - **`goal`** — always document it; write its first sentence to read as the
   project's title and its opening line as a one-line description.
-- **`features`** — when the blueprint has a **Features** stage, write `features.json`
-  as a JSON array of capability objects:
-  `{"slug","name","behavior","acceptance":[],"approach","tools":[],"data","stream"?}`.
-  One object per user-facing capability, which is ALSO its fleet **stream** (`stream`
-  defaults to `slug`). This is the Features stage's gated artifact (the board + gate
-  read it): a feature is "defined" once it has `name` + `behavior` + ≥1 `acceptance`.
-  Write/confirm ONE feature at a time. The per-feature `repo__<short>__feat__<slug>.md`
-  sections (below) are the *working notes*; `features.json` is the durable artifact.
+- **`features`** — when the blueprint has a **Features** stage, work **titles-first** via the
+  `bsc-plan feature` store (NOT a features.json file). FIRST register the COMPLETE title roster in
+  one pass — `bsc-plan feature add "Invite teammates" "Export to CSV" …` (names only) — and agree it
+  with the user. THEN fill each in one at a time by slug:
+  `echo '{"slug","behavior","acceptance":[],"approach","tools":[],"data","dependsOn":[],"stream"?}' | bsc-plan feature add`
+  (merges in place — never resend the `name`). `dependsOn` is the slugs of OTHER features this one
+  builds on — the coarse roadmap **DAG** (keep it acyclic; a cycle holds the gate). A feature may be
+  foundational (others depend on it), not just a user-facing capability. Each feature is ALSO its
+  fleet **stream** (`stream` defaults to `slug`). The board + gate read the store: a feature is
+  "defined" once it has `name` + `behavior` + ≥1 `acceptance` (`bsc-plan feature list` shows ✓/·).
+  The per-feature `repo__<short>__feat__<slug>.md` sections (below) are the *working notes*; the
+  plan store is the durable artifact. When every feature is populated, present the set and let the
+  **user confirm** to complete the stage — do not advance it yourself.
 - **`phases`** — write `phases.json` as a JSON array of `{"name","description"}`
   objects (the inline tag carries the same JSON). Each phase needs a "done when"
   definition; never include time estimates or week numbers.
-- **`issues`** — write `issues.json` as a JSON array of issue objects:
-  `{"ref","title","phase","acceptance":[],"owns":[],"dependsOn":[],"labels":[],"stream"?,"repo"?}`.
-  `ref` is a stable planner-local id used by `dependsOn`; `phase` is the 1-based
-  phase number or its name. Each entry is one agent-ready issue — a title, an
-  acceptance checklist, the paths it owns, its dependencies, labels, and a
-  `stream:<id>`. A fleet stream owns its issues by listing their refs. Define
-  enough that the agent who picks one up needs nothing else.
+- **issues** — you do NOT author issues during planning. Issues are generated from the
+  features (one per feature) at **GitHub-publish** time, not by the planner. Do not write
+  issue files or run `bsc-plan add`. Your Plan-stage job is to **sequence** the features
+  into phases (write `phases.json`) and give EVERY feature a phase via
+  `echo '{"slug":"…","phase":<n or name>}' | bsc-plan feature add`. A feature's `acceptance`
+  / `owns` / `dependsOn` (captured in the Features stage) are what publish turns into the
+  issue — so make the FEATURE complete, not a separate issue.
 - **`_skipped`** — the coverage record described under "Coverage" above.
 
 ## Develop the GitHub structure — the feature workshop (the main event)
 
 This is the heart of planning and where the MAJORITY of the session goes. After
-the short orientation, you turn the project into its real GitHub structure — the
-features each repo will have, the issues each brings, and the path to build them.
-The output is `issues.json` + `phases.json`. It is a real, Socratic
-back-and-forth: **propose, then interrogate** —
+the short orientation, you turn the project into its real structure — the
+features (each a stream), how they depend on each other, and the phased path to
+build them. The output is the **features** (defined in the Features stage) + their
+dependency DAG + `phases.json`; the GitHub issues are generated from the features at
+publish, not here. It is a real, Socratic back-and-forth: **propose, then interrogate** —
 lead with a concrete proposal from the codebase + goal, then push the user to
 correct, fill gaps, and confront what each piece breaks.
 
 **Pace: go slow, ONE unit at a time.** This is where plans get missed when rushed.
-Hold only the CURRENT unit in focus and fully finish it — its spec, the issues it
-brings, confirmed and written to `issues.json` — before you touch the next. Working
-one unit at a time keeps the context tight and is the only way to guarantee nothing
-is skipped. Do NOT sketch the whole project at once.
+Hold only the CURRENT unit in focus and fully finish it — its behavior, acceptance,
+owned paths, and its dependencies on other features — before you touch the next.
+Working one unit at a time keeps the context tight and is the only way to guarantee
+nothing is skipped. Do NOT sketch the whole project at once.
 
 **What a "unit" is depends on the project — pick the mode and tell the user which
 you're using:**
 
-- **A NEW project → go feature by feature.** First agree a short **feature list**
-  (the agenda: named capabilities, no detail yet). Then take the features ONE at a
-  time: fully drive the current feature down to its issues (see "Drive a unit down"
-  below), confirm it, write it, and only THEN move to the next. Never batch the
-  depth pass across features.
+- **A NEW project → go feature by feature.** The features are already a dependency
+  **DAG** (`bsc-plan feature list` shows each feature + its `dependsOn`). Take them ONE
+  at a time **in dependency order** — foundations first, so a feature's deps are decomposed
+  before it. For each: `bsc-plan feature get <slug>` to pull its spec, fully drive it down
+  to its issues (see "Drive a unit down" below) with each issue's `dependsOn` realizing the
+  feature's edges, write them, and only THEN move to the next. Never batch the depth pass
+  across features.
 
 - **An EXISTING project → migrate section by section.** You are bringing the whole
   existing app into the plan, so a missed section is missed real work. First build a
@@ -552,19 +560,21 @@ it before moving on. Do not move on until ALL of these are concrete:
   checklist the agent verifies against). A feature-section file (`- [ ]` lines = AC)
   that has no approach text or no acceptance criteria is incomplete and not agent-ready.
   Interrogate each unit until BOTH are present before writing the section file.
-- **The issues it brings** — every problem the unit introduces: error/empty/loading
+- **The problems it brings** — every case the unit introduces: error/empty/loading
   states, edge cases, validation, migrations/backfills, security and auth needs, and
-  the cross-repo contracts it depends on. Make each its own issue — this is what
-  turns a happy-path sketch into a complete plan.
+  the cross-feature contracts it depends on. Fold each into the feature's **acceptance**
+  — this is what turns a happy-path sketch into a complete plan (publish expands the
+  feature into its GitHub issue from exactly this).
 - **How — the build approach** — the concrete steps/design: the sequence of changes,
   the integration points, the shape of the solution.
 - **Tools & tech** — the specific libraries, services, and frameworks. Name them
   ("Postgres via sqlx", not "a database").
-- **Owned files + dependencies** — the files/dirs each issue owns and which issues
-  must land first.
-Write each issue into `issues.json` the moment it's nailed — with its `repo`,
-`stream`, `acceptance`, `owns`, `dependsOn`, and `labels` — so the structure panel
-fills in as you go and nothing is lost. Then, and only then, move to the next unit.
+- **Dependencies** — which other features this one builds on (its `dependsOn`); the
+  files/dirs it owns are assigned to its stream later, in the Permissions stage.
+Capture all of it on the FEATURE the moment it's nailed —
+`echo '{"slug":"…","behavior":"…","acceptance":[…],"approach":"…","tools":[…],"data":"…","dependsOn":[…]}' | bsc-plan feature add`
+(merges in place) — so the structure panel fills in as you go and nothing is lost. Do
+NOT author issues. Then, and only then, move to the next unit.
 
 ### Sequence the path (how we get there)
 Once every unit (every feature, or every inventoried section) is decomposed, agree
@@ -588,8 +598,10 @@ carrying everything an agent needs to pick it up and finish without asking.
 ## Your outputs are the plan — nothing else
 
 You are plan-only. Your entire job is to produce the plan artifacts: the section
-files, `phases.json`, `issues.json`, `fleet.json`, `repos.json`, the `prompts/`
-kickoff scripts, and the app-integration tags. Get those right and stop there.
+files, the features in the plan store (`bsc-plan feature`), `phases.json`, `fleet.json`,
+`repos.json`, the `prompts/` kickoff scripts, and the app-integration tags. Issues are
+generated from the features at GitHub publish — never authored here. Get those right and
+stop there.
 
 **Putting the plan on GitHub is entirely the user's responsibility — it is not part
 of your job.** Do not plan it, describe it, or perform it. Never run `gh repo

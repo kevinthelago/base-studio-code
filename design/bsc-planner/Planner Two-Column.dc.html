@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;background:#e7e5df;}
+  *{box-sizing:border-box;}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:oklch(0.38 0.006 250 / .6);border-radius:99px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</helmet>
+<div style="--bg-canvas:oklch(0.13 0.005 250); --bg-panel:oklch(0.17 0.005 250); --bg-elev:oklch(0.21 0.006 250); --bg-elev2:oklch(0.26 0.006 250); --border:oklch(0.30 0.006 250); --border-soft:oklch(0.24 0.006 250); --fg:oklch(0.94 0.004 250); --fg-muted:oklch(0.66 0.008 250); --fg-dim:oklch(0.46 0.008 250); --accent:oklch(0.80 0.14 70); --accent-dim:oklch(0.55 0.10 70); --success:oklch(0.74 0.13 145); --info:oklch(0.72 0.10 230); --violet:oklch(0.72 0.12 300); --danger:oklch(0.68 0.18 25); --mono:'JetBrains Mono',ui-monospace,monospace; --sans:'Inter',system-ui,sans-serif; min-width:100%; min-height:100vh; width:max-content; box-sizing:border-box; padding:48px; background:#e7e5df; display:flex; flex-direction:column; gap:60px; font-family:var(--sans);">
+
+  <div style="flex:none; max-width:1280px;">
+    <div style="font-family:var(--mono); font-size:13px; font-weight:700; color:#2b2825; letter-spacing:.02em;">Planner tab — two-column redesign</div>
+    <div style="font-family:var(--mono); font-size:11.5px; color:#6b6660; margin-top:5px;">Three configurations that split Projects and Blueprints into distinct side-by-side lists. The primary goal: a clear, immediate distinction between the two. Pick a direction (or mix elements) and I'll build it out at full fidelity.</div>
+  </div>
+
+  <!-- ════════════ CONFIG 1 ════════════ -->
+  <div style="flex:none; width:1240px;">
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:10px;">
+      <span style="font-family:var(--mono); font-size:12px; font-weight:700; color:#2b2825;">01 · Split view, shared toolbar</span>
+      <span style="font-family:var(--mono); font-size:11px; color:#6b6660;">60/40 panes · one search + add bar on top · each column scrolls on its own · amber = projects, violet = blueprints</span>
+    </div>
+    <div style="background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:8px; overflow:hidden; height:780px; display:flex; flex-direction:column; box-shadow:0 2px 8px rgba(0,0,0,.18);">
+
+      <!-- mode strip -->
+      <div style="height:34px; flex:0 0 34px; display:flex; align-items:center; gap:4px; padding:0 20px; background:var(--bg-panel); border-bottom:1px solid var(--border-soft); font-family:var(--mono); font-size:11.5px;">
+        <div style="height:34px; display:flex; align-items:center; color:var(--accent); border-bottom:2px solid var(--accent); padding:0 10px;">Projects</div>
+        <div style="color:var(--fg-muted); padding:0 10px;">Fleet</div>
+        <div style="color:var(--fg-muted); padding:0 10px;">Data Models</div>
+      </div>
+
+      <!-- shared toolbar -->
+      <div style="flex:0 0 auto; padding:16px 24px 12px; border-bottom:1px solid var(--border-soft);">
+        <div style="display:flex; align-items:flex-start; gap:14px; margin-bottom:14px;">
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <h2 style="margin:0; font-family:var(--mono); font-size:18px; font-weight:600; color:var(--fg);">Projects</h2>
+              <span style="padding:1px 7px; border-radius:8px; font-family:var(--mono); font-size:10px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">10</span>
+            </div>
+            <div style="color:var(--fg-muted); font-size:11.5px; margin-top:6px; display:flex; align-items:center; gap:8px; font-family:var(--mono);">
+              <span style="color:var(--success);">● github connected</span>
+              <span style="color:var(--fg-dim);">·</span>
+              <span>4 published · 2 drafts · 4 blueprints · 9 repos</span>
+            </div>
+          </div>
+          <button style="height:28px; padding:0 12px; border-radius:6px; background:transparent; border:1px solid var(--border-soft); color:var(--fg); font-family:var(--mono); font-size:11px; cursor:pointer;">↻ sync</button>
+          <button style="height:28px; padding:0 12px; border-radius:6px; background:var(--accent); border:1px solid transparent; color:#1a120a; font-family:var(--mono); font-size:11px; font-weight:600; cursor:pointer;">+ New project</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="display:flex; align-items:center; gap:8px; height:30px; padding:0 10px; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:6px; flex:0 0 320px;">
+            <span style="color:var(--fg-dim); font-size:12px;">⌕</span>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--fg-dim);">search projects &amp; blueprints…</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:7px;">
+            <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">sort</span>
+            <div style="display:flex; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:6px; overflow:hidden;">
+              <span style="height:28px; display:flex; align-items:center; padding:0 11px; font-family:var(--mono); font-size:10.5px; background:var(--bg-elev2); color:var(--fg);">recency</span>
+              <span style="height:28px; display:flex; align-items:center; padding:0 11px; font-family:var(--mono); font-size:10.5px; color:var(--fg-dim);">name</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- two columns -->
+      <div style="flex:1; min-height:0; display:flex;">
+
+        <!-- PROJECTS column -->
+        <div style="flex:1.5 1 0; min-width:0; overflow:auto; padding:0 22px 24px;">
+          <div style="position:sticky; top:0; z-index:5; background:var(--bg-canvas); padding:16px 0 11px; display:flex; align-items:center; gap:9px;">
+            <span style="width:7px; height:7px; border-radius:2px; background:var(--accent);"></span>
+            <span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--fg-muted); text-transform:uppercase; letter-spacing:.08em;">Projects</span>
+            <span style="padding:0 6px; border-radius:8px; font-family:var(--mono); font-size:9.5px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">6</span>
+            <span style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim);">on github · grouped by lifecycle</span>
+            <span style="flex:1; height:1px; background:var(--border-soft);"></span>
+          </div>
+
+          <!-- drafts strip -->
+          <div style="display:flex; align-items:center; gap:8px; margin:4px 0 8px;">
+            <span style="font-family:var(--mono); font-size:10px; color:var(--accent); text-transform:uppercase; letter-spacing:.07em;">drafting</span>
+            <span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">2</span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:9px; margin-bottom:18px;">
+            <sc-for list="{{ drafts }}" as="d" hint-placeholder-count="2">
+              <div style="display:flex; align-items:center; gap:12px; padding:11px 14px; background:var(--bg-elev); border:1px dashed var(--border-soft); border-radius:6px;">
+                <div style="flex:1; min-width:0;">
+                  <div style="display:flex; align-items:center; gap:9px;">
+                    <span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--accent); background:color-mix(in oklch, var(--accent), transparent 90%); border:1px solid color-mix(in oklch, var(--accent), transparent 75%);">draft</span>
+                    <span style="font-family:var(--sans); font-size:13.5px; font-weight:600; color:var(--fg);">{{ d.name }}</span>
+                    <span style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim);">no board yet</span>
+                  </div>
+                  <div style="margin-top:5px; color:var(--fg-muted); font-size:11.5px; line-height:1.5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ d.pitch }}</div>
+                </div>
+                <span style="font-family:var(--mono); font-size:10.5px; color:var(--fg-muted);">resume →</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <!-- active group -->
+          <div style="display:flex; align-items:center; gap:8px; margin:0 0 8px;">
+            <span style="width:6px; height:6px; border-radius:99px; background:var(--success);"></span>
+            <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.07em;">active</span>
+            <span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">3</span>
+          </div>
+          <div style="border:1px solid var(--border-soft); border-radius:10px; overflow:hidden; margin-bottom:18px;">
+            <sc-for list="{{ projsActive }}" as="p" hint-placeholder-count="3">
+              <div style="padding:13px 16px; display:grid; grid-template-columns:1fr auto; gap:14px; align-items:center; background:var(--bg-panel); border-top:1px solid var(--border-soft); border-left:2px solid transparent;">
+                <div style="min-width:0;">
+                  <div style="display:flex; align-items:center; gap:9px; margin-bottom:5px; flex-wrap:wrap;">
+                    <span style="width:7px; height:7px; border-radius:99px; background:var(--success);"></span>
+                    <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">{{ p.num }}</span>
+                    <span style="font-family:var(--sans); font-size:14px; font-weight:600; color:var(--fg);">{{ p.name }}</span>
+                    <span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--success); background:color-mix(in oklch, var(--success), transparent 90%); border:1px solid color-mix(in oklch, var(--success), transparent 75%);">active</span>
+                    <sc-for list="{{ p.tags }}" as="t" hint-placeholder-count="2">
+                      <span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">{{ t }}</span>
+                    </sc-for>
+                  </div>
+                  <div style="color:var(--fg-muted); font-size:12px; line-height:1.5; margin-bottom:9px;">{{ p.desc }}</div>
+                  <div style="display:flex; gap:16px; align-items:center; font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); flex-wrap:wrap;">
+                    <span>{{ p.items }}</span>
+                    <span>{{ p.open }}</span>
+                    <span style="display:inline-flex; align-items:center; gap:6px;">
+                      <span style="width:56px; height:4px; border-radius:99px; background:var(--bg-elev2); overflow:hidden; display:inline-block;"><span style="display:block; height:100%; width:{{ p.pct }}; background:var(--accent);"></span></span>
+                      <span style="color:var(--fg-dim);">{{ p.pct }}</span>
+                    </span>
+                    <span style="color:var(--fg-dim);">{{ p.when }}</span>
+                  </div>
+                </div>
+                <span style="font-family:var(--mono); font-size:10.5px; color:var(--fg-dim); white-space:nowrap;">open planning →</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <!-- shipped group -->
+          <div style="display:flex; align-items:center; gap:8px; margin:0 0 8px;">
+            <span style="width:6px; height:6px; border-radius:99px; background:var(--fg-dim);"></span>
+            <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.07em;">shipped</span>
+            <span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">1</span>
+          </div>
+          <div style="border:1px solid var(--border-soft); border-radius:10px; overflow:hidden; opacity:.82;">
+            <sc-for list="{{ projsShipped }}" as="p" hint-placeholder-count="1">
+              <div style="padding:13px 16px; display:grid; grid-template-columns:1fr auto; gap:14px; align-items:center; background:var(--bg-panel); border-left:2px solid transparent;">
+                <div style="min-width:0;">
+                  <div style="display:flex; align-items:center; gap:9px; margin-bottom:5px; flex-wrap:wrap;">
+                    <span style="width:7px; height:7px; border-radius:99px; background:var(--fg-dim);"></span>
+                    <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">{{ p.num }}</span>
+                    <span style="font-family:var(--sans); font-size:14px; font-weight:600; color:var(--fg);">{{ p.name }}</span>
+                    <span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">shipped</span>
+                  </div>
+                  <div style="color:var(--fg-muted); font-size:12px; line-height:1.5; margin-bottom:9px;">{{ p.desc }}</div>
+                  <div style="display:flex; gap:16px; align-items:center; font-family:var(--mono); font-size:10.5px; color:var(--fg-muted);">
+                    <span>{{ p.items }}</span>
+                    <span style="color:var(--fg-dim);">{{ p.when }}</span>
+                  </div>
+                </div>
+                <span style="font-family:var(--mono); font-size:10.5px; color:var(--fg-dim); white-space:nowrap;">open planning →</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- divider -->
+        <div style="flex:0 0 1px; background:var(--border-soft);"></div>
+
+        <!-- BLUEPRINTS column -->
+        <div style="flex:1 1 0; min-width:0; overflow:auto; padding:0 22px 24px; background:color-mix(in oklch, var(--violet), var(--bg-canvas) 96%);">
+          <div style="position:sticky; top:0; z-index:5; background:color-mix(in oklch, var(--violet), var(--bg-canvas) 96%); padding:16px 0 11px; display:flex; align-items:center; gap:9px;">
+            <span style="width:7px; height:7px; border-radius:2px; background:var(--violet);"></span>
+            <span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--violet); text-transform:uppercase; letter-spacing:.08em;">Blueprints</span>
+            <span style="padding:0 6px; border-radius:8px; font-family:var(--mono); font-size:9.5px; background:color-mix(in oklch, var(--violet), transparent 88%); color:var(--violet); border:1px solid color-mix(in oklch, var(--violet), transparent 75%);">4</span>
+            <span style="flex:1; height:1px; background:var(--border-soft);"></span>
+            <span style="font-family:var(--mono); font-size:10px; color:var(--violet); cursor:pointer;">+ new</span>
+          </div>
+          <div style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim); margin-bottom:12px;">reusable plan templates · published as gists</div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <sc-for list="{{ blueprints }}" as="b" hint-placeholder-count="4">
+              <div style="display:flex; align-items:center; gap:13px; padding:13px 14px; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:10px;">
+                <div style="width:40px; height:40px; flex:0 0 40px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:color-mix(in oklch, var(--violet), transparent 88%); border:1px solid color-mix(in oklch, var(--violet), transparent 70%); color:var(--violet); font-family:var(--mono); font-size:16px;">◫</div>
+                <div style="flex:1; min-width:0;">
+                  <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
+                    <span style="font-family:var(--sans); font-size:14px; font-weight:600; color:var(--fg);">{{ b.name }}</span>
+                    <span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--violet); background:color-mix(in oklch, var(--violet), transparent 90%); border:1px solid color-mix(in oklch, var(--violet), transparent 78%);">{{ b.cat }}</span>
+                  </div>
+                  <div style="margin-top:8px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-family:var(--mono); font-size:10px; color:var(--fg-dim);">
+                    <span>{{ b.stages }}</span>
+                    <span>{{ b.vis }}</span>
+                    <span>updated {{ b.when }}</span>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ CONFIG 2 ════════════ -->
+  <div style="flex:none; width:1240px;">
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:10px;">
+      <span style="font-family:var(--mono); font-size:12px; font-weight:700; color:#2b2825;">02 · Two framed panels</span>
+      <span style="font-family:var(--mono); font-size:11px; color:#6b6660;">each list is its own titled container with its own header, count, search + add · drafts fold into the Projects panel · strongest separation</span>
+    </div>
+    <div style="background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:8px; overflow:hidden; height:780px; display:flex; flex-direction:column; box-shadow:0 2px 8px rgba(0,0,0,.18);">
+
+      <!-- mode strip -->
+      <div style="height:34px; flex:0 0 34px; display:flex; align-items:center; gap:4px; padding:0 20px; background:var(--bg-panel); border-bottom:1px solid var(--border-soft); font-family:var(--mono); font-size:11.5px;">
+        <div style="height:34px; display:flex; align-items:center; color:var(--accent); border-bottom:2px solid var(--accent); padding:0 10px;">Projects</div>
+        <div style="color:var(--fg-muted); padding:0 10px;">Fleet</div>
+        <div style="color:var(--fg-muted); padding:0 10px;">Data Models</div>
+      </div>
+
+      <!-- slim page header -->
+      <div style="flex:0 0 auto; padding:15px 24px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--border-soft);">
+        <h2 style="margin:0; font-family:var(--mono); font-size:17px; font-weight:600; color:var(--fg);">Workspace</h2>
+        <span style="font-family:var(--mono); font-size:11px; color:var(--fg-muted);">● <span style="color:var(--success);">github connected</span> · 9 repos · last sync 4m ago</span>
+        <span style="flex:1;"></span>
+        <button style="height:28px; padding:0 12px; border-radius:6px; background:transparent; border:1px solid var(--border-soft); color:var(--fg); font-family:var(--mono); font-size:11px; cursor:pointer;">↻ sync</button>
+      </div>
+
+      <!-- two panels -->
+      <div style="flex:1; min-height:0; display:flex; gap:18px; padding:18px 24px;">
+
+        <!-- PROJECTS panel -->
+        <div style="flex:1 1 0; min-width:0; display:flex; flex-direction:column; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:12px; overflow:hidden;">
+          <div style="height:3px; flex:0 0 3px; background:var(--accent);"></div>
+          <div style="flex:0 0 auto; padding:14px 16px 12px; border-bottom:1px solid var(--border-soft);">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+              <span style="width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center; background:color-mix(in oklch, var(--accent), transparent 86%); border:1px solid color-mix(in oklch, var(--accent), transparent 70%); color:var(--accent); font-size:14px;">▥</span>
+              <h3 style="margin:0; font-family:var(--mono); font-size:13px; font-weight:600; color:var(--fg);">Projects</h3>
+              <span style="padding:0 6px; border-radius:8px; font-family:var(--mono); font-size:9.5px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">6</span>
+              <span style="flex:1;"></span>
+              <button style="height:26px; padding:0 11px; border-radius:6px; background:var(--accent); border:1px solid transparent; color:#1a120a; font-family:var(--mono); font-size:10.5px; font-weight:600; cursor:pointer;">+ New</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; height:28px; padding:0 10px; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:6px;">
+              <span style="color:var(--fg-dim); font-size:12px;">⌕</span>
+              <span style="font-family:var(--mono); font-size:10.5px; color:var(--fg-dim);">filter projects…</span>
+            </div>
+          </div>
+          <div style="flex:1; min-height:0; overflow:auto; padding:12px 16px;">
+            <!-- drafts fold-in -->
+            <div style="font-family:var(--mono); font-size:9.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.07em; margin-bottom:8px;">drafting · 2</div>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:18px;">
+              <sc-for list="{{ drafts }}" as="d" hint-placeholder-count="2">
+                <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--bg-elev); border:1px dashed var(--border-soft); border-radius:6px;">
+                  <span style="padding:1px 6px; border-radius:99px; font-family:var(--mono); font-size:9px; color:var(--accent); background:color-mix(in oklch, var(--accent), transparent 90%); border:1px solid color-mix(in oklch, var(--accent), transparent 75%);">draft</span>
+                  <span style="font-family:var(--sans); font-size:13px; font-weight:600; color:var(--fg);">{{ d.name }}</span>
+                  <span style="flex:1; font-family:var(--mono); font-size:10px; color:var(--fg-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ d.pitch }}</span>
+                  <span style="font-family:var(--mono); font-size:10px; color:var(--fg-muted);">resume →</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.07em; margin-bottom:8px;">active · 3</div>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:18px;">
+              <sc-for list="{{ projsActive }}" as="p" hint-placeholder-count="3">
+                <div style="padding:12px 14px; background:var(--bg-elev); border:1px solid var(--border-soft); border-radius:8px; border-left:2px solid var(--success);">
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px; flex-wrap:wrap;">
+                    <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">{{ p.num }}</span>
+                    <span style="font-family:var(--sans); font-size:13.5px; font-weight:600; color:var(--fg);">{{ p.name }}</span>
+                    <sc-for list="{{ p.tags }}" as="t" hint-placeholder-count="2">
+                      <span style="padding:1px 6px; border-radius:99px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">{{ t }}</span>
+                    </sc-for>
+                  </div>
+                  <div style="color:var(--fg-muted); font-size:11.5px; line-height:1.5; margin-bottom:8px;">{{ p.desc }}</div>
+                  <div style="display:flex; gap:14px; align-items:center; font-family:var(--mono); font-size:10px; color:var(--fg-muted);">
+                    <span>{{ p.items }}</span>
+                    <span>{{ p.open }}</span>
+                    <span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:48px; height:4px; border-radius:99px; background:var(--bg-elev2); overflow:hidden; display:inline-block;"><span style="display:block; height:100%; width:{{ p.pct }}; background:var(--accent);"></span></span><span style="color:var(--fg-dim);">{{ p.pct }}</span></span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.07em; margin-bottom:8px;">shipped · 1</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <sc-for list="{{ projsShipped }}" as="p" hint-placeholder-count="1">
+                <div style="padding:12px 14px; background:var(--bg-elev); border:1px solid var(--border-soft); border-radius:8px; opacity:.78;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">{{ p.num }}</span>
+                    <span style="font-family:var(--sans); font-size:13.5px; font-weight:600; color:var(--fg);">{{ p.name }}</span>
+                    <span style="padding:1px 6px; border-radius:99px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">shipped</span>
+                  </div>
+                  <div style="margin-top:5px; color:var(--fg-muted); font-size:11.5px; line-height:1.5;">{{ p.desc }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <!-- BLUEPRINTS panel -->
+        <div style="flex:1 1 0; min-width:0; display:flex; flex-direction:column; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:12px; overflow:hidden;">
+          <div style="height:3px; flex:0 0 3px; background:var(--violet);"></div>
+          <div style="flex:0 0 auto; padding:14px 16px 12px; border-bottom:1px solid var(--border-soft);">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+              <span style="width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center; background:color-mix(in oklch, var(--violet), transparent 86%); border:1px solid color-mix(in oklch, var(--violet), transparent 70%); color:var(--violet); font-size:14px;">◫</span>
+              <h3 style="margin:0; font-family:var(--mono); font-size:13px; font-weight:600; color:var(--fg);">Blueprints</h3>
+              <span style="padding:0 6px; border-radius:8px; font-family:var(--mono); font-size:9.5px; background:color-mix(in oklch, var(--violet), transparent 88%); color:var(--violet); border:1px solid color-mix(in oklch, var(--violet), transparent 75%);">4</span>
+              <span style="flex:1;"></span>
+              <button style="height:26px; padding:0 11px; border-radius:6px; background:transparent; border:1px solid color-mix(in oklch, var(--violet), transparent 55%); color:var(--violet); font-family:var(--mono); font-size:10.5px; cursor:pointer;">+ New</button>
+            </div>
+            <div style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim);">reusable plan templates · published as gists</div>
+          </div>
+          <div style="flex:1; min-height:0; overflow:auto; padding:14px 16px;">
+            <div style="display:flex; flex-direction:column; gap:9px;">
+              <sc-for list="{{ blueprints }}" as="b" hint-placeholder-count="4">
+                <div style="display:flex; align-items:center; gap:12px; padding:12px 13px; background:var(--bg-elev); border:1px solid var(--border-soft); border-radius:9px;">
+                  <div style="width:38px; height:38px; flex:0 0 38px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:color-mix(in oklch, var(--violet), transparent 88%); border:1px solid color-mix(in oklch, var(--violet), transparent 70%); color:var(--violet); font-size:15px;">◫</div>
+                  <div style="flex:1; min-width:0;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                      <span style="font-family:var(--sans); font-size:13.5px; font-weight:600; color:var(--fg);">{{ b.name }}</span>
+                      <span style="padding:1px 6px; border-radius:99px; font-family:var(--mono); font-size:9px; color:var(--violet); background:color-mix(in oklch, var(--violet), transparent 90%); border:1px solid color-mix(in oklch, var(--violet), transparent 78%);">{{ b.cat }}</span>
+                    </div>
+                    <div style="margin-top:7px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-family:var(--mono); font-size:9.5px; color:var(--fg-dim);">
+                      <span>{{ b.stages }}</span>
+                      <span>{{ b.vis }}</span>
+                      <span>updated {{ b.when }}</span>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ CONFIG 3 ════════════ -->
+  <div style="flex:none; width:1240px;">
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:10px;">
+      <span style="font-family:var(--mono); font-size:12px; font-weight:700; color:#2b2825;">03 · Primary list + blueprint rail</span>
+      <span style="font-family:var(--mono); font-size:11px; color:#6b6660;">Projects own the main canvas; Blueprints sit in a narrower right rail on a raised panel surface · drafts as a thin strip up top</span>
+    </div>
+    <div style="background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:8px; overflow:hidden; height:780px; display:flex; flex-direction:column; box-shadow:0 2px 8px rgba(0,0,0,.18);">
+
+      <!-- mode strip -->
+      <div style="height:34px; flex:0 0 34px; display:flex; align-items:center; gap:4px; padding:0 20px; background:var(--bg-panel); border-bottom:1px solid var(--border-soft); font-family:var(--mono); font-size:11.5px;">
+        <div style="height:34px; display:flex; align-items:center; color:var(--accent); border-bottom:2px solid var(--accent); padding:0 10px;">Projects</div>
+        <div style="color:var(--fg-muted); padding:0 10px;">Fleet</div>
+        <div style="color:var(--fg-muted); padding:0 10px;">Data Models</div>
+      </div>
+
+      <!-- body: main + rail -->
+      <div style="flex:1; min-height:0; display:flex;">
+
+        <!-- MAIN projects area -->
+        <div style="flex:1 1 0; min-width:0; display:flex; flex-direction:column;">
+          <!-- header -->
+          <div style="flex:0 0 auto; padding:18px 24px 14px;">
+            <div style="display:flex; align-items:flex-start; gap:14px; margin-bottom:14px;">
+              <div style="flex:1; min-width:0;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <h2 style="margin:0; font-family:var(--mono); font-size:18px; font-weight:600; color:var(--fg);">Projects</h2>
+                  <span style="padding:1px 7px; border-radius:8px; font-family:var(--mono); font-size:10px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">6</span>
+                </div>
+                <div style="color:var(--fg-muted); font-size:11.5px; margin-top:6px; font-family:var(--mono);"><span style="color:var(--success);">● github connected</span> · 4 published · 2 drafts · 9 repos</div>
+              </div>
+              <button style="height:28px; padding:0 12px; border-radius:6px; background:transparent; border:1px solid var(--border-soft); color:var(--fg); font-family:var(--mono); font-size:11px; cursor:pointer;">↻ sync</button>
+              <button style="height:28px; padding:0 12px; border-radius:6px; background:var(--accent); border:1px solid transparent; color:#1a120a; font-family:var(--mono); font-size:11px; font-weight:600; cursor:pointer;">+ New project</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; height:30px; padding:0 10px; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:6px; max-width:320px;">
+              <span style="color:var(--fg-dim); font-size:12px;">⌕</span>
+              <span style="font-family:var(--mono); font-size:11px; color:var(--fg-dim);">search projects…</span>
+            </div>
+          </div>
+
+          <!-- scroll area -->
+          <div style="flex:1; min-height:0; overflow:auto; padding:0 24px 24px;">
+            <!-- drafts thin strip -->
+            <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; margin-bottom:18px; background:color-mix(in oklch, var(--accent), var(--bg-canvas) 92%); border:1px dashed color-mix(in oklch, var(--accent), transparent 60%); border-radius:8px; flex-wrap:wrap;">
+              <span style="font-family:var(--mono); font-size:9.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.07em;">2 drafts</span>
+              <sc-for list="{{ drafts }}" as="d" hint-placeholder-count="2">
+                <span style="display:inline-flex; align-items:center; gap:7px; padding:4px 10px; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:99px; font-family:var(--mono); font-size:10.5px; color:var(--fg);">{{ d.name }} <span style="color:var(--fg-dim);">· {{ d.when }}</span> <span style="color:var(--accent);">resume →</span></span>
+              </sc-for>
+            </div>
+
+            <!-- active -->
+            <div style="display:flex; align-items:center; gap:8px; margin:0 0 9px;">
+              <span style="width:6px; height:6px; border-radius:99px; background:var(--success);"></span>
+              <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.07em;">active</span>
+              <span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">3</span>
+            </div>
+            <div style="border:1px solid var(--border-soft); border-radius:10px; overflow:hidden; margin-bottom:20px;">
+              <sc-for list="{{ projsActive }}" as="p" hint-placeholder-count="3">
+                <div style="padding:14px 18px; display:grid; grid-template-columns:1fr auto; gap:16px; align-items:center; background:var(--bg-panel); border-top:1px solid var(--border-soft); border-left:2px solid transparent;">
+                  <div style="min-width:0;">
+                    <div style="display:flex; align-items:center; gap:9px; margin-bottom:5px; flex-wrap:wrap;">
+                      <span style="width:7px; height:7px; border-radius:99px; background:var(--success);"></span>
+                      <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">{{ p.num }}</span>
+                      <span style="font-family:var(--sans); font-size:14px; font-weight:600; color:var(--fg);">{{ p.name }}</span>
+                      <span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; color:var(--success); background:color-mix(in oklch, var(--success), transparent 90%); border:1px solid color-mix(in oklch, var(--success), transparent 75%);">active</span>
+                      <sc-for list="{{ p.tags }}" as="t" hint-placeholder-count="2">
+                        <span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">{{ t }}</span>
+                      </sc-for>
+                    </div>
+                    <div style="color:var(--fg-muted); font-size:12px; line-height:1.5; margin-bottom:9px;">{{ p.desc }}</div>
+                    <div style="display:flex; gap:16px; align-items:center; font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); flex-wrap:wrap;">
+                      <span>{{ p.items }}</span>
+                      <span>{{ p.open }}</span>
+                      <span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:56px; height:4px; border-radius:99px; background:var(--bg-elev2); overflow:hidden; display:inline-block;"><span style="display:block; height:100%; width:{{ p.pct }}; background:var(--accent);"></span></span><span style="color:var(--fg-dim);">{{ p.pct }}</span></span>
+                      <span style="color:var(--fg-dim);">{{ p.when }}</span>
+                    </div>
+                  </div>
+                  <span style="font-family:var(--mono); font-size:10.5px; color:var(--fg-dim); white-space:nowrap;">open planning →</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <!-- shipped -->
+            <div style="display:flex; align-items:center; gap:8px; margin:0 0 9px;">
+              <span style="width:6px; height:6px; border-radius:99px; background:var(--fg-dim);"></span>
+              <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.07em;">shipped</span>
+              <span style="padding:0 5px; border-radius:8px; font-family:var(--mono); font-size:9px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">1</span>
+            </div>
+            <div style="border:1px solid var(--border-soft); border-radius:10px; overflow:hidden; opacity:.82;">
+              <sc-for list="{{ projsShipped }}" as="p" hint-placeholder-count="1">
+                <div style="padding:14px 18px; display:grid; grid-template-columns:1fr auto; gap:16px; align-items:center; background:var(--bg-panel);">
+                  <div style="min-width:0;">
+                    <div style="display:flex; align-items:center; gap:9px; margin-bottom:5px; flex-wrap:wrap;">
+                      <span style="width:7px; height:7px; border-radius:99px; background:var(--fg-dim);"></span>
+                      <span style="font-family:var(--mono); font-size:10px; color:var(--fg-dim);">{{ p.num }}</span>
+                      <span style="font-family:var(--sans); font-size:14px; font-weight:600; color:var(--fg);">{{ p.name }}</span>
+                      <span style="padding:1px 7px; border-radius:99px; font-family:var(--mono); font-size:9.5px; background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);">shipped</span>
+                    </div>
+                    <div style="color:var(--fg-muted); font-size:12px; line-height:1.5;">{{ p.desc }}</div>
+                  </div>
+                  <span style="font-family:var(--mono); font-size:10.5px; color:var(--fg-dim); white-space:nowrap;">open planning →</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <!-- BLUEPRINTS rail -->
+        <div style="flex:0 0 340px; display:flex; flex-direction:column; background:var(--bg-panel); border-left:1px solid var(--border-soft);">
+          <div style="flex:0 0 auto; padding:18px 18px 14px; border-bottom:1px solid var(--border-soft);">
+            <div style="display:flex; align-items:center; gap:9px;">
+              <span style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; background:color-mix(in oklch, var(--violet), transparent 86%); border:1px solid color-mix(in oklch, var(--violet), transparent 70%); color:var(--violet); font-size:12px;">◫</span>
+              <h3 style="margin:0; font-family:var(--mono); font-size:13px; font-weight:600; color:var(--fg);">Blueprints</h3>
+              <span style="padding:0 6px; border-radius:8px; font-family:var(--mono); font-size:9.5px; background:color-mix(in oklch, var(--violet), transparent 88%); color:var(--violet); border:1px solid color-mix(in oklch, var(--violet), transparent 75%);">4</span>
+              <span style="flex:1;"></span>
+              <button style="height:24px; width:24px; padding:0; border-radius:6px; background:transparent; border:1px solid color-mix(in oklch, var(--violet), transparent 55%); color:var(--violet); font-family:var(--mono); font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center;">+</button>
+            </div>
+            <div style="font-family:var(--mono); font-size:9.5px; color:var(--fg-dim); margin-top:8px; line-height:1.5;">reusable plan templates · published as gists</div>
+          </div>
+          <div style="flex:1; min-height:0; overflow:auto; padding:14px 16px; display:flex; flex-direction:column; gap:9px;">
+            <sc-for list="{{ blueprints }}" as="b" hint-placeholder-count="4">
+              <div style="padding:12px 13px; background:var(--bg-elev); border:1px solid var(--border-soft); border-radius:9px; border-left:2px solid var(--violet);">
+                <div style="display:flex; align-items:center; gap:9px; margin-bottom:8px;">
+                  <span style="width:30px; height:30px; flex:0 0 30px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:color-mix(in oklch, var(--violet), transparent 88%); border:1px solid color-mix(in oklch, var(--violet), transparent 70%); color:var(--violet); font-size:13px;">◫</span>
+                  <span style="font-family:var(--sans); font-size:13px; font-weight:600; color:var(--fg);">{{ b.name }}</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-family:var(--mono); font-size:9px; color:var(--fg-dim);">
+                  <span style="padding:1px 6px; border-radius:99px; color:var(--violet); background:color-mix(in oklch, var(--violet), transparent 90%); border:1px solid color-mix(in oklch, var(--violet), transparent 78%);">{{ b.cat }}</span>
+                  <span>{{ b.stages }}</span>
+                  <span>{{ b.vis }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!--FRAMES-->
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const projsActive = [
+      { num: "#14", name: "Chirp", desc: "A Twitter clone — web, mobile, and three backing microservices.", tags: ["chirp-web", "chirp-mobile", "+2"], items: "42 items", open: "11 open", pct: "68%", when: "updated 2d ago" },
+      { num: "#9", name: "Stock Explorer", desc: "Multi-asset market explorer with paper and live trading.", tags: ["stock-explorer-web", "+1"], items: "28 items", open: "6 open", pct: "54%", when: "updated 5h ago" },
+      { num: "#21", name: "Overdrive", desc: "Distribution opportunity engine for label catalogs.", tags: ["overdrive-api"], items: "17 items", open: "9 open", pct: "31%", when: "updated 1d ago" },
+    ];
+    const projsShipped = [
+      { num: "#3", name: "WoToS", desc: "World of Tanks stats mesh — WN8 ratings across microservices.", tags: ["wotos-react-ui"], items: "63 items", open: "0 open", pct: "100%", when: "shipped 3w ago" },
+    ];
+    const drafts = [
+      { name: "Celebritea", pitch: "LLM-filtered celebrity news feed — Kotlin API + mobile.", when: "1h ago" },
+      { name: "Note AI", pitch: "AI note-taking with a liquid blob radial UI on Skia.", when: "4d ago" },
+    ];
+    const blueprints = [
+      { name: "Greenfield SaaS", cat: "greenfield", stages: "6 stages", vis: "public gist", when: "1w ago" },
+      { name: "Microservice mesh", cat: "greenfield", stages: "8 stages", vis: "private gist", when: "2w ago" },
+      { name: "Legacy transform", cat: "transform", stages: "5 stages", vis: "draft", when: "3d ago" },
+      { name: "Harden & audit", cat: "harden", stages: "4 stages", vis: "public gist", when: "6d ago" },
+    ];
+    return { projsActive, projsShipped, drafts, blueprints };
+  }
+}
+</script>
+</body>
+</html>

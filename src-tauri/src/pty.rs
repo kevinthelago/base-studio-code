@@ -8,7 +8,7 @@ use crate::{
 };
 use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
-    BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC,
+    BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
 };
 use crate::{config, perf, tunnel};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -208,6 +208,29 @@ pub(crate) fn kill_all_pty_sessions(state: &PtyState) {
     log::info!("killed {n} PTY session(s) on exit");
 }
 
+/// The project hub's `plan.db` for a session whose cwd lives under a project hub
+/// (`~/.base-studio-code/projects/<key>/...`), or None for a non-project session (#plan-db).
+/// Workers run in `projects/<key>/.worktrees/...` and the director/planner in `projects/<key>/` —
+/// both resolve to the same hub db, so the whole fleet shares one canonical plan store.
+fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+    if cwd.is_empty() {
+        return None;
+    }
+    let projects_root = bsc_base_dir().join("projects");
+    let rel = std::path::Path::new(cwd).strip_prefix(&projects_root).ok()?;
+    let key = rel.components().next()?.as_os_str();
+    Some(projects_root.join(key).join("plan.db"))
+}
+
+/// The absolute path of the `bsc-plan` CLI — the binary sitting beside the running app exe (the
+/// cargo target dir in dev; a bundled sidecar in a release), or None if it isn't there (#plan-db).
+/// Exposed to sessions as `$BSC_PLAN_BIN` for the `bsc-plan` shell helper to exec — no PATH change.
+fn bsc_plan_bin_path() -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) { "bsc-plan.exe" } else { "bsc-plan" };
+    let p = std::env::current_exe().ok()?.with_file_name(exe);
+    p.exists().then_some(p)
+}
+
 /// Build the environment for a session shell.
 ///
 /// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
@@ -327,7 +350,7 @@ pub(crate) async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -369,6 +392,19 @@ pub(crate) async fn pty_create(
     // the repo root. Set for every pane; only gated panes install the hook.
     if !cwd.is_empty() {
         cmd.env("BSC_REPO_ROOT", to_bash_path(&cwd));
+    }
+    // bsc-plan (#plan-db): point this session at its project's canonical plan store. Both vars feed
+    // the `bsc-plan` shell helper (installed via the rc above, like every other bsc-*): $BSC_PLAN_DB
+    // is the plan.db it reads/writes, $BSC_PLAN_BIN the absolute path of the CLI it execs — no PATH
+    // changes, no copies. The DB is derived from the cwd — every project session runs under
+    // `~/.base-studio-code/projects/<key>/...` (the director/planner at the hub, workers in a
+    // worktree beneath it) — so the whole fleet shares one plan.db. Non-project sessions (a plain
+    // console in some repo) get no BSC_PLAN_DB and never call bsc-plan.
+    if let Some(db) = plan_db_for_cwd(&cwd) {
+        cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy()));
+    }
+    if let Some(bin) = bsc_plan_bin_path() {
+        cmd.env("BSC_PLAN_BIN", to_bash_path(&bin.to_string_lossy()));
     }
 
     let child = pair.slave.spawn_command(cmd)
@@ -729,6 +765,8 @@ pub(crate) fn tunnel_set_pane_size(app: &AppHandle, pane_id: &str, cols: u16, ro
 #[cfg(test)]
 mod tests {
     use super::session_env;
+    use super::plan_db_for_cwd;
+    use crate::bsc_base_dir;
     #[cfg(any(windows, unix))]
     use super::PtyJob;
     use std::collections::HashMap;
@@ -873,6 +911,26 @@ mod tests {
         assert!(env.iter().any(|(k, v)| k == "TERM" && v == "screen-256color"));
         // unrelated caller vars still flow through
         assert!(env.iter().any(|(k, v)| k == "GH_TOKEN" && v == "secret"));
+    }
+
+    #[test]
+    fn plan_db_for_cwd_resolves_the_hub_db_from_a_project_session() {
+        let projects = bsc_base_dir().join("projects");
+        // Director/planner at the hub root → projects/<key>/plan.db.
+        let hub = projects.join("my-app");
+        assert_eq!(plan_db_for_cwd(&hub.to_string_lossy()), Some(hub.join("plan.db")));
+        // A worker in a worktree beneath the hub resolves to the SAME db.
+        let wt = projects.join("my-app").join(".worktrees").join("web--auth");
+        assert_eq!(plan_db_for_cwd(&wt.to_string_lossy()), Some(hub.join("plan.db")));
+    }
+
+    #[test]
+    fn plan_db_for_cwd_is_none_outside_a_project_hub() {
+        assert_eq!(plan_db_for_cwd(""), None);
+        assert_eq!(plan_db_for_cwd(&bsc_base_dir().join("bin").to_string_lossy()), None);
+        // A plain repo somewhere on disk is not a project session.
+        let elsewhere = std::path::Path::new("C:/code/some-repo");
+        assert_eq!(plan_db_for_cwd(&elsewhere.to_string_lossy()), None);
     }
 }
 

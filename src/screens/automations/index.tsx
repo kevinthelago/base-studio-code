@@ -2,12 +2,12 @@ import { useMemo, useState } from "react";
 import { useAppStore } from "../../store";
 import { SchedulesTab } from "./Schedules";
 import { HistoryTab } from "./History";
-import { ExtensionsScreen } from "../extensions";
+import { HooksView } from "../mcp";
 import { HookAnalyticsTab } from "./HookAnalytics";
 import { fmtClock } from "./format";
 import { TabBar, type TabItem } from "../../components/chrome/TabBar";
 import { usePageTabs } from "../../hooks/usePageTabs";
-import type { RunStatus, Every } from "../../lib/scheduler";
+import type { RunStatus, Every } from "../../lib/automations/scheduler";
 import "./automations.css";
 
 /**
@@ -18,9 +18,9 @@ import "./automations.css";
  */
 export function AutomationsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   const { automations, addAutomation, tabs } = useAppStore();
-  // Hooks moved here from the (now MCP-only) Extensions page (#865) — event-triggered
-  // automations live alongside the time-triggered Schedules.
-  const hookCount = useAppStore(s => s.extensions.filter(e => e.kind === "hook").length);
+  // Hooks live here (the MCP page is servers-only, #865 / #mcp-hooks-split) — event-triggered
+  // automations alongside the time-triggered Schedules.
+  const hookCount = useAppStore(s => s.hooks.length);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [histStatus, setHistStatus] = useState<"all" | RunStatus>("all");
@@ -64,7 +64,7 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
   const body = active === "analytics"
     ? <HookAnalyticsTab />
     : active === "hooks"
-    ? <ExtensionsScreen kind="hook" embedded />
+    ? <HooksView />
     : active === "history"
     ? <HistoryTab status={histStatus} setStatus={setHistStatus} sched={histSched} setSched={setHistSched} />
     : <SchedulesTab selectedId={selectedId} setSelectedId={setSelectedId} onNew={createAndSelect} onViewAllHistory={viewAllHistory} />;

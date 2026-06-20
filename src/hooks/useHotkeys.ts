@@ -1,16 +1,16 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
-import { computeBroadcastTargets } from "../lib/broadcast";
-import { adjustFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
-import { nextFullscreen } from "../lib/consoleFocus";
-import { CLEAR_INPUT_BYTES } from "../lib/clearInput";
-import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/paneSelect";
-import { SCREEN_HOTKEYS } from "../lib/shortcuts";
+import { computeBroadcastTargets } from "../lib/console/broadcast";
+import { adjustFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/console/terminal";
+import { nextFullscreen } from "../lib/console/consoleFocus";
+import { CLEAR_INPUT_BYTES } from "../lib/console/clearInput";
+import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/console/paneSelect";
+import { SCREEN_HOTKEYS } from "../lib/settings/shortcuts";
 import {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,
-} from "../lib/keybindings";
+} from "../lib/settings/keybindings";
 import type { ViewKey } from "../components/pane/ViewTabs";
 
 export interface ShortcutDef {
@@ -26,7 +26,6 @@ export interface ShortcutDef {
  *  The Keyboard settings page derives its reference list from this registry. */
 export const SHORTCUT_REGISTRY: ShortcutDef[] = [
   { id: "screen-console",      label: "Go to Console",            keys: "F1",                  description: "Switch to the Console screen" },
-  { id: "screen-knowledge",    label: "Go to Knowledge Store",    keys: "F2",                  description: "Switch to the Knowledge Store screen" },
   { id: "screen-automation",   label: "Go to Automations",        keys: "F3",                  description: "Switch to the Automations screen" },
   { id: "screen-github",       label: "Go to GitHub",             keys: "F4",                  description: "Switch to the GitHub screen" },
   { id: "screen-projects",     label: "Go to Projects",           keys: "F5",                  description: "Switch to the Projects screen" },

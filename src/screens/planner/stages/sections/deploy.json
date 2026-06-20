@@ -1,0 +1,20 @@
+{
+  "name": "Deploy",
+  "glyph": "⎈",
+  "gate": "target, envs, pipeline, secrets & release defined",
+  "deps": [
+    "repos"
+  ],
+  "gateRule": {
+    "require": [
+      {
+        "signal": "deploymentDefined",
+        "target": true,
+        "label": "define target, environments, pipeline, secrets & release"
+      }
+    ]
+  },
+  "output": "issues",
+  "blurb": "How each service ships — target, environments, pipeline, secrets, release & health.",
+  "prompt": "Define how this project SHIPS, per service (one per linked repo): the deploy TARGET (hosting\nplatform + workload — static / serverless / container / long-running), the ENVIRONMENT ladder\n(dev → staging → prod, each mapped to a branch), the CI/CD PIPELINE (build → test → deploy, with\nthe gating stage), CONFIG + SECRETS per environment (names only — values live in the host vault),\nthe RELEASE strategy (recreate / rolling / blue-green / canary) + rollback policy, and HEALTH\nchecks / observability. Propose sensible defaults from the stack, then interrogate the user and\nlet them set the targets in the Deploy pane. These become deployment ISSUES owned by a `deploy`\nstream at publish.\n\nGate: a target per service, ≥2 environments, a staged pipeline, secrets wired for every env, and\na release strategy chosen."
+}

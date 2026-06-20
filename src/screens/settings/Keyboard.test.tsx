@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { KeyboardSettings } from "./Keyboard";
 import { useAppStore } from "../../store";
+import { SHORTCUT_GROUPS } from "../../lib/settings/shortcuts";
+import { SHORTCUT_REGISTRY } from "../../hooks/useHotkeys";
 
 beforeEach(() => {
   useAppStore.setState({ keybindings: {} });
@@ -107,5 +109,59 @@ describe("KeyboardSettings", () => {
     render(<KeyboardSettings />);
     fireEvent.click(screen.getByRole("button", { name: /Reset all to defaults/ }));
     expect(useAppStore.getState().keybindings).toEqual({});
+  });
+});
+
+// Exhaustive reference rendering — consolidated from the former keyboardSettings /
+// KeyboardSettings smoke tests. Renders with default bindings (keybindings: {}).
+describe("KeyboardSettings — reference rendering", () => {
+  it("renders the page heading and every shortcut group title", () => {
+    render(<KeyboardSettings />);
+    expect(screen.getByText("Keyboard")).toBeTruthy();
+    for (const group of SHORTCUT_GROUPS) {
+      expect(screen.getByText(group.title)).toBeTruthy();
+    }
+  });
+
+  it("renders every shortcut description from SHORTCUT_GROUPS", () => {
+    render(<KeyboardSettings />);
+    for (const group of SHORTCUT_GROUPS) {
+      for (const shortcut of group.items) {
+        expect(screen.getByText(shortcut.desc)).toBeTruthy();
+      }
+    }
+  });
+
+  it("renders each key cap from SHORTCUT_GROUPS", () => {
+    render(<KeyboardSettings />);
+    for (const group of SHORTCUT_GROUPS) {
+      for (const shortcut of group.items) {
+        for (const key of shortcut.keys) {
+          // Some keys (e.g. "Ctrl") appear many times — just assert at least one renders.
+          expect(screen.getAllByText(key).length).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+});
+
+describe("SHORTCUT_REGISTRY integrity", () => {
+  it("has no duplicate ids", () => {
+    const ids = SHORTCUT_REGISTRY.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("every entry has a non-empty label, keys, and description", () => {
+    for (const s of SHORTCUT_REGISTRY) {
+      expect(s.label.length).toBeGreaterThan(0);
+      expect(s.keys.length).toBeGreaterThan(0);
+      expect(s.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("context values are either undefined or 'Console'", () => {
+    for (const s of SHORTCUT_REGISTRY) {
+      expect(s.context === undefined || s.context === "Console").toBe(true);
+    }
   });
 });
