@@ -24,7 +24,7 @@ import {
   ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
 } from "../stages/planSections";
-import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
+import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
@@ -781,8 +781,8 @@ export function Planning({ visible }: { visible: boolean }) {
     return out;
   }, [confirmedSet]);
   const signals = useMemo(
-    () => ({ ...planStateToSignals(stageState), hasPlanGaps, deploymentDefined: deploymentDefined(deployCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals }),
-    [stageState, hasPlanGaps, deployCfg, isAuthoring, authoringSig, skipSignals, confirmSignals]);
+    () => ({ ...planStateToSignals(stageState), hasPlanGaps, featuresPhased: featuresAllPhased(planFeatures), deploymentDefined: deploymentDefined(deployCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals }),
+    [stageState, hasPlanGaps, planFeatures, deployCfg, isAuthoring, authoringSig, skipSignals, confirmSignals]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
   // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user

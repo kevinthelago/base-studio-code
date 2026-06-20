@@ -100,6 +100,12 @@ export function featuresAwaitingConfirm(summary: { allConfirmed: boolean }, user
   return summary.allConfirmed && !userConfirmed;
 }
 
+/** Whether every feature has been sequenced into a phase (#plan-db) — the Plan stage's completion
+ *  signal now that issues are a publish-time artifact (it replaces the old "≥1 issue authored"). */
+export function featuresAllPhased(features: PlanFeature[]): boolean {
+  return features.length > 0 && features.every((f) => f.phase !== undefined && f.phase !== "");
+}
+
 /**
  * Find a cycle in the feature dependency DAG (#plan-db) — a cycle is a planning deadlock and holds
  * the Features gate. Returns the slugs on the first cycle found (e.g. `["a","b","a"]`) or `[]` when

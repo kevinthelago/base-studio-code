@@ -50,10 +50,9 @@ describe("authored substeps (built-in sections)", () => {
     expect(subs.map((s) => s.key)).toEqual(["propose", "features"]);
     expect(subs.find((s) => s.key === "features")?.loop).toBe("features");
   });
-  it("Structure (Plan) exposes a sequence step then a per-feature decompose loop", () => {
+  it("Structure (Plan) exposes a single sequence step (issues are generated at publish, #plan-db)", () => {
     const subs = SECTION_DEFS.structure.substeps ?? [];
-    expect(subs.map((s) => s.key)).toEqual(["sequence", "decompose"]);
-    expect(subs.find((s) => s.key === "decompose")?.loop).toBe("features");
+    expect(subs.map((s) => s.key)).toEqual(["sequence"]);
   });
   it("no built-in substep prompt mentions publishing (user owns publish)", () => {
     for (const def of Object.values(SECTION_DEFS)) {
