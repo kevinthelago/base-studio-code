@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { markBoot, logStartupTrace } from "./lib/core/startupTrace";
 import { invoke } from "@tauri-apps/api/core";
 import { LayoutGrid } from "lucide-react";
@@ -15,19 +15,32 @@ import { useTunnelSync } from "./hooks/useTunnelSync";
 import { startPerfMonitor, recordStoreWrite } from "./lib/core/perf";
 import { log } from "./lib/core/log";
 import { ConsoleScreen } from "./screens/Console";
-import { GitHubScreen } from "./screens/github";
-import { AutomationsScreen } from "./screens/automations";
 import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
-import { McpScreen } from "./screens/mcp";
-import { SettingsScreen } from "./screens/settings";
-import { ProjectsScreen } from "./screens/planner";
-import { SkillsScreen } from "./screens/skills";
-import { AgentsScreen } from "./screens/agents";
 import { SkillsStatus } from "./screens/skills/SkillsStatus";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/console/detachWindow";
 import { accentVars } from "./lib/settings/appearance";
+
+// Lazy-loaded screens (#perf): only the Console is needed at boot. Each other screen's chunk
+// loads on first navigation, keeping the heavy module graph (esp. the planner) off the cold
+// startup path — both the dev transform and the production bundle.
+const GitHubScreen      = lazy(() => import("./screens/github").then((m) => ({ default: m.GitHubScreen })));
+const AutomationsScreen = lazy(() => import("./screens/automations").then((m) => ({ default: m.AutomationsScreen })));
+const McpScreen         = lazy(() => import("./screens/mcp").then((m) => ({ default: m.McpScreen })));
+const SettingsScreen    = lazy(() => import("./screens/settings").then((m) => ({ default: m.SettingsScreen })));
+const ProjectsScreen    = lazy(() => import("./screens/planner").then((m) => ({ default: m.ProjectsScreen })));
+const SkillsScreen      = lazy(() => import("./screens/skills").then((m) => ({ default: m.SkillsScreen })));
+const AgentsScreen      = lazy(() => import("./screens/agents").then((m) => ({ default: m.AgentsScreen })));
+
+/** Lightweight placeholder shown while a lazy screen's chunk loads. */
+function ScreenFallback() {
+  return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 12 }}>
+      loading…
+    </div>
+  );
+}
 
 // ── New-tab dialog ────────────────────────────────────────────────────────────
 
@@ -189,6 +202,11 @@ export default function App() {
     requestAnimationFrame(() => { markBoot("painted"); logStartupTrace(); });
   }, [hasHydrated]);
 
+  // Lazy-mount Projects on first visit, then keep it mounted so its local state + PTY survive
+  // (the heavy planner chunk thus loads on first navigation, not at boot — #perf).
+  const projectsEverShown = useRef(false);
+  if (activeScreen === "projects") projectsEverShown.current = true;
+
   // Detached tab window (#430): when opened via tear-off (?detachTab=<id>), this
   // window renders only that console tab — pinned by stable id (resolved to an
   // index for ConsoleScreen's override). Computed once per window load.
@@ -332,7 +350,7 @@ export default function App() {
         <div className="shell">
           <div className="main">
             <div className="page">
-              {hasHydrated && renderDetachedSection(detSection.page, detSection.section)}
+              {hasHydrated && <Suspense fallback={<ScreenFallback />}>{renderDetachedSection(detSection.page, detSection.section)}</Suspense>}
             </div>
           </div>
         </div>
@@ -408,17 +426,22 @@ export default function App() {
           {activeScreen === "console" && tabs.length === 0 && (
             <ConsoleEmptyState onNew={() => setShowNewTab(true)} />
           )}
-          {/* Projects stays mounted so local state + PTY sessions survive screen
-              switches. CSS hides it when inactive. */}
-          <div style={{ display: activeScreen === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
-            <ProjectsScreen />
-          </div>
-          {activeScreen === "github"     && <GitHubScreen />}
-          {activeScreen === "automation" && <AutomationsScreen />}
-          {activeScreen === "mcp" && <McpScreen />}
-          {activeScreen === "skills"     && <SkillsScreen />}
-          {activeScreen === "agents"     && <AgentsScreen />}
-          {activeScreen === "settings"   && <SettingsScreen />}
+          {/* Projects lazy-mounts on first visit, then stays mounted so its local state + PTY
+              sessions survive screen switches (CSS hides it when inactive). */}
+          {projectsEverShown.current && (
+            <div style={{ display: activeScreen === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
+              <Suspense fallback={<ScreenFallback />}><ProjectsScreen /></Suspense>
+            </div>
+          )}
+          {/* The remaining screens mount only while active — their chunks load on first nav. */}
+          <Suspense fallback={<ScreenFallback />}>
+            {activeScreen === "github"     && <GitHubScreen />}
+            {activeScreen === "automation" && <AutomationsScreen />}
+            {activeScreen === "mcp" && <McpScreen />}
+            {activeScreen === "skills"     && <SkillsScreen />}
+            {activeScreen === "agents"     && <AgentsScreen />}
+            {activeScreen === "settings"   && <SettingsScreen />}
+          </Suspense>
           </ErrorBoundary>
           </div>
           <StatusBar extra={
