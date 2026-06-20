@@ -8,7 +8,7 @@ use crate::{
 };
 use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
-    BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC,
+    BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
 };
 use crate::{config, perf, tunnel};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -222,29 +222,13 @@ fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     Some(projects_root.join(key).join("plan.db"))
 }
 
-/// Ensure the `bsc-plan` CLI is installed under `~/.base-studio-code/bin` and return that dir so it
-/// can be prepended to a session's PATH (#plan-db). The source is the binary sitting beside the
-/// running app exe — the cargo target dir in dev, a bundled sidecar in a release. Copies only when
-/// the source is newer (or the dest is missing), so an in-flight CLI invocation isn't disturbed.
-fn ensure_bsc_plan_bin(base: &std::path::Path) -> Option<std::path::PathBuf> {
+/// The absolute path of the `bsc-plan` CLI — the binary sitting beside the running app exe (the
+/// cargo target dir in dev; a bundled sidecar in a release), or None if it isn't there (#plan-db).
+/// Exposed to sessions as `$BSC_PLAN_BIN` for the `bsc-plan` shell helper to exec — no PATH change.
+fn bsc_plan_bin_path() -> Option<std::path::PathBuf> {
     let exe = if cfg!(windows) { "bsc-plan.exe" } else { "bsc-plan" };
-    let bin_dir = base.join("bin");
-    let _ = std::fs::create_dir_all(&bin_dir);
-    let dest = bin_dir.join(exe);
-    if let Ok(src) = std::env::current_exe().map(|p| p.with_file_name(exe)) {
-        if src.exists() {
-            let src_m = std::fs::metadata(&src).and_then(|m| m.modified()).ok();
-            let dst_m = std::fs::metadata(&dest).and_then(|m| m.modified()).ok();
-            let stale = match (src_m, dst_m) {
-                (Some(s), Some(d)) => s > d,
-                _ => !dest.exists(),
-            };
-            if stale {
-                let _ = std::fs::copy(&src, &dest);
-            }
-        }
-    }
-    dest.exists().then_some(bin_dir)
+    let p = std::env::current_exe().ok()?.with_file_name(exe);
+    p.exists().then_some(p)
 }
 
 /// Build the environment for a session shell.
@@ -366,7 +350,7 @@ pub(crate) async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -409,23 +393,18 @@ pub(crate) async fn pty_create(
     if !cwd.is_empty() {
         cmd.env("BSC_REPO_ROOT", to_bash_path(&cwd));
     }
-    // bsc-plan (#plan-db): point this session at its project's canonical plan store and put the
-    // `bsc-plan` CLI on PATH. The DB is derived from the cwd — every project session runs under
+    // bsc-plan (#plan-db): point this session at its project's canonical plan store. Both vars feed
+    // the `bsc-plan` shell helper (installed via the rc above, like every other bsc-*): $BSC_PLAN_DB
+    // is the plan.db it reads/writes, $BSC_PLAN_BIN the absolute path of the CLI it execs — no PATH
+    // changes, no copies. The DB is derived from the cwd — every project session runs under
     // `~/.base-studio-code/projects/<key>/...` (the director/planner at the hub, workers in a
-    // worktree beneath it) — so the whole fleet reads+writes the one `plan.db`. Non-project
-    // sessions (a plain console in some repo) simply get no BSC_PLAN_DB and never call bsc-plan.
+    // worktree beneath it) — so the whole fleet shares one plan.db. Non-project sessions (a plain
+    // console in some repo) get no BSC_PLAN_DB and never call bsc-plan.
     if let Some(db) = plan_db_for_cwd(&cwd) {
         cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy()));
     }
-    if let Some(bin_dir) = ensure_bsc_plan_bin(&base) {
-        // Prepend the install dir to the inherited PATH (git-bash converts the Windows PATH on
-        // startup, so a native dir + `;` separator resolves correctly inside the shell).
-        let prev = std::env::var_os("PATH").unwrap_or_default();
-        let mut dirs = vec![bin_dir];
-        dirs.extend(std::env::split_paths(&prev));
-        if let Ok(joined) = std::env::join_paths(dirs) {
-            cmd.env("PATH", joined);
-        }
+    if let Some(bin) = bsc_plan_bin_path() {
+        cmd.env("BSC_PLAN_BIN", to_bash_path(&bin.to_string_lossy()));
     }
 
     let child = pair.slave.spawn_command(cmd)
