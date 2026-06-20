@@ -5,17 +5,17 @@
 // module is the single source of truth for the pane data contract; the pane
 // falls back to its own sample consts when a project has none of this yet.
 
-import type { AgentProfile, Tier, ToolKey } from "../agents/agentProfiles";
-import type { FleetPlan, AgentStream } from "./stages/planSections";
-import type { AgentRelationship } from "./relationship/relationshipGraph";
-import type { PlanIssue } from "./issues/planIssues";
-import type { Section } from "./github/ghStructure";
-import type { NodeProgress } from "./github/ghProgress";
-import { resolvePhaseIndex } from "./issues/planIssues";
-import { resolveFlow } from "./fleet/agentFlow";
-import { resolveDirectorDrive } from "./fleet/directorDrive";
+import type { AgentProfile, Tier, ToolKey } from "../../agents/agentProfiles";
+import type { FleetPlan, AgentStream } from "../stages/planSections";
+import type { AgentRelationship } from "../relationship/relationshipGraph";
+import type { PlanIssue } from "../issues/planIssues";
+import type { Section } from "../github/ghStructure";
+import type { NodeProgress } from "../github/ghProgress";
+import { resolvePhaseIndex } from "../issues/planIssues";
+import { resolveFlow } from "../fleet/agentFlow";
+import { resolveDirectorDrive } from "../fleet/directorDrive";
 
-export type { PlanGrade, IssueGrade, MilestoneGrade, RepoGrade, Letter } from "../../lib/planGrade";
+export type { PlanGrade, IssueGrade, MilestoneGrade, RepoGrade, Letter } from "../../../lib/planGrade";
 // The render-shape contract lives in projectPane.types (#356, the shared pane
 // types). This adapter imports those shapes and re-exports them so existing
 // import sites that reach for them via "./projectPaneData" keep working.
@@ -23,11 +23,11 @@ import type {
   Posture, Perm, Agent, Repo, Issue, Milestone, PhaseGroup, ContextFile, ProjectPaneData,
   PaneAutomation, PaneSkill,
 } from "./projectPane.types";
-import type { PlanFeature } from "./issues/featureList";
-import type { Blueprint } from "./stages/blueprints";
-import type { DeployConfig } from "./shared/deployConfig";
-import { buildMcpServers, type McpInstallState } from "./shared/mcpPaneData";
-import type { ExtensionDef } from "../../lib/extensions";
+import type { PlanFeature } from "../issues/featureList";
+import type { Blueprint } from "../stages/blueprints";
+import type { DeployConfig } from "../shared/deployConfig";
+import { buildMcpServers, type McpInstallState } from "../shared/mcpPaneData";
+import type { ExtensionDef } from "../../../lib/extensions";
 
 export type {
   Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone, PhaseGroup,
@@ -58,10 +58,10 @@ export interface BuildProjectPaneInput {
   authoredBlueprint?: Blueprint;
   /** Per-project coordination-topology override (#…) — set in the Permissions pane,
    *  wins over the planner's `fleet.json` topology. */
-  topologyOverride?: import("./relationship/relationshipGraph").Topology;
+  topologyOverride?: import("../relationship/relationshipGraph").Topology;
   /** Per-project director-drive override (#…) — set in the Permissions pane, wins over
    *  `fleet.json`'s `director.drive`. */
-  directorDriveOverride?: import("./fleet/directorDrive").DirectorDrive;
+  directorDriveOverride?: import("../fleet/directorDrive").DirectorDrive;
   /** The project's deployment & infrastructure config (#919) — the Deploy stage pane's state. */
   deployConfig?: DeployConfig;
   sections: Section[];

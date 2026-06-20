@@ -8,39 +8,39 @@ import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, SubItem, ContextFile,
   ProjectPaneData, PaneAutomation, PaneSkill, McpServer,
 } from "./projectPaneData";
-import type { Section } from "./github/ghStructure";
-import type { FleetPlan } from "./stages/planSections";
-import { featureDefined, type PlanFeature } from "./issues/featureList";
-import type { Phase, GatePill, FooterKind } from "./stages/focusedPlan";
+import type { Section } from "../github/ghStructure";
+import type { FleetPlan } from "../stages/planSections";
+import { featureDefined, type PlanFeature } from "../issues/featureList";
+import type { Phase, GatePill, FooterKind } from "../stages/focusedPlan";
 import {
   Stepper as FocusedStepper,
   PhaseHeader as FocusedPhaseHeader,
   LockBanner as FocusedLockBanner,
   PhaseFooter as FocusedPhaseFooter,
 } from "./FocusedShell";
-import type { StagePrompt } from "./session/plannerConductor";
-import { FileIntakePane } from "./bodies/FileIntakePane";
-import { FocusedDeployBody } from "./bodies/DeployView";
-import type { DeployConfig } from "./shared/deployConfig";
-import { PurposeView, StagesView, CapabilitiesView, PublishView } from "./blueprints/BlueprintAuthorViews";
-import type { BlueprintSkillItem } from "./blueprints/blueprintSkills";
-import type { McpLibraryItem } from "./blueprints/blueprintMcp";
-import { FocusedSourceBody } from "./bodies/FocusedSourceBody";
-import { FocusedTargetsBody } from "./bodies/FocusedTargetsBody";
-import { FocusedLegitimacyBody } from "./bodies/FocusedLegitimacyBody";
-import { FocusedAcquireBody } from "./bodies/FocusedAcquireBody";
-import { FocusedExtractBody } from "./bodies/FocusedExtractBody";
-import { FocusedModelBody } from "./bodies/FocusedModelBody";
-import { FocusedMappingBody } from "./bodies/FocusedMappingBody";
-import { FocusedCleaningBody } from "./bodies/FocusedCleaningBody";
-import { FocusedLoadBody } from "./bodies/FocusedLoadBody";
-import { RelationshipGraphView } from "./relationship/RelationshipGraphView";
-import { RelationshipInspector } from "./relationship/RelationshipInspector";
+import type { StagePrompt } from "../session/plannerConductor";
+import { FileIntakePane } from "../bodies/FileIntakePane";
+import { FocusedDeployBody } from "../bodies/DeployView";
+import type { DeployConfig } from "../shared/deployConfig";
+import { PurposeView, StagesView, CapabilitiesView, PublishView } from "../blueprints/BlueprintAuthorViews";
+import type { BlueprintSkillItem } from "../blueprints/blueprintSkills";
+import type { McpLibraryItem } from "../blueprints/blueprintMcp";
+import { FocusedSourceBody } from "../bodies/FocusedSourceBody";
+import { FocusedTargetsBody } from "../bodies/FocusedTargetsBody";
+import { FocusedLegitimacyBody } from "../bodies/FocusedLegitimacyBody";
+import { FocusedAcquireBody } from "../bodies/FocusedAcquireBody";
+import { FocusedExtractBody } from "../bodies/FocusedExtractBody";
+import { FocusedModelBody } from "../bodies/FocusedModelBody";
+import { FocusedMappingBody } from "../bodies/FocusedMappingBody";
+import { FocusedCleaningBody } from "../bodies/FocusedCleaningBody";
+import { FocusedLoadBody } from "../bodies/FocusedLoadBody";
+import { RelationshipGraphView } from "../relationship/RelationshipGraphView";
+import { RelationshipInspector } from "../relationship/RelationshipInspector";
 import {
   buildRelationshipGraph, EDGE_KIND_META,
   type Topology, type RelFocus,
-} from "./relationship/relationshipGraph";
-import { DIRECTOR_DRIVES, type DirectorDrive } from "./fleet/directorDrive";
+} from "../relationship/relationshipGraph";
+import { DIRECTOR_DRIVES, type DirectorDrive } from "../fleet/directorDrive";
 
 /** The three coordination topologies + their one-line explainers (Permissions control). */
 const TOPOLOGY_OPTS: { id: Topology; label: string; hint: string }[] = [

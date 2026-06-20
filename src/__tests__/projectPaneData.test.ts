@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildProjectPaneData } from "../screens/planner/projectPaneData";
-import type { BuildProjectPaneInput } from "../screens/planner/projectPaneData";
+import { buildProjectPaneData } from "../screens/planner/pane/projectPaneData";
+import type { BuildProjectPaneInput } from "../screens/planner/pane/projectPaneData";
 import { emptyFleet } from "../screens/planner/stages/planSections";
 import type { FleetPlan } from "../screens/planner/stages/planSections";
 import type { PlanIssue } from "../screens/planner/issues/planIssues";

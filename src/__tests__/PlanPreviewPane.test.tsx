@@ -9,7 +9,7 @@ vi.mock("../screens/planner/preview/previewBundle", () => ({
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
 }));
 
-import { PlanPreviewPane } from "../screens/planner/PlanPreviewPane";
+import { PlanPreviewPane } from "../screens/planner/pane/PlanPreviewPane";
 
 describe("PlanPreviewPane (#531)", () => {
   beforeEach(() => useAppStore.setState({ stagePreview: {}, stagePipelineRuns: {}, uiScreens: {}, uiApproved: {} }));

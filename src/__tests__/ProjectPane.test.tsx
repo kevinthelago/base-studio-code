@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ProjectPane } from "../screens/planner/ProjectPane";
+import { ProjectPane } from "../screens/planner/pane/ProjectPane";
 import type { Section } from "../screens/planner/github/ghStructure";
 
 // ----------------------------------------------------------------

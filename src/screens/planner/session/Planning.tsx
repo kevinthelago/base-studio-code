@@ -30,7 +30,7 @@ import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
 import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "../issues/planIssues";
-import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "../ProjectPane";
+import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "../pane/ProjectPane";
 import { publishFleetRoster } from "../../../lib/fleetRoster";
 import { hubToCanonical } from "../../../lib/plannerSync";
 import { tunnelSetPlanState } from "../../../lib/tunnelClient";
@@ -43,7 +43,7 @@ import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../bluepri
 import { catalogLink, repoNameFromLink, mcpRepoName } from "../../../lib/mcpInstall";
 import { type McpInstallState } from "../shared/mcpPaneData";
 import { EXT_CATALOG } from "../../../data/extensions";
-import { buildProjectPaneData } from "../projectPaneData";
+import { buildProjectPaneData } from "../pane/projectPaneData";
 import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChecks } from "../shared/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,

@@ -6,13 +6,13 @@
 // that maps the real plan store into these shapes); projectPaneData re-exports
 // them for back-compat with existing import sites.
 
-import type { DirectorDrive } from "./fleet/directorDrive";
-import type { IntegrationStrategy } from "./shared/integrationStrategy";
-import type { PlanGrade } from "../../lib/planGrade";
-import type { PlanFeature } from "./issues/featureList";
-import type { Blueprint } from "./stages/blueprints";
-import type { DeployConfig } from "./shared/deployConfig";
-import type { Topology, RelationshipArtifact, AgentRelationship } from "./relationship/relationshipGraph";
+import type { DirectorDrive } from "../fleet/directorDrive";
+import type { IntegrationStrategy } from "../shared/integrationStrategy";
+import type { PlanGrade } from "../../../lib/planGrade";
+import type { PlanFeature } from "../issues/featureList";
+import type { Blueprint } from "../stages/blueprints";
+import type { DeployConfig } from "../shared/deployConfig";
+import type { Topology, RelationshipArtifact, AgentRelationship } from "../relationship/relationshipGraph";
 
 export type { PlanGrade };
 
