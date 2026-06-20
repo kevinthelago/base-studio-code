@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { PlanStageBar } from "../screens/planner/PlanStageBar";
+import { PlanStageBar } from "../screens/planner/pane/PlanStageBar";
 import { makeBlueprints, type BlueprintSection } from "../screens/planner/stages/blueprints";
 import { planStateToSignals } from "../screens/planner/stages/planStageDerive";
 import { buildPlanStageState } from "../screens/planner/stages/planStages";

@@ -3,8 +3,8 @@
 // advance bar. Pure presentational (props in, callbacks out); the phase model + footer
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
 import { Fragment, useState } from "react";
-import { connectorKind, type Phase, type GatePill, type FooterKind } from "./stages/focusedPlan";
-import type { StagePrompt } from "./session/plannerConductor";
+import { connectorKind, type Phase, type GatePill, type FooterKind } from "../stages/focusedPlan";
+import type { StagePrompt } from "../session/plannerConductor";
 
 /** The per-stage prompt helper (#…): the "?" affordance in the focused-pane header. The app no
  *  longer auto-injects prompts; instead this lists every injectable prompt for the stage and the

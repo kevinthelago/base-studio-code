@@ -5,8 +5,8 @@
 // half-clipped "tucked under the divider" look from #508: the 12px pills sit in a 6px
 // clipping strip, so only their top rounded half shows.
 
-import { sectionStatus, type BlueprintSection } from "./stages/blueprints";
-import type { PlanSignals } from "./stages/stageGate";
+import { sectionStatus, type BlueprintSection } from "../stages/blueprints";
+import type { PlanSignals } from "../stages/stageGate";
 
 function fillColor(status: string): string {
   switch (status) {
