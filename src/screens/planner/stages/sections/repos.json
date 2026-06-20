@@ -1,0 +1,17 @@
+{
+  "name": "Repos",
+  "glyph": "⑂",
+  "gate": "≥1 repo linked",
+  "deps": [],
+  "gateRule": {
+    "require": [
+      {
+        "signal": "repoCount",
+        "target": 1,
+        "label": "link at least one repository"
+      }
+    ]
+  },
+  "blurb": "Link the repositories this project spans.",
+  "prompt": "Link the repositories this project spans. For each, record owner/repo, default\nbranch, and its role in the system. Write repos.json.\n\nGate: at least one repository is linked."
+}
