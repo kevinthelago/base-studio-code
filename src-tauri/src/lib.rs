@@ -1402,8 +1402,10 @@ fn git_exclude(repo_root: &std::path::Path, entry: &str) {
 
 /// Shell commands every spawned repo/console session auto-approves regardless of
 /// the user's allowlist — the app's GitHub workflow (triage, publish, repo ops)
-/// depends on them. `gh` is required by triage; `git` by every repo session.
-const MANDATORY_BASH: &[&str] = &["gh", "git"];
+/// depends on them. `gh` is required by triage; `git` by every repo session;
+/// `bsc-plan` is the plan-store CLI (#plan-db) the planner/director/workers use to
+/// read+write issues, so it must never prompt (the planner runs it under autopilot).
+const MANDATORY_BASH: &[&str] = &["gh", "git", "bsc-plan"];
 
 /// Dangerous command patterns denied in every spawned session by default.
 ///
@@ -2470,6 +2472,7 @@ mod tests {
         assert!(allow.contains(&"Bash".to_string()));
         assert!(allow.contains(&"Bash(gh *)".to_string()));
         assert!(allow.contains(&"Bash(git *)".to_string()));
+        assert!(allow.contains(&"Bash(bsc-plan *)".to_string())); // the plan-store CLI (#plan-db)
         assert!(allow.contains(&"Bash(cargo *)".to_string()));
         assert_eq!(allow.iter().filter(|r| *r == "Bash(git *)").count(), 1);
         // Curated dangerous defaults plus the user deny are present.
