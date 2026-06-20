@@ -273,6 +273,26 @@ describe("deleteLocalProject", () => {
     expect(useAppStore.getState().projectsView).toBe("planning");
   });
 
+  it("deleting a PUBLISHED project clears slug-keyed data + the planning session via the alias (#997)", () => {
+    useAppStore.setState({
+      // Per-project maps are keyed by the sanitized slug (effectiveProjectId), NOT the title/node id.
+      planSections: { "my-app": { goal: "x" }, other: { goal: "y" } },
+      projectKeyAlias: { "PVT_id1": "my-app" },
+      activeProjectId: "PVT_id1",        // a published project's active id is the GitHub node id
+      activeProjectName: "My App",
+      planningSessionKey: "my-app",      // the still-mounted Planning pane resolves here
+      projectsView: "planning",
+    });
+    // ProjectsList passes [title, nodeId] — neither equals the slug, so the alias must resolve it.
+    useAppStore.getState().deleteLocalProject(["My App", "PVT_id1"]);
+    const s = useAppStore.getState();
+    expect(s.planSections["my-app"]).toBeUndefined();  // slug-keyed data actually dropped (no leak)
+    expect(s.planSections.other).toBeDefined();        // unrelated project untouched
+    expect(s.activeProjectId).toBeNull();
+    expect(s.planningSessionKey).toBe("");             // the crash fix — Planning stops resolving to it
+    expect(s.projectsView).toBe("list");
+  });
+
   it("dismissProject records the id once (deduped) so syncs stay filtered", () => {
     useAppStore.getState().dismissProject("PVT_x");
     useAppStore.getState().dismissProject("PVT_x"); // dup ignored
