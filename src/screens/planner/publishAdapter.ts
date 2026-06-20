@@ -8,7 +8,7 @@
 // labels → epics → dependencies). Free of React / xterm / Tauri imports.
 
 import { mapConcept, type CapabilityProfile } from "./capabilityMapping";
-import type { ExecutionStrategy } from "./executionTopology";
+import type { ExecutionStrategy } from "./fleet/executionTopology";
 
 export interface PublishInput {
   projectTitle: string;

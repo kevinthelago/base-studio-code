@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Fleet } from "../screens/planner/Fleet";
+import { Fleet } from "../screens/planner/fleet/Fleet";
 import { useAppStore } from "../store";
 import {
   statusForPane, buildLiveWorkers, statusCounts, deriveFleetKpis, tabOfPane,

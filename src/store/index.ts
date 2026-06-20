@@ -21,9 +21,9 @@ import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../lib/checkpoi
 import { computeNextRun, appendRun, suggestionToAutomation, type Automation, type AutomationRun } from "../lib/scheduler";
 import { resolveAllowedCommands } from "../lib/allowedCommands";
 import type { SessionRole } from "../lib/sessionRoles";
-import type { AgentFlow } from "../screens/planner/agentFlow";
-import { normalizeFlow, resolveFlow } from "../screens/planner/agentFlow";
-import { flowKickoffText } from "../screens/planner/flowKickoff";
+import type { AgentFlow } from "../screens/planner/fleet/agentFlow";
+import { normalizeFlow, resolveFlow } from "../screens/planner/fleet/agentFlow";
+import { flowKickoffText } from "../screens/planner/fleet/flowKickoff";
 import { WORKFLOW_PRESETS } from "../lib/workflow";
 import { startRun, currentLaunch, type WorkflowRun } from "../lib/conductor";
 import { generateAgentProfile } from "../lib/profileGen";
@@ -42,7 +42,7 @@ import { seedDataModels, emptyDataModel, type DataModel } from "../screens/plann
 import { canonicalSectionKey } from "../screens/planner/planSections";
 import type { PaneDescriptor } from "../lib/tunnel";
 import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/planner/integrationStrategy";
-import { type DirectorDrive, resolveDirectorDrive } from "../screens/planner/directorDrive";
+import { type DirectorDrive, resolveDirectorDrive } from "../screens/planner/fleet/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
 import { resolveSkills, seedSkills, refreshPackagedSkills, skillFromPayload, type SkillDef } from "../lib/skills";

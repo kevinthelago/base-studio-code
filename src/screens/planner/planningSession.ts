@@ -4,7 +4,7 @@
 // can be unit-tested in isolation and shared with Planning.tsx.
 
 import type { AgentStream } from "./planSections";
-import { flowOrUndefined } from "./agentFlow";
+import { flowOrUndefined } from "./fleet/agentFlow";
 import { type IntegrationStrategy, normalizeStrategy } from "./integrationStrategy";
 
 // Quote-flexible class: straight ("), and curly (“ ”) so an LLM emitting smart

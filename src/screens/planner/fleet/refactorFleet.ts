@@ -6,13 +6,13 @@
 // Pure mapping (refactorUnitsToFleet / buildRemovalKickoff) is testable; startCleanupFleet
 // writes the kickoffs and hands the plan to the store's fleet launch.
 
-import { useAppStore } from "../../store";
-import { writeProjectFile } from "../../lib/projectFiles";
-import { publishFleetRoster } from "../../lib/fleetRoster";
+import { useAppStore } from "../../../store";
+import { writeProjectFile } from "../../../lib/projectFiles";
+import { publishFleetRoster } from "../../../lib/fleetRoster";
 import { type AgentFlow } from "./agentFlow";
-import { type FleetPlan, type AgentStream } from "./planSections";
-import { type RefactorUnit, type RefactorTier, generateRefactorUnits } from "../../lib/refactorUnits";
-import { type VerifiedFinding } from "../../lib/deadcodeVerify";
+import { type FleetPlan, type AgentStream } from "../planSections";
+import { type RefactorUnit, type RefactorTier, generateRefactorUnits } from "../../../lib/refactorUnits";
+import { type VerifiedFinding } from "../../../lib/deadcodeVerify";
 
 /** Flow per risk tier: safe removals open their own PR continuously; risky ones pause at
  *  each PR for human review (the push command isn't auto-approved — a hard gate). */

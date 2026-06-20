@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_FLOW, normalizeFlow, flowOrUndefined, resolveFlow,
   FLOW_AUTONOMY, FLOW_PUSH, FLOW_TRIGGER, FLOW_GATE,
-} from "../screens/planner/agentFlow";
+} from "../screens/planner/fleet/agentFlow";
 import { parseFleetFile } from "../screens/planner/planSections";
 import { parseAgentAssigns } from "../screens/planner/planningSession";
 

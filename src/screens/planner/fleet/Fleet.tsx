@@ -4,14 +4,14 @@
 // the fleet's repos (#415). No fabrication — tokens/spend still need per-session
 // accounting (#416) and show an explicit note.
 import { useMemo, useState } from "react";
-import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar, useTip } from "../../components/charts";
-import { useAppStore } from "../../store";
-import { STATUS } from "../../data/fleet";
-import { useFleetLive } from "../../hooks/useFleetLive";
-import { useFleetGithub, type FleetGithub } from "../../hooks/useFleetGithub";
+import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar, useTip } from "../../../components/charts";
+import { useAppStore } from "../../../store";
+import { STATUS } from "../../../data/fleet";
+import { useFleetLive } from "../../../hooks/useFleetLive";
+import { useFleetGithub, type FleetGithub } from "../../../hooks/useFleetGithub";
 import { WorkerDetail } from "./WorkerDetail";
-import type { LiveWorker } from "../../lib/fleetLive";
-import type { ThroughputSlice } from "../../lib/fleetGithub";
+import type { LiveWorker } from "../../../lib/fleetLive";
+import type { ThroughputSlice } from "../../../lib/fleetGithub";
 
 const GRID = "150px 96px 1fr 70px 22px";
 

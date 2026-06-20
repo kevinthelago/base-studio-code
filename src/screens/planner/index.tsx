@@ -4,7 +4,7 @@ import { ProjectsEmpty } from "./Empty";
 import { ProjectsList } from "./ProjectsList";
 import { Planning } from "./Planning";
 import { ProjectsPageModeStrip } from "./ProjectsSummary";
-import { Fleet } from "./Fleet";
+import { Fleet } from "./fleet/Fleet";
 import { BlueprintsPage } from "./blueprints/BlueprintsPage";
 import { DataModelsPage } from "./DataModelsPage";
 import { useProjectScan } from "./useProjectScan";
