@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFeaturesFile, featureDefined, featuresSummary, featuresGateComplete, featuresAwaitingConfirm } from "./featureList";
+import { parseFeaturesFile, featureDefined, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featureDependencyCycle, type PlanFeature } from "./featureList";
 
 describe("parseFeaturesFile", () => {
   it("returns [] for empty / bad JSON / non-array", () => {
@@ -69,5 +69,24 @@ describe("featuresGateComplete / featuresAwaitingConfirm (#plan-db — the auto-
     expect(featuresAwaitingConfirm({ allConfirmed: false }, false)).toBe(false); // still populating → no offer
     expect(featuresAwaitingConfirm({ allConfirmed: true }, false)).toBe(true);   // all populated → offer confirm
     expect(featuresAwaitingConfirm({ allConfirmed: true }, true)).toBe(false);   // already confirmed → nothing pending
+  });
+});
+
+describe("featureDependencyCycle (#plan-db — the feature DAG)", () => {
+  const f = (slug: string, dependsOn?: string[]): PlanFeature => ({ slug, name: slug, dependsOn });
+  it("returns [] for an acyclic graph (a foundation many depend on)", () => {
+    const feats = [f("kernel"), f("sketcher", ["kernel"]), f("assembly", ["kernel", "sketcher"])];
+    expect(featureDependencyCycle(feats)).toEqual([]);
+  });
+  it("finds a direct cycle", () => {
+    const cyc = featureDependencyCycle([f("a", ["b"]), f("b", ["a"])]);
+    expect(cyc[0]).toBe(cyc[cyc.length - 1]); // closes on itself
+    expect(new Set(cyc)).toEqual(new Set(["a", "b"]));
+  });
+  it("catches a self-dependency", () => {
+    expect(featureDependencyCycle([f("a", ["a"])])).toEqual(["a", "a"]);
+  });
+  it("ignores edges to unknown slugs (dangling dep is not a cycle)", () => {
+    expect(featureDependencyCycle([f("a", ["ghost"])])).toEqual([]);
   });
 });
