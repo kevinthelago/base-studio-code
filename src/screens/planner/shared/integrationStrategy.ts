@@ -1,4 +1,4 @@
-import type { FlowPush } from "./fleet/agentFlow";
+import type { FlowPush } from "../fleet/agentFlow";
 
 /** Fleet integration strategy (#378): a named preset that selects how workers integrate
  *  and how the director behaves. Chosen at the fleet level (project default) and

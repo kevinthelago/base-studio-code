@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
   INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT,
-} from "../screens/planner/fileIntake";
+} from "../screens/planner/shared/fileIntake";
 
 describe("fileIntake — staging directory (#829)", () => {
   it("stages dropped files into a visible project-folder design/ directory", () => {

@@ -6,7 +6,7 @@ import {
   rankRelevant,
   searchNodes,
   type Gap,
-} from "../screens/planner/discoverability";
+} from "../screens/planner/shared/discoverability";
 import type { PlanNode, NodeKind, Maturity } from "../screens/planner/planNode";
 import type { Shape } from "../screens/planner/data/shape";
 

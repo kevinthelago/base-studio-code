@@ -6,7 +6,7 @@ import {
   applyMcpAssign,
   isDownloadableMcp,
   type ExtensionStoreLike,
-} from "../screens/planner/planExtensions";
+} from "../screens/planner/shared/planExtensions";
 import type { ExtensionDef } from "../lib/extensions";
 
 describe("parseMcpAssigns", () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { runCleanupScan } from "../screens/planner/cleanupScan";
+import { runCleanupScan } from "../screens/planner/shared/cleanupScan";
 import { useAppStore } from "../store";
 import { makeBlueprints } from "../screens/planner/blueprints";
 

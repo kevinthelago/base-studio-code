@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildMcpServers } from "../screens/planner/mcpPaneData";
+import { buildMcpServers } from "../screens/planner/shared/mcpPaneData";
 import type { ExtensionDef } from "../lib/extensions";
 import type { FleetPlan } from "../screens/planner/planSections";
 

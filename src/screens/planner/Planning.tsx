@@ -27,7 +27,7 @@ import {
 import { parseFeaturesFile, featuresSummary } from "./issues/featureList";
 import { buildWorkerScope } from "./fleet/workerScope";
 import { resolveIssueAssignee } from "./fleet/fleetAssignee";
-import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "./repoScaffold";
+import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "./shared/repoScaffold";
 import type { FlowAutonomy, FlowPush, FlowGate } from "./fleet/agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks } from "./issues/planIssues";
 import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "./ProjectPane";
@@ -37,14 +37,14 @@ import { tunnelSetPlanState } from "../../lib/tunnelClient";
 import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../lib/projectSync";
 import { effectiveProjectRepos, localReposFor } from "./projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
-import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./planExtensions";
+import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./shared/planExtensions";
 import { applyBlueprintMcp, collectBlueprintMcp } from "./blueprints/blueprintMcp";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "./blueprints/blueprintSkills";
 import { catalogLink, repoNameFromLink, mcpRepoName } from "../../lib/mcpInstall";
-import { type McpInstallState } from "./mcpPaneData";
+import { type McpInstallState } from "./shared/mcpPaneData";
 import { EXT_CATALOG } from "../../data/extensions";
 import { buildProjectPaneData } from "./projectPaneData";
-import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChecks } from "./deployConfig";
+import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChecks } from "./shared/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.

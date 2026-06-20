@@ -5,11 +5,11 @@
 // Verification needs a model: with an API key the candidates are agent-judged; without
 // one they stay "uncertain" (never auto-confirmed) so nothing is wrongly marked removable.
 
-import { useAppStore } from "../../store";
-import { oneShotComplete } from "../../lib/claudeComplete";
-import { scanDeadCode, DEAD_CODE_SCANNERS, type DeadCodeFinding } from "../../lib/deadcode";
-import { verifyFindings, findingsToGrade, type VerifiedFinding } from "../../lib/deadcodeVerify";
-import { type GradeResult } from "./grading/grading";
+import { useAppStore } from "../../../store";
+import { oneShotComplete } from "../../../lib/claudeComplete";
+import { scanDeadCode, DEAD_CODE_SCANNERS, type DeadCodeFinding } from "../../../lib/deadcode";
+import { verifyFindings, findingsToGrade, type VerifiedFinding } from "../../../lib/deadcodeVerify";
+import { type GradeResult } from "../grading/grading";
 
 export interface CleanupScanArgs {
   projectKey: string;

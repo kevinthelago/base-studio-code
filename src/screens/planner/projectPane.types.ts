@@ -7,11 +7,11 @@
 // them for back-compat with existing import sites.
 
 import type { DirectorDrive } from "./fleet/directorDrive";
-import type { IntegrationStrategy } from "./integrationStrategy";
+import type { IntegrationStrategy } from "./shared/integrationStrategy";
 import type { PlanGrade } from "../../lib/planGrade";
 import type { PlanFeature } from "./issues/featureList";
 import type { Blueprint } from "./blueprints";
-import type { DeployConfig } from "./deployConfig";
+import type { DeployConfig } from "./shared/deployConfig";
 import type { Topology, RelationshipArtifact, AgentRelationship } from "./relationship/relationshipGraph";
 
 export type { PlanGrade };
