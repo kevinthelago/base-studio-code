@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFeaturesFile, featureDefined, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featureDependencyCycle, type PlanFeature } from "./featureList";
+import { parseFeaturesFile, featureDefined, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "./featureList";
 
 describe("parseFeaturesFile", () => {
   it("returns [] for empty / bad JSON / non-array", () => {
@@ -79,6 +79,19 @@ describe("featuresGateComplete / featuresAwaitingConfirm (#plan-db — the auto-
     expect(featuresAwaitingConfirm({ allConfirmed: false }, false)).toBe(false); // still populating → no offer
     expect(featuresAwaitingConfirm({ allConfirmed: true }, false)).toBe(true);   // all populated → offer confirm
     expect(featuresAwaitingConfirm({ allConfirmed: true }, true)).toBe(false);   // already confirmed → nothing pending
+  });
+});
+
+describe("featuresToPlanIssues (#plan-db — publish generates issues from features)", () => {
+  it("maps one issue per feature: slug→ref, phase/acceptance/dependsOn carry over, prose→body", () => {
+    const issues = featuresToPlanIssues([
+      { slug: "kernel", name: "Geometry kernel", phase: 1, behavior: "evaluate solids", acceptance: ["booleans work"], approach: "BREP", tools: ["opencascade"], dependsOn: [] },
+      { slug: "sketcher", name: "Sketcher", phase: 2, dependsOn: ["kernel"] },
+    ]);
+    expect(issues[0]).toMatchObject({ ref: "kernel", title: "Geometry kernel", phase: 1, acceptance: ["booleans work"], stream: "kernel" });
+    expect(issues[0].body).toContain("evaluate solids");
+    expect(issues[0].body).toContain("## Approach");
+    expect(issues[1]).toMatchObject({ ref: "sketcher", dependsOn: ["kernel"] }); // feature edge → issue dep
   });
 });
 

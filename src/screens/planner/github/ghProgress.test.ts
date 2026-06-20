@@ -16,9 +16,11 @@ const PHASES_JSON = JSON.stringify([
   { name: "Phase 2 - Core",       description: "features" },
 ]);
 
-const ISSUES_JSON = JSON.stringify([
-  { ref: "F1", title: "Add login endpoint",   phase: 1, acceptance: [], owns: [], dependsOn: [], labels: [] },
-  { ref: "F2", title: "Wire status command",  phase: 1, acceptance: [], owns: [], dependsOn: [], labels: [] },
+// Issues are generated from features now (#plan-db) — the structure card reads the features section.
+// slug → issue ref (issue:<repo>:<slug>), name → title.
+const FEATURES_JSON = JSON.stringify([
+  { slug: "F1", name: "Add login endpoint",   phase: 1, acceptance: [] },
+  { slug: "F2", name: "Wire status command",  phase: 1, acceptance: [] },
 ]);
 
 const iss = (over: Partial<IssueState>): IssueState => ({
@@ -30,7 +32,7 @@ const ms = (title: string, open: number, closed: number): MilestoneState => ({ t
 describe("buildProgressOverlay", () => {
   it("sets done=true on a closed issue node matched by title", () => {
     const structure = buildGhStructure(
-      [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],
+      [sec("phases", PHASES_JSON), sec("features", FEATURES_JSON)],
       ["acme/api"], "P",
     );
     const overlay = buildProgressOverlay(
@@ -47,7 +49,7 @@ describe("buildProgressOverlay", () => {
 
   it("matches titles case-insensitively and trims whitespace", () => {
     const structure = buildGhStructure(
-      [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],
+      [sec("phases", PHASES_JSON), sec("features", FEATURES_JSON)],
       ["acme/api"], "P",
     );
     const overlay = buildProgressOverlay(
@@ -117,7 +119,7 @@ describe("buildProgressOverlay", () => {
 
   it("rolls matched issue nodes up to the repo and project nodes", () => {
     const structure = buildGhStructure(
-      [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],
+      [sec("phases", PHASES_JSON), sec("features", FEATURES_JSON)],
       ["acme/api"], "P",
     );
     const overlay = buildProgressOverlay(
@@ -132,32 +134,29 @@ describe("buildProgressOverlay", () => {
     expect(overlay.project).toEqual({ closed: 1, total: 2 });
   });
 
-  it("aggregates the project rollup across multiple repos", () => {
-    const issuesApi = [
-      { ref: "A1", title: "API one", phase: 1, acceptance: [], owns: [], dependsOn: [], labels: [], repo: "acme/api" },
-    ];
-    const issuesWeb = [
-      { ref: "W1", title: "Web one", phase: 1, acceptance: [], owns: [], dependsOn: [], labels: [], repo: "acme/web" },
-      { ref: "W2", title: "Web two", phase: 1, acceptance: [], owns: [], dependsOn: [], labels: [], repo: "acme/web" },
-    ];
-    const allIssues = JSON.stringify([...issuesApi, ...issuesWeb]);
+  it("rolls feature-issues up to the project node (they land in the default repo, #plan-db)", () => {
+    // Features carry no repo, so every feature-issue routes to the default (first) repo; the project
+    // rollup is the sum across repos regardless.
+    const features = JSON.stringify([
+      { slug: "A1", name: "API one", phase: 1 },
+      { slug: "W1", name: "Web one", phase: 1 },
+      { slug: "W2", name: "Web two", phase: 1 },
+    ]);
     const structure = buildGhStructure(
-      [sec("phases", PHASES_JSON), sec("issues", allIssues)],
+      [sec("phases", PHASES_JSON), sec("features", features)],
       ["acme/api", "acme/web"], "P",
     );
     const overlay = buildProgressOverlay(
       structure,
-      {
-        "acme/api": [iss({ title: "API one", state: "closed" })],
-        "acme/web": [
-          iss({ title: "Web one", state: "closed" }),
-          iss({ title: "Web two", state: "open" }),
-        ],
-      },
+      { "acme/api": [
+        iss({ title: "API one", state: "closed" }),
+        iss({ title: "Web one", state: "closed" }),
+        iss({ title: "Web two", state: "open" }),
+      ] },
       {},
     );
-    expect(overlay["repo:acme/api"]).toEqual({ closed: 1, total: 1 });
-    expect(overlay["repo:acme/web"]).toEqual({ closed: 1, total: 2 });
+    expect(overlay["repo:acme/api"]).toEqual({ closed: 2, total: 3 });
+    expect(overlay["repo:acme/web"]).toBeUndefined();
     expect(overlay.project).toEqual({ closed: 2, total: 3 });
   });
 
@@ -168,7 +167,7 @@ describe("buildProgressOverlay", () => {
 
   it("matches an issue node by NUMBER via the links map even when no title matches", () => {
     const structure = buildGhStructure(
-      [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],
+      [sec("phases", PHASES_JSON), sec("features", FEATURES_JSON)],
       ["acme/api"], "P",
     );
     // The plan title drifted: GitHub issue #7's title no longer equals the node label.
@@ -189,7 +188,7 @@ describe("buildProgressOverlay", () => {
 
   it("number-matched nodes roll up into the repo and project counts", () => {
     const structure = buildGhStructure(
-      [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],
+      [sec("phases", PHASES_JSON), sec("features", FEATURES_JSON)],
       ["acme/api"], "P",
     );
     const overlay = buildProgressOverlay(
@@ -211,7 +210,7 @@ describe("buildProgressOverlay", () => {
 
   it("falls back to title match when a link points at a missing issue number", () => {
     const structure = buildGhStructure(
-      [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],
+      [sec("phases", PHASES_JSON), sec("features", FEATURES_JSON)],
       ["acme/api"], "P",
     );
     const overlay = buildProgressOverlay(
@@ -228,7 +227,7 @@ describe("buildProgressOverlay", () => {
 
   it("ignores GitHub issues with no matching structure node", () => {
     const structure = buildGhStructure(
-      [sec("phases", PHASES_JSON), sec("issues", ISSUES_JSON)],
+      [sec("phases", PHASES_JSON), sec("features", FEATURES_JSON)],
       ["acme/api"], "P",
     );
     const overlay = buildProgressOverlay(

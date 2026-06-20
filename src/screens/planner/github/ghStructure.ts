@@ -3,7 +3,7 @@
 // Kept free of React / xterm / Tauri imports so the derivation logic can be unit
 // tested in isolation and shared between Planning.tsx and its tests.
 
-import { parseIssuesFile } from "../issues/planIssues";
+import { parseFeaturesFile, featuresToPlanIssues } from "../issues/featureList";
 import type { FleetPlan } from "../stages/planSections";
 
 // The planner is dynamic: Claude documents whatever topics a project warrants,
@@ -79,7 +79,9 @@ export function buildGhStructure(
   fleet?: FleetPlan,
 ): GhStructure {
   const phases = parsePhases(sections.find(s => s.k === "phases")?.content ?? "");
-  const planIssues = parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "");
+  // Issues are generated from the features (one per feature) — issues aren't authored during
+  // planning (#plan-db). The card shows the same nodes publish will create.
+  const planIssues = featuresToPlanIssues(parseFeaturesFile(sections.find(s => s.k === "features")?.content ?? ""));
   return {
     project:    { id: "project", label: projectTitle },
     milestones: phases.map((ph, i) => ({ id: `ms:${i}`, label: ph.name })),
