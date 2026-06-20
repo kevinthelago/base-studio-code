@@ -282,144 +282,30 @@ export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
   return merged;
 }
 
+/** The JSON shape of a built-in blueprint definition (stages/blueprints/*.json): blueprint
+ *  metadata + an ordered list of section KEYS (chaining to stages/sections/*.json). The keys
+ *  resolve to full section instances via mkSection at load — no blueprint data lives in TS. */
+export interface BlueprintDef extends Omit<Blueprint, "sections"> {
+  /** Display order within the built-in library. */
+  order?: number;
+  /** Ordered section refs: a key into SECTION_DEFS + an optional per-blueprint `optional` flag. */
+  sections: { key: string; optional?: boolean }[];
+}
+
+// The built-in blueprints live as one JSON file per blueprint under ./blueprints/ — each is just
+// metadata + an ordered list of section keys that chain into ./sections/*.json (resolved below).
+const blueprintModules = import.meta.glob<{ default: BlueprintDef }>("./blueprints/*.json", { eager: true });
+
+/** The built-in blueprint library, assembled from the per-blueprint JSON definitions: ordered by
+ *  each def`s `order`, with its section keys resolved into section instances via mkSection. */
 export function makeBlueprints(): Blueprint[] {
-  return [
-    {
-      id: "default", name: "Default", desc: "Balanced starting point", origin: "built-in", category: "greenfield", mode: "create",
-      sections: [
-        mkSection("context"),
-        mkSection("repos"),
-        // Deploy right after repos (#919): decide how each service ships before shaping the rest.
-        mkSection("deploy"),
-        // Optional migration source step (#pp-section): skippable for projects with no migration
-        // component; never blocks the rest of the plan. Signals read from datamodel.json.
-        mkSection("source",      { optional: true }),
-        // Features before UI (#825): design the screens from the defined capabilities + author the Claude Design kickoff.
-        mkSection("features"),
-        mkSection("ui",          { optional: true }),
-        mkSection("structure"),
-        mkSection("permissions"),
-        mkSection("mcp",         { optional: true }),
-        mkSection("automations", { optional: true }),
-        mkSection("skills",      { optional: true }),
-      ],
-    },
-    {
-      id: "mcp-server", name: "MCP server", desc: "Headless Model Context Protocol server — tools/resources, no UI",
-      origin: "built-in", icon: "⚇", category: "greenfield", mode: "create",
-      sections: [
-        mkSection("context"), mkSection("repos"),
-        // No UI stage: an MCP server is headless (tools/resources over stdio/HTTP), so the plan
-        // goes straight from features to structure (#825).
-        mkSection("features"),
-        mkSection("structure"),
-        mkSection("testing"), mkSection("permissions"),
-        mkSection("automations"), mkSection("skills"),
-      ],
-    },
-    {
-      id: "refactor", name: "Refactor & Cleanup", desc: "Clean up an existing codebase — find dead/legacy code & refactor",
-      origin: "built-in", icon: "♻", h: 25, category: "transform", mode: "operate",
-      sections: [
-        mkSection("context"),
-        mkSection("repos"),
-        mkSection("cleanup"),
-        mkSection("testing"),
-        // No `structure` stage: a refactor pass tracks work as cleanup/refactor units that
-        // drive the fleet directly — it doesn't need a GitHub issues.json (#666).
-        mkSection("permissions"),
-      ],
-    },
-    // ── transform blueprints (#645 slice 2): operate on existing repos ──
-    {
-      id: "split-services", name: "Split into microservices", desc: "Carve a monolith into services along its seams",
-      origin: "built-in", icon: "⧉", h: 230, category: "transform", mode: "operate",
-      sections: [
-        mkSection("context"),
-        mkSection("repos"),
-        mkSection("boundaries"),
-        mkSection("extraction"),
-        mkSection("structure"),
-        mkSection("permissions"),
-      ],
-    },
-    {
-      id: "combine-services", name: "Combine microservices", desc: "Merge services back into fewer (or a monolith)",
-      origin: "built-in", icon: "⧈", h: 260, category: "transform", mode: "operate",
-      sections: [
-        mkSection("context"),
-        mkSection("repos"),
-        mkSection("consolidation"),
-        mkSection("testing"),
-        mkSection("structure"),
-        mkSection("permissions"),
-      ],
-    },
-    {
-      id: "migrate", name: "Migrate stack", desc: "Move framework / language / protocol with an incremental cutover",
-      origin: "built-in", icon: "⇄", h: 195, category: "transform", mode: "operate",
-      sections: [
-        mkSection("context"),
-        mkSection("repos"),
-        mkSection("migration"),
-        mkSection("testing"),
-        mkSection("structure"),
-        mkSection("permissions"),
-      ],
-    },
-    {
-      id: "harden", name: "Harden security", desc: "Threat-model, audit, and fix security gaps in place",
-      origin: "built-in", icon: "⛨", h: 25, category: "harden", mode: "operate",
-      sections: [
-        mkSection("context"),
-        mkSection("repos"),
-        mkSection("hardening"),
-        mkSection("testing"),
-        mkSection("structure"),
-        mkSection("permissions"),
-      ],
-    },
-    // ── data blueprints (#782/#783): acquire data into a canonical Data Model ──
-    {
-      id: "data-migration", name: "Data migration", desc: "Move data from an existing system into a canonical Data Model",
-      origin: "built-in", icon: "⇲", h: 280, category: "data", mode: "operate",
-      sections: [
-        mkSection("context"),
-        mkSection("dataSource"),
-        mkSection("dataModel"),
-        mkSection("dataMap"),
-        mkSection("dataClean"),
-        mkSection("dataLoad"),
-      ],
-    },
-    {
-      id: "data-collection", name: "Data collection", desc: "Scrape the web or fetch datasets into a canonical Data Model",
-      origin: "built-in", icon: "⇱", h: 300, category: "data", mode: "create",
-      sections: [
-        mkSection("context"),
-        mkSection("collectTargets"),
-        mkSection("dataModel"),
-        mkSection("sourceLicensing"),
-        mkSection("dataAcquire"),
-        mkSection("dataExtract"),
-        mkSection("dataClean"),
-        mkSection("dataLoad"),
-      ],
-    },
-    // ── meta: author a reusable blueprint, publish to a gist (#923) ──
-    {
-      id: AUTHORING_BLUEPRINT_ID, name: "Blueprint Author",
-      desc: "Design a reusable blueprint and publish it to a gist",
-      origin: "built-in", icon: "⎙", h: 160, category: "greenfield", mode: "create",
-      deliverable: "blueprint",
-      sections: [
-        mkSection("purpose"),
-        mkSection("bp_stages"),
-        mkSection("bp_capabilities", { optional: true }),
-        mkSection("bp_review"),
-      ],
-    },
-  ];
+  return Object.values(blueprintModules)
+    .map((m) => m.default)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map(({ order: _order, sections, ...meta }) => ({
+      ...meta,
+      sections: sections.map((s) => mkSection(s.key, { optional: s.optional })),
+    }));
 }
 
 export interface SectionStatus { locked: boolean; unmet: string[]; satisfied: boolean }

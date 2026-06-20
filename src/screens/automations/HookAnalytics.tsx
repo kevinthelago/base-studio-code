@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
-import { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "../../lib/hookTelemetry";
+import { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "../../lib/session/hookTelemetry";
 
 // Hook Analytics tab (#865 PR 2) — KPI cards + 3 charts over the hook-fire telemetry
 // (~/.base-studio-code/hooks.log via read_hook_log + hookTelemetry.ts). Charts are hand-rolled
@@ -22,7 +22,7 @@ function Kpi({ label, value, sub, color }: { label: string; value: React.ReactNo
 }
 
 export function HookAnalyticsTab() {
-  const enabledHooks = useAppStore(s => s.extensions.filter(e => e.kind === "hook" && e.enabled));
+  const enabledHooks = useAppStore(s => s.hooks.filter(e => e.enabled));
   const activeHooks = enabledHooks.length;
   const preCount = enabledHooks.filter(h => h.event === "PreToolUse").length;
 

@@ -5,7 +5,7 @@
 // One DeployConfig per project (store slice `planDeployConfig`). The Deploy pane edits it; the
 // `deploymentDefined` gate signal (planStageDerive) is `deployChecks(config).every(ok)`.
 
-import { repoShortName } from "../../../lib/projectPaths";
+import { repoShortName } from "../../../lib/core/projectPaths";
 
 /** Workload kind a service deploys as. */
 export type Workload = "static" | "serverless" | "container" | "service";

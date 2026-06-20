@@ -1,26 +1,28 @@
-// Pure mapping from the extensions store → the planning page's MCP pane view-model (#878).
-// Joins each MCP ExtensionDef scoped to a project with its catalog metadata (description,
-// transport, first-party/official, download link) and an optional install-state map, so the
-// pane is a dumb view. No React/Tauri — unit-tested.
+// Pure mapping from the MCP-servers store → the planning page's MCP pane view-model (#878).
+// Joins each MCP server scoped to a project with its catalog metadata (description, transport,
+// first-party/official, download link) and an optional install-state map, so the pane is a
+// dumb view. No React/Tauri — unit-tested.
+//
+// `McpServerDef` is the stored data model (lib/mcpServers); `McpServer` is the pane view-model.
 
-import type { ExtensionDef } from "../../../lib/extensions";
-import { EXT_CATALOG } from "../../../data/extensions";
-import { catalogLink } from "../../../lib/mcpInstall";
+import type { McpServer as McpServerDef } from "../../../lib/session/mcpServers";
+import { MCP_CATALOG } from "../../../data/mcpCatalog";
+import { catalogLink } from "../../../lib/session/mcpInstall";
 import type { McpServer } from "../pane/projectPane.types";
 import type { FleetPlan } from "../stages/planSections";
 
 /** Per-server install lifecycle the pane tracks (seeded by a disk probe, advanced by the
- *  download/build buttons). Keyed by extension id. */
+ *  download/build buttons). Keyed by server id. */
 export type McpInstallState = Record<string, McpServer["status"]>;
 
-/** An MCP extension applies to a project when it's global (`projects: []`) or scoped to it. */
-function appliesToProject(e: ExtensionDef, projectKey: string): boolean {
-  return e.kind === "mcp" && (e.projects.length === 0 || e.projects.includes(projectKey));
+/** An MCP server applies to a project when it's global (`projects: []`) or scoped to it. */
+function appliesToProject(e: McpServerDef, projectKey: string): boolean {
+  return e.projects.length === 0 || e.projects.includes(projectKey);
 }
 
 /** The catalog entry for a server name (description / official flag), if any. */
 function catalogMeta(name: string): { desc: string; official: boolean } {
-  const c = EXT_CATALOG.find((x) => x.name === name);
+  const c = MCP_CATALOG.find((x) => x.name === name);
   return {
     desc: c?.desc ?? "",
     // "official" = built by the MCP org; first-party (kevinthelago) servers are NOT official.
@@ -29,13 +31,13 @@ function catalogMeta(name: string): { desc: string; official: boolean } {
 }
 
 /** The launch command line shown in the pane: `command args` for stdio, the URL for http. */
-function commandLine(e: ExtensionDef): string {
+function commandLine(e: McpServerDef): string {
   if (e.transport === "http") return e.url ?? "";
   return [e.command, e.args].filter(Boolean).join(" ").trim();
 }
 
 /**
- * Build the MCP pane view-model for a project: every MCP extension that applies to it,
+ * Build the MCP pane view-model for a project: every MCP server that applies to it,
  * joined with catalog metadata, fleet reach, and install state.
  *
  * A project-scoped enabled server reaches the whole fleet (director + every worker) via the
@@ -44,7 +46,7 @@ function commandLine(e: ExtensionDef): string {
  * "available" until probed/built); a remote/built-in server is always "ready".
  */
 export function buildMcpServers(
-  extensions: ExtensionDef[],
+  servers: McpServerDef[],
   projectKey: string,
   fleet: FleetPlan | undefined,
   installState: McpInstallState = {},
@@ -53,7 +55,7 @@ export function buildMcpServers(
   const directorOn = fleet?.director.enabled ?? false;
   const agents = directorOn ? ["director", ...fleetAgents] : fleetAgents;
 
-  return extensions
+  return servers
     .filter((e) => appliesToProject(e, projectKey))
     .map((e) => {
       const { desc, official } = catalogMeta(e.name);

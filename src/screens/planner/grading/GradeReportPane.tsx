@@ -11,7 +11,7 @@ import { runSectionGrade } from "./gradeDispatch";
 import { runSectionGradeLLM } from "./gradeLLM";
 import type { GradeResult, Severity } from "./grading";
 import type { PipelineScreenProps } from "./pipelineScreens";
-import { letterColor, gradeColor } from "../../../lib/planGrade";
+import { letterColor, gradeColor } from "../../../lib/planner/planGrade";
 
 const EMPTY: GradeResult[] = [];
 

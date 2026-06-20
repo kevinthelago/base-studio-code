@@ -5,9 +5,9 @@
 // mobile. It is a pure function (no IO, no store imports) so it's unit-testable and can run
 // on every store tick without side-effects.
 
-import type { CoordState, Waiter, WaitingSession, AskingSession } from "../../../lib/coordination";
-import { refKey } from "../../../lib/coordination";
-import type { FleetSession } from "../../../lib/tunnelClient";
+import type { CoordState, Waiter, WaitingSession, AskingSession } from "../../../lib/fleet/coordination";
+import { refKey } from "../../../lib/fleet/coordination";
+import type { FleetSession } from "../../../lib/tunnel/tunnelClient";
 
 /** Build the wire `FleetSession` for one dep-blocked waiter. */
 function fromWaiter(w: Waiter, now: number): FleetSession {

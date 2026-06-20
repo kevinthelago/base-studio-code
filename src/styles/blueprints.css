@@ -8,9 +8,6 @@
    block is dropped — we render icons as inline SVG (blueprintIcons.tsx). Keyframes are
    global (can't be nested). */
 
-@keyframes bp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
-@keyframes bp-fadeUp { from { transform: translateY(6px); } to { transform: none; } }
-@keyframes bp-slideIn { from { transform: translateX(26px); } to { transform: none; } }
 @keyframes bp-popIn { from { transform: translateY(7px) scale(.99); } to { transform: none; } }
 @keyframes bp-flash {
   0% { box-shadow: 0 0 0 0 transparent; }
@@ -266,41 +263,13 @@
   .chip-sug:hover { border-color: var(--accent-dim); color: var(--fg); }
   .chip-sug:disabled { opacity: .5; cursor: not-allowed; }
 
-  /* diff lines (sync + assistant proposals) */
+  /* diff lines (sync proposals) */
   .diff-line { display: flex; align-items: center; gap: 9px; padding: 7px 11px; border-radius: var(--r-sm); font-family: var(--mono); font-size: 11px; margin-bottom: 4px; }
   .diff-line .dmark { width: 14px; text-align: center; font-weight: 700; }
   .diff-line.add { background: color-mix(in oklch, var(--success), transparent 90%); color: var(--success); }
   .diff-line.del { background: color-mix(in oklch, var(--danger), transparent 90%); color: var(--danger); }
   .diff-line.mod { background: color-mix(in oklch, var(--info), transparent 90%); color: var(--info); }
   .diff-line .dtitle { color: var(--fg); }
-
-  /* ── assistant drawer ── */
-  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 420px; max-width: 92vw; background: var(--bg-panel); border-left: 1px solid var(--border); box-shadow: -16px 0 50px rgba(0,0,0,.5); z-index: 55; display: flex; flex-direction: column; animation: bp-slideIn .22s cubic-bezier(.2,.8,.2,1) both; }
-  .drawer-head { display: flex; align-items: center; gap: 10px; padding: 15px 18px; border-bottom: 1px solid var(--border-soft); flex: 0 0 auto; }
-  .drawer-head .da { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), oklch(0.62 0.14 40)); display: flex; align-items: center; justify-content: center; color: #1a120a; font-family: var(--mono); font-weight: 700; font-size: 13px; }
-  .drawer-head h2 { margin: 0; font-family: var(--mono); font-size: 13px; font-weight: 600; }
-  .drawer-head .dsub { font-size: 10px; color: var(--fg-dim); }
-  .drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
-  .drawer-foot { flex: 0 0 auto; border-top: 1px solid var(--border-soft); padding: 12px 14px; }
-
-  .msg { display: flex; flex-direction: column; gap: 6px; animation: bp-fadeUp .25s ease both; }
-  .msg .who { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-dim); }
-  .msg .bub { font-size: 11.5px; line-height: 1.6; color: var(--fg-muted); }
-  .msg.me .bub { background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: var(--r-md); padding: 9px 11px; color: var(--fg); }
-  .msg.ai .who { color: var(--accent); }
-
-  .proposal { border: 1px solid var(--accent-dim); border-radius: var(--r-md); background: color-mix(in oklch, var(--accent), transparent 93%); padding: 11px 12px; }
-  .proposal .ptitle { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-bottom: 8px; display: flex; align-items: center; gap: 7px; }
-  .proposal .pchanges { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
-  .proposal .pacts { display: flex; gap: 7px; }
-
-  .composer { display: flex; gap: 8px; align-items: flex-end; }
-  .composer textarea { flex: 1; resize: none; height: 56px; }
-
-  .typing { display: inline-flex; gap: 3px; align-items: center; }
-  .typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: bp-pulse 1s ease-in-out infinite; }
-  .typing i:nth-child(2) { animation-delay: .15s; }
-  .typing i:nth-child(3) { animation-delay: .3s; }
 
   /* context menu popover */
   .menu button { width: 100%; padding: 7px 11px; border: 0; background: transparent; color: var(--fg-muted); font-family: var(--mono); font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 9px; text-align: left; border-radius: var(--r-sm); }

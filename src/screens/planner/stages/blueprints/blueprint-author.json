@@ -1,0 +1,27 @@
+{
+  "order": 9,
+  "id": "blueprint-author",
+  "name": "Blueprint Author",
+  "desc": "Design a reusable blueprint and publish it to a gist",
+  "origin": "built-in",
+  "icon": "⎙",
+  "h": 160,
+  "category": "greenfield",
+  "mode": "create",
+  "deliverable": "blueprint",
+  "sections": [
+    {
+      "key": "purpose"
+    },
+    {
+      "key": "bp_stages"
+    },
+    {
+      "key": "bp_capabilities",
+      "optional": true
+    },
+    {
+      "key": "bp_review"
+    }
+  ]
+}

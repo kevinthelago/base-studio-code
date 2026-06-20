@@ -1,0 +1,210 @@
+import { describe, it, expect } from "vitest";
+import { parseIssuesFile, validateIssues, renderIssueBody, resolvePhaseIndex, phaseTagMatches, issueTree, subIssueLinks, type PlanIssue } from "./planIssues";
+
+const issue = (p: Partial<PlanIssue>): PlanIssue => ({
+  ref: "F1", title: "Do the thing", acceptance: [], owns: [], dependsOn: [], labels: [], ...p,
+});
+
+describe("parseIssuesFile", () => {
+  it("parses an array of issues, filling array fields and accepting phase as number or name", () => {
+    const raw = JSON.stringify([
+      { ref: "F1", title: "Add endpoint", phase: 1, acceptance: ["returns 200"], owns: ["src/api/**"], dependsOn: [], labels: ["scope:core"] },
+      { ref: "F2", title: "Wire UI", phase: "Phase 2", depends_on: ["F1"], stream: "ui" },
+    ]);
+    const out = parseIssuesFile(raw);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ ref: "F1", phase: 1, acceptance: ["returns 200"], owns: ["src/api/**"], labels: ["scope:core"] });
+    expect(out[1]).toMatchObject({ ref: "F2", phase: "Phase 2", dependsOn: ["F1"], stream: "ui" });
+  });
+
+  it("accepts a { issues: [...] } wrapper and an id alias for ref", () => {
+    expect(parseIssuesFile(JSON.stringify({ issues: [{ id: "X", title: "t" }] }))[0].ref).toBe("X");
+  });
+
+  it("parses the parent ref for sub-issues (#…)", () => {
+    const out = parseIssuesFile(JSON.stringify([
+      { ref: "invite", title: "Invite teammates" },
+      { ref: "invite-form", title: "Invite form UI", parent: "invite" },
+    ]));
+    expect(out[0].parent).toBeUndefined();
+    expect(out[1].parent).toBe("invite");
+  });
+});
+
+describe("issueTree (feature → sub-issue tree)", () => {
+  it("nests sub-issues under their parent feature, keeping order", () => {
+    const issues: PlanIssue[] = [
+      issue({ ref: "invite", title: "Invite teammates" }),
+      issue({ ref: "invite-api", title: "Invite API", parent: "invite" }),
+      issue({ ref: "invite-ui", title: "Invite UI", parent: "invite" }),
+      issue({ ref: "export", title: "Export" }),
+    ];
+    const tree = issueTree(issues);
+    expect(tree.map((n) => n.issue.ref)).toEqual(["invite", "export"]);
+    expect(tree[0].children.map((c) => c.ref)).toEqual(["invite-api", "invite-ui"]);
+    expect(tree[1].children).toEqual([]);
+  });
+
+  it("treats an orphan parent (or self-parent) as a root, never dropping it", () => {
+    const issues: PlanIssue[] = [
+      issue({ ref: "a", title: "A", parent: "missing" }),
+      issue({ ref: "b", title: "B", parent: "b" }),
+    ];
+    expect(issueTree(issues).map((n) => n.issue.ref)).toEqual(["a", "b"]);
+  });
+});
+
+describe("subIssueLinks (publish — GitHub sub-issue node-id pairs)", () => {
+  const issues: PlanIssue[] = [
+    issue({ ref: "invite", title: "Invite teammates" }),
+    issue({ ref: "invite-api", title: "Invite API", parent: "invite" }),
+    issue({ ref: "invite-ui", title: "Invite UI", parent: "invite" }),
+    issue({ ref: "orphan", title: "Orphan", parent: "invite" }), // parent resolves, child unresolved below
+  ];
+  it("returns parent→child node-id pairs only when both ends resolve", () => {
+    const nodes = { invite: "N_invite", "invite-api": "N_api", "invite-ui": "N_ui" };
+    const links = subIssueLinks(issues, nodes);
+    expect(links).toEqual([
+      { parent: "N_invite", child: "N_api" },
+      { parent: "N_invite", child: "N_ui" },
+    ]); // "orphan" dropped: no node id for it
+  });
+  it("skips when the parent node id is unknown", () => {
+    expect(subIssueLinks(issues, { "invite-api": "N_api" })).toEqual([]);
+  });
+
+  it("drops entries missing ref or title, and tolerates bad JSON", () => {
+    expect(parseIssuesFile("not json")).toEqual([]);
+    expect(parseIssuesFile(JSON.stringify([{ title: "no ref" }, { ref: "ok", title: "y" }]))).toHaveLength(1);
+  });
+});
+
+describe("validateIssues", () => {
+  it("ok for a clean set", () => {
+    const v = validateIssues([issue({ ref: "A", acceptance: ["x"] }), issue({ ref: "B", dependsOn: ["A"], acceptance: ["y"] })], ["Phase 1"]);
+    expect(v.ok).toBe(true);
+  });
+
+  it("flags duplicate refs", () => {
+    const v = validateIssues([issue({ ref: "A" }), issue({ ref: "A" })]);
+    expect(v.ok).toBe(false);
+    expect(v.duplicateRefs).toEqual(["A"]);
+  });
+
+  it("flags a dangling dependency", () => {
+    const v = validateIssues([issue({ ref: "A", dependsOn: ["ghost"] })]);
+    expect(v.danglingDependencies).toEqual([{ ref: "A", dependsOn: "ghost" }]);
+    expect(v.ok).toBe(false);
+  });
+
+  it("flags an unknown phase (number out of range or unmatched name) when phases are known", () => {
+    const v = validateIssues([issue({ ref: "A", phase: 5 }), issue({ ref: "B", phase: "Nope" })], ["Phase 1", "Phase 2"]);
+    expect(v.unknownPhases.map((u) => u.ref).sort()).toEqual(["A", "B"]);
+  });
+
+  it("accepts an in-range number and a matching (case-insensitive) phase name", () => {
+    const v = validateIssues([issue({ ref: "A", phase: 2, acceptance: ["x"] }), issue({ ref: "B", phase: "phase 1", acceptance: ["y"] })], ["Phase 1", "Phase 2"]);
+    expect(v.unknownPhases).toEqual([]);
+    expect(v.ok).toBe(true);
+  });
+
+  it("surfaces missing acceptance as a warning without failing validation", () => {
+    const v = validateIssues([issue({ ref: "A" })]);
+    expect(v.missingAcceptance).toEqual(["A"]);
+    expect(v.ok).toBe(true); // not agent-ready, but structurally valid
+  });
+});
+
+describe("renderIssueBody", () => {
+  it("renders acceptance as a checklist plus owns + deps", () => {
+    const md = renderIssueBody(issue({ acceptance: ["returns 200", "has a test"], owns: ["src/api/**"], dependsOn: ["F0"], body: "context here" }));
+    expect(md).toMatch(/context here/);
+    expect(md).toMatch(/## Acceptance criteria\n- \[ \] returns 200\n- \[ \] has a test/);
+    expect(md).toMatch(/## Owns\n- `src\/api\/\*\*`/);
+    expect(md).toMatch(/## Depends on\n- F0/);
+  });
+
+  it("omits empty sections", () => {
+    const md = renderIssueBody(issue({}));
+    expect(md).not.toMatch(/Acceptance criteria/);
+    expect(md).toMatch(/Auto-generated by the base-studio-code planner/);
+  });
+});
+
+describe("resolvePhaseIndex", () => {
+  const names = ["Phase 1", "Phase 2", "Phase 3"];
+  it("maps a 1-based number to a 0-based index", () => {
+    expect(resolvePhaseIndex(1, names)).toBe(0);
+    expect(resolvePhaseIndex(3, names)).toBe(2);
+  });
+  it("matches a phase name case-insensitively", () => {
+    expect(resolvePhaseIndex("Phase 2", names)).toBe(1);
+    expect(resolvePhaseIndex("phase 3", names)).toBe(2);
+  });
+  it("returns undefined for absent / out-of-range / unknown", () => {
+    expect(resolvePhaseIndex(undefined, names)).toBeUndefined();
+    expect(resolvePhaseIndex(9, names)).toBeUndefined();
+    expect(resolvePhaseIndex("Nope", names)).toBeUndefined();
+  });
+  it("prefix-matches a short tag against a longer phase name (#550)", () => {
+    const withSuffix = ["0.9.7 - Finish line: everything we can land now", "1.0.0 - GA"];
+    // "0.9.7" is a prefix of the first phase name → resolves to index 0
+    expect(resolvePhaseIndex("0.9.7", withSuffix)).toBe(0);
+    // "1.0" prefix matches the second
+    expect(resolvePhaseIndex("1.0", withSuffix)).toBe(1);
+    // exact match still takes precedence — "0.9.7 - Finish line: everything we can land now" exact
+    expect(resolvePhaseIndex("0.9.7 - Finish line: everything we can land now", withSuffix)).toBe(0);
+    // ambiguous prefix picks first match
+    const ambiguous = ["0.9 - Alpha", "0.9.7 - Beta"];
+    expect(resolvePhaseIndex("0.9", ambiguous)).toBe(0);
+  });
+});
+
+describe("phaseTagMatches (#550)", () => {
+  it("exact match", () => {
+    expect(phaseTagMatches("Phase 1", "Phase 1")).toBe(true);
+  });
+  it("case-insensitive match", () => {
+    expect(phaseTagMatches("Phase 1", "phase 1")).toBe(true);
+  });
+  it("version-prefix with space separator", () => {
+    expect(phaseTagMatches("0.9.7 - Finish line: everything", "0.9.7")).toBe(true);
+  });
+  it("does not match a partial prefix without a space boundary", () => {
+    expect(phaseTagMatches("0.9.71 - Other phase", "0.9.7")).toBe(false);
+    expect(phaseTagMatches("0.9.70 - Third", "0.9.7")).toBe(false);
+  });
+  it("does not match an unrelated name", () => {
+    expect(phaseTagMatches("1.0.0 - Release", "0.9.7")).toBe(false);
+  });
+});
+
+describe("resolvePhaseIndex - version-prefix matching (#550)", () => {
+  it("resolves a version-prefix tag to the single matching phase", () => {
+    const names = ["0.9.7 - Finish line: everything", "1.0.0 - GA"];
+    expect(resolvePhaseIndex("0.9.7", names)).toBe(0);
+    expect(resolvePhaseIndex("1.0.0", names)).toBe(1);
+  });
+  it("returns undefined when two phases share the prefix (ambiguous)", () => {
+    const names = ["0.9.7 - Phase A", "0.9.7 - Phase B"];
+    expect(resolvePhaseIndex("0.9.7", names)).toBeUndefined();
+  });
+  it("returns undefined when no phase matches", () => {
+    expect(resolvePhaseIndex("999", ["0.9.7 - Finish"])).toBeUndefined();
+  });
+});
+
+describe("validateIssues + resolvePhaseIndex parity (#550)", () => {
+  it("validate accepts what resolve resolves (version-prefix)", () => {
+    const phases = ["0.9.7 - Finish line"];
+    const v = validateIssues([issue({ ref: "A", phase: "0.9.7", acceptance: ["x"] })], phases);
+    expect(v.unknownPhases).toEqual([]);
+    expect(resolvePhaseIndex("0.9.7", phases)).toBe(0);
+  });
+  it("validate rejects what resolve returns undefined for (ambiguous prefix)", () => {
+    const phases = ["0.9.7 - Phase A", "0.9.7 - Phase B"];
+    const v = validateIssues([issue({ ref: "A", phase: "0.9.7", acceptance: ["x"] })], phases);
+    expect(v.unknownPhases).toHaveLength(1);
+    expect(resolvePhaseIndex("0.9.7", phases)).toBeUndefined();
+  });
+});

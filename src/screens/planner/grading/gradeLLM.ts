@@ -5,7 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../../store";
-import { letterFromScore } from "../../../lib/planGrade";
+import { letterFromScore } from "../../../lib/planner/planGrade";
 import { rubricForSection, type GradeResult, type GradeDimension, type GradeFinding, type Severity, type Rubric } from "./grading";
 
 export const GRADE_LLM_ID = "grade-llm";

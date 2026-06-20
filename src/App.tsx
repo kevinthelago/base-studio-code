@@ -11,14 +11,14 @@ import { useAppStore } from "./store";
 import { useHotkeys } from "./hooks/useHotkeys";
 import { useScheduler } from "./hooks/useScheduler";
 import { useTunnelSync } from "./hooks/useTunnelSync";
-import { startPerfMonitor, recordStoreWrite } from "./lib/perf";
-import { log } from "./lib/log";
+import { startPerfMonitor, recordStoreWrite } from "./lib/core/perf";
+import { log } from "./lib/core/log";
 import { ConsoleScreen } from "./screens/Console";
 import { KnowledgeStoreScreen } from "./screens/KnowledgeStore";
 import { GitHubScreen } from "./screens/github";
 import { AutomationsScreen } from "./screens/automations";
 import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
-import { ExtensionsScreen } from "./screens/extensions";
+import { McpScreen } from "./screens/mcp";
 import { SettingsScreen } from "./screens/settings";
 import { ProjectsScreen } from "./screens/planner";
 import { SkillsScreen } from "./screens/skills";
@@ -26,8 +26,8 @@ import { AgentsScreen } from "./screens/agents";
 import { SkillsStatus } from "./screens/skills/SkillsStatus";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
-import { openDetachedTab, detachedTabId, detachedSection } from "./lib/detachWindow";
-import { accentVars } from "./lib/appearance";
+import { openDetachedTab, detachedTabId, detachedSection } from "./lib/console/detachWindow";
+import { accentVars } from "./lib/settings/appearance";
 
 // ── New-tab dialog ────────────────────────────────────────────────────────────
 
@@ -135,7 +135,7 @@ function renderDetachedSection(page: string, section: string): React.ReactNode {
   switch (page) {
     case "automations": return <AutomationsScreen sectionOverride={section} />;
     case "skills":      return <SkillsScreen sectionOverride={section} />;
-    case "extensions":  return <ExtensionsScreen kind="mcp" sectionOverride={section} />;
+    case "mcp":         return <McpScreen sectionOverride={section} />;
     case "agents":      return <AgentsScreen sectionOverride={section} />;
     case "github":      return <GitHubScreen sectionOverride={section} />;
     case "projects":    return <ProjectsScreen sectionOverride={section} />;
@@ -235,7 +235,7 @@ export default function App() {
         parts.push("Automations");
         parts.push(automationsTab);
         break;
-      case "extensions":
+      case "mcp":
         parts.push("MCP");
         break;
       case "projects":
@@ -421,7 +421,7 @@ export default function App() {
           </div>
           {activeScreen === "github"     && <GitHubScreen />}
           {activeScreen === "automation" && <AutomationsScreen />}
-          {activeScreen === "extensions" && <ExtensionsScreen kind="mcp" />}
+          {activeScreen === "mcp" && <McpScreen />}
           {activeScreen === "skills"     && <SkillsScreen />}
           {activeScreen === "agents"     && <AgentsScreen />}
           {activeScreen === "settings"   && <SettingsScreen />}

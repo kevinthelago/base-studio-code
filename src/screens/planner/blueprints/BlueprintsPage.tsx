@@ -1,28 +1,26 @@
 // The new Blueprints page (#609 wiring slice) — assembles the library / catalog /
-// editor views + the editor header, gist modals, assistant drawer, context menu, and
-// toasts into one page, wired to the store (blueprint CRUD + setBlueprintSections) and
-// the real gist client (publish / install). Replaces the old BlueprintsTab.
+// editor views + the editor header, gist modals, context menu, and toasts into one page,
+// wired to the store (blueprint CRUD + setBlueprintSections) and the real gist client
+// (publish / install). Replaces the old BlueprintsTab.
 
 import { useEffect, useMemo, useState } from "react";
 import "../../../styles/blueprints.css";
 import { useAppStore } from "../../../store";
 import { tint, hue, DEFAULT_GIST_SOURCE } from "./blueprintCatalog";
 import { uid, type Blueprint, type BlueprintSection, type BlueprintGist } from "../stages/blueprints";
-import { sanitizeProjectKey } from "../../../lib/projectPaths";
+import { sanitizeProjectKey } from "../../../lib/core/projectPaths";
 import { LibraryView, type CardMenuAction } from "./BlueprintLibrary";
 import { CatalogView } from "./BlueprintCatalogView";
 import { BlueprintEditorView } from "./BlueprintEditor";
 import { buildSkillLibrary } from "./blueprintSkills";
 import { buildMcpLibrary } from "./blueprintMcp";
-import { blankSkill } from "../../../lib/skills";
-import { BlueprintAssistant } from "./BlueprintAssistant";
 import {
   PublishModal, ImportModal, NewBlueprintModal, HistoryModal, SyncModal,
   type PreviewBlueprint, type PublishResult, type Revision,
 } from "./BlueprintModals";
 import { blueprintToManifest, manifestToBlueprint, bundledSkillsFromManifest } from "./blueprintShare";
 import { resolveBlueprintSkillPayloads } from "./blueprintSkills";
-import { publishGist, updateGist, installFromGist, gistRevisions, installFromGistRevision, gistIdFromUrl } from "../../../lib/extensions/gist";
+import { publishGist, updateGist, installFromGist, gistRevisions, installFromGistRevision, gistIdFromUrl } from "../../../lib/planner/gist/gist";
 import { diffBlueprints, type DiffLine } from "./blueprintDiff";
 
 const freshSections = (sections: BlueprintSection[]): BlueprintSection[] =>
@@ -37,10 +35,10 @@ type Modal =
 interface MenuState { x: number; y: number; bp: Blueprint; header?: boolean }
 interface Toast { id: string; text: string; accent?: boolean }
 
-function EditorHeader({ bp, active, onBack, onRename, onRedesc, onUse, onPublish, onAssistant, onMenu }: {
+function EditorHeader({ bp, active, onBack, onRename, onRedesc, onUse, onPublish, onMenu }: {
   bp: Blueprint; active: boolean; onBack: () => void;
   onRename: (v: string) => void; onRedesc: (v: string) => void;
-  onUse: () => void; onPublish: () => void; onAssistant: () => void; onMenu: (e: React.MouseEvent) => void;
+  onUse: () => void; onPublish: () => void; onMenu: (e: React.MouseEvent) => void;
 }) {
   const g: BlueprintGist = bp.gist ?? { state: "local" };
   // Once a gist exists (any non-local state), the action UPDATES it in place rather than publishing
@@ -60,7 +58,6 @@ function EditorHeader({ bp, active, onBack, onRename, onRedesc, onUse, onPublish
       </div>
       <div className="ed-acts">
         <span className={chipCls} title="Gist status"><i />{chipLabel}</span>
-        <button className="btn ghost sm" onClick={onAssistant}><span>✦</span> Design with Claude</button>
         {/* Publish-to-gist demoted to a side action; Use is the main CTA (#662). */}
         <button className="btn ghost sm" onClick={onPublish}>{publishLabel}</button>
         <button
@@ -88,17 +85,15 @@ export function BlueprintsPage() {
   const importBlueprintStore = useAppStore((s) => s.importBlueprint);
   const skillDefs = useAppStore((s) => s.skills);
   const kbBlocks = useAppStore((s) => s.kbBlocks);
-  const addSkill = useAppStore((s) => s.addSkill);
   const skillLibrary = useMemo(() => buildSkillLibrary(skillDefs, kbBlocks), [skillDefs, kbBlocks]);
-  const extensions = useAppStore((s) => s.extensions);
-  const mcpLibrary = useMemo(() => buildMcpLibrary(extensions), [extensions]);
+  const mcpServers = useAppStore((s) => s.mcpServers);
+  const mcpLibrary = useMemo(() => buildMcpLibrary(mcpServers), [mcpServers]);
   const installBundledSkills = useAppStore((s) => s.installBundledSkills);
 
   const [view, setView] = useState<View>("library");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selStage, setSelStage] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
-  const [drawer, setDrawer] = useState<{ draftName?: string } | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -318,7 +313,7 @@ export function BlueprintsPage() {
             onRename={(v) => updateBlueprintMeta(active.id, { name: v })}
             onRedesc={(v) => updateBlueprintMeta(active.id, { desc: v })}
             onUse={() => selectBlueprint(active.id)}
-            onPublish={() => setModal({ type: "publish" })} onAssistant={() => setDrawer({})} onMenu={headerMenu} />
+            onPublish={() => setModal({ type: "publish" })} onMenu={headerMenu} />
           <BlueprintEditorView sections={active.sections} selectedUid={selStage} onSelect={setSelStage} onChange={onSectionsChange} skillLibrary={skillLibrary} mcpLibrary={mcpLibrary} />
         </>
       ) : view === "catalog" ? (
@@ -343,14 +338,6 @@ export function BlueprintsPage() {
       {modal?.type === "publish" && active && <PublishModal bp={active} onClose={() => setModal(null)} onPublish={doPublish} onPublished={onPublished} />}
       {modal?.type === "history" && <HistoryModal bp={modal.bp} revs={modal.revs} onClose={() => setModal(null)} onRestore={(r) => void restoreRev(modal.bp, r)} />}
       {modal?.type === "sync" && <SyncModal bp={modal.bp} diff={modal.diff} onClose={() => setModal(null)} onPull={() => pullUpstream(modal.bp, modal.upstream)} />}
-
-      {/* assistant drawer */}
-      {drawer && active && (
-        <BlueprintAssistant sections={active.sections} name={active.name} draftName={drawer.draftName}
-          onApply={onSectionsChange} library={skillLibrary}
-          onCreateSkill={(skName, content) => addSkill({ ...blankSkill(), name: skName, desc: content.split("\n")[0].slice(0, 80), prompt: content })}
-          onClose={() => setDrawer(null)} onToast={(t) => toast(t, true)} />
-      )}
 
       {/* context menu */}
       {menu && (

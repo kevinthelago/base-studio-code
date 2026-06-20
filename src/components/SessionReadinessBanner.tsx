@@ -5,7 +5,7 @@
 // own install/action link. The user can dismiss the whole banner once they've
 // acknowledged it.
 
-import type { ReadinessCheck } from "../lib/diagnostics";
+import type { ReadinessCheck } from "../lib/core/diagnostics";
 
 interface SessionReadinessBannerProps {
   warnings: ReadinessCheck[];

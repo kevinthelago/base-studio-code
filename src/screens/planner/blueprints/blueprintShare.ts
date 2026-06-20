@@ -1,10 +1,10 @@
 // Blueprint ⇄ extension-manifest bridge (#598). Wraps a blueprint in the generic
 // envelope for export/share, and tolerantly reconstructs a blueprint from an imported
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
-// Pure; pairs with lib/extensions/manifest.ts.
+// Pure; pairs with lib/gist/manifest.ts.
 
 import { type Blueprint, type BlueprintSection, uid } from "../stages/blueprints";
-import { wrapExtension, type ExtensionManifest } from "../../../lib/extensions/manifest";
+import { wrapExtension, type ExtensionManifest } from "../../../lib/planner/gist/manifest";
 import { type SkillPayload } from "./blueprintSkills";
 
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);

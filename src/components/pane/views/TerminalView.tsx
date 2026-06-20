@@ -4,25 +4,27 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { log } from "../../../lib/log";
-import { recordPtyData, bumpTerminals } from "../../../lib/perf";
-import { gateClaudeLaunch } from "../../../lib/launchGate";
-import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/terminal";
-import { composeStartupPrompt } from "../../../lib/checkpoint";
-import { composeReferenceContext } from "../../../lib/assignments";
-import { resolveExtensions, toSessionPayloads } from "../../../lib/extensions";
-import { resolveSkills, toSkillCfgs } from "../../../lib/skills";
-import { PendingPtyData } from "../../../lib/pendingPtyData";
-import { resolveInitCmd } from "../../../lib/resumeClaude";
-import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/sessionRoles";
+import { log } from "../../../lib/core/log";
+import { recordPtyData, bumpTerminals } from "../../../lib/core/perf";
+import { gateClaudeLaunch } from "../../../lib/fleet/launchGate";
+import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/console/terminal";
+import { composeStartupPrompt } from "../../../lib/session/checkpoint";
+import { composeReferenceContext } from "../../../lib/session/assignments";
+import { resolveMcpServers } from "../../../lib/session/mcpServers";
+import { resolveHooks } from "../../../lib/session/hooks";
+import { toSessionPayloads } from "../../../lib/session/sessionConfig";
+import { resolveSkills, toSkillCfgs } from "../../../lib/session/skills";
+import { PendingPtyData } from "../../../lib/console/pendingPtyData";
+import { resolveInitCmd } from "../../../lib/console/resumeClaude";
+import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/session/sessionRoles";
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
 import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/planner/fleet/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
-import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus, type SessionVerdict } from "../../../lib/diagnostics";
+import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus, type SessionVerdict } from "../../../lib/core/diagnostics";
 import { SessionReadinessBanner } from "../../SessionReadinessBanner";
 import { SessionFailure } from "../../SessionFailure";
-import { tokenForRepo } from "../../../lib/repoCredentials";
-import { getProvider } from "../../../lib/consoleProviders";
+import { tokenForRepo } from "../../../lib/github/repoCredentials";
+import { getProvider } from "../../../lib/console/providers";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -418,11 +420,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
         const denyToolRules = [...write.deny, ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
         const askToolRules = flowRules.askToolRules;
-        // Extensions (MCP servers + hooks) resolved for this session — pre-resolved
-        // per pane at tab creation; fall back to globals for ad-hoc consoles.
-        const exts = useAppStore.getState().paneExtensions[paneId]
-          ?? resolveExtensions(useAppStore.getState().extensions, "");
-        const { mcp, hooks } = toSessionPayloads(exts);
+        // MCP servers + hooks resolved for this session — pre-resolved per pane at tab
+        // creation; fall back to globals for ad-hoc consoles.
+        const mcpServers = useAppStore.getState().paneMcpServers[paneId]
+          ?? resolveMcpServers(useAppStore.getState().mcpServers, "");
+        const hookDefs = useAppStore.getState().paneHooks[paneId]
+          ?? resolveHooks(useAppStore.getState().hooks, "");
+        const { mcp, hooks } = toSessionPayloads(mcpServers, hookDefs);
         // Skills (reusable capability bundles) resolved for this session — like
         // extensions, pre-resolved per pane at tab creation; fall back to globals
         // for ad-hoc consoles. Written as .claude/skills/<slug>/SKILL.md.

@@ -7,7 +7,7 @@
 // result and the runtime persists it (slice b).
 
 import { type PlanSignals, type StageGate, evalGate } from "../stages/stageGate";
-import { letterFromScore, type Letter } from "../../../lib/planGrade";
+import { letterFromScore, type Letter } from "../../../lib/planner/planGrade";
 
 export type Severity = "info" | "warn" | "error";
 export interface GradeFinding { severity: Severity; message: string; fix?: string }

@@ -8,7 +8,7 @@
 
 import type { DirectorDrive } from "../fleet/directorDrive";
 import type { IntegrationStrategy } from "../shared/integrationStrategy";
-import type { PlanGrade } from "../../../lib/planGrade";
+import type { PlanGrade } from "../../../lib/planner/planGrade";
 import type { PlanFeature } from "../issues/featureList";
 import type { Blueprint } from "../stages/blueprints";
 import type { DeployConfig } from "../shared/deployConfig";

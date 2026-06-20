@@ -5,13 +5,13 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import ReactMarkdown from "react-markdown";
-import { log } from "../lib/log";
+import { log } from "../lib/core/log";
 import { useAppStore } from "../store";
 import {
   scopeToProject, selectDocuments, collectTags, groupByKind,
   DOC_FILTERS, kindLabel,
   type Doc, type DocFilter, type DocKind,
-} from "../lib/documents";
+} from "../lib/session/documents";
 import { useDragResize } from "../hooks/useDragResize";
 
 const KB_PANE_ID = "kb";
