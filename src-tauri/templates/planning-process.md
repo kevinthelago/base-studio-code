@@ -434,9 +434,11 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
   `bsc-plan feature` store (NOT a features.json file). FIRST register the COMPLETE title roster in
   one pass — `bsc-plan feature add "Invite teammates" "Export to CSV" …` (names only) — and agree it
   with the user. THEN fill each in one at a time by slug:
-  `echo '{"slug","behavior","acceptance":[],"approach","tools":[],"data","stream"?}' | bsc-plan feature add`
-  (merges in place — never resend the `name`). One feature per user-facing capability, which is ALSO
-  its fleet **stream** (`stream` defaults to `slug`). The board + gate read the store: a feature is
+  `echo '{"slug","behavior","acceptance":[],"approach","tools":[],"data","dependsOn":[],"stream"?}' | bsc-plan feature add`
+  (merges in place — never resend the `name`). `dependsOn` is the slugs of OTHER features this one
+  builds on — the coarse roadmap **DAG** (keep it acyclic; a cycle holds the gate). A feature may be
+  foundational (others depend on it), not just a user-facing capability. Each feature is ALSO its
+  fleet **stream** (`stream` defaults to `slug`). The board + gate read the store: a feature is
   "defined" once it has `name` + `behavior` + ≥1 `acceptance` (`bsc-plan feature list` shows ✓/·).
   The per-feature `repo__<short>__feat__<slug>.md` sections (below) are the *working notes*; the
   plan store is the durable artifact. When every feature is populated, present the set and let the

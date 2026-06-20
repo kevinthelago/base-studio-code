@@ -295,6 +295,9 @@ fn render_feature(f: &PlanFeature) -> String {
     if let Some(d) = &f.data {
         out.push_str(&format!("  data: {d}\n"));
     }
+    if !f.depends_on.is_empty() {
+        out.push_str(&format!("  depends on: {}\n", f.depends_on.join(", ")));
+    }
     if !f.tools.is_empty() {
         out.push_str(&format!("  tools: {}\n", f.tools.join(", ")));
     }

@@ -6,7 +6,8 @@
 export interface PlanFeature {
   /** Stable slug / stream id (kebab-case). */
   slug: string;
-  /** User-facing capability name ("Invite teammates"). */
+  /** Capability name ("Invite teammates", "Geometry kernel"). Not just user-facing — a feature can
+   *  be foundational (others depend on it). */
   name: string;
   /** What it does + when, in the user's terms. */
   behavior?: string;
@@ -16,7 +17,9 @@ export interface PlanFeature {
   approach?: string;
   /** Specific libraries / services / frameworks. */
   tools?: string[];
-  /** What it stores/reads + which other features it relies on. */
+  /** Feature slugs this feature builds on — the coarse roadmap DAG (#plan-db). Must stay acyclic. */
+  dependsOn?: string[];
+  /** What it stores/reads. */
   data?: string;
   /** The fleet stream that owns it (defaults to the slug — a feature IS a stream). */
   stream?: string;
@@ -57,6 +60,7 @@ export function parseFeaturesFile(raw: string): PlanFeature[] {
       acceptance: strArray(o.acceptance),
       approach: str(o.approach),
       tools: strArray(o.tools),
+      dependsOn: strArray(o.dependsOn ?? o.depends_on),
       data: str(o.data),
       stream: str(o.stream) ?? slug,
     });
@@ -88,4 +92,38 @@ export function featuresGateComplete(summary: { allConfirmed: boolean }, userCon
  *  yet. While features are still being populated, no confirm is offered (the gate stays closed). */
 export function featuresAwaitingConfirm(summary: { allConfirmed: boolean }, userConfirmed: boolean): boolean {
   return summary.allConfirmed && !userConfirmed;
+}
+
+/**
+ * Find a cycle in the feature dependency DAG (#plan-db) — a cycle is a planning deadlock and holds
+ * the Features gate. Returns the slugs on the first cycle found (e.g. `["a","b","a"]`) or `[]` when
+ * acyclic. Edges to unknown slugs are ignored (a dangling dep isn't a cycle). Iterative-style DFS
+ * with a colour map; self-deps (`a → a`) count.
+ */
+export function featureDependencyCycle(features: PlanFeature[]): string[] {
+  const bySlug = new Map(features.map((f) => [f.slug, f]));
+  const color = new Map<string, 1 | 2>(); // 1 = on the current path, 2 = fully explored
+  const path: string[] = [];
+  let found: string[] = [];
+
+  const visit = (slug: string): boolean => {
+    if (color.get(slug) === 2) return false;
+    if (color.get(slug) === 1) {
+      found = path.slice(path.indexOf(slug)).concat(slug); // back-edge → extract the cycle
+      return true;
+    }
+    color.set(slug, 1);
+    path.push(slug);
+    for (const dep of bySlug.get(slug)?.dependsOn ?? []) {
+      if (bySlug.has(dep) && visit(dep)) return true;
+    }
+    path.pop();
+    color.set(slug, 2);
+    return false;
+  };
+
+  for (const f of features) {
+    if (color.get(f.slug) !== 2 && visit(f.slug)) break;
+  }
+  return found;
 }
