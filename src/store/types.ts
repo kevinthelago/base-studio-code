@@ -372,8 +372,8 @@ export interface AppStore {
   recordAutomationRun: (id: string, run: AutomationRun) => void;
 
   // Projects (transient)
-  projectsPageMode: "projects" | "fleet" | "blueprints" | "dataModels";
-  setProjectsPageMode: (v: "projects" | "fleet" | "blueprints" | "dataModels") => void;
+  projectsPageMode: "projects" | "fleet" | "dataModels";
+  setProjectsPageMode: (v: "projects" | "fleet" | "dataModels") => void;
   // The Projects page is list ↔ planning (#499): the board moved to the GitHub
   // page (#498) and the execution tabs were removed.
   projectsView: "list" | "planning";

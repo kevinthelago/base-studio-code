@@ -203,7 +203,6 @@ function useProjectsSummaryData() {
 const PROJECT_MODES: TabItem[] = [
   { id: "projects",   label: "Planner",     hint: "plan a project" },
   { id: "fleet",      label: "Fleet",       hint: "live orchestration" },
-  { id: "blueprints", label: "Blueprints",  hint: "planning presets" },
   { id: "dataModels", label: "Data Models", hint: "canonical schemas" },
 ];
 
