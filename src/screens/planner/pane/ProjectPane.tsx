@@ -1396,18 +1396,16 @@ function FocusedPlanBody({ data }: {
   const artifacts = data?.relationshipArtifacts ?? [];
   const edges = data?.relationships ?? [];
   const topology = (data?.topology ?? "hybrid") as Topology;
-  // Renders for ANY planned fleet (≥1 stream) — `relationships` falls back to dependsOn-
-  // derived edges in projectPaneData, so it shows before the planner authors explicit ones.
-  const hasRel = (data?.agents?.length ?? 0) > 0;
-  const relGraph = useMemo(
-    () => (hasRel
-      ? buildRelationshipGraph(
-          (data?.agents ?? []).map((a) => ({ id: a.id, role: a.role, repo: a.repo, owns: a.owns })),
-          artifacts, edges, topology,
-        )
-      : null),
-    [data?.agents, artifacts, edges, topology, hasRel],
-  );
+  // Renders for ANY planned fleet (≥1 stream) — and, before the fleet is authored, straight from
+  // the FEATURES (a feature IS a stream; #plan-db), so the stream graph shows during the Structure
+  // stage. `relationships` (edges) falls back to dependsOn-derived edges in projectPaneData.
+  const relGraph = useMemo(() => {
+    const nodes = (data?.agents?.length ?? 0) > 0
+      ? (data?.agents ?? []).map((a) => ({ id: a.id, role: a.role, repo: a.repo, owns: a.owns }))
+      : (data?.features ?? []).map((f) => ({ id: f.slug, role: "worker" as const, repo: "", owns: [] }));
+    return nodes.length ? buildRelationshipGraph(nodes, artifacts, edges, topology) : null;
+  }, [data?.agents, data?.features, artifacts, edges, topology]);
+  const hasRel = !!relGraph;
 
   if (phases.length === 0 && !hasRel) {
     return (
