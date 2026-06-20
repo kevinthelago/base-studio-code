@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   isCreateSkillRequest, isAttachSkillRequest, inferSkillKind, authorSkill,
   applyAssistantActions, actionLine, type AssistantAction,
-} from "../screens/planner/blueprintAssistantCore";
-import { mkStageSection } from "../screens/planner/blueprintEdit";
+} from "../screens/planner/blueprints/blueprintAssistantCore";
+import { mkStageSection } from "../screens/planner/blueprints/blueprintEdit";
 
 describe("assistant skill intent (#636 slice c)", () => {
   it("detects create vs attach intent", () => {

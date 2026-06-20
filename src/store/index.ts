@@ -46,7 +46,7 @@ import { type DirectorDrive, resolveDirectorDrive } from "../screens/planner/dir
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";
 import { resolveSkills, seedSkills, refreshPackagedSkills, skillFromPayload, type SkillDef } from "../lib/skills";
-import { type SkillPayload } from "../screens/planner/blueprintSkills";
+import { type SkillPayload } from "../screens/planner/blueprints/blueprintSkills";
 import { invoke } from "@tauri-apps/api/core";
 
 /** Mint a stable tab id (#463). Prefers crypto.randomUUID; falls back for older

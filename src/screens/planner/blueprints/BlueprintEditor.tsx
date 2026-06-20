@@ -6,7 +6,7 @@
 // untouched.
 
 import { useState } from "react";
-import "../../styles/blueprints.css";
+import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import {
   stageKind, tint, hue, DISPOSITIONS, DISPOSITION_KEYS, defaultDisposition,
@@ -19,7 +19,7 @@ import {
 } from "./blueprintEdit";
 import { resolveBlueprintSkills, type BlueprintSkillItem } from "./blueprintSkills";
 import { resolveBlueprintMcp, type McpLibraryItem } from "./blueprintMcp";
-import { type BlueprintSection } from "./blueprints";
+import { type BlueprintSection } from "../blueprints";
 
 export interface EditorRibbon { author?: string; label: string; summary: string }
 

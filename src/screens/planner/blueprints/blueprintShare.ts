@@ -3,8 +3,8 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/extensions/manifest.ts.
 
-import { type Blueprint, type BlueprintSection, uid } from "./blueprints";
-import { wrapExtension, type ExtensionManifest } from "../../lib/extensions/manifest";
+import { type Blueprint, type BlueprintSection, uid } from "../blueprints";
+import { wrapExtension, type ExtensionManifest } from "../../../lib/extensions/manifest";
 import { type SkillPayload } from "./blueprintSkills";
 
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);

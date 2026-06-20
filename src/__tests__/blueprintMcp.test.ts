@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildMcpLibrary, resolveBlueprintMcp, collectBlueprintMcp, applyBlueprintMcp } from "../screens/planner/blueprintMcp";
-import { addMcpServer, removeMcpServer } from "../screens/planner/blueprintEdit";
+import { buildMcpLibrary, resolveBlueprintMcp, collectBlueprintMcp, applyBlueprintMcp } from "../screens/planner/blueprints/blueprintMcp";
+import { addMcpServer, removeMcpServer } from "../screens/planner/blueprints/blueprintEdit";
 import { type ExtensionStoreLike } from "../screens/planner/planExtensions";
 import type { ExtensionDef } from "../lib/extensions";
 import type { Blueprint, BlueprintSection } from "../screens/planner/blueprints";

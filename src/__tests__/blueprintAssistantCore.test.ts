@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { planActions, applyAssistantActions, actionLine, proseFor } from "../screens/planner/blueprintAssistantCore";
-import { mkStageSection } from "../screens/planner/blueprintEdit";
+import { planActions, applyAssistantActions, actionLine, proseFor } from "../screens/planner/blueprints/blueprintAssistantCore";
+import { mkStageSection } from "../screens/planner/blueprints/blueprintEdit";
 
 const base = () => [mkStageSection("context"), mkStageSection("stack")];
 

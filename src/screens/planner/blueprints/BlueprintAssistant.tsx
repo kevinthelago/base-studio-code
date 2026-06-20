@@ -4,18 +4,18 @@
 // the deterministic heuristic; wiring it to the real Claude API is a follow-up.
 
 import { useEffect, useRef, useState } from "react";
-import "../../styles/blueprints.css";
+import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import { tint, hue } from "./blueprintCatalog";
-import { type BlueprintSection } from "./blueprints";
+import { type BlueprintSection } from "../blueprints";
 import {
   planActions, applyAssistantActions, actionLine, proseFor, explainActions, ASSISTANT_SUGGESTIONS,
   isCreateSkillRequest, isAttachSkillRequest, inferSkillKind, authorSkill,
   type AssistantAction,
 } from "./blueprintAssistantCore";
 import { type BlueprintSkillItem } from "./blueprintSkills";
-import { useAppStore } from "../../store";
-import { oneShotComplete } from "../../lib/claudeComplete";
+import { useAppStore } from "../../../store";
+import { oneShotComplete } from "../../../lib/claudeComplete";
 
 interface Msg { who: "me" | "ai"; text: string; actions?: AssistantAction[] | null; applied?: boolean }
 

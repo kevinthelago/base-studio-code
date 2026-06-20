@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { BlueprintsPage } from "../screens/planner/BlueprintsPage";
+import { BlueprintsPage } from "../screens/planner/blueprints/BlueprintsPage";
 import { useAppStore } from "../store";
 import { makeBlueprints, DEFAULT_BLUEPRINT_ID } from "../screens/planner/blueprints";
 

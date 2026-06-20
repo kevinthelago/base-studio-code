@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { BlueprintUpdateModal } from "../screens/planner/BlueprintUpdateModal";
+import { BlueprintUpdateModal } from "../screens/planner/blueprints/BlueprintUpdateModal";
 
 describe("BlueprintUpdateModal (#827)", () => {
   const setup = (over: Partial<Parameters<typeof BlueprintUpdateModal>[0]> = {}) => {

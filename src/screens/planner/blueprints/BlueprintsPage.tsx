@@ -4,17 +4,17 @@
 // the real gist client (publish / install). Replaces the old BlueprintsTab.
 
 import { useEffect, useMemo, useState } from "react";
-import "../../styles/blueprints.css";
-import { useAppStore } from "../../store";
+import "../../../styles/blueprints.css";
+import { useAppStore } from "../../../store";
 import { tint, hue, DEFAULT_GIST_SOURCE } from "./blueprintCatalog";
-import { uid, type Blueprint, type BlueprintSection, type BlueprintGist } from "./blueprints";
-import { sanitizeProjectKey } from "../../lib/projectPaths";
+import { uid, type Blueprint, type BlueprintSection, type BlueprintGist } from "../blueprints";
+import { sanitizeProjectKey } from "../../../lib/projectPaths";
 import { LibraryView, type CardMenuAction } from "./BlueprintLibrary";
 import { CatalogView } from "./BlueprintCatalogView";
 import { BlueprintEditorView } from "./BlueprintEditor";
 import { buildSkillLibrary } from "./blueprintSkills";
 import { buildMcpLibrary } from "./blueprintMcp";
-import { blankSkill } from "../../lib/skills";
+import { blankSkill } from "../../../lib/skills";
 import { BlueprintAssistant } from "./BlueprintAssistant";
 import {
   PublishModal, ImportModal, NewBlueprintModal, HistoryModal, SyncModal,
@@ -22,7 +22,7 @@ import {
 } from "./BlueprintModals";
 import { blueprintToManifest, manifestToBlueprint, bundledSkillsFromManifest } from "./blueprintShare";
 import { resolveBlueprintSkillPayloads } from "./blueprintSkills";
-import { publishGist, updateGist, installFromGist, gistRevisions, installFromGistRevision, gistIdFromUrl } from "../../lib/extensions/gist";
+import { publishGist, updateGist, installFromGist, gistRevisions, installFromGistRevision, gistIdFromUrl } from "../../../lib/extensions/gist";
 import { diffBlueprints, type DiffLine } from "./blueprintDiff";
 
 const freshSections = (sections: BlueprintSection[]): BlueprintSection[] =>

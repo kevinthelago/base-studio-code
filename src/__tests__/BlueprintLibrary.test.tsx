@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { BlueprintLibrary, BlueprintResetModal } from "../screens/planner/blueprints/BlueprintLibrary";
+import { BlueprintLibrary, BlueprintResetModal } from "../screens/planner/blueprints/BlueprintLibraryLegacy";
 import { BUILTIN_ARCHETYPES } from "../screens/planner/shape";
 
 const ARCHETYPE_IDS = Object.keys(BUILTIN_ARCHETYPES);

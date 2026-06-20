@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { authoringChecks } from "../screens/planner/BlueprintAuthorViews";
+import { authoringChecks } from "../screens/planner/blueprints/BlueprintAuthorViews";
 import { mkSection, type Blueprint } from "../screens/planner/blueprints";
 
 describe("authoringChecks (#923 — Review-stage lint)", () => {
