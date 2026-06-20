@@ -64,6 +64,10 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # framework. Pulling this in compiles bundled DuckDB into the desktop build.
 bsc-data = { path = "../crates/data" }
 
+# Per-project plan store (#plan-db) — shared with the `bsc-plan` agent CLI. The Tauri
+# commands below are a thin wrapper over this crate's `Store`.
+plandb = { path = "../crates/plandb" }
+
 # Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any
 # grandchildren) dies with the session on pty_kill / app exit. portable-pty calls
 # `setsid()` in the spawned shell, so the shell leads a process group whose pgid ==

@@ -1,0 +1,21 @@
+[package]
+name = "plandb"
+version = "0.1.0"
+edition = "2021"
+description = "Native per-project plan store (SQLite) for base-studio-code (#plan-db) — shared by the Tauri app and the `bsc-plan` agent CLI."
+
+# The core lib (no Tauri) so a tiny CLI can reuse it without dragging the whole desktop app in.
+[lib]
+name = "plandb"
+
+# The agent-facing CLI: planner writes, workers/director read + drive status. Installed per-session
+# and pointed at the project's plan.db via the BSC_PLAN_DB env var (so it works from a worktree).
+[[bin]]
+name = "bsc-plan"
+path = "src/bin/bsc-plan.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# `bundled` compiles SQLite from source (matches src-tauri) for cross-platform reliability.
+rusqlite = { version = "0.40", features = ["bundled"] }
