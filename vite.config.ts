@@ -19,6 +19,12 @@ export default defineConfig(async () => ({
     ],
   },
   server: {
+    // Bind IPv4 explicitly (#perf). Vite's default "localhost" binds IPv6 (::1) here, but WebView2
+    // navigates to the devUrl trying IPv4 (127.0.0.1) first — each connection then stalls ~2s on
+    // the failed IPv4 attempt before falling back to IPv6. With the boot graph's ~dozen connections
+    // that was ~25s of the cold start. Binding 127.0.0.1 + a matching 127.0.0.1 devUrl keeps it
+    // IPv4 end-to-end, no dual-stack stall.
+    host: "127.0.0.1",
     port: 1420,
     strictPort: true,
     // Pre-transform the boot graph in parallel at server start (#perf) instead of letting the
