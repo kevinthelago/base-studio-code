@@ -9,8 +9,8 @@
 // Pure (no React/Tauri) so the tag parsing + catalog mapping are unit-testable and
 // shared between Planning.tsx and its tests.
 
-import { defFromCatalog, type ExtensionDef } from "../../lib/extensions";
-import { resolveMcpInstallDir, catalogLink } from "../../lib/mcpInstall";
+import { defFromCatalog, type ExtensionDef } from "../../../lib/extensions";
+import { resolveMcpInstallDir, catalogLink } from "../../../lib/mcpInstall";
 
 // Quote-flexible: matches a straight double quote and both curly quotes, so an LLM's
 // smart-quote output doesn't silently break tag detection (mirrors Planning.tsx's Q).

@@ -5,7 +5,7 @@
 
 import type { AgentStream } from "./planSections";
 import { flowOrUndefined } from "./fleet/agentFlow";
-import { type IntegrationStrategy, normalizeStrategy } from "./integrationStrategy";
+import { type IntegrationStrategy, normalizeStrategy } from "./shared/integrationStrategy";
 
 // Quote-flexible class: straight ("), and curly (“ ”) so an LLM emitting smart
 // quotes doesn't silently break tag detection. Mirrors the other planner tags.

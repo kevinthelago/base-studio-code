@@ -37,11 +37,11 @@ import { defaultStageConfig, type StageConfig, type StageId } from "../screens/p
 import type { PipelineRunState } from "../screens/planner/grading/pipelineRuntime";
 import type { GradeResult } from "../screens/planner/grading/grading";
 import { makeBlueprints, refreshBuiltIns, cloneSections, mkSection, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintSection } from "../screens/planner/blueprints";
-import type { DeployConfig } from "../screens/planner/deployConfig";
+import type { DeployConfig } from "../screens/planner/shared/deployConfig";
 import { seedDataModels, emptyDataModel, type DataModel } from "../screens/planner/data/dataModel";
 import { canonicalSectionKey } from "../screens/planner/planSections";
 import type { PaneDescriptor } from "../lib/tunnel";
-import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/planner/integrationStrategy";
+import { type IntegrationStrategy, type DirectorMode, DEFAULT_STRATEGY, strategySettings, resolveStrategy } from "../screens/planner/shared/integrationStrategy";
 import { type DirectorDrive, resolveDirectorDrive } from "../screens/planner/fleet/directorDrive";
 import { worktreeSlug } from "../lib/projectPaths";
 import { resolveExtensions, type ExtensionDef } from "../lib/extensions";

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { defaultDeployConfig, deployChecks, deploymentDefined, coerceDeployConfig, parseDeployConfigTag } from "../screens/planner/deployConfig";
+import { defaultDeployConfig, deployChecks, deploymentDefined, coerceDeployConfig, parseDeployConfigTag } from "../screens/planner/shared/deployConfig";
 import { makeBlueprints } from "../screens/planner/blueprints";
 
 describe("deployConfig (#919)", () => {

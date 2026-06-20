@@ -3,11 +3,11 @@
 // transport, first-party/official, download link) and an optional install-state map, so the
 // pane is a dumb view. No React/Tauri — unit-tested.
 
-import type { ExtensionDef } from "../../lib/extensions";
-import { EXT_CATALOG } from "../../data/extensions";
-import { catalogLink } from "../../lib/mcpInstall";
-import type { McpServer } from "./projectPane.types";
-import type { FleetPlan } from "./planSections";
+import type { ExtensionDef } from "../../../lib/extensions";
+import { EXT_CATALOG } from "../../../data/extensions";
+import { catalogLink } from "../../../lib/mcpInstall";
+import type { McpServer } from "../projectPane.types";
+import type { FleetPlan } from "../planSections";
 
 /** Per-server install lifecycle the pane tracks (seeded by a disk probe, advanced by the
  *  download/build buttons). Keyed by extension id. */

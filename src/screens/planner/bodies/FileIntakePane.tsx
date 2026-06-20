@@ -10,9 +10,9 @@ import { PipelineScreenFrame } from "../grading/PipelineScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
   INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
-} from "../fileIntake";
+} from "../shared/fileIntake";
 import type { PipelineScreenProps } from "../grading/pipelineScreens";
-import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "../dropFiles";
+import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "../shared/dropFiles";
 
 const KIND_COLOR: Record<IntakeKind, string> = {
   image: "var(--violet, oklch(0.72 0.12 300))", vector: "var(--violet, oklch(0.72 0.12 300))",
