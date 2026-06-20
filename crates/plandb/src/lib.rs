@@ -79,6 +79,11 @@ pub struct PlanFeature {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub behavior: Option<String>,
+    /// The roadmap phase this feature is sequenced into (a 1-based number or its name) — assigned in
+    /// the Plan stage; becomes the GitHub milestone at publish. Kept as a raw JSON value so the
+    /// number/string distinction survives (like PlanIssue.phase).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<serde_json::Value>,
     #[serde(default)]
     pub acceptance: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -242,11 +247,12 @@ impl Store {
             .conn
             .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM features", [], |r| r.get(0))?;
         self.conn.execute(
-            "INSERT INTO features (slug, name, behavior, approach, data, stream, acceptance, tools, depends_on, position, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, strftime('%s','now'))
+            "INSERT INTO features (slug, name, behavior, phase, approach, data, stream, acceptance, tools, depends_on, position, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, strftime('%s','now'))
              ON CONFLICT(slug) DO UPDATE SET
                 name       = CASE WHEN excluded.name != ''                          THEN excluded.name       ELSE features.name       END,
                 behavior   = CASE WHEN COALESCE(excluded.behavior, '') != ''         THEN excluded.behavior   ELSE features.behavior   END,
+                phase      = CASE WHEN COALESCE(excluded.phase, '') != ''            THEN excluded.phase      ELSE features.phase      END,
                 approach   = CASE WHEN COALESCE(excluded.approach, '') != ''         THEN excluded.approach   ELSE features.approach   END,
                 data       = CASE WHEN COALESCE(excluded.data, '') != ''             THEN excluded.data       ELSE features.data       END,
                 stream     = CASE WHEN COALESCE(excluded.stream, '') != ''           THEN excluded.stream     ELSE features.stream     END,
@@ -255,7 +261,7 @@ impl Store {
                 depends_on = CASE WHEN excluded.depends_on != '[]'                   THEN excluded.depends_on ELSE features.depends_on END,
                 updated_at = excluded.updated_at",
             params![
-                slug, feature.name, feature.behavior, feature.approach, feature.data,
+                slug, feature.name, feature.behavior, phase_to_db(&feature.phase), feature.approach, feature.data,
                 feature.stream, arr_to_json(&feature.acceptance), arr_to_json(&feature.tools),
                 arr_to_json(&feature.depends_on), pos,
             ],
@@ -324,6 +330,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             slug        TEXT PRIMARY KEY,
             name        TEXT NOT NULL,
             behavior    TEXT,
+            phase       TEXT,
             approach    TEXT,
             data        TEXT,
             stream      TEXT,
@@ -338,6 +345,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // already present — ignored).
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN status TEXT NOT NULL DEFAULT 'open'", []);
     let _ = conn.execute("ALTER TABLE features ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'", []);
+    let _ = conn.execute("ALTER TABLE features ADD COLUMN phase TEXT", []);
     Ok(())
 }
 
@@ -377,19 +385,20 @@ fn row_to_issue(r: &rusqlite::Row) -> rusqlite::Result<PlanIssue> {
 }
 
 const FEATURE_COLS: &str =
-    "SELECT slug, name, behavior, approach, data, stream, acceptance, tools, depends_on FROM features";
+    "SELECT slug, name, behavior, phase, approach, data, stream, acceptance, tools, depends_on FROM features";
 
 fn row_to_feature(r: &rusqlite::Row) -> rusqlite::Result<PlanFeature> {
     Ok(PlanFeature {
         slug: r.get(0)?,
         name: r.get(1)?,
         behavior: r.get(2)?,
-        approach: r.get(3)?,
-        data: r.get(4)?,
-        stream: r.get(5)?,
-        acceptance: json_to_arr(&r.get::<_, String>(6)?),
-        tools: json_to_arr(&r.get::<_, String>(7)?),
-        depends_on: json_to_arr(&r.get::<_, String>(8)?),
+        phase: phase_from_db(r.get::<_, Option<String>>(3)?),
+        approach: r.get(4)?,
+        data: r.get(5)?,
+        stream: r.get(6)?,
+        acceptance: json_to_arr(&r.get::<_, String>(7)?),
+        tools: json_to_arr(&r.get::<_, String>(8)?),
+        depends_on: json_to_arr(&r.get::<_, String>(9)?),
     })
 }
 
@@ -609,5 +618,16 @@ mod tests {
         // A later detail edit that omits depends_on must NOT wipe it.
         s.feature_upsert(&PlanFeature { slug: "sketcher".into(), approach: Some("constraint solver".into()), ..Default::default() }).unwrap();
         assert_eq!(s.feature_get("sketcher").unwrap().unwrap().depends_on, vec!["geometry-kernel"]);
+    }
+
+    #[test]
+    fn feature_phase_round_trips_and_merges() {
+        let s = Store::open_in_memory().unwrap();
+        s.feature_upsert(&feat("Sketcher")).unwrap();
+        // Plan stage assigns the phase (a number); a later edit omitting it must not wipe it.
+        s.feature_upsert(&PlanFeature { slug: "sketcher".into(), phase: Some(serde_json::json!(2)), ..Default::default() }).unwrap();
+        assert_eq!(s.feature_get("sketcher").unwrap().unwrap().phase, Some(serde_json::json!(2)));
+        s.feature_upsert(&PlanFeature { slug: "sketcher".into(), behavior: Some("draw".into()), ..Default::default() }).unwrap();
+        assert_eq!(s.feature_get("sketcher").unwrap().unwrap().phase, Some(serde_json::json!(2)), "phase survives a later edit");
     }
 }
