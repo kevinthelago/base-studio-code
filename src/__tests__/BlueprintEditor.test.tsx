@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { BlueprintEditorView } from "../screens/planner/BlueprintEditor";
-import { mkStageSection } from "../screens/planner/blueprintEdit";
+import { BlueprintEditorView } from "../screens/planner/blueprints/BlueprintEditor";
+import { mkStageSection } from "../screens/planner/blueprints/blueprintEdit";
 import type { BlueprintSection } from "../screens/planner/blueprints";
 
 /** A controlled harness so edits flow through onChange like the real page. */

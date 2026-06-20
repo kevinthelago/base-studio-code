@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { toRevisions, gistRevisions, installFromGistRevision } from "../lib/extensions/gist";
-import { diffBlueprints } from "../screens/planner/blueprintDiff";
-import { mkStageSection } from "../screens/planner/blueprintEdit";
-import { setStageField } from "../screens/planner/blueprintEdit";
+import { diffBlueprints } from "../screens/planner/blueprints/blueprintDiff";
+import { mkStageSection } from "../screens/planner/blueprints/blueprintEdit";
+import { setStageField } from "../screens/planner/blueprints/blueprintEdit";
 import type { Blueprint } from "../screens/planner/blueprints";
 
 const bp = (sections: ReturnType<typeof mkStageSection>[]): Blueprint => ({ id: "b", name: "B", desc: "d", sections });

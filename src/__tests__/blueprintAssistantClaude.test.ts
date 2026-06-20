@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { explainActions, proseFor, type AssistantAction } from "../screens/planner/blueprintAssistantCore";
+import { explainActions, proseFor, type AssistantAction } from "../screens/planner/blueprints/blueprintAssistantCore";
 
 describe("explainActions (#624)", () => {
   const actions: AssistantAction[] = [

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { buildSkillLibrary, resolveBlueprintSkills } from "../screens/planner/blueprintSkills";
-import { addSkill, removeSkill, mkStageSection } from "../screens/planner/blueprintEdit";
-import { BlueprintEditorView } from "../screens/planner/BlueprintEditor";
+import { buildSkillLibrary, resolveBlueprintSkills } from "../screens/planner/blueprints/blueprintSkills";
+import { addSkill, removeSkill, mkStageSection } from "../screens/planner/blueprints/blueprintEdit";
+import { BlueprintEditorView } from "../screens/planner/blueprints/BlueprintEditor";
 import type { SkillDef } from "../lib/skills";
 import type { KbBlock } from "../data/mock";
 import type { BlueprintSection } from "../screens/planner/blueprints";

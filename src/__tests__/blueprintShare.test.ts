@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, bundledSkillsFromManifest } from "../screens/planner/blueprintShare";
-import { resolveBlueprintSkillPayloads, type SkillPayload } from "../screens/planner/blueprintSkills";
+import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, bundledSkillsFromManifest } from "../screens/planner/blueprints/blueprintShare";
+import { resolveBlueprintSkillPayloads, type SkillPayload } from "../screens/planner/blueprints/blueprintSkills";
 import { skillFromPayload } from "../lib/skills";
 import { encodeShareCode, decodeShareCode, wrapExtension } from "../lib/extensions/manifest";
 import { makeBlueprints } from "../screens/planner/blueprints";

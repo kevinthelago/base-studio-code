@@ -1,4 +1,4 @@
-import { Dialog } from "../../components/Dialog";
+import { Dialog } from "../../../components/Dialog";
 
 /**
  * Shown when a project is opened whose blueprint / planner-template version differs from the one

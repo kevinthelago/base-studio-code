@@ -3,11 +3,11 @@
 // page shell can wire them to the real gist client (gist.ts) while these stay testable.
 
 import { useEffect, useState, type ReactNode } from "react";
-import "../../styles/blueprints.css";
+import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import { stageKind, tint, hue } from "./blueprintCatalog";
 import { type DiffLine } from "./blueprintDiff";
-import { type Blueprint, type BlueprintSection } from "./blueprints";
+import { type Blueprint, type BlueprintSection } from "../blueprints";
 import { type SkillPayload } from "./blueprintSkills";
 
 /** A resolved import/preview blueprint (subset enough to preview + import). */

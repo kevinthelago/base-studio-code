@@ -5,7 +5,7 @@
 // <blueprint> tag, so editing and the live session stay in sync. Styling reuses blueprints.css.
 
 import { useState, type CSSProperties } from "react";
-import "../../styles/blueprints.css";
+import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import {
   hue, tint, stageKind, STAGE_KIND_KEYS, DISPOSITIONS, DISPOSITION_KEYS,
@@ -14,7 +14,7 @@ import {
   reorderStages, addStage, deleteStage, toggleDep, setOutput, setStageField,
   addSkill, removeSkill, addMcpServer, removeMcpServer, depCandidates,
 } from "./blueprintEdit";
-import type { Blueprint, BlueprintSection } from "./blueprints";
+import type { Blueprint, BlueprintSection } from "../blueprints";
 import type { BlueprintSkillItem } from "./blueprintSkills";
 import type { McpLibraryItem } from "./blueprintMcp";
 

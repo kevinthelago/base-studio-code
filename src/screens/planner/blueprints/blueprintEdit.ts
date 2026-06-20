@@ -7,7 +7,7 @@
 import {
   type BlueprintSection,
   SECTION_DEFS, mkSection, uid,
-} from "./blueprints";
+} from "../blueprints";
 import { stageKind, defaultDisposition } from "./blueprintCatalog";
 
 /** Build a section for ANY stage kind. Known kinds (in SECTION_DEFS) keep their runtime

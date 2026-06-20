@@ -2,7 +2,7 @@
 // upstream-change list. Compares by section key: a key only upstream is an add, only
 // local is a delete, in both with different prompt/skills/mcp/output is a change. Pure.
 
-import { type Blueprint, type BlueprintSection } from "./blueprints";
+import { type Blueprint, type BlueprintSection } from "../blueprints";
 
 export interface DiffLine { type: "add" | "mod" | "del"; title: string; note: string }
 

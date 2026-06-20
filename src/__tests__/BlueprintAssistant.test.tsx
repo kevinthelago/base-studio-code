@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { BlueprintAssistant } from "../screens/planner/BlueprintAssistant";
-import { mkStageSection } from "../screens/planner/blueprintEdit";
+import { BlueprintAssistant } from "../screens/planner/blueprints/BlueprintAssistant";
+import { mkStageSection } from "../screens/planner/blueprints/blueprintEdit";
 import type { BlueprintSection } from "../screens/planner/blueprints";
 
 function Harness({ onApplied }: { onApplied?: (s: BlueprintSection[]) => void }) {

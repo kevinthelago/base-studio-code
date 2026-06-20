@@ -6,11 +6,11 @@
 // tool list, and the existing applyMcpAssign/{dir} machinery scopes them to the project at
 // launch. Pure (no React/Tauri) so it's unit-testable and shared by the editor + launch path.
 
-import { defFromCatalog, type ExtensionDef } from "../../lib/extensions";
-import { EXT_CATALOG } from "../../data/extensions";
-import { catalogLink } from "../../lib/mcpInstall";
-import { applyMcpAssign, type ExtensionStoreLike } from "./planExtensions";
-import { type Blueprint } from "./blueprints";
+import { defFromCatalog, type ExtensionDef } from "../../../lib/extensions";
+import { EXT_CATALOG } from "../../../data/extensions";
+import { catalogLink } from "../../../lib/mcpInstall";
+import { applyMcpAssign, type ExtensionStoreLike } from "../planExtensions";
+import { type Blueprint } from "../blueprints";
 
 /** One pickable MCP server. `id` is the server NAME (the portable ref stored in a blueprint). */
 export interface McpLibraryItem {

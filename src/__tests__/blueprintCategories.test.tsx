@@ -4,7 +4,7 @@ import {
   blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
   type Blueprint,
 } from "../screens/planner/blueprints";
-import { LibraryView } from "../screens/planner/BlueprintLibrary";
+import { LibraryView } from "../screens/planner/blueprints/BlueprintLibrary";
 
 const bp = (id: string, name: string, over: Partial<Blueprint> = {}): Blueprint =>
   ({ id, name, desc: "", sections: [], ...over });
