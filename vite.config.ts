@@ -21,6 +21,12 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
+    // Pre-transform the boot graph in parallel at server start (#perf) instead of letting the
+    // WebView pull it module-by-module in a serial waterfall on first load. This overlaps with
+    // the native/WebView2 launch, so by the time the page loads the boot modules are cached.
+    warmup: {
+      clientFiles: ["./src/main.tsx", "./src/App.tsx", "./src/store/index.ts", "./src/screens/Console.tsx"],
+    },
     watch: {
       ignored: ["**/src-tauri/**"],
     },
