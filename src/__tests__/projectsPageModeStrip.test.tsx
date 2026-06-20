@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ProjectsPageModeStrip } from "../screens/planner/ProjectsSummary";
+import { ProjectsPageModeStrip } from "../screens/planner/list/ProjectsSummary";
 
 describe("ProjectsPageModeStrip (#548)", () => {
   it("renders the mode tabs", () => {

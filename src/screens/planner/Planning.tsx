@@ -35,7 +35,7 @@ import { publishFleetRoster } from "../../lib/fleetRoster";
 import { hubToCanonical } from "../../lib/plannerSync";
 import { tunnelSetPlanState } from "../../lib/tunnelClient";
 import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../lib/projectSync";
-import { effectiveProjectRepos, localReposFor } from "./projectRepos";
+import { effectiveProjectRepos, localReposFor } from "./list/projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "./planStages";
 import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "./shared/planExtensions";
 import { applyBlueprintMcp, collectBlueprintMcp } from "./blueprints/blueprintMcp";

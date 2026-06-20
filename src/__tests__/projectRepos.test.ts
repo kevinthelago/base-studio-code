@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { effectiveProjectRepos } from "../screens/planner/projectRepos";
+import { effectiveProjectRepos } from "../screens/planner/list/projectRepos";
 
 describe("effectiveProjectRepos (#833)", () => {
   const local = { "my-project": ["acme/api"], "proj-x": ["acme/web", "acme/api"] };

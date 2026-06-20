@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
-import { sanitizeProjectKey, projectRepoCwd } from "../../lib/projectPaths";
-import { TabBar, type TabItem } from "../../components/chrome/TabBar";
-import { usePageTabs } from "../../hooks/usePageTabs";
+import { useAppStore } from "../../../store";
+import { sanitizeProjectKey, projectRepoCwd } from "../../../lib/projectPaths";
+import { TabBar, type TabItem } from "../../../components/chrome/TabBar";
+import { usePageTabs } from "../../../hooks/usePageTabs";
 
 /** Mirror of the Rust sanitize_project_key: ASCII alnum/dash kept, else `_`, capped 80. */
 const sanitizeKey = sanitizeProjectKey;
