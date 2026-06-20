@@ -58,11 +58,11 @@ describe("pipelineCommands — render-preview module", () => {
   it("render-preview registers a command module on import", async () => {
     // Mock the bundler so importing renderPreview's transitive deps is jsdom-safe.
     vi.resetModules();
-    vi.doMock("../screens/planner/previewBundle", () => ({
+    vi.doMock("../screens/planner/preview/previewBundle", () => ({
       bundleSkeleton: vi.fn().mockResolvedValue("BUNDLE_JS"),
       buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
     }));
-    const { RENDER_PREVIEW_ID } = await import("../screens/planner/renderPreview");
+    const { RENDER_PREVIEW_ID } = await import("../screens/planner/preview/renderPreview");
     const { hasPipelineModule: has } = await import("../screens/planner/grading/pipelineCommands");
     expect(has(RENDER_PREVIEW_ID)).toBe(true);
   });

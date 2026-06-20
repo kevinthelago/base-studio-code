@@ -8,10 +8,10 @@
 // writes the result to the store; #533 wires the triggers (tag / watch / manual).
 
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
+import { useAppStore } from "../../../store";
 import { bundleSkeleton, buildPreviewSrcDoc } from "./previewBundle";
-import { type StageContext, type PipelineRunResult } from "./grading/pipelineRuntime";
-import { registerPipeline } from "./grading/pipelineCommands";
+import { type StageContext, type PipelineRunResult } from "../grading/pipelineRuntime";
+import { registerPipeline } from "../grading/pipelineCommands";
 
 export type PreviewMode = "2d" | "3d";
 export interface PreviewOutput { srcDoc: string; mode: PreviewMode; screen?: string }

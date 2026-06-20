@@ -7,7 +7,7 @@
 //                 { __preview_cmd: 'render_gltf',   url?: string, base64?: string }
 //   frame → host: { __preview: 'ready' | 'error' | 'runtime_ready', message?: string }
 
-import { DEFAULT_IMPORTMAP } from '../previewBundle';
+import { DEFAULT_IMPORTMAP } from './previewBundle';
 
 /**
  * Builds the srcdoc for the streaming html/react-bundle iframe. The thin runtime:

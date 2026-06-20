@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseUiPreviewTags, stripUiPreviewTags } from "../screens/planner/uiPreviewTag";
+import { parseUiPreviewTags, stripUiPreviewTags } from "../screens/planner/preview/uiPreviewTag";
 
 describe("uiPreviewTag (#533)", () => {
   it("parses screen + mode (mode defaults to 2d)", () => {

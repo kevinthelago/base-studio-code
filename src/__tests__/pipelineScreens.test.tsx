@@ -2,13 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 
 // pipelineScreens imports PlanPreviewPane → renderPreview → previewBundle, whose
 // esbuild-wasm module load fails under jsdom. Mock it so the registry imports clean.
-vi.mock("../screens/planner/previewBundle", () => ({
+vi.mock("../screens/planner/preview/previewBundle", () => ({
   bundleSkeleton: vi.fn().mockResolvedValue("BUNDLE_JS"),
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
 }));
 
 import { pipelineScreen, hasPipelineScreen, registerPipelineScreen } from "../screens/planner/grading/pipelineScreens";
-import { RENDER_PREVIEW_ID } from "../screens/planner/renderPreview";
+import { RENDER_PREVIEW_ID } from "../screens/planner/preview/renderPreview";
 
 describe("pipelineScreens registry", () => {
   it("render-preview declares a second screen", () => {
