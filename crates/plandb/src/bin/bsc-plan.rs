@@ -17,7 +17,7 @@
 //!   bsc-plan render                   # print the issues.json projection to stdout
 //! Global flags: --db <path>, --json
 
-use plandb::{is_valid_status, PlanFeature, PlanIssue, Store, STATUSES};
+use plandb::{is_valid_status, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -249,6 +249,223 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown repo command '{other}'\n\n{USAGE}")),
             }
         }
+        "phase" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `phase add <name> [description...]` — name first, the rest joined as the description.
+                "add" => {
+                    let name = args.positional.get(2).ok_or("usage: bsc-plan phase add <name> [description]")?;
+                    let desc = args.positional.iter().skip(3).cloned().collect::<Vec<_>>().join(" ");
+                    s.phase_upsert(&PlanPhase { name: name.clone(), description: desc }).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("phase: {name}");
+                    }
+                    Ok(())
+                }
+                "list" => {
+                    let phases = s.phase_list().map_err(|e| e.to_string())?;
+                    if args.json {
+                        println!("{}", serde_json::to_string(&phases).unwrap_or_else(|_| "[]".into()));
+                    } else if phases.is_empty() {
+                        println!("(no phases)");
+                    } else {
+                        for (i, p) in phases.iter().enumerate() {
+                            let d = if p.description.is_empty() { String::new() } else { format!("  — {}", p.description) };
+                            println!("{}. {}{}", i + 1, p.name, d);
+                        }
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let name = args.positional.get(2).ok_or("usage: bsc-plan phase remove <name>")?;
+                    s.phase_remove(name).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("removed {name}");
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown phase command '{other}'\n\n{USAGE}")),
+            }
+        }
+        "fleet" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `fleet set` reads the whole FleetPlan JSON on stdin (streams + meta) and replaces it.
+                "set" => {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+                    let plan: serde_json::Value =
+                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing fleet JSON: {e}"))?;
+                    s.fleet_set(&plan).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        let n = plan.get("streams").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                        println!("fleet set ({n} streams)");
+                    }
+                    Ok(())
+                }
+                "get" | "list" => {
+                    match s.fleet_get().map_err(|e| e.to_string())? {
+                        Some(f) => println!("{}", serde_json::to_string_pretty(&f).unwrap_or_default()),
+                        None => println!("{}", if args.json { "null" } else { "(no fleet)" }),
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let id = args.positional.get(2).ok_or("usage: bsc-plan fleet remove <stream-id>")?;
+                    s.fleet_stream_remove(id).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("removed {id}");
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown fleet command '{other}'\n\n{USAGE}")),
+            }
+        }
+        "deploy" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `deploy set` reads the whole DeployConfig JSON on stdin and replaces it (one blob).
+                "set" => {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+                    let cfg: serde_json::Value =
+                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing deploy JSON: {e}"))?;
+                    s.deploy_set(&cfg).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        let n = cfg.get("services").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                        println!("deploy set ({n} services)");
+                    }
+                    Ok(())
+                }
+                "get" => {
+                    match s.deploy_get().map_err(|e| e.to_string())? {
+                        Some(c) => println!("{}", serde_json::to_string_pretty(&c).unwrap_or_default()),
+                        None => println!("{}", if args.json { "null" } else { "(no deploy config)" }),
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown deploy command '{other}'\n\n{USAGE}")),
+            }
+        }
+        "mcp" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `mcp add <name>...` assigns catalog MCP server(s) to the project (durable in plan.db).
+                "add" => {
+                    let names: Vec<&String> = args.positional.iter().skip(2).collect();
+                    if names.is_empty() {
+                        return Err("usage: bsc-plan mcp add <name>...".into());
+                    }
+                    for n in &names {
+                        s.mcp_add(n).map_err(|e| e.to_string())?;
+                    }
+                    if args.json {
+                        println!("{}", serde_json::to_string(&names).unwrap_or_else(|_| "[]".into()));
+                    } else {
+                        for n in &names {
+                            println!("assigned {n}");
+                        }
+                    }
+                    Ok(())
+                }
+                "list" => {
+                    let mcps = s.mcp_list().map_err(|e| e.to_string())?;
+                    if args.json {
+                        println!("{}", serde_json::to_string(&mcps).unwrap_or_else(|_| "[]".into()));
+                    } else if mcps.is_empty() {
+                        println!("(no assigned MCP servers)");
+                    } else {
+                        for m in &mcps {
+                            println!("{m}");
+                        }
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let name = args.positional.get(2).ok_or("usage: bsc-plan mcp remove <name>")?;
+                    s.mcp_remove(name).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("unassigned {name}");
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown mcp command '{other}'\n\n{USAGE}")),
+            }
+        }
+        "blueprint" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `blueprint set` reads the whole Blueprint JSON on stdin and replaces it (one blob).
+                "set" => {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+                    let bp: serde_json::Value =
+                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing blueprint JSON: {e}"))?;
+                    s.blueprint_set(&bp).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        let n = bp.get("sections").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                        let name = bp.get("name").and_then(|v| v.as_str()).unwrap_or("blueprint");
+                        println!("blueprint set: {name} ({n} sections)");
+                    }
+                    Ok(())
+                }
+                "get" => {
+                    match s.blueprint_get().map_err(|e| e.to_string())? {
+                        Some(b) => println!("{}", serde_json::to_string_pretty(&b).unwrap_or_default()),
+                        None => println!("{}", if args.json { "null" } else { "(no blueprint)" }),
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown blueprint command '{other}'\n\n{USAGE}")),
+            }
+        }
+        "context" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `context require/unrequire <topic>...` shape the DYNAMIC required set as the project
+                // clarifies. Context files gate on GENERATION (the gate checks each required
+                // `context/<topic>.md` exists) — they are not confirmed (#1028).
+                "require" | "unrequire" => {
+                    let topics: Vec<&String> = args.positional.iter().skip(2).collect();
+                    if topics.is_empty() {
+                        return Err(format!("usage: bsc-plan context {sub} <topic>..."));
+                    }
+                    let required = sub == "require";
+                    for t in &topics {
+                        s.context_require(t, required).map_err(|e| e.to_string())?;
+                    }
+                    if args.json {
+                        println!("{}", serde_json::to_string(&topics).unwrap_or_else(|_| "[]".into()));
+                    } else {
+                        let verb = if required { "required" } else { "unrequired" };
+                        for t in &topics {
+                            println!("{verb} {t}");
+                        }
+                    }
+                    Ok(())
+                }
+                "list" => {
+                    let required = s.context_list().map_err(|e| e.to_string())?;
+                    if args.json {
+                        println!("{}", serde_json::to_string(&required).unwrap_or_else(|_| "[]".into()));
+                    } else if required.is_empty() {
+                        println!("(no required context topics)");
+                    } else {
+                        for t in &required {
+                            println!("{t}");
+                        }
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown context command '{other}'\n\n{USAGE}")),
+            }
+        }
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
 }
@@ -433,6 +650,35 @@ REPOS (linked, durable in plan.db):
   repo add <owner/repo>...  link repo(s) to the project
   repo list                 list the linked repos
   repo remove <owner/repo>  unlink a repo
+
+PHASES (the roadmap — features reference a phase by its 1-based order):
+  phase add <name> [desc]   add/merge a roadmap phase (in order)
+  phase list                list phases in order
+  phase remove <name>       delete a phase
+
+FLEET (streams + per-stream permissions/flows + director/topology):
+  fleet set                 replace the fleet from a FleetPlan JSON on stdin
+  fleet get                 print the fleet (FleetPlan JSON)
+  fleet remove <stream-id>  drop one stream
+
+DEPLOY (the Deploy stage's structured config — one blob):
+  deploy set                replace the deploy config from a DeployConfig JSON on stdin
+  deploy get                print the deploy config (DeployConfig JSON)
+
+MCP (catalog servers scoped to the project):
+  mcp add <name>...         assign MCP server(s) by catalog name
+  mcp list                  list the assigned servers
+  mcp remove <name>         unassign a server
+
+BLUEPRINT (the blueprint an authoring project is designing — one blob):
+  blueprint set             replace the blueprint from a Blueprint JSON on stdin
+  blueprint get             print the blueprint (Blueprint JSON)
+
+CONTEXT (the Context stage's DYNAMIC required-set — prose lives in context/<topic>.md files):
+  context require <topic>...    mark topic(s) required for this project
+  context unrequire <topic>...  drop topic(s) from the required set
+  context list                  show the required topic set
+  (context files gate on GENERATION — written, not confirmed)
 
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 ";

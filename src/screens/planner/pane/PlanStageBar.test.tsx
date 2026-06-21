@@ -28,7 +28,7 @@ describe("PlanStageBar", () => {
   });
 
   it("shows the UI section when the project requires a UI", () => {
-    const signals = signalsFrom({ requiresUi: true, context: { resolved: 1, total: 1, coreConfirmed: true } });
+    const signals = signalsFrom({ requiresUi: true, context: { resolved: 1, total: 1, requiredContextReady: true } });
     const { container } = render(<PlanStageBar sections={defaultSections()} signals={signals} />);
     expect(titlesIn(container).some((t) => t.startsWith("UI"))).toBe(true);
   });

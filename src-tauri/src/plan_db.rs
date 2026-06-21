@@ -2,7 +2,7 @@
 // the Tauri-free `plandb` crate (shared with the `bsc-plan` agent CLI); this module only resolves the
 // project key → `projects/<key>/plan.db` and adapts the `Store` API to Tauri commands for the UI.
 
-use plandb::{PlanFeature, PlanIssue, Store, STATUSES};
+use plandb::{PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use std::path::PathBuf;
 
 fn db_path(project_key: &str) -> PathBuf {
@@ -94,5 +94,94 @@ pub fn plan_list_repos(project_key: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn plan_remove_repo(project_key: String, full_name: String) -> Result<(), String> {
     open(&project_key)?.repo_remove(&full_name).map_err(|e| e.to_string())
+}
+
+// ── roadmap phases (#1017) — names/descriptions; the structure card + publish read them from here. ──
+
+#[tauri::command]
+pub fn plan_upsert_phase(project_key: String, phase: PlanPhase) -> Result<(), String> {
+    open(&project_key)?.phase_upsert(&phase).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_list_phases(project_key: String) -> Result<Vec<PlanPhase>, String> {
+    open(&project_key)?.phase_list().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_remove_phase(project_key: String, name: String) -> Result<(), String> {
+    open(&project_key)?.phase_remove(&name).map_err(|e| e.to_string())
+}
+
+// ── fleet + per-stream permissions (#1018) — the whole FleetPlan as meta + per-stream rows. ─────────
+
+#[tauri::command]
+pub fn plan_set_fleet(project_key: String, fleet: serde_json::Value) -> Result<(), String> {
+    open(&project_key)?.fleet_set(&fleet).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_get_fleet(project_key: String) -> Result<Option<serde_json::Value>, String> {
+    open(&project_key)?.fleet_get().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_remove_stream(project_key: String, id: String) -> Result<(), String> {
+    open(&project_key)?.fleet_stream_remove(&id).map_err(|e| e.to_string())
+}
+
+// ── deploy config (#1020) — the Deploy stage's structured config as one blob (the poll coerces it). ──
+
+#[tauri::command]
+pub fn plan_set_deploy(project_key: String, config: serde_json::Value) -> Result<(), String> {
+    open(&project_key)?.deploy_set(&config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_get_deploy(project_key: String) -> Result<Option<serde_json::Value>, String> {
+    open(&project_key)?.deploy_get().map_err(|e| e.to_string())
+}
+
+// ── MCP assignments (#1021) — catalog server names scoped to the project; the poll resolves each. ──
+
+#[tauri::command]
+pub fn plan_add_mcp(project_key: String, name: String) -> Result<(), String> {
+    open(&project_key)?.mcp_add(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_list_mcp(project_key: String) -> Result<Vec<String>, String> {
+    open(&project_key)?.mcp_list().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_remove_mcp(project_key: String, name: String) -> Result<(), String> {
+    open(&project_key)?.mcp_remove(&name).map_err(|e| e.to_string())
+}
+
+// ── authored blueprint (#1022) — the blueprint an authoring project designs, as one blob. ──
+
+#[tauri::command]
+pub fn plan_set_blueprint(project_key: String, blueprint: serde_json::Value) -> Result<(), String> {
+    open(&project_key)?.blueprint_set(&blueprint).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_get_blueprint(project_key: String) -> Result<Option<serde_json::Value>, String> {
+    open(&project_key)?.blueprint_get().map_err(|e| e.to_string())
+}
+
+// ── Context required-set (#1019/#1028) — the dynamic set of topics this project requires. The poll
+//    reads it (`plan_list_context`); the blueprint seed / planner shapes it (`plan_require_context`).
+//    Context files gate on GENERATION (the file exists), not confirmation — there is no confirm. ──
+
+#[tauri::command]
+pub fn plan_list_context(project_key: String) -> Result<Vec<String>, String> {
+    open(&project_key)?.context_list().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_require_context(project_key: String, topic: String, required: bool) -> Result<(), String> {
+    open(&project_key)?.context_require(&topic, required).map_err(|e| e.to_string())
 }
 

@@ -2242,6 +2242,21 @@ pub fn run() {
             plan_db::plan_add_repo,
             plan_db::plan_list_repos,
             plan_db::plan_remove_repo,
+            plan_db::plan_upsert_phase,
+            plan_db::plan_list_phases,
+            plan_db::plan_remove_phase,
+            plan_db::plan_set_fleet,
+            plan_db::plan_get_fleet,
+            plan_db::plan_remove_stream,
+            plan_db::plan_set_deploy,
+            plan_db::plan_get_deploy,
+            plan_db::plan_add_mcp,
+            plan_db::plan_list_mcp,
+            plan_db::plan_remove_mcp,
+            plan_db::plan_set_blueprint,
+            plan_db::plan_get_blueprint,
+            plan_db::plan_list_context,
+            plan_db::plan_require_context,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

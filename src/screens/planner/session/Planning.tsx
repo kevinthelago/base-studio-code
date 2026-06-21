@@ -38,18 +38,18 @@ import { tunnelSetPlanState } from "../../../lib/tunnel/tunnelClient";
 import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../../lib/github/projectSync";
 import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
-import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "../shared/planExtensions";
+import { applyMcpAssign } from "../shared/planExtensions";
 import { applyBlueprintMcp, collectBlueprintMcp } from "../blueprints/blueprintMcp";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { catalogLink, repoNameFromLink, mcpRepoName } from "../../../lib/session/mcpInstall";
 import { type McpInstallState } from "../shared/mcpPaneData";
 import { MCP_CATALOG } from "../../../data/mcpCatalog";
 import { buildProjectPaneData } from "../pane/projectPaneData";
-import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChecks } from "../shared/deployConfig";
+import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag } from "../shared/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
-import { derivePlanStageState, planStateToSignals, stageConfirmKeys } from "../stages/planStageDerive";
+import { derivePlanStageState, planStateToSignals, stageConfirmKeys, CONTEXT_BASELINE } from "../stages/planStageDerive";
 import { findPlanGaps } from "../grading/lintPlan";
 import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
 import { Ic } from "../blueprints/blueprintIcons";
@@ -396,6 +396,17 @@ export function Planning({ visible }: { visible: boolean }) {
   // setup_workspaces, so the planner can read repo contents during planning (triage launch
   // re-clones fail-soft, but that's too late for in-session context). Idempotent on the Rust side.
   const autoCloneRef = useRef<Set<string>>(new Set());
+  // DB poll churn guards (#1020/#1021): the last deploy blob applied per project (skip re-applying an
+  // unchanged config) and the set of `<projId>::<mcp-name>` already resolved into the MCP store (so we
+  // don't re-apply/re-clone every 2s tick). Keyed by project, so a project switch doesn't reset them.
+  const deployAppliedRef = useRef<Record<string, string>>({});
+  const mcpAppliedRef = useRef<Set<string>>(new Set());
+  // Context manifest (#1019): the dynamic required-set + confirm state, polled from plan.db. The gate
+  // (`requiredContextConfirmed`) reads it; the change-guard avoids churning state every tick; the
+  // seeded-set guards the baseline seed so it runs at most once per project per session.
+  const [ctxRequired, setCtxRequired] = useState<string[]>([]);
+  const ctxRequiredJsonRef = useRef<string>("");
+  const ctxSeededRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!effectiveProjectId) return;
     const repos = [...new Set([...effectiveRepos, ...repoLinkFullNames])];
@@ -715,6 +726,7 @@ export function Planning({ visible }: { visible: boolean }) {
       parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "").length + featureIssues.length;
     return derivePlanStageState({
       sections: sections.map(s => ({ k: s.k, state: s.state })),
+      contextRequired: ctxRequired,
       repoCount: publishRepos.length,
       issueCount,
       fleetStreams: streams.length,
@@ -734,7 +746,7 @@ export function Planning({ visible }: { visible: boolean }) {
       // Folding the user-confirm in here keeps the gate signal (`featuresConfirmed`) unchanged.
       features: { count: featureState.count, allConfirmed: featuresGateComplete(featureState, confirmedSet.has(FEATURES_KEY)) && featureCycle.length === 0 },
     });
-  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet]);
+  }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
     const bp = blueprints.find(b => b.id === effectiveBlueprintId);
@@ -814,6 +826,40 @@ export function Planning({ visible }: { visible: boolean }) {
     }
     return base;
   }, [phases, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle]);
+  // #1019: clear the cached manifest on a project switch so a stale set never bleeds across.
+  useEffect(() => { setCtxRequired([]); ctxRequiredJsonRef.current = ""; }, [effectiveProjectId]);
+  // #1028: poll the Context required-set from plan.db and seed the baseline once per project. The gate
+  // reads it to check each required topic's `context/<topic>.md` exists — context files gate on
+  // GENERATION, not confirmation, so there's nothing to confirm/mirror.
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    let alive = true;
+    const tick = async () => {
+      try {
+        const m = await invoke<string[]>("plan_list_context", { projectKey: effectiveProjectId });
+        if (!alive) return;
+        // Seed the baseline once per project/session if the set is empty — a deterministic floor before
+        // the planner runs `bsc-plan context require`. The blueprint's context section `requires`
+        // overrides the universal baseline (blueprint seeding).
+        if ((m?.length ?? 0) === 0 && !ctxSeededRef.current.has(effectiveProjectId)) {
+          ctxSeededRef.current.add(effectiveProjectId);
+          const requires = planSecs.find(s => s.key === "context")?.requires ?? CONTEXT_BASELINE;
+          for (const t of requires) {
+            await invoke("plan_require_context", { projectKey: effectiveProjectId, topic: t, required: true }).catch(() => {});
+          }
+          return; // next tick reads the seeded set
+        }
+        const j = JSON.stringify(m ?? []);
+        if (j !== ctxRequiredJsonRef.current) {
+          ctxRequiredJsonRef.current = j;
+          setCtxRequired(m ?? []);
+        }
+      } catch { /* plan.db not created until the planner/seed touches context — ignore */ }
+    };
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [effectiveProjectId, planSecs]);
   // The active phase is an enabled OPTIONAL stage the user hasn't decided yet — so the advance bar
   // offers a "Skip stage" control beside the primary action (#921). `phasesFrom` reports a not-yet
   // -decided optional stage at the frontier as "active"; a decided (done/skipped) one isn't.
@@ -1073,35 +1119,10 @@ export function Planning({ visible }: { visible: boolean }) {
 
         let m: RegExpExecArray | null;
 
-        // ── <plan_update section="key">content</plan_update> ─────────────────
-        const planRe = new RegExp(
-          `<plan_update\\s+section=${Q}(\\w+)${Q}\\s*>([\\s\\S]*?)<\\/plan_update>`,
-          'g'
-        );
-        let foundPlan = false;
-        while ((m = planRe.exec(bufRef.current)) !== null) {
-          const key     = canonicalSectionKey(m[1]);
-          const content = m[2].trim();
-          foundPlan = true;
-          // Issues + features live in plan.db now (#plan-db); ignore any inline section text for
-          // them so it can't clobber the DB-sourced content (the planner writes via `bsc-plan`).
-          if (key === "issues" || key === FEATURES_KEY) continue;
-          // Any \w+ key is a valid section (dynamic planner). Persist to the
-          // store unless the user already confirmed it — confirmed sections are
-          // frozen. The derived `sections`/`skipped` pick the change up on the
-          // next render. Read confirmed state fresh (this listener is created
-          // once at mount, so a captured set would go stale).
-          const confirmed = new Set(useAppStore.getState().planConfirmedSections[projIdSnap] ?? []);
-          if (!confirmed.has(key)) {
-            useAppStore.getState().setPlanSection(projIdSnap, key, content);
-          }
-        }
-        if (foundPlan) {
-          bufRef.current = bufRef.current.replace(
-            new RegExp(`<plan_update\\s+section=${Q}\\w+${Q}\\s*>[\\s\\S]*?<\\/plan_update>`, 'g'),
-            ""
-          );
-        }
+        // Discovery/context section CONTENT now lives in `context/<topic>.md` files the planner
+        // writes (read by the section poll + by workers) — the single channel (#1019). The redundant
+        // `<plan_update section>` stream tag is retired; its required-set + confirm state moved to the
+        // plan.db context manifest (`bsc-plan context` + the manifest poll above).
 
         // ── <plan_focus section="key" /> ─────────────────────────────────────
         // Marks the section Claude is currently discussing. The last focus tag
@@ -1223,79 +1244,15 @@ export function Planning({ visible }: { visible: boolean }) {
           bufRef.current = stripAgentAssigns(bufRef.current);
         }
 
-        // ── <mcp_assign name="…" /> — scope an MCP server/extension to this project (#174).
-        // The template instructs the planner to emit these; the refactor had unwired the parser
-        // so the assignments were silently dropped (never loaded into the fleet). Restored (#754).
-        const mcpNames = parseMcpAssigns(bufRef.current);
-        if (mcpNames.length > 0) {
-          const store = useAppStore.getState();
-          for (const name of mcpNames) {
-            applyMcpAssign(store, name, projIdSnap, store.bscBaseDir);
-            // A first-party server installs from source — clone its repo into
-            // ~/.base-studio-code/mcp/<repo> now so it's present for the build button +
-            // the fleet launch. Best-effort + idempotent (mcp_clone is a no-op/pull when
-            // the dir exists); the build itself is run on demand from the MCP panel.
-            const link = catalogLink(name);
-            if (link) {
-              invoke("mcp_clone", { name: repoNameFromLink(link), url: link })
-                .catch((e) => console.warn(`mcp_clone(${name}) during planning failed:`, e));
-            }
-          }
-          bufRef.current = stripMcpAssigns(bufRef.current);
-        }
+        // MCP assignments moved to plan.db (#1021) — the planner now records them with `bsc-plan mcp
+        // add`, and the DB poll below resolves each into the MCP-servers store. (Was a <mcp_assign> tag.)
 
-        // ── <blueprint>{…JSON…}</blueprint> — the blueprint an AUTHORING project is designing (#923).
-        // The planner re-emits the full JSON as the design firms up; we validate with the same
-        // coerceBlueprint the import path uses (fresh uids, defensive coercion) and store it. The
-        // focused pane renders it and the Review stage publishes it to a gist. Take the LAST complete
-        // tag in the buffer (the most recent emission wins).
-        const bpRe = /<blueprint\s*>([\s\S]*?)<\/blueprint>/g;
-        let lastBpBody: string | null = null;
-        while ((m = bpRe.exec(bufRef.current)) !== null) lastBpBody = m[1];
-        if (lastBpBody !== null) {
-          try {
-            // Allow a section-less blueprint: at the Purpose stage the planner emits its identity
-            // (name/category) before any stages exist (#923).
-            const parsed = coerceBlueprint(JSON.parse(lastBpBody.trim()), { allowEmptySections: true });
-            if (parsed) useAppStore.getState().setAuthoredBlueprint(projIdSnap, parsed);
-          } catch { /* incomplete/invalid JSON — ignore; the planner re-emits */ }
-          bufRef.current = bufRef.current.replace(/<blueprint\s*>[\s\S]*?<\/blueprint>/g, "");
-        }
+        // Authored blueprint moved to plan.db (#1022) — the planner now records it with `bsc-plan
+        // blueprint set`, and the DB poll below coerces it into the authored blueprint + pins the
+        // authoring binding. (Was a <blueprint> stream tag + a blueprint.json file.)
 
-        // ── <deploy_config>{…JSON…}</deploy_config> — the Deploy stage's structured config (#919).
-        // The planner emits it (a lenient shape coerced into the full DeployConfig) so the `deploy`
-        // gate clears from the plan, not only from manual pane edits. Last complete tag wins.
-        const dcRe = /<deploy_config\s*>([\s\S]*?)<\/deploy_config>/g;
-        let lastDcBody: string | null = null;
-        let dcMatchedComplete = false;
-        while ((m = dcRe.exec(bufRef.current)) !== null) { lastDcBody = m[1]; dcMatchedComplete = true; }
-        // Fallback (#919): the closing tag can be mangled / line-wrapped / never arrive. If an
-        // opening tag is present, parse from it to the buffer end — parseDeployConfigTag extracts the
-        // {…} object, so the config still lands without a clean </deploy_config>.
-        if (lastDcBody === null) {
-          const openIdx = bufRef.current.lastIndexOf("<deploy_config");
-          if (openIdx >= 0) {
-            const gt = bufRef.current.indexOf(">", openIdx);
-            if (gt >= 0) lastDcBody = bufRef.current.slice(gt + 1);
-          }
-        }
-        if (lastDcBody !== null) {
-          const cfg = parseDeployConfigTag(lastDcBody);
-          if (cfg) {
-            useAppStore.getState().setPlanDeployConfig(projIdSnap, cfg);
-            // Diagnostic (#919): console.log (NOT console.debug, which DevTools hides at its default
-            // level) — confirms the tag was ingested + shows which readiness checks pass / are MISSING.
-            console.log("[deploy_config] parsed for", projIdSnap, "→",
-              deployChecks(cfg).map((c) => `${c.id}:${c.ok ? "ok" : "MISSING"}`).join("  "));
-          } else {
-            // Diagnostic (#919): the tag was captured but its body isn't parseable JSON — dump it
-            // ESCAPED so terminal-mangling (inserted newlines, box-drawing chars, indentation) is visible.
-            console.log("[deploy_config] body NOT parseable. Escaped first 800 chars:\n", JSON.stringify(lastDcBody.slice(0, 800)));
-          }
-          // Only strip a fully-closed tag; an unclosed one is left so a later chunk can complete it
-          // (re-parsing the same config is idempotent).
-          if (dcMatchedComplete) bufRef.current = bufRef.current.replace(/<deploy_config\s*>[\s\S]*?<\/deploy_config>/g, "");
-        }
+        // Deploy config moved to plan.db (#1020) — the planner now records it with `bsc-plan deploy
+        // set`, and the DB poll below coerces it into planDeployConfig. (Was a <deploy_config> tag.)
 
         // ── <data_model>{"name":"...","entities":[...]}</data_model> ──────────
         // Persists the planner's inferred Data Model as datamodel.json in the project
@@ -1494,36 +1451,91 @@ export function Planning({ visible }: { visible: boolean }) {
           for (const r of dbRepos ?? []) store.addProjectRepo(effectiveProjectId, r);
         } catch { /* plan.db not created until the first repo is linked — ignore */ }
 
-        const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
-        const entries = Object.entries(result);
+        // Phases are DB-owned too (#1017) — reflect the roadmap (name + description, in order) from
+        // plan.db into the "phases" section so the structure card + publish (parsePhases) read it
+        // unchanged. Only override on a non-empty DB so the migration doesn't wipe a legacy phases.json.
+        try {
+          const dbPhases = await invoke<{ name: string; description: string }[]>("plan_list_phases", { projectKey: effectiveProjectId });
+          const json = JSON.stringify(dbPhases ?? []);
+          if ((dbPhases?.length ?? 0) > 0 && json !== (saved["phases"] ?? "")) store.setPlanSection(effectiveProjectId, "phases", json);
+        } catch { /* plan.db not created until the planner adds a phase — ignore */ }
 
-        for (const [rawKey, content] of entries) {
-          // The authoring planner writes `blueprint.json` to the hub — the reliable channel (like
-          // fleet.json), more dependable than the inline <blueprint> tag (#923). Parse it into the
-          // in-progress blueprint so the authoring panes render the stages it designed. Guard on the
-          // file content changing so a 2s re-read can't clobber a live UI edit; it's NOT a plan section.
-          if (rawKey === "blueprint") {
-            if (content && content !== lastBpJsonRef.current) {
-              lastBpJsonRef.current = content;
+        // Fleet (streams + per-stream permissions/flows + director/topology) is DB-owned too (#1018) —
+        // reflect it from plan.db into the "fleet" section so the fleet sync effect (parseFleetFile →
+        // setPlanFleet) reads it unchanged. Only override on a non-null fleet so a legacy fleet.json isn't wiped.
+        try {
+          const dbFleet = await invoke<unknown | null>("plan_get_fleet", { projectKey: effectiveProjectId });
+          if (dbFleet) {
+            const json = JSON.stringify(dbFleet);
+            if (json !== (saved[FLEET_KEY] ?? "")) store.setPlanSection(effectiveProjectId, FLEET_KEY, json);
+          }
+        } catch { /* plan.db not created until the planner sets the fleet — ignore */ }
+
+        // Deploy config is DB-owned (#1020) — coerce the stored blob through the same parseDeployConfigTag
+        // the old <deploy_config> tag used and push it into planDeployConfig, so the `deploy` gate clears
+        // from the plan. Skip an unchanged blob so we don't churn the store every tick.
+        try {
+          const dbDeploy = await invoke<unknown | null>("plan_get_deploy", { projectKey: effectiveProjectId });
+          if (dbDeploy) {
+            const raw = JSON.stringify(dbDeploy);
+            if (raw !== deployAppliedRef.current[effectiveProjectId]) {
+              deployAppliedRef.current[effectiveProjectId] = raw;
+              const cfg = parseDeployConfigTag(raw, publishRepos);
+              if (cfg) store.setPlanDeployConfig(effectiveProjectId, cfg);
+            }
+          }
+        } catch { /* plan.db not created until the planner sets deploy — ignore */ }
+
+        // MCP assignments are DB-owned (#1021) — resolve each assigned catalog name into the MCP-servers
+        // store (idempotent) and clone any first-party server, exactly as the old <mcp_assign> tag did.
+        // The applied-set guards against re-applying/re-cloning the same name every 2s tick.
+        try {
+          const dbMcp = await invoke<string[]>("plan_list_mcp", { projectKey: effectiveProjectId });
+          for (const name of dbMcp ?? []) {
+            const key = `${effectiveProjectId}::${name.toLowerCase()}`;
+            if (mcpAppliedRef.current.has(key)) continue;
+            mcpAppliedRef.current.add(key);
+            applyMcpAssign(store, name, effectiveProjectId, store.bscBaseDir);
+            const link = catalogLink(name);
+            if (link) {
+              invoke("mcp_clone", { name: repoNameFromLink(link), url: link })
+                .catch((e) => console.warn(`mcp_clone(${name}) during planning failed:`, e));
+            }
+          }
+        } catch { /* plan.db not created until the planner assigns an MCP server — ignore */ }
+
+        // Authored blueprint is DB-owned (#1022) — the authoring planner records it with `bsc-plan
+        // blueprint set`; coerce the stored JSON into the in-progress blueprint (the same coerceBlueprint
+        // the import path uses) so the authoring panes render the stages it designed. Guard on the JSON
+        // changing so a 2s re-read can't clobber a live UI edit, and pin the binding to the authoring
+        // lifecycle so it can't revert to default on restart (#923).
+        try {
+          const dbBp = await invoke<unknown | null>("plan_get_blueprint", { projectKey: effectiveProjectId });
+          if (dbBp) {
+            const raw = JSON.stringify(dbBp);
+            if (raw !== lastBpJsonRef.current) {
+              lastBpJsonRef.current = raw;
               try {
-                const parsed = coerceBlueprint(JSON.parse(content), { allowEmptySections: true });
+                const parsed = coerceBlueprint(dbBp, { allowEmptySections: true });
                 if (parsed) {
                   store.setAuthoredBlueprint(effectiveProjectId, parsed);
-                  // blueprint.json existing ⇒ this is an authoring project — pin its binding to the
-                  // authoring lifecycle so it can't revert to default on restart, correcting any stale
-                  // binding from a legacy session (#923).
                   if (store.projectBlueprintId[effectiveProjectId] !== AUTHORING_BLUEPRINT_ID) {
                     store.setProjectBlueprintId(effectiveProjectId, AUTHORING_BLUEPRINT_ID);
                   }
                 }
-              } catch { /* mid-write / invalid JSON — ignore, the planner re-writes */ }
+              } catch { /* mid-write / invalid shape — ignore, the planner re-writes */ }
             }
-            continue;
           }
+        } catch { /* plan.db not created until the planner sets the blueprint — ignore */ }
+
+        const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
+        const entries = Object.entries(result);
+
+        for (const [rawKey, content] of entries) {
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
           const key = canonicalSectionKey(rawKey);
-          if (key === "issues" || key === FEATURES_KEY) continue; // DB-owned (#plan-db) — sourced from plan.db above, not a file
+          if (key === "issues" || key === FEATURES_KEY || key === "phases" || key === FLEET_KEY || key === "blueprint") continue; // DB-owned (#plan-db/#1017/#1018/#1022) — sourced from plan.db above, not a file
           if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
             store.setPlanSection(effectiveProjectId, key, content);
           }

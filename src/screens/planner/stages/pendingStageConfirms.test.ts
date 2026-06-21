@@ -12,38 +12,9 @@ const coreDrafted: S[] = [
 ];
 
 describe("pendingStageConfirms — one-click stage approval (#807-followup)", () => {
-  it("context: returns every drafted project-tier discovery file once the core four are present", () => {
+  it("context: nothing to confirm — context files gate on GENERATION, not confirmation (#1028)", () => {
     const sections = [...coreDrafted, sec("api", "drafted"), sec("schema", "confirmed")];
-    // All four core + the drafted dynamic topic; the already-confirmed one is excluded.
-    expect(pendingStageConfirms("context", sections).sort())
-      .toEqual(["api", "architecture", "goal", "scope", "stack"]);
-  });
-
-  it("context: waits for ALL four core topics to be present before anything can be approved", () => {
-    // stack + architecture not yet written — approving now could pass the gate prematurely
-    // (coreConfirmed treats an absent core topic as satisfied), so confirm nothing.
-    const partial = [sec("goal", "drafted"), sec("scope", "drafted")];
-    expect(pendingStageConfirms("context", partial)).toEqual([]);
-  });
-
-  it("context: a pending (empty, contentless) core file does not count as present", () => {
-    const sections = [...coreDrafted.slice(0, 3), sec("architecture", "pending")];
     expect(pendingStageConfirms("context", sections)).toEqual([]);
-  });
-
-  it("context: nothing left to confirm once every topic is confirmed", () => {
-    const allConfirmed = coreDrafted.map((s) => ({ ...s, state: "confirmed" as SectionState }));
-    expect(pendingStageConfirms("context", allConfirmed)).toEqual([]);
-  });
-
-  it("context: excludes the phases anchor (it belongs to the structure stage)", () => {
-    const sections = [...coreDrafted, sec("phases", "drafted")];
-    expect(pendingStageConfirms("context", sections)).not.toContain("phases");
-  });
-
-  it("context: ignores repo-tier sections — only project-tier discovery files", () => {
-    const sections = [...coreDrafted, sec("repo__web__api", "drafted")];
-    expect(pendingStageConfirms("context", sections)).not.toContain("repo__web__api");
   });
 
   it("structure: confirms the phases roadmap anchor when it's drafted", () => {
@@ -73,17 +44,16 @@ describe("stageConfirmKeys — gateless active-stage approval (#954)", () => {
     expect(stageConfirmKeys("repos", [], /*activeHasGate*/ true, false)).toEqual([]);
   });
 
-  it("a GATED structure/context stage confirms its gate's drafted anchors", () => {
+  it("a GATED structure confirms its phases anchor; context gates on generation, so nothing", () => {
     // structure (gated) → the phases anchor
     expect(stageConfirmKeys("structure", [sec("phases", "drafted")], /*activeHasGate*/ true, false)).toEqual(["phases"]);
-    // context (gated) → the core-four discovery files
-    expect(stageConfirmKeys("context", coreDrafted, /*activeHasGate*/ true, false).sort())
-      .toEqual(["architecture", "goal", "scope", "stack"]);
+    // context (gated) → no confirm step; the files are done once written (#1028)
+    expect(stageConfirmKeys("context", coreDrafted, /*activeHasGate*/ true, false)).toEqual([]);
   });
 
   it("a GATELESS context/structure (e.g. an IMPORTED blueprint) confirms ITS OWN key, not the anchors", () => {
     // Imported blueprints lose their gateRules, so even a `context`/`structure` stage is gateless and
-    // completes via confirmed:<its-key> — NOT the discovery/phases anchors (which feed a gate it lacks).
+    // completes via confirmed:<its-key>.
     expect(stageConfirmKeys("context", coreDrafted, /*activeHasGate*/ false, false)).toEqual(["context"]);
     expect(stageConfirmKeys("structure", [sec("phases", "drafted")], /*activeHasGate*/ false, false)).toEqual(["structure"]);
   });

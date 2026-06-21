@@ -56,20 +56,20 @@ const PLANNING_PROCESS_MD: &str = include_str!("../templates/planning-process.md
 // The blueprint-authoring lifecycle (#923) gets its OWN, self-contained intro — the planner is
 // designing a reusable blueprint (deliverable = a gist), not a software project — and does NOT get
 // the software-planning process block (repos / features / fleet / GitHub publish), which would only
-// mislead it. The `<blueprint>` tag spec + the four authoring stages live in this intro.
+// mislead it. The `bsc-plan blueprint set` spec + the four authoring stages live in this intro.
 const PLANNING_BLUEPRINT_INTRO: &str = include_str!("../templates/planning-blueprint-intro.md");
 
 /// One-line directive per planning stage (#542/#666) for the assembled active-stages
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
     let line = match id {
-        "context"     => "**Context** — discovery, one topic at a time. Write every discovery file into the **`context/`** subdir. The gate REQUIRES these four, written and confirmed: `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md` — always create them. Cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/users.md`, `context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, `context/observability.md`, `context/reliability.md`, `context/data_lifecycle.md`, …; the production-readiness bars in the planning guide are first-class dimensions here — apply where they matter, accessibility/compliance via the Compliance MCP); record every dimension you don't document in `context/_skipped.md`. Each file you create is a gate item the user must confirm — do NOT create files for tangential topics, or the gate can't complete.",
+        "context"     => "**Context** — establish the project's context one topic at a time, each a markdown file at `context/<topic>.md` (canonical key = the file stem). The REQUIRED set is DYNAMIC: the baseline `goal, scope, stack, architecture, users` is seeded for you — shape it for THIS project with `bsc-plan context require <topic>` / `bsc-plan context unrequire <topic>` as the picture clarifies (a CLI tool unrequires `users`/`ux`; a data platform requires `schema`; a realtime API requires `api`). `bsc-plan context list` shows the manifest. ALWAYS write the required files; cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, `context/observability.md`, `context/reliability.md`, `context/data_lifecycle.md`, …; the production-readiness bars in the planning guide are first-class dimensions here — apply where they matter, accessibility/compliance via the Compliance MCP); record every dimension you don't document in `context/_skipped.md`. The required files are done once WRITTEN — they're generated, not confirmed (the gate checks every required `context/<topic>.md` exists). Do NOT create files for tangential topics, or the gate can't complete.",
         "repos"       => "**Repos** — decide and link the repositories: emit `<repo_link owner/repo>` for each (clones it into the hub + records the link in plan.db, durable). Do NOT write repos.json — links live in plan.db (`bsc-plan repo list` shows them; `bsc-plan repo add owner/repo` links one directly).",
-        "deploy"      => "**Deploy** (right after Repos) — define how each service SHIPS, then EMIT it as a `<deploy_config>{…JSON…}</deploy_config>` tag. **The tag is what clears the gate and fills the Deploy pane — a prose `deploy.md` does NOT.** JSON fields: `services` (array; each REQUIRES `platform` + `workload` = static|serverless|container|service, plus `id`, `repo`, `region`, `build`, `output`/`runtime`); `environments` (≥2; each `name`, `branch`, `url`, `auto`); `pipeline` (`provider` + `stages`: array of `{name, trigger: push|tag|on-green|manual, gate: bool, cmd}`, ≥2 stages); `secrets` (array of `{key, envs:[…]}` — list `prod` in `envs` for every prod-needed secret); `release` (`strategy` = recreate|rolling|blue-green|canary, `autoRollback`, `keep`, `migrateWithDeploy`); `health` (`probe`, `slo`, `alerts`). The gate (`deploymentDefined`) needs: a `platform` on EVERY service, ≥2 environments, ≥2 pipeline stages, every secret wired for `prod`, and a non-empty `release.strategy`. Propose defaults from the stack, confirm with the user, then emit the tag (re-emit the whole tag as it firms up). A human-readable `deploy.md` is optional reference. Publishes as deployment issues owned by a `deploy` stream.",
+        "deploy"      => "**Deploy** (right after Repos) — define how each service SHIPS, then RECORD it in the plan DB by piping the config JSON to `bsc-plan deploy set`. **`bsc-plan deploy set` is what clears the gate and fills the Deploy pane — a prose `deploy.md` does NOT** (`bsc-plan deploy get` shows the stored config). JSON fields: `services` (array; each REQUIRES `platform` + `workload` = static|serverless|container|service, plus `id`, `repo`, `region`, `build`, `output`/`runtime`); `environments` (≥2; each `name`, `branch`, `url`, `auto`); `pipeline` (`provider` + `stages`: array of `{name, trigger: push|tag|on-green|manual, gate: bool, cmd}`, ≥2 stages); `secrets` (array of `{key, envs:[…]}` — list `prod` in `envs` for every prod-needed secret); `release` (`strategy` = recreate|rolling|blue-green|canary, `autoRollback`, `keep`, `migrateWithDeploy`); `health` (`probe`, `slo`, `alerts`). The gate (`deploymentDefined`) needs: a `platform` on EVERY service, ≥2 environments, ≥2 pipeline stages, every secret wired for `prod`, and a non-empty `release.strategy`. Propose defaults from the stack, confirm with the user, then pipe the whole config: `echo '{…}' | bsc-plan deploy set` (re-run with the full config as it firms up). A human-readable `deploy.md` is optional reference. Publishes as deployment issues owned by a `deploy` stream.",
         "ui"          => "**UI** — runs AFTER Features: design the screens that deliver the defined capabilities. Write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live. Then author a **Claude Design kickoff** at `prompts/ui-kickoff.md` — a self-contained brief (goal, feature→screen map, each screen's states/flows, design-system constraints) the user pastes into a Claude Design session.",
         "features"    => "**Features** — work titles-first via the `bsc-plan feature` store (NOT a features.json file). STEP 1: register the COMPLETE title roster in one pass — `bsc-plan feature add \"Invite teammates\" \"Export to CSV\" ...` (names only; the board shows each as an undefined title). Agree the roster with the user before detailing. STEP 2: drive ONE feature at a time, filling its detail by slug — `echo '{\"slug\":\"invite-teammates\",\"behavior\":\"…\",\"acceptance\":[\"…\"],\"approach\":\"…\",\"tools\":[\"…\"],\"data\":\"…\",\"dependsOn\":[\"…\"],\"stream\":\"…\"}' | bsc-plan feature add` (merges in place — do NOT resend the name). `behavior` = what it does + when, in the user's terms; `acceptance` = a done-when checklist; `data` = what it stores/reads; `dependsOn` = slugs of OTHER features this one builds on (the roadmap DAG — keep it acyclic; a feature may be foundational, not just user-facing); `stream` defaults to the slug. A feature is defined once it has name + behavior + ≥1 acceptance (`bsc-plan feature list` shows ✓/·). Do NOT design the integration contracts here — that's the Plan/Structure stage. When EVERY feature is populated, present the set and let the USER confirm to complete the stage — never advance the stage yourself.",
-        "structure"   => "**Structure** — the features are a dependency DAG (`bsc-plan feature list` shows each feature + its `dependsOn`). SEQUENCE them into a roadmap by assigning every feature a phase IN THE PLAN DB — do NOT write phases.json or any issue files. Phases live in plan.db; issues are generated from the features at GitHub-publish time, not during planning (no `bsc-plan add`). Group the features into ordered phases (foundations first — a feature's deps land in the same or an earlier phase) and assign EVERY feature its phase via `echo '{\"slug\":\"…\",\"phase\":<n or name>}' | bsc-plan feature add` (merges in place). When every feature is phased, present the phase order + the dependency graph and get the user's approval. (Existing repos: inventory every screen/module first so none is missed.)",
-        "permissions" => "**Permissions** — plan the agent fleet (`fleet.json`): non-overlapping streams + least-privilege profiles.",
+        "structure"   => "**Structure** — the features are a dependency DAG (`bsc-plan feature list` shows each feature + its `dependsOn`). SEQUENCE them into a roadmap, all IN THE PLAN DB — do NOT write phases.json or any issue files. Issues are generated from the features at GitHub-publish time, not during planning (no `bsc-plan add`). Two writes: (1) define the ordered phases — `bsc-plan phase add \"<name>\" \"<done-when>\"`, foundations first (`bsc-plan phase list` numbers them); (2) assign EVERY feature its phase NUMBER via `echo '{\"slug\":\"…\",\"phase\":<n>}' | bsc-plan feature add` (merges in place). When every feature is phased, present the roadmap + the dependency graph and get the user's approval. (Existing repos: inventory every screen/module first so none is missed.)",
+        "permissions" => "**Permissions** — plan the agent fleet IN THE PLAN DB: pipe a FleetPlan JSON (non-overlapping streams with least-privilege profiles + per-stream perms/flows, plus recommended/director/topology) to `bsc-plan fleet set`. Do NOT write fleet.json — `bsc-plan fleet get` shows the stored fleet.",
         "automations" => "**Automations** — propose cron automations (emit `<automation_assign>`).",
         "skills"      => "**Skills** — select reusable skills from the library (`skills.json`).",
         // transform / operate stages (#666) — these do NOT produce issues.json.
@@ -83,12 +83,12 @@ fn stage_directive(id: &str) -> String {
         "migration"    => "**Migration plan** — the from→to mapping and an incremental, reversible cutover.",
         "hardening"    => "**Security hardening** — threat-model, audit (authz / secrets / deps), and plan concrete fixes.",
         // Blueprint-authoring lifecycle (#923) — the DELIVERABLE is a reusable blueprint published
-        // to a gist; there is NO code, no fleet, no triage. Build the blueprint with the <blueprint>
-        // tag and re-emit the whole tag as it grows.
-        "purpose"         => "**Purpose** — you are designing a reusable BLUEPRINT (a planning template), not a software project. Establish its lifecycle category, the projects it seeds, and its name + description; emit a `<blueprint>` tag with id/name/desc/category/mode.",
-        "bp_stages"       => "**Stages** — design the blueprint's ordered stages, one at a time: each stage's key+name, intent, the discovery prompt it runs, its deps/order, and whether it's optional. Re-emit the full `<blueprint>` tag as the sections array grows.",
-        "bp_capabilities" => "**Capabilities** (optional) — attach reusable skills/knowledge + MCP servers the blueprint should bundle into projects it seeds; fold them into the `<blueprint>` tag's section or blueprint-level skills/mcp arrays.",
-        "bp_review"       => "**Review & publish** — review the assembled blueprint with the user, emit the FINAL `<blueprint>` tag, and let the user publish it to a gist from the footer. Do NOT publish it yourself.",
+        // to a gist; there is NO code, no fleet, no triage. Build the blueprint with `bsc-plan
+        // blueprint set` and re-run it with the whole blueprint as it grows (#1022).
+        "purpose"         => "**Purpose** — you are designing a reusable BLUEPRINT (a planning template), not a software project. Establish its lifecycle category, the projects it seeds, and its name + description; record it with `bsc-plan blueprint set` (the blueprint JSON on stdin: id/name/desc/category/mode). Do NOT emit a `<blueprint>` tag — `bsc-plan blueprint get` shows the stored blueprint.",
+        "bp_stages"       => "**Stages** — design the blueprint's ordered stages, one at a time: each stage's key+name, intent, the discovery prompt it runs, its deps/order, and whether it's optional. Re-run `bsc-plan blueprint set` with the full blueprint JSON as the sections array grows.",
+        "bp_capabilities" => "**Capabilities** (optional) — attach reusable skills/knowledge + MCP servers the blueprint should bundle into projects it seeds; fold them into the blueprint JSON's section or blueprint-level skills/mcp arrays and re-run `bsc-plan blueprint set`.",
+        "bp_review"       => "**Review & publish** — review the assembled blueprint with the user, record the FINAL blueprint with `bsc-plan blueprint set`, and let the user publish it to a gist from the footer. Do NOT publish it yourself.",
         other         => return format!("**{other}** — configured stage."),
     };
     line.to_string()
@@ -283,13 +283,13 @@ pub(crate) async fn setup_workspaces(
     // extensions" step knows which MCP servers it can assign. The names mirror the
     // frontend catalog (src/lib/extensions.ts CATALOG_TEMPLATES) — the source of
     // truth for each server's transport/command/env; this file is guidance text.
-    // Each `<mcp_assign>` scopes that server to THIS project; every build & triage
-    // session the plan launches then loads it via its `.mcp.json` (pre-trusted, no
+    // Each `bsc-plan mcp add <name>` scopes that server to THIS project (#1021); every build &
+    // triage session the plan launches then loads it via its `.mcp.json` (pre-trusted, no
     // blocking prompt).
     let ext_md = String::from(
         "# Extensions Catalogue (MCP servers)\n\n\
-         Assign an MCP server/extension to this project with a single-line tag:\n\
-         `<mcp_assign name=\"Compliance\" />`\n\n\
+         Assign an MCP server/extension to this project by recording it in the plan DB:\n\
+         `bsc-plan mcp add Compliance`   (`bsc-plan mcp list` shows the assigned servers)\n\n\
          Each assigned server is scoped to THIS project and loaded into every session this\n\
          plan launches — the director AND every worker — written to each session's\n\
          `.mcp.json` and pre-trusted, so the agent never blocks on a \"trust these MCP\n\
@@ -308,7 +308,7 @@ pub(crate) async fn setup_workspaces(
          A name not listed above creates a blank stdio MCP entry the user completes in the\n\
          MCP panel. Required env values (tokens, connection strings) are left blank for the\n\
          user to fill — never invent secrets.\n\n\
-         Pair this with `<automation_assign …>` (see automations.md) in the planner's\n\
+         Pair this with the automations step (see automations.md) in the planner's\n\
          \"Automations & extensions\" step.\n"
     );
     std::fs::write(planning_dir.join("extensions.md"), ext_md)
@@ -414,13 +414,18 @@ mod tests {
     /// Context directive must name the four gate-required files so the planner
     /// doesn't create tangential sections that block the gate (#672).
     #[test]
-    fn stage_directive_context_names_four_gate_files() {
+    fn stage_directive_context_seeds_baseline_and_uses_bsc_plan() {
         let d = super::stage_directive("context");
-        assert!(d.contains("goal.md"),         "missing goal.md");
-        assert!(d.contains("scope.md"),        "missing scope.md");
-        assert!(d.contains("stack.md"),        "missing stack.md");
-        assert!(d.contains("architecture.md"), "missing architecture.md");
-        assert!(d.contains("_skipped.md"),     "must mention _skipped.md fallback");
+        // Names the baseline required topics — the DYNAMIC set seeded for the project (#1019).
+        for t in ["goal", "scope", "stack", "architecture", "users"] {
+            assert!(d.contains(t), "context directive names baseline topic {t}");
+        }
+        // The required-set is shaped via bsc-plan context; non-applicable dimensions go to _skipped.
+        assert!(d.contains("bsc-plan context"), "directive shapes the required-set via bsc-plan context");
+        assert!(d.contains("_skipped.md"),      "must mention _skipped.md fallback");
+        // Context files gate on GENERATION, not confirmation (#1028).
+        assert!(d.to_lowercase().contains("written"), "directive states required files are done once written");
+        assert!(d.to_lowercase().contains("generated, not confirmed"), "context files are generated, not confirmed");
     }
 
     /// Features directive must steer the planner to write features.json (the artifact the
@@ -561,12 +566,13 @@ mod tests {
         assert!(md.contains("OUT OF SCOPE"), "scope guard present");
         assert!(!md.contains("Structure"), "no Structure stage → no issues.json step");
         assert!(super::PLANNING_PROCESS_MD.contains("authoritative"), "process defers to the active-stages list");
-        // The context directive names the four gate-required files so the planner creates
-        // exactly what the gate keys on (#671 follow-up).
+        // The context directive names the baseline required topics + the bsc-plan context channel that
+        // shapes the dynamic required-set, so the planner seeds what the gate keys on (#1019).
         let ctx = super::stage_directive("context");
-        for f in ["goal.md", "scope.md", "stack.md", "architecture.md"] {
-            assert!(ctx.contains(f), "context directive names {f}");
+        for t in ["goal", "scope", "stack", "architecture", "users"] {
+            assert!(ctx.contains(t), "context directive names baseline topic {t}");
         }
+        assert!(ctx.contains("bsc-plan context"), "context directive shapes the dynamic required-set");
         assert!(ctx.contains("_skipped.md"), "context directive points non-applicable dimensions at _skipped");
         assert!(super::PLANNING_PROCESS_MD.contains("gate item"), "coverage section frames created files as gate items");
         // The discovery checklist itself flags the four files as gate-required and tells the

@@ -29,9 +29,9 @@ export type StageId =
  * construct one with safe defaults for any field not yet known.
  */
 export interface PlanStageState {
-  /** Discovery topics resolved (confirmed or explicitly skipped) vs total surfaced,
-   *  plus whether the core four (goal/scope/stack/architecture) are confirmed. */
-  context: { resolved: number; total: number; coreConfirmed: boolean };
+  /** Context progress (#1019/#1028): required topics written (`resolved`) vs required total, plus
+   *  `requiredContextReady` — every REQUIRED topic's file generated (≥1 required). No confirmation. */
+  context: { resolved: number; total: number; requiredContextReady: boolean };
   /** Repositories linked to the project. */
   repoCount: number;
   /** Whether the project needs a UI at all — drives the UI stage's applicability. */
@@ -113,7 +113,7 @@ export const PLAN_STAGES: Stage[] = [
     dependsOn: [],
     defaultEnabled: true,
     gate: (s) => ({
-      done: s.context.coreConfirmed && s.context.total > 0 && s.context.resolved >= s.context.total,
+      done: s.context.requiredContextReady,
       fraction: s.context.total > 0 ? s.context.resolved / s.context.total : 0,
     }),
   },
@@ -240,7 +240,7 @@ export function defaultStageConfig(): StageConfig {
 /** Fill a partial snapshot with safe defaults so callers needn't specify every field. */
 export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageState {
   return {
-    context: p.context ?? { resolved: 0, total: 0, coreConfirmed: false },
+    context: p.context ?? { resolved: 0, total: 0, requiredContextReady: false },
     repoCount: p.repoCount ?? 0,
     requiresUi: p.requiresUi ?? false,
     ui: p.ui ?? { approved: 0, total: 0, routed: false },

@@ -17,33 +17,27 @@ files (`*.md`, `*.json`, `prompts/*`), use **WebFetch** for docs/version lookups
 or mutate GitHub (publishing is a separate, user-driven step). If a tool you expect is
 denied, that's the profile — surface it rather than working around it.
 
-## Filling sections — two channels
+## Filling sections — write the file
 
 Each documented topic is **its own file** in your current directory, named after
 the topic's **canonical key** — a single lowercase word, **never the display title
 or the colloquial name**. For example the technology-stack topic is `stack.md`,
 **never** `Tech stack.md`; the data model is `schema.md`, never `Data model.md`.
-Whenever you draft or refine a section, do **both**:
 
-**Channel 1 — write the section file** (reliable; survives restarts). The app
-polls these files every 2 seconds and updates the right panel. Overwrite to
-refine — each write replaces the previous version.
+**Write the section file** — the single source of truth. It survives restarts and is
+read by the workers too; the app polls these files every 2 seconds and updates the
+right panel. Overwrite to refine — each write replaces the previous version.
 
-- **Context-stage discovery file: `context/{topic}.md`** — e.g.
-  `context/goal.md`, `context/stack.md`, `context/security.md`,
-  `context/observability.md`, or a custom `context/feature_flags.md`. Every topic
-  you document during the **Context** stage lives in the `context/` subdir (#807);
-  the file stem is still the bare canonical key.
-- Other project-tier files (manifests, repo-tier sections) stay at the hub root:
-  `repos.json`, `repo__web__api.md`, etc.
-- The roadmap is JSON: `phases.json` (see "Special sections").
-
-**Channel 2 — emit an inline tag** for immediate display before the next poll:
-```
-<plan_update section="goal">content here</plan_update>
-```
-The `section` value is the file stem (no extension). Use the same key for both
-channels so they refer to one section.
+- **Context-stage file: `context/{topic}.md`** — e.g. `context/goal.md`,
+  `context/stack.md`, `context/security.md`, `context/observability.md`, or a custom
+  `context/feature_flags.md`. Every topic you document during the **Context** stage
+  lives in the `context/` subdir; the file stem is the bare canonical key. Shape which
+  topics are REQUIRED with `bsc-plan context require <topic>` / `bsc-plan context
+  unrequire <topic>` (`bsc-plan context list` shows the manifest).
+- Other project-tier files (repo-tier sections) stay at the hub root: `repo__web__api.md`, etc.
+- Structured plan state is the plan DB, not files — repos (`bsc-plan repo`), the roadmap
+  (`bsc-plan phase`), features (`bsc-plan feature`), the fleet (`bsc-plan fleet`), deploy
+  (`bsc-plan deploy`). See "App integration tags".
 
 Mark the topic you are actively discussing so the UI highlights it:
 ```
@@ -52,14 +46,16 @@ Mark the topic you are actively discussing so the UI highlights it:
 
 ## Coverage — record what you skip
 
-**Each section file you create is a gate item** — the stage completes only once the
-user confirms every documented section. So create a file **only** for a dimension that
-genuinely applies; don't spin up tangential files (they just block the gate). Use the
-**canonical key** as the file stem so the section maps to the right gate signal —
+**Each context file you create is a gate item** — the stage completes once every required
+section is **written** (context files are generated, not confirmed). So create a file **only**
+for a dimension that genuinely applies; don't spin up tangential files (they just block the
+gate). Use the **canonical key** as the file stem so the section maps to the right gate signal —
 `schema` (not "data-model"), `ux`, `api`, `auth`, `security`, `testing`, etc. The
-**Context** gate specifically requires `goal`, `scope`, `stack`, and `architecture` to be
-written and confirmed — as `context/goal.md`, `context/scope.md`, `context/stack.md`, and
-`context/architecture.md` (every Context-stage file lives in the `context/` subdir).
+**Context** gate requires the project's DYNAMIC required-set — seeded with the baseline
+`goal`, `scope`, `stack`, `architecture`, `users` (each `context/<topic>.md`, in the
+`context/` subdir) — which you shape with `bsc-plan context require <topic>` /
+`bsc-plan context unrequire <topic>` (`bsc-plan context list` shows it). Just write the
+required files; they don't need confirmation.
 
 **Finish each section** — never leave a deliberate fill-in marker (`TODO`, `TBD`, `FIXME`,
 `XXX`, `TKTK`) in a written section. The Context and Plan gates block on them. (Ordinary prose —
@@ -89,7 +85,7 @@ Format (any of these per line works):
 - **Repo tier** — decisions that live in one codebase of a multi-repo project.
   Namespace the key `repo__{short}__{topic}`, where `{short}` is the repo name
   **without the owner** (for `acme/web`, short = `web`). File:
-  `repo__web__api.md`; inline tag `<plan_update section="repo__web__api">…`.
+  `repo__web__api.md` (written to the hub root).
 
 Use the repo tier when a choice only applies to one repo (the web app's UX, the
 API service's schema). For single-repo projects, stay in the project tier.
@@ -156,7 +152,7 @@ needs. Read `extensions.md` (the catalog of available MCP servers) and
 - **Extensions / MCP** — for each capability the work needs (a Postgres MCP for a
   DB-backed project, Sentry for error triage, the **Compliance** server for accessibility /
   regulatory compliance, Linear/Notion for issue/doc access, Brave Search for research),
-  assign the server with `<mcp_assign name="Postgres" />`
+  assign the server with `bsc-plan mcp add Postgres`
   (see "App integration tags"). Each assignment is scoped to THIS project and loaded
   into every build & triage session the plan launches — written to the session's
   `.mcp.json` and pre-trusted, so an autonomous agent never blocks on a "trust these
@@ -313,7 +309,7 @@ into milestones is different from scoping the solution down.)
 **Enterprise / production-readiness bars — part of "done," folded into the build.** For a
 production or enterprise target, **weigh each of these and APPLY the ones that matter** — as the
 relevant feature's acceptance criteria, an architecture decision, a reusable Skill, or a short
-section + `<kb_assign>`. Don't run them as a dozen set-piece discovery chats; fold each into the
+section + `<kb_assign>`. Don't run them as a dozen set-piece context chats; fold each into the
 feature/issue that carries it, and record any you deliberately skip in `context/_skipped.md`:
 - **Observability & SLOs** — structured logging, metrics, distributed tracing (OpenTelemetry),
   dashboards, and explicit SLIs/SLOs with alerting. ("Can you see it in prod, and know when it breaks?")
@@ -336,9 +332,9 @@ feature/issue that carries it, and record any you deliberately skip in `context/
   deprecation policy, and onboarding docs.
 - **Cost / FinOps** — budgets and cost tagging (for an agent-driven product, include LLM/API spend).
 
-**Compliance & accessibility are owned by the Compliance MCP server — not a discovery section.** When
+**Compliance & accessibility are owned by the Compliance MCP server — not a context section.** When
 the project has accessibility (WCAG) or regulatory needs (GDPR, SOC 2, ISO 27001, HIPAA, PCI DSS),
-assign it with `<mcp_assign name="Compliance" />`: it generates the necessary compliance/accessibility
+assign it with `bsc-plan mcp add Compliance`: it generates the necessary compliance/accessibility
 **Skills** during planning and enforces them at runtime. Don't hand-author accessibility sections —
 assign the server and let it own that surface.
 
@@ -347,9 +343,9 @@ does NOT mean gold-plating. Don't add speculative abstractions, features beyond 
 defensive handling for scenarios that can't happen. Build the simplest design that fully and
 robustly meets the goal; raise the quality/completeness bar, not the surface area.
 
-## The discovery checklist — a quick orientation, not the main event
+## The context checklist — a quick orientation, not the main event
 
-Discovery here is a SHORT grounding pass. Its only job is to give the feature
+Establishing context here is a SHORT grounding pass. Its only job is to give the feature
 workshop (the real work — see "Develop the GitHub structure") enough shared
 context to stand on. Document the core dimensions briefly and move on fast; do
 NOT turn this into a dozen set-piece conversations. `goal`, `phases`, `issues`,
@@ -357,16 +353,18 @@ and `risks` apply to almost every project.
 
 **Core orientation — document these, briefly (each line is the template).**
 
-> **REQUIRED for the Context gate — always create and confirm four files: `context/goal.md`,
-> `context/scope.md`, `context/stack.md`, and `context/architecture.md`.** Do this for EVERY project, even a trivial
-> one (keep them short if so, but never skip them — the "skip what doesn't apply" guidance
-> below does NOT cover these four). The Context stage cannot complete until all four exist and
-> the user has confirmed each. `users` is helpful orientation but is NOT gate-required.
+> **REQUIRED for the Context gate — the DYNAMIC required-set is seeded with the baseline
+> `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md`, and
+> `context/users.md`.** Write each; shape the set for THIS project with `bsc-plan context
+> require <topic>` / `bsc-plan context unrequire <topic>` (a CLI tool unrequires `users`/`ux`; a data
+> platform requires `schema`; `bsc-plan context list` shows the required set). The Context stage
+> completes once every required topic's file exists — context files are generated, not confirmed.
 
 - `goal` **(gate-required)** — what it does, who it's for, and the measurable signal of
   success (2–4 sentences). Drives the GitHub project title and description.
-- `users` — primary personas, their jobs-to-be-done, and the one workflow each
-  cares most about. One tight paragraph.
+- `users` **(gate-required)** — primary personas, their jobs-to-be-done, and the one workflow each
+  cares most about. One tight paragraph. (Unrequire it for a project with no distinct users — a pure
+  CLI or library — with `bsc-plan context unrequire users`.)
 - `scope` **(gate-required)** — two lists: **In scope** (concrete deliverables) and **Out of
   scope** (explicit exclusions that prevent scope creep).
 - `stack` **(gate-required)** — one line per layer (runtime, framework, datastore, auth,
@@ -397,8 +395,8 @@ shared contract many features depend on.
 apply each where it matters (folded into the feature/architecture/issues, a Skill, or a short
 section) and record any you skip in `context/_skipped.md` — don't silently drop them.
 **`accessibility` and other compliance** (GDPR / SOC 2 / HIPAA / PCI) are owned by the **Compliance
-MCP server** (`<mcp_assign name="Compliance" />`, which generates the compliance/accessibility
-Skills) — never a hand-authored discovery section.
+MCP server** (`bsc-plan mcp add Compliance`, which generates the compliance/accessibility
+Skills) — never a hand-authored context section.
 
 **Genuinely optional — one line in `context/_skipped.md` unless the product is centrally about
 it:** `ux`, `infra`, `analytics`. Document one only when it is a first-class concern (e.g. `ux`
@@ -628,28 +626,25 @@ on-demand commands — otherwise it's a cron expression):
 **Assign an MCP server/extension** to this project (#174; read `extensions.md`
 for the catalog). `name` is a catalog entry (e.g. `Postgres`, `Sentry`); the
 server is scoped to this project and loaded into every build & triage session the
-plan launches (`.mcp.json`, pre-trusted). Idempotent — re-emitting the same name
-is harmless. Never put secret values in the tag; the user fills env in the
-Extensions screen:
+plan launches (`.mcp.json`, pre-trusted). Idempotent — re-running the same name
+is harmless. Never put secret values here; the user fills env in the Extensions screen:
 ```
-<mcp_assign name="Postgres" />
+bsc-plan mcp add Postgres
 ```
-**Emit the Deploy stage's config** (#919) — the **structured** artifact for the Deploy stage
-(right after Repos). This tag — NOT a prose `deploy.md` — fills the Deploy pane and clears the
-stage gate. Re-emit the whole tag as the config firms up (the latest one wins). The gate needs a
-`platform` on every service, ≥2 `environments`, ≥2 `pipeline.stages`, every secret listing `prod`
-in its `envs`, and a non-empty `release.strategy`:
+**Record the Deploy stage's config** (#919) — the **structured** artifact for the Deploy stage
+(right after Repos). `bsc-plan deploy set` (the config JSON on stdin) — NOT a prose `deploy.md` —
+fills the Deploy pane and clears the stage gate. Re-run with the whole config as it firms up (the
+latest one wins). The gate needs a `platform` on every service, ≥2 `environments`, ≥2
+`pipeline.stages`, every secret listing `prod` in its `envs`, and a non-empty `release.strategy`:
 ```
-<deploy_config>
-{
+echo '{
   "services": [{"id":"web","repo":"owner/web","platform":"vercel","workload":"static","region":"iad1","build":"pnpm build","output":"dist"}],
   "environments": [{"name":"dev","branch":"feature/*","auto":true},{"name":"staging","branch":"develop","auto":true},{"name":"prod","branch":"main","auto":false}],
   "pipeline": {"provider":"GitHub Actions","stages":[{"name":"build","trigger":"push"},{"name":"test","trigger":"on-green","gate":true},{"name":"deploy","trigger":"on-green"}]},
   "secrets": [{"key":"DATABASE_URL","envs":["dev","staging","prod"]}],
   "release": {"strategy":"blue-green","autoRollback":true,"keep":3,"migrateWithDeploy":true},
   "health": {"probe":"/healthz","slo":"99.9% uptime","alerts":"Slack #deploys"}
-}
-</deploy_config>
+}' | bsc-plan deploy set
 ```
 **Register a per-repo starting script** (emit once you've written the file to
 `prompts/`; `mode` is `dev` or `triage`, `path` is relative to this directory).

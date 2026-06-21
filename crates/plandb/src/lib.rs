@@ -101,6 +101,18 @@ pub struct PlanFeature {
     pub stream: Option<String>,
 }
 
+/// A roadmap phase (#1017) — the name + "done when" description the structure card + publish (as a
+/// GitHub milestone) read. Features reference a phase by its 1-based position (or name) via
+/// `feature.phase`. Serializes to the `{name, description}` shape the frontend `parsePhases` reads.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct PlanPhase {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+
 /// kebab-case slug from a name (mirrors the frontend `slugify`).
 pub fn slugify(name: &str) -> String {
     let mut s = String::new();
@@ -301,7 +313,11 @@ impl Store {
     /// reset: without it the cleared file/store state would be re-populated from the DB on the next
     /// poll. Truncates rather than dropping the file, so it works even with the db open (WAL).
     pub fn clear(&self) -> rusqlite::Result<()> {
-        self.conn.execute_batch("DELETE FROM issues; DELETE FROM features; DELETE FROM repos;")
+        self.conn.execute_batch(
+            "DELETE FROM issues; DELETE FROM features; DELETE FROM repos; DELETE FROM phases; \
+             DELETE FROM fleet_streams; DELETE FROM fleet_meta; DELETE FROM deploy; DELETE FROM mcp; \
+             DELETE FROM blueprint; DELETE FROM context;",
+        )
     }
 
     // ── linked repos (#1012) — the repos linked to a project, durable in the hub's plan.db so a
@@ -335,6 +351,242 @@ impl Store {
     pub fn repo_remove(&self, full_name: &str) -> rusqlite::Result<()> {
         self.conn.execute("DELETE FROM repos WHERE full_name = ?1", params![full_name])?;
         Ok(())
+    }
+
+    // ── roadmap phases (#1017) — names/descriptions in order; features reference them by position. ──
+
+    /// Insert or merge a phase by `name` (idempotent; a non-empty description overwrites, blank keeps).
+    pub fn phase_upsert(&self, phase: &PlanPhase) -> rusqlite::Result<()> {
+        let name = phase.name.trim();
+        if name.is_empty() {
+            return Ok(());
+        }
+        let pos: i64 = self
+            .conn
+            .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM phases", [], |r| r.get(0))?;
+        self.conn.execute(
+            "INSERT INTO phases (name, description, position, updated_at)
+             VALUES (?1, ?2, ?3, strftime('%s','now'))
+             ON CONFLICT(name) DO UPDATE SET
+                description = CASE WHEN excluded.description != '' THEN excluded.description ELSE phases.description END,
+                updated_at  = excluded.updated_at",
+            params![name, phase.description, pos],
+        )?;
+        Ok(())
+    }
+
+    /// Every phase in roadmap order (position) — the `{name, description}` shape `parsePhases` reads.
+    pub fn phase_list(&self) -> rusqlite::Result<Vec<PlanPhase>> {
+        let mut stmt = self.conn.prepare("SELECT name, description FROM phases ORDER BY position, name")?;
+        let out: rusqlite::Result<Vec<PlanPhase>> = stmt
+            .query_map([], |r| Ok(PlanPhase { name: r.get(0)?, description: r.get(1)? }))?
+            .collect();
+        out
+    }
+
+    /// Remove a phase by `name` (no-op if absent).
+    pub fn phase_remove(&self, name: &str) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM phases WHERE name = ?1", params![name])?;
+        Ok(())
+    }
+
+    // ── fleet + per-stream permissions (#1018) — each stream is one JSON-per-row (granular edits, no
+    //    column sprawl) + a single meta row; reconstructed into the FleetPlan shape the frontend reads,
+    //    so the whole config (incl. per-stream perms/flows) is durable in plan.db, not a fleet.json file. ──
+
+    /// Replace the whole fleet: the `streams` array (by id, in order) + the meta (everything else).
+    pub fn fleet_set(&self, plan: &serde_json::Value) -> rusqlite::Result<()> {
+        let obj = plan.as_object().cloned().unwrap_or_default();
+        self.conn.execute("DELETE FROM fleet_streams", [])?;
+        if let Some(serde_json::Value::Array(streams)) = obj.get("streams") {
+            for (i, s) in streams.iter().enumerate() {
+                if let Some(id) = s.get("id").and_then(|v| v.as_str()) {
+                    if !id.trim().is_empty() {
+                        self.fleet_stream_upsert_at(id, s, i as i64)?;
+                    }
+                }
+            }
+        }
+        let mut meta = obj;
+        meta.remove("streams");
+        self.fleet_meta_set(&serde_json::Value::Object(meta))
+    }
+
+    /// Upsert one stream by id (appends if new; keeps its slot otherwise).
+    pub fn fleet_stream_upsert(&self, id: &str, data: &serde_json::Value) -> rusqlite::Result<()> {
+        let pos: i64 = self
+            .conn
+            .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM fleet_streams", [], |r| r.get(0))?;
+        self.fleet_stream_upsert_at(id, data, pos)
+    }
+
+    fn fleet_stream_upsert_at(&self, id: &str, data: &serde_json::Value, pos: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO fleet_streams (id, data, position, updated_at) VALUES (?1, ?2, ?3, strftime('%s','now'))
+             ON CONFLICT(id) DO UPDATE SET data = excluded.data, position = excluded.position, updated_at = excluded.updated_at",
+            params![id.trim(), data.to_string(), pos],
+        )?;
+        Ok(())
+    }
+
+    /// Every stream's JSON, in order.
+    pub fn fleet_stream_list(&self) -> rusqlite::Result<Vec<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM fleet_streams ORDER BY position, id")?;
+        let out: rusqlite::Result<Vec<serde_json::Value>> = stmt
+            .query_map([], |r| r.get::<_, String>(0))?
+            .map(|s| s.map(|t| serde_json::from_str(&t).unwrap_or(serde_json::Value::Null)))
+            .collect();
+        out
+    }
+
+    /// Remove one stream by id (no-op if absent).
+    pub fn fleet_stream_remove(&self, id: &str) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM fleet_streams WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Set the fleet meta (the FleetPlan minus `streams`: recommended, reasoning, director, topology, …).
+    pub fn fleet_meta_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO fleet_meta (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+            params![data.to_string()],
+        )?;
+        Ok(())
+    }
+
+    fn fleet_meta_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM fleet_meta WHERE id = 1")?;
+        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        match rows.next() {
+            Some(s) => Ok(serde_json::from_str(&s?).ok()),
+            None => Ok(None),
+        }
+    }
+
+    /// The whole FleetPlan (meta + streams), or None if nothing's set — the shape `parseFleetFile` reads.
+    pub fn fleet_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
+        let meta = self.fleet_meta_get()?;
+        let streams = self.fleet_stream_list()?;
+        if meta.is_none() && streams.is_empty() {
+            return Ok(None);
+        }
+        let mut obj = match meta {
+            Some(serde_json::Value::Object(m)) => m,
+            _ => serde_json::Map::new(),
+        };
+        obj.insert("streams".into(), serde_json::Value::Array(streams));
+        Ok(Some(serde_json::Value::Object(obj)))
+    }
+
+    // ── deploy config (#1020) — one DeployConfig blob per project (single row); the Deploy stage's
+    //    structured config, durable in plan.db instead of a <deploy_config> text tag. ──
+
+    /// Replace the project's deploy config (a single JSON blob — the full DeployConfig shape).
+    pub fn deploy_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO deploy (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+            params![data.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// The stored deploy config, or None if unset.
+    pub fn deploy_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM deploy WHERE id = 1")?;
+        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        match rows.next() {
+            Some(s) => Ok(serde_json::from_str(&s?).ok()),
+            None => Ok(None),
+        }
+    }
+
+    // ── MCP assignments (#1021) — the catalog server names scoped to a project; durable in plan.db
+    //    instead of <mcp_assign> text tags. The frontend resolves each name → the MCP-servers store. ──
+
+    /// Assign an MCP server by catalog `name` (idempotent; assignment order preserved).
+    pub fn mcp_add(&self, name: &str) -> rusqlite::Result<()> {
+        let n = name.trim();
+        if n.is_empty() {
+            return Ok(());
+        }
+        let pos: i64 = self
+            .conn
+            .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM mcp", [], |r| r.get(0))?;
+        self.conn.execute(
+            "INSERT INTO mcp (name, position, updated_at) VALUES (?1, ?2, strftime('%s','now'))
+             ON CONFLICT(name) DO NOTHING",
+            params![n, pos],
+        )?;
+        Ok(())
+    }
+
+    /// Every assigned MCP server name, in assignment order.
+    pub fn mcp_list(&self) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT name FROM mcp ORDER BY position, name")?;
+        let out: rusqlite::Result<Vec<String>> = stmt.query_map([], |r| r.get(0))?.collect();
+        out
+    }
+
+    /// Unassign an MCP server by `name` (no-op if absent).
+    pub fn mcp_remove(&self, name: &str) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM mcp WHERE name = ?1", params![name])?;
+        Ok(())
+    }
+
+    // ── authored blueprint (#1022) — the blueprint an AUTHORING project is designing, as one JSON
+    //    blob (single row); durable in plan.db instead of a <blueprint> tag / blueprint.json file. ──
+
+    /// Replace the authored blueprint (a single JSON blob — the full Blueprint shape).
+    pub fn blueprint_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO blueprint (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+            params![data.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// The stored authored blueprint, or None if unset.
+    pub fn blueprint_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM blueprint WHERE id = 1")?;
+        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        match rows.next() {
+            Some(s) => Ok(serde_json::from_str(&s?).ok()),
+            None => Ok(None),
+        }
+    }
+
+    // ── Context manifest (#1019) — the DYNAMIC required-set + confirm state for the Context stage.
+    //    The prose for each topic is a `context/<topic>.md` FILE (planner-written, worker-read); only
+    //    the required-SET lives in the db. The table IS the required set — `require` inserts a topic,
+    //    `unrequire` deletes it. Context files gate on GENERATION (presence), not confirmation (#1028).
+
+    /// Add (`required` = true) or drop (`required` = false) `topic` from the required set. The
+    /// planner shapes the set as the project clarifies; a blueprint seeds it.
+    pub fn context_require(&self, topic: &str, required: bool) -> rusqlite::Result<()> {
+        let t = topic.trim();
+        if t.is_empty() {
+            return Ok(());
+        }
+        if required {
+            let pos: i64 = self
+                .conn
+                .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM context", [], |r| r.get(0))?;
+            self.conn.execute(
+                "INSERT INTO context (topic, position, updated_at) VALUES (?1, ?2, strftime('%s','now'))
+                 ON CONFLICT(topic) DO NOTHING",
+                params![t, pos],
+            )?;
+        } else {
+            self.conn.execute("DELETE FROM context WHERE topic = ?1", params![t])?;
+        }
+        Ok(())
+    }
+
+    /// The required topic set, in declaration order — the gate checks each has a `context/<topic>.md`.
+    pub fn context_list(&self) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT topic FROM context ORDER BY position, topic")?;
+        let out: rusqlite::Result<Vec<String>> = stmt.query_map([], |r| r.get(0))?.collect();
+        out
     }
 }
 
@@ -375,6 +627,40 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
          );
          CREATE TABLE IF NOT EXISTS repos (
             full_name   TEXT PRIMARY KEY,
+            position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS phases (
+            name        TEXT PRIMARY KEY,
+            description TEXT NOT NULL DEFAULT '',
+            position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS fleet_streams (
+            id          TEXT PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}',
+            position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS fleet_meta (
+            id          INTEGER PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}'
+         );
+         CREATE TABLE IF NOT EXISTS deploy (
+            id          INTEGER PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}'
+         );
+         CREATE TABLE IF NOT EXISTS mcp (
+            name        TEXT PRIMARY KEY,
+            position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS blueprint (
+            id          INTEGER PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}'
+         );
+         CREATE TABLE IF NOT EXISTS context (
+            topic       TEXT PRIMARY KEY,
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
          );",
@@ -682,5 +968,123 @@ mod tests {
         // clear() unlinks repos too (the "clear plan" reset).
         s.clear().unwrap();
         assert!(s.repo_list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn phases_add_list_merge_remove() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.phase_list().unwrap().is_empty());
+        s.phase_upsert(&PlanPhase { name: "Foundations".into(), description: "kernel + storage".into() }).unwrap();
+        s.phase_upsert(&PlanPhase { name: "Build".into(), description: String::new() }).unwrap();
+        let p = s.phase_list().unwrap();
+        assert_eq!(p.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(), vec!["Foundations", "Build"]); // roadmap order
+        assert_eq!(p[0].description, "kernel + storage");
+        // a later edit with a blank description keeps the stored one; a non-blank overwrites.
+        s.phase_upsert(&PlanPhase { name: "Foundations".into(), description: String::new() }).unwrap();
+        assert_eq!(s.phase_list().unwrap()[0].description, "kernel + storage", "blank description doesn't wipe");
+        s.phase_upsert(&PlanPhase { name: "Build".into(), description: "the features".into() }).unwrap();
+        assert_eq!(s.phase_list().unwrap()[1].description, "the features");
+        s.phase_remove("Foundations").unwrap();
+        assert_eq!(s.phase_list().unwrap().len(), 1);
+        s.clear().unwrap();
+        assert!(s.phase_list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn fleet_set_get_round_trips_streams_and_meta() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.fleet_get().unwrap().is_none());
+        let plan = serde_json::json!({
+            "recommended": 2,
+            "reasoning": "two streams",
+            "director": { "enabled": true, "drive": "checkpoint" },
+            "topology": "hybrid",
+            "streams": [
+                { "id": "kernel", "repo": "o/r", "perm": { "edit": "allow" }, "flow": { "push": "auto-pr" } },
+                { "id": "ui", "repo": "o/r", "dependsOn": ["kernel"] }
+            ]
+        });
+        s.fleet_set(&plan).unwrap();
+        let got = s.fleet_get().unwrap().unwrap();
+        // meta survives, streams stay in order with per-stream perm/flow intact
+        assert_eq!(got["recommended"], serde_json::json!(2));
+        assert_eq!(got["director"]["enabled"], serde_json::json!(true));
+        let streams = got["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 2);
+        assert_eq!(streams[0]["id"], serde_json::json!("kernel"));
+        assert_eq!(streams[0]["perm"]["edit"], serde_json::json!("allow"));
+        assert_eq!(streams[1]["dependsOn"], serde_json::json!(["kernel"]));
+        // a fresh set replaces the stream set; remove drops one; clear() wipes both tables.
+        s.fleet_set(&serde_json::json!({ "recommended": 1, "streams": [ { "id": "solo", "repo": "o/r" } ] })).unwrap();
+        assert_eq!(s.fleet_stream_list().unwrap().len(), 1);
+        s.fleet_stream_remove("solo").unwrap();
+        assert!(s.fleet_stream_list().unwrap().is_empty());
+        s.fleet_set(&serde_json::json!({ "recommended": 1, "streams": [ { "id": "x", "repo": "o/r" } ] })).unwrap();
+        s.clear().unwrap();
+        assert!(s.fleet_get().unwrap().is_none());
+    }
+
+    #[test]
+    fn deploy_set_get_round_trips_and_clears() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.deploy_get().unwrap().is_none());
+        let cfg = serde_json::json!({ "services": [{ "id": "api", "platform": "fly" }], "release": { "strategy": "rolling" } });
+        s.deploy_set(&cfg).unwrap();
+        let got = s.deploy_get().unwrap().unwrap();
+        assert_eq!(got["services"][0]["platform"], serde_json::json!("fly"));
+        // a fresh set replaces the whole blob (single row)
+        s.deploy_set(&serde_json::json!({ "services": [] })).unwrap();
+        assert_eq!(s.deploy_get().unwrap().unwrap()["services"].as_array().unwrap().len(), 0);
+        s.clear().unwrap();
+        assert!(s.deploy_get().unwrap().is_none());
+    }
+
+    #[test]
+    fn mcp_add_list_remove_and_clear() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.mcp_list().unwrap().is_empty());
+        s.mcp_add("Postgres").unwrap();
+        s.mcp_add("GitHub").unwrap();
+        s.mcp_add("Postgres").unwrap(); // idempotent re-assign
+        assert_eq!(s.mcp_list().unwrap(), vec!["Postgres".to_string(), "GitHub".to_string()]);
+        s.mcp_remove("Postgres").unwrap();
+        assert_eq!(s.mcp_list().unwrap(), vec!["GitHub".to_string()]);
+        s.clear().unwrap();
+        assert!(s.mcp_list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn blueprint_set_get_round_trips_and_clears() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.blueprint_get().unwrap().is_none());
+        let bp = serde_json::json!({ "id": "bp1", "name": "API service", "category": "greenfield", "sections": [{ "key": "context" }] });
+        s.blueprint_set(&bp).unwrap();
+        let got = s.blueprint_get().unwrap().unwrap();
+        assert_eq!(got["name"], serde_json::json!("API service"));
+        assert_eq!(got["sections"][0]["key"], serde_json::json!("context"));
+        // a fresh set replaces the whole blob (single row)
+        s.blueprint_set(&serde_json::json!({ "id": "bp1", "name": "renamed" })).unwrap();
+        assert_eq!(s.blueprint_get().unwrap().unwrap()["name"], serde_json::json!("renamed"));
+        s.clear().unwrap();
+        assert!(s.blueprint_get().unwrap().is_none());
+    }
+
+    #[test]
+    fn context_required_set_add_remove_and_clear() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.context_list().unwrap().is_empty());
+        // seed a baseline required set (declaration order preserved)
+        for t in ["goal", "scope", "stack", "architecture", "users"] {
+            s.context_require(t, true).unwrap();
+        }
+        assert_eq!(s.context_list().unwrap(), vec!["goal", "scope", "stack", "architecture", "users"]);
+        s.context_require("goal", true).unwrap(); // idempotent re-require
+        assert_eq!(s.context_list().unwrap().len(), 5);
+        // unrequire drops the topic from the set (context gates on generation, not confirmation)
+        s.context_require("users", false).unwrap();
+        assert!(!s.context_list().unwrap().contains(&"users".to_string()));
+        // clear() wipes the set
+        s.clear().unwrap();
+        assert!(s.context_list().unwrap().is_empty());
     }
 }

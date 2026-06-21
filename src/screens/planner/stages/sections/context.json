@@ -1,20 +1,21 @@
 {
   "name": "Context",
   "glyph": "◆",
-  "gate": "all topics resolved",
+  "gate": "every required topic generated",
   "deps": [],
+  "requires": ["goal", "scope", "stack", "architecture", "users"],
   "gateRule": {
     "require": [
       {
-        "signal": "coreConfirmed",
+        "signal": "requiredContextReady",
         "target": true,
-        "weight": 0,
-        "label": "confirm goal, scope, stack & architecture"
+        "label": "generate every required context file"
       },
       {
         "signal": "topicsResolved",
         "of": "topicsTotal",
-        "label": "resolve the discovery topics"
+        "weight": 0,
+        "label": "write the required topics"
       },
       {
         "signal": "hasPlanGaps",
@@ -24,38 +25,44 @@
       }
     ]
   },
-  "blurb": "Discovery — goal, scope, stack, architecture (+ applicable dimensions).",
-  "prompt": "Walk the discovery checklist one topic at a time, using the canonical key as each\nfile's stem. The gate REQUIRES these four written and confirmed: goal, scope, stack,\narchitecture. Cover other dimensions ONLY where they genuinely apply (canonical keys:\nusers, ux, schema, api, auth, security, testing, …) and record the rest in _skipped.md.\nEach file you create is a gate item the user confirms — don't create tangential files.\nFinish each section fully — do NOT leave TODO / TBD / FIXME / XXX / TKTK markers in a written\nsection; the gate blocks on them. (Ordinary prose like \"...\" or the word \"placeholder\" is fine.)\n\nGate: goal/scope/stack/architecture confirmed, and every documented topic confirmed\n(skipped dimensions don't count).",
+  "blurb": "Context — the fundamental files that give Claude a clear picture (goal, scope, stack, architecture, users + applicable dimensions).",
+  "prompt": "Establish the project's context — one topic at a time — as a markdown file per topic at\n`context/<topic>.md` (the canonical key is the file stem). The REQUIRED set is dynamic and\nproject-specific: the baseline `goal, scope, stack, architecture, users` is seeded for you, but\nshape it for THIS project with `bsc-plan context require <topic>` / `bsc-plan context unrequire\n<topic>` as the picture clarifies — e.g. a CLI tool unrequires `users`/`ux`; a data platform\nrequires `schema`; a realtime API requires `api`. `bsc-plan context list` shows the required set.\n\nFor each topic: propose it, interrogate it with the user, then WRITE the file. Cover non-required\ndimensions only where they genuinely apply (canonical keys: ux, schema, api, auth, security,\ntesting, …); record the rest in `context/_skipped.md`. Finish each file fully — no TODO / TBD /\nFIXME / XXX / TKTK markers (the gate blocks on them; ordinary \"...\" or \"placeholder\" is fine).\n\nThe context files are done once GENERATED — they don't need confirmation; the gate passes when\nevery required topic's file exists.\n\nGate: every required topic is written.",
   "substeps": [
     {
       "key": "goal",
       "label": "Goal",
-      "gate": "goal.md written and confirmed",
-      "prompt": "Establish the goal: the single outcome this project must achieve, and who it's for. Propose\nit, interrogate it with the user, then write goal.md. Stop and confirm before moving on."
+      "gate": "context/goal.md written",
+      "prompt": "Establish the goal: the single outcome this project must achieve, and who it's for. Propose\nit, interrogate it with the user, then write `context/goal.md`."
     },
     {
       "key": "scope",
       "label": "Scope",
-      "gate": "scope.md written and confirmed",
-      "prompt": "Define what's in scope and — just as important — what's explicitly out of scope. Write\nscope.md, then confirm."
+      "gate": "context/scope.md written",
+      "prompt": "Define what's in scope and — just as important — what's explicitly out of scope. Write\n`context/scope.md`."
     },
     {
       "key": "stack",
       "label": "Stack",
-      "gate": "stack.md written and confirmed",
-      "prompt": "Decide the technology stack — languages, frameworks, datastores — and the reasoning behind\neach choice. Write it to the file named exactly `stack.md` (not \"tech stack.md\" or a titled\nvariant — the gate looks for `stack.md`), then confirm."
+      "gate": "context/stack.md written",
+      "prompt": "Decide the technology stack — languages, frameworks, datastores — and the reasoning behind\neach choice. Write it to the file named exactly `context/stack.md` (not \"tech stack.md\" or a\ntitled variant — the gate looks for the `stack` stem)."
     },
     {
       "key": "architecture",
       "label": "Architecture",
-      "gate": "architecture.md written and confirmed",
-      "prompt": "Describe the high-level architecture: the major components and how they interact. Write\narchitecture.md, then confirm."
+      "gate": "context/architecture.md written",
+      "prompt": "Describe the high-level architecture: the major components and how they interact. Write\n`context/architecture.md`."
+    },
+    {
+      "key": "users",
+      "label": "Users",
+      "gate": "context/users.md written",
+      "prompt": "Describe who uses this — the user roles/personas and what each needs from the app. Write\n`context/users.md`. (Unrequire this with `bsc-plan context unrequire users` if the project genuinely has no distinct users, e.g. a pure CLI or library.)"
     },
     {
       "key": "dimensions",
       "label": "Applicable dimensions",
       "loop": "topics",
-      "prompt": "Now cover any remaining dimension that genuinely applies — one at a time — using the canonical\nkey as the file stem (users, ux, schema, api, auth, security, testing, …). Record every\ndimension you don't document in _skipped.md. Don't create files for tangential topics."
+      "prompt": "Now cover any remaining dimension that genuinely applies — one at a time — using the canonical\nkey as the file stem (`context/ux.md`, `context/schema.md`, `context/api.md`, `context/auth.md`,\n`context/security.md`, `context/testing.md`, …); `bsc-plan context require <topic>` any you want\nto gate on. Record every dimension you don't document in `context/_skipped.md`. Don't create files\nfor tangential topics."
     }
   ]
 }
