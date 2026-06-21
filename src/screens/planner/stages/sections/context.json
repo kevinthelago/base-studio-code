@@ -3,7 +3,7 @@
   "glyph": "◆",
   "gate": "every required topic generated",
   "deps": [],
-  "requires": ["goal", "scope", "stack", "architecture", "users"],
+  "requires": ["goal", "scope", "stack", "architecture", "users", "release"],
   "gateRule": {
     "require": [
       {
@@ -25,8 +25,8 @@
       }
     ]
   },
-  "blurb": "Context — the fundamental files that give Claude a clear picture (goal, scope, stack, architecture, users + applicable dimensions).",
-  "prompt": "Establish the project's context — one topic at a time — as a markdown file per topic at\n`context/<topic>.md` (the canonical key is the file stem). The REQUIRED set is dynamic and\nproject-specific: the baseline `goal, scope, stack, architecture, users` is seeded for you, but\nshape it for THIS project with `bsc-plan context require <topic>` / `bsc-plan context unrequire\n<topic>` as the picture clarifies — e.g. a CLI tool unrequires `users`/`ux`; a data platform\nrequires `schema`; a realtime API requires `api`. `bsc-plan context list` shows the required set.\n\nFor each topic: propose it, interrogate it with the user, then WRITE the file. Cover non-required\ndimensions only where they genuinely apply (canonical keys: ux, schema, api, auth, security,\ntesting, …); record the rest in `context/_skipped.md`. Finish each file fully — no TODO / TBD /\nFIXME / XXX / TKTK markers (the gate blocks on them; ordinary \"...\" or \"placeholder\" is fine).\n\nThe context files are done once GENERATED — they don't need confirmation; the gate passes when\nevery required topic's file exists.\n\nGate: every required topic is written.",
+  "blurb": "Context — the fundamental files that give Claude a clear picture (goal, scope, stack, architecture, users, versioning & release schedule + applicable dimensions).",
+  "prompt": "Establish the project's context — one topic at a time — as a markdown file per topic at\n`context/<topic>.md` (the canonical key is the file stem). The REQUIRED set is dynamic and\nproject-specific: the baseline `goal, scope, stack, architecture, users, release` is seeded for\nyou, but shape it for THIS project with `bsc-plan context require <topic>` / `bsc-plan context\nunrequire <topic>` as the picture clarifies — e.g. a CLI tool unrequires `users`/`ux`; a data\nplatform requires `schema`; a realtime API requires `api`. `bsc-plan context list` shows the\nrequired set.\n\nFor each topic: propose it, interrogate it with the user, then WRITE the file. Cover non-required\ndimensions only where they genuinely apply (canonical keys: ux, schema, api, auth, security,\ntesting, …); record the rest in `context/_skipped.md`. Finish each file fully — no TODO / TBD /\nFIXME / XXX / TKTK markers (the gate blocks on them; ordinary \"...\" or \"placeholder\" is fine).\n\nThe context files are done once GENERATED — they don't need confirmation; the gate passes when\nevery required topic's file exists.\n\nGate: every required topic is written.",
   "substeps": [
     {
       "key": "goal",
@@ -57,6 +57,12 @@
       "label": "Users",
       "gate": "context/users.md written",
       "prompt": "Describe who uses this — the user roles/personas and what each needs from the app. Write\n`context/users.md`. (Unrequire this with `bsc-plan context unrequire users` if the project genuinely has no distinct users, e.g. a pure CLI or library.)"
+    },
+    {
+      "key": "release",
+      "label": "Versioning & release schedule",
+      "gate": "context/release.md written",
+      "prompt": "Propose an ideal versioning scheme and release schedule for THIS project, then write\n`context/release.md`. Default to the shape that fits how this app is built: ship a COMPLETE initial\nprototype first — one early version (e.g. `0.1.0` / `v1.0.0`) that delivers the whole thing working\nend-to-end at a basic level, the foundation everything else builds on — and from there release\nFEATURE BY FEATURE, one focused increment per version. Use semver: patch for fixes, minor for each\nfeature release, major for breaking changes. Recommend a release-and-continue rhythm — ship a\nversion early and keep refining it until its theme is complete before moving to the next. Lay out\nthe first few concrete versions: the prototype, then the next 2–4 feature versions in order, each\nwith a one-line theme. Adapt the cadence to the goal/scope/users (a regulated or data-migration\nproduct may need longer, gated releases) and confirm the shape with the user before writing."
     },
     {
       "key": "dimensions",

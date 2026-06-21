@@ -11,7 +11,7 @@ import type { PlanSignals } from "./stageGate";
 /** The universal baseline context topics a project requires when nothing else seeds the manifest
  *  (#1019). A blueprint may seed a different set via its context section's `requires`; the planner
  *  then adjusts it with `bsc-plan context require/unrequire`. */
-export const CONTEXT_BASELINE = ["goal", "scope", "stack", "architecture", "users"];
+export const CONTEXT_BASELINE = ["goal", "scope", "stack", "architecture", "users", "release"];
 
 // datamodel.json contract
 // Path:    ~/.base-studio-code/projects/<key>/datamodel.json
