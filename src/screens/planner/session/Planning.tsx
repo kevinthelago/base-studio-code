@@ -49,7 +49,7 @@ import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag } from "..
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
-import { derivePlanStageState, planStateToSignals, stageConfirmKeys, CONTEXT_BASELINE, type ContextManifestEntry } from "../stages/planStageDerive";
+import { derivePlanStageState, planStateToSignals, stageConfirmKeys, CONTEXT_BASELINE } from "../stages/planStageDerive";
 import { findPlanGaps } from "../grading/lintPlan";
 import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
 import { Ic } from "../blueprints/blueprintIcons";
@@ -404,9 +404,8 @@ export function Planning({ visible }: { visible: boolean }) {
   // Context manifest (#1019): the dynamic required-set + confirm state, polled from plan.db. The gate
   // (`requiredContextConfirmed`) reads it; the change-guard avoids churning state every tick; the
   // seeded-set guards the baseline seed so it runs at most once per project per session.
-  const [ctxManifest, setCtxManifest] = useState<ContextManifestEntry[]>([]);
-  const ctxManifestRef = useRef<ContextManifestEntry[]>([]); // mirror for stable callbacks (confirm)
-  const ctxManifestJsonRef = useRef<string>("");
+  const [ctxRequired, setCtxRequired] = useState<string[]>([]);
+  const ctxRequiredJsonRef = useRef<string>("");
   const ctxSeededRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!effectiveProjectId) return;
@@ -727,7 +726,7 @@ export function Planning({ visible }: { visible: boolean }) {
       parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "").length + featureIssues.length;
     return derivePlanStageState({
       sections: sections.map(s => ({ k: s.k, state: s.state })),
-      contextManifest: ctxManifest,
+      contextRequired: ctxRequired,
       repoCount: publishRepos.length,
       issueCount,
       fleetStreams: streams.length,
@@ -747,7 +746,7 @@ export function Planning({ visible }: { visible: boolean }) {
       // Folding the user-confirm in here keeps the gate signal (`featuresConfirmed`) unchanged.
       features: { count: featureState.count, allConfirmed: featuresGateComplete(featureState, confirmedSet.has(FEATURES_KEY)) && featureCycle.length === 0 },
     });
-  }, [sections, ctxManifest, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet]);
+  }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
     const bp = blueprints.find(b => b.id === effectiveBlueprintId);
@@ -818,7 +817,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const pendingConfirm = useMemo(() => {
     const activeKey = phases[focusActiveIdx]?.key;
     const activeSec = activeKey ? planSecs.find((s) => s.key === activeKey) : undefined;
-    const base = stageConfirmKeys(activeKey, sections, !!activeSec?.gateRule, !!activeKey && confirmedSet.has(activeKey), ctxManifest);
+    const base = stageConfirmKeys(activeKey, sections, !!activeSec?.gateRule, !!activeKey && confirmedSet.has(activeKey));
     // Features (#plan-db): once every feature in the roster is populated, offer the one-click
     // confirm that completes the stage. Until then the gate holds (titles-first → count = N), so a
     // single populated feature can no longer auto-advance.
@@ -826,22 +825,22 @@ export function Planning({ visible }: { visible: boolean }) {
       return base.includes(FEATURES_KEY) ? base : [...base, FEATURES_KEY];
     }
     return base;
-  }, [phases, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle, ctxManifest]);
+  }, [phases, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle]);
   // #1019: clear the cached manifest on a project switch so a stale set never bleeds across.
-  useEffect(() => { setCtxManifest([]); ctxManifestRef.current = []; ctxManifestJsonRef.current = ""; }, [effectiveProjectId]);
-  // #1019: poll the Context manifest (dynamic required-set + confirm state) from plan.db, seed the
-  // baseline once per project, and mirror confirmed topics into the section store so the cards reflect
-  // the durable db truth. The seed only sets `required` — only the USER ever confirms.
+  useEffect(() => { setCtxRequired([]); ctxRequiredJsonRef.current = ""; }, [effectiveProjectId]);
+  // #1028: poll the Context required-set from plan.db and seed the baseline once per project. The gate
+  // reads it to check each required topic's `context/<topic>.md` exists — context files gate on
+  // GENERATION, not confirmation, so there's nothing to confirm/mirror.
   useEffect(() => {
     if (!effectiveProjectId) return;
     let alive = true;
     const tick = async () => {
       try {
-        const m = await invoke<ContextManifestEntry[]>("plan_list_context", { projectKey: effectiveProjectId });
+        const m = await invoke<string[]>("plan_list_context", { projectKey: effectiveProjectId });
         if (!alive) return;
-        // Seed the baseline once per project/session if the manifest is empty — a deterministic floor
-        // before the planner runs `bsc-plan context require`. The blueprint's context section
-        // `requires` overrides the universal baseline (blueprint seeding).
+        // Seed the baseline once per project/session if the set is empty — a deterministic floor before
+        // the planner runs `bsc-plan context require`. The blueprint's context section `requires`
+        // overrides the universal baseline (blueprint seeding).
         if ((m?.length ?? 0) === 0 && !ctxSeededRef.current.has(effectiveProjectId)) {
           ctxSeededRef.current.add(effectiveProjectId);
           const requires = planSecs.find(s => s.key === "context")?.requires ?? CONTEXT_BASELINE;
@@ -851,33 +850,16 @@ export function Planning({ visible }: { visible: boolean }) {
           return; // next tick reads the seeded set
         }
         const j = JSON.stringify(m ?? []);
-        if (j !== ctxManifestJsonRef.current) {
-          ctxManifestJsonRef.current = j;
-          ctxManifestRef.current = m ?? [];
-          setCtxManifest(m ?? []);
-          // Mirror confirm → the section store (display only; the gate reads ctxManifest directly).
-          // Confirm-only, never unconfirm, so it can't race an optimistic approve.
-          for (const c of m ?? []) if (c.confirmed) confirmPlanSection(effectiveProjectId, c.topic);
+        if (j !== ctxRequiredJsonRef.current) {
+          ctxRequiredJsonRef.current = j;
+          setCtxRequired(m ?? []);
         }
       } catch { /* plan.db not created until the planner/seed touches context — ignore */ }
     };
     tick();
     const id = setInterval(tick, 2000);
     return () => { alive = false; clearInterval(id); };
-  }, [effectiveProjectId, planSecs, confirmPlanSection]);
-  // #1019: the user's confirm gesture persists to plan.db for any CONTEXT topic among `keys` (only the
-  // user confirms — the planner never does). Non-context keys (e.g. the features anchor) are ignored.
-  // The gate picks the change up on the next manifest poll.
-  const persistContextConfirms = useCallback((keys: string[]) => {
-    const topics = new Set(ctxManifestRef.current.map(c => c.topic));
-    void (async () => {
-      for (const k of keys) {
-        if (topics.has(k)) {
-          await invoke("plan_confirm_context", { projectKey: effectiveProjectId, topic: k, confirmed: true }).catch(console.error);
-        }
-      }
-    })();
-  }, [effectiveProjectId]);
+  }, [effectiveProjectId, planSecs]);
   // The active phase is an enabled OPTIONAL stage the user hasn't decided yet — so the advance bar
   // offers a "Skip stage" control beside the primary action (#921). `phasesFrom` reports a not-yet
   // -decided optional stage at the frontier as "active"; a decided (done/skipped) one isn't.
@@ -1050,7 +1032,6 @@ export function Planning({ visible }: { visible: boolean }) {
     },
     confirm: (keys) => {
       for (const k of keys) confirmPlanSection(effectiveProjectId, k);
-      persistContextConfirms(keys); // #1019: durable, user-only confirm of context topics in plan.db
       const name = keys.map(k => titleForKey(k)).join(", ") || "section";
       invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
       apLastAnswered.current = autopilotTxRef.current.length;
@@ -2482,7 +2463,6 @@ _Auto-generated by base-studio-code planner._`,
                   // selection re-follows to the next live phase (#807-followup).
                   if (focusFooter.kind === "approve-continue" && pendingConfirm.length > 0) {
                     for (const k of pendingConfirm) confirmPlanSection(effectiveProjectId, k);
-                    persistContextConfirms(pendingConfirm); // #1019: durable, user-only confirm in plan.db
                     const name = pendingConfirm.map(k => titleForKey(k)).join(", ");
                     invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
                   }

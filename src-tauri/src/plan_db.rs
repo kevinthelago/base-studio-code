@@ -2,7 +2,7 @@
 // the Tauri-free `plandb` crate (shared with the `bsc-plan` agent CLI); this module only resolves the
 // project key → `projects/<key>/plan.db` and adapts the `Store` API to Tauri commands for the UI.
 
-use plandb::{ContextTopic, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
+use plandb::{PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use std::path::PathBuf;
 
 fn db_path(project_key: &str) -> PathBuf {
@@ -171,24 +171,17 @@ pub fn plan_get_blueprint(project_key: String) -> Result<Option<serde_json::Valu
     open(&project_key)?.blueprint_get().map_err(|e| e.to_string())
 }
 
-// ── Context manifest (#1019) — the dynamic required-set + confirm state. The poll reads the manifest
-//    (`plan_list_context`); the blueprint seed / a UI toggle shapes `required`; ONLY the user confirms
-//    (`plan_confirm_context`) — there is no planner-facing confirm. ──
+// ── Context required-set (#1019/#1028) — the dynamic set of topics this project requires. The poll
+//    reads it (`plan_list_context`); the blueprint seed / planner shapes it (`plan_require_context`).
+//    Context files gate on GENERATION (the file exists), not confirmation — there is no confirm. ──
 
 #[tauri::command]
-pub fn plan_list_context(project_key: String) -> Result<Vec<ContextTopic>, String> {
+pub fn plan_list_context(project_key: String) -> Result<Vec<String>, String> {
     open(&project_key)?.context_list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn plan_require_context(project_key: String, topic: String, required: bool) -> Result<(), String> {
     open(&project_key)?.context_require(&topic, required).map_err(|e| e.to_string())
-}
-
-/// The user's confirm gesture for a context topic (see [[user-only-confirms-sections]]). Kept distinct
-/// from the planner's `bsc-plan context require` so confirmation stays a human-in-the-loop action.
-#[tauri::command]
-pub fn plan_confirm_context(project_key: String, topic: String, confirmed: bool) -> Result<(), String> {
-    open(&project_key)?.context_set_confirmed(&topic, confirmed).map_err(|e| e.to_string())
 }
 

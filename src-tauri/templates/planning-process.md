@@ -46,16 +46,16 @@ Mark the topic you are actively discussing so the UI highlights it:
 
 ## Coverage — record what you skip
 
-**Each context file you create is a gate item** — the stage completes only once the
-user confirms every required section. So create a file **only** for a dimension that
-genuinely applies; don't spin up tangential files (they just block the gate). Use the
-**canonical key** as the file stem so the section maps to the right gate signal —
+**Each context file you create is a gate item** — the stage completes once every required
+section is **written** (context files are generated, not confirmed). So create a file **only**
+for a dimension that genuinely applies; don't spin up tangential files (they just block the
+gate). Use the **canonical key** as the file stem so the section maps to the right gate signal —
 `schema` (not "data-model"), `ux`, `api`, `auth`, `security`, `testing`, etc. The
 **Context** gate requires the project's DYNAMIC required-set — seeded with the baseline
 `goal`, `scope`, `stack`, `architecture`, `users` (each `context/<topic>.md`, in the
 `context/` subdir) — which you shape with `bsc-plan context require <topic>` /
-`bsc-plan context unrequire <topic>` (`bsc-plan context list` shows it). You NEVER confirm
-a topic yourself — only the USER confirms; you write and require, the user reviews.
+`bsc-plan context unrequire <topic>` (`bsc-plan context list` shows it). Just write the
+required files; they don't need confirmation.
 
 **Finish each section** — never leave a deliberate fill-in marker (`TODO`, `TBD`, `FIXME`,
 `XXX`, `TKTK`) in a written section. The Context and Plan gates block on them. (Ordinary prose —
@@ -355,11 +355,10 @@ and `risks` apply to almost every project.
 
 > **REQUIRED for the Context gate — the DYNAMIC required-set is seeded with the baseline
 > `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md`, and
-> `context/users.md`.** Write and confirm each; shape the set for THIS project with `bsc-plan context
+> `context/users.md`.** Write each; shape the set for THIS project with `bsc-plan context
 > require <topic>` / `bsc-plan context unrequire <topic>` (a CLI tool unrequires `users`/`ux`; a data
-> platform requires `schema`; `bsc-plan context list` shows the manifest). The Context stage cannot
-> complete until every required topic exists and the user has confirmed each — only the USER confirms,
-> never you.
+> platform requires `schema`; `bsc-plan context list` shows the required set). The Context stage
+> completes once every required topic's file exists — context files are generated, not confirmed.
 
 - `goal` **(gate-required)** — what it does, who it's for, and the measurable signal of
   success (2–4 sentences). Drives the GitHub project title and description.
