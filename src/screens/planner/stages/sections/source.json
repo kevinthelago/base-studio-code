@@ -1,0 +1,26 @@
+{
+  "name": "Source",
+  "glyph": "⇲",
+  "gate": "model inferred + schema confirmed",
+  "deps": [
+    "context",
+    "repos"
+  ],
+  "optional": true,
+  "blurb": "Migration source — inventory it, infer the data model, confirm the schema.",
+  "gateRule": {
+    "require": [
+      {
+        "signal": "modelInferred",
+        "target": true,
+        "label": "data model inferred from source"
+      },
+      {
+        "signal": "schemaRefined",
+        "target": true,
+        "label": "schema reviewed and confirmed"
+      }
+    ]
+  },
+  "prompt": "Identify the migration source (database, SaaS export, or API) and inventory what exists\nthere: its objects/tables, their schemas, and a small representative sample of rows.\nThen propose the canonical data model this project will load into — entities, fields with\ntypes, and the identity key (the fields that decide when two records describe the same\nreal-world thing). Write the model to datamodel.json and set modelInferred to true.\nWalk the proposed schema with the user and refine it; when confirmed, set schemaRefined\nto true.\n\nGate: datamodel.json present with modelInferred and schemaRefined both true."
+}

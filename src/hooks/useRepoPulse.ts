@@ -7,14 +7,14 @@
 // Diff-derived panels (lines/day, churn-by-area, hottest files, contributor
 // ±lines) need per-commit detail calls — capped to the most recent N commits.
 import { useState, useEffect } from "react";
-import { githubRequest, isGithubAuthError } from "../lib/github";
+import { githubRequest, isGithubAuthError } from "../lib/github/github";
 import type { GithubRepo } from "../store";
 import {
   mapVelocity, mapChurnAreas, mapHottestFiles, mapContributors, mapCI,
   mapReviewLatency, mapBranches, deriveKpis,
   type GhCommitItem, type GhCommitDetail, type GhPull, type GhBranchItem,
   type GhWorkflowItem, type GhRun, type GhCompare, type CiHealth, type PulseKpis,
-} from "../lib/repoPulseLive";
+} from "../lib/github/repoPulseLive";
 import type {
   VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch,
 } from "../data/repoPulse";

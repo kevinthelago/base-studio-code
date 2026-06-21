@@ -1,0 +1,33 @@
+{
+  "order": 0,
+  "id": "default",
+  "name": "Default",
+  "desc": "The simplest greenfield path — context to agent-ready plan",
+  "origin": "built-in",
+  "category": "greenfield",
+  "mode": "create",
+  "sections": [
+    {
+      "key": "context"
+    },
+    {
+      "key": "repos"
+    },
+    {
+      "key": "deploy"
+    },
+    {
+      "key": "features"
+    },
+    {
+      "key": "ui",
+      "optional": true
+    },
+    {
+      "key": "structure"
+    },
+    {
+      "key": "permissions"
+    }
+  ]
+}

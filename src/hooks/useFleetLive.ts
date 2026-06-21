@@ -5,8 +5,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
-import { ingestCoordLog, emptyCoordState, type CoordState } from "../lib/coordination";
-import { buildLiveWorkers, deriveFleetKpis, statusCounts, type LiveWorker, type FleetKpis } from "../lib/fleetLive";
+import { ingestCoordLog, emptyCoordState, type CoordState } from "../lib/fleet/coordination";
+import { buildLiveWorkers, deriveFleetKpis, statusCounts, type LiveWorker, type FleetKpis } from "../lib/fleet/fleetLive";
 
 export interface UseFleetLive {
   workers: LiveWorker[];

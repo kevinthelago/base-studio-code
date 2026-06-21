@@ -3,14 +3,14 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "../../store";
-import { pairingPayload, type TunnelStatus } from "../../lib/tunnel";
+import { pairingPayload, type TunnelStatus } from "../../lib/tunnel/tunnel";
 import {
   tunnelStart,
   tunnelStop,
   tunnelStatus,
   tunnelSetInputGranted,
   tunnelUnpair,
-} from "../../lib/tunnelClient";
+} from "../../lib/tunnel/tunnelClient";
 
 // A "Deploy to Cloudflare" link prefilled with the relay workspace, so a user can
 // stand up their own zero-knowledge relay in their own account (BYO).
@@ -30,6 +30,25 @@ export function relayHealthUrl(relayUrl: string): string {
     .replace(/^ws:\/\//i, "http://");
   const withScheme = /^https?:\/\//i.test(normalized) ? normalized : `https://${normalized}`;
   return `${withScheme}/health`;
+}
+
+/**
+ * Deep-link to the user's Cloudflare dashboard for their relay. Cloudflare resolves the `:account`
+ * placeholder to whoever's logged in, so we never need their account id (which the app can't know).
+ * When the relay is a `*.workers.dev` URL we extract the worker NAME (the first host label) and link
+ * straight to that Worker; otherwise (custom domain, or no URL yet) we fall back to the Workers &
+ * Pages list.
+ */
+export function cloudflareDashUrl(relayUrl: string): string {
+  const base = "https://dash.cloudflare.com/?to=/:account";
+  const trimmed = relayUrl.trim().replace(/^wss?:\/\//i, "https://");
+  let host = "";
+  try {
+    host = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`).hostname;
+  } catch { /* unparseable / empty → fall through to the generic Workers list */ }
+  // `<worker>.<account-subdomain>.workers.dev` → the first label is the Worker's name.
+  const m = host.match(/^([a-z0-9][a-z0-9-]*)\.[a-z0-9-]+\.workers\.dev$/i);
+  return m ? `${base}/workers/services/view/${m[1]}/production` : `${base}/workers-and-pages`;
 }
 
 /** How long to wait for the relay's `/health` before calling the Test a failure. */
@@ -215,6 +234,13 @@ export function TunnelSettings() {
             </button>
             <button className="btn" onClick={() => openUrl(DEPLOY_URL)}>
               deploy a relay →
+            </button>
+            <button
+              className="btn"
+              title="Open this relay's Worker in your Cloudflare dashboard"
+              onClick={() => openUrl(cloudflareDashUrl(tunnelRelayUrl))}
+            >
+              manage in Cloudflare ↗
             </button>
           </div>
           <div className="hint">

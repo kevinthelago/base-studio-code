@@ -1,6 +1,6 @@
 import { useAppStore } from "../../store";
-import { paneCount, type Every, type Automation, type SimpleWhen } from "../../lib/scheduler";
-import { isValidCron } from "../../lib/cron";
+import { paneCount, type Every, type Automation, type SimpleWhen } from "../../lib/automations/scheduler";
+import { isValidCron } from "../../lib/automations/cron";
 import { fmtStamp } from "./format";
 
 const EVERY_OPTS: Every[] = ["minute", "hour", "day", "weekday"];

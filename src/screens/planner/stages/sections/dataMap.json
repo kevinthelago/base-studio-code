@@ -1,0 +1,25 @@
+{
+  "name": "Mapping",
+  "glyph": "↦",
+  "gate": "every in-scope field mapped or dropped",
+  "deps": [
+    "dataSource",
+    "dataModel"
+  ],
+  "blurb": "Field-by-field: source object → Data Model entity.",
+  "prompt": "Map the source onto the Data Model, one object at a time. For each source object, bind it to a\nData Model entity and map every field — or explicitly mark it DROPPED, with a reason. Note the\ntransforms each field needs (type coercion, unit/format normalization, lookups). The output is a\ncomplete mapping spec; nothing is left ambiguous for the load stage.\n\nWrite `dataMap.json`: { \"mapped\": [{ \"from\": \"Source.field\", \"to\": \"Entity.field\", \"auto\":\ntrue|false, \"note\" }], \"droppedSource\": [{ \"field\", \"why\" }], \"unmappedModel\": [{ \"field\", \"why\" }] }.\nThe Mapping pane renders the bindings, the dropped source fields, and the net-new model fields.",
+  "substeps": [
+    {
+      "key": "map-objects",
+      "label": "Bind objects to entities",
+      "gate": "each source object bound to an entity",
+      "prompt": "Bind each source object to a Data Model entity (or mark it out of scope). Confirm the set of\nobject→entity bindings with the user before mapping individual fields."
+    },
+    {
+      "key": "map-fields",
+      "label": "Map the fields",
+      "gate": "every in-scope field mapped or dropped",
+      "prompt": "Now, per bound object, map every field to a Data Model field or mark it DROPPED with a reason,\nrecording the transform each needs. Write the mapping spec, then confirm."
+    }
+  ]
+}

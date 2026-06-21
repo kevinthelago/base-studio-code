@@ -9,6 +9,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-06-21
+
+The **simplicity release** — make the platform foolproof for new users.
+
+### Added
+- New **Complete** greenfield blueprint — the thorough path (source + MCP servers, automations & skills) for when you want everything; the advanced stages moved here from Default (#1003)
+- **plan.db** execution substrate — a local SQLite working store (`crates/plandb` + the `bsc-plan` CLI) tracking features, issues, and execution status; GitHub stays the durable store and recovery rehydrates the DB from it
+- Features are now a **dependency graph** — the plan stage sequences them into phases, and issues are generated at GitHub-publish time straight from the DB
+- Blueprint **import-from-gist** modal (browse your own published blueprint gists); user blueprints persist to a dedicated directory
+- Gated-icon stage progression on blueprint cards; a drag-resizable blueprints rail
+
+### Changed
+- **Default blueprint simplified** to a foolproof greenfield path: context → repos → deploy → features → UI → structure → permissions (#1003)
+- Blueprints folded into the planner page — the separate Blueprints tab was removed; selecting a blueprint sets it active, "modify in planner" edits it
+- UI planning stage now hands off to **Claude Design** — the user provides the exported design files instead of the planner inventing the visuals
+- Deploy platform selection is now a toggle (click again to clear)
+
+### Removed
+- The **MCP server** greenfield blueprint — the MCP-servers planning stage stays available on the Complete blueprint and others
+
+### Fixed
+- Published-project delete crash (#997); deleting a project also clears its plan.db data
+- Ghost `issues.md` context card — a stale issues section no longer renders as a 0.0k context file
+- Opening a project no longer silently switches its blueprint to the globally-selected one (#988)
+- CI: repointed the Plan-contract job to the reorg's moved test paths, and removed an unused import that broke `develop`'s typecheck
+
 ## [1.0.2] — 2026-06-18
 
 ### Added

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use bsc_data::{reconcile, Connector, CsvConnector, DataModel, DataStore, LoadSource, Precedence, SourceLoad};
+use bsc_data::{reconcile, Connector, CsvConnector, DataModel, Entity, Field, FieldType, DataStore, LoadSource, Precedence, SourceLoad};
 
 /// A preview of a CSV source: its columns and the first `limit` rows.
 #[derive(serde::Serialize)]
@@ -164,6 +164,172 @@ pub fn data_reconcile_csvs(
     run_reconcile(&db, model, &entity, &sources, precedence, &loaded_at).map_err(|e| e.to_string())
 }
 
+// ── source-stage commands (#se-commands) ─────────────────────────────────────
+// Gated behind the `source-stage` feature (enabled by default). These power the
+// data-source connection UX: list source objects, preview rows, infer a Data Model
+// from a CSV, and persist/load the canonical artifact.
+
+/// A source object exposed to the frontend: its logical name and column list.
+/// Mirrors `bsc_data::SourceObject` but serializable for the Tauri bridge.
+#[cfg(feature = "source-stage")]
+#[derive(serde::Serialize)]
+pub struct SourceObjectView {
+    pub name: String,
+    pub columns: Vec<String>,
+}
+
+/// Infer the field type from a column's sample values. Prefers specificity:
+/// bool > number/money > date > string. Empty / all-blank columns default to string.
+#[cfg(feature = "source-stage")]
+fn infer_field_type(samples: &[&str]) -> FieldType {
+    let non_empty: Vec<&str> = samples.iter().copied().filter(|s| !s.is_empty()).collect();
+    if non_empty.is_empty() {
+        return FieldType::String;
+    }
+    // Bool: standard truthy/falsy spellings
+    if non_empty.iter().all(|s| {
+        matches!(s.to_lowercase().as_str(), "true" | "false" | "yes" | "no" | "1" | "0" | "y" | "n")
+    }) {
+        return FieldType::Bool;
+    }
+    // Number / Money: parseable as f64
+    if non_empty.iter().all(|s| s.parse::<f64>().is_ok()) {
+        return if non_empty.iter().any(|s| s.contains('.')) { FieldType::Money } else { FieldType::Number };
+    }
+    // Date: YYYY-MM-DD heuristic
+    if non_empty.iter().all(|s| {
+        let b = s.as_bytes();
+        b.len() >= 10 && b[4] == b'-' && b[7] == b'-'
+            && b[..4].iter().all(u8::is_ascii_digit)
+            && b[5..7].iter().all(u8::is_ascii_digit)
+            && b[8..10].iter().all(u8::is_ascii_digit)
+    }) {
+        return FieldType::Date;
+    }
+    FieldType::String
+}
+
+/// Sanitize a raw column name into a safe SQL identifier (letters, digits, `_`).
+#[cfg(feature = "source-stage")]
+fn safe_key(raw: &str) -> String {
+    let s: String = raw.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
+    if s.is_empty() || s.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("col_{s}")
+    } else {
+        s.to_lowercase()
+    }
+}
+
+/// List the objects (and their columns) that a CSV source exposes.
+/// For a CSV connector this is always one object — the file itself.
+#[cfg(feature = "source-stage")]
+#[tauri::command]
+pub fn data_source_inventory(csv_path: String) -> Result<Vec<SourceObjectView>, String> {
+    let objs = CsvConnector::new(&csv_path).objects().map_err(|e| e.to_string())?;
+    Ok(objs.into_iter().map(|o| SourceObjectView { name: o.name, columns: o.columns }).collect())
+}
+
+/// Preview the first `limit` rows of a CSV source (columns + sample rows).
+/// Reuses the existing `CsvPreview` type so the frontend sees a consistent shape.
+#[cfg(feature = "source-stage")]
+#[tauri::command]
+pub fn data_source_sample(csv_path: String, limit: usize) -> Result<CsvPreview, String> {
+    let rs = CsvConnector::new(&csv_path).read("").map_err(|e| e.to_string())?;
+    let total = rs.rows.len();
+    Ok(CsvPreview { columns: rs.columns, rows: rs.rows.into_iter().take(limit).collect(), total })
+}
+
+/// Infer a canonical Data Model from a CSV file.
+///
+/// - One entity per file (the CSV connector has a single object).
+/// - Field keys are SQL-safe lowercased column names.
+/// - Types are inferred from up to 20 sample rows.
+/// - The first column is tentatively the identity field.
+#[cfg(feature = "source-stage")]
+#[tauri::command]
+pub fn data_infer_model(csv_path: String, model_name: String) -> Result<DataModel, String> {
+    let conn = CsvConnector::new(&csv_path);
+    let rs = conn.read("").map_err(|e| e.to_string())?;
+    let path = std::path::Path::new(&csv_path);
+    let entity_raw = path.file_stem().and_then(|s| s.to_str()).unwrap_or("data");
+    let entity_key = safe_key(entity_raw);
+    let entity_label = entity_raw.to_string();
+
+    let n_sample = rs.rows.len().min(20);
+    let mut fields: Vec<Field> = rs.columns.iter().enumerate().map(|(ci, col)| {
+        let samples: Vec<&str> = rs.rows[..n_sample]
+            .iter()
+            .filter_map(|row| row.get(ci).map(String::as_str))
+            .collect();
+        Field {
+            key: safe_key(col),
+            label: col.clone(),
+            ty: infer_field_type(&samples),
+            required: false,
+            reference: None,
+            enum_values: vec![],
+            validate: None,
+        }
+    }).collect();
+
+    let identity = fields.first().map(|f| vec![f.key.clone()]).unwrap_or_default();
+    // Identity fields are merge keys and must round-trip as text — force String (matching
+    // crates/data::infer), so a numeric-looking key like `id` joins/dedupes as a key, not a number.
+    for f in fields.iter_mut() {
+        if identity.iter().any(|k| k == &f.key) && !matches!(f.ty, FieldType::Ref) {
+            f.ty = FieldType::String;
+        }
+    }
+    Ok(DataModel {
+        name: model_name,
+        version: 1,
+        entities: vec![Entity { key: entity_key, label: entity_label, fields, identity }],
+    })
+}
+
+/// Persist the canonical Data Model as `datamodel.json` in the project hub.
+///
+/// Shape: `{ "model": <DataModel>, "refined": <bool> }`.
+/// `refined` is false on first inference; true once the user confirms/refines it in the pane.
+#[cfg(feature = "source-stage")]
+#[tauri::command]
+pub fn data_persist_model(project_key: String, model: DataModel, refined: bool) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    struct Artifact<'a> {
+        model: &'a DataModel,
+        refined: bool,
+    }
+    let artifact = Artifact { model: &model, refined };
+    let json = serde_json::to_string_pretty(&artifact).map_err(|e| e.to_string())?;
+    let path = crate::project_dir(&project_key).join("datamodel.json");
+    if let Some(p) = path.parent() {
+        std::fs::create_dir_all(p).map_err(|e| format!("data_persist_model: {e}"))?;
+    }
+    std::fs::write(&path, json).map_err(|e| format!("data_persist_model: {e}"))?;
+    log::info!("data_persist_model({project_key}): wrote datamodel.json (refined={refined})");
+    Ok(())
+}
+
+/// Load the reconciled canonical data artifact into the project's DuckDB store.
+///
+/// **Stub** — the load-stream (#se-persist) owns the real implementation. This stub
+/// defines the command surface early so the load-stream can depend on it without
+/// waiting for this crate's full build. Returns a zeroed report until replaced.
+#[cfg(feature = "source-stage")]
+#[tauri::command]
+pub fn data_load_reconciled(
+    project_key: String,
+    entity: String,
+    sources: Vec<CsvSource>,
+    precedence: Vec<String>,
+    loaded_at: String,
+) -> Result<ReconcileReport, String> {
+    // Resolve the persisted model from datamodel.json so the interface is testable
+    // even as a stub. Load-stream replaces this body with the real reconcile-and-load.
+    let _ = (project_key, entity, sources, precedence, loaded_at);
+    Ok(ReconcileReport { entity: String::new(), records: 0, conflicts: 0, field_lineage: 0, sources: 0 })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,5 +394,58 @@ mod tests {
         std::fs::remove_file(&crm).ok();
         std::fs::remove_file(&books).ok();
         std::fs::remove_file(&db).ok();
+    }
+
+    // ── source-stage unit tests ────────────────────────────────────────────────
+
+    #[cfg(feature = "source-stage")]
+    #[test]
+    fn infer_field_type_detects_bool_number_money_date_string() {
+        use super::infer_field_type;
+        assert_eq!(infer_field_type(&["true", "false", "yes"]), FieldType::Bool);
+        assert_eq!(infer_field_type(&["1", "2", "3"]), FieldType::Number);
+        assert_eq!(infer_field_type(&["1.50", "2.99"]), FieldType::Money);
+        assert_eq!(infer_field_type(&["2024-01-15", "2024-06-01"]), FieldType::Date);
+        assert_eq!(infer_field_type(&["Acme Corp", "1234"]), FieldType::String);
+        assert_eq!(infer_field_type(&[]), FieldType::String);
+        assert_eq!(infer_field_type(&["", ""]), FieldType::String);
+    }
+
+    #[cfg(feature = "source-stage")]
+    #[test]
+    fn data_source_inventory_returns_columns_from_csv() {
+        let tmp = std::env::temp_dir();
+        let csv = tmp.join(format!("bsc-inv-{}.csv", std::process::id()));
+        std::fs::write(&csv, "id,name,revenue\n1,Acme,500\n").unwrap();
+
+        let views = super::data_source_inventory(csv.to_str().unwrap().to_string()).unwrap();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].columns, vec!["id", "name", "revenue"]);
+
+        std::fs::remove_file(&csv).ok();
+    }
+
+    #[cfg(feature = "source-stage")]
+    #[test]
+    fn data_infer_model_produces_a_valid_data_model_from_csv() {
+        let tmp = std::env::temp_dir();
+        let csv = tmp.join(format!("bsc-infer-{}.csv", std::process::id()));
+        std::fs::write(&csv, "id,amount,created_at,active\n1,9.99,2024-01-01,true\n2,0.50,2024-06-01,false\n").unwrap();
+
+        let model = super::data_infer_model(csv.to_str().unwrap().to_string(), "Test".to_string()).unwrap();
+        model.check().expect("inferred model should be valid");
+        assert_eq!(model.name, "Test");
+        assert_eq!(model.entities.len(), 1);
+        let ent = &model.entities[0];
+        assert_eq!(ent.identity, vec!["id"]);
+
+        let by_key: std::collections::HashMap<&str, FieldType> =
+            ent.fields.iter().map(|f| (f.key.as_str(), f.ty)).collect();
+        assert_eq!(by_key["id"], FieldType::String);
+        assert_eq!(by_key["amount"], FieldType::Money);
+        assert_eq!(by_key["created_at"], FieldType::Date);
+        assert_eq!(by_key["active"], FieldType::Bool);
+
+        std::fs::remove_file(&csv).ok();
     }
 }
