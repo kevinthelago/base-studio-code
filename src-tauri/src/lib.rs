@@ -2081,6 +2081,36 @@ async fn read_plan_sections(project_key: String) -> Result<std::collections::Has
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Crash-recovery flag (#1041): true when the PREVIOUS shutdown was UNCLEAN — the `.session-lock`
+/// marker survived because the `RunEvent::Exit` handler never ran (crash / kill / power loss /
+/// force-quit). A clean quit deletes the marker, so a normal restart reads `false`. The frontend
+/// reads this once (`was_unclean_shutdown`) to offer restoring the sessions that were running.
+pub(crate) struct UncleanShutdown(pub bool);
+
+/// Path of the session-lock marker (#1041).
+fn session_lock_path() -> std::path::PathBuf {
+    bsc_base_dir().join(".session-lock")
+}
+
+/// Claim the session lock for this run (#1041): returns whether the marker was ALREADY present
+/// (= the previous shutdown was unclean — the Exit handler never deleted it), then (re)writes it.
+/// Pure over an explicit path so it's testable; the pid content is just for debugging.
+fn claim_session_lock(path: &std::path::Path) -> bool {
+    let was_held = path.exists();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, std::process::id().to_string());
+    was_held
+}
+
+/// Whether the previous shutdown was unclean (#1041). The frontend reads this once at boot to offer
+/// restoring the sessions that were running (a clean quit returns `false`).
+#[tauri::command]
+fn was_unclean_shutdown(state: tauri::State<UncleanShutdown>) -> bool {
+    state.0
+}
+
 pub fn run() {
     // rustls 0.23 can't auto-determine a CryptoProvider from features at runtime, so
     // the relay dial's TLS handshake (tokio-tungstenite) would panic the tunnel thread
@@ -2091,6 +2121,14 @@ pub fn run() {
     // Startup timing (#perf): wall clock from here to `setup` ≈ native + plugin init, before the
     // WebView even loads our page. The frontend logs the doc→paint portion separately.
     let boot_start = std::time::Instant::now();
+
+    // Crash recovery (#1041): if the session-lock marker SURVIVED the last run, the previous
+    // shutdown was unclean (the Exit handler never ran to delete it). Read it BEFORE re-writing, then
+    // claim the lock for this run. Existence is the signal; the pid is just for debugging.
+    let unclean_shutdown = claim_session_lock(&session_lock_path());
+    if unclean_shutdown {
+        log::warn!("[startup] previous shutdown was UNCLEAN (session-lock survived) — offering session restore");
+    }
 
     tauri::Builder::default()
         .plugin(
@@ -2126,6 +2164,7 @@ pub fn run() {
         .manage(crate::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
+        .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             log::info!("[startup] process→setup {}ms (native + plugin init)", boot_start.elapsed().as_millis());
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
@@ -2178,6 +2217,7 @@ pub fn run() {
             config::read_claude_config,
             config::write_claude_config,
             ensure_session_settings,
+            was_unclean_shutdown,
             github_readiness,
             preflight,
             get_preferred_shell,
@@ -2267,6 +2307,10 @@ pub fn run() {
         // `~/.base-studio-code` (#52).
         .run(|app_handle, event| {
             if matches!(event, RunEvent::Exit) {
+                // Clean shutdown (#1041): delete the session-lock marker so the NEXT launch reads a
+                // clean exit and doesn't offer to restore. A crash/kill skips this handler, leaving
+                // the marker → the next launch detects the unclean shutdown.
+                let _ = std::fs::remove_file(session_lock_path());
                 // Signal the tunnel transport (#242b) to close before tearing down PTYs.
                 app_handle.state::<tunnel::TunnelState>().shutdown();
                 crate::pty::kill_all_pty_sessions(app_handle.state::<crate::pty::PtyState>().inner());
@@ -2309,6 +2353,26 @@ pub(crate) mod testutil {
 #[cfg(test)]
 mod tests {
     use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn session_lock_detects_unclean_shutdown() {
+        // #1041: the marker surviving a run = unclean shutdown (the Exit handler never deleted it).
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-lock-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ));
+        let lock = dir.join(".session-lock");
+        // First claim (clean / first run): marker not present yet.
+        assert!(!super::claim_session_lock(&lock), "first claim sees a clean state");
+        assert!(lock.exists(), "claim writes the marker");
+        // A second claim WITHOUT a clean release (no Exit delete) = unclean prior shutdown.
+        assert!(super::claim_session_lock(&lock), "surviving marker => unclean");
+        // A clean release (what RunEvent::Exit does), then a claim = clean again.
+        let _ = std::fs::remove_file(&lock);
+        assert!(!super::claim_session_lock(&lock), "after a clean release the next run is clean");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn director_protocol_assigns_contract_ownership() {
