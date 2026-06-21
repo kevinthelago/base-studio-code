@@ -11,7 +11,8 @@ import type { AgentStream } from "../../screens/planner/stages/planSections";
  *  coordinators mostly read. (`bash` is never blanket-denied; command control is the
  *  allowlist -- see profileEnforcement.) */
 const TOOLS_BY_ROLE: Record<SessionRole, Record<ToolKey, Tier>> = {
-  worker:    { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "allow", web: "ask",  task: "allow" },
+  worker:    { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "allow", web: "ask",  task: "deny"  }, // #1036: a worker does its issue directly, never spawns sub-agents
+
   planner:   { read: "allow", grep: "allow", glob: "allow", edit: "ask",   write: "ask",   bash: "ask",   web: "ask",  task: "allow" },
   director:  { read: "allow", grep: "allow", glob: "allow", edit: "deny",  write: "deny",  bash: "ask",   web: "ask",  task: "allow" },
   triage:    { read: "allow", grep: "allow", glob: "allow", edit: "ask",   write: "ask",   bash: "ask",   web: "ask",  task: "allow" },
