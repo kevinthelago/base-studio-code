@@ -40,15 +40,35 @@ describe("blueprints — seed library", () => {
     expect(SECTION_DEFS.ui.deps).toContain("features");
   });
 
-  it("adds an optional MCP Servers stage after Permissions in the greenfield blueprints (#878)", () => {
+  it("adds an optional MCP Servers stage after Permissions in the Complete blueprint (#878/#1003)", () => {
     expect(SECTION_DEFS.mcp).toBeTruthy();
     expect(SECTION_DEFS.mcp.optional).toBe(true);
-    for (const id of ["default"]) {
+    // #1003: the advanced stages moved off Default onto the Complete greenfield blueprint.
+    for (const id of ["complete"]) {
       const bp = makeBlueprints().find((b) => b.id === id)!;
       const keys = bp.sections.map((s) => s.key);
       expect(keys, `${id} has an mcp stage`).toContain("mcp");
       expect(keys.indexOf("mcp"), `${id}: mcp after permissions`).toBeGreaterThan(keys.indexOf("permissions"));
     }
+  });
+
+  it("keeps the Default blueprint minimal; the advanced stages live on Complete (#1003)", () => {
+    const bp = (id: string) => makeBlueprints().find((b) => b.id === id)!;
+    const keysOf = (id: string) => bp(id).sections.map((s) => s.key);
+    // Default is the simplest greenfield path — no source/mcp/automations/skills.
+    expect(keysOf("default")).toEqual(["context", "repos", "deploy", "features", "ui", "structure", "permissions"]);
+    for (const k of ["source", "mcp", "automations", "skills"]) {
+      expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
+    }
+    // Complete is the thorough greenfield path — the trimmed Default flow plus the advanced stages.
+    const complete = keysOf("complete");
+    expect(complete.slice(0, 7)).toEqual(["context", "repos", "deploy", "features", "ui", "structure", "permissions"]);
+    for (const k of ["mcp", "automations", "skills"]) {
+      expect(complete, `complete includes ${k}`).toContain(k);
+    }
+    // Complete sorts right after Default in the greenfield group.
+    const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
+    expect(greenfield.indexOf("complete")).toBe(greenfield.indexOf("default") + 1);
   });
 
   it("includes a 'blueprint-author' authoring blueprint: deliverable=blueprint, 4 stages, no fleet/triage (#923)", () => {
