@@ -1,8 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { startupLog, teeLogger } from "./vite-startup-log";
 
-export default defineConfig(async () => ({
-  plugins: [react()],
+export default defineConfig(async ({ command }) => ({
+  plugins: [react(), startupLog()],
+  // Dev-only startup diagnostics (#1031): timestamp + tee Vite's own messages (optimizeDeps
+  // re-bundle / full-reload — the cold-start stalls) to `.vite-dev.log`. Off for `vite build`.
+  ...(command === "serve" ? { customLogger: teeLogger() } : {}),
   clearScreen: false,
   // Pre-bundle the heavy dependencies once at dev-server start, rather than letting Vite
   // discover them during the cold module crawl and re-optimize mid-load (each re-optimization
