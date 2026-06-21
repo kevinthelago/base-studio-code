@@ -323,6 +323,79 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown fleet command '{other}'\n\n{USAGE}")),
             }
         }
+        "deploy" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `deploy set` reads the whole DeployConfig JSON on stdin and replaces it (one blob).
+                "set" => {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+                    let cfg: serde_json::Value =
+                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing deploy JSON: {e}"))?;
+                    s.deploy_set(&cfg).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        let n = cfg.get("services").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                        println!("deploy set ({n} services)");
+                    }
+                    Ok(())
+                }
+                "get" => {
+                    match s.deploy_get().map_err(|e| e.to_string())? {
+                        Some(c) => println!("{}", serde_json::to_string_pretty(&c).unwrap_or_default()),
+                        None => println!("{}", if args.json { "null" } else { "(no deploy config)" }),
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown deploy command '{other}'\n\n{USAGE}")),
+            }
+        }
+        "mcp" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `mcp add <name>...` assigns catalog MCP server(s) to the project (durable in plan.db).
+                "add" => {
+                    let names: Vec<&String> = args.positional.iter().skip(2).collect();
+                    if names.is_empty() {
+                        return Err("usage: bsc-plan mcp add <name>...".into());
+                    }
+                    for n in &names {
+                        s.mcp_add(n).map_err(|e| e.to_string())?;
+                    }
+                    if args.json {
+                        println!("{}", serde_json::to_string(&names).unwrap_or_else(|_| "[]".into()));
+                    } else {
+                        for n in &names {
+                            println!("assigned {n}");
+                        }
+                    }
+                    Ok(())
+                }
+                "list" => {
+                    let mcps = s.mcp_list().map_err(|e| e.to_string())?;
+                    if args.json {
+                        println!("{}", serde_json::to_string(&mcps).unwrap_or_else(|_| "[]".into()));
+                    } else if mcps.is_empty() {
+                        println!("(no assigned MCP servers)");
+                    } else {
+                        for m in &mcps {
+                            println!("{m}");
+                        }
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let name = args.positional.get(2).ok_or("usage: bsc-plan mcp remove <name>")?;
+                    s.mcp_remove(name).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("unassigned {name}");
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown mcp command '{other}'\n\n{USAGE}")),
+            }
+        }
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
 }
@@ -517,6 +590,15 @@ FLEET (streams + per-stream permissions/flows + director/topology):
   fleet set                 replace the fleet from a FleetPlan JSON on stdin
   fleet get                 print the fleet (FleetPlan JSON)
   fleet remove <stream-id>  drop one stream
+
+DEPLOY (the Deploy stage's structured config — one blob):
+  deploy set                replace the deploy config from a DeployConfig JSON on stdin
+  deploy get                print the deploy config (DeployConfig JSON)
+
+MCP (catalog servers scoped to the project):
+  mcp add <name>...         assign MCP server(s) by catalog name
+  mcp list                  list the assigned servers
+  mcp remove <name>         unassign a server
 
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 ";
