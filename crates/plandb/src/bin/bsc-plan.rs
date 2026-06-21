@@ -203,6 +203,52 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown feature command '{other}'\n\n{USAGE}")),
             }
         }
+        "repo" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `repo add <owner/repo>...` links repo(s) to the project (durable in plan.db).
+                "add" => {
+                    let names: Vec<&String> = args.positional.iter().skip(2).collect();
+                    if names.is_empty() {
+                        return Err("usage: bsc-plan repo add <owner/repo>...".into());
+                    }
+                    for n in &names {
+                        s.repo_add(n).map_err(|e| e.to_string())?;
+                    }
+                    if args.json {
+                        println!("{}", serde_json::to_string(&names).unwrap_or_else(|_| "[]".into()));
+                    } else {
+                        for n in &names {
+                            println!("linked {n}");
+                        }
+                    }
+                    Ok(())
+                }
+                "list" => {
+                    let repos = s.repo_list().map_err(|e| e.to_string())?;
+                    if args.json {
+                        println!("{}", serde_json::to_string(&repos).unwrap_or_else(|_| "[]".into()));
+                    } else if repos.is_empty() {
+                        println!("(no linked repos)");
+                    } else {
+                        for r in &repos {
+                            println!("{r}");
+                        }
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let name = args.positional.get(2).ok_or("usage: bsc-plan repo remove <owner/repo>")?;
+                    s.repo_remove(name).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("unlinked {name}");
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown repo command '{other}'\n\n{USAGE}")),
+            }
+        }
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
 }
@@ -382,6 +428,11 @@ FEATURES (titles-first):
   feature list              list features (· = title only, ✓ = fully defined)
   feature get <slug>        print one feature's full spec
   feature remove <slug>     delete a feature
+
+REPOS (linked, durable in plan.db):
+  repo add <owner/repo>...  link repo(s) to the project
+  repo list                 list the linked repos
+  repo remove <owner/repo>  unlink a repo
 
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 ";
