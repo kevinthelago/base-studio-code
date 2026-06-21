@@ -16,21 +16,15 @@ Desktop host application for a multi-agent AI development workflow platform. Run
 
 Pairs **optionally** with **mobile-studio-code**, a standalone companion app that can tunnel into a desktop session over a **zero-knowledge Cloudflare relay** — end-to-end encrypted (Noise IK), paired by QR — so the same agents can be driven from your phone, from anywhere.
 
-## Project Blueprints & Pipelines
+## Project Blueprints
 
-*A core feature of the platform.* Planning is built from two composable pieces.
+*A core feature of the platform.* A **Blueprint** is a reusable planning template — an ordered list of planning **stages** (context, repos, UI design, structure, permissions, …), each with its own prompt module, a declarative completion **gate**, and optional attached **skills / knowledge**. Pick one — built-ins span the project lifecycle: **greenfield** (Default, Complete), **transform** (Refactor & Cleanup, Split / Combine microservices, Migrate stack), **harden** (Harden security), and **data** (Data migration, Data collection) — searchable and filterable by category. It seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. You can also **author your own blueprint** in the planner and publish it to a gist to share. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
 
-**Blueprints** are reusable planning templates. A Blueprint is an ordered list of planning **stages** — context, repos, UI design, structure, permissions, automations, skills — each with its own prompt module and attached pipelines. Pick one — built-ins span the project lifecycle: **greenfield** (Default, Complete), **transform** (Refactor & Cleanup, Split / Combine microservices, Migrate stack), **harden** (Harden security), and **data** (Data migration, Data collection) — searchable and filterable by category, and it seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. You can also **author your own blueprint** in the planner and publish it to a gist to share. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
+A standout capability is the **live UI preview**: the UI stage's generated screen skeletons are bundled with `esbuild-wasm` and rendered as an interactive **2D/3D walkthrough** in a sandboxed iframe, right inside the planning page — no preview server, no leaving the app. Approve screens one at a time to advance the stage.
 
-**Pipelines** are pluggable actions that run on a stage's output — on entering a stage, when an artifact changes, on completion, or manually. Some are **gates**: the stage can't complete until the pipeline passes. Built-ins include:
+The planning arc: **pitch → plan, stage by stage → live preview → gate checks → publish to GitHub → launch the fleet.**
 
-- **render-preview** — bundles the UI stage's generated screen skeletons with `esbuild-wasm` and renders them as a live, interactive **2D/3D walkthrough** in a sandboxed iframe, right inside the planning page — no preview server, no leaving the app. Approve screens one at a time to advance the UI stage.
-- **lint-plan** — scans a stage's artifacts for gaps (empty files, unresolved placeholders) and blocks completion until they're resolved.
-- …plus publish-side actions: issue generation, milestone sync, stream scoping, and skill indexing.
-
-Together they drive the planning arc: **pitch → plan, stage by stage → live preview → gate checks → publish to GitHub → launch the fleet.**
-
-> 🚧 Blueprints & Pipelines are largely mature: lifecycle categories, the drag-reorder Blueprint editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, drag-and-drop file intake, and gist sharing all work today. The main remaining piece is the execution-side conductor (staged build → test → review → integrate).
+> 🚧 Blueprints are largely mature: lifecycle categories, the drag-reorder Blueprint editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, drag-and-drop file intake, and gist sharing all work today. The main remaining piece is the execution-side conductor (staged build → test → review → integrate).
 
 ## Features
 
@@ -134,7 +128,7 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 **✅ Shipped — `1.0.3` (current) · the simplicity release**
 - A **foolproof Default blueprint** — trimmed to the essential greenfield path (context → repos → deploy → features → UI → structure → permissions); the advanced stages (MCP servers, automations, skills) moved to a new **Complete** blueprint
 - Planning → blueprints → parallel agent **fleet** (least-privilege workers in git worktrees, coordinated by a director)
-- **Blueprints & Pipelines** — lifecycle categories, the drag-reorder editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, file intake, gist sharing, authoring your own blueprint; Blueprints folded into the planner page with the live render-preview pane
+- **Blueprints** — lifecycle categories, the drag-reorder editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, file intake, gist sharing, authoring your own blueprint; Blueprints folded into the planner page with the live render-preview pane
 - **Deploy** stage + pane, parallel **console** sessions, **Knowledge Store**, **GitHub** integration, **automations**, **MCP extensions**, the optional **mobile tunnel** (zero-knowledge Cloudflare relay, Noise IK E2E), and enterprise-grade planning dimensions baked into the planner
 
 **🔜 Next — `1.0.4` · enterprise integration & migration**
@@ -143,11 +137,11 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 - **Compliance** — a user-updatable Compliance MCP server (regulations, accessibility, user-protection) integrated into the planner, so generated software is compliant by default
 
 **🗺️ Then — `1.0.5` · the UI release**
-- An in-app, **Claude-Design-like** way to define each **page, component, and animation** — generate, preview, and iterate UI inside the planner (closing the external Claude Design round-trip), rendered live by the render-preview pipeline
+- An in-app, **Claude-Design-like** way to define each **page, component, and animation** — generate, preview, and iterate UI inside the planner (closing the external Claude Design round-trip), rendered live by the render-preview
 
 **Later**
 - The execution-side **conductor** (staged build → test → review → integrate)
-- Expanded blueprint catalog and richer per-stage pipelines
+- Expanded blueprint catalog and richer per-stage gates and checks
 
 ## Versioning & Releases
 
