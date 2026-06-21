@@ -308,8 +308,13 @@ function buildContext(input: BuildProjectPaneInput): ContextFile[] {
   // it drives `pinned`; otherwise fall back to the confirmed-section default.
   const explicitPins = input.pinned ? new Set(input.pinned) : undefined;
   // Skip empty section files — a created-but-unwritten section would otherwise show as a
-  // ghost 0.0k context file (#654).
-  return input.sections.filter(s => s.content.trim().length > 0).map(s => {
+  // ghost 0.0k context file (#654). Also skip the deprecated `issues` / `issues-phase<n>`
+  // sections: issues are no longer an authored plan file — they're generated from the feature
+  // DAG at GitHub-publish time (#plan-db), so a stale (often near-empty) issues section must
+  // not resurface as a ghost context card.
+  return input.sections.filter(s =>
+    s.content.trim().length > 0 && s.k !== "issues" && !s.k.startsWith("issues-phase"),
+  ).map(s => {
     const kind = s.k === "claude" ? "claude"
       : s.k.includes("spec") ? "spec"
       : "doc";
