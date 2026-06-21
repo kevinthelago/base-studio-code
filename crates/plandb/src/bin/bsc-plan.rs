@@ -288,6 +288,41 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown phase command '{other}'\n\n{USAGE}")),
             }
         }
+        "fleet" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `fleet set` reads the whole FleetPlan JSON on stdin (streams + meta) and replaces it.
+                "set" => {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+                    let plan: serde_json::Value =
+                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing fleet JSON: {e}"))?;
+                    s.fleet_set(&plan).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        let n = plan.get("streams").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                        println!("fleet set ({n} streams)");
+                    }
+                    Ok(())
+                }
+                "get" | "list" => {
+                    match s.fleet_get().map_err(|e| e.to_string())? {
+                        Some(f) => println!("{}", serde_json::to_string_pretty(&f).unwrap_or_default()),
+                        None => println!("{}", if args.json { "null" } else { "(no fleet)" }),
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let id = args.positional.get(2).ok_or("usage: bsc-plan fleet remove <stream-id>")?;
+                    s.fleet_stream_remove(id).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("removed {id}");
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown fleet command '{other}'\n\n{USAGE}")),
+            }
+        }
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
 }
@@ -477,6 +512,11 @@ PHASES (the roadmap — features reference a phase by its 1-based order):
   phase add <name> [desc]   add/merge a roadmap phase (in order)
   phase list                list phases in order
   phase remove <name>       delete a phase
+
+FLEET (streams + per-stream permissions/flows + director/topology):
+  fleet set                 replace the fleet from a FleetPlan JSON on stdin
+  fleet get                 print the fleet (FleetPlan JSON)
+  fleet remove <stream-id>  drop one stream
 
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 ";

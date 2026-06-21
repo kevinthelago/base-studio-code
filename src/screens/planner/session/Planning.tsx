@@ -1503,6 +1503,17 @@ export function Planning({ visible }: { visible: boolean }) {
           if ((dbPhases?.length ?? 0) > 0 && json !== (saved["phases"] ?? "")) store.setPlanSection(effectiveProjectId, "phases", json);
         } catch { /* plan.db not created until the planner adds a phase — ignore */ }
 
+        // Fleet (streams + per-stream permissions/flows + director/topology) is DB-owned too (#1018) —
+        // reflect it from plan.db into the "fleet" section so the fleet sync effect (parseFleetFile →
+        // setPlanFleet) reads it unchanged. Only override on a non-null fleet so a legacy fleet.json isn't wiped.
+        try {
+          const dbFleet = await invoke<unknown | null>("plan_get_fleet", { projectKey: effectiveProjectId });
+          if (dbFleet) {
+            const json = JSON.stringify(dbFleet);
+            if (json !== (saved[FLEET_KEY] ?? "")) store.setPlanSection(effectiveProjectId, FLEET_KEY, json);
+          }
+        } catch { /* plan.db not created until the planner sets the fleet — ignore */ }
+
         const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
         const entries = Object.entries(result);
 
@@ -1532,7 +1543,7 @@ export function Planning({ visible }: { visible: boolean }) {
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
           const key = canonicalSectionKey(rawKey);
-          if (key === "issues" || key === FEATURES_KEY || key === "phases") continue; // DB-owned (#plan-db/#1017) — sourced from plan.db above, not a file
+          if (key === "issues" || key === FEATURES_KEY || key === "phases" || key === FLEET_KEY) continue; // DB-owned (#plan-db/#1017/#1018) — sourced from plan.db above, not a file
           if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
             store.setPlanSection(effectiveProjectId, key, content);
           }
