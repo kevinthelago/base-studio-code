@@ -312,7 +312,10 @@ impl Store {
     /// reset: without it the cleared file/store state would be re-populated from the DB on the next
     /// poll. Truncates rather than dropping the file, so it works even with the db open (WAL).
     pub fn clear(&self) -> rusqlite::Result<()> {
-        self.conn.execute_batch("DELETE FROM issues; DELETE FROM features; DELETE FROM repos; DELETE FROM phases;")
+        self.conn.execute_batch(
+            "DELETE FROM issues; DELETE FROM features; DELETE FROM repos; DELETE FROM phases; \
+             DELETE FROM fleet_streams; DELETE FROM fleet_meta;",
+        )
     }
 
     // ── linked repos (#1012) — the repos linked to a project, durable in the hub's plan.db so a
@@ -384,6 +387,94 @@ impl Store {
         self.conn.execute("DELETE FROM phases WHERE name = ?1", params![name])?;
         Ok(())
     }
+
+    // ── fleet + per-stream permissions (#1018) — each stream is one JSON-per-row (granular edits, no
+    //    column sprawl) + a single meta row; reconstructed into the FleetPlan shape the frontend reads,
+    //    so the whole config (incl. per-stream perms/flows) is durable in plan.db, not a fleet.json file. ──
+
+    /// Replace the whole fleet: the `streams` array (by id, in order) + the meta (everything else).
+    pub fn fleet_set(&self, plan: &serde_json::Value) -> rusqlite::Result<()> {
+        let obj = plan.as_object().cloned().unwrap_or_default();
+        self.conn.execute("DELETE FROM fleet_streams", [])?;
+        if let Some(serde_json::Value::Array(streams)) = obj.get("streams") {
+            for (i, s) in streams.iter().enumerate() {
+                if let Some(id) = s.get("id").and_then(|v| v.as_str()) {
+                    if !id.trim().is_empty() {
+                        self.fleet_stream_upsert_at(id, s, i as i64)?;
+                    }
+                }
+            }
+        }
+        let mut meta = obj;
+        meta.remove("streams");
+        self.fleet_meta_set(&serde_json::Value::Object(meta))
+    }
+
+    /// Upsert one stream by id (appends if new; keeps its slot otherwise).
+    pub fn fleet_stream_upsert(&self, id: &str, data: &serde_json::Value) -> rusqlite::Result<()> {
+        let pos: i64 = self
+            .conn
+            .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM fleet_streams", [], |r| r.get(0))?;
+        self.fleet_stream_upsert_at(id, data, pos)
+    }
+
+    fn fleet_stream_upsert_at(&self, id: &str, data: &serde_json::Value, pos: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO fleet_streams (id, data, position, updated_at) VALUES (?1, ?2, ?3, strftime('%s','now'))
+             ON CONFLICT(id) DO UPDATE SET data = excluded.data, position = excluded.position, updated_at = excluded.updated_at",
+            params![id.trim(), data.to_string(), pos],
+        )?;
+        Ok(())
+    }
+
+    /// Every stream's JSON, in order.
+    pub fn fleet_stream_list(&self) -> rusqlite::Result<Vec<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM fleet_streams ORDER BY position, id")?;
+        let out: rusqlite::Result<Vec<serde_json::Value>> = stmt
+            .query_map([], |r| r.get::<_, String>(0))?
+            .map(|s| s.map(|t| serde_json::from_str(&t).unwrap_or(serde_json::Value::Null)))
+            .collect();
+        out
+    }
+
+    /// Remove one stream by id (no-op if absent).
+    pub fn fleet_stream_remove(&self, id: &str) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM fleet_streams WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Set the fleet meta (the FleetPlan minus `streams`: recommended, reasoning, director, topology, …).
+    pub fn fleet_meta_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO fleet_meta (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+            params![data.to_string()],
+        )?;
+        Ok(())
+    }
+
+    fn fleet_meta_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM fleet_meta WHERE id = 1")?;
+        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        match rows.next() {
+            Some(s) => Ok(serde_json::from_str(&s?).ok()),
+            None => Ok(None),
+        }
+    }
+
+    /// The whole FleetPlan (meta + streams), or None if nothing's set — the shape `parseFleetFile` reads.
+    pub fn fleet_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
+        let meta = self.fleet_meta_get()?;
+        let streams = self.fleet_stream_list()?;
+        if meta.is_none() && streams.is_empty() {
+            return Ok(None);
+        }
+        let mut obj = match meta {
+            Some(serde_json::Value::Object(m)) => m,
+            _ => serde_json::Map::new(),
+        };
+        obj.insert("streams".into(), serde_json::Value::Array(streams));
+        Ok(Some(serde_json::Value::Object(obj)))
+    }
 }
 
 // ── schema ───────────────────────────────────────────────────────────────────────
@@ -431,6 +522,16 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             description TEXT NOT NULL DEFAULT '',
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS fleet_streams (
+            id          TEXT PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}',
+            position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS fleet_meta (
+            id          INTEGER PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}'
          );",
     )?;
     // Additive migrations for a plan.db created before a column existed (each errors if the column is
@@ -756,5 +857,39 @@ mod tests {
         assert_eq!(s.phase_list().unwrap().len(), 1);
         s.clear().unwrap();
         assert!(s.phase_list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn fleet_set_get_round_trips_streams_and_meta() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.fleet_get().unwrap().is_none());
+        let plan = serde_json::json!({
+            "recommended": 2,
+            "reasoning": "two streams",
+            "director": { "enabled": true, "drive": "checkpoint" },
+            "topology": "hybrid",
+            "streams": [
+                { "id": "kernel", "repo": "o/r", "perm": { "edit": "allow" }, "flow": { "push": "auto-pr" } },
+                { "id": "ui", "repo": "o/r", "dependsOn": ["kernel"] }
+            ]
+        });
+        s.fleet_set(&plan).unwrap();
+        let got = s.fleet_get().unwrap().unwrap();
+        // meta survives, streams stay in order with per-stream perm/flow intact
+        assert_eq!(got["recommended"], serde_json::json!(2));
+        assert_eq!(got["director"]["enabled"], serde_json::json!(true));
+        let streams = got["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 2);
+        assert_eq!(streams[0]["id"], serde_json::json!("kernel"));
+        assert_eq!(streams[0]["perm"]["edit"], serde_json::json!("allow"));
+        assert_eq!(streams[1]["dependsOn"], serde_json::json!(["kernel"]));
+        // a fresh set replaces the stream set; remove drops one; clear() wipes both tables.
+        s.fleet_set(&serde_json::json!({ "recommended": 1, "streams": [ { "id": "solo", "repo": "o/r" } ] })).unwrap();
+        assert_eq!(s.fleet_stream_list().unwrap().len(), 1);
+        s.fleet_stream_remove("solo").unwrap();
+        assert!(s.fleet_stream_list().unwrap().is_empty());
+        s.fleet_set(&serde_json::json!({ "recommended": 1, "streams": [ { "id": "x", "repo": "o/r" } ] })).unwrap();
+        s.clear().unwrap();
+        assert!(s.fleet_get().unwrap().is_none());
     }
 }
