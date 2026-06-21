@@ -279,6 +279,18 @@ describe("buildProjectPaneData", () => {
     expect(goal.pinned).toBe(false);
   });
 
+  it("omits the deprecated issues sections from context files (no ghost issues.md, #plan-db)", () => {
+    const sections: Section[] = [
+      { k: "goal", title: "Goal", state: "drafted", content: "g".repeat(300) },
+      // A stale issues section with tiny content used to surface as a ghost "issues.md 0.0k".
+      { k: "issues", title: "Issues", state: "drafted", content: "# Issues\n" },
+      { k: "issues-phase1", title: "Issues — phase 1", state: "drafted", content: "- A1\n" },
+    ];
+    const d = buildProjectPaneData(base({ sections }));
+    expect(d.context.map(c => c.name)).toEqual(["goal.md"]);
+    expect(d.context.some(c => c.name.startsWith("issues"))).toBe(false);
+  });
+
   it("stream.perm overrides the profile-derived perm", () => {
     const fleet = fleetWith([
       {
