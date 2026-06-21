@@ -63,7 +63,7 @@ const PLANNING_BLUEPRINT_INTRO: &str = include_str!("../templates/planning-bluep
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
     let line = match id {
-        "context"     => "**Context** — discovery, one topic at a time. Write every discovery file into the **`context/`** subdir. The gate REQUIRES these four, written and confirmed: `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md` — always create them. Cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/users.md`, `context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, `context/observability.md`, `context/reliability.md`, `context/data_lifecycle.md`, …; the production-readiness bars in the planning guide are first-class dimensions here — apply where they matter, accessibility/compliance via the Compliance MCP); record every dimension you don't document in `context/_skipped.md`. Each file you create is a gate item the user must confirm — do NOT create files for tangential topics, or the gate can't complete.",
+        "context"     => "**Context** — establish the project's context one topic at a time, each a markdown file at `context/<topic>.md` (canonical key = the file stem). The REQUIRED set is DYNAMIC: the baseline `goal, scope, stack, architecture, users` is seeded for you — shape it for THIS project with `bsc-plan context require <topic>` / `bsc-plan context unrequire <topic>` as the picture clarifies (a CLI tool unrequires `users`/`ux`; a data platform requires `schema`; a realtime API requires `api`). `bsc-plan context list` shows the manifest. ALWAYS write the required files; cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, `context/observability.md`, `context/reliability.md`, `context/data_lifecycle.md`, …; the production-readiness bars in the planning guide are first-class dimensions here — apply where they matter, accessibility/compliance via the Compliance MCP); record every dimension you don't document in `context/_skipped.md`. You NEVER confirm a topic yourself — only the USER confirms (each required file is a gate item); write and require, the user reviews. Do NOT create files for tangential topics, or the gate can't complete.",
         "repos"       => "**Repos** — decide and link the repositories: emit `<repo_link owner/repo>` for each (clones it into the hub + records the link in plan.db, durable). Do NOT write repos.json — links live in plan.db (`bsc-plan repo list` shows them; `bsc-plan repo add owner/repo` links one directly).",
         "deploy"      => "**Deploy** (right after Repos) — define how each service SHIPS, then RECORD it in the plan DB by piping the config JSON to `bsc-plan deploy set`. **`bsc-plan deploy set` is what clears the gate and fills the Deploy pane — a prose `deploy.md` does NOT** (`bsc-plan deploy get` shows the stored config). JSON fields: `services` (array; each REQUIRES `platform` + `workload` = static|serverless|container|service, plus `id`, `repo`, `region`, `build`, `output`/`runtime`); `environments` (≥2; each `name`, `branch`, `url`, `auto`); `pipeline` (`provider` + `stages`: array of `{name, trigger: push|tag|on-green|manual, gate: bool, cmd}`, ≥2 stages); `secrets` (array of `{key, envs:[…]}` — list `prod` in `envs` for every prod-needed secret); `release` (`strategy` = recreate|rolling|blue-green|canary, `autoRollback`, `keep`, `migrateWithDeploy`); `health` (`probe`, `slo`, `alerts`). The gate (`deploymentDefined`) needs: a `platform` on EVERY service, ≥2 environments, ≥2 pipeline stages, every secret wired for `prod`, and a non-empty `release.strategy`. Propose defaults from the stack, confirm with the user, then pipe the whole config: `echo '{…}' | bsc-plan deploy set` (re-run with the full config as it firms up). A human-readable `deploy.md` is optional reference. Publishes as deployment issues owned by a `deploy` stream.",
         "ui"          => "**UI** — runs AFTER Features: design the screens that deliver the defined capabilities. Write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live. Then author a **Claude Design kickoff** at `prompts/ui-kickoff.md` — a self-contained brief (goal, feature→screen map, each screen's states/flows, design-system constraints) the user pastes into a Claude Design session.",
@@ -414,13 +414,17 @@ mod tests {
     /// Context directive must name the four gate-required files so the planner
     /// doesn't create tangential sections that block the gate (#672).
     #[test]
-    fn stage_directive_context_names_four_gate_files() {
+    fn stage_directive_context_seeds_baseline_and_uses_bsc_plan() {
         let d = super::stage_directive("context");
-        assert!(d.contains("goal.md"),         "missing goal.md");
-        assert!(d.contains("scope.md"),        "missing scope.md");
-        assert!(d.contains("stack.md"),        "missing stack.md");
-        assert!(d.contains("architecture.md"), "missing architecture.md");
-        assert!(d.contains("_skipped.md"),     "must mention _skipped.md fallback");
+        // Names the baseline required topics — the DYNAMIC set seeded for the project (#1019).
+        for t in ["goal", "scope", "stack", "architecture", "users"] {
+            assert!(d.contains(t), "context directive names baseline topic {t}");
+        }
+        // The required-set is shaped via bsc-plan context; non-applicable dimensions go to _skipped.
+        assert!(d.contains("bsc-plan context"), "directive shapes the required-set via bsc-plan context");
+        assert!(d.contains("_skipped.md"),      "must mention _skipped.md fallback");
+        // Only the user confirms (user-only-confirms).
+        assert!(d.to_lowercase().contains("only the user"), "directive states only the user confirms");
     }
 
     /// Features directive must steer the planner to write features.json (the artifact the
@@ -561,12 +565,13 @@ mod tests {
         assert!(md.contains("OUT OF SCOPE"), "scope guard present");
         assert!(!md.contains("Structure"), "no Structure stage → no issues.json step");
         assert!(super::PLANNING_PROCESS_MD.contains("authoritative"), "process defers to the active-stages list");
-        // The context directive names the four gate-required files so the planner creates
-        // exactly what the gate keys on (#671 follow-up).
+        // The context directive names the baseline required topics + the bsc-plan context channel that
+        // shapes the dynamic required-set, so the planner seeds what the gate keys on (#1019).
         let ctx = super::stage_directive("context");
-        for f in ["goal.md", "scope.md", "stack.md", "architecture.md"] {
-            assert!(ctx.contains(f), "context directive names {f}");
+        for t in ["goal", "scope", "stack", "architecture", "users"] {
+            assert!(ctx.contains(t), "context directive names baseline topic {t}");
         }
+        assert!(ctx.contains("bsc-plan context"), "context directive shapes the dynamic required-set");
         assert!(ctx.contains("_skipped.md"), "context directive points non-applicable dimensions at _skipped");
         assert!(super::PLANNING_PROCESS_MD.contains("gate item"), "coverage section frames created files as gate items");
         // The discovery checklist itself flags the four files as gate-required and tells the
