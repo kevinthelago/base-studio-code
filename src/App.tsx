@@ -19,6 +19,7 @@ import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
 import { SkillsStatus } from "./screens/skills/SkillsStatus";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
+import { CrashRecoveryBanner } from "./components/CrashRecoveryBanner";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/console/detachWindow";
 import { accentVars } from "./lib/settings/appearance";
 
@@ -226,6 +227,11 @@ export default function App() {
     invoke<string>("get_base_dir")
       .then(setBscBaseDir)
       .catch((e) => log.error(`get_base_dir failed: ${e}`));
+    // Crash recovery (#1041): learn once whether the previous shutdown was unclean — gates the
+    // restore banner + session auto-resume (a clean quit leaves sessions dormant).
+    invoke<boolean>("was_unclean_shutdown")
+      .then((v) => useAppStore.getState().setUncleanShutdown(v))
+      .catch(() => { /* command absent (e.g. tests) — leave false */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -395,6 +401,7 @@ export default function App() {
     <div className="app">
       <SuperUserAchievement />
       <Titlebar workspace={titleWorkspace} />
+      <CrashRecoveryBanner />
       <div className="shell">
         <Rail active={activeScreen} onNavigate={setScreen} />
         <div className="main">

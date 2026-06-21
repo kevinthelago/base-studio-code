@@ -495,6 +495,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
             startupPrompt,
             paneWasClaude: !!st.paneWasClaude[paneId],
             autoResumeClaude: st.autoResumeClaude,
+            // Crash recovery (#1041): resume only after an unclean shutdown (silent, if opted in) or
+            // a banner "restore" click — never on a clean restart.
+            wasUncleanShutdown: st.uncleanShutdown,
+            restoreRequested: !!st.restoreRequested[paneId],
           })
         : (initCmd && initCmd.length > 0 ? initCmd : provider.buildLaunchCmd());
       // The model new claude launches use (per-pane override, else the global
