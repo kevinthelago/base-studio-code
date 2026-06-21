@@ -56,7 +56,7 @@ const PLANNING_PROCESS_MD: &str = include_str!("../templates/planning-process.md
 // The blueprint-authoring lifecycle (#923) gets its OWN, self-contained intro — the planner is
 // designing a reusable blueprint (deliverable = a gist), not a software project — and does NOT get
 // the software-planning process block (repos / features / fleet / GitHub publish), which would only
-// mislead it. The `<blueprint>` tag spec + the four authoring stages live in this intro.
+// mislead it. The `bsc-plan blueprint set` spec + the four authoring stages live in this intro.
 const PLANNING_BLUEPRINT_INTRO: &str = include_str!("../templates/planning-blueprint-intro.md");
 
 /// One-line directive per planning stage (#542/#666) for the assembled active-stages
@@ -83,12 +83,12 @@ fn stage_directive(id: &str) -> String {
         "migration"    => "**Migration plan** — the from→to mapping and an incremental, reversible cutover.",
         "hardening"    => "**Security hardening** — threat-model, audit (authz / secrets / deps), and plan concrete fixes.",
         // Blueprint-authoring lifecycle (#923) — the DELIVERABLE is a reusable blueprint published
-        // to a gist; there is NO code, no fleet, no triage. Build the blueprint with the <blueprint>
-        // tag and re-emit the whole tag as it grows.
-        "purpose"         => "**Purpose** — you are designing a reusable BLUEPRINT (a planning template), not a software project. Establish its lifecycle category, the projects it seeds, and its name + description; emit a `<blueprint>` tag with id/name/desc/category/mode.",
-        "bp_stages"       => "**Stages** — design the blueprint's ordered stages, one at a time: each stage's key+name, intent, the discovery prompt it runs, its deps/order, and whether it's optional. Re-emit the full `<blueprint>` tag as the sections array grows.",
-        "bp_capabilities" => "**Capabilities** (optional) — attach reusable skills/knowledge + MCP servers the blueprint should bundle into projects it seeds; fold them into the `<blueprint>` tag's section or blueprint-level skills/mcp arrays.",
-        "bp_review"       => "**Review & publish** — review the assembled blueprint with the user, emit the FINAL `<blueprint>` tag, and let the user publish it to a gist from the footer. Do NOT publish it yourself.",
+        // to a gist; there is NO code, no fleet, no triage. Build the blueprint with `bsc-plan
+        // blueprint set` and re-run it with the whole blueprint as it grows (#1022).
+        "purpose"         => "**Purpose** — you are designing a reusable BLUEPRINT (a planning template), not a software project. Establish its lifecycle category, the projects it seeds, and its name + description; record it with `bsc-plan blueprint set` (the blueprint JSON on stdin: id/name/desc/category/mode). Do NOT emit a `<blueprint>` tag — `bsc-plan blueprint get` shows the stored blueprint.",
+        "bp_stages"       => "**Stages** — design the blueprint's ordered stages, one at a time: each stage's key+name, intent, the discovery prompt it runs, its deps/order, and whether it's optional. Re-run `bsc-plan blueprint set` with the full blueprint JSON as the sections array grows.",
+        "bp_capabilities" => "**Capabilities** (optional) — attach reusable skills/knowledge + MCP servers the blueprint should bundle into projects it seeds; fold them into the blueprint JSON's section or blueprint-level skills/mcp arrays and re-run `bsc-plan blueprint set`.",
+        "bp_review"       => "**Review & publish** — review the assembled blueprint with the user, record the FINAL blueprint with `bsc-plan blueprint set`, and let the user publish it to a gist from the footer. Do NOT publish it yourself.",
         other         => return format!("**{other}** — configured stage."),
     };
     line.to_string()

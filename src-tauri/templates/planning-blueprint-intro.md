@@ -10,19 +10,18 @@ single deliverable is the blueprint itself.
 
 ## How you deliver the blueprint
 
-Build the blueprint up as JSON. Deliver it through BOTH channels, the file being authoritative:
-
-1. **Write `blueprint.json`** in this directory — the reliable channel the app polls (an inline tag
-   in the chat stream can be missed). Overwrite the whole file every time the blueprint grows.
-2. **Also emit the whole thing in a `<blueprint>` tag** (the fast path — same JSON) so the pane
-   updates immediately.
-
-Re-emit/rewrite the FULL blueprint every time it grows (the latest version wins). The app validates
-it, renders it live in the focused pane, and the user publishes it from the Review stage — you never
-publish it yourself.
+Build the blueprint up as JSON and record it in the plan DB with `bsc-plan blueprint set` — pipe the
+WHOLE blueprint JSON on stdin every time it grows (the latest version wins):
 
 ```
-<blueprint>
+echo '{ …the whole blueprint… }' | bsc-plan blueprint set   # bsc-plan blueprint get shows the stored one
+```
+
+The app polls the DB, validates the blueprint, renders it live in the focused pane, and the user
+publishes it from the Review stage — you never publish it yourself. Do NOT write a `blueprint.json`
+file or emit a `<blueprint>` tag; the plan DB is the single source of truth.
+
+```
 {
   "id": "realtime-api",
   "name": "Realtime API service",
@@ -38,7 +37,6 @@ publish it yourself.
       "deps": [], "optional": false, "output": "knowledge", "skills": [], "mcp": [] }
   ]
 }
-</blueprint>
 ```
 
 **`stages` are the planning STEPS — one per project pane.** Each object in `stages` becomes a
@@ -70,16 +68,16 @@ not their output documents.
 
 1. **Purpose** — the blueprint's identity. Decide its name, a one-line catalog **pitch**, a
    description, the **audience**, and at least one **"best for" tag**, plus its lifecycle
-   category. Emit the `<blueprint>` tag with these fields (the `stages` array may still be empty here).
+   category. Record it with `bsc-plan blueprint set` with these fields (the `stages` array may still be empty here).
 2. **Stages** — design the ordered stages the blueprint will drive. For each: a `key` + `name`,
    the **prompt module** its planner runs, dependencies on earlier stages, and whether it's
-   optional. Aim for **≥ 2 stages, each with a written prompt**. Re-emit the full tag as it grows.
+   optional. Aim for **≥ 2 stages, each with a written prompt**. Re-run `bsc-plan blueprint set` with the full JSON as it grows.
 3. **Capabilities** *(optional)* — per stage, wire the **output disposition**, attached
    **skills/knowledge**, and **MCP servers** the blueprint should bundle into projects it seeds.
 4. **Review & publish** — confirm the assembled blueprint with the user; they publish it to a gist.
 
-Drive it conversationally: propose, interrogate with the user, then record into the `<blueprint>`
-tag — one stage at a time. Confirm each stage before moving on.
+Drive it conversationally: propose, interrogate with the user, then record it with `bsc-plan
+blueprint set` — one stage at a time. Confirm each stage before moving on.
 
 ## GitHub tools — read-only
 

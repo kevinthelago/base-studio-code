@@ -1231,23 +1231,9 @@ export function Planning({ visible }: { visible: boolean }) {
         // MCP assignments moved to plan.db (#1021) — the planner now records them with `bsc-plan mcp
         // add`, and the DB poll below resolves each into the MCP-servers store. (Was a <mcp_assign> tag.)
 
-        // ── <blueprint>{…JSON…}</blueprint> — the blueprint an AUTHORING project is designing (#923).
-        // The planner re-emits the full JSON as the design firms up; we validate with the same
-        // coerceBlueprint the import path uses (fresh uids, defensive coercion) and store it. The
-        // focused pane renders it and the Review stage publishes it to a gist. Take the LAST complete
-        // tag in the buffer (the most recent emission wins).
-        const bpRe = /<blueprint\s*>([\s\S]*?)<\/blueprint>/g;
-        let lastBpBody: string | null = null;
-        while ((m = bpRe.exec(bufRef.current)) !== null) lastBpBody = m[1];
-        if (lastBpBody !== null) {
-          try {
-            // Allow a section-less blueprint: at the Purpose stage the planner emits its identity
-            // (name/category) before any stages exist (#923).
-            const parsed = coerceBlueprint(JSON.parse(lastBpBody.trim()), { allowEmptySections: true });
-            if (parsed) useAppStore.getState().setAuthoredBlueprint(projIdSnap, parsed);
-          } catch { /* incomplete/invalid JSON — ignore; the planner re-emits */ }
-          bufRef.current = bufRef.current.replace(/<blueprint\s*>[\s\S]*?<\/blueprint>/g, "");
-        }
+        // Authored blueprint moved to plan.db (#1022) — the planner now records it with `bsc-plan
+        // blueprint set`, and the DB poll below coerces it into the authored blueprint + pins the
+        // authoring binding. (Was a <blueprint> stream tag + a blueprint.json file.)
 
         // Deploy config moved to plan.db (#1020) — the planner now records it with `bsc-plan deploy
         // set`, and the DB poll below coerces it into planDeployConfig. (Was a <deploy_config> tag.)
@@ -1502,36 +1488,38 @@ export function Planning({ visible }: { visible: boolean }) {
           }
         } catch { /* plan.db not created until the planner assigns an MCP server — ignore */ }
 
-        const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
-        const entries = Object.entries(result);
-
-        for (const [rawKey, content] of entries) {
-          // The authoring planner writes `blueprint.json` to the hub — the reliable channel (like
-          // fleet.json), more dependable than the inline <blueprint> tag (#923). Parse it into the
-          // in-progress blueprint so the authoring panes render the stages it designed. Guard on the
-          // file content changing so a 2s re-read can't clobber a live UI edit; it's NOT a plan section.
-          if (rawKey === "blueprint") {
-            if (content && content !== lastBpJsonRef.current) {
-              lastBpJsonRef.current = content;
+        // Authored blueprint is DB-owned (#1022) — the authoring planner records it with `bsc-plan
+        // blueprint set`; coerce the stored JSON into the in-progress blueprint (the same coerceBlueprint
+        // the import path uses) so the authoring panes render the stages it designed. Guard on the JSON
+        // changing so a 2s re-read can't clobber a live UI edit, and pin the binding to the authoring
+        // lifecycle so it can't revert to default on restart (#923).
+        try {
+          const dbBp = await invoke<unknown | null>("plan_get_blueprint", { projectKey: effectiveProjectId });
+          if (dbBp) {
+            const raw = JSON.stringify(dbBp);
+            if (raw !== lastBpJsonRef.current) {
+              lastBpJsonRef.current = raw;
               try {
-                const parsed = coerceBlueprint(JSON.parse(content), { allowEmptySections: true });
+                const parsed = coerceBlueprint(dbBp, { allowEmptySections: true });
                 if (parsed) {
                   store.setAuthoredBlueprint(effectiveProjectId, parsed);
-                  // blueprint.json existing ⇒ this is an authoring project — pin its binding to the
-                  // authoring lifecycle so it can't revert to default on restart, correcting any stale
-                  // binding from a legacy session (#923).
                   if (store.projectBlueprintId[effectiveProjectId] !== AUTHORING_BLUEPRINT_ID) {
                     store.setProjectBlueprintId(effectiveProjectId, AUTHORING_BLUEPRINT_ID);
                   }
                 }
-              } catch { /* mid-write / invalid JSON — ignore, the planner re-writes */ }
+              } catch { /* mid-write / invalid shape — ignore, the planner re-writes */ }
             }
-            continue;
           }
+        } catch { /* plan.db not created until the planner sets the blueprint — ignore */ }
+
+        const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
+        const entries = Object.entries(result);
+
+        for (const [rawKey, content] of entries) {
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
           const key = canonicalSectionKey(rawKey);
-          if (key === "issues" || key === FEATURES_KEY || key === "phases" || key === FLEET_KEY) continue; // DB-owned (#plan-db/#1017/#1018) — sourced from plan.db above, not a file
+          if (key === "issues" || key === FEATURES_KEY || key === "phases" || key === FLEET_KEY || key === "blueprint") continue; // DB-owned (#plan-db/#1017/#1018/#1022) — sourced from plan.db above, not a file
           if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
             store.setPlanSection(effectiveProjectId, key, content);
           }
