@@ -113,3 +113,20 @@ pub fn plan_remove_phase(project_key: String, name: String) -> Result<(), String
     open(&project_key)?.phase_remove(&name).map_err(|e| e.to_string())
 }
 
+// ── fleet + per-stream permissions (#1018) — the whole FleetPlan as meta + per-stream rows. ─────────
+
+#[tauri::command]
+pub fn plan_set_fleet(project_key: String, fleet: serde_json::Value) -> Result<(), String> {
+    open(&project_key)?.fleet_set(&fleet).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_get_fleet(project_key: String) -> Result<Option<serde_json::Value>, String> {
+    open(&project_key)?.fleet_get().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_remove_stream(project_key: String, id: String) -> Result<(), String> {
+    open(&project_key)?.fleet_stream_remove(&id).map_err(|e| e.to_string())
+}
+
