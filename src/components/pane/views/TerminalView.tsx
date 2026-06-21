@@ -16,7 +16,7 @@ import { toSessionPayloads } from "../../../lib/session/sessionConfig";
 import { resolveSkills, toSkillCfgs } from "../../../lib/session/skills";
 import { PendingPtyData } from "../../../lib/console/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/console/resumeClaude";
-import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools } from "../../../lib/session/sessionRoles";
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
 import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/planner/fleet/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
@@ -418,7 +418,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           ...(prof?.deniedCommands ?? []),
         ];
         const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
-        const denyToolRules = [...write.deny, ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
+        // Worker sub-agent block (#1036): deny the Task tool for workers so they can't spin up their
+        // own sub-agents (which floods the coordinator with wake requests). Deny wins over any
+        // profile allow.
+        const denyToolRules = [...write.deny, ...(cap ? roleDeniedTools(cap) : []), ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
         const askToolRules = flowRules.askToolRules;
         // MCP servers + hooks resolved for this session — pre-resolved per pane at tab
         // creation; fall back to globals for ad-hoc consoles.

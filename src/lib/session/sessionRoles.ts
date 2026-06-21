@@ -216,6 +216,19 @@ export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
   return { allow, deny: [] };
 }
 
+/**
+ * Whole-tool denies by role BEYOND the write-path tools (#1036) — currently the sub-agent **Task**
+ * tool for **workers**. A worker must not spawn its OWN sub-agents: each spawned agent reads as
+ * fresh activity that the always-on coordinator keeps trying to relaunch the worker for (a wake
+ * request every poll), and it blurs the worker's lane. A worker does its assigned issue directly;
+ * spinning up helper sessions is the director's job. Denied by bare tool name — the same whole-tool
+ * deny {@link roleWriteRules} uses for Edit/Write — so it's a hard block at launch, no prompt, no
+ * delay. Merged into `denyToolRules` at session launch.
+ */
+export function roleDeniedTools(cap: RoleCapability): string[] {
+  return cap.role === "worker" ? ["Task"] : [];
+}
+
 // ── Launch wiring: command-allowlist denies ────────────────────────────────────
 
 /** git write subcommand prefixes (the backend wraps each as `Bash(<prefix> *)`). */

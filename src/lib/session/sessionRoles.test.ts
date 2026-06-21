@@ -9,6 +9,7 @@ import {
   canWritePath,
   roleDeniedCommands,
   roleWriteRules,
+  roleDeniedTools,
 } from "./sessionRoles";
 
 describe("classifyCommand", () => {
@@ -114,6 +115,17 @@ describe("roleDeniedCommands (launch wiring)", () => {
     const denies = roleDeniedCommands(ROLE_DEFAULTS.triage);
     expect(denies).toContain("git");
     expect(denies).not.toContain("gh issue create");
+  });
+});
+
+describe("roleDeniedTools (sub-agent block, #1036)", () => {
+  it("denies the Task tool for workers so they can't spawn their own sub-agents", () => {
+    expect(roleDeniedTools(ROLE_DEFAULTS.worker)).toEqual(["Task"]);
+  });
+  it("does not deny Task for non-worker roles (director coordinates, etc.)", () => {
+    for (const role of ["director", "triage", "tester", "reviewer", "conductor", "issuer", "juror", "planner"] as const) {
+      expect(roleDeniedTools(ROLE_DEFAULTS[role])).toEqual([]);
+    }
   });
 });
 
