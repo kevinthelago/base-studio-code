@@ -63,6 +63,10 @@ export interface SectionDef {
    *  downstream dependents, and it's off the critical path (currentSection skips it) — the
    *  user can fill it or skip it (#676). */
   optional?: boolean;
+  /** Context stage only (#1019): the baseline REQUIRED topics this section seeds into the project's
+   *  dynamic context manifest (plan.db) when first adopted. The planner then adjusts the set with
+   *  `bsc-plan context require/unrequire`. Absent ⇒ the universal {@link CONTEXT_BASELINE}. */
+  requires?: string[];
   /** Output disposition (#609) — what happens to this stage's artifact (a key into
    *  DISPOSITIONS: plan-file / issues / milestones / skill-index / knowledge / scratch).
    *  Editor metadata; the runtime doesn't read it. Absent ⇒ defaultDisposition(key). */

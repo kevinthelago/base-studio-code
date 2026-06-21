@@ -9,8 +9,18 @@ import { parseSectionKey } from "./planSections";
 import type { SectionState } from "../github/ghStructure";
 import type { PlanSignals } from "./stageGate";
 
-/** The four discovery topics the planner template always confirms. */
-const CORE = ["goal", "scope", "stack", "architecture"];
+/** The universal baseline context topics a project requires when nothing else seeds the manifest
+ *  (#1019). A blueprint may seed a different set via its context section's `requires`; the planner
+ *  then adjusts it with `bsc-plan context require/unrequire`. */
+export const CONTEXT_BASELINE = ["goal", "scope", "stack", "architecture", "users"];
+
+/** One row of the project's context manifest (plan.db, #1019): a topic's dynamic required/confirmed
+ *  state. The prose lives in `context/<topic>.md`; this is only the structured state. */
+export interface ContextManifestEntry {
+  topic: string;
+  required: boolean;
+  confirmed: boolean;
+}
 
 // datamodel.json contract
 // Path:    ~/.base-studio-code/projects/<key>/datamodel.json
@@ -28,6 +38,9 @@ const CORE = ["goal", "scope", "stack", "architecture"];
 export interface DerivePlanStageInput {
   /** Every surfaced plan section with its state (from the dynamic section model). */
   sections: { k: string; state: SectionState }[];
+  /** The project's context manifest (#1019) — the dynamic required-set + confirm state, from plan.db.
+   *  Drives the Context gate: every REQUIRED topic must be present (its `.md` exists) AND confirmed. */
+  contextManifest: ContextManifestEntry[];
   repoCount: number;
   issueCount: number;
   fleetStreams: number;
@@ -60,23 +73,26 @@ export interface DerivePlanStageInput {
  * a manual user was deadlocked. This collapses the per-file confirmation into a single per-stage
  * approval gesture.
  *
- * - **context** → its project-tier discovery files, but only once the four CORE topics are
- *   present (drafted/confirmed). Gating on core-presence stops an early approve from passing the
- *   gate before the planner has actually written the core discovery (`coreConfirmed` treats an
- *   absent core topic as satisfied, so without this guard a half-written stage could be approved).
+ * - **context** → its project-tier context files, but only once every REQUIRED topic (the project's
+ *   dynamic manifest, #1019) is present. Gating on required-presence stops an early approve from
+ *   passing the gate before the planner has written the required context. Confirms every present
+ *   project-tier file (required + any optional extras the planner wrote).
  * - **structure** → the `phases` roadmap anchor when it's drafted.
  * - other stages gate on counts (issues, fleet, …), not section confirmation ⇒ nothing to confirm.
  */
 export function pendingStageConfirms(
   activeStageKey: string | undefined,
   sections: { k: string; state: SectionState }[],
+  contextManifest: ContextManifestEntry[] = [],
 ): string[] {
   if (activeStageKey === "structure") {
     return sections.some((s) => s.k === "phases" && s.state === "drafted") ? ["phases"] : [];
   }
   if (activeStageKey === "context") {
     const present = (k: string) => sections.some((s) => s.k === k && s.state !== "pending");
-    if (!CORE.every(present)) return [];
+    const required = contextManifest.filter((c) => c.required).map((c) => c.topic);
+    // Can't approve until every required topic has actually been written.
+    if (required.length === 0 || !required.every(present)) return [];
     return sections
       .filter((s) => parseSectionKey(s.k).tier === "project" && s.k !== "phases" && s.state === "drafted")
       .map((s) => s.k);
@@ -101,34 +117,34 @@ export function stageConfirmKeys(
   sections: { k: string; state: SectionState }[],
   activeHasGate: boolean,
   activeAlreadyConfirmed: boolean,
+  contextManifest: ContextManifestEntry[] = [],
 ): string[] {
   if (!activeStageKey) return [];
   if (!activeHasGate) return activeAlreadyConfirmed ? [] : [activeStageKey];
-  return pendingStageConfirms(activeStageKey, sections);
+  return pendingStageConfirms(activeStageKey, sections, contextManifest);
 }
 
 export function derivePlanStageState(input: DerivePlanStageInput): PlanStageState {
-  // Context = project-tier discovery sections, excluding the structure anchor
-  // (`phases`). Skipped topics aren't surfaced as sections, so they're simply
-  // absent — i.e. resolved by omission — which is the intended behavior.
-  const contextSections = input.sections.filter(
-    (s) => parseSectionKey(s.k).tier === "project" && s.k !== "phases",
-  );
-  const total = contextSections.length;
-  const resolved = contextSections.filter((s) => s.state === "confirmed").length;
-
-  // A core topic is OK if confirmed or absent (skipped); a present-but-unconfirmed
-  // core topic blocks context completion.
+  // Context (#1019): the gate is driven by the project's DYNAMIC required-set (the manifest), not a
+  // hardcoded core. A topic is "present" once its `context/<topic>.md` exists (section state leaves
+  // `pending`); "confirmed" is the manifest flag (the user's gesture, durable in plan.db). The stage
+  // completes when EVERY required topic is present AND confirmed — and there's at least one required
+  // topic (an empty manifest can't pass, which also retires the old "absent ⇒ satisfied" foot-gun).
   const byKey = new Map(input.sections.map((s) => [s.k, s.state]));
-  const coreConfirmed = CORE.every((k) => {
-    const st = byKey.get(k);
-    return st === undefined || st === "confirmed";
-  });
+  const present = (topic: string) => {
+    const st = byKey.get(topic);
+    return st !== undefined && st !== "pending";
+  };
+  const requiredTopics = input.contextManifest.filter((c) => c.required);
+  const total = requiredTopics.length;
+  const resolved = requiredTopics.filter((c) => present(c.topic) && c.confirmed).length;
+  const requiredContextConfirmed = total > 0 && resolved >= total;
+
   const phasesConfirmed = byKey.get("phases") === "confirmed";
 
   const art = input.datamodelArtifact ?? {};
   return buildPlanStageState({
-    context: { resolved, total, coreConfirmed },
+    context: { resolved, total, requiredContextConfirmed },
     repoCount: input.repoCount,
     requiresUi: input.requiresUi,
     ui: { ...input.ui, routed: input.uiRouted ?? false },
@@ -157,7 +173,7 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
  */
 export function planStateToSignals(s: PlanStageState): PlanSignals {
   return {
-    coreConfirmed: s.context.coreConfirmed,
+    requiredContextConfirmed: s.context.requiredContextConfirmed,
     topicsResolved: s.context.resolved,
     topicsTotal: s.context.total,
     repoCount: s.repoCount,

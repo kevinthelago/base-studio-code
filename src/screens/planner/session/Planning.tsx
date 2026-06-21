@@ -49,7 +49,7 @@ import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag } from "..
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
-import { derivePlanStageState, planStateToSignals, stageConfirmKeys } from "../stages/planStageDerive";
+import { derivePlanStageState, planStateToSignals, stageConfirmKeys, CONTEXT_BASELINE, type ContextManifestEntry } from "../stages/planStageDerive";
 import { findPlanGaps } from "../grading/lintPlan";
 import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
 import { Ic } from "../blueprints/blueprintIcons";
@@ -401,6 +401,13 @@ export function Planning({ visible }: { visible: boolean }) {
   // don't re-apply/re-clone every 2s tick). Keyed by project, so a project switch doesn't reset them.
   const deployAppliedRef = useRef<Record<string, string>>({});
   const mcpAppliedRef = useRef<Set<string>>(new Set());
+  // Context manifest (#1019): the dynamic required-set + confirm state, polled from plan.db. The gate
+  // (`requiredContextConfirmed`) reads it; the change-guard avoids churning state every tick; the
+  // seeded-set guards the baseline seed so it runs at most once per project per session.
+  const [ctxManifest, setCtxManifest] = useState<ContextManifestEntry[]>([]);
+  const ctxManifestRef = useRef<ContextManifestEntry[]>([]); // mirror for stable callbacks (confirm)
+  const ctxManifestJsonRef = useRef<string>("");
+  const ctxSeededRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!effectiveProjectId) return;
     const repos = [...new Set([...effectiveRepos, ...repoLinkFullNames])];
@@ -720,6 +727,7 @@ export function Planning({ visible }: { visible: boolean }) {
       parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "").length + featureIssues.length;
     return derivePlanStageState({
       sections: sections.map(s => ({ k: s.k, state: s.state })),
+      contextManifest: ctxManifest,
       repoCount: publishRepos.length,
       issueCount,
       fleetStreams: streams.length,
@@ -739,7 +747,7 @@ export function Planning({ visible }: { visible: boolean }) {
       // Folding the user-confirm in here keeps the gate signal (`featuresConfirmed`) unchanged.
       features: { count: featureState.count, allConfirmed: featuresGateComplete(featureState, confirmedSet.has(FEATURES_KEY)) && featureCycle.length === 0 },
     });
-  }, [sections, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet]);
+  }, [sections, ctxManifest, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
     const bp = blueprints.find(b => b.id === effectiveBlueprintId);
@@ -810,7 +818,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const pendingConfirm = useMemo(() => {
     const activeKey = phases[focusActiveIdx]?.key;
     const activeSec = activeKey ? planSecs.find((s) => s.key === activeKey) : undefined;
-    const base = stageConfirmKeys(activeKey, sections, !!activeSec?.gateRule, !!activeKey && confirmedSet.has(activeKey));
+    const base = stageConfirmKeys(activeKey, sections, !!activeSec?.gateRule, !!activeKey && confirmedSet.has(activeKey), ctxManifest);
     // Features (#plan-db): once every feature in the roster is populated, offer the one-click
     // confirm that completes the stage. Until then the gate holds (titles-first → count = N), so a
     // single populated feature can no longer auto-advance.
@@ -818,7 +826,58 @@ export function Planning({ visible }: { visible: boolean }) {
       return base.includes(FEATURES_KEY) ? base : [...base, FEATURES_KEY];
     }
     return base;
-  }, [phases, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle]);
+  }, [phases, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle, ctxManifest]);
+  // #1019: clear the cached manifest on a project switch so a stale set never bleeds across.
+  useEffect(() => { setCtxManifest([]); ctxManifestRef.current = []; ctxManifestJsonRef.current = ""; }, [effectiveProjectId]);
+  // #1019: poll the Context manifest (dynamic required-set + confirm state) from plan.db, seed the
+  // baseline once per project, and mirror confirmed topics into the section store so the cards reflect
+  // the durable db truth. The seed only sets `required` — only the USER ever confirms.
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    let alive = true;
+    const tick = async () => {
+      try {
+        const m = await invoke<ContextManifestEntry[]>("plan_list_context", { projectKey: effectiveProjectId });
+        if (!alive) return;
+        // Seed the baseline once per project/session if the manifest is empty — a deterministic floor
+        // before the planner runs `bsc-plan context require`. The blueprint's context section
+        // `requires` overrides the universal baseline (blueprint seeding).
+        if ((m?.length ?? 0) === 0 && !ctxSeededRef.current.has(effectiveProjectId)) {
+          ctxSeededRef.current.add(effectiveProjectId);
+          const requires = planSecs.find(s => s.key === "context")?.requires ?? CONTEXT_BASELINE;
+          for (const t of requires) {
+            await invoke("plan_require_context", { projectKey: effectiveProjectId, topic: t, required: true }).catch(() => {});
+          }
+          return; // next tick reads the seeded set
+        }
+        const j = JSON.stringify(m ?? []);
+        if (j !== ctxManifestJsonRef.current) {
+          ctxManifestJsonRef.current = j;
+          ctxManifestRef.current = m ?? [];
+          setCtxManifest(m ?? []);
+          // Mirror confirm → the section store (display only; the gate reads ctxManifest directly).
+          // Confirm-only, never unconfirm, so it can't race an optimistic approve.
+          for (const c of m ?? []) if (c.confirmed) confirmPlanSection(effectiveProjectId, c.topic);
+        }
+      } catch { /* plan.db not created until the planner/seed touches context — ignore */ }
+    };
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [effectiveProjectId, planSecs, confirmPlanSection]);
+  // #1019: the user's confirm gesture persists to plan.db for any CONTEXT topic among `keys` (only the
+  // user confirms — the planner never does). Non-context keys (e.g. the features anchor) are ignored.
+  // The gate picks the change up on the next manifest poll.
+  const persistContextConfirms = useCallback((keys: string[]) => {
+    const topics = new Set(ctxManifestRef.current.map(c => c.topic));
+    void (async () => {
+      for (const k of keys) {
+        if (topics.has(k)) {
+          await invoke("plan_confirm_context", { projectKey: effectiveProjectId, topic: k, confirmed: true }).catch(console.error);
+        }
+      }
+    })();
+  }, [effectiveProjectId]);
   // The active phase is an enabled OPTIONAL stage the user hasn't decided yet — so the advance bar
   // offers a "Skip stage" control beside the primary action (#921). `phasesFrom` reports a not-yet
   // -decided optional stage at the frontier as "active"; a decided (done/skipped) one isn't.
@@ -991,6 +1050,7 @@ export function Planning({ visible }: { visible: boolean }) {
     },
     confirm: (keys) => {
       for (const k of keys) confirmPlanSection(effectiveProjectId, k);
+      persistContextConfirms(keys); // #1019: durable, user-only confirm of context topics in plan.db
       const name = keys.map(k => titleForKey(k)).join(", ") || "section";
       invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
       apLastAnswered.current = autopilotTxRef.current.length;
@@ -1078,35 +1138,10 @@ export function Planning({ visible }: { visible: boolean }) {
 
         let m: RegExpExecArray | null;
 
-        // ── <plan_update section="key">content</plan_update> ─────────────────
-        const planRe = new RegExp(
-          `<plan_update\\s+section=${Q}(\\w+)${Q}\\s*>([\\s\\S]*?)<\\/plan_update>`,
-          'g'
-        );
-        let foundPlan = false;
-        while ((m = planRe.exec(bufRef.current)) !== null) {
-          const key     = canonicalSectionKey(m[1]);
-          const content = m[2].trim();
-          foundPlan = true;
-          // Issues + features live in plan.db now (#plan-db); ignore any inline section text for
-          // them so it can't clobber the DB-sourced content (the planner writes via `bsc-plan`).
-          if (key === "issues" || key === FEATURES_KEY) continue;
-          // Any \w+ key is a valid section (dynamic planner). Persist to the
-          // store unless the user already confirmed it — confirmed sections are
-          // frozen. The derived `sections`/`skipped` pick the change up on the
-          // next render. Read confirmed state fresh (this listener is created
-          // once at mount, so a captured set would go stale).
-          const confirmed = new Set(useAppStore.getState().planConfirmedSections[projIdSnap] ?? []);
-          if (!confirmed.has(key)) {
-            useAppStore.getState().setPlanSection(projIdSnap, key, content);
-          }
-        }
-        if (foundPlan) {
-          bufRef.current = bufRef.current.replace(
-            new RegExp(`<plan_update\\s+section=${Q}\\w+${Q}\\s*>[\\s\\S]*?<\\/plan_update>`, 'g'),
-            ""
-          );
-        }
+        // Discovery/context section CONTENT now lives in `context/<topic>.md` files the planner
+        // writes (read by the section poll + by workers) — the single channel (#1019). The redundant
+        // `<plan_update section>` stream tag is retired; its required-set + confirm state moved to the
+        // plan.db context manifest (`bsc-plan context` + the manifest poll above).
 
         // ── <plan_focus section="key" /> ─────────────────────────────────────
         // Marks the section Claude is currently discussing. The last focus tag
@@ -2447,6 +2482,7 @@ _Auto-generated by base-studio-code planner._`,
                   // selection re-follows to the next live phase (#807-followup).
                   if (focusFooter.kind === "approve-continue" && pendingConfirm.length > 0) {
                     for (const k of pendingConfirm) confirmPlanSection(effectiveProjectId, k);
+                    persistContextConfirms(pendingConfirm); // #1019: durable, user-only confirm in plan.db
                     const name = pendingConfirm.map(k => titleForKey(k)).join(", ");
                     invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
                   }

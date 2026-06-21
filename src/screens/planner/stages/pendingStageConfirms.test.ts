@@ -11,39 +11,48 @@ const coreDrafted: S[] = [
   sec("stack", "drafted"), sec("architecture", "drafted"),
 ];
 
+// The context manifest requiring those four (#1019) — the dynamic required-set the approve gesture
+// gates on (replaces the old hardcoded CORE).
+const coreManifest = ["goal", "scope", "stack", "architecture"].map((topic) => ({ topic, required: true, confirmed: false }));
+
 describe("pendingStageConfirms — one-click stage approval (#807-followup)", () => {
-  it("context: returns every drafted project-tier discovery file once the core four are present", () => {
+  it("context: returns every drafted project-tier context file once every required topic is present", () => {
     const sections = [...coreDrafted, sec("api", "drafted"), sec("schema", "confirmed")];
-    // All four core + the drafted dynamic topic; the already-confirmed one is excluded.
-    expect(pendingStageConfirms("context", sections).sort())
+    // All four required + the drafted extra topic; the already-confirmed one is excluded.
+    expect(pendingStageConfirms("context", sections, coreManifest).sort())
       .toEqual(["api", "architecture", "goal", "scope", "stack"]);
   });
 
-  it("context: waits for ALL four core topics to be present before anything can be approved", () => {
-    // stack + architecture not yet written — approving now could pass the gate prematurely
-    // (coreConfirmed treats an absent core topic as satisfied), so confirm nothing.
-    const partial = [sec("goal", "drafted"), sec("scope", "drafted")];
-    expect(pendingStageConfirms("context", partial)).toEqual([]);
+  it("context: an empty manifest (no required topics) approves nothing", () => {
+    // The dynamic gate can't auto-pass before the required-set is seeded (#1019).
+    expect(pendingStageConfirms("context", coreDrafted, [])).toEqual([]);
   });
 
-  it("context: a pending (empty, contentless) core file does not count as present", () => {
+  it("context: waits for EVERY required topic to be present before anything can be approved", () => {
+    // stack + architecture not yet written — approving now could pass the gate prematurely, so
+    // confirm nothing until all required topics exist.
+    const partial = [sec("goal", "drafted"), sec("scope", "drafted")];
+    expect(pendingStageConfirms("context", partial, coreManifest)).toEqual([]);
+  });
+
+  it("context: a pending (empty, contentless) required file does not count as present", () => {
     const sections = [...coreDrafted.slice(0, 3), sec("architecture", "pending")];
-    expect(pendingStageConfirms("context", sections)).toEqual([]);
+    expect(pendingStageConfirms("context", sections, coreManifest)).toEqual([]);
   });
 
   it("context: nothing left to confirm once every topic is confirmed", () => {
     const allConfirmed = coreDrafted.map((s) => ({ ...s, state: "confirmed" as SectionState }));
-    expect(pendingStageConfirms("context", allConfirmed)).toEqual([]);
+    expect(pendingStageConfirms("context", allConfirmed, coreManifest)).toEqual([]);
   });
 
   it("context: excludes the phases anchor (it belongs to the structure stage)", () => {
     const sections = [...coreDrafted, sec("phases", "drafted")];
-    expect(pendingStageConfirms("context", sections)).not.toContain("phases");
+    expect(pendingStageConfirms("context", sections, coreManifest)).not.toContain("phases");
   });
 
-  it("context: ignores repo-tier sections — only project-tier discovery files", () => {
+  it("context: ignores repo-tier sections — only project-tier context files", () => {
     const sections = [...coreDrafted, sec("repo__web__api", "drafted")];
-    expect(pendingStageConfirms("context", sections)).not.toContain("repo__web__api");
+    expect(pendingStageConfirms("context", sections, coreManifest)).not.toContain("repo__web__api");
   });
 
   it("structure: confirms the phases roadmap anchor when it's drafted", () => {
@@ -76,8 +85,8 @@ describe("stageConfirmKeys — gateless active-stage approval (#954)", () => {
   it("a GATED structure/context stage confirms its gate's drafted anchors", () => {
     // structure (gated) → the phases anchor
     expect(stageConfirmKeys("structure", [sec("phases", "drafted")], /*activeHasGate*/ true, false)).toEqual(["phases"]);
-    // context (gated) → the core-four discovery files
-    expect(stageConfirmKeys("context", coreDrafted, /*activeHasGate*/ true, false).sort())
+    // context (gated) → the required context files (from the manifest)
+    expect(stageConfirmKeys("context", coreDrafted, /*activeHasGate*/ true, false, coreManifest).sort())
       .toEqual(["architecture", "goal", "scope", "stack"]);
   });
 

@@ -424,6 +424,50 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown blueprint command '{other}'\n\n{USAGE}")),
             }
         }
+        "context" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `context require/unrequire <topic>...` shape the DYNAMIC required set as the project
+                // clarifies. There is deliberately NO `confirm` — only the USER confirms a section, from
+                // the UI; the planner may shape what's required but never mark it reviewed.
+                "require" | "unrequire" => {
+                    let topics: Vec<&String> = args.positional.iter().skip(2).collect();
+                    if topics.is_empty() {
+                        return Err(format!("usage: bsc-plan context {sub} <topic>..."));
+                    }
+                    let required = sub == "require";
+                    for t in &topics {
+                        s.context_require(t, required).map_err(|e| e.to_string())?;
+                    }
+                    if args.json {
+                        println!("{}", serde_json::to_string(&topics).unwrap_or_else(|_| "[]".into()));
+                    } else {
+                        let verb = if required { "required" } else { "unrequired" };
+                        for t in &topics {
+                            println!("{verb} {t}");
+                        }
+                    }
+                    Ok(())
+                }
+                "list" => {
+                    let manifest = s.context_list().map_err(|e| e.to_string())?;
+                    if args.json {
+                        println!("{}", serde_json::to_string(&manifest).unwrap_or_else(|_| "[]".into()));
+                    } else if manifest.is_empty() {
+                        println!("(no context topics)");
+                    } else {
+                        for c in &manifest {
+                            let req = if c.required { "required" } else { "optional" };
+                            let conf = if c.confirmed { "✓ confirmed" } else { "· unconfirmed" };
+                            println!("{:<16} {:<9} {}", c.topic, req, conf);
+                        }
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown context command '{other}'\n\n{USAGE}")),
+            }
+        }
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
 }
@@ -631,6 +675,12 @@ MCP (catalog servers scoped to the project):
 BLUEPRINT (the blueprint an authoring project is designing — one blob):
   blueprint set             replace the blueprint from a Blueprint JSON on stdin
   blueprint get             print the blueprint (Blueprint JSON)
+
+CONTEXT (the Context stage's DYNAMIC required-set — prose lives in context/<topic>.md files):
+  context require <topic>...    mark topic(s) required for this project
+  context unrequire <topic>...  drop topic(s) from the required set
+  context list                  show the manifest (required/optional · confirmed)
+  (no `confirm` — only the user confirms a section, from the UI)
 
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 ";
