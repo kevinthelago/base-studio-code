@@ -101,6 +101,17 @@ pub struct PlanFeature {
     pub stream: Option<String>,
 }
 
+/// A roadmap phase (#1017) — the name + "done when" description the structure card + publish (as a
+/// GitHub milestone) read. Features reference a phase by its 1-based position (or name) via
+/// `feature.phase`. Serializes to the `{name, description}` shape the frontend `parsePhases` reads.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct PlanPhase {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+}
+
 /// kebab-case slug from a name (mirrors the frontend `slugify`).
 pub fn slugify(name: &str) -> String {
     let mut s = String::new();
@@ -301,7 +312,7 @@ impl Store {
     /// reset: without it the cleared file/store state would be re-populated from the DB on the next
     /// poll. Truncates rather than dropping the file, so it works even with the db open (WAL).
     pub fn clear(&self) -> rusqlite::Result<()> {
-        self.conn.execute_batch("DELETE FROM issues; DELETE FROM features; DELETE FROM repos;")
+        self.conn.execute_batch("DELETE FROM issues; DELETE FROM features; DELETE FROM repos; DELETE FROM phases;")
     }
 
     // ── linked repos (#1012) — the repos linked to a project, durable in the hub's plan.db so a
@@ -334,6 +345,43 @@ impl Store {
     /// Unlink a repo by `full_name` (no-op if absent).
     pub fn repo_remove(&self, full_name: &str) -> rusqlite::Result<()> {
         self.conn.execute("DELETE FROM repos WHERE full_name = ?1", params![full_name])?;
+        Ok(())
+    }
+
+    // ── roadmap phases (#1017) — names/descriptions in order; features reference them by position. ──
+
+    /// Insert or merge a phase by `name` (idempotent; a non-empty description overwrites, blank keeps).
+    pub fn phase_upsert(&self, phase: &PlanPhase) -> rusqlite::Result<()> {
+        let name = phase.name.trim();
+        if name.is_empty() {
+            return Ok(());
+        }
+        let pos: i64 = self
+            .conn
+            .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM phases", [], |r| r.get(0))?;
+        self.conn.execute(
+            "INSERT INTO phases (name, description, position, updated_at)
+             VALUES (?1, ?2, ?3, strftime('%s','now'))
+             ON CONFLICT(name) DO UPDATE SET
+                description = CASE WHEN excluded.description != '' THEN excluded.description ELSE phases.description END,
+                updated_at  = excluded.updated_at",
+            params![name, phase.description, pos],
+        )?;
+        Ok(())
+    }
+
+    /// Every phase in roadmap order (position) — the `{name, description}` shape `parsePhases` reads.
+    pub fn phase_list(&self) -> rusqlite::Result<Vec<PlanPhase>> {
+        let mut stmt = self.conn.prepare("SELECT name, description FROM phases ORDER BY position, name")?;
+        let out: rusqlite::Result<Vec<PlanPhase>> = stmt
+            .query_map([], |r| Ok(PlanPhase { name: r.get(0)?, description: r.get(1)? }))?
+            .collect();
+        out
+    }
+
+    /// Remove a phase by `name` (no-op if absent).
+    pub fn phase_remove(&self, name: &str) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM phases WHERE name = ?1", params![name])?;
         Ok(())
     }
 }
@@ -375,6 +423,12 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
          );
          CREATE TABLE IF NOT EXISTS repos (
             full_name   TEXT PRIMARY KEY,
+            position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS phases (
+            name        TEXT PRIMARY KEY,
+            description TEXT NOT NULL DEFAULT '',
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
          );",
@@ -682,5 +736,25 @@ mod tests {
         // clear() unlinks repos too (the "clear plan" reset).
         s.clear().unwrap();
         assert!(s.repo_list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn phases_add_list_merge_remove() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.phase_list().unwrap().is_empty());
+        s.phase_upsert(&PlanPhase { name: "Foundations".into(), description: "kernel + storage".into() }).unwrap();
+        s.phase_upsert(&PlanPhase { name: "Build".into(), description: String::new() }).unwrap();
+        let p = s.phase_list().unwrap();
+        assert_eq!(p.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(), vec!["Foundations", "Build"]); // roadmap order
+        assert_eq!(p[0].description, "kernel + storage");
+        // a later edit with a blank description keeps the stored one; a non-blank overwrites.
+        s.phase_upsert(&PlanPhase { name: "Foundations".into(), description: String::new() }).unwrap();
+        assert_eq!(s.phase_list().unwrap()[0].description, "kernel + storage", "blank description doesn't wipe");
+        s.phase_upsert(&PlanPhase { name: "Build".into(), description: "the features".into() }).unwrap();
+        assert_eq!(s.phase_list().unwrap()[1].description, "the features");
+        s.phase_remove("Foundations").unwrap();
+        assert_eq!(s.phase_list().unwrap().len(), 1);
+        s.clear().unwrap();
+        assert!(s.phase_list().unwrap().is_empty());
     }
 }
