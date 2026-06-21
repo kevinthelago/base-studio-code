@@ -2242,6 +2242,9 @@ pub fn run() {
             plan_db::plan_add_repo,
             plan_db::plan_list_repos,
             plan_db::plan_remove_repo,
+            plan_db::plan_upsert_phase,
+            plan_db::plan_list_phases,
+            plan_db::plan_remove_phase,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
