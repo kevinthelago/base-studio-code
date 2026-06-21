@@ -2253,6 +2253,8 @@ pub fn run() {
             plan_db::plan_add_mcp,
             plan_db::plan_list_mcp,
             plan_db::plan_remove_mcp,
+            plan_db::plan_set_blueprint,
+            plan_db::plan_get_blueprint,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
