@@ -1,7 +1,7 @@
 {
   "name": "Plan",
   "glyph": "⊞",
-  "gate": "phases + every feature sequenced",
+  "gate": "every feature sequenced into a phase",
   "deps": [
     "context",
     "repos",
@@ -9,11 +9,6 @@
   ],
   "gateRule": {
     "require": [
-      {
-        "signal": "phasesConfirmed",
-        "target": true,
-        "label": "approve the roadmap"
-      },
       {
         "signal": "featuresPhased",
         "target": true,
@@ -27,14 +22,14 @@
       }
     ]
   },
-  "blurb": "Sequence the feature DAG into phases — issues are generated at publish, not here.",
-  "prompt": "The features are a dependency DAG — run `bsc-plan feature list` to see every feature and its\n`dependsOn`. Your job here is to SEQUENCE them into a roadmap, NOT to write issues: issues are\ngenerated from the features at GitHub-publish time, not during planning. Do NOT create issue files\nor run `bsc-plan add`.\n\nUsing the DAG, group the features into ordered **phases** (foundations first — a feature's\n`dependsOn` features land in the same or an earlier phase) and:\n1. Write `phases.json` — a JSON array of `{\"name\",\"description\"}`, each phase a crisp \"done when\".\n2. Assign every feature its phase by re-running `bsc-plan feature add` with the slug + phase, e.g.\n   `echo '{\"slug\":\"sketcher\",\"phase\":2}' | bsc-plan feature add` (merges in place).\nThen present the phase order + the dependency graph and get the user's APPROVAL. Leave no\nTODO / TBD / FIXME / XXX / TKTK markers — the gate blocks on them.\n\nWhere a real cross-feature contract exists (a shared schema/types/API), write it as a doc under\n`contracts/<name>.md` — the director owns those and workers read them as the source of truth.",
+  "blurb": "Sequence the feature DAG into phases — in the plan DB; issues are generated at publish, not here.",
+  "prompt": "The features are a dependency DAG — run `bsc-plan feature list` to see every feature and its\n`dependsOn`. SEQUENCE them into a roadmap by assigning each feature a **phase IN THE PLAN DB** — do\nNOT write phases.json or any issue files. Phases live in plan.db; issues are generated from the\nfeatures at GitHub-publish time, not during planning (no `bsc-plan add`).\n\nGroup the features into ordered phases (foundations first — a feature's `dependsOn` features land in\nthe same or an earlier phase) and assign EVERY feature its phase by re-running `bsc-plan feature add`\nwith the slug + phase:\n  `echo '{\"slug\":\"sketcher\",\"phase\":2}' | bsc-plan feature add`  (merges in place — slug + phase only).\nUse a consistent phase number (or short phase name). When every feature is phased, present the phase\norder + the dependency graph and get the user's APPROVAL. Leave no TODO / TBD / FIXME / XXX markers —\nthe gate blocks on them.\n\nWhere a real cross-feature contract exists (a shared schema/types/API), write it as a doc under\n`contracts/<name>.md` — the director owns those and workers read them as the source of truth.",
   "substeps": [
     {
       "key": "sequence",
       "label": "Sequence features into phases",
-      "gate": "the roadmap is approved + every feature is phased",
-      "prompt": "Using the feature DAG (`bsc-plan feature list`), sequence the features into ordered\nphases — foundations first, a feature's `dependsOn` features in the same or an earlier phase. Two\nwrites: (1) `phases.json` — a JSON array of `{\"name\",\"description\"}`, each a crisp \"done when\"; and\n(2) assign EVERY feature its phase via `echo '{\"slug\":\"…\",\"phase\":<n or name>}' | bsc-plan feature add`\n(merges in place — slug + phase only). Do NOT write any issues — those are generated from the\nfeatures afterward, not in this stage. Present the phase order + the dependency graph and get the user's APPROVAL."
+      "gate": "every feature is phased in the DB",
+      "prompt": "Using the feature DAG (`bsc-plan feature list`), sequence the features into ordered\nphases — foundations first, a feature's `dependsOn` features in the same or an earlier phase. Assign\nEVERY feature its phase in the plan DB via `echo '{\"slug\":\"…\",\"phase\":<n or name>}' | bsc-plan feature add`\n(merges in place — slug + phase only). Do NOT write phases.json or any issues — phases live in the DB,\nand issues are generated from the features afterward, not in this stage. Present the phase order + the\ndependency graph and get the user's APPROVAL."
     }
   ]
 }
