@@ -130,3 +130,32 @@ pub fn plan_remove_stream(project_key: String, id: String) -> Result<(), String>
     open(&project_key)?.fleet_stream_remove(&id).map_err(|e| e.to_string())
 }
 
+// ── deploy config (#1020) — the Deploy stage's structured config as one blob (the poll coerces it). ──
+
+#[tauri::command]
+pub fn plan_set_deploy(project_key: String, config: serde_json::Value) -> Result<(), String> {
+    open(&project_key)?.deploy_set(&config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_get_deploy(project_key: String) -> Result<Option<serde_json::Value>, String> {
+    open(&project_key)?.deploy_get().map_err(|e| e.to_string())
+}
+
+// ── MCP assignments (#1021) — catalog server names scoped to the project; the poll resolves each. ──
+
+#[tauri::command]
+pub fn plan_add_mcp(project_key: String, name: String) -> Result<(), String> {
+    open(&project_key)?.mcp_add(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_list_mcp(project_key: String) -> Result<Vec<String>, String> {
+    open(&project_key)?.mcp_list().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_remove_mcp(project_key: String, name: String) -> Result<(), String> {
+    open(&project_key)?.mcp_remove(&name).map_err(|e| e.to_string())
+}
+

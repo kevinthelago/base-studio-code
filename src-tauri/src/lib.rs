@@ -2248,6 +2248,11 @@ pub fn run() {
             plan_db::plan_set_fleet,
             plan_db::plan_get_fleet,
             plan_db::plan_remove_stream,
+            plan_db::plan_set_deploy,
+            plan_db::plan_get_deploy,
+            plan_db::plan_add_mcp,
+            plan_db::plan_list_mcp,
+            plan_db::plan_remove_mcp,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

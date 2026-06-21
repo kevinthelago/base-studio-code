@@ -314,7 +314,7 @@ impl Store {
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.conn.execute_batch(
             "DELETE FROM issues; DELETE FROM features; DELETE FROM repos; DELETE FROM phases; \
-             DELETE FROM fleet_streams; DELETE FROM fleet_meta;",
+             DELETE FROM fleet_streams; DELETE FROM fleet_meta; DELETE FROM deploy; DELETE FROM mcp;",
         )
     }
 
@@ -475,6 +475,61 @@ impl Store {
         obj.insert("streams".into(), serde_json::Value::Array(streams));
         Ok(Some(serde_json::Value::Object(obj)))
     }
+
+    // ── deploy config (#1020) — one DeployConfig blob per project (single row); the Deploy stage's
+    //    structured config, durable in plan.db instead of a <deploy_config> text tag. ──
+
+    /// Replace the project's deploy config (a single JSON blob — the full DeployConfig shape).
+    pub fn deploy_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO deploy (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+            params![data.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// The stored deploy config, or None if unset.
+    pub fn deploy_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM deploy WHERE id = 1")?;
+        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        match rows.next() {
+            Some(s) => Ok(serde_json::from_str(&s?).ok()),
+            None => Ok(None),
+        }
+    }
+
+    // ── MCP assignments (#1021) — the catalog server names scoped to a project; durable in plan.db
+    //    instead of <mcp_assign> text tags. The frontend resolves each name → the MCP-servers store. ──
+
+    /// Assign an MCP server by catalog `name` (idempotent; assignment order preserved).
+    pub fn mcp_add(&self, name: &str) -> rusqlite::Result<()> {
+        let n = name.trim();
+        if n.is_empty() {
+            return Ok(());
+        }
+        let pos: i64 = self
+            .conn
+            .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM mcp", [], |r| r.get(0))?;
+        self.conn.execute(
+            "INSERT INTO mcp (name, position, updated_at) VALUES (?1, ?2, strftime('%s','now'))
+             ON CONFLICT(name) DO NOTHING",
+            params![n, pos],
+        )?;
+        Ok(())
+    }
+
+    /// Every assigned MCP server name, in assignment order.
+    pub fn mcp_list(&self) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT name FROM mcp ORDER BY position, name")?;
+        let out: rusqlite::Result<Vec<String>> = stmt.query_map([], |r| r.get(0))?.collect();
+        out
+    }
+
+    /// Unassign an MCP server by `name` (no-op if absent).
+    pub fn mcp_remove(&self, name: &str) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM mcp WHERE name = ?1", params![name])?;
+        Ok(())
+    }
 }
 
 // ── schema ───────────────────────────────────────────────────────────────────────
@@ -532,6 +587,15 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
          CREATE TABLE IF NOT EXISTS fleet_meta (
             id          INTEGER PRIMARY KEY,
             data        TEXT NOT NULL DEFAULT '{}'
+         );
+         CREATE TABLE IF NOT EXISTS deploy (
+            id          INTEGER PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}'
+         );
+         CREATE TABLE IF NOT EXISTS mcp (
+            name        TEXT PRIMARY KEY,
+            position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
          );",
     )?;
     // Additive migrations for a plan.db created before a column existed (each errors if the column is
@@ -891,5 +955,34 @@ mod tests {
         s.fleet_set(&serde_json::json!({ "recommended": 1, "streams": [ { "id": "x", "repo": "o/r" } ] })).unwrap();
         s.clear().unwrap();
         assert!(s.fleet_get().unwrap().is_none());
+    }
+
+    #[test]
+    fn deploy_set_get_round_trips_and_clears() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.deploy_get().unwrap().is_none());
+        let cfg = serde_json::json!({ "services": [{ "id": "api", "platform": "fly" }], "release": { "strategy": "rolling" } });
+        s.deploy_set(&cfg).unwrap();
+        let got = s.deploy_get().unwrap().unwrap();
+        assert_eq!(got["services"][0]["platform"], serde_json::json!("fly"));
+        // a fresh set replaces the whole blob (single row)
+        s.deploy_set(&serde_json::json!({ "services": [] })).unwrap();
+        assert_eq!(s.deploy_get().unwrap().unwrap()["services"].as_array().unwrap().len(), 0);
+        s.clear().unwrap();
+        assert!(s.deploy_get().unwrap().is_none());
+    }
+
+    #[test]
+    fn mcp_add_list_remove_and_clear() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.mcp_list().unwrap().is_empty());
+        s.mcp_add("Postgres").unwrap();
+        s.mcp_add("GitHub").unwrap();
+        s.mcp_add("Postgres").unwrap(); // idempotent re-assign
+        assert_eq!(s.mcp_list().unwrap(), vec!["Postgres".to_string(), "GitHub".to_string()]);
+        s.mcp_remove("Postgres").unwrap();
+        assert_eq!(s.mcp_list().unwrap(), vec!["GitHub".to_string()]);
+        s.clear().unwrap();
+        assert!(s.mcp_list().unwrap().is_empty());
     }
 }

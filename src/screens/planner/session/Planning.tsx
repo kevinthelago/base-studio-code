@@ -38,14 +38,14 @@ import { tunnelSetPlanState } from "../../../lib/tunnel/tunnelClient";
 import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../../lib/github/projectSync";
 import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
-import { parseMcpAssigns, stripMcpAssigns, applyMcpAssign } from "../shared/planExtensions";
+import { applyMcpAssign } from "../shared/planExtensions";
 import { applyBlueprintMcp, collectBlueprintMcp } from "../blueprints/blueprintMcp";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { catalogLink, repoNameFromLink, mcpRepoName } from "../../../lib/session/mcpInstall";
 import { type McpInstallState } from "../shared/mcpPaneData";
 import { MCP_CATALOG } from "../../../data/mcpCatalog";
 import { buildProjectPaneData } from "../pane/projectPaneData";
-import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag, deployChecks } from "../shared/deployConfig";
+import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag } from "../shared/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
@@ -396,6 +396,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // setup_workspaces, so the planner can read repo contents during planning (triage launch
   // re-clones fail-soft, but that's too late for in-session context). Idempotent on the Rust side.
   const autoCloneRef = useRef<Set<string>>(new Set());
+  // DB poll churn guards (#1020/#1021): the last deploy blob applied per project (skip re-applying an
+  // unchanged config) and the set of `<projId>::<mcp-name>` already resolved into the MCP store (so we
+  // don't re-apply/re-clone every 2s tick). Keyed by project, so a project switch doesn't reset them.
+  const deployAppliedRef = useRef<Record<string, string>>({});
+  const mcpAppliedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!effectiveProjectId) return;
     const repos = [...new Set([...effectiveRepos, ...repoLinkFullNames])];
@@ -1223,26 +1228,8 @@ export function Planning({ visible }: { visible: boolean }) {
           bufRef.current = stripAgentAssigns(bufRef.current);
         }
 
-        // ── <mcp_assign name="…" /> — scope an MCP server/extension to this project (#174).
-        // The template instructs the planner to emit these; the refactor had unwired the parser
-        // so the assignments were silently dropped (never loaded into the fleet). Restored (#754).
-        const mcpNames = parseMcpAssigns(bufRef.current);
-        if (mcpNames.length > 0) {
-          const store = useAppStore.getState();
-          for (const name of mcpNames) {
-            applyMcpAssign(store, name, projIdSnap, store.bscBaseDir);
-            // A first-party server installs from source — clone its repo into
-            // ~/.base-studio-code/mcp/<repo> now so it's present for the build button +
-            // the fleet launch. Best-effort + idempotent (mcp_clone is a no-op/pull when
-            // the dir exists); the build itself is run on demand from the MCP panel.
-            const link = catalogLink(name);
-            if (link) {
-              invoke("mcp_clone", { name: repoNameFromLink(link), url: link })
-                .catch((e) => console.warn(`mcp_clone(${name}) during planning failed:`, e));
-            }
-          }
-          bufRef.current = stripMcpAssigns(bufRef.current);
-        }
+        // MCP assignments moved to plan.db (#1021) — the planner now records them with `bsc-plan mcp
+        // add`, and the DB poll below resolves each into the MCP-servers store. (Was a <mcp_assign> tag.)
 
         // ── <blueprint>{…JSON…}</blueprint> — the blueprint an AUTHORING project is designing (#923).
         // The planner re-emits the full JSON as the design firms up; we validate with the same
@@ -1262,40 +1249,8 @@ export function Planning({ visible }: { visible: boolean }) {
           bufRef.current = bufRef.current.replace(/<blueprint\s*>[\s\S]*?<\/blueprint>/g, "");
         }
 
-        // ── <deploy_config>{…JSON…}</deploy_config> — the Deploy stage's structured config (#919).
-        // The planner emits it (a lenient shape coerced into the full DeployConfig) so the `deploy`
-        // gate clears from the plan, not only from manual pane edits. Last complete tag wins.
-        const dcRe = /<deploy_config\s*>([\s\S]*?)<\/deploy_config>/g;
-        let lastDcBody: string | null = null;
-        let dcMatchedComplete = false;
-        while ((m = dcRe.exec(bufRef.current)) !== null) { lastDcBody = m[1]; dcMatchedComplete = true; }
-        // Fallback (#919): the closing tag can be mangled / line-wrapped / never arrive. If an
-        // opening tag is present, parse from it to the buffer end — parseDeployConfigTag extracts the
-        // {…} object, so the config still lands without a clean </deploy_config>.
-        if (lastDcBody === null) {
-          const openIdx = bufRef.current.lastIndexOf("<deploy_config");
-          if (openIdx >= 0) {
-            const gt = bufRef.current.indexOf(">", openIdx);
-            if (gt >= 0) lastDcBody = bufRef.current.slice(gt + 1);
-          }
-        }
-        if (lastDcBody !== null) {
-          const cfg = parseDeployConfigTag(lastDcBody);
-          if (cfg) {
-            useAppStore.getState().setPlanDeployConfig(projIdSnap, cfg);
-            // Diagnostic (#919): console.log (NOT console.debug, which DevTools hides at its default
-            // level) — confirms the tag was ingested + shows which readiness checks pass / are MISSING.
-            console.log("[deploy_config] parsed for", projIdSnap, "→",
-              deployChecks(cfg).map((c) => `${c.id}:${c.ok ? "ok" : "MISSING"}`).join("  "));
-          } else {
-            // Diagnostic (#919): the tag was captured but its body isn't parseable JSON — dump it
-            // ESCAPED so terminal-mangling (inserted newlines, box-drawing chars, indentation) is visible.
-            console.log("[deploy_config] body NOT parseable. Escaped first 800 chars:\n", JSON.stringify(lastDcBody.slice(0, 800)));
-          }
-          // Only strip a fully-closed tag; an unclosed one is left so a later chunk can complete it
-          // (re-parsing the same config is idempotent).
-          if (dcMatchedComplete) bufRef.current = bufRef.current.replace(/<deploy_config\s*>[\s\S]*?<\/deploy_config>/g, "");
-        }
+        // Deploy config moved to plan.db (#1020) — the planner now records it with `bsc-plan deploy
+        // set`, and the DB poll below coerces it into planDeployConfig. (Was a <deploy_config> tag.)
 
         // ── <data_model>{"name":"...","entities":[...]}</data_model> ──────────
         // Persists the planner's inferred Data Model as datamodel.json in the project
@@ -1513,6 +1468,39 @@ export function Planning({ visible }: { visible: boolean }) {
             if (json !== (saved[FLEET_KEY] ?? "")) store.setPlanSection(effectiveProjectId, FLEET_KEY, json);
           }
         } catch { /* plan.db not created until the planner sets the fleet — ignore */ }
+
+        // Deploy config is DB-owned (#1020) — coerce the stored blob through the same parseDeployConfigTag
+        // the old <deploy_config> tag used and push it into planDeployConfig, so the `deploy` gate clears
+        // from the plan. Skip an unchanged blob so we don't churn the store every tick.
+        try {
+          const dbDeploy = await invoke<unknown | null>("plan_get_deploy", { projectKey: effectiveProjectId });
+          if (dbDeploy) {
+            const raw = JSON.stringify(dbDeploy);
+            if (raw !== deployAppliedRef.current[effectiveProjectId]) {
+              deployAppliedRef.current[effectiveProjectId] = raw;
+              const cfg = parseDeployConfigTag(raw, publishRepos);
+              if (cfg) store.setPlanDeployConfig(effectiveProjectId, cfg);
+            }
+          }
+        } catch { /* plan.db not created until the planner sets deploy — ignore */ }
+
+        // MCP assignments are DB-owned (#1021) — resolve each assigned catalog name into the MCP-servers
+        // store (idempotent) and clone any first-party server, exactly as the old <mcp_assign> tag did.
+        // The applied-set guards against re-applying/re-cloning the same name every 2s tick.
+        try {
+          const dbMcp = await invoke<string[]>("plan_list_mcp", { projectKey: effectiveProjectId });
+          for (const name of dbMcp ?? []) {
+            const key = `${effectiveProjectId}::${name.toLowerCase()}`;
+            if (mcpAppliedRef.current.has(key)) continue;
+            mcpAppliedRef.current.add(key);
+            applyMcpAssign(store, name, effectiveProjectId, store.bscBaseDir);
+            const link = catalogLink(name);
+            if (link) {
+              invoke("mcp_clone", { name: repoNameFromLink(link), url: link })
+                .catch((e) => console.warn(`mcp_clone(${name}) during planning failed:`, e));
+            }
+          }
+        } catch { /* plan.db not created until the planner assigns an MCP server — ignore */ }
 
         const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
         const entries = Object.entries(result);
