@@ -3,6 +3,7 @@ import { derivePlanStageState, planStateToSignals, type DerivePlanStageInput } f
 
 const BASE_INPUT: DerivePlanStageInput = {
   sections: [],
+  contextManifest: [],
   repoCount: 0,
   issueCount: 0,
   fleetStreams: 0,
@@ -58,6 +59,53 @@ describe("derivePlanStageState — datamodel signals", () => {
     expect(s.datamodel.schemaRefined).toBe(false);
     expect(s.datamodel.mappingComplete).toBe(false);
     expect(s.datamodel.loadVerified).toBe(false);
+  });
+});
+
+describe("derivePlanStageState — context manifest gate (#1019)", () => {
+  const drafted = (k: string) => ({ k, state: "drafted" as const });
+  const confirmedSection = (k: string) => ({ k, state: "confirmed" as const });
+
+  it("does NOT pass with an empty manifest (no required topics ⇒ stage can't auto-pass)", () => {
+    const s = derivePlanStageState({ ...BASE_INPUT, sections: [confirmedSection("goal")] });
+    expect(s.context.requiredContextConfirmed).toBe(false);
+    expect(s.context.total).toBe(0);
+  });
+
+  it("requires every required topic present AND confirmed", () => {
+    const manifest = [
+      { topic: "goal", required: true, confirmed: true },
+      { topic: "scope", required: true, confirmed: false }, // present but not confirmed
+    ];
+    const s = derivePlanStageState({
+      ...BASE_INPUT,
+      contextManifest: manifest,
+      sections: [drafted("goal"), drafted("scope")],
+    });
+    expect(s.context.total).toBe(2);
+    expect(s.context.resolved).toBe(1);
+    expect(s.context.requiredContextConfirmed).toBe(false);
+  });
+
+  it("passes once all required topics are present and confirmed; ignores optional topics", () => {
+    const manifest = [
+      { topic: "goal", required: true, confirmed: true },
+      { topic: "users", required: true, confirmed: true },
+      { topic: "ux", required: false, confirmed: false }, // optional ⇒ doesn't gate
+    ];
+    const s = derivePlanStageState({
+      ...BASE_INPUT,
+      contextManifest: manifest,
+      sections: [confirmedSection("goal"), confirmedSection("users")],
+    });
+    expect(s.context.requiredContextConfirmed).toBe(true);
+    expect(planStateToSignals(s).requiredContextConfirmed).toBe(true);
+  });
+
+  it("a confirmed-but-absent required topic does NOT pass (file must exist)", () => {
+    const manifest = [{ topic: "goal", required: true, confirmed: true }];
+    const s = derivePlanStageState({ ...BASE_INPUT, contextManifest: manifest, sections: [] });
+    expect(s.context.requiredContextConfirmed).toBe(false);
   });
 });
 
