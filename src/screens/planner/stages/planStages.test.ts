@@ -27,9 +27,9 @@ describe("planStages — registry", () => {
 
 describe("planStages — gates", () => {
   it("context completes only when core is confirmed and all topics resolved", () => {
-    expect(status("context", buildPlanStageState({ context: { resolved: 3, total: 6, requiredContextConfirmed: false } }))).toBe("in-progress");
-    expect(status("context", buildPlanStageState({ context: { resolved: 6, total: 6, requiredContextConfirmed: false } }))).toBe("in-progress");
-    expect(status("context", buildPlanStageState({ context: { resolved: 6, total: 6, requiredContextConfirmed: true } }))).toBe("complete");
+    expect(status("context", buildPlanStageState({ context: { resolved: 3, total: 6, requiredContextReady: false } }))).toBe("in-progress");
+    expect(status("context", buildPlanStageState({ context: { resolved: 6, total: 6, requiredContextReady: false } }))).toBe("in-progress");
+    expect(status("context", buildPlanStageState({ context: { resolved: 6, total: 6, requiredContextReady: true } }))).toBe("complete");
   });
 
   it("repos completes with at least one repo", () => {
@@ -38,14 +38,14 @@ describe("planStages — gates", () => {
   });
 
   it("structure completes only with phases confirmed AND issues", () => {
-    const base = { context: { resolved: 1, total: 1, requiredContextConfirmed: true }, repoCount: 1, requiresUi: false, features: { count: 1, allConfirmed: true } };
+    const base = { context: { resolved: 1, total: 1, requiredContextReady: true }, repoCount: 1, requiresUi: false, features: { count: 1, allConfirmed: true } };
     expect(status("structure", buildPlanStageState({ ...base, phasesConfirmed: true, issueCount: 0 }))).toBe("in-progress");
     expect(status("structure", buildPlanStageState({ ...base, phasesConfirmed: true, issueCount: 5 }))).toBe("complete");
   });
 
   it("automations completes on acknowledgement once its structure dep is satisfied", () => {
     // automations depends on structure, so make structure complete first.
-    const base = { context: { resolved: 1, total: 1, requiredContextConfirmed: true }, repoCount: 1, requiresUi: false, phasesConfirmed: true, issueCount: 1 };
+    const base = { context: { resolved: 1, total: 1, requiredContextReady: true }, repoCount: 1, requiresUi: false, phasesConfirmed: true, issueCount: 1 };
     expect(status("automations", buildPlanStageState({ ...base, automationsAck: false }))).toBe("in-progress");
     expect(status("automations", buildPlanStageState({ ...base, automationsAck: true }))).toBe("complete");
   });
@@ -63,22 +63,22 @@ describe("planStages — applicability", () => {
 
   it("ui is in-progress when required but no screens approved", () => {
     // ui now depends on features (#825), so features must be complete for ui to be reachable.
-    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, requiredContextConfirmed: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 0, total: 3 } });
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, requiredContextReady: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 0, total: 3 } });
     expect(status("ui", s)).toBe("in-progress");
   });
 
   it("ui is locked until features are defined (#825)", () => {
-    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, requiredContextConfirmed: true }, features: { count: 0, allConfirmed: false }, ui: { approved: 0, total: 3 } });
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, requiredContextReady: true }, features: { count: 0, allConfirmed: false }, ui: { approved: 0, total: 3 } });
     expect(status("ui", s)).toBe("locked");
   });
 
   it("ui completes when the preview is approved (#544)", () => {
-    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, requiredContextConfirmed: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 1, total: 1 } });
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, requiredContextReady: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 1, total: 1 } });
     expect(status("ui", s)).toBe("complete");
   });
 
   it("ui completes when the design is routed, even with no screens (#837)", () => {
-    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, requiredContextConfirmed: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 0, total: 0, routed: true } });
+    const s = buildPlanStageState({ requiresUi: true, context: { resolved: 1, total: 1, requiredContextReady: true }, features: { count: 1, allConfirmed: true }, ui: { approved: 0, total: 0, routed: true } });
     expect(status("ui", s)).toBe("complete");
   });
 });
@@ -86,7 +86,7 @@ describe("planStages — applicability", () => {
 describe("planStages — dependency gating", () => {
   it("locks a stage whose enabled dependency is incomplete", () => {
     // structure depends on context+repos+ui; context not done -> locked
-    const s = buildPlanStageState({ context: { resolved: 0, total: 3, requiredContextConfirmed: false }, repoCount: 1, requiresUi: false });
+    const s = buildPlanStageState({ context: { resolved: 0, total: 3, requiredContextReady: false }, repoCount: 1, requiresUi: false });
     expect(status("structure", s)).toBe("locked");
   });
 
@@ -98,7 +98,7 @@ describe("planStages — dependency gating", () => {
   });
 
   it("an N/A dependency (ui off via requiresUi) does not block structure", () => {
-    const s = buildPlanStageState({ context: { resolved: 1, total: 1, requiredContextConfirmed: true }, repoCount: 1, requiresUi: false, features: { count: 1, allConfirmed: true } });
+    const s = buildPlanStageState({ context: { resolved: 1, total: 1, requiredContextReady: true }, repoCount: 1, requiresUi: false, features: { count: 1, allConfirmed: true } });
     // context+repos+features complete, ui N/A -> structure unlocked (in-progress, not locked)
     expect(status("structure", s)).toBe("in-progress");
   });
@@ -121,7 +121,7 @@ describe("planStages — currentStage (reached frontier)", () => {
 
   it("advances past a completed stage to the next in-progress one", () => {
     const state = buildPlanStageState({
-      context: { resolved: 6, total: 6, requiredContextConfirmed: true }, // context complete
+      context: { resolved: 6, total: 6, requiredContextReady: true }, // context complete
       requiresUi: false,                                       // ui n/a
       // repos not linked → repos is the next in-progress stage
     });
@@ -130,7 +130,7 @@ describe("planStages — currentStage (reached frontier)", () => {
 
   it("skips N/A stages (ui when the project needs no UI)", () => {
     const state = buildPlanStageState({
-      context: { resolved: 6, total: 6, requiredContextConfirmed: true },
+      context: { resolved: 6, total: 6, requiredContextReady: true },
       repoCount: 1,                              // repos complete
       features: { count: 1, allConfirmed: true }, // features complete
       requiresUi: false,   // ui (now after features, #825) is n/a → skipped → next is structure
@@ -140,7 +140,7 @@ describe("planStages — currentStage (reached frontier)", () => {
 
   it("falls back to the last enabled+applicable stage when all are complete", () => {
     const allDone = buildPlanStageState({
-      context: { resolved: 1, total: 1, requiredContextConfirmed: true },
+      context: { resolved: 1, total: 1, requiredContextReady: true },
       repoCount: 1,
       requiresUi: false,
       features: { count: 2, allConfirmed: true },
@@ -162,7 +162,7 @@ describe("planStages — source stage (pp-stage)", () => {
     const s = buildPlanStageState({
       migrationSourceEnabled: true,
       repoCount: 1,
-      context: { resolved: 1, total: 1, requiredContextConfirmed: true },
+      context: { resolved: 1, total: 1, requiredContextReady: true },
     });
     expect(status("source", s)).toBe("in-progress");
   });
@@ -171,7 +171,7 @@ describe("planStages — source stage (pp-stage)", () => {
     const s = buildPlanStageState({
       migrationSourceEnabled: true,
       repoCount: 0,   // repos not done
-      context: { resolved: 0, total: 0, requiredContextConfirmed: false },
+      context: { resolved: 0, total: 0, requiredContextReady: false },
     });
     expect(status("source", s)).toBe("locked");
   });
@@ -180,7 +180,7 @@ describe("planStages — source stage (pp-stage)", () => {
     const s = buildPlanStageState({
       migrationSourceEnabled: true,
       repoCount: 1,
-      context: { resolved: 1, total: 1, requiredContextConfirmed: true },
+      context: { resolved: 1, total: 1, requiredContextReady: true },
       datamodel: { sourceReachable: true, modelInferred: true, schemaRefined: true, mappingComplete: false, loadVerified: false },
     });
     expect(status("source", s)).toBe("complete");
@@ -190,7 +190,7 @@ describe("planStages — source stage (pp-stage)", () => {
     const s = buildPlanStageState({
       migrationSourceEnabled: true,
       repoCount: 1,
-      context: { resolved: 1, total: 1, requiredContextConfirmed: true },
+      context: { resolved: 1, total: 1, requiredContextReady: true },
       datamodel: { sourceReachable: false, modelInferred: true, schemaRefined: false, mappingComplete: false, loadVerified: false },
     });
     expect(status("source", s)).toBe("in-progress");

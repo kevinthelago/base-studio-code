@@ -81,7 +81,7 @@ describe("Features stage (Phase 1)", () => {
 
   it("derive → signals surfaces the features count + confirmation", () => {
     const base = {
-      sections: [], contextManifest: [], repoCount: 0, issueCount: 0, fleetStreams: 0, fleetProfilesComplete: false,
+      sections: [], contextRequired: [], repoCount: 0, issueCount: 0, fleetStreams: 0, fleetProfilesComplete: false,
       automationsAck: false, skillsAck: false, requiresUi: false, ui: { approved: 0, total: 0 },
     };
     const open = planStateToSignals(derivePlanStageState({ ...base, features: { count: 2, allConfirmed: false } }));
