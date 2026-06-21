@@ -35,11 +35,16 @@ describe("blueprint categories (#645)", () => {
     expect(repos.enabled).toBe(true);
   });
 
-  it("the default blueprint's UI + automations + skills stages are optional (#676/#698/#700)", () => {
+  it("the default blueprint's UI stage is optional; automations/skills moved to Complete (#676/#698/#700/#1003)", () => {
     const def = makeBlueprints().find((b) => b.id === "default")!;
     expect(def.sections.find((s) => s.key === "ui")!.optional).toBe(true);
-    expect(def.sections.find((s) => s.key === "automations")!.optional).toBe(true);
-    expect(def.sections.find((s) => s.key === "skills")!.optional).toBe(true);
+    // #1003: the advanced stages were trimmed off Default for a foolproof starting point.
+    expect(def.sections.find((s) => s.key === "automations")).toBeUndefined();
+    expect(def.sections.find((s) => s.key === "skills")).toBeUndefined();
+    // …and they live (optional) on the Complete blueprint instead.
+    const complete = makeBlueprints().find((b) => b.id === "complete")!;
+    expect(complete.sections.find((s) => s.key === "automations")!.optional).toBe(true);
+    expect(complete.sections.find((s) => s.key === "skills")!.optional).toBe(true);
   });
 
   it("refreshBuiltIns updates stale persisted built-ins but keeps user blueprints (#677)", () => {
