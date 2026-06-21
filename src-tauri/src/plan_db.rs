@@ -78,3 +78,21 @@ pub fn plan_remove_feature(project_key: String, slug: String) -> Result<(), Stri
     open(&project_key)?.feature_remove(&slug).map_err(|e| e.to_string())
 }
 
+// ── linked repos (#1012) — durable per-project repo links in the hub's plan.db, so a zustand /
+//    app-state reset can't lose them (the store-only persistence proved fragile). ──────────────
+
+#[tauri::command]
+pub fn plan_add_repo(project_key: String, full_name: String) -> Result<(), String> {
+    open(&project_key)?.repo_add(&full_name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_list_repos(project_key: String) -> Result<Vec<String>, String> {
+    open(&project_key)?.repo_list().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_remove_repo(project_key: String, full_name: String) -> Result<(), String> {
+    open(&project_key)?.repo_remove(&full_name).map_err(|e| e.to_string())
+}
+
