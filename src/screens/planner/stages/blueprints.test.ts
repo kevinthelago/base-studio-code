@@ -182,7 +182,7 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     mkSection("context"), mkSection("repos"), mkSection("ui"), mkSection("structure"),
     mkSection("permissions"), mkSection("skills"),
   ];
-  const doneCtx = { context: { resolved: 1, total: 1, requiredContextConfirmed: true }, repoCount: 1, requiresUi: false };
+  const doneCtx = { context: { resolved: 1, total: 1, requiredContextReady: true }, repoCount: 1, requiresUi: false };
 
   it("evaluates a section's own declarative gate (not a hardcoded enum)", () => {
     const secs = baseSecs();
@@ -215,7 +215,7 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
 
   it("an optional stage is shown + never locks dependents, but IS a deliberate stop the user must decide (#676/#921)", () => {
     const secs = [mkSection("context"), mkSection("ui", { optional: true }), mkSection("structure")];
-    const signals = sig({ context: { resolved: 1, total: 1, requiredContextConfirmed: true }, requiresUi: true,
+    const signals = sig({ context: { resolved: 1, total: 1, requiredContextReady: true }, requiresUi: true,
       phasesConfirmed: true, issueCount: 1 });
     const ui = secs.find((s) => s.key === "ui")!;
     // shown (not N/A) even though its screens gate is unmet
@@ -227,7 +227,7 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     expect(currentSection(secs, signals)?.key).toBe("ui");
     // …and an undecided optional stage blocks plan completion until the user decides (do or skip).
     const twoSec = [mkSection("context"), mkSection("ui", { optional: true })];
-    const ctxDone = sig({ context: { resolved: 1, total: 1, requiredContextConfirmed: true }, requiresUi: true });
+    const ctxDone = sig({ context: { resolved: 1, total: 1, requiredContextReady: true }, requiresUi: true });
     expect(planSectionsComplete(twoSec, ctxDone)).toBe(false);
     // a USER-skip resolves the optional stage → it counts as done, the frontier advances, plan completes.
     const skipped = { ...ctxDone, [skippedSignal("ui")]: true };
@@ -260,7 +260,7 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
   it("currentSection is the first in-progress section, skipping N/A", () => {
     const secs = baseSecs();
     // context complete, repos incomplete, ui N/A → repos is the frontier
-    const s = sig({ context: { resolved: 1, total: 1, requiredContextConfirmed: true }, repoCount: 0, requiresUi: false });
+    const s = sig({ context: { resolved: 1, total: 1, requiredContextReady: true }, repoCount: 0, requiresUi: false });
     expect(currentSection(secs, s)?.key).toBe("repos");
   });
 
@@ -291,7 +291,7 @@ describe("lint-as-gate (#897 Phase 4b)", () => {
 
   it("blocks the gate on an unresolved placeholder, passes when clean or absent (absent-safe)", () => {
     const gate = SECTION_DEFS.context.gateRule!;
-    const base = { requiredContextConfirmed: true, topicsResolved: 3, topicsTotal: 3 }; // other context reqs satisfied
+    const base = { requiredContextReady: true, topicsResolved: 3, topicsTotal: 3 }; // other context reqs satisfied
     expect(evalGate(gate, { ...base, hasPlanGaps: true }).done).toBe(false);  // a TODO/placeholder blocks
     expect(evalGate(gate, { ...base, hasPlanGaps: false }).done).toBe(true);  // clean passes
     expect(evalGate(gate, base).done).toBe(true);                             // signal absent ⇒ passes

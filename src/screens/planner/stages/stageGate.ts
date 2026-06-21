@@ -5,7 +5,7 @@
 // distribute as data — you couldn't ship one over the WAN without shipping code.
 //
 // A StageGate is a pure DATA predicate over a flat bag of named SIGNALS the app
-// publishes (repoCount, issueCount, requiredContextConfirmed, …). The app evaluates the gate;
+// publishes (repoCount, issueCount, requiredContextReady, …). The app evaluates the gate;
 // the section — built-in OR cloud-distributed — only ever carries JSON. New sections
 // compose the existing signal vocabulary but cannot invent signals or run code, which
 // is the safety boundary that makes distribution viable.

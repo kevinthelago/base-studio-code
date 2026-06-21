@@ -112,20 +112,6 @@ pub struct PlanPhase {
     pub description: String,
 }
 
-/// One Context-stage topic in the project's manifest (#1019). The PROSE for a topic lives in
-/// `context/<topic>.md` (a file the planner writes + workers read); this row holds only the
-/// structured STATE: whether the topic is `required` for THIS project (the set is dynamic — the
-/// planner shapes it, a blueprint seeds it) and whether the user has `confirmed` it. The gate's
-/// `requiredContextConfirmed` = every required topic present (its file exists) AND confirmed.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct ContextTopic {
-    #[serde(default)]
-    pub topic: String,
-    #[serde(default)]
-    pub required: bool,
-    #[serde(default)]
-    pub confirmed: bool,
-}
 
 /// kebab-case slug from a name (mirrors the frontend `slugify`).
 pub fn slugify(name: &str) -> String {
@@ -571,59 +557,35 @@ impl Store {
 
     // ── Context manifest (#1019) — the DYNAMIC required-set + confirm state for the Context stage.
     //    The prose for each topic is a `context/<topic>.md` FILE (planner-written, worker-read); only
-    //    this structured state lives in the db. `require`/`unrequire` are the planner's (it shapes the
-    //    set as the project clarifies; a blueprint seeds it); `confirm` is the USER's gesture only. ──
+    //    the required-SET lives in the db. The table IS the required set — `require` inserts a topic,
+    //    `unrequire` deletes it. Context files gate on GENERATION (presence), not confirmation (#1028).
 
-    /// Set whether `topic` is required for this project (the planner's verb). A row that ends up
-    /// neither required nor confirmed is pruned, so the manifest stays the live picture.
+    /// Add (`required` = true) or drop (`required` = false) `topic` from the required set. The
+    /// planner shapes the set as the project clarifies; a blueprint seeds it.
     pub fn context_require(&self, topic: &str, required: bool) -> rusqlite::Result<()> {
         let t = topic.trim();
         if t.is_empty() {
             return Ok(());
         }
-        let pos: i64 = self
-            .conn
-            .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM context", [], |r| r.get(0))?;
-        self.conn.execute(
-            "INSERT INTO context (topic, required, position, updated_at) VALUES (?1, ?2, ?3, strftime('%s','now'))
-             ON CONFLICT(topic) DO UPDATE SET required = excluded.required, updated_at = excluded.updated_at",
-            params![t, required, pos],
-        )?;
-        self.conn
-            .execute("DELETE FROM context WHERE topic = ?1 AND required = 0 AND confirmed = 0", params![t])?;
-        Ok(())
-    }
-
-    /// Set whether the user has confirmed `topic` (the USER's gesture — never exposed to the planner).
-    /// Pruned when it ends up neither required nor confirmed.
-    pub fn context_set_confirmed(&self, topic: &str, confirmed: bool) -> rusqlite::Result<()> {
-        let t = topic.trim();
-        if t.is_empty() {
-            return Ok(());
+        if required {
+            let pos: i64 = self
+                .conn
+                .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM context", [], |r| r.get(0))?;
+            self.conn.execute(
+                "INSERT INTO context (topic, position, updated_at) VALUES (?1, ?2, strftime('%s','now'))
+                 ON CONFLICT(topic) DO NOTHING",
+                params![t, pos],
+            )?;
+        } else {
+            self.conn.execute("DELETE FROM context WHERE topic = ?1", params![t])?;
         }
-        let pos: i64 = self
-            .conn
-            .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM context", [], |r| r.get(0))?;
-        self.conn.execute(
-            "INSERT INTO context (topic, confirmed, position, updated_at) VALUES (?1, ?2, ?3, strftime('%s','now'))
-             ON CONFLICT(topic) DO UPDATE SET confirmed = excluded.confirmed, updated_at = excluded.updated_at",
-            params![t, confirmed, pos],
-        )?;
-        self.conn
-            .execute("DELETE FROM context WHERE topic = ?1 AND required = 0 AND confirmed = 0", params![t])?;
         Ok(())
     }
 
-    /// The whole manifest — every topic with its `required`/`confirmed` flags, in declaration order.
-    pub fn context_list(&self) -> rusqlite::Result<Vec<ContextTopic>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT topic, required, confirmed FROM context ORDER BY position, topic")?;
-        let out: rusqlite::Result<Vec<ContextTopic>> = stmt
-            .query_map([], |r| {
-                Ok(ContextTopic { topic: r.get(0)?, required: r.get(1)?, confirmed: r.get(2)? })
-            })?
-            .collect();
+    /// The required topic set, in declaration order — the gate checks each has a `context/<topic>.md`.
+    pub fn context_list(&self) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT topic FROM context ORDER BY position, topic")?;
+        let out: rusqlite::Result<Vec<String>> = stmt.query_map([], |r| r.get(0))?.collect();
         out
     }
 }
@@ -699,8 +661,6 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
          );
          CREATE TABLE IF NOT EXISTS context (
             topic       TEXT PRIMARY KEY,
-            required    INTEGER NOT NULL DEFAULT 0,
-            confirmed   INTEGER NOT NULL DEFAULT 0,
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
          );",
@@ -1110,27 +1070,20 @@ mod tests {
     }
 
     #[test]
-    fn context_manifest_require_confirm_prune_and_clear() {
+    fn context_required_set_add_remove_and_clear() {
         let s = Store::open_in_memory().unwrap();
         assert!(s.context_list().unwrap().is_empty());
         // seed a baseline required set (declaration order preserved)
         for t in ["goal", "scope", "stack", "architecture", "users"] {
             s.context_require(t, true).unwrap();
         }
-        let m = s.context_list().unwrap();
-        assert_eq!(m.iter().map(|c| c.topic.as_str()).collect::<Vec<_>>(), vec!["goal", "scope", "stack", "architecture", "users"]);
-        assert!(m.iter().all(|c| c.required && !c.confirmed));
-        // the user confirms one; require + confirm coexist
-        s.context_set_confirmed("goal", true).unwrap();
-        assert!(s.context_list().unwrap().iter().find(|c| c.topic == "goal").unwrap().confirmed);
-        // the planner unrequires a topic the user never confirmed → row is pruned
+        assert_eq!(s.context_list().unwrap(), vec!["goal", "scope", "stack", "architecture", "users"]);
+        s.context_require("goal", true).unwrap(); // idempotent re-require
+        assert_eq!(s.context_list().unwrap().len(), 5);
+        // unrequire drops the topic from the set (context gates on generation, not confirmation)
         s.context_require("users", false).unwrap();
-        assert!(s.context_list().unwrap().iter().all(|c| c.topic != "users"));
-        // unrequiring a CONFIRMED topic keeps the row (confirmed survives)
-        s.context_require("goal", false).unwrap();
-        let goal = s.context_list().unwrap().into_iter().find(|c| c.topic == "goal").unwrap();
-        assert!(!goal.required && goal.confirmed);
-        // clear() wipes the manifest
+        assert!(!s.context_list().unwrap().contains(&"users".to_string()));
+        // clear() wipes the set
         s.clear().unwrap();
         assert!(s.context_list().unwrap().is_empty());
     }
