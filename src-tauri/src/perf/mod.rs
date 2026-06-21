@@ -70,6 +70,10 @@ pub struct PerfSample {
 const RING_CAP: usize = 2000;
 /// Apply retention pruning every N ingests (not every tick — a DELETE per tick is wasteful).
 const RETENTION_EVERY: u64 = 100;
+/// Don't sample during the cold-start window (#1033). Agent metrics have no value before the app is
+/// up (no agents are even running at a fresh launch), and the 2s disk writes + IPC just pile
+/// contention onto the slowest moment of a launch.
+const STARTUP_GRACE_SECS: u64 = 20;
 /// Text logs longer than this are truncated to their newest N lines.
 pub const LOG_MAX_LINES: usize = 10_000;
 
@@ -97,6 +101,11 @@ impl PerfState {
         let db = open_db(&db_path)
             .map_err(|e| log::warn!("perf: cannot open DB {}: {e}", db_path.display()))
             .ok();
+        // Measure the metrics DB at boot (#1033) — a growing perf.db is a suspect in the
+        // cold-start-time variance (more for the OS file scanner to chew on every write).
+        if let Ok(meta) = std::fs::metadata(&db_path) {
+            log::info!("[perf] perf.db {} KB at startup", meta.len() / 1024);
+        }
         Self(Mutex::new(PerfInner {
             config: PerfConfig::default(),
             tracked: HashMap::new(),
@@ -244,12 +253,35 @@ fn ingest(g: &mut PerfInner, samples: Vec<PerfSample>) {
 }
 
 fn apply_retention(g: &mut PerfInner) {
-    if g.config.retention_hours == 0 { return; }
-    let cutoff = now_ms() - g.config.retention_hours as i64 * 3_600_000;
-    if let Some(conn) = &g.db {
-        let _ = conn.execute("DELETE FROM perf_samples WHERE ts < ?1", params![cutoff]);
+    if g.config.retention_hours > 0 {
+        let cutoff = now_ms() - g.config.retention_hours as i64 * 3_600_000;
+        if let Some(conn) = &g.db {
+            let _ = conn.execute("DELETE FROM perf_samples WHERE ts < ?1", params![cutoff]);
+        }
+        g.ring.retain(|s| s.ts >= cutoff);
     }
-    g.ring.retain(|s| s.ts >= cutoff);
+    enforce_size_cap(g);
+}
+
+/// Size cap (#1033): time-based DELETE doesn't shrink the SQLite file (freed pages are reused, not
+/// returned), so a busy fleet can leave perf.db large. When it exceeds `max_db_mb`, drop the oldest
+/// quarter of rows and VACUUM to actually reclaim the disk — keeping the file the OS scanner touches
+/// on every write small. Cheap: the size is read via PRAGMA (no filesystem stat) and only crosses the
+/// cap rarely, so the VACUUM is infrequent.
+fn enforce_size_cap(g: &mut PerfInner) {
+    if g.config.max_db_mb == 0 { return; }
+    let Some(conn) = &g.db else { return };
+    let page_count: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0)).unwrap_or(0);
+    let page_size: i64 = conn.query_row("PRAGMA page_size", [], |r| r.get(0)).unwrap_or(0);
+    let bytes = page_count * page_size;
+    if bytes <= g.config.max_db_mb as i64 * 1_048_576 { return; }
+    let _ = conn.execute(
+        "DELETE FROM perf_samples WHERE id IN \
+         (SELECT id FROM perf_samples ORDER BY ts LIMIT (SELECT COUNT(*) / 4 FROM perf_samples))",
+        [],
+    );
+    let _ = conn.execute("VACUUM", []);
+    log::info!("[perf] perf.db exceeded {}MB cap — pruned oldest 25% + vacuumed", g.config.max_db_mb);
 }
 
 fn now_ms() -> i64 {
@@ -287,6 +319,9 @@ pub fn cap_logs(base_dir: &Path) {
 /// can react to config changes promptly without restart logic; the actual sample
 /// cadence is controlled by `interval_secs`.
 pub async fn run_sampler(app: tauri::AppHandle) {
+    // Hold off until the cold-start window has passed (#1033) — see STARTUP_GRACE_SECS.
+    tokio::time::sleep(tokio::time::Duration::from_secs(STARTUP_GRACE_SECS)).await;
+    log::info!("[perf] sampler active (after {STARTUP_GRACE_SECS}s startup grace)");
     let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(1));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut last = std::time::Instant::now();
@@ -434,6 +469,37 @@ mod tests {
                 .unwrap_or(1);
             assert_eq!(count, 0, "old sample pruned from DB");
         }
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn size_cap_prunes_oldest_when_over_limit() {
+        let db_path = tmp_db_path();
+        let state = PerfState::new(db_path.clone());
+        let mut g = state.0.lock().unwrap();
+        g.config.retention_hours = 0; // isolate the size cap from time-based retention
+        g.config.max_db_mb = 1;       // tiny cap
+        // Bulk-insert directly (one transaction) past 1 MB — far faster than driving the ring.
+        {
+            let conn = g.db.as_ref().unwrap();
+            conn.execute_batch("BEGIN").unwrap();
+            let mut stmt = conn
+                .prepare("INSERT INTO perf_samples (ts, session_id, rss_bytes, cpu_pct) VALUES (?1, 's', 1048576, 5.0)")
+                .unwrap();
+            for i in 0..60_000i64 {
+                stmt.execute(params![i]).unwrap();
+            }
+            drop(stmt);
+            conn.execute_batch("COMMIT").unwrap();
+        }
+        enforce_size_cap(&mut g);
+        let rows: i64 = g
+            .db
+            .as_ref()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM perf_samples", [], |r| r.get(0))
+            .unwrap();
+        assert!(rows < 60_000, "size cap pruned the oldest rows (kept {rows})");
         let _ = std::fs::remove_file(&db_path);
     }
 
