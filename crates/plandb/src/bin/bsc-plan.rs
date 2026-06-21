@@ -429,8 +429,8 @@ fn run() -> Result<(), String> {
             let s = store()?;
             match sub {
                 // `context require/unrequire <topic>...` shape the DYNAMIC required set as the project
-                // clarifies. There is deliberately NO `confirm` — only the USER confirms a section, from
-                // the UI; the planner may shape what's required but never mark it reviewed.
+                // clarifies. Context files gate on GENERATION (the gate checks each required
+                // `context/<topic>.md` exists) — they are not confirmed (#1028).
                 "require" | "unrequire" => {
                     let topics: Vec<&String> = args.positional.iter().skip(2).collect();
                     if topics.is_empty() {
@@ -451,16 +451,14 @@ fn run() -> Result<(), String> {
                     Ok(())
                 }
                 "list" => {
-                    let manifest = s.context_list().map_err(|e| e.to_string())?;
+                    let required = s.context_list().map_err(|e| e.to_string())?;
                     if args.json {
-                        println!("{}", serde_json::to_string(&manifest).unwrap_or_else(|_| "[]".into()));
-                    } else if manifest.is_empty() {
-                        println!("(no context topics)");
+                        println!("{}", serde_json::to_string(&required).unwrap_or_else(|_| "[]".into()));
+                    } else if required.is_empty() {
+                        println!("(no required context topics)");
                     } else {
-                        for c in &manifest {
-                            let req = if c.required { "required" } else { "optional" };
-                            let conf = if c.confirmed { "✓ confirmed" } else { "· unconfirmed" };
-                            println!("{:<16} {:<9} {}", c.topic, req, conf);
+                        for t in &required {
+                            println!("{t}");
                         }
                     }
                     Ok(())
@@ -679,8 +677,8 @@ BLUEPRINT (the blueprint an authoring project is designing — one blob):
 CONTEXT (the Context stage's DYNAMIC required-set — prose lives in context/<topic>.md files):
   context require <topic>...    mark topic(s) required for this project
   context unrequire <topic>...  drop topic(s) from the required set
-  context list                  show the manifest (required/optional · confirmed)
-  (no `confirm` — only the user confirms a section, from the UI)
+  context list                  show the required topic set
+  (context files gate on GENERATION — written, not confirmed)
 
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 ";
