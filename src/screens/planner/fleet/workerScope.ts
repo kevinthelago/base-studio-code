@@ -3,7 +3,7 @@
 // inherit the hub's ~52KB planner `CLAUDE.md` (their worktrees sat under the hub, so
 // Claude Code's cwd-and-ancestors `CLAUDE.md` walk picked it up); relocating worktrees
 // out from under the hub removes that leak, and this gives each worker exactly the
-// context it needs: the files and issues it owns, and what it must wait on. Pure +
+// context it needs: the files and issues it owns, and the contracts it builds against. Pure +
 // unit-tested; the Rust side (`write_worker_context`) writes it as the lead of the
 // worktree's CLAUDE.local.md, ahead of the per-repo context, protocol, and skills.
 
@@ -35,11 +35,13 @@ export function buildWorkerScope(stream: AgentStream): string {
     `- **You own:** ${owns}. Do not modify files outside your owned paths — another stream owns`,
     "  them; coordinate through the director instead of reaching in.",
     `- **Your issues:** ${issues}.`,
-    `- **You depend on:** ${deps}.`,
+    `- **You build against the contracts of:** ${deps}. Implement to their planned interface IN`,
+    "  PARALLEL — do NOT wait for those streams to land; integration is verified at merge.",
     "",
     "Integration interfaces between streams live in the contracts directory — treat them as the",
-    "source of truth. If one is unclear or must change, ask the director (`bsc-ask`) rather than",
-    "guessing. For the high-level project context you don't have here, defer to the director.",
+    "source of truth. Build to the contract now; if one is unclear or must change, ask the director",
+    "(`bsc-ask`) rather than guessing or parking. For the high-level project context you don't have",
+    "here, defer to the director.",
     "",
     "Issue lifecycle is the director's job, not yours. When you finish an owned issue, signal it",
     "the way your kickoff says (open your PR / `bsc-landed`) and let the director close it — do",
