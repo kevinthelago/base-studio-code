@@ -159,3 +159,15 @@ pub fn plan_remove_mcp(project_key: String, name: String) -> Result<(), String> 
     open(&project_key)?.mcp_remove(&name).map_err(|e| e.to_string())
 }
 
+// ── authored blueprint (#1022) — the blueprint an authoring project designs, as one blob. ──
+
+#[tauri::command]
+pub fn plan_set_blueprint(project_key: String, blueprint: serde_json::Value) -> Result<(), String> {
+    open(&project_key)?.blueprint_set(&blueprint).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_get_blueprint(project_key: String) -> Result<Option<serde_json::Value>, String> {
+    open(&project_key)?.blueprint_get().map_err(|e| e.to_string())
+}
+

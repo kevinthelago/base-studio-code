@@ -396,6 +396,34 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown mcp command '{other}'\n\n{USAGE}")),
             }
         }
+        "blueprint" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `blueprint set` reads the whole Blueprint JSON on stdin and replaces it (one blob).
+                "set" => {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+                    let bp: serde_json::Value =
+                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing blueprint JSON: {e}"))?;
+                    s.blueprint_set(&bp).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        let n = bp.get("sections").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                        let name = bp.get("name").and_then(|v| v.as_str()).unwrap_or("blueprint");
+                        println!("blueprint set: {name} ({n} sections)");
+                    }
+                    Ok(())
+                }
+                "get" => {
+                    match s.blueprint_get().map_err(|e| e.to_string())? {
+                        Some(b) => println!("{}", serde_json::to_string_pretty(&b).unwrap_or_default()),
+                        None => println!("{}", if args.json { "null" } else { "(no blueprint)" }),
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown blueprint command '{other}'\n\n{USAGE}")),
+            }
+        }
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
 }
@@ -599,6 +627,10 @@ MCP (catalog servers scoped to the project):
   mcp add <name>...         assign MCP server(s) by catalog name
   mcp list                  list the assigned servers
   mcp remove <name>         unassign a server
+
+BLUEPRINT (the blueprint an authoring project is designing — one blob):
+  blueprint set             replace the blueprint from a Blueprint JSON on stdin
+  blueprint get             print the blueprint (Blueprint JSON)
 
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 ";

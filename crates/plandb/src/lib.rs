@@ -314,7 +314,8 @@ impl Store {
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.conn.execute_batch(
             "DELETE FROM issues; DELETE FROM features; DELETE FROM repos; DELETE FROM phases; \
-             DELETE FROM fleet_streams; DELETE FROM fleet_meta; DELETE FROM deploy; DELETE FROM mcp;",
+             DELETE FROM fleet_streams; DELETE FROM fleet_meta; DELETE FROM deploy; DELETE FROM mcp; \
+             DELETE FROM blueprint;",
         )
     }
 
@@ -530,6 +531,28 @@ impl Store {
         self.conn.execute("DELETE FROM mcp WHERE name = ?1", params![name])?;
         Ok(())
     }
+
+    // ── authored blueprint (#1022) — the blueprint an AUTHORING project is designing, as one JSON
+    //    blob (single row); durable in plan.db instead of a <blueprint> tag / blueprint.json file. ──
+
+    /// Replace the authored blueprint (a single JSON blob — the full Blueprint shape).
+    pub fn blueprint_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO blueprint (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+            params![data.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// The stored authored blueprint, or None if unset.
+    pub fn blueprint_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM blueprint WHERE id = 1")?;
+        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        match rows.next() {
+            Some(s) => Ok(serde_json::from_str(&s?).ok()),
+            None => Ok(None),
+        }
+    }
 }
 
 // ── schema ───────────────────────────────────────────────────────────────────────
@@ -596,6 +619,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             name        TEXT PRIMARY KEY,
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS blueprint (
+            id          INTEGER PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}'
          );",
     )?;
     // Additive migrations for a plan.db created before a column existed (each errors if the column is
@@ -984,5 +1011,21 @@ mod tests {
         assert_eq!(s.mcp_list().unwrap(), vec!["GitHub".to_string()]);
         s.clear().unwrap();
         assert!(s.mcp_list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn blueprint_set_get_round_trips_and_clears() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.blueprint_get().unwrap().is_none());
+        let bp = serde_json::json!({ "id": "bp1", "name": "API service", "category": "greenfield", "sections": [{ "key": "context" }] });
+        s.blueprint_set(&bp).unwrap();
+        let got = s.blueprint_get().unwrap().unwrap();
+        assert_eq!(got["name"], serde_json::json!("API service"));
+        assert_eq!(got["sections"][0]["key"], serde_json::json!("context"));
+        // a fresh set replaces the whole blob (single row)
+        s.blueprint_set(&serde_json::json!({ "id": "bp1", "name": "renamed" })).unwrap();
+        assert_eq!(s.blueprint_get().unwrap().unwrap()["name"], serde_json::json!("renamed"));
+        s.clear().unwrap();
+        assert!(s.blueprint_get().unwrap().is_none());
     }
 }
