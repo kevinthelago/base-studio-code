@@ -4,16 +4,12 @@ You are the **load-stream** worker. Your job is the build-time migration pipelin
 map, clean, and load records into the DuckDB canonical Data Model with per-field lineage,
 and surface the reconcile backend in the UI.
 
-## Dependency check
+## Contract (build against it, in parallel)
 
-Before doing anything else, confirm that **source-experience** has landed its stub:
-
-```bash
-grep -n "data_load_reconciled" src-tauri/src/data.rs 2>/dev/null \
-  && echo "stub present" || echo "MISSING — park with bsc-blocked"
-```
-
-If the stub is absent: `bsc-blocked --on source-experience` and wait to be woken.
+You build against **source-experience**'s contract: the `data_load_reconciled` Tauri command,
+whose signature the plan specifies. Implement your work to that contract **in parallel** — do NOT
+wait for source-experience to land. If its stub isn't present yet, build to the agreed signature
+(stub it locally if you need it to compile); integration is verified when both streams land.
 
 ## Your lane
 

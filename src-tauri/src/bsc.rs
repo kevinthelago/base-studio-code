@@ -14,25 +14,20 @@
 pub(crate) const BSC_CHECKPOINT_RC: &str =
     "bsc-checkpoint() { mkdir -p \"$(dirname \"$BSC_CHECKPOINT_DOC\")\" 2>/dev/null; cat > \"$BSC_CHECKPOINT_DOC\"; }\n";
 
-/// The `bsc-note` / `bsc-blocked` helpers: append a one-line entry read from stdin
-/// to the assume-and-log journal named by `$BSC_DECISIONS_DOC` (default: a
-/// `DECISIONS.md` in the session's cwd, creating its parent dir). Fleet workers use
-/// these to record a reversible decision (note) or a genuine stop (blocked) and keep
-/// moving instead of stalling on a human. Same rc + `BASH_ENV` install path as
-/// bsc-checkpoint, so the agent's non-interactive Bash subshells can call them.
-pub(crate) const BSC_DECISIONS_RC: &str = concat!(
-    // `printf '%s' '- '` (not `printf '- '`): a format starting with `-` is parsed as
-    // an option flag and the prefix is silently dropped.
-    "bsc-note() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' '- '; cat; printf '\\n'; } >> \"$d\"; }\n",
-    // bsc-blocked also accepts `--on <ref[,ref]>` (+ optional `--checkpoint <ref>`):
-    // when present it appends a structured `blocked` event to $BSC_COORD_LOG (#199),
-    // tagged with the pane id, alongside the human note. No --on => note only.
-    // A ref is `#42` | `contract:Name` | `file:path` | `predicate:expr` | `session:<paneId>`
-    // ("blocked until that pane finishes" — the form the runtime uses to detect wait-for
-    // cycles between sessions; see detectDeadlocks in src/lib/coordination.ts).
-    r#"bsc-blocked() { on=""; cp=""; while [ $# -gt 0 ]; do case "$1" in --on) on="$2"; shift 2 ;; --checkpoint) cp="$2"; shift 2 ;; *) shift ;; esac; done; d="${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}"; mkdir -p "$(dirname "$d")" 2>/dev/null; m="$(cat)"; { printf '%s' '- BLOCKED: '; printf '%s' "$m"; [ -n "$on" ] && printf '%s' " (on $on)"; printf '\n'; } >> "$d"; l="${BSC_COORD_LOG:-}"; if [ -n "$on" ] && [ -n "$l" ]; then ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\tblocked\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$on" "$cp" >> "$l"; fi; }"#,
-    "\n",
-);
+/// The `bsc-note` helper: append a one-line entry read from stdin to the assume-and-log journal
+/// named by `$BSC_DECISIONS_DOC` (default: a `DECISIONS.md` in the session's cwd, creating its
+/// parent dir). Fleet workers use it to record a reversible decision and keep moving instead of
+/// stalling on a human. Same rc + `BASH_ENV` install path as bsc-checkpoint, so the agent's
+/// non-interactive Bash subshells can call it.
+///
+/// (#1039) The `bsc-blocked --on <ref>` dependency-WAIT helper was removed: planning already defines
+/// the integration contracts/seams between streams, so a worker builds against the contract IN
+/// PARALLEL rather than parking until an upstream lands. A worker that genuinely needs a decision
+/// defers to the director via `bsc-ask` (which is answered + resumes it); it never blocks on a dep.
+pub(crate) const BSC_DECISIONS_RC: &str =
+    // `printf '%s' '- '` (not `printf '- '`): a format starting with `-` is parsed as an option
+    // flag and the prefix is silently dropped.
+    "bsc-note() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' '- '; cat; printf '\\n'; } >> \"$d\"; }\n";
 
 /// The `bsc-audit` helper (#257): the PreToolUse hook on a gated pane pipes Claude
 /// Code's tool JSON into this; it extracts ONLY the tool name + a short target field
@@ -238,13 +233,14 @@ mod tests {
     }
 
     #[test]
-    fn bsc_decisions_rc_defines_note_and_blocked_helpers() {
-        // The fleet assume-and-log helpers keep their hyphenated names (defined via the
-        // rc file, like bsc-checkpoint) and append to the doc named by the env var.
+    fn bsc_decisions_rc_defines_note_helper() {
+        // The fleet assume-and-log helper keeps its hyphenated name (defined via the rc file, like
+        // bsc-checkpoint) and appends to the doc named by the env var. bsc-blocked — the runtime
+        // dependency-WAIT — was removed (#1039): workers build against planned contracts in parallel.
         let rc = super::BSC_DECISIONS_RC;
         assert!(rc.contains("bsc-note()"), "rc must define bsc-note");
-        assert!(rc.contains("bsc-blocked()"), "rc must define bsc-blocked");
-        assert!(rc.contains("BSC_DECISIONS_DOC"), "helpers must target the decisions doc env var");
+        assert!(!rc.contains("bsc-blocked"), "bsc-blocked (the dependency-wait) was removed (#1039)");
+        assert!(rc.contains("BSC_DECISIONS_DOC"), "helper must target the decisions doc env var");
     }
 
     #[test]
