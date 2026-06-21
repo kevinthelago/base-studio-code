@@ -60,12 +60,10 @@ describe("blueprints — seed library", () => {
     for (const k of ["source", "mcp", "automations", "skills"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }
-    // Complete is the thorough greenfield path — the trimmed Default flow plus the advanced stages.
-    const complete = keysOf("complete");
-    expect(complete.slice(0, 7)).toEqual(["context", "repos", "deploy", "features", "ui", "structure", "permissions"]);
-    for (const k of ["mcp", "automations", "skills"]) {
-      expect(complete, `complete includes ${k}`).toContain(k);
-    }
+    // Complete is the thorough greenfield path — the trimmed Default flow plus source + the advanced stages.
+    expect(keysOf("complete")).toEqual(
+      ["context", "repos", "deploy", "source", "features", "ui", "structure", "permissions", "mcp", "automations", "skills"],
+    );
     // Complete sorts right after Default in the greenfield group.
     const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
     expect(greenfield.indexOf("complete")).toBe(greenfield.indexOf("default") + 1);
@@ -103,7 +101,7 @@ describe("blueprints — seed library", () => {
     expect(canSwitchBlueprint(by("default"), by("harden"))).toBe(true);     // → harden
     expect(canSwitchBlueprint(by("default"), maintain)).toBe(true);         // → maintain
     // greenfield → another greenfield / data / itself is NOT allowed
-    expect(canSwitchBlueprint(by("default"), by("mcp-server"))).toBe(false); // → greenfield
+    expect(canSwitchBlueprint(by("default"), by("complete"))).toBe(false); // → greenfield
     expect(canSwitchBlueprint(by("default"), by("data-migration"))).toBe(false); // → data
     // a non-greenfield origin can't switch at all
     expect(canSwitchBlueprint(by("refactor"), by("harden"))).toBe(false);
@@ -134,16 +132,6 @@ describe("blueprints — seed library", () => {
       sections: [{ ...mkSection("purpose"), prompt: "do x" }, { ...mkSection("bp_stages"), prompt: "do y" }],
     } as Blueprint;
     expect(authoringSignals(full)).toMatchObject({ bpName: true, bpStageCount: 2, bpStagesReady: true, bpValid: true });
-  });
-
-  it("includes a headless 'mcp-server' greenfield blueprint with no UI stage (#825)", () => {
-    const mcp = makeBlueprints().find((b) => b.id === "mcp-server");
-    expect(mcp).toBeTruthy();
-    expect(mcp!.category).toBe("greenfield");
-    const keys = mcp!.sections.map((s) => s.key);
-    expect(keys).not.toContain("ui");
-    expect(keys).toContain("features");
-    expect(keys).toContain("structure");
   });
 
 });
