@@ -17,7 +17,7 @@
 //!   bsc-plan render                   # print the issues.json projection to stdout
 //! Global flags: --db <path>, --json
 
-use plandb::{is_valid_status, PlanFeature, PlanIssue, Store, STATUSES};
+use plandb::{is_valid_status, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -249,6 +249,45 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown repo command '{other}'\n\n{USAGE}")),
             }
         }
+        "phase" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `phase add <name> [description...]` — name first, the rest joined as the description.
+                "add" => {
+                    let name = args.positional.get(2).ok_or("usage: bsc-plan phase add <name> [description]")?;
+                    let desc = args.positional.iter().skip(3).cloned().collect::<Vec<_>>().join(" ");
+                    s.phase_upsert(&PlanPhase { name: name.clone(), description: desc }).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("phase: {name}");
+                    }
+                    Ok(())
+                }
+                "list" => {
+                    let phases = s.phase_list().map_err(|e| e.to_string())?;
+                    if args.json {
+                        println!("{}", serde_json::to_string(&phases).unwrap_or_else(|_| "[]".into()));
+                    } else if phases.is_empty() {
+                        println!("(no phases)");
+                    } else {
+                        for (i, p) in phases.iter().enumerate() {
+                            let d = if p.description.is_empty() { String::new() } else { format!("  — {}", p.description) };
+                            println!("{}. {}{}", i + 1, p.name, d);
+                        }
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let name = args.positional.get(2).ok_or("usage: bsc-plan phase remove <name>")?;
+                    s.phase_remove(name).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("removed {name}");
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown phase command '{other}'\n\n{USAGE}")),
+            }
+        }
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
 }
@@ -433,6 +472,11 @@ REPOS (linked, durable in plan.db):
   repo add <owner/repo>...  link repo(s) to the project
   repo list                 list the linked repos
   repo remove <owner/repo>  unlink a repo
+
+PHASES (the roadmap — features reference a phase by its 1-based order):
+  phase add <name> [desc]   add/merge a roadmap phase (in order)
+  phase list                list phases in order
+  phase remove <name>       delete a phase
 
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 ";

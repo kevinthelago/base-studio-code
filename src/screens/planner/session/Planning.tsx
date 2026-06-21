@@ -1494,6 +1494,15 @@ export function Planning({ visible }: { visible: boolean }) {
           for (const r of dbRepos ?? []) store.addProjectRepo(effectiveProjectId, r);
         } catch { /* plan.db not created until the first repo is linked — ignore */ }
 
+        // Phases are DB-owned too (#1017) — reflect the roadmap (name + description, in order) from
+        // plan.db into the "phases" section so the structure card + publish (parsePhases) read it
+        // unchanged. Only override on a non-empty DB so the migration doesn't wipe a legacy phases.json.
+        try {
+          const dbPhases = await invoke<{ name: string; description: string }[]>("plan_list_phases", { projectKey: effectiveProjectId });
+          const json = JSON.stringify(dbPhases ?? []);
+          if ((dbPhases?.length ?? 0) > 0 && json !== (saved["phases"] ?? "")) store.setPlanSection(effectiveProjectId, "phases", json);
+        } catch { /* plan.db not created until the planner adds a phase — ignore */ }
+
         const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
         const entries = Object.entries(result);
 
@@ -1523,7 +1532,7 @@ export function Planning({ visible }: { visible: boolean }) {
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
           const key = canonicalSectionKey(rawKey);
-          if (key === "issues" || key === FEATURES_KEY) continue; // DB-owned (#plan-db) — sourced from plan.db above, not a file
+          if (key === "issues" || key === FEATURES_KEY || key === "phases") continue; // DB-owned (#plan-db/#1017) — sourced from plan.db above, not a file
           if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
             store.setPlanSection(effectiveProjectId, key, content);
           }
