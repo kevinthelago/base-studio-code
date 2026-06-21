@@ -46,6 +46,10 @@ function ScreenFallback() {
 
 const LAYOUTS: string[] = ["1×1", "2×1", "1×2", "2×2", "3×2", "3×3"];
 
+/** Delay (ms after hydration) before the perf monitor + store-write diagnostics start, so they don't
+ *  load the cold-start window (#1033). Metrics during boot have no diagnostic value. */
+const METRICS_GRACE_MS = 5000;
+
 function nextTabName(tabs: Tab[]): string {
   const nums = tabs
     .map(t => t.name.match(/^tab-(\d+)$/)?.[1])
@@ -222,20 +226,29 @@ export default function App() {
     invoke<string>("get_base_dir")
       .then(setBscBaseDir)
       .catch((e) => log.error(`get_base_dir failed: ${e}`));
-    // Watch the main thread for jank (logs `[perf] main thread blocked …`).
-    startPerfMonitor();
-    // Diagnostic: count how often each store key changes, so a re-render loop
-    // reveals which key drives it (shown as `store <key>×N` in the perf line).
-    const unsub = useAppStore.subscribe((state, prev) => {
-      const s = state as unknown as Record<string, unknown>;
-      const p = prev as unknown as Record<string, unknown>;
-      for (const k in s) {
-        if (s[k] !== p[k]) recordStoreWrite(k);
-      }
-    });
-    return unsub;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Defer the perf monitor + store-write diagnostics past the cold-start window (#1033). Both run
+  // every 2s and add IPC + sampling load that's pure overhead while the app is still booting (and
+  // useless before it's interactive) — start them a few seconds after hydration instead of at mount.
+  useEffect(() => {
+    if (!hasHydrated) return;
+    let unsub: (() => void) | undefined;
+    const id = setTimeout(() => {
+      // Watch the main thread for jank (logs `[perf] main thread blocked …`).
+      startPerfMonitor();
+      // Count how often each store key changes, so a re-render loop reveals which key drives it.
+      unsub = useAppStore.subscribe((state, prev) => {
+        const s = state as unknown as Record<string, unknown>;
+        const p = prev as unknown as Record<string, unknown>;
+        for (const k in s) {
+          if (s[k] !== p[k]) recordStoreWrite(k);
+        }
+      });
+    }, METRICS_GRACE_MS);
+    return () => { clearTimeout(id); unsub?.(); };
+  }, [hasHydrated]);
 
   const titleWorkspace = (() => {
     const parts: string[] = [];
