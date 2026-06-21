@@ -1,8 +1,8 @@
 {
-  "order": 0,
-  "id": "default",
-  "name": "Default",
-  "desc": "The simplest greenfield path — context to agent-ready plan",
+  "order": 0.5,
+  "id": "complete",
+  "name": "Complete",
+  "desc": "The thorough greenfield path — adds MCP servers, automations & skills",
   "origin": "built-in",
   "category": "greenfield",
   "mode": "create",
@@ -28,6 +28,18 @@
     },
     {
       "key": "permissions"
+    },
+    {
+      "key": "mcp",
+      "optional": true
+    },
+    {
+      "key": "automations",
+      "optional": true
+    },
+    {
+      "key": "skills",
+      "optional": true
     }
   ]
 }
