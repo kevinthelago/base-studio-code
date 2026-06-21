@@ -1,38 +1,26 @@
-// The always-on coordinator (#199): polls the coordination log and, when auto-wake is on,
-// relaunches any session whose deps just landed. Idempotent (the `woke` event), gated on a
-// recency window so an app restart can't relaunch long-abandoned parks, and bounded by an
-// in-flight set so a slow wake isn't fired twice. Mount once (ConsoleScreen stays mounted
-// across screens, so the coordinator runs regardless of the active screen).
+// The always-on coordinator (#199, scoped down in #1039): polls the coordination log and resumes a
+// worker the DIRECTOR has answered. It no longer auto-wakes on dependency-landed — the runtime
+// dependency-WAIT was removed: planning already defines the integration contracts/seams between
+// streams, so workers build against the contract IN PARALLEL rather than parking until an upstream
+// lands (see fleet-protocol.md). Mount once (ConsoleScreen stays mounted across screens, so the
+// coordinator runs regardless of the active screen).
 //
-// Each poll also runs the predicate satisfy path (#365): any still-pending `predicate:` dep
-// is re-checked against the repo via the host, and a predicate that now holds satisfies its
-// latch and unblocks its waiters -- the polled third satisfy path alongside merged/closed/
-// landed (see applyPredicates).
-//
-// It ALSO pushes coordination notifications to a paired phone (#366): a dep just landed
-// (a parked session is wakeable) or a chain is stuck (a failed dep / a wait-for deadlock).
-// Delivery reuses the existing tunnel `user_request` -> FCM path -- the affected pane is
-// flipped to `awaiting_input` with the notification summary as its prompt via
-// `tunnelSetSessions`, so the relay fires `user_request` (and FCM when the mobile is
-// registered) exactly as it does for a y/n confirmation. Each alert fires once (deduped by
-// the notification's stable key). Notifications fire regardless of auto-wake -- a stuck
-// chain must reach the human even when auto-wake is off -- so only the relaunch is gated.
+// What remains:
+//   • Director answer (#369): a worker that asked the director a question (`bsc-ask`) is resumed
+//     when the director replies (`bsc-answer`), recency-gated, independent of any toggle.
+//   • Mobile push (#366): coordination notifications to a paired phone, deduped + once each — the
+//     surviving alert path (a stuck/failed signal still reaches the human).
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import {
   ingestCoordLog,
-  wakePromptFor,
   answerWakePrompt,
-  isFreshlyReady,
   emptyCoordState,
   coordNotifications,
   buildProducerOf,
   producesFromPaneStreams,
-  evaluatePredicates,
-  pendingPredicateExprs,
 } from "./coordination";
-import type { Waiter } from "./coordination";
 import type { SessionMeta } from "../tunnel/tunnel";
 import { injectWake } from "./coordinatorActuate";
 import { tunnelStatus, tunnelSetSessions } from "../tunnel/tunnelClient";
@@ -43,8 +31,8 @@ const FRESH_MS = 15 * 60 * 1000;
 
 export function useCoordinator(): void {
   const inFlight = useRef<Set<string>>(new Set());
-  // Notification keys already pushed to mobile this app run -- so a 3s poll loop fires
-  // each ready/stalled/deadlocked alert exactly once (FCM is a push, not a poll).
+  // Notification keys already pushed to mobile this app run -- so the poll loop fires
+  // each alert exactly once (FCM is a push, not a poll).
   const notified = useRef<Set<string>>(new Set());
   useEffect(() => {
     let cancelled = false;
@@ -52,19 +40,13 @@ export function useCoordinator(): void {
       if (cancelled) return;
       const lines = await invoke<string[]>("read_coord_log", { limit: 1000 }).catch(() => null);
       if (cancelled || !lines) return;
-      const ingested = ingestCoordLog(lines, emptyCoordState());
+      const { state, ready, answered } = ingestCoordLog(lines, emptyCoordState());
       const now = Date.now();
 
-      // Predicate satisfy path (#365): re-check every still-pending `predicate:` dep against
-      // the repo via the host, satisfying the latches that now hold and surfacing the waiters
-      // they unblock -- the polled third satisfy path alongside merged/closed/landed.
-      const { state, ready } = await applyPredicates(ingested.state, ingested.ready, now);
-      if (cancelled) return;
-
-      // A director answer (#369) always resumes the asking worker, recency-gated -- this is
-      // independent of the dependency auto-wake toggle, since deferring questions to the
-      // director only works if its answer reliably wakes the worker.
-      for (const a of ingested.answered) {
+      // A director answer (#369) always resumes the asking worker, recency-gated -- this is the
+      // surviving wake path: deferring a worker's question to the director only works if its
+      // answer reliably wakes the worker.
+      for (const a of answered) {
         if (inFlight.current.has(a.session)) continue;
         if (now - a.at >= FRESH_MS) continue;
         inFlight.current.add(a.session);
@@ -72,21 +54,10 @@ export function useCoordinator(): void {
           .finally(() => inFlight.current.delete(a.session));
       }
 
-      // Mobile push (#366): ready/blocked alerts to a paired phone, deduped + once each.
-      // Runs regardless of auto-wake so a stalled/deadlocked chain still reaches the human.
+      // Mobile push (#366): alerts to a paired phone, deduped + once each.
       void pushNotifications(state, ready, notified.current).catch((e) =>
         log.error(`coordinator: notify failed: ${e}`),
       );
-
-      // Auto-wake (#199): relaunch freshly-ready parked sessions when enabled.
-      if (!useAppStore.getState().coordAutoWake) return;
-      for (const w of ready) {
-        if (inFlight.current.has(w.session)) continue;
-        if (!isFreshlyReady(w, state, now, FRESH_MS)) continue;
-        inFlight.current.add(w.session);
-        void injectWake(w.session, wakePromptFor(w, state))
-          .finally(() => inFlight.current.delete(w.session));
-      }
     };
     void tick();
     const id = setInterval(() => void tick(), POLL_MS);
@@ -95,7 +66,7 @@ export function useCoordinator(): void {
 }
 
 /**
- * Push the current ready/stuck notifications to a paired phone, firing each alert once.
+ * Push the current coordination notifications to a paired phone, firing each alert once.
  * No-op unless the tunnel is running (no phone paired -> nothing to deliver). Flips each
  * affected pane to `awaiting_input` with the summary as its prompt so the existing relay
  * `user_request` -> FCM path delivers it (see tunnel_set_sessions in src-tauri/src/tunnel.rs).
@@ -122,28 +93,4 @@ async function pushNotifications(
   }));
   await tunnelSetSessions(sessions);
   for (const n of fresh) notified.add(n.key);
-}
-
-/**
- * Run the predicate satisfy path for this poll: ask the host to evaluate the still-pending
- * `predicate:` deps, then satisfy the latches that now hold and merge the freshly-unblocked
- * waiters into `ready`. The host check (`coord_eval_predicates`) inspects the repo
- * (file-exists / symbol / tests-pass / custom) and returns a map of expr -> holds. Until that
- * backend command exists the invoke rejects and we treat every predicate as not-yet-evaluable
- * (left pending, retried next poll) -- a safe no-op that never falsely satisfies. The host
- * round-trip is skipped entirely when nothing is predicate-gated.
- */
-async function applyPredicates(
-  state: ReturnType<typeof ingestCoordLog>["state"],
-  ready: Waiter[],
-  now: number,
-): Promise<{ state: ReturnType<typeof ingestCoordLog>["state"]; ready: Waiter[] }> {
-  const exprs = pendingPredicateExprs(state);
-  if (exprs.length === 0) return { state, ready };
-  const holds = await invoke<Record<string, boolean | undefined>>("coord_eval_predicates", {
-    exprs,
-  }).catch(() => null);
-  if (!holds) return { state, ready }; // host can't evaluate yet -> defer, retry next poll
-  const { state: next, woken } = evaluatePredicates(state, (e) => holds[e], now);
-  return { state: next, ready: woken.length ? [...ready, ...woken] : ready };
 }
