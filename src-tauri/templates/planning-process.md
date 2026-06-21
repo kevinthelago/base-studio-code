@@ -283,9 +283,9 @@ session run with as little human input as possible. Every worker kickoff must:
   goal and architecture — prefer a reversible option only when you are genuinely uncertain
   (this is about not stalling on micro-decisions, NOT about doing the minimal thing). Record
   it — pipe a one-line note into `bsc-note` on stdin (e.g.
-  `echo "used cursor pagination for /items per the api section" | bsc-note`). Only if
-  you are genuinely blocked and cannot proceed, pipe a one-line reason into
-  `bsc-blocked`. Verify against the repo's tests and CI rather than asking whether
+  `echo "used cursor pagination for /items per the api section" | bsc-note`). For a
+  cross-stream dependency, build against the planned contract IN PARALLEL — do not wait
+  for it to land. Verify against the repo's tests and CI rather than asking whether
   your work is correct. Keep working through every owned issue, self-merging each to develop; do not end your turn while any owned issue remains unintegrated.*
 - Carry the **checkpoint rule** (so a relaunched session resumes where it left off):
   *When you pause or finish a work session, pipe a short "where I left off + the next
