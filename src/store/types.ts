@@ -193,6 +193,16 @@ export interface AppStore {
   // CLI (with `--continue`) instead of dropping the user back at a bare
   // bash prompt (#36). Set by TerminalView when OSC 100 "run" fires.
   paneWasClaude: Record<string, boolean>;
+  /** Crash recovery (#1041): the previous shutdown was unclean (set once at boot from the
+   *  `was_unclean_shutdown` command). Transient — NOT persisted. Gates session auto-resume (a clean
+   *  quit leaves sessions dormant) + the restore banner. */
+  uncleanShutdown: boolean;
+  setUncleanShutdown: (v: boolean) => void;
+  /** Crash recovery (#1041): panes the user clicked "restore" for — resume with `claude --continue`
+   *  on remount, regardless of the autoResumeClaude setting. Transient. */
+  restoreRequested: Record<string, boolean>;
+  /** Relaunch every `paneWasClaude` pane with `claude --continue`, staggered. Returns the count. */
+  restoreSessionsFromCrash: () => number;
   /** Live agent/terminal pane count (transient, not persisted) — drives the >10 easter egg (#365). */
   liveAgents: number;
   bumpLiveAgents: (delta: number) => void;

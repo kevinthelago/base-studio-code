@@ -7,27 +7,33 @@
  *  - `startupPrompt`: when set (triage / fleet kickoff), `pty_create`'s backend
  *    handles the claude launch with the baked prompt — we must NOT also inject
  *    `claude --continue` as init_cmd, or we'd race two claude invocations.
- *  - `paneWasClaude` + `autoResumeClaude`: the #36 ad-hoc-pane resume path.
- *    When the user had claude running here at last shutdown and hasn't opted
- *    out of auto-resume, mount the pane straight into `claude --continue` so
- *    the prior conversation resumes. The Rust side already guards `--continue`
- *    against missing history (#124), so a stale flag falls back gracefully.
+ *  - `paneWasClaude` + `autoResumeClaude` + `wasUncleanShutdown` + `restoreRequested`:
+ *    the resume path (#36/#1041). Mount the pane straight into `claude --continue` so
+ *    the prior conversation resumes — but ONLY as crash recovery: a clean quit leaves
+ *    sessions dormant. Resume when the user clicked "restore" in the crash banner
+ *    (`restoreRequested`), OR when they've opted into silent auto-resume
+ *    (`autoResumeClaude`) AND the last shutdown was unclean (`wasUncleanShutdown`).
+ *    The Rust side guards `--continue` against missing history (#124), so a stale flag
+ *    falls back gracefully.
  */
 export function resolveInitCmd(args: {
   explicit: string | undefined;
   startupPrompt: string | undefined;
   paneWasClaude: boolean;
   autoResumeClaude: boolean;
+  wasUncleanShutdown: boolean;
+  restoreRequested: boolean;
 }): string {
-  const { explicit, startupPrompt, paneWasClaude, autoResumeClaude } = args;
+  const { explicit, startupPrompt, paneWasClaude, autoResumeClaude, wasUncleanShutdown, restoreRequested } = args;
   // Explicit overrides win unconditionally — caller knows best.
   if (explicit && explicit.length > 0) return explicit;
   // Triage / fleet launches claude via the prompt-baked path; layering an
   // init_cmd on top would spawn a second claude before the first finishes
   // initialising.
   if (startupPrompt !== undefined) return "";
-  // The ad-hoc resume path: only if the pane has used claude before AND the
-  // user hasn't opted out via the Settings → Integrations toggle.
-  if (paneWasClaude && autoResumeClaude) return "claude --continue";
+  // The resume path — crash recovery only (#1041): a clean quit does NOT auto-resume.
+  if (paneWasClaude && (restoreRequested || (autoResumeClaude && wasUncleanShutdown))) {
+    return "claude --continue";
+  }
   return "";
 }
