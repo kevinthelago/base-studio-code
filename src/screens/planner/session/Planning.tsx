@@ -404,7 +404,12 @@ export function Planning({ visible }: { visible: boolean }) {
       if (cloned.has(fullName) || autoCloneRef.current.has(fullName)) continue;
       autoCloneRef.current.add(fullName);
       invoke<string>("clone_repo", { project: effectiveProjectId, fullName })
-        .then(() => useAppStore.getState().addProjectRepo(effectiveProjectId, fullName))
+        .then(() => {
+          useAppStore.getState().addProjectRepo(effectiveProjectId, fullName);
+          // Persist the link in the hub's plan.db (#1012) — durable across a store/app-state reset,
+          // which the store-only persistence didn't survive.
+          void invoke("plan_add_repo", { projectKey: effectiveProjectId, fullName }).catch(() => {});
+        })
         .catch(e => console.error(`clone ${fullName} failed:`, e))
         .finally(() => autoCloneRef.current.delete(fullName));
     }
@@ -1481,6 +1486,13 @@ export function Planning({ visible }: { visible: boolean }) {
           const json = JSON.stringify(dbFeatures ?? []);
           if (json !== (saved[FEATURES_KEY] ?? "")) store.setPlanSection(effectiveProjectId, FEATURES_KEY, json);
         } catch { /* plan.db not created until the planner registers its first feature — ignore */ }
+
+        // Linked repos are DB-owned too (#1012) — restore them from the hub's plan.db into the store
+        // so a zustand/app-state reset can't lose the links (the store-only persistence proved fragile).
+        try {
+          const dbRepos = await invoke<string[]>("plan_list_repos", { projectKey: effectiveProjectId });
+          for (const r of dbRepos ?? []) store.addProjectRepo(effectiveProjectId, r);
+        } catch { /* plan.db not created until the first repo is linked — ignore */ }
 
         const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
         const entries = Object.entries(result);
