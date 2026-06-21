@@ -58,7 +58,7 @@ describe("blueprint categories (#645)", () => {
     // the user blueprint is untouched
     expect(out.find((b) => b.id === "mine")).toBe(mine);
     // new built-ins (not in the stale set) are added
-    expect(out.some((b) => b.id === "mcp-server")).toBe(true);
+    expect(out.some((b) => b.id === "complete")).toBe(true);
   });
 
   it("prunes persisted built-ins that no longer exist in code, keeps user blueprints (#923)", () => {
@@ -73,7 +73,7 @@ describe("blueprint categories (#645)", () => {
   it("tags every built-in blueprint origin=built-in (#658)", () => {
     const all = makeBlueprints();
     expect(all.every((b) => b.origin === "built-in")).toBe(true);
-    for (const id of ["default", "mcp-server", "refactor"]) {
+    for (const id of ["default", "complete", "refactor"]) {
       expect(all.find((b) => b.id === id)!.origin, id).toBe("built-in");
     }
   });
