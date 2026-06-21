@@ -126,7 +126,7 @@ jobs:
         run: npm ci
 
       - name: Plan contract (blueprint-driven structural validator)
-        run: npm run test -- --reporter=verbose src/__tests__/planContract.test.ts src/__tests__/planEval.test.ts
+        run: npm run test -- --reporter=verbose src/lib/planner/planContract/planContract.test.ts src/lib/planner/planEval/planEval.test.ts
 
   rust:
     name: Rust (check + clippy + test)
