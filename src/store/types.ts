@@ -493,7 +493,14 @@ export interface AppStore {
   setBscBaseDir: (dir: string) => void;
   projectLocalRepos: Record<string, string[]>;
   addProjectRepo: (projectId: string, fullName: string) => void;
-  triageStartProject: (projectName: string, repos: string[], projectId?: string) => void;
+  // `deltas` (#1004): optional per-repo (fullName → lead) since-last-run summary, prepended to
+  // each pane's default triage prompt so a re-run resumes from what changed instead of re-ingesting.
+  // Built by `prepareTriageRun` (which also records the new run marker) and passed in at launch.
+  triageStartProject: (projectName: string, repos: string[], projectId?: string, deltas?: Record<string, string>) => void;
+  // #1004: read each repo's last-triage marker + the since-then changed-issue delta from plan.db,
+  // render a one-line resume lead per repo, and STAMP a fresh run marker (read-before-write). Keyed
+  // by the project's plan.db key (effectiveProjectId). Returns the fullName → lead map for `deltas`.
+  prepareTriageRun: (projectKey: string, repos: string[]) => Promise<Record<string, string>>;
   // Index of this project's triage tab, matched on its STABLE projectKey (#457) — not
   // the derived "· triage" name — so a rename never forks a duplicate. Pass the same
   // (projectName, projectId) used to launch it. -1 when none.
