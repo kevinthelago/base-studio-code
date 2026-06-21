@@ -18,6 +18,7 @@ src-tauri/gen/
 
 # Logs
 npm-debug.log*
+.vite-dev.log
 
 # Editor
 .vscode/
