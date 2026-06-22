@@ -1961,6 +1961,7 @@ export function Planning({ visible }: { visible: boolean }) {
     const rest = <T,>(path: string) => invoke<T>("github_request", { token, path });
     const post = <T,>(path: string, body: unknown) => invoke<T>("github_post", { token, path, body });
     const put = (path: string, body: unknown) => invoke("github_put", { token, path, body });
+    const patch = (path: string, body: unknown) => invoke("github_patch", { token, path, body });
 
     try {
       // ── 1. Repositories — verify each exists; create if missing ───────────
@@ -1993,23 +1994,35 @@ export function Planning({ visible }: { visible: boolean }) {
         }
       }
 
-      // ── 1b. Repo presentation (#848): topics from the stack + a thorough README
-      //        with CI/version badges + the standard community-health files. Files are
-      //        created only when ABSENT (never clobber a hand-written one); a repo with
-      //        no workflows simply omits CI badges; any failure is surfaced, not fatal. ──
+      // ── 1b. Repo presentation (#848, #1114): the repo description (set on EVERY repo,
+      //        created or pre-existing), topics from the stack, and a thorough README built
+      //        from the plan (goal/scope/features/architecture) with CI/version badges, plus
+      //        the standard community-health files. Files are created only when ABSENT (never
+      //        clobber a hand-written one); a repo with no workflows simply omits CI badges;
+      //        any failure is surfaced in the card detail, not fatal. ──
       {
         const stackText = sections.find(s => s.k === "stack")?.content ?? "";
+        const scopeText = sections.find(s => s.k === "scope")?.content ?? "";
+        const archText  = sections.find(s => s.k === "architecture")?.content ?? "";
+        const readmeFeatures = planFeatures.map(f => ({ name: f.name, behavior: f.behavior }));
         const topics = deriveTopics(stackText);
         for (const fullName of repos) {
           const id = `scaffold:${fullName}`;
           upd(id, { status: "running" });
           try {
-            if (topics.length) await put(`repos/${fullName}/topics`, { names: topics }).catch(() => {});
+            // Always (re)apply the description — a create sets it, but a pre-existing repo never had it.
+            let descOk = true;
+            if (projectDesc) await patch(`repos/${fullName}`, { description: projectDesc }).catch(() => { descOk = false; });
+            let topicsOk = true;
+            if (topics.length) await put(`repos/${fullName}/topics`, { names: topics }).catch(() => { topicsOk = false; });
             // CI badges reference the repo's actual workflow files (graceful — none yet ⇒ none).
             const wfs = await rest<{ name: string }[]>(`repos/${fullName}/contents/.github/workflows`).catch(() => []);
             const workflows = (Array.isArray(wfs) ? wfs : []).map(w => w.name).filter(n => /\.ya?ml$/i.test(n));
             const files: ScaffoldFile[] = [
-              { path: "README.md", content: buildReadme({ fullName, description: projectDesc, stackText, workflows }) },
+              { path: "README.md", content: buildReadme({
+                fullName, description: projectDesc, goal: goalContent, scope: scopeText,
+                architecture: archText, features: readmeFeatures, stackText, workflows,
+              }) },
               ...communityFiles(projectTitle),
             ];
             let wrote = 0;
@@ -2021,9 +2034,14 @@ export function Planning({ visible }: { visible: boolean }) {
               await put(path, { message: `docs: scaffold ${f.path}`, content }).catch(() => {});
               wrote++;
             }
+            const bits = [
+              projectDesc ? (descOk ? "description" : "description failed") : null,
+              topics.length ? (topicsOk ? `${topics.length} topics` : "topics failed") : null,
+              wrote ? `${wrote} file${wrote === 1 ? "" : "s"}` : null,
+            ].filter(Boolean);
             upd(id, wrote
-              ? { status: "created", detail: `${topics.length} topics · ${wrote} file${wrote === 1 ? "" : "s"}` }
-              : { status: "exists", detail: topics.length ? `${topics.length} topics · files present` : "already scaffolded" });
+              ? { status: "created", detail: bits.join(" · ") }
+              : { status: "exists", detail: bits.length ? `${bits.join(" · ")} · files present` : "already scaffolded" });
           } catch (e) {
             upd(id, { status: "error", detail: String(e) });
           }
