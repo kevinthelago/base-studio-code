@@ -500,27 +500,19 @@
 
 /* sequenced rail (#668) — ported from the V4 design (bsc-project-planner-progress-bar) */
 .fp .seqrail-wrap { flex: 0 0 auto; padding: 13px 14px 9px; border-bottom: 1px solid var(--border-soft); background: var(--bg-panel); }
-/* Each seg is a FIXED-HEIGHT box that vertically centers the node; the marker (top) and
-   label (bottom) are absolutely positioned so they never affect the node's position. The
-   node therefore sits at the same y on every seg regardless of state/marker (#668). */
+/* Each seg is a FIXED-HEIGHT box that vertically centers the node; the label (bottom) is
+   absolutely positioned so it never affects the node's position. The node therefore sits at
+   the same y on every seg regardless of state (#668). */
 .fp .seqrail { display: flex; flex-direction: row; align-items: center; }
-.fp .seqrail-seg { flex: 1; height: 50px; position: relative; display: flex; align-items: center; justify-content: center;
+.fp .seqrail-seg { flex: 1; height: 44px; position: relative; display: flex; align-items: center; justify-content: center;
   cursor: pointer; background: none; border: none; padding: 0; min-width: 0; }
-/* marker row pinned to the top — out of flow, so an empty (upcoming) marker can't shift the node */
-.fp .seqrail-marker { position: absolute; top: 0; left: 0; right: 0; height: 14px; display: flex; align-items: center; justify-content: center; }
-.fp .seqrail-marker .m-now { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .08em; color: var(--accent); white-space: nowrap; }
-.fp .seqrail-marker .m-banked { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .05em;
-  text-transform: uppercase; color: var(--success); background: color-mix(in oklch, var(--success), transparent 88%);
-  border: 1px solid color-mix(in oklch, var(--success), transparent 65%); border-radius: 999px; padding: 0 5px; white-space: nowrap; }
-.fp .seqrail-marker .m-skipped { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: .05em;
-  text-transform: uppercase; color: var(--info); white-space: nowrap; }
 .fp .seqrail-node { width: 18px; height: 18px; flex: 0 0 auto; aspect-ratio: 1; border-radius: 999px;
   display: grid; place-items: center; font-family: var(--mono); font-size: 9px; font-weight: 700;
   position: relative; z-index: 2;
   background: var(--bg-elev2); box-shadow: inset 0 0 0 1.5px var(--border); color: var(--fg-dim); transition: background .16s, color .16s; }
 .fp .seqrail-seg.complete .seqrail-node { background: var(--success); box-shadow: none; color: oklch(0.20 0.04 145); }
 /* current/unfinished: the BUBBLE stays grey (not done) while the track around it goes green;
-   a pulsing accent ring + the "◆ now" marker still mark "you are here" (#668). */
+   a pulsing accent ring + the ◆ node glyph mark "you are here" (#668). */
 .fp .seqrail-seg.active .seqrail-node { background: var(--bg-elev2); color: var(--fg-dim);
   box-shadow: inset 0 0 0 1.5px var(--border), 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%);
   animation: rail-ring 2s ease-in-out infinite; }
