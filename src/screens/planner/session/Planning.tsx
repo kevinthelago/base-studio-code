@@ -43,6 +43,9 @@ import { applyMcpAssign } from "../shared/planExtensions";
 import { applyBlueprintMcp, collectBlueprintMcp } from "../blueprints/blueprintMcp";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { catalogLink, repoNameFromLink, mcpRepoName } from "../../../lib/session/mcpInstall";
+import { resolveAllInstalledMcp } from "../../../lib/session/mcpServers";
+import { toSessionPayloads } from "../../../lib/session/sessionConfig";
+import { writeProjectMcpContext } from "../shared/mcpContext";
 import { type McpInstallState } from "../shared/mcpPaneData";
 import { MCP_CATALOG } from "../../../data/mcpCatalog";
 import { buildProjectPaneData } from "../pane/projectPaneData";
@@ -657,6 +660,39 @@ export function Planning({ visible }: { visible: boolean }) {
     void writeBlueprintSkillContext({ projectKey: effectiveProjectId, blueprint: bp, skills: store.skills, kb: store.kbBlocks })
       .catch((e) => console.warn("writeBlueprintSkillContext failed:", e));
   }, [bpSkillKey, effectiveProjectId, effectiveBlueprintId]);
+
+  // Write the planner's live extensions.md — the installed MCP servers it can call + the per-worker
+  // assignment directive (#1054). Supersedes the static catalogue setup_workspaces used to write;
+  // re-runs whenever the installed-server set or the project changes.
+  const installedMcpKey = useMemo(
+    () => resolveAllInstalledMcp(mcpServers).map((e) => `${e.id}:${e.name}`).join("\n"),
+    [mcpServers],
+  );
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    void writeProjectMcpContext({ projectKey: effectiveProjectId, servers: resolveAllInstalledMcp(useAppStore.getState().mcpServers) })
+      .catch((e) => console.warn("writeProjectMcpContext failed:", e));
+  }, [installedMcpKey, effectiveProjectId]);
+
+  // Keep the planner session's .mcp.json current as servers are downloaded (#1054). Claude loads MCP
+  // config at startup, so a newly downloaded server is picked up on the planner's next launch /
+  // resume; this keeps the file ready. No-op until the planner dir is known.
+  useEffect(() => {
+    if (!planningDir) return;
+    const cap = roleCapability("planner");
+    const write = roleWriteRules(cap);
+    const mcp = toSessionPayloads(resolveAllInstalledMcp(useAppStore.getState().mcpServers), []).mcp;
+    void invoke("ensure_session_settings", {
+      cwd:             planningDir,
+      allowedCommands: [],
+      deniedCommands:  roleDeniedCommands(cap),
+      mcpServers:      mcp,
+      hooks:           null,
+      allowToolRules:  [...write.allow, "Read", "WebFetch"],
+      denyToolRules:   write.deny,
+      replacePermissions: true,
+    }).catch((e: unknown) => console.warn("planner mcp refresh failed:", e));
+  }, [installedMcpKey, planningDir]);
 
   // ── MCP stage handlers (#878) ──────────────────────────────────────────────
   const onToggleMcp = useCallback((id: string) => useAppStore.getState().toggleMcpServer(id), []);
@@ -1328,6 +1364,10 @@ export function Planning({ visible }: { visible: boolean }) {
       // (publishing is an explicit, separately-gated step).
       const plannerCap = roleCapability("planner");
       const plannerWrite = roleWriteRules(plannerCap);
+      // Expose EVERY installed MCP server to the planner (#1054), project scope ignored: the planner
+      // is the assignment hub, so it sees all downloaded servers — it can call them while planning
+      // (e.g. research sources for a skill) and assign them to the workers that need them.
+      const plannerMcp = toSessionPayloads(resolveAllInstalledMcp(useAppStore.getState().mcpServers), []).mcp;
       // The role gate covers the planner's scoped plan-file writes + git/gh read-only.
       // WebFetch (docs / version / pricing lookups) and Read are added explicitly here so
       // this single role-launch path fully sources the planner's tools — replacing the
@@ -1336,7 +1376,7 @@ export function Planning({ visible }: { visible: boolean }) {
         cwd:             paths?.planning_dir ?? "",
         allowedCommands: [],
         deniedCommands:  roleDeniedCommands(plannerCap),
-        mcpServers:      null,
+        mcpServers:      plannerMcp,
         hooks:           null,
         allowToolRules:  [...plannerWrite.allow, "Read", "WebFetch"],
         denyToolRules:   plannerWrite.deny,

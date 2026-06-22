@@ -279,43 +279,11 @@ pub(crate) async fn setup_workspaces(
     std::fs::write(planning_dir.join("automations.md"), auto_md)
         .map_err(|e| e.to_string())?;
 
-    // Write the extensions catalogue (#174) so the planner's "Automations &
-    // extensions" step knows which MCP servers it can assign. The names mirror the
-    // frontend catalog (src/lib/extensions.ts CATALOG_TEMPLATES) — the source of
-    // truth for each server's transport/command/env; this file is guidance text.
-    // Each `bsc-plan mcp add <name>` scopes that server to THIS project (#1021); every build &
-    // triage session the plan launches then loads it via its `.mcp.json` (pre-trusted, no
-    // blocking prompt).
-    let ext_md = String::from(
-        "# Extensions Catalogue (MCP servers)\n\n\
-         Assign an MCP server/extension to this project by recording it in the plan DB:\n\
-         `bsc-plan mcp add Compliance`   (`bsc-plan mcp list` shows the assigned servers)\n\n\
-         Each assigned server is scoped to THIS project and loaded into every session this\n\
-         plan launches — the director AND every worker — written to each session's\n\
-         `.mcp.json` and pre-trusted, so the agent never blocks on a \"trust these MCP\n\
-         servers?\" prompt. Assign only the servers the project's agents actually need.\n\n\
-         ## First-party servers (recommended)\n\n\
-         These install from source. Assigning one **downloads its repo automatically** into\n\
-         `~/.base-studio-code/mcp/<repo>`; the user then clicks **build** once in the\n\
-         planning page's MCP panel (it runs `python -m uv sync` / `pnpm build`) before the fleet runs.\n\n\
-         - **Compliance** — scan a project or git diff for compliance findings (GDPR, SOC 2,\n\
-           ISO 27001, HIPAA, PCI DSS) and gate CI on severity thresholds.\n\
-         - **Complexity Analyzer** — measure code complexity (cyclomatic, cognitive,\n\
-           hotspots) across a codebase to target refactors.\n\
-         - **Dependency Graph** — explore a project's dependency graph: nodes, neighbors,\n\
-           cycles, and stats.\n\
-         - **Research** — search scientific literature (arXiv, Semantic Scholar, PubMed,\n\
-           Crossref) and extract citation-grounded passages — ground plans and skills in\n\
-           real sources.\n\n\
-         ## Other servers\n\n\
-         A name not listed above creates a blank stdio MCP entry the user completes in the\n\
-         MCP panel. Required env values (tokens, connection strings) are left blank for the\n\
-         user to fill — never invent secrets.\n\n\
-         Pair this with the automations step (see automations.md) in the planner's\n\
-         \"Automations & extensions\" step.\n"
-    );
-    std::fs::write(planning_dir.join("extensions.md"), ext_md)
-        .map_err(|e| e.to_string())?;
+    // extensions.md (the planner's live list of installed MCP servers + the per-worker assignment
+    // directive) is written by the frontend now (#1054, shared/mcpContext.ts) so it reflects the
+    // ACTUAL downloaded servers the planner is exposed to, not a static catalogue. The frontend is
+    // the sole writer to avoid a stale-overwrite race; the planner reads it during the
+    // "Automations & extensions" stage, well after this setup runs.
 
     // Write a github_context.md so Claude knows the authenticated user and
     // what repos are available without needing to run `gh api user` first.
