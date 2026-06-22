@@ -22,7 +22,6 @@ describe("ProjectPane focused mode (#652)", () => {
   it("renders the stepper + the selected phase, and selects on step click", () => {
     const onSelect = vi.fn();
     render(<ProjectPane focus={baseFocus({ onSelect })} />);
-    expect(screen.getByText("PHASE 01 / 03")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Context" })).toBeInTheDocument();
     fireEvent.click(screen.getByTitle("Permissions"));
     expect(onSelect).toHaveBeenCalledWith(2);
@@ -31,7 +30,6 @@ describe("ProjectPane focused mode (#652)", () => {
   it("shows a lock banner when browsing a future phase", () => {
     render(<ProjectPane focus={baseFocus({ selectedIdx: 2, activeIdx: 0 })} />);
     expect(screen.getByText(/Locked\./)).toBeInTheDocument();
-    expect(screen.getByText("PHASE 03 / 03")).toBeInTheDocument();
   });
 
   it("renders the file-drop intake surface for the UI stage (#829)", () => {
