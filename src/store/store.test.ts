@@ -103,6 +103,31 @@ describe("autoCompleteGates setting (#1068)", () => {
   });
 });
 
+describe("LLM provider config (#1085)", () => {
+  it("defaults to anthropic + claude-sonnet-4-6 with empty extra keys", () => {
+    const s = useAppStore.getState();
+    expect(s.llmProvider).toBe("anthropic");
+    expect(s.llmModel).toBe("claude-sonnet-4-6");
+    expect(s.openaiKey).toBe("");
+    expect(s.geminiKey).toBe("");
+  });
+
+  it("setters update provider, model, and per-provider keys", () => {
+    const g = () => useAppStore.getState();
+    g().setLlmProvider("openai");
+    g().setLlmModel("gpt-5");
+    g().setOpenaiKey("oai");
+    g().setGeminiKey("gem");
+    expect(g().llmProvider).toBe("openai");
+    expect(g().llmModel).toBe("gpt-5");
+    expect(g().openaiKey).toBe("oai");
+    expect(g().geminiKey).toBe("gem");
+    // restore defaults for other tests
+    g().setLlmProvider("anthropic"); g().setLlmModel("claude-sonnet-4-6");
+    g().setOpenaiKey(""); g().setGeminiKey("");
+  });
+});
+
 describe("terminal font zoom", () => {
   it("defaults to the baseline font size", () => {
     expect(useAppStore.getState().terminalFontSize).toBe(12);

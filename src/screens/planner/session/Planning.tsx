@@ -70,6 +70,7 @@ import { flattenPrompt, stagePrompts } from "./plannerConductor";
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "../../../lib/core/claudeComplete";
+import { resolveLlmConfig, hasLlmKey } from "../../../lib/core/llmConfig";
 import { fleetProfilesComplete } from "../../../lib/session/profileGen";
 import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "../../../lib/github/issueProvenance";
 import type { DataModel } from "../data/dataModel";
@@ -329,7 +330,8 @@ export function Planning({ visible }: { visible: boolean }) {
   } = useAppStore();
   const autoPlanWithClaude = useAppStore(s => s.autoPlanWithClaude);
   const autoCompleteGates = useAppStore(s => s.autoCompleteGates);
-  const claudeApiKey = useAppStore(s => s.claudeApiKey);
+  // Whether the active API-tier provider can make a call — gates the planning autopilot (#1085).
+  const llmHasKey = useAppStore(s => hasLlmKey(resolveLlmConfig(s)));
   const skillDefs = useAppStore(s => s.skills);
   // The extensions store drives the MCP stage pane (#878); the base dir is read on demand.
   const mcpServers = useAppStore(s => s.mcpServers);
@@ -944,7 +946,7 @@ export function Planning({ visible }: { visible: boolean }) {
   // from being re-confirmed on every render.
   const autoConfirmRef = useRef<string>("");
   useEffect(() => {
-    if (!shouldAutoCompleteGate(autoCompleteGates, autoPlanWithClaude && !!claudeApiKey, pendingConfirm)) return;
+    if (!shouldAutoCompleteGate(autoCompleteGates, autoPlanWithClaude && llmHasKey, pendingConfirm)) return;
     const key = `${effectiveProjectId}|${pendingConfirm.join(",")}`;
     if (autoConfirmRef.current === key) return;
     const t = setTimeout(() => {
@@ -952,7 +954,7 @@ export function Planning({ visible }: { visible: boolean }) {
       confirmStageKeys(pendingConfirm);
     }, 800);
     return () => clearTimeout(t);
-  }, [autoCompleteGates, autoPlanWithClaude, claudeApiKey, pendingConfirm, effectiveProjectId, confirmStageKeys]);
+  }, [autoCompleteGates, autoPlanWithClaude, llmHasKey, pendingConfirm, effectiveProjectId, confirmStageKeys]);
   // #1019: clear the cached manifest on a project switch so a stale set never bleeds across.
   useEffect(() => { setCtxRequired([]); ctxRequiredJsonRef.current = ""; }, [effectiveProjectId]);
   // #1028: poll the Context required-set from plan.db and seed the baseline once per project. The gate
@@ -1145,7 +1147,7 @@ export function Planning({ visible }: { visible: boolean }) {
       };
     },
     pendingOutput: () => autopilotTxRef.current.slice(apLastAnswered.current),
-    userSim: (system, user) => oneShotComplete(claudeApiKey, system, user),
+    userSim: (system, user) => oneShotComplete(resolveLlmConfig(useAppStore.getState()), system, user),
     sendReply: (text) => {
       invoke("pty_write", { paneId, data: `${text}\r` }).catch(console.error);
       apLastAnswered.current = autopilotTxRef.current.length;
@@ -1157,7 +1159,7 @@ export function Planning({ visible }: { visible: boolean }) {
     mockPublish: () => { /* feature stops at publishable (autoPublish=false) — unused */ },
     log: (e) => console.debug("[auto-plan]", e.action, e.detail ?? ""),
   };
-  const autopilot = usePlanAutopilot(autopilotDeps, { enabled: autoPlanWithClaude && !!claudeApiKey });
+  const autopilot = usePlanAutopilot(autopilotDeps, { enabled: autoPlanWithClaude && llmHasKey });
 
   // Inject a prompt into the planner session on demand (#…). The app no longer AUTO-injects stage
   // prompts (the old "conductor" caused too many problems — it typed over the user, re-sent lost
