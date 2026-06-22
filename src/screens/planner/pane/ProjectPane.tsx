@@ -865,12 +865,13 @@ function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
         const hasDetail = !!(f.approach || f.data || (f.tools && f.tools.length > 0) || acc.length > 0);
         const isOpen = open.has(f.slug);
         return (
-          <div key={f.slug} className={"feature-card" + (done ? " done" : "")}>
-            <div
-              className="feature-head"
-              onClick={hasDetail ? () => toggle(f.slug) : undefined}
-              style={{ cursor: hasDetail ? "pointer" : "default" }}
-            >
+          <div
+            key={f.slug}
+            className={"feature-card" + (done ? " done" : "")}
+            onClick={hasDetail ? () => toggle(f.slug) : undefined}
+            style={{ cursor: hasDetail ? "pointer" : "default" }}
+          >
+            <div className="feature-head">
               <span className="feature-caret">{hasDetail ? (isOpen ? "▼" : "▶") : ""}</span>
               <span className="sdot" style={{ background: done ? "var(--success)" : "var(--fg-dim)" }} />
               <span className="feature-name">{f.name}</span>
@@ -880,7 +881,11 @@ function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
             {f.behavior && <div className="feature-behavior">{f.behavior}</div>}
 
             {isOpen ? (
-              <div className="feature-detail">
+              <div
+                className="feature-detail"
+                onClick={(e) => e.stopPropagation()}
+                style={{ cursor: "default" }}
+              >
                 {f.approach && (
                   <div className="feature-field">
                     <span className="feature-flabel">approach</span>
