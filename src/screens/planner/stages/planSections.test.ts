@@ -197,6 +197,18 @@ describe("parseFleetFile", () => {
     expect(parseFleetFile(raw)?.streams.map(s => s.id)).toEqual(["ok"]);
   });
 
+  it("carries a stream's assigned MCP servers, undefined when none (#1054)", () => {
+    const raw = JSON.stringify({
+      streams: [
+        { id: "sci", repo: "o/r", mcp: ["Research", "Compliance"] },
+        { id: "ui", repo: "o/r" },
+      ],
+    });
+    const fleet = parseFleetFile(raw)!;
+    expect(fleet.streams[0].mcp).toEqual(["Research", "Compliance"]);
+    expect(fleet.streams[1].mcp).toBeUndefined();
+  });
+
   it("accepts depends_on as an alias and coerces a string recommended", () => {
     const raw = JSON.stringify({
       recommended: "2",

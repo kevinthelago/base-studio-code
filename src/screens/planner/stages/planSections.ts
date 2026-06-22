@@ -155,6 +155,10 @@ export interface AgentStream {
   /** Permission preset name chosen in the pane (e.g. "Build"), or "custom" when a
    *  capability was hand-tuned. When present it overrides the profile-derived preset. */
   preset?: string;
+  /** MCP servers (catalog names) the planner assigned to THIS worker (#1054). At fleet launch
+   *  the worker gets these (case-insensitive) on top of any global servers; the planner + director
+   *  always see every installed server. Unset/empty ⇒ the worker gets only global servers. */
+  mcp?: string[];
 }
 
 /** Optional async-integrator session that coordinates the fleet from the project root. */
@@ -435,6 +439,9 @@ export function parseFleetFile(raw: string): FleetPlan | null {
     const repo = typeof so.repo === "string" ? so.repo.trim() : "";
     if (!id || !repo) continue;  // id + repo are the minimum a stream needs
     const prompt = typeof so.prompt === "string" && so.prompt.trim() ? so.prompt.trim() : undefined;
+    // MCP servers (catalog names) the planner assigned to this worker (#1054); undefined when none
+    // so the field round-trips cleanly. Carried through to fleetStartProject's per-worker resolution.
+    const mcp = toStringArray(so.mcp);
     streams.push({
       id,
       name: typeof so.name === "string" && so.name.trim() ? so.name.trim() : id,
@@ -443,6 +450,7 @@ export function parseFleetFile(raw: string): FleetPlan | null {
       issues:    toStringArray(so.issues),
       dependsOn: toStringArray(so.dependsOn ?? so.depends_on),
       prompt,
+      mcp: mcp.length ? mcp : undefined,
       profile: typeof so.profile === "string" && so.profile.trim() ? so.profile.trim() : undefined,
       flow: flowOrUndefined(so.flow && typeof so.flow === "object" && !Array.isArray(so.flow) ? so.flow as Record<string, unknown> : null),
       perm: (so.perm && typeof so.perm === "object" && !Array.isArray(so.perm))

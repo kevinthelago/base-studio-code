@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveMcpServers, toMcpPayload, mcpFromCatalog, blankMcpServer, type McpServer } from "./mcpServers";
+import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp, toMcpPayload, mcpFromCatalog, blankMcpServer, type McpServer } from "./mcpServers";
 import { MCP_CATALOG } from "../../data/mcpCatalog";
 
 // Helper: a minimal enabled stdio server; `name` defaults to the id for readable asserts.
@@ -19,6 +19,36 @@ describe("resolveMcpServers", () => {
     expect(resolveMcpServers(all, "P2").map(e => e.id)).toEqual(["g", "q"]);
     // No project (ad-hoc console) → globals only.
     expect(resolveMcpServers(all, "").map(e => e.id)).toEqual(["g"]);
+  });
+});
+
+describe("resolveAllInstalledMcp", () => {
+  it("returns every runnable server regardless of enabled / project scope (#1054)", () => {
+    const all = [
+      mk({ id: "g", command: "x" }),                                 // global enabled
+      mk({ id: "off", command: "x", enabled: false }),               // disabled — still exposed to the planner
+      mk({ id: "scoped", command: "x", projects: ["other"] }),       // scoped to a different project
+      mk({ id: "http", transport: "http", url: "https://h/sse" }),   // complete http
+      mk({ id: "broken" }),                                          // stdio without a command → dropped
+    ];
+    expect(resolveAllInstalledMcp(all).map(e => e.id)).toEqual(["g", "off", "scoped", "http"]);
+  });
+});
+
+describe("resolveStreamMcp", () => {
+  const all = [
+    mk({ id: "g", name: "g", command: "x", projects: [] }),                                   // global enabled → baseline
+    mk({ id: "p", name: "p", command: "x", projects: ["P1"] }),                                // this-project → baseline
+    mk({ id: "off", name: "off", command: "x", enabled: false }),                             // disabled global → not baseline
+    mk({ id: "res", name: "Research", command: "x", enabled: false, projects: ["zzz"] }),     // assignable extra
+  ];
+  it("is the #876 baseline (enabled global + this-project) plus stream-assigned extras", () => {
+    // No assignment → just the baseline.
+    expect(resolveStreamMcp(all, [], "P1").map(e => e.id)).toEqual(["g", "p"]);
+    // Assign Research by name (disabled + other-project) → included as an extra, baseline first.
+    expect(resolveStreamMcp(all, ["research"], "P1").map(e => e.id)).toEqual(["g", "p", "res"]);
+    // Assigning a server already in the baseline doesn't duplicate it.
+    expect(resolveStreamMcp(all, ["g"], "P1").map(e => e.id)).toEqual(["g", "p"]);
   });
 });
 

@@ -149,16 +149,18 @@ should use, and which **automations** (scheduled or on-demand commands) the proj
 needs. Read `extensions.md` (the catalog of available MCP servers) and
 `automations.md` first.
 
-- **Extensions / MCP** — for each capability the work needs (a Postgres MCP for a
-  DB-backed project, Sentry for error triage, the **Compliance** server for accessibility /
-  regulatory compliance, Linear/Notion for issue/doc access, Brave Search for research),
-  assign the server with `bsc-plan mcp add Postgres`
-  (see "App integration tags"). Each assignment is scoped to THIS project and loaded
-  into every build & triage session the plan launches — written to the session's
-  `.mcp.json` and pre-trusted, so an autonomous agent never blocks on a "trust these
-  MCP servers?" prompt. Assign only what the project actually needs; never invent
-  secret values (tokens/connection strings stay blank for the user to fill in the
-  Extensions screen). A name not in the catalog creates a blank stdio entry to complete.
+- **Extensions / MCP** — every installed MCP server is already exposed to YOU (the planner)
+  and the director, so you can call one directly while planning (e.g. research real sources
+  before authoring a skill). Your job here is to give each WORKER the servers its lane needs.
+  Two ways: scope a server **project-wide** with `bsc-plan mcp add Postgres` (every build &
+  triage session gets it — right for a DB or API every worker touches), or assign it to **one
+  worker** by adding the server name to that stream's `mcp` list in the fleet plan
+  (`"mcp": ["Research"]`, via `bsc-plan fleet set` — right for a tool only one stream needs).
+  Servers are pre-trusted in each session's `.mcp.json`, so an autonomous agent never blocks
+  on a "trust these MCP servers?" prompt. Assign only what each agent needs; never invent
+  secret values (tokens/connection strings stay blank for the user to fill in the MCP screen).
+  Read `extensions.md` for the live list of installed servers; a name not yet installed is
+  downloaded from the MCP screen.
 - **Automations** — assign scheduled/on-demand commands with `<automation_assign>`
   (omit `schedule` for on-demand). Suggest the ones that fit the stack (a daily
   `npm audit`, a lint/test sweep, a dependency-bump check).
@@ -631,11 +633,13 @@ on-demand commands — otherwise it's a cron expression):
 ```
 <automation_assign name="Daily audit" command="npm audit" schedule="0 9 * * 1-5" description="Runs every weekday morning" />
 ```
-**Assign an MCP server/extension** to this project (#174; read `extensions.md`
-for the catalog). `name` is a catalog entry (e.g. `Postgres`, `Sentry`); the
-server is scoped to this project and loaded into every build & triage session the
-plan launches (`.mcp.json`, pre-trusted). Idempotent — re-running the same name
-is harmless. Never put secret values here; the user fills env in the Extensions screen:
+**Assign an MCP server/extension** (#174; read `extensions.md` for the live installed
+list). For a tool every worker needs, scope it **project-wide** with the tag below — `name`
+is a catalog entry (e.g. `Postgres`, `Sentry`); it loads into every build & triage session
+(`.mcp.json`, pre-trusted; idempotent). For a tool only **one** worker needs, add the server
+name to that stream's `mcp` list in the fleet plan instead (#1054). You and the director
+already see every installed server. Never put secret values here; the user fills env in the
+MCP screen:
 ```
 bsc-plan mcp add Postgres
 ```

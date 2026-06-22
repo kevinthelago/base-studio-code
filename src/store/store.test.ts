@@ -1149,6 +1149,35 @@ describe("agent fleet store", () => {
     expect(names(2)).toContain("Compliance"); // worker 2
   });
 
+  it("director sees every installed server; workers get baseline + only their assigned (#1054)", () => {
+    useAppStore.setState({
+      bscBaseDir: "/base",
+      mcpServers: [
+        { id: "glob", name: "Glob",     enabled: true,  projects: [],      transport: "stdio", command: "x", args: "", env: [] },
+        { id: "dis",  name: "Disabled", enabled: false, projects: [],      transport: "stdio", command: "x", args: "", env: [] },
+        { id: "res",  name: "Research", enabled: false, projects: ["zzz"],  transport: "stdio", command: "x", args: "", env: [] },
+      ],
+    });
+    const f: FleetPlan = {
+      recommended: 2, reasoning: "", director: { enabled: true },
+      streams: [
+        { id: "sci", name: "Sci", repo: "o/r", owns: [], issues: [], dependsOn: [], mcp: ["Research"] },
+        { id: "ui",  name: "UI",  repo: "o/r", owns: [], issues: [], dependsOn: [] },
+      ],
+    };
+    useAppStore.getState().fleetStartProject("Multi", f, "multi-key");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("multi-key");
+    const names = (p: number) => (st.paneMcpServers[`t${idx}p${p}`] ?? []).map((e) => e.name).sort();
+    // Director (pane 0) sees ALL installed servers — including the disabled and other-project ones.
+    expect(names(0)).toEqual(["Disabled", "Glob", "Research"]);
+    // The science worker gets the global baseline + its assigned Research (disabled/other-project,
+    // pulled in by the explicit assignment).
+    expect(names(1)).toEqual(["Glob", "Research"]);
+    // The UI worker, with nothing assigned, gets only the global baseline.
+    expect(names(2)).toEqual(["Glob"]);
+  });
+
   it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
     useAppStore.setState({ bscBaseDir: "/base" });
     const dirFleet: FleetPlan = {
