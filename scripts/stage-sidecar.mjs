@@ -39,9 +39,14 @@ if (triple === "universal-apple-darwin") {
   // No real rustc target named "universal" — build both slices and fuse with lipo.
   const arm = buildOne("aarch64-apple-darwin");
   const intel = buildOne("x86_64-apple-darwin");
+  // Stage the per-arch reals too: Tauri's externalBin check may validate the per-arch
+  // name during each slice's compile (not just the lipo'd universal one), so a real
+  // binary must exist under every name the universal build might look for (#1091).
+  copyFileSync(arm, join(outDir, "bsc-plan-aarch64-apple-darwin"));
+  copyFileSync(intel, join(outDir, "bsc-plan-x86_64-apple-darwin"));
   const dst = join(outDir, "bsc-plan-universal-apple-darwin");
   run(`lipo -create -output ${dst} ${arm} ${intel}`);
-  console.log(`staged universal sidecar -> ${dst}`);
+  console.log(`staged universal sidecar (+ per-arch) -> ${dst}`);
 } else {
   const ext = triple.includes("windows") ? ".exe" : "";
   const src = buildOne(triple);
