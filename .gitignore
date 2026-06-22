@@ -28,6 +28,8 @@ npm-debug.log*
 
 # Claude Code (local project state)
 .claude/
+# Per-worktree local instruction override (e.g. a lighter UI-tweak workflow) — never committed.
+CLAUDE.local.md
 
 # OS
 .DS_Store
