@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:plan": "cargo build --bin bsc-plan",
-    "build:plan:release": "cargo build --release --bin bsc-plan",
+    "stage:sidecar": "node scripts/stage-sidecar.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
