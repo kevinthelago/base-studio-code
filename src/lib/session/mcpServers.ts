@@ -75,6 +75,10 @@ const MCP_CATALOG_TEMPLATES: Record<string, Partial<McpServer>> = {
   "Dependency Graph":    { transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
   // Python/uv like Compliance — console-script `plan-grader-mcp` (#897).
   "Plan Grader":         { transport: "stdio", command: "python", args: "-m uv run --directory {dir} plan-grader-mcp" },
+  // Node/tsup → dist/index.js, like Dependency Graph (#1056). Runs offline by default (arXiv/
+  // Semantic Scholar/PubMed/Crossref need no key; local embeddings); optional API keys + GROBID
+  // are env/Docker config the user adds, so no required env here.
+  "Research":            { transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
   // Well-known third-party servers — pruned from the browse catalog (#870) but kept here so the
   // planner's `<mcp_assign name="…" />` (planExtensions.ts) still resolves them to a working config.
   "Postgres":     { transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres", env: [["POSTGRES_CONNECTION_STRING", ""]] },

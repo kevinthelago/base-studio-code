@@ -303,7 +303,10 @@ pub(crate) async fn setup_workspaces(
          - **Complexity Analyzer** — measure code complexity (cyclomatic, cognitive,\n\
            hotspots) across a codebase to target refactors.\n\
          - **Dependency Graph** — explore a project's dependency graph: nodes, neighbors,\n\
-           cycles, and stats.\n\n\
+           cycles, and stats.\n\
+         - **Research** — search scientific literature (arXiv, Semantic Scholar, PubMed,\n\
+           Crossref) and extract citation-grounded passages — ground plans and skills in\n\
+           real sources.\n\n\
          ## Other servers\n\n\
          A name not listed above creates a blank stdio MCP entry the user completes in the\n\
          MCP panel. Required env values (tokens, connection strings) are left blank for the\n\
