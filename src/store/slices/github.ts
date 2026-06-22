@@ -1,12 +1,12 @@
 // GithubSlice — extracted from the store implementation (store split, stage 2).
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
-import { type AppStore, DEFAULT_PERF_CONFIG } from "../types";
+import { type AppStore, DEFAULT_PERF_CONFIG, DEFAULT_LOG_CONFIG } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 // NOTE: action-body imports are added below (tsc-guided).
 
 type GithubSlice = Pick<AppStore,
-  "githubConnected" | "githubToken" | "repoGithubTokens" | "setRepoGithubToken" | "githubUser" | "githubRepos" | "activeRepoName" | "githubPageMode" | "setGithubPageMode" | "setGithubToken" | "setGithubUser" | "setGithubRepos" | "setActiveRepo" | "setGithubConnected" | "disconnectGithub" | "markGithubTokenInvalid" | "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "perfConfig" | "setPerfConfig" | "tunnelRelayUrl" | "setTunnelRelayUrl" | "tunnelRunning" | "setTunnelRunning" | "tunnelExtraPanes" | "setTunnelExtraPanes"
+  "githubConnected" | "githubToken" | "repoGithubTokens" | "setRepoGithubToken" | "githubUser" | "githubRepos" | "activeRepoName" | "githubPageMode" | "setGithubPageMode" | "setGithubToken" | "setGithubUser" | "setGithubRepos" | "setActiveRepo" | "setGithubConnected" | "disconnectGithub" | "markGithubTokenInvalid" | "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig" | "tunnelRelayUrl" | "setTunnelRelayUrl" | "tunnelRunning" | "setTunnelRunning" | "tunnelExtraPanes" | "setTunnelExtraPanes"
 >;
 
 export const createGithubSlice: StateCreator<AppStore, [], [], GithubSlice> = (set) => ({
@@ -80,6 +80,16 @@ export const createGithubSlice: StateCreator<AppStore, [], [], GithubSlice> = (s
           maxDbMb: config.maxDbMb,
           trackProcess: config.trackProcess,
           trackFrontend: config.trackFrontend,
+        }).catch(() => { /* backend may not be ready */ });
+      },
+
+      logConfig: DEFAULT_LOG_CONFIG,
+      setLogConfig: (config) => {
+        set({ logConfig: config });
+        // Push the cap to the Rust backend so "Enforce now" and the next startup respect it.
+        invoke("log_set_config", {
+          maxLines: config.maxLines,
+          maxSizeMb: config.maxSizeMb,
         }).catch(() => { /* backend may not be ready */ });
       },
 
