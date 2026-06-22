@@ -83,6 +83,7 @@ export const useAppStore = create<AppStore>()(
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         autoPlanWithClaude:   s.autoPlanWithClaude,
+        autoCompleteGates:    s.autoCompleteGates,
         restrictToBscIssues:  s.restrictToBscIssues,
         coordAutoWake:        s.coordAutoWake,
         defaultModel:         s.defaultModel,
