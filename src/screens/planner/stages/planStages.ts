@@ -43,6 +43,9 @@ export interface PlanStageState {
   /** Features: how many user-facing capabilities are defined, and whether all are
    *  confirmed. Each feature becomes a fleet stream; the Plan stage reads them. */
   features: { count: number; allConfirmed: boolean };
+  /** Dependencies (#1111): how many libraries the planner has locked in the dependency manifest
+   *  (`dependencies.json`). The Dependencies gate passes once ≥1 is defined. */
+  dependencies: { count: number };
   /** Structure/Plan: the roadmap is confirmed and granular issues exist. */
   phasesConfirmed: boolean;
   issueCount: number;
@@ -245,6 +248,7 @@ export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageS
     requiresUi: p.requiresUi ?? false,
     ui: p.ui ?? { approved: 0, total: 0, routed: false },
     features: p.features ?? { count: 0, allConfirmed: false },
+    dependencies: p.dependencies ?? { count: 0 },
     phasesConfirmed: p.phasesConfirmed ?? false,
     issueCount: p.issueCount ?? 0,
     fleet: p.fleet ?? { streams: 0, profilesComplete: false },

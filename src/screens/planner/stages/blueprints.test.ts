@@ -56,7 +56,7 @@ describe("blueprints — seed library", () => {
     const bp = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     const keysOf = (id: string) => bp(id).sections.map((s) => s.key);
     // Default is the simplest greenfield path — no source/mcp/automations/skills.
-    expect(keysOf("default")).toEqual(["context", "repos", "deploy", "features", "ui", "structure", "permissions"]);
+    expect(keysOf("default")).toEqual(["context", "repos", "deploy", "features", "ui", "dependencies", "structure", "permissions"]);
     for (const k of ["source", "mcp", "automations", "skills"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }

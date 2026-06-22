@@ -3,6 +3,7 @@ import {
   ROLE_DEFAULTS,
   PLANNER_WRITE_GLOBS,
   DB_OWNED_PLAN_FILES,
+  DEP_MANIFEST_FILES,
   roleCapability,
   classifyCommand,
   checkCommand,
@@ -157,23 +158,42 @@ describe("roleWriteRules (write-tool guard)", () => {
     expect(rules.deny).toContain("Write(deploy.md)");
   });
 
-  it("does NOT deny the DB-owned file forms for non-planner roles", () => {
-    // The deny is planner-specific — a worker writes real repo files, not plan-state artifacts.
-    expect(roleWriteRules(roleCapability("worker", { writeGlobs: ["src/**"] })).deny).toEqual([]);
+  it("does NOT deny the DB-owned plan-state file forms for non-planner roles (#1070)", () => {
+    // The DB-owned deny is planner-specific — a worker writes real repo files, not plan-state artifacts.
+    const workerDeny = roleWriteRules(roleCapability("worker", { writeGlobs: ["src/**"] })).deny;
+    for (const f of DB_OWNED_PLAN_FILES) {
+      if (DEP_MANIFEST_FILES.includes(f)) continue; // (no overlap today, but be precise)
+      expect(workerDeny).not.toContain(`Write(${f})`);
+    }
+  });
+
+  it("worker: locks the dependency manifests — denied even inside an owned glob (#1111)", () => {
+    // Even when the worker owns package.json's directory, the manifest write is denied (deny > allow)
+    // so the fleet can't each redefine deps in parallel worktrees; a new dep routes via the director.
+    const worker = roleCapability("worker", { writeGlobs: ["**"] });
+    const deny = roleWriteRules(worker).deny;
+    for (const f of DEP_MANIFEST_FILES) {
+      expect(deny).toContain(`Edit(${f})`);
+      expect(deny).toContain(`Write(${f})`);
+    }
+    expect(deny).toContain("Write(package.json)");
+    expect(deny).toContain("Write(Cargo.toml)");
   });
 
   it("scopes a worker to its boundary globs (one allow per tool per glob)", () => {
     const worker = roleCapability("worker", { writeGlobs: ["src/api/**", "tests/**"] });
     const rules = roleWriteRules(worker);
-    expect(rules.deny).toEqual([]);
+    // deny is the dependency-manifest lock (#1111), not boundary rules.
+    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`)));
     expect(rules.allow).toContain("Edit(src/api/**)");
     expect(rules.allow).toContain("Write(tests/**)");
     expect(rules.allow).toHaveLength(WRITE_TOOLS.length * 2);
   });
 
-  it("imposes no rules for a boundary-less worker (writes follow the default)", () => {
+  it("imposes only the manifest lock for a boundary-less worker (writes otherwise follow the default)", () => {
     const rules = roleWriteRules(ROLE_DEFAULTS.worker);
-    expect(rules).toEqual({ allow: [], deny: [] });
+    expect(rules.allow).toEqual([]);
+    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`)));
   });
 
   it("agrees with canWritePath: planner writes plan files; worker writes its globs", () => {

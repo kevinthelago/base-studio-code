@@ -45,6 +45,8 @@ export interface DerivePlanStageInput {
   uiRouted?: boolean;
   /** User-facing capabilities defined in the Features stage (each becomes a stream). */
   features: { count: number; allConfirmed: boolean };
+  /** Libraries locked in the dependency manifest (#1111) — `dependencies.json` entry count. */
+  dependencies?: { count: number };
   /** Whether a data migration source pipeline is active for this project. Absent ⇒ false. */
   migrationSourceEnabled?: boolean;
   /** Parsed datamodel.json artifact from the source-experience stream. Absent ⇒ all-false. */
@@ -125,6 +127,7 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
     requiresUi: input.requiresUi,
     ui: { ...input.ui, routed: input.uiRouted ?? false },
     features: input.features,
+    dependencies: { count: input.dependencies?.count ?? 0 },
     phasesConfirmed,
     issueCount: input.issueCount,
     fleet: { streams: input.fleetStreams, profilesComplete: input.fleetProfilesComplete },
@@ -161,6 +164,8 @@ export function planStateToSignals(s: PlanStageState): PlanSignals {
     uiDone: s.ui.routed || (s.ui.total > 0 && s.ui.approved >= s.ui.total),
     featuresDefined: s.features.count,
     featuresConfirmed: s.features.allConfirmed,
+    // Dependencies (#1111): the manifest gate passes once the planner has locked ≥1 library.
+    dependenciesDefined: s.dependencies.count,
     phasesConfirmed: s.phasesConfirmed,
     issueCount: s.issueCount,
     fleetStreams: s.fleet.streams,
