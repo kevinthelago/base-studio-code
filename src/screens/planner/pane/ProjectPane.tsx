@@ -867,7 +867,7 @@ function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
         return (
           <div
             key={f.slug}
-            className={"feature-card" + (done ? " done" : "")}
+            className={"feature-card" + (done ? " done" : "") + (isOpen ? " open" : "")}
             onClick={hasDetail ? () => toggle(f.slug) : undefined}
             style={{ cursor: hasDetail ? "pointer" : "default" }}
           >

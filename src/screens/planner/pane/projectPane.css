@@ -244,7 +244,11 @@
 .features-view .feature-behavior {
   font-family: var(--mono); font-size: 9.5px; color: var(--fg-muted);
   line-height: 1.5; margin: 6px 0 0; padding-left: 16px;
+  /* Collapsed: clamp the behavior subtext to 2 lines so cards stay compact and the full list is
+     scannable; the open card shows it in full (rule below). */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
+.features-view .feature-card.open .feature-behavior { -webkit-line-clamp: unset; overflow: visible; }
 .features-view .feature-acc-count {
   font-family: var(--mono); font-size: 9px; color: var(--fg-dim);
   margin-top: 3px; padding-left: 16px;
@@ -548,13 +552,10 @@
 /* phase header */
 .fp .ph-head { flex: 0 0 auto; padding: 14px 16px 13px; border-bottom: 1px solid var(--border-soft);
   background: linear-gradient(180deg, var(--bg-elev), var(--bg-panel)); }
-.fp .ph-eyebrow { display: flex; align-items: center; gap: 8px; margin-bottom: 5px;
-  font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); letter-spacing: .06em; }
-.fp .ph-eyebrow .num { color: var(--accent); }
-.fp .ph-title { display: flex; align-items: baseline; gap: 10px; }
+.fp .ph-title { display: flex; align-items: center; gap: 10px; }
 .fp .ph-title h2 { margin: 0; font-family: var(--mono); font-size: 18px; font-weight: 600; color: var(--fg); letter-spacing: -.01em; }
 .fp .ph-blurb { margin: 6px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--fg-muted); max-width: 52ch; }
-.fp .ph-gate { display: inline-flex; align-items: center; gap: 6px; margin-top: 11px;
+.fp .ph-gate { display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 9px; border-radius: 99px; font-family: var(--mono); font-size: 9.5px;
   background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted); }
 .fp .ph-gate .gd { width: 6px; height: 6px; border-radius: 50%; }
@@ -574,14 +575,20 @@
 
 /* scrolling body + footer — the focused render wraps the body in .pp-scroll (not .ph-body),
    so the design's body padding goes here; scoped to .fp to leave the staged pane untouched. */
-.fp .pp-scroll { overflow-x: hidden; padding: 14px 16px 18px; }
-.fp .ph-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+/* Flex column so a stage body that wants to fill the height (the file-intake drop box, flex:1) can,
+   while content bodies stay content-sized and scroll. */
+.fp .pp-scroll { overflow-x: hidden; padding: 14px 16px 18px; display: flex; flex-direction: column; }
+.fp .ph-foot { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; row-gap: 8px;
   padding: 10px 14px; border-top: 1px solid var(--border-soft); background: var(--bg-elev); }
-.fp .ph-foot .prog { font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); }
+.fp .ph-foot .prog { font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); white-space: nowrap; }
+/* Buttons keep their full size and never wrap their own text; when the pane is too narrow to fit
+   them, the BAR wraps to a second row instead of the buttons squishing/fighting for width. */
 .fp .nav-btn { height: 30px; padding: 0 13px; border-radius: var(--r-md); font-family: var(--mono);
   font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  white-space: nowrap; flex: 0 0 auto;
   background: var(--bg-elev2); border: 1px solid var(--border-soft); color: var(--fg); }
 .fp .nav-btn:hover { background: var(--bg-elev); }
-.fp .nav-btn.primary { background: var(--accent); border-color: transparent; color: #1a120a; font-weight: 600; }
+/* Primary action pinned right — and right-aligned even when the bar wraps it onto its own row. */
+.fp .nav-btn.primary { margin-left: auto; background: var(--accent); border-color: transparent; color: #1a120a; font-weight: 600; }
 .fp .nav-btn.primary:hover { filter: brightness(1.06); }
 .fp .nav-btn:disabled { opacity: .45; cursor: not-allowed; }

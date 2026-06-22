@@ -130,26 +130,20 @@ export function PhaseHeader({ phase, pill, promptHelp }: {
   return (
     <div className="ph-head" style={{ position: "relative" }}>
       {promptHelp && <StagePromptHelp prompts={promptHelp.prompts} onInject={promptHelp.onInject} />}
-      <div className="ph-eyebrow">
-        <span className="num">PHASE {String(phase.index + 1).padStart(2, "0")} / {String(phase.total).padStart(2, "0")}</span>
-        <span>·</span><span>{phase.key}</span>
-        {phase.optional && <span style={{
-          marginLeft: 6, fontSize: 8.5, color: "var(--fg-dim)", border: "1px solid var(--border-soft)",
-          borderRadius: 999, padding: "0 6px", textTransform: "none", letterSpacing: 0,
-        }}>optional</span>}
+      <div className="ph-title">
+        <h2>{phase.name}</h2>
+        <span
+          className={"ph-gate " + pill}
+          title={tip}
+          onClick={hasReasons ? () => setShowReasons((v) => !v) : undefined}
+          style={{ cursor: hasReasons ? "pointer" : undefined }}
+        >
+          <span className="gd" />
+          gate
+          {hasReasons && <span style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</span>}
+        </span>
       </div>
-      <div className="ph-title"><h2>{phase.name}</h2></div>
       <p className="ph-blurb">{phase.blurb}</p>
-      <span
-        className={"ph-gate " + pill}
-        title={tip}
-        onClick={hasReasons ? () => setShowReasons((v) => !v) : undefined}
-        style={{ cursor: hasReasons ? "pointer" : undefined }}
-      >
-        <span className="gd" />
-        gate · {phase.gate} — {pill === "pass" ? "passing" : "waiting"}
-        {hasReasons && <span style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</span>}
-      </span>
       {hasReasons && showReasons && (
         <div role="status" style={{
           marginTop: 8, padding: "8px 11px", borderRadius: 7, maxWidth: 420,
