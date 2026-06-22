@@ -57,16 +57,17 @@ describe("Stepper (#652)", () => {
 });
 
 describe("PhaseHeader (#652)", () => {
-  it("shows the phase title and gate pill state", () => {
-    render(<PhaseHeader phase={phase({ index: 1, total: 3, name: "Repos" })} pill="wait" />);
+  it("shows the phase title and the gate pill", () => {
+    const { container } = render(<PhaseHeader phase={phase({ index: 1, total: 3, name: "Repos" })} pill="wait" />);
     expect(screen.getByText("Repos")).toBeInTheDocument();
-    expect(screen.getByText(/waiting/)).toBeInTheDocument();
+    expect(screen.getByText("gate")).toBeInTheDocument();
+    expect(container.querySelector(".ph-gate.wait")).toBeTruthy();
   });
-  it("renders pass + wait pills", () => {
-    const { rerender } = render(<PhaseHeader phase={phase()} pill="pass" />);
-    expect(screen.getByText(/passing/)).toBeInTheDocument();
+  it("reflects pass/wait state via the pill class", () => {
+    const { container, rerender } = render(<PhaseHeader phase={phase()} pill="pass" />);
+    expect(container.querySelector(".ph-gate.pass")).toBeTruthy();
     rerender(<PhaseHeader phase={phase()} pill="wait" />);
-    expect(screen.getByText(/waiting/)).toBeInTheDocument();
+    expect(container.querySelector(".ph-gate.wait")).toBeTruthy();
   });
 
   it("surfaces unmet gate reasons on click when blocked (#805)", () => {
