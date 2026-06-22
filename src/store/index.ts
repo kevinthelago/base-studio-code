@@ -76,6 +76,7 @@ export const useAppStore = create<AppStore>()(
         llmModel:        s.llmModel,
         openaiKey:       s.openaiKey,
         geminiKey:       s.geminiKey,
+        localBaseUrl:    s.localBaseUrl,
         schedules:            s.schedules,
         commands:             s.commands,
         automations:          s.automations,

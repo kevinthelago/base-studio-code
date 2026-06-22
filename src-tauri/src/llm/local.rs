@@ -5,17 +5,25 @@
 
 use super::{openai, LlmProvider, LlmRequest};
 
-pub struct LocalProvider;
+/// A local / self-hosted OpenAI-compatible provider, pointed at a configurable
+/// `base_url` (Settings → Integrations; defaults to Ollama via [`DEFAULT_LOCAL_BASE_URL`]).
+pub struct LocalProvider {
+    pub base_url: String,
+}
 
-/// The OpenAI-compatible base URL local models are served at. Ollama's default;
-/// a configurable base URL arrives with the provider/model selection UX (later P1).
-const LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
+/// Ollama's default OpenAI-compatible base URL — used when none is configured.
+pub const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
+
+/// The chat-completions endpoint for a base URL (tolerant of a trailing slash).
+pub(crate) fn chat_completions_url(base: &str) -> String {
+    format!("{}/chat/completions", base.trim_end_matches('/'))
+}
 
 impl LlmProvider for LocalProvider {
     async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
         let client = reqwest::Client::new();
         let mut builder = client
-            .post(format!("{}/chat/completions", LOCAL_BASE_URL))
+            .post(chat_completions_url(&self.base_url))
             .header("content-type", "application/json")
             .json(&openai::build_request_body(req));
         // Ollama needs no auth; only forward a bearer token when one is configured.
@@ -39,5 +47,23 @@ impl LlmProvider for LocalProvider {
             return Err(format!("API error ({}): {}", status, err));
         }
         Ok(openai::normalize_response(&json))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chat_completions_url_appends_path_and_trims_trailing_slash() {
+        assert_eq!(
+            chat_completions_url("http://localhost:11434/v1"),
+            "http://localhost:11434/v1/chat/completions"
+        );
+        // A user-entered base URL with a trailing slash must not double up.
+        assert_eq!(
+            chat_completions_url("http://10.0.0.5:8080/v1/"),
+            "http://10.0.0.5:8080/v1/chat/completions"
+        );
     }
 }
