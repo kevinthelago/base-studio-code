@@ -7,6 +7,7 @@ import type { Tab } from "../components/chrome/Tabstrip";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { ModelId } from "../components/pane/PaneMenu";
 import type { KbBlock, Schedule, Command } from "../data/mock";
+import type { LlmProvider } from "../lib/core/llmConfig";
 import type { ReaperConfig } from "../lib/console/idleReaper";
 import type { QueuedPane, FocusTarget, ConsoleAutoFocusMode } from "../lib/console/focusQueue";
 import type { SessionRole } from "../lib/session/sessionRoles";
@@ -377,6 +378,18 @@ export interface AppStore {
   kbBlocks: KbBlock[];
   claudeApiKey: string;
   setClaudeApiKey: (key: string) => void;
+
+  // API-tier LLM provider config (#1085) — powers kb_chat-backed calls (planning
+  // autopilot, grader, cleanup verifier). `claudeApiKey` doubles as the anthropic key.
+  // Distinct from the per-pane runtime model (defaultModel/paneModels).
+  llmProvider: LlmProvider;
+  setLlmProvider: (p: LlmProvider) => void;
+  llmModel: string;
+  setLlmModel: (m: string) => void;
+  openaiKey: string;
+  setOpenaiKey: (k: string) => void;
+  geminiKey: string;
+  setGeminiKey: (k: string) => void;
 
   // Automations
   schedules: Schedule[];
