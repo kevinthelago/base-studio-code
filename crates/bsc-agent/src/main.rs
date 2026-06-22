@@ -7,7 +7,7 @@
 
 mod agent;
 
-use agent::{read_file_tool, run_agent};
+use agent::{bash_tool, edit_file_tool, read_file_tool, run_agent, write_file_tool};
 use std::io::Read;
 
 #[tokio::main]
@@ -33,7 +33,7 @@ async fn main() {
     // System prompt from the project's CLAUDE.md, if any (same context file the
     // planner/agents already author). Absent ⇒ empty.
     let system = std::fs::read_to_string("CLAUDE.md").unwrap_or_default();
-    let tools = vec![read_file_tool()];
+    let tools = vec![read_file_tool(), write_file_tool(), edit_file_tool(), bash_tool()];
 
     let kind = match llm::resolve_provider(&provider) {
         Ok(k) => k,
