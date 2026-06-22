@@ -18,7 +18,7 @@ import { repoPromptKey } from "../../lib/session/startupPrompt";
 import { resolveAllowedCommands } from "../../lib/session/allowedCommands";
 import { resolveDirectorDrive } from "../../screens/planner/fleet/directorDrive";
 import { resolveHooks } from "../../lib/session/hooks";
-import { resolveMcpServers } from "../../lib/session/mcpServers";
+import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "../../lib/session/mcpServers";
 import { resolveReferenceContext, resolveStartupPrompt } from "../../lib/session/assignments";
 import { resolveSkills } from "../../lib/session/skills";
 import { resolveStrategy, strategySettings } from "../../screens/planner/shared/integrationStrategy";
@@ -430,8 +430,10 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
 
           const safeKey = sanitizeProjectKey(projectKey);
           const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
-          // Same resolved extensions for every pane — they share the project scope.
-          const fleetMcp = resolveMcpServers(s.mcpServers, projectKey);
+          // MCP exposure is role-aware (#1054): the director sees every installed server (it
+          // coordinates the whole fleet), while each worker gets the global servers plus only the
+          // servers its stream was assigned. Hooks/skills still share the project scope.
+          const fleetAllMcp = resolveAllInstalledMcp(s.mcpServers);
           const fleetHooks = resolveHooks(s.hooks, projectKey);
           const fleetSkills = resolveSkills(s.skills, projectKey);
           // Reference-context assignments resolved per pane below (#326).
@@ -535,7 +537,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   newFleetPaneStreams[key] = sess;
                 }
                 newPaneContinue[key] = resume;
-                newPaneMcpServers[key] = fleetMcp;
+                // Director (sess === null) sees every installed server; a worker gets the
+                // fleet-wide baseline plus its stream's assigned servers (#1054).
+                newPaneMcpServers[key] = sess === null ? fleetAllMcp : resolveStreamMcp(s.mcpServers, sess.mcp, projectKey);
                 newPaneHooks[key] = fleetHooks;
                 newPaneSkills[key] = fleetSkills;
                 newPaneRoles[key] = sess === null ? "director" : "worker";

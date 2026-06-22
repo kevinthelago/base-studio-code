@@ -31,6 +31,37 @@ export function resolveMcpServers(all: McpServer[], projectId: string): McpServe
   );
 }
 
+/**
+ * Every **downloaded** server, regardless of the enable toggle or project scope (#1054). The
+ * planner sees all installed servers — so a freshly downloaded one (which lands disabled) is
+ * available immediately, and the planner can call it while planning and decide which workers need
+ * it. The director gets the same set since it coordinates the whole fleet. "Downloaded" = has a
+ * runnable config (`toMcpPayload` non-null: stdio with a command, http with a url); half-configured
+ * entries are skipped so a broken `.mcp.json` line never reaches a session.
+ */
+export function resolveAllInstalledMcp(all: McpServer[]): McpServer[] {
+  return all.filter(e => toMcpPayload(e) !== null);
+}
+
+/**
+ * A worker's servers (#1054): the fleet-wide baseline — {@link resolveMcpServers} (enabled global +
+ * this-project servers, the #876 behavior every worker shares) — PLUS any server the worker's
+ * stream explicitly assigned by name (`stream.mcp`, case-insensitive). Stream assignment is intent,
+ * so an assigned extra is included regardless of the enable toggle / project scope, as long as it
+ * has a runnable config (`toMcpPayload` non-null). This is how the planner gives one worker the
+ * extra tools its lane needs without handing them to the whole fleet, while project-wide tools
+ * (a DB everyone touches) still ride the baseline.
+ */
+export function resolveStreamMcp(all: McpServer[], streamMcp: string[] = [], projectId = ""): McpServer[] {
+  const base = resolveMcpServers(all, projectId);
+  const baseIds = new Set(base.map(e => e.id));
+  const assigned = new Set(streamMcp.map(n => n.toLowerCase()));
+  const extra = all.filter(
+    e => toMcpPayload(e) !== null && assigned.has(e.name.toLowerCase()) && !baseIds.has(e.id),
+  );
+  return [...base, ...extra];
+}
+
 // ── Backend payload ───────────────────────────────────────────────────────────
 // Shape handed to `ensure_session_settings`; field names match the Rust struct.
 
