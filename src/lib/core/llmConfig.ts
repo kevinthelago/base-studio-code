@@ -10,6 +10,8 @@ export interface LlmConfig {
   provider: LlmProvider;
   model: string;
   apiKey: string;
+  /** OpenAI-compatible endpoint for the `local` provider (ignored by hosted ones). */
+  baseUrl: string;
 }
 
 /** The store fields `resolveLlmConfig` reads — a structural subset of the app store,
@@ -20,17 +22,18 @@ export interface LlmConfigSource {
   claudeApiKey: string;
   openaiKey: string;
   geminiKey: string;
+  localBaseUrl: string;
 }
 
 /** Resolve the active provider + model and the API key for THAT provider.
- *  `local` (OpenAI-compatible, e.g. Ollama) needs no key. */
+ *  `local` (OpenAI-compatible, e.g. Ollama) needs no key but carries a base URL. */
 export function resolveLlmConfig(s: LlmConfigSource): LlmConfig {
   const apiKey =
     s.llmProvider === "openai" ? s.openaiKey :
     s.llmProvider === "gemini" ? s.geminiKey :
     s.llmProvider === "local"  ? "" :
     s.claudeApiKey;
-  return { provider: s.llmProvider, model: s.llmModel, apiKey };
+  return { provider: s.llmProvider, model: s.llmModel, apiKey, baseUrl: s.localBaseUrl };
 }
 
 /** Whether the config can make a call — a key is present, or it's `local` (no key). */
