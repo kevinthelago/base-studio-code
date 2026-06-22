@@ -110,6 +110,13 @@ describe("LLM provider config (#1085)", () => {
     expect(s.llmModel).toBe("claude-sonnet-4-6");
     expect(s.openaiKey).toBe("");
     expect(s.geminiKey).toBe("");
+    expect(s.localBaseUrl).toBe("http://localhost:11434/v1");
+  });
+
+  it("setLocalBaseUrl updates the local endpoint (#1091)", () => {
+    useAppStore.getState().setLocalBaseUrl("http://10.0.0.5:8080/v1");
+    expect(useAppStore.getState().localBaseUrl).toBe("http://10.0.0.5:8080/v1");
+    useAppStore.getState().setLocalBaseUrl("http://localhost:11434/v1"); // restore
   });
 
   it("setters update provider, model, and per-provider keys", () => {

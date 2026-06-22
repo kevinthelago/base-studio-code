@@ -72,7 +72,7 @@ export async function gradeWithLLM(rubric: Rubric, input: { sectionKey: string; 
 async function kbComplete(llm: LlmConfig, p: GradePrompt): Promise<string> {
   const res = await invoke<{ content: { type: string; text?: string }[] }>("kb_chat", {
     messages: [{ role: "user", content: p.user }], system: p.system, tools: [],
-    apiKey: llm.apiKey, provider: llm.provider, model: llm.model,
+    apiKey: llm.apiKey, provider: llm.provider, model: llm.model, baseUrl: llm.baseUrl,
   });
   return (res.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("\n");
 }
