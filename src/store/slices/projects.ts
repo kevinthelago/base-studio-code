@@ -8,7 +8,9 @@ import type { AgentStream } from "../../screens/planner/stages/planSections";
 import { WORKFLOW_PRESETS } from "../../lib/fleet/workflow";
 import { startRun } from "../../lib/fleet/conductor";
 import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations, mountState } from "../helpers";
-import { buildTriagePrompt } from "../constants";
+import { buildTriagePrompt, renderTriageDelta } from "../constants";
+import { invoke } from "@tauri-apps/api/core";
+import type { PlanIssue } from "../../screens/planner/issues/planIssues";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../../lib/session/checkpoint";
 import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, canonicalProjectKey, findProjectTabIdx, worktreeSlug } from "../../lib/core/projectPaths";
 import { clearTabStatuses as clearTabStatusesPure } from "../../lib/console/paneStatus";
@@ -23,7 +25,7 @@ import { resolveStrategy, strategySettings } from "../../screens/planner/shared/
 import { scriptDocRelpath } from "../../screens/planner/session/planningSession";
 
 type ProjectsSlice = Pick<AppStore,
-  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "refContextDefault" | "refContextProject" | "refContextRepo" | "toggleReferenceContext" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "findFleetTabIdx" | "fleetStartProject"
+  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "refContextDefault" | "refContextProject" | "refContextRepo" | "toggleReferenceContext" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
 >;
 
 export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> = (set, get) => ({
@@ -213,7 +215,30 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         }),
       findTriageTabIdx: (projectName, projectId = "") =>
         findProjectTabIdx(get().tabs, canonicalProjectKey(projectName, projectId), "triage"),
-      triageStartProject: (projectName, repos, projectId = "") =>
+      // #1004: prepare a triage re-run from plan.db — for each repo read the last-run marker and the
+      // issues changed since it, render a one-line resume lead (renderTriageDelta), then STAMP a fresh
+      // marker so the next run's "since" is now (read-before-write order). Returns fullName → lead for
+      // triageStartProject's `deltas`. Failures are per-repo and non-fatal (omitted ⇒ full prompt).
+      prepareTriageRun: async (projectKey, repos) => {
+        const deltas: Record<string, string> = {};
+        await Promise.all(repos.map(async (repo) => {
+          try {
+            const lastRun = await invoke<number | null>("plan_triage_last_run", { projectKey, repo });
+            const changed = lastRun != null
+              ? await invoke<PlanIssue[]>("plan_issues_changed_since", { projectKey, repo, since: lastRun })
+              : [];
+            deltas[repo] = renderTriageDelta(
+              changed.map((c) => ({ ref: c.ref, title: c.title, status: c.status ?? "open" })),
+              lastRun ?? null,
+            );
+            await invoke("plan_triage_record_run", { projectKey, repo });
+          } catch (e) {
+            console.error(`triage delta prep ${repo} failed:`, e);
+          }
+        }));
+        return deltas;
+      },
+      triageStartProject: (projectName, repos, projectId = "", deltas) =>
         set((s) => {
           // A triage tab for this project may already exist (re-run): rebuild it in
           // place at the same index. The caller kills the old panes' sessions first
@@ -275,7 +300,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 newPaneStartupPromptDocs[key] = triageDoc;
               } else {
                 // Secure default (#738): triage only bsc-authored issues unless the user opts out.
-                newPaneStartupPromptText[key] = buildTriagePrompt(s.restrictToBscIssues);
+                // #1004: lead with this repo's since-last-run delta (if prepareTriageRun supplied one)
+                // so a re-run resumes from what changed rather than re-ingesting the whole project.
+                newPaneStartupPromptText[key] = buildTriagePrompt(s.restrictToBscIssues, deltas?.[fullName ?? ""]);
                 // Resolution moved to the assignments module (#324/#326): startup
                 // prompt is the override cascade; reference context accumulates.
                 const doc = resolveStartupPrompt(assignments, { projectId, repo: fullName ?? "" });

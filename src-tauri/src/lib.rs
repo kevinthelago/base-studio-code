@@ -2297,6 +2297,9 @@ pub fn run() {
             plan_db::plan_get_blueprint,
             plan_db::plan_list_context,
             plan_db::plan_require_context,
+            plan_db::plan_triage_record_run,
+            plan_db::plan_triage_last_run,
+            plan_db::plan_issues_changed_since,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
