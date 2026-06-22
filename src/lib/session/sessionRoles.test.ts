@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ROLE_DEFAULTS,
   PLANNER_WRITE_GLOBS,
+  DB_OWNED_PLAN_FILES,
   roleCapability,
   classifyCommand,
   checkCommand,
@@ -140,14 +141,25 @@ describe("roleWriteRules (write-tool guard)", () => {
     }
   });
 
-  it("planner: auto-approves plan-file globs, no deny list (#509)", () => {
+  it("planner: auto-approves plan-file globs; denies DB-owned plan-state file forms (#509/#1070)", () => {
     const rules = roleWriteRules(ROLE_DEFAULTS.planner);
-    expect(rules.deny).toEqual([]);
-    // Every PLANNER_WRITE_GLOB must be represented in the allow list.
+    // Every PLANNER_WRITE_GLOB is represented in the allow list (section files stay writable).
     for (const glob of PLANNER_WRITE_GLOBS) {
       expect(rules.allow).toContain(`Edit(${glob})`);
       expect(rules.allow).toContain(`Write(${glob})`);
     }
+    // DB-owned artifacts (deploy/phases/issues/fleet/repos/features) are denied as files so the
+    // planner uses `bsc-plan` instead — deny wins over the *.md/*.json glob allow.
+    for (const f of DB_OWNED_PLAN_FILES) {
+      expect(rules.deny).toContain(`Write(${f})`);
+      expect(rules.deny).toContain(`Edit(${f})`);
+    }
+    expect(rules.deny).toContain("Write(deploy.md)");
+  });
+
+  it("does NOT deny the DB-owned file forms for non-planner roles", () => {
+    // The deny is planner-specific — a worker writes real repo files, not plan-state artifacts.
+    expect(roleWriteRules(roleCapability("worker", { writeGlobs: ["src/**"] })).deny).toEqual([]);
   });
 
   it("scopes a worker to its boundary globs (one allow per tool per glob)", () => {
@@ -172,8 +184,9 @@ describe("roleWriteRules (write-tool guard)", () => {
     expect(canWritePath(planner, "context/goal.md")).toBe(true);
     expect(canWritePath(planner, "context/_skipped.md")).toBe(true);
     expect(canWritePath(planner, "src/x.ts")).toBe(false);
-    expect(roleWriteRules(planner).deny).toEqual([]);
+    // Section-file globs auto-approve; the DB-owned plan-state file forms are denied (#1070).
     expect(roleWriteRules(planner).allow).toContain("Edit(*.md)");
+    expect(roleWriteRules(planner).deny).toContain("Write(deploy.md)");
 
     // worker with a boundary: every allow-rule glob is exactly a canWritePath-true path.
     const worker = roleCapability("worker", { writeGlobs: ["src/api/**"] });

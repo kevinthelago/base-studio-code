@@ -44,6 +44,17 @@ export const PLANNER_WRITE_GLOBS: string[] = [
   "context/*.md", "context/*",
 ];
 
+// Structured plan state that lives in plan.db, written ONLY via the `bsc-plan` CLI
+// (repo/phase/feature/fleet/deploy). The planner must never write these as FILES — a stray
+// `deploy.md` / `phases.json` doesn't feed the DB or clear a stage gate, it just rots (#1070).
+// {@link roleWriteRules} denies their file forms for the planner so its `*.md`/`*.json` write glob
+// can't auto-approve them (deny > allow); the planner is forced to the CLI. Section files
+// (`goal.md`, `scope.md`, …) stay writable.
+export const DB_OWNED_PLAN_FILES: string[] = [
+  "deploy.md", "deploy.json",
+  "phases.json", "issues.json", "fleet.json", "repos.json", "features.json",
+];
+
 /**
  * Default capability per role. `writeGlobs` are filled per assignment (a worker owns
  * its stream's globs); the defaults are empty so a session with no assigned boundary
@@ -213,7 +224,12 @@ export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
     return { allow: [], deny: [...WRITE_TOOLS] };
   }
   const allow = cap.writeGlobs.flatMap((g) => WRITE_TOOLS.map((t) => `${t}(${g})`));
-  return { allow, deny: [] };
+  // The planner's *.md/*.json globs would otherwise auto-approve the DB-owned plan-state artifacts
+  // (#1070) — force it to the `bsc-plan` CLI by denying their file forms. deny wins over allow.
+  const deny = cap.role === "planner"
+    ? DB_OWNED_PLAN_FILES.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`))
+    : [];
+  return { allow, deny };
 }
 
 /**
