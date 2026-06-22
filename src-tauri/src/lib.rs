@@ -828,6 +828,7 @@ async fn kb_chat(
     api_key: String,
     provider: Option<String>,
     model: Option<String>,
+    base_url: Option<String>,
 ) -> Result<serde_json::Value, String> {
     use llm::LlmProvider;
     let provider = provider.unwrap_or_else(|| "anthropic".to_string());
@@ -847,7 +848,12 @@ async fn kb_chat(
         llm::ProviderKind::Anthropic => llm::AnthropicProvider.complete(&req, &api_key).await,
         llm::ProviderKind::OpenAi => llm::OpenAiProvider.complete(&req, &api_key).await,
         llm::ProviderKind::Gemini => llm::GeminiProvider.complete(&req, &api_key).await,
-        llm::ProviderKind::Local => llm::LocalProvider.complete(&req, &api_key).await,
+        llm::ProviderKind::Local => {
+            let base = base_url
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| llm::DEFAULT_LOCAL_BASE_URL.to_string());
+            llm::LocalProvider { base_url: base }.complete(&req, &api_key).await
+        }
     }
 }
 

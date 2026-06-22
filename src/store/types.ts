@@ -390,6 +390,9 @@ export interface AppStore {
   setOpenaiKey: (k: string) => void;
   geminiKey: string;
   setGeminiKey: (k: string) => void;
+  /** OpenAI-compatible endpoint for the `local` provider (default Ollama). */
+  localBaseUrl: string;
+  setLocalBaseUrl: (u: string) => void;
 
   // Automations
   schedules: Schedule[];

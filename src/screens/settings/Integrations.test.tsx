@@ -46,4 +46,18 @@ describe("IntegrationsSettings — LLM provider (#1085)", () => {
     fireEvent.change(model, { target: { value: "claude-opus-4-8" } });
     expect(useAppStore.getState().llmModel).toBe("claude-opus-4-8");
   });
+
+  it("local provider exposes an editable base URL (#1091)", () => {
+    useAppStore.setState({ llmProvider: "local", localBaseUrl: "http://localhost:11434/v1" });
+    render(<IntegrationsSettings />);
+    const base = screen.getByPlaceholderText("http://localhost:11434/v1") as HTMLInputElement;
+    fireEvent.change(base, { target: { value: "http://10.0.0.5:8080/v1" } });
+    expect(useAppStore.getState().localBaseUrl).toBe("http://10.0.0.5:8080/v1");
+  });
+
+  it("planning-autopilot copy is provider-neutral (#1091)", () => {
+    render(<IntegrationsSettings />);
+    expect(screen.getByText(/Automate planning with the LLM/i)).toBeTruthy();
+    expect(screen.queryByText(/Automate planning with Claude/i)).toBeNull();
+  });
 });
