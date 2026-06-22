@@ -7,10 +7,6 @@ name: verify-sidecar
 
 on:
   workflow_dispatch:
-  # TEMPORARY (#1094): run on push to this branch to validate now; stripped to
-  # dispatch-only before merge (workflow_dispatch is usable once on the default branch).
-  push:
-    branches: [1094-verify-sidecar-ci]
 
 jobs:
   bundle:
