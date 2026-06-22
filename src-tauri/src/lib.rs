@@ -17,7 +17,6 @@ mod pty;
 mod bsc;
 mod planner;
 mod data;
-mod llm;
 mod harness;
 
 // ── Logging / performance ────────────────────────────────────────────────────
