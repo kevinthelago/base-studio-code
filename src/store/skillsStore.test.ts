@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./";
-import { blankSkill } from "../lib/session/skills";
+import { blankSkill, parseSkillsFile } from "../lib/session/skills";
 
 describe("skills store slice", () => {
   beforeEach(() => {
@@ -43,6 +43,26 @@ describe("skills store slice", () => {
     expect(skills).toHaveLength(2);
     expect(skills.find(s => s.name === "Open a clean PR")!.desc).toBe("refined");
     expect(skills.some(s => s.name === "Brand new skill")).toBe(true);
+  });
+
+  it("ingests a planner-shaped skills.json into the library, refining on re-emit (#1086)", () => {
+    // The shape the planner writes to skills.json — an array of skill objects.
+    const skillsJson = JSON.stringify([
+      { name: "Virtual mountain weathering", kind: "docs", desc: "Procedural erosion grounded in recent papers.", prompt: "Apply hydraulic + thermal erosion…", tools: ["read_file"] },
+    ]);
+    useAppStore.getState().upsertSkills(parseSkillsFile(skillsJson));
+    let skills = useAppStore.getState().skills;
+    expect(skills).toHaveLength(1);
+    expect(skills[0]).toMatchObject({ name: "Virtual mountain weathering", kind: "docs", enabled: true, pinned: true });
+    expect(skills[0].prompt).toContain("erosion");
+
+    // Re-emitting the same skill (refined) updates in place by name-slug — not duplicated.
+    useAppStore.getState().upsertSkills(parseSkillsFile(
+      JSON.stringify([{ name: "Virtual mountain weathering", kind: "docs", desc: "v2", prompt: "Refined." }]),
+    ));
+    skills = useAppStore.getState().skills;
+    expect(skills).toHaveLength(1);
+    expect(skills[0].desc).toBe("v2");
   });
 
   it("deleteLocalProject strips the deleted key from every skill's scope", () => {
