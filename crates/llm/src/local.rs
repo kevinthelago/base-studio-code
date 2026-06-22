@@ -3,7 +3,7 @@
 //! API key is optional (Ollama needs none), so the bearer header is sent only when
 //! a key is present.
 
-use super::{openai, LlmProvider, LlmRequest};
+use super::{openai, LlmProvider, LlmRequest, Turn, TurnResult};
 
 /// A local / self-hosted OpenAI-compatible provider, pointed at a configurable
 /// `base_url` (Settings → Integrations; defaults to Ollama via [`DEFAULT_LOCAL_BASE_URL`]).
@@ -47,6 +47,29 @@ impl LlmProvider for LocalProvider {
             return Err(format!("API error ({}): {}", status, err));
         }
         Ok(openai::normalize_response(&json))
+    }
+
+    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
+        let client = reqwest::Client::new();
+        // Reuse OpenAI's turn mapping against the configured (OpenAI-compatible) endpoint.
+        let mut builder = client
+            .post(chat_completions_url(&self.base_url))
+            .header("content-type", "application/json")
+            .json(&openai::turn_request_body(t));
+        if !api_key.is_empty() {
+            builder = builder.header("authorization", format!("Bearer {}", api_key));
+        }
+        let response = builder.send().await.map_err(|e| format!("Request failed: {}", e))?;
+        let status = response.status();
+        let json: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+        if !status.is_success() {
+            let err = json["error"]["message"].as_str().unwrap_or("Unknown error").to_string();
+            return Err(format!("API error ({}): {}", status, err));
+        }
+        Ok(openai::parse_turn_response(&json))
     }
 }
 
