@@ -115,6 +115,7 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
       statusLabel={busy ? "staging…" : entries.length ? `${entries.length} staged` : undefined}
       statusColor={busy ? "var(--accent)" : "var(--fg-dim)"}
       onClose={onClose}
+      fullWidth
     >
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, padding: 14, gap: 12, overflow: "auto" }}>
         {/* Drop zone */}
@@ -131,19 +132,13 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
         >
           <span style={{ fontSize: 22 }}>⬇</span>
           <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>Drop design files or a folder here</span>
-          <span className="hint">or click to browse files — images, SVG, components, markup, anything</span>
-          <input type="file" multiple style={{ display: "none" }} onChange={onPick} />
+          <span className="hint">or click to browse a folder — images, SVG, components, markup, anything</span>
+          {/* The drop box IS the browse affordance: clicking it opens the native folder picker
+              (webkitdirectory is set on this input via the effect above). Files can also be dragged in. */}
+          <input ref={folderInputRef} type="file" multiple style={{ display: "none" }} onChange={onPick} />
         </label>
 
-        {/* Folder picker — the native directory selector (the drop zone above browses files). */}
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <button type="button" className="mini" onClick={() => folderInputRef.current?.click()}>
-            ⊞ browse a folder…
-          </button>
-          <input ref={folderInputRef} type="file" multiple style={{ display: "none" }} onChange={onPick} />
-        </div>
-
-        {error && <div style={{ color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11 }}>{error}</div>}
+        {error &&<div style={{ color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11 }}>{error}</div>}
 
         {/* Staged files */}
         {entries.length > 0 && (
