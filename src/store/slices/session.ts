@@ -8,7 +8,7 @@ import { repoPromptKey } from "../../lib/session/startupPrompt";
 import { DEFAULT_AUTO_FOCUS_MODE } from "../../lib/console/focusQueue";
 
 type SessionSlice = Pick<AppStore,
-  "mcpServers" | "addMcpServer" | "updateMcpServer" | "removeMcpServer" | "toggleMcpServer" | "setMcpServerProjects" | "hooks" | "addHook" | "updateHook" | "removeHook" | "toggleHook" | "setHookProjects" | "paneMcpServers" | "paneHooks" | "skills" | "addSkill" | "installBundledSkills" | "updateSkill" | "removeSkill" | "toggleSkill" | "toggleSkillPin" | "setSkillProjects" | "upsertSkills" | "paneSkills" | "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "paneModels" | "setPaneModel"
+  "mcpServers" | "addMcpServer" | "updateMcpServer" | "removeMcpServer" | "toggleMcpServer" | "setMcpServerProjects" | "hooks" | "addHook" | "updateHook" | "removeHook" | "toggleHook" | "setHookProjects" | "paneMcpServers" | "paneHooks" | "skills" | "addSkill" | "installBundledSkills" | "updateSkill" | "removeSkill" | "toggleSkill" | "toggleSkillPin" | "setSkillProjects" | "upsertSkills" | "paneSkills" | "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "paneModels" | "setPaneModel"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
@@ -169,6 +169,9 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
 
       autoPlanWithClaude: false,
       setAutoPlanWithClaude: (v) => set({ autoPlanWithClaude: v }),
+
+      autoCompleteGates: false,
+      setAutoCompleteGates: (v) => set({ autoCompleteGates: v }),
 
       restrictToBscIssues: true, // secure by default (#738)
       setRestrictToBscIssues: (v) => set({ restrictToBscIssues: v }),

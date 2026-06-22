@@ -791,6 +791,11 @@ export interface AppStore {
    *  Enables the "Auto-plan" control on the planner page. */
   autoPlanWithClaude: boolean;
   setAutoPlanWithClaude: (v: boolean) => void;
+  /** #1068: auto-advance planner gates — when a stage's sections are ready, confirm them without
+   *  the manual "approve & continue" click (opt-in; off by default). One global flag every gate
+   *  follows; steps aside while the planning autopilot is running (it owns confirmation then). */
+  autoCompleteGates: boolean;
+  setAutoCompleteGates: (v: boolean) => void;
   /** #738 (security): restrict agents that pull live GitHub issues (triage) to issues
    *  base-studio-code authored — the `bsc-generated` label. ON by default so a hand-created
    *  or injected issue isn't acted on; off works every open issue. */
