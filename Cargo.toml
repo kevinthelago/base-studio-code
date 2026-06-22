@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/data", "crates/plandb"]
+members = ["src-tauri", "crates/data", "crates/plandb", "crates/llm"]
 resolver = "2"
 
 # Strip debug info from DEPENDENCIES in dev/test builds (our own crates keep theirs).
