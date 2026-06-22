@@ -48,7 +48,7 @@ describe("catalog templates + blank", () => {
   });
 
   it("includes the first-party MCP servers with download links + run configs (#858)", () => {
-    const firstParty = ["Compliance", "Complexity Analyzer", "Dependency Graph", "Plan Grader"];
+    const firstParty = ["Compliance", "Complexity Analyzer", "Dependency Graph", "Plan Grader", "Research"];
     for (const name of firstParty) {
       const item = MCP_CATALOG.find((c) => c.name === name);
       expect(item, `${name} in catalog`).toBeDefined();
@@ -61,6 +61,9 @@ describe("catalog templates + blank", () => {
     expect(mcpFromCatalog("Complexity Analyzer")).toMatchObject({ command: "node", args: "{dir}/dist/mcp/index.js" });
     expect(mcpFromCatalog("Dependency Graph")).toMatchObject({ command: "node", args: "{dir}/dist/index.js" });
     expect(mcpFromCatalog("Plan Grader")).toMatchObject({ transport: "stdio", command: "python", args: "-m uv run --directory {dir} plan-grader-mcp" });
+    // Research is a Node server (tsup → dist/index.js); offline-capable, so no required env (#1056).
+    expect(mcpFromCatalog("Research")).toMatchObject({ transport: "stdio", command: "node", args: "{dir}/dist/index.js" });
+    expect(mcpFromCatalog("Research").env).toBeUndefined();
   });
 
   it("blankMcpServer produces an empty stdio shape", () => {
