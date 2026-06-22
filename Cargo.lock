@@ -705,6 +705,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-agent"
+version = "0.1.0"
+dependencies = [
+ "bsc-llm",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "bsc-data"
 version = "0.1.0"
 dependencies = [

@@ -9,11 +9,13 @@ mod anthropic;
 mod gemini;
 mod local;
 mod openai;
+mod turn;
 
 pub use anthropic::AnthropicProvider;
 pub use gemini::GeminiProvider;
 pub use local::{LocalProvider, DEFAULT_LOCAL_BASE_URL};
 pub use openai::OpenAiProvider;
+pub use turn::{Msg, ToolCall, ToolDef, Turn, TurnResult};
 
 /// A provider-agnostic chat-completion request. `messages` and `tools` are passed
 /// through as raw JSON (the caller already speaks the message/tool shape); each
@@ -28,9 +30,13 @@ pub struct LlmRequest {
 
 /// A chat-completion provider. `complete` returns the normalized response JSON
 /// (`{ content: [...], usage }`) — the same shape every consumer already reads.
+/// `turn` is the tool-using, multi-turn path the `bsc-agent` loop drives; it maps
+/// the normalized [`Turn`] onto the provider's wire format and back into a
+/// [`TurnResult`].
 #[allow(async_fn_in_trait)]
 pub trait LlmProvider {
     async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String>;
+    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String>;
 }
 
 /// Which provider a request targets.
