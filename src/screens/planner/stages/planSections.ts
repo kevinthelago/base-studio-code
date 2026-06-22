@@ -223,6 +223,7 @@ export const KNOWN_DIMENSIONS: { key: string; title: string }[] = [
   { key: "analytics",      title: "Analytics" },
   { key: "accessibility",  title: "Accessibility & i18n" },
   { key: "cost",           title: "Cost & resourcing" },
+  { key: "release",        title: "Versioning & release schedule" },
   { key: "phases",         title: "Roadmap" },
   { key: "risks",          title: "Risks" },
   { key: "open_questions", title: "Open questions" },
@@ -239,6 +240,8 @@ const KEY_BY_TITLE = new Map(KNOWN_DIMENSIONS.map(d => [d.title.toLowerCase(), d
 const KEY_ALIASES: Record<string, string> = {
   techstack: "stack", "technology stack": "stack",
   "data schema": "schema", personas: "users",
+  versioning: "release", releases: "release", "release schedule": "release",
+  "versioning and release schedule": "release", "release plan": "release",
 };
 /**
  * Map a section key/stem the planner may have written as a display title or alias (e.g.

@@ -127,8 +127,9 @@ right mode:
 3. **Walk the discovery checklist as a QUICK orientation** using the
    scan→propose→confirm loop (see "The discovery checklist") — open with a 3–5
    sentence read of what you found, document the core dimensions (goal, users,
-   scope, stack, architecture) briefly, skip the rest unless they're central, and
-   don't dwell. This pass only grounds the workshop.
+   scope, stack, architecture, and the versioning + release schedule) briefly, skip
+   the rest unless they're central, and don't dwell. This pass only grounds the
+   workshop.
 4. **Develop the GitHub structure — the main event.** Run the feature workshop
    REPO BY REPO (see "Develop the GitHub structure"), and go SLOW — ONE unit at a
    time. For a NEW project work **feature by feature**; for an EXISTING project

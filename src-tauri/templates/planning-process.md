@@ -52,7 +52,7 @@ for a dimension that genuinely applies; don't spin up tangential files (they jus
 gate). Use the **canonical key** as the file stem so the section maps to the right gate signal —
 `schema` (not "data-model"), `ux`, `api`, `auth`, `security`, `testing`, etc. The
 **Context** gate requires the project's DYNAMIC required-set — seeded with the baseline
-`goal`, `scope`, `stack`, `architecture`, `users` (each `context/<topic>.md`, in the
+`goal`, `scope`, `stack`, `architecture`, `users`, `release` (each `context/<topic>.md`, in the
 `context/` subdir) — which you shape with `bsc-plan context require <topic>` /
 `bsc-plan context unrequire <topic>` (`bsc-plan context list` shows it). Just write the
 required files; they don't need confirmation.
@@ -354,8 +354,8 @@ and `risks` apply to almost every project.
 **Core orientation — document these, briefly (each line is the template).**
 
 > **REQUIRED for the Context gate — the DYNAMIC required-set is seeded with the baseline
-> `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md`, and
-> `context/users.md`.** Write each; shape the set for THIS project with `bsc-plan context
+> `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md`,
+> `context/users.md`, and `context/release.md`.** Write each; shape the set for THIS project with `bsc-plan context
 > require <topic>` / `bsc-plan context unrequire <topic>` (a CLI tool unrequires `users`/`ux`; a data
 > platform requires `schema`; `bsc-plan context list` shows the required set). The Context stage
 > completes once every required topic's file exists — context files are generated, not confirmed.
@@ -374,6 +374,14 @@ and `risks` apply to almost every project.
 - `architecture` **(gate-required)** — named components + a one-sentence responsibility each,
   how they communicate, and the 2–3 key cross-component flows. For a multi-repo
   project, say which repo owns what.
+- `release` **(gate-required)** — the versioning scheme + release schedule for THIS project. Default
+  to the shape this app builds toward: a **complete initial prototype** first (one early version that
+  works end-to-end at a basic level — the foundation), then **feature-by-feature** releases, one
+  focused increment per version. Use semver (patch = fixes, minor = each feature release, major =
+  breaking). Recommend **release-and-continue** — ship a version early and keep refining it until its
+  theme is complete before the next. List the first few concrete versions in order (prototype, then
+  2–4 feature versions), each with a one-line theme; adapt the cadence to the goal/scope/users (a
+  regulated or data-migration product may need longer, gated releases).
 
 **Capture only where it materially shapes the build — otherwise fold it into the
 feature that needs it, or skip:**
@@ -390,7 +398,7 @@ agent will actually build them. Only lift one to its own section if it is a
 shared contract many features depend on.
 
 **Enterprise / production-readiness dimensions — `observability`, `reliability`,
-`data_lifecycle`, `release`, `performance`, `docs`, `cost`** — are the "done" bars enumerated under
+`data_lifecycle`, `performance`, `docs`, `cost`** — are the "done" bars enumerated under
 "Aim for the most complete, production-grade solution" above. For a production/enterprise target,
 apply each where it matters (folded into the feature/architecture/issues, a Skill, or a short
 section) and record any you skip in `context/_skipped.md` — don't silently drop them.
