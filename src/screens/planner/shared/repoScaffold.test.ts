@@ -49,6 +49,50 @@ describe("buildReadme (#848)", () => {
     expect(buildReadme(base)).not.toContain("## Tech stack");
     expect(buildReadme({ ...base, stackText: "React + Rust" })).toContain("## Tech stack");
   });
+
+  it("uses the full goal for the Overview, falling back to the description (#1114)", () => {
+    const overviewOnly = buildReadme(base);
+    expect(overviewOnly).toContain("## Overview");
+    expect(overviewOnly).toContain("A todo app for teams."); // falls back to description
+    const withGoal = buildReadme({ ...base, goal: "A todo app for teams.\n\nIt syncs in real time across devices." });
+    expect(withGoal).toContain("It syncs in real time across devices.");
+  });
+
+  it("renders a Scope section only when scope text is present (#1114)", () => {
+    expect(buildReadme(base)).not.toContain("## Scope");
+    expect(buildReadme({ ...base, scope: "In: tasks, lists. Out: billing." })).toContain("## Scope");
+    expect(buildReadme({ ...base, scope: "In: tasks, lists. Out: billing." })).toContain("Out: billing.");
+  });
+
+  it("renders an Architecture section only when architecture text is present (#1114)", () => {
+    expect(buildReadme(base)).not.toContain("## Architecture");
+    expect(buildReadme({ ...base, architecture: "Client → API → Postgres." })).toContain("## Architecture");
+  });
+
+  it("renders a bulleted Features section from planned features, omitting empties (#1114)", () => {
+    expect(buildReadme(base)).not.toContain("## Features");
+    const md = buildReadme({ ...base, features: [
+      { name: "Invite teammates", behavior: "send an email invite" },
+      { name: "Dark mode" },
+      { name: "   " }, // dropped — no name
+    ] });
+    expect(md).toContain("## Features");
+    expect(md).toContain("- **Invite teammates** — send an email invite");
+    expect(md).toContain("- **Dark mode**");
+  });
+
+  it("derives Getting-started commands from the stack, with a generic fallback (#1114)", () => {
+    expect(buildReadme({ ...base, stackText: "React + TypeScript, Tauri (Rust)" }))
+      .toContain("npm install");
+    expect(buildReadme({ ...base, stackText: "React + TypeScript, Tauri (Rust)" }))
+      .toContain("cargo build");
+    expect(buildReadme(base)).toContain("install dependencies and run the project's");
+  });
+
+  it("always preserves the base-studio-code watermark (#1114)", () => {
+    expect(buildReadme({ ...base, goal: "g", scope: "s", features: [{ name: "f" }] }))
+      .toContain("_Scaffolded by base-studio-code._");
+  });
 });
 
 describe("communityFiles (#848)", () => {

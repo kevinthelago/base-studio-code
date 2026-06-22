@@ -2190,6 +2190,7 @@ pub fn run() {
             github::github_graphql,
             github::github_post,
             github::github_put,
+            github::github_patch,
             oauth::github_client_id,
             oauth::github_device_start,
             oauth::github_device_poll,
