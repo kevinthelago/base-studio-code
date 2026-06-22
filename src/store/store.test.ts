@@ -93,6 +93,16 @@ describe("autoPlanWithClaude setting (#682)", () => {
   });
 });
 
+describe("autoCompleteGates setting (#1068)", () => {
+  it("is off by default and toggles via the setter", () => {
+    expect(useAppStore.getState().autoCompleteGates).toBe(false);
+    useAppStore.getState().setAutoCompleteGates(true);
+    expect(useAppStore.getState().autoCompleteGates).toBe(true);
+    useAppStore.getState().setAutoCompleteGates(false);
+    expect(useAppStore.getState().autoCompleteGates).toBe(false);
+  });
+});
+
 describe("terminal font zoom", () => {
   it("defaults to the baseline font size", () => {
     expect(useAppStore.getState().terminalFontSize).toBe(12);

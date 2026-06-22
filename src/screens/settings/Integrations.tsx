@@ -14,6 +14,8 @@ const TOOLS: [string, string, boolean][] = [
 
 export function IntegrationsSettings() {
   const { claudeApiKey, setClaudeApiKey, autoPlanWithClaude, setAutoPlanWithClaude } = useAppStore();
+  const autoCompleteGates = useAppStore(s => s.autoCompleteGates);
+  const setAutoCompleteGates = useAppStore(s => s.setAutoCompleteGates);
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Integrations</h2>
@@ -77,6 +79,16 @@ export function IntegrationsSettings() {
           answers its own discovery questions and drives the plan to a publishable state for
           your review — it never auto-publishes to GitHub. Runs under the least-privilege
           "Planning Autopilot" agent role. Requires a Claude API key (above).
+        </ToggleRow>
+        <ToggleRow
+          on={autoCompleteGates}
+          onToggle={() => setAutoCompleteGates(!autoCompleteGates)}
+          title="Auto-advance planner gates"
+        >
+          When a planning stage's sections are drafted and its gate is ready, confirm it
+          automatically instead of clicking <b>approve &amp; continue</b> each time. You still drive
+          the conversation — only the per-gate approval is automated. Off by default; steps aside
+          while Auto-plan is running.
         </ToggleRow>
       </div>
 

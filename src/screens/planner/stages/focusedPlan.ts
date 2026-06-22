@@ -152,3 +152,13 @@ export function currentGateReady(sections: BlueprintSection[], signals: PlanSign
   const cur = currentSection(sections, signals);
   return !!cur && evalGate(cur.gateRule, signals).done;
 }
+
+/**
+ * Whether the auto-complete-gates effect should confirm the active stage's pending sections (#1068):
+ * the global flag is on, the planning autopilot is NOT driving (it owns confirmation then), and the
+ * active stage actually has sections awaiting confirmation. The same "approve & continue" action the
+ * user would click, minus the click — so it advances exactly the gates the manual path would.
+ */
+export function shouldAutoCompleteGate(autoOn: boolean, autopilotActive: boolean, pending: string[]): boolean {
+  return autoOn && !autopilotActive && pending.length > 0;
+}

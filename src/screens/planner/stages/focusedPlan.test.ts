@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, connectorKind,
-  sectionForPhase, type Phase, type PhaseStatus,
+  sectionForPhase, shouldAutoCompleteGate, type Phase, type PhaseStatus,
 } from "./focusedPlan";
 import { confirmedSignal, skippedSignal, type BlueprintSection } from "./blueprints";
 import type { PlanSignals } from "./stageGate";
@@ -197,5 +197,17 @@ describe("imported blueprint — every stage gateless (#954, the 'Feature Add' r
     expect(active(sig)).toBe("docs");                    // optional — flow stops here until done/skipped (#921)
     sig[confirmedSignal("docs")] = true;
     expect(phasesFrom(IMPORTED, sig).every((p) => p.status === "complete")).toBe(true);
+  });
+});
+
+describe("shouldAutoCompleteGate (#1068)", () => {
+  it("fires only when the flag is on, autopilot is idle, and there are pending sections", () => {
+    expect(shouldAutoCompleteGate(true, false, ["phases"])).toBe(true);
+    // off by default
+    expect(shouldAutoCompleteGate(false, false, ["phases"])).toBe(false);
+    // autopilot owns confirmation while it's driving
+    expect(shouldAutoCompleteGate(true, true, ["phases"])).toBe(false);
+    // nothing to confirm (e.g. a generation-gated stage) → no-op
+    expect(shouldAutoCompleteGate(true, false, [])).toBe(false);
   });
 });
