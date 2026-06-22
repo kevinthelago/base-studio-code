@@ -244,7 +244,11 @@
 .features-view .feature-behavior {
   font-family: var(--mono); font-size: 9.5px; color: var(--fg-muted);
   line-height: 1.5; margin: 6px 0 0; padding-left: 16px;
+  /* Collapsed: clamp the behavior subtext to 2 lines so cards stay compact and the full list is
+     scannable; the open card shows it in full (rule below). */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
+.features-view .feature-card.open .feature-behavior { -webkit-line-clamp: unset; overflow: visible; }
 .features-view .feature-acc-count {
   font-family: var(--mono); font-size: 9px; color: var(--fg-dim);
   margin-top: 3px; padding-left: 16px;
