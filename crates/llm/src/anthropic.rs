@@ -65,6 +65,19 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
     })
 }
 
+/// Normalize Anthropic usage to the canonical 4-key shape `tokens.rs` parses
+/// (`input_tokens`/`output_tokens`/`cache_creation_input_tokens`/`cache_read_input_tokens`);
+/// Anthropic already uses these names, so this just defaults any missing key to 0.
+pub(crate) fn normalize_usage(u: &serde_json::Value) -> serde_json::Value {
+    let g = |k: &str| u.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    serde_json::json!({
+        "input_tokens": g("input_tokens"),
+        "output_tokens": g("output_tokens"),
+        "cache_creation_input_tokens": g("cache_creation_input_tokens"),
+        "cache_read_input_tokens": g("cache_read_input_tokens"),
+    })
+}
+
 /// Parse an Anthropic response into a [`TurnResult`]: text from `text` blocks,
 /// tool calls from `tool_use` blocks. Pure — unit-testable without I/O.
 pub(crate) fn parse_turn_response(raw: &serde_json::Value) -> TurnResult {
@@ -86,7 +99,7 @@ pub(crate) fn parse_turn_response(raw: &serde_json::Value) -> TurnResult {
     TurnResult {
         text,
         tool_calls,
-        usage: raw.get("usage").cloned().unwrap_or(serde_json::Value::Null),
+        usage: normalize_usage(raw.get("usage").unwrap_or(&serde_json::Value::Null)),
         stop_reason: raw["stop_reason"].as_str().unwrap_or("").to_string(),
     }
 }
@@ -249,5 +262,14 @@ mod tests {
         assert_eq!(r.tool_calls[0].id, "c9");
         assert_eq!(r.tool_calls[0].name, "read_file");
         assert_eq!(r.tool_calls[0].args["path"], "y");
+    }
+
+    #[test]
+    fn normalize_usage_passes_through_and_defaults_missing() {
+        let u = normalize_usage(&serde_json::json!({ "input_tokens": 11, "output_tokens": 22 }));
+        assert_eq!(u["input_tokens"], 11);
+        assert_eq!(u["output_tokens"], 22);
+        assert_eq!(u["cache_creation_input_tokens"], 0); // defaulted
+        assert_eq!(u["cache_read_input_tokens"], 0);
     }
 }

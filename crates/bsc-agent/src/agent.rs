@@ -2,6 +2,7 @@
 //! through tool-using turns until it returns a final answer.
 
 use crate::permissions::Permissions;
+use crate::telemetry::Telemetry;
 use llm::{LlmProvider, Msg, ToolDef, Turn};
 use serde_json::Value;
 
@@ -28,6 +29,7 @@ pub async fn run_agent<P: LlmProvider>(
     user: &str,
     tools: &[Tool],
     perms: &Permissions,
+    telemetry: &Telemetry,
     max_steps: usize,
 ) -> Result<String, String> {
     let mut messages: Vec<Msg> = vec![Msg::User(user.to_string())];
@@ -42,10 +44,13 @@ pub async fn run_agent<P: LlmProvider>(
             max_tokens: 4096,
         };
         let result = provider.turn(&turn, api_key).await?;
+        // Record every assistant turn to the transcript (cost accounting reads its usage).
+        telemetry.record_assistant(model, &result.usage);
         if !result.text.is_empty() {
             println!("{}", result.text);
         }
         if result.tool_calls.is_empty() {
+            telemetry.finish();
             return Ok(result.text);
         }
         messages.push(Msg::Assistant {
@@ -61,14 +66,18 @@ pub async fn run_agent<P: LlmProvider>(
                     println!("[denied] {}", tc.name);
                     reason
                 }
-                Ok(()) => match tools.iter().find(|t| t.def.name == tc.name) {
-                    Some(tool) => (tool.run)(&tc.args).unwrap_or_else(|e| format!("error: {e}")),
-                    None => format!("error: unknown tool '{}'", tc.name),
-                },
+                Ok(()) => {
+                    telemetry.audit(&tc.name, &tc.args); // one audit line per executed tool
+                    match tools.iter().find(|t| t.def.name == tc.name) {
+                        Some(tool) => (tool.run)(&tc.args).unwrap_or_else(|e| format!("error: {e}")),
+                        None => format!("error: unknown tool '{}'", tc.name),
+                    }
+                }
             };
             messages.push(Msg::ToolResult { id: tc.id.clone(), content: output });
         }
     }
+    telemetry.finish();
     Err(format!("agent did not finish within {max_steps} steps"))
 }
 
@@ -240,7 +249,7 @@ mod tests {
             file: path.to_string_lossy().into_owned(),
         };
         let tools = vec![read_file_tool()];
-        let out = run_agent(&mock, "", "m", "", "read the file", &tools, &Permissions::default(), 5)
+        let out = run_agent(&mock, "", "m", "", "read the file", &tools, &Permissions::default(), &Telemetry::disabled(), 5)
             .await
             .unwrap();
         assert_eq!(out, "done: saw HELLO");
@@ -266,7 +275,7 @@ mod tests {
             }
         }
         let tools = vec![read_file_tool()];
-        let err = run_agent(&Loopy, "", "m", "", "go", &tools, &Permissions::default(), 3)
+        let err = run_agent(&Loopy, "", "m", "", "go", &tools, &Permissions::default(), &Telemetry::disabled(), 3)
             .await
             .unwrap_err();
         assert!(err.contains("did not finish"));
@@ -315,10 +324,46 @@ mod tests {
         let mock = BashMock { step: Cell::new(0) };
         let tools = vec![bash_tool()];
         let perms = Permissions { deny_bash: vec!["rm -rf".into()], ..Default::default() };
-        let out = run_agent(&mock, "", "m", "", "clean up", &tools, &perms, 5)
+        let out = run_agent(&mock, "", "m", "", "clean up", &tools, &perms, &Telemetry::disabled(), 5)
             .await
             .unwrap();
         assert_eq!(out, "ok: was denied");
+    }
+
+    /// run_agent records the assistant turn to the transcript (schema tokens.rs reads)
+    /// when telemetry is configured — proves the loop wires emission end-to-end.
+    #[tokio::test]
+    async fn loop_emits_transcript_when_telemetry_configured() {
+        struct FinalMock;
+        impl LlmProvider for FinalMock {
+            async fn complete(&self, _r: &LlmRequest, _k: &str) -> Result<serde_json::Value, String> {
+                unreachable!()
+            }
+            async fn turn(&self, _t: &Turn, _k: &str) -> Result<TurnResult, String> {
+                Ok(TurnResult {
+                    text: "all done".into(),
+                    tool_calls: vec![],
+                    usage: serde_json::json!({
+                        "input_tokens": 12, "output_tokens": 3,
+                        "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0
+                    }),
+                    stop_reason: "end_turn".into(),
+                })
+            }
+        }
+        let dir = std::env::temp_dir().join(format!("bsc_p2d_loopemit_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let tx = dir.join("s.jsonl");
+        let tokens = dir.join("tokens.log").to_string_lossy().into_owned();
+        let tele = Telemetry::for_test(Some(tokens), Some(tx.clone()));
+        let out = run_agent(&FinalMock, "", "claude-x", "", "hi", &[], &Permissions::default(), &tele, 5)
+            .await
+            .unwrap();
+        assert_eq!(out, "all done");
+        let v: serde_json::Value = serde_json::from_str(std::fs::read_to_string(&tx).unwrap().trim()).unwrap();
+        assert_eq!(v["message"]["model"], "claude-x");
+        assert_eq!(v["message"]["usage"]["input_tokens"], 12);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
