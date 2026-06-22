@@ -65,6 +65,19 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
     body
 }
 
+/// Normalize OpenAI usage (`prompt_tokens`/`completion_tokens`) to the canonical
+/// 4-key shape `tokens.rs` parses; OpenAI has no prompt-cache split, so cache_* = 0.
+/// Shared by the `local` provider (OpenAI-compatible). Pure.
+pub(crate) fn normalize_usage(u: &serde_json::Value) -> serde_json::Value {
+    let g = |k: &str| u.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    serde_json::json!({
+        "input_tokens": g("prompt_tokens"),
+        "output_tokens": g("completion_tokens"),
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+    })
+}
+
 /// Parse an OpenAI response into a [`TurnResult`]. `tool_calls[].function.arguments`
 /// is a JSON string, parsed back into `args`. Pure — unit-testable (reused by local).
 pub(crate) fn parse_turn_response(raw: &serde_json::Value) -> TurnResult {
@@ -89,7 +102,7 @@ pub(crate) fn parse_turn_response(raw: &serde_json::Value) -> TurnResult {
     TurnResult {
         text,
         tool_calls,
-        usage: raw.get("usage").cloned().unwrap_or(serde_json::Value::Null),
+        usage: normalize_usage(raw.get("usage").unwrap_or(&serde_json::Value::Null)),
         stop_reason: raw["choices"][0]["finish_reason"].as_str().unwrap_or("").to_string(),
     }
 }
@@ -318,15 +331,27 @@ mod tests {
                 },
                 "finish_reason": "tool_calls"
             } ],
-            "usage": { "total_tokens": 11 }
+            "usage": { "prompt_tokens": 4, "completion_tokens": 7, "total_tokens": 11 }
         });
         let r = parse_turn_response(&raw);
         assert_eq!(r.text, "sure");
         assert_eq!(r.stop_reason, "tool_calls");
-        assert_eq!(r.usage["total_tokens"], 11);
+        // usage is normalized to the canonical shape tokens.rs parses
+        assert_eq!(r.usage["input_tokens"], 4);
+        assert_eq!(r.usage["output_tokens"], 7);
+        assert_eq!(r.usage["cache_read_input_tokens"], 0);
         assert_eq!(r.tool_calls.len(), 1);
         assert_eq!(r.tool_calls[0].id, "call_9");
         assert_eq!(r.tool_calls[0].name, "read_file");
         assert_eq!(r.tool_calls[0].args["path"], "y"); // arguments JSON string parsed back to a value
+    }
+
+    #[test]
+    fn normalize_usage_maps_prompt_completion_to_canonical() {
+        let u = normalize_usage(&serde_json::json!({ "prompt_tokens": 9, "completion_tokens": 4, "total_tokens": 13 }));
+        assert_eq!(u["input_tokens"], 9);
+        assert_eq!(u["output_tokens"], 4);
+        assert_eq!(u["cache_creation_input_tokens"], 0);
+        assert_eq!(u["cache_read_input_tokens"], 0);
     }
 }
