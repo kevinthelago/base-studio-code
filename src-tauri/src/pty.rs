@@ -10,7 +10,7 @@ use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
     BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
 };
-use crate::{config, perf, tunnel};
+use crate::{perf, tunnel};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -293,13 +293,17 @@ pub(crate) async fn pty_create(
     let shell = resolved_shell.program.clone();
     let mut cmd = CommandBuilder::new(&shell);
 
+    // The session-harness adapter (#1078 P0) — owns the launch + pre-launch host setup so an
+    // alternative harness (bsc-agent) can plug in. Claude Code is the only impl today.
+    let harness = crate::harness::ClaudeCodeAdapter;
+
     // Self-heal a corrupt ~/.claude.json before this session can launch claude.
     // The repair (drop trailing junk, keep the leading valid object) already runs
     // at workspace setup, but a session launched later (e.g. triage) would hit a
     // config corrupted in the meantime; claude aborts on invalid JSON. Mutex-
     // guarded + atomic, so it's safe alongside trust_claude_dir and concurrent
     // launches, and a no-op when the config is already valid.
-    config::sanitize_claude_config();
+    harness.prepare_config();
 
     // Hardening (#367): never silently fall back to $HOME when a session's configured
     // directory is missing — a failed clone/worktree or a stale persisted cwd would
@@ -321,7 +325,7 @@ pub(crate) async fn pty_create(
         // Pre-accept Claude Code's folder-trust prompt for this directory so the
         // auto-launched `claude` starts already trusted instead of blocking on
         // the "Do you trust the files in this folder?" dialog.
-        config::trust_claude_dir(&effective_cwd);
+        harness.trust_dir(&effective_cwd);
     }
     // Terminal-type defaults (so claude's TUI gets full xterm capabilities) plus
     // any caller-supplied environment (e.g. GH_TOKEN), which takes precedence.
@@ -454,7 +458,6 @@ pub(crate) async fn pty_create(
     // still delivers the prompt.
     // The session harness (#1078 P0): ClaudeCodeAdapter is the only impl today; it reproduces the
     // exact launch behavior this block had inline. bsc-agent becomes a second adapter (P2).
-    let harness = crate::harness::ClaudeCodeAdapter;
     let resume = continue_session.unwrap_or(false) && harness.detect_history(&cwd);
     let launch = match startup_prompt.as_deref().filter(|s| !s.is_empty()) {
         Some(p) => Some(harness.launch_command(p, resume)),

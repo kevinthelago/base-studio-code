@@ -20,6 +20,12 @@ pub trait HarnessAdapter {
     fn shell_fn(&self, model_flag: Option<&str>) -> String;
     /// Whether `launch` starts this harness's CLI — gates the degraded non-bash replay path.
     fn is_harness_launch(&self, launch: &str) -> bool;
+    /// Harness-specific pre-launch host setup (no-op for harnesses without it): self-heal/prepare
+    /// the harness's global config before a session can launch.
+    fn prepare_config(&self);
+    /// Harness-specific pre-launch host setup (no-op for harnesses without it): pre-accept any
+    /// folder-trust gate the harness would otherwise block on for `cwd`.
+    fn trust_dir(&self, cwd: &str);
 }
 
 /// Adapter for Claude Code (the `claude` CLI) — the default, full-parity harness.
@@ -53,6 +59,14 @@ impl HarnessAdapter for ClaudeCodeAdapter {
 
     fn is_harness_launch(&self, launch: &str) -> bool {
         launch.contains("claude")
+    }
+
+    fn prepare_config(&self) {
+        crate::config::sanitize_claude_config();
+    }
+
+    fn trust_dir(&self, cwd: &str) {
+        crate::config::trust_claude_dir(cwd);
     }
 }
 
