@@ -57,6 +57,19 @@ export const DEFAULT_PERF_CONFIG: PerfConfig = {
   trackFrontend: true,
 };
 
+/** Retention for the text log streams (#1060). 0 disables a cap. */
+export interface LogConfig {
+  /** Trim a text log to its newest N lines on enforcement. 0 = no line cap. */
+  maxLines: number;
+  /** Trim a text log to its newest bytes if it exceeds this many MB. 0 = no size cap. */
+  maxSizeMb: number;
+}
+
+export const DEFAULT_LOG_CONFIG: LogConfig = {
+  maxLines: 10_000,
+  maxSizeMb: 20,
+};
+
 export interface ToolPermissions {
   allow: string[];
   deny: string[];
@@ -343,6 +356,10 @@ export interface AppStore {
   // Performance monitoring (#569)
   perfConfig: PerfConfig;
   setPerfConfig: (config: PerfConfig) => void;
+
+  // Log management (#1060)
+  logConfig: LogConfig;
+  setLogConfig: (config: LogConfig) => void;
 
   // Mobile tunnel (#243). The relay Worker URL is persisted (the user's BYO relay);
   // `tunnelRunning` mirrors the Rust client's connected state (transient — NOT
