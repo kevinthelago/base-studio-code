@@ -69,6 +69,19 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
     body
 }
 
+/// Normalize Gemini usage (`usageMetadata.promptTokenCount`/`candidatesTokenCount`)
+/// to the canonical 4-key shape `tokens.rs` parses; Gemini has no prompt-cache split,
+/// so cache_* = 0. Pure.
+pub(crate) fn normalize_usage(u: &serde_json::Value) -> serde_json::Value {
+    let g = |k: &str| u.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    serde_json::json!({
+        "input_tokens": g("promptTokenCount"),
+        "output_tokens": g("candidatesTokenCount"),
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+    })
+}
+
 /// Parse a Gemini response into a [`TurnResult`]: text from `text` parts, tool
 /// calls from `functionCall` parts (id synthesized from the name). Pure.
 pub(crate) fn parse_turn_response(raw: &serde_json::Value) -> TurnResult {
@@ -89,16 +102,7 @@ pub(crate) fn parse_turn_response(raw: &serde_json::Value) -> TurnResult {
             }
         }
     }
-    let usage = raw
-        .get("usageMetadata")
-        .map(|u| {
-            serde_json::json!({
-                "input_tokens": u.get("promptTokenCount").cloned().unwrap_or(serde_json::Value::Null),
-                "output_tokens": u.get("candidatesTokenCount").cloned().unwrap_or(serde_json::Value::Null),
-                "total_tokens": u.get("totalTokenCount").cloned().unwrap_or(serde_json::Value::Null),
-            })
-        })
-        .unwrap_or(serde_json::Value::Null);
+    let usage = normalize_usage(raw.get("usageMetadata").unwrap_or(&serde_json::Value::Null));
     TurnResult {
         text,
         tool_calls,
@@ -336,10 +340,21 @@ mod tests {
         let r = parse_turn_response(&raw);
         assert_eq!(r.text, "sure");
         assert_eq!(r.stop_reason, "STOP");
-        assert_eq!(r.usage["total_tokens"], 5);
+        // usage normalized to the canonical shape tokens.rs parses
+        assert_eq!(r.usage["input_tokens"], 3);
+        assert_eq!(r.usage["output_tokens"], 2);
         assert_eq!(r.tool_calls.len(), 1);
         assert_eq!(r.tool_calls[0].name, "read_file");
         assert_eq!(r.tool_calls[0].id, "read_file"); // id synthesized from name
         assert_eq!(r.tool_calls[0].args["path"], "y");
+    }
+
+    #[test]
+    fn normalize_usage_maps_gemini_counts_to_canonical() {
+        let u = normalize_usage(&serde_json::json!({ "promptTokenCount": 8, "candidatesTokenCount": 5, "totalTokenCount": 13 }));
+        assert_eq!(u["input_tokens"], 8);
+        assert_eq!(u["output_tokens"], 5);
+        assert_eq!(u["cache_creation_input_tokens"], 0);
+        assert_eq!(u["cache_read_input_tokens"], 0);
     }
 }
