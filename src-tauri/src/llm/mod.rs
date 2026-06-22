@@ -12,7 +12,7 @@ mod openai;
 
 pub use anthropic::AnthropicProvider;
 pub use gemini::GeminiProvider;
-pub use local::LocalProvider;
+pub use local::{LocalProvider, DEFAULT_LOCAL_BASE_URL};
 pub use openai::OpenAiProvider;
 
 /// A provider-agnostic chat-completion request. `messages` and `tools` are passed

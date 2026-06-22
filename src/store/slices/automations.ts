@@ -6,7 +6,7 @@ import { type Automation, appendRun, computeNextRun } from "../../lib/automation
 import type { Schedule, Command } from "../../data/mock";
 
 type AutomationsSlice = Pick<AppStore,
-  "kbBlocks" | "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "schedules" | "addSchedule" | "updateSchedule" | "removeSchedule" | "commands" | "addCommand" | "updateCommand" | "removeCommand" | "automations" | "addAutomation" | "updateAutomation" | "removeAutomation" | "setAutomationArmed" | "recordAutomationRun" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "removeDraftProject"
+  "kbBlocks" | "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "schedules" | "addSchedule" | "updateSchedule" | "removeSchedule" | "commands" | "addCommand" | "updateCommand" | "removeCommand" | "automations" | "addAutomation" | "updateAutomation" | "removeAutomation" | "setAutomationArmed" | "recordAutomationRun" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "removeDraftProject"
 >;
 
 export const createAutomationsSlice: StateCreator<AppStore, [], [], AutomationsSlice> = (set) => ({
@@ -23,6 +23,8 @@ export const createAutomationsSlice: StateCreator<AppStore, [], [], AutomationsS
       setOpenaiKey: (k) => set({ openaiKey: k }),
       geminiKey: "",
       setGeminiKey: (k) => set({ geminiKey: k }),
+      localBaseUrl: "http://localhost:11434/v1",
+      setLocalBaseUrl: (u) => set({ localBaseUrl: u }),
 
       schedules: [],
       addSchedule: () =>

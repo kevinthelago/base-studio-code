@@ -35,6 +35,8 @@ export function IntegrationsSettings() {
   const setOpenaiKey = useAppStore(s => s.setOpenaiKey);
   const geminiKey = useAppStore(s => s.geminiKey);
   const setGeminiKey = useAppStore(s => s.setGeminiKey);
+  const localBaseUrl = useAppStore(s => s.localBaseUrl);
+  const setLocalBaseUrl = useAppStore(s => s.setLocalBaseUrl);
   // The key for the selected provider (anthropic reuses claudeApiKey; local needs none).
   const providerKey = llmProvider === "openai" ? openaiKey : llmProvider === "gemini" ? geminiKey : llmProvider === "anthropic" ? claudeApiKey : "";
   const setProviderKey = (v: string) => {
@@ -71,10 +73,22 @@ export function IntegrationsSettings() {
               placeholder="claude-sonnet-4-6"
             />
           </div>
+          {llmProvider === "local" && (
+            <div className="field" style={{ gridColumn: "1 / -1" }}>
+              <label>Base URL</label>
+              <input
+                className="input"
+                value={localBaseUrl}
+                onChange={(e) => setLocalBaseUrl(e.target.value)}
+                placeholder="http://localhost:11434/v1"
+              />
+              <div className="hint">OpenAI-compatible endpoint (e.g. Ollama).</div>
+            </div>
+          )}
           <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>API key</label>
             {llmProvider === "local" ? (
-              <div className="hint">Local provider — no API key needed (default endpoint <code>http://localhost:11434/v1</code>).</div>
+              <div className="hint">Local provider — no API key needed; set the <b>Base URL</b> above.</div>
             ) : (
               <>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -119,12 +133,12 @@ export function IntegrationsSettings() {
         <ToggleRow
           on={autoPlanWithClaude}
           onToggle={() => setAutoPlanWithClaude(!autoPlanWithClaude)}
-          title="Automate planning with Claude"
+          title="Automate planning with the LLM"
         >
-          Adds an <b>Auto-plan</b> control to the project planner: from your pitch, Claude
+          Adds an <b>Auto-plan</b> control to the project planner: from your pitch, the model
           answers its own discovery questions and drives the plan to a publishable state for
           your review — it never auto-publishes to GitHub. Runs under the least-privilege
-          "Planning Autopilot" agent role. Requires a Claude API key (above).
+          "Planning Autopilot" agent role. Requires an API key for the selected provider (above).
         </ToggleRow>
         <ToggleRow
           on={autoCompleteGates}

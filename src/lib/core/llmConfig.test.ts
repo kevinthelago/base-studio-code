@@ -7,11 +7,20 @@ const base: LlmConfigSource = {
   claudeApiKey: "ant-key",
   openaiKey: "oai-key",
   geminiKey: "gem-key",
+  localBaseUrl: "http://localhost:11434/v1",
 };
 
 describe("resolveLlmConfig (#1085)", () => {
   it("picks the anthropic key + model for anthropic", () => {
-    expect(resolveLlmConfig(base)).toEqual({ provider: "anthropic", model: "claude-sonnet-4-6", apiKey: "ant-key" });
+    expect(resolveLlmConfig(base)).toEqual({
+      provider: "anthropic", model: "claude-sonnet-4-6", apiKey: "ant-key",
+      baseUrl: "http://localhost:11434/v1",
+    });
+  });
+
+  it("carries the configured local base URL (#1091)", () => {
+    expect(resolveLlmConfig({ ...base, llmProvider: "local", localBaseUrl: "http://10.0.0.5:8080/v1" }).baseUrl)
+      .toBe("http://10.0.0.5:8080/v1");
   });
 
   it("picks the per-provider key", () => {
@@ -30,12 +39,12 @@ describe("resolveLlmConfig (#1085)", () => {
 
 describe("hasLlmKey", () => {
   it("is true when a key is present", () => {
-    expect(hasLlmKey({ provider: "openai", model: "gpt-5", apiKey: "x" })).toBe(true);
+    expect(hasLlmKey({ provider: "openai", model: "gpt-5", apiKey: "x", baseUrl: "" })).toBe(true);
   });
   it("is false when a cloud provider has no key", () => {
-    expect(hasLlmKey({ provider: "anthropic", model: "m", apiKey: "" })).toBe(false);
+    expect(hasLlmKey({ provider: "anthropic", model: "m", apiKey: "", baseUrl: "" })).toBe(false);
   });
   it("is true for local even without a key", () => {
-    expect(hasLlmKey({ provider: "local", model: "llama3", apiKey: "" })).toBe(true);
+    expect(hasLlmKey({ provider: "local", model: "llama3", apiKey: "", baseUrl: "" })).toBe(true);
   });
 });
