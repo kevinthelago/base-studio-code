@@ -709,6 +709,8 @@ name = "bsc-agent"
 version = "0.1.0"
 dependencies = [
  "bsc-llm",
+ "glob",
+ "serde",
  "serde_json",
  "tokio",
 ]

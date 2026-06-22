@@ -6,6 +6,7 @@
 //! stdout — it runs inside the PTY like `claude` does.
 
 mod agent;
+mod permissions;
 
 use agent::{bash_tool, edit_file_tool, read_file_tool, run_agent, write_file_tool};
 use std::io::Read;
@@ -34,6 +35,8 @@ async fn main() {
     // planner/agents already author). Absent ⇒ empty.
     let system = std::fs::read_to_string("CLAUDE.md").unwrap_or_default();
     let tools = vec![read_file_tool(), write_file_tool(), edit_file_tool(), bash_tool()];
+    // Least-privilege gate ($BSC_AGENT_PERMS); permissive when unset.
+    let perms = permissions::Permissions::from_env();
 
     let kind = match llm::resolve_provider(&provider) {
         Ok(k) => k,
@@ -45,17 +48,17 @@ async fn main() {
 
     let result = match kind {
         llm::ProviderKind::Anthropic => {
-            run_agent(&llm::AnthropicProvider, &api_key, &model, &system, &task, &tools, 20).await
+            run_agent(&llm::AnthropicProvider, &api_key, &model, &system, &task, &tools, &perms, 20).await
         }
         llm::ProviderKind::OpenAi => {
-            run_agent(&llm::OpenAiProvider, &api_key, &model, &system, &task, &tools, 20).await
+            run_agent(&llm::OpenAiProvider, &api_key, &model, &system, &task, &tools, &perms, 20).await
         }
         llm::ProviderKind::Gemini => {
-            run_agent(&llm::GeminiProvider, &api_key, &model, &system, &task, &tools, 20).await
+            run_agent(&llm::GeminiProvider, &api_key, &model, &system, &task, &tools, &perms, 20).await
         }
         llm::ProviderKind::Local => {
             let p = llm::LocalProvider { base_url: llm::DEFAULT_LOCAL_BASE_URL.into() };
-            run_agent(&p, &api_key, &model, &system, &task, &tools, 20).await
+            run_agent(&p, &api_key, &model, &system, &task, &tools, &perms, 20).await
         }
     };
 

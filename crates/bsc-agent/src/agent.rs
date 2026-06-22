@@ -1,6 +1,7 @@
 //! The agent loop (epic #1078, P2a). Provider-agnostic: drive any `LlmProvider`
 //! through tool-using turns until it returns a final answer.
 
+use crate::permissions::Permissions;
 use llm::{LlmProvider, Msg, ToolDef, Turn};
 use serde_json::Value;
 
@@ -18,6 +19,7 @@ pub struct Tool {
 /// continue — until the provider answers with no tool calls (final text) or the
 /// step budget runs out. Assistant text and a `[tool] <name>` trace are printed as
 /// they happen (the binary runs inside the PTY).
+#[allow(clippy::too_many_arguments)] // the agent entrypoint legitimately takes the full session config
 pub async fn run_agent<P: LlmProvider>(
     provider: &P,
     api_key: &str,
@@ -25,6 +27,7 @@ pub async fn run_agent<P: LlmProvider>(
     system: &str,
     user: &str,
     tools: &[Tool],
+    perms: &Permissions,
     max_steps: usize,
 ) -> Result<String, String> {
     let mut messages: Vec<Msg> = vec![Msg::User(user.to_string())];
@@ -51,9 +54,17 @@ pub async fn run_agent<P: LlmProvider>(
         });
         for tc in &result.tool_calls {
             println!("[tool] {}", tc.name);
-            let output = match tools.iter().find(|t| t.def.name == tc.name) {
-                Some(tool) => (tool.run)(&tc.args).unwrap_or_else(|e| format!("error: {e}")),
-                None => format!("error: unknown tool '{}'", tc.name),
+            // Permission gate: a denial is fed back as the tool result (so the model
+            // sees it and adapts) rather than crashing the loop.
+            let output = match perms.check(&tc.name, &tc.args) {
+                Err(reason) => {
+                    println!("[denied] {}", tc.name);
+                    reason
+                }
+                Ok(()) => match tools.iter().find(|t| t.def.name == tc.name) {
+                    Some(tool) => (tool.run)(&tc.args).unwrap_or_else(|e| format!("error: {e}")),
+                    None => format!("error: unknown tool '{}'", tc.name),
+                },
             };
             messages.push(Msg::ToolResult { id: tc.id.clone(), content: output });
         }
@@ -229,7 +240,7 @@ mod tests {
             file: path.to_string_lossy().into_owned(),
         };
         let tools = vec![read_file_tool()];
-        let out = run_agent(&mock, "", "m", "", "read the file", &tools, 5)
+        let out = run_agent(&mock, "", "m", "", "read the file", &tools, &Permissions::default(), 5)
             .await
             .unwrap();
         assert_eq!(out, "done: saw HELLO");
@@ -255,8 +266,59 @@ mod tests {
             }
         }
         let tools = vec![read_file_tool()];
-        let err = run_agent(&Loopy, "", "m", "", "go", &tools, 3).await.unwrap_err();
+        let err = run_agent(&Loopy, "", "m", "", "go", &tools, &Permissions::default(), 3)
+            .await
+            .unwrap_err();
         assert!(err.contains("did not finish"));
+    }
+
+    /// A denied tool call is fed back to the model as the result (not a crash) and the
+    /// loop continues to completion.
+    #[tokio::test]
+    async fn loop_feeds_denial_and_continues() {
+        // Turn 1: ask for a denied `bash`. Turn 2: after seeing the denial echoed into
+        // the conversation, finish.
+        struct BashMock {
+            step: Cell<usize>,
+        }
+        impl LlmProvider for BashMock {
+            async fn complete(&self, _r: &LlmRequest, _k: &str) -> Result<serde_json::Value, String> {
+                unreachable!()
+            }
+            async fn turn(&self, t: &Turn, _k: &str) -> Result<TurnResult, String> {
+                let n = self.step.get() + 1;
+                self.step.set(n);
+                if n == 1 {
+                    Ok(TurnResult {
+                        text: String::new(),
+                        tool_calls: vec![ToolCall {
+                            id: "b1".into(),
+                            name: "bash".into(),
+                            args: serde_json::json!({ "command": "rm -rf /tmp/x" }),
+                        }],
+                        usage: serde_json::Value::Null,
+                        stop_reason: "tool_use".into(),
+                    })
+                } else {
+                    let denied = t.messages.iter().any(
+                        |m| matches!(m, Msg::ToolResult { content, .. } if content.contains("permission denied")),
+                    );
+                    Ok(TurnResult {
+                        text: if denied { "ok: was denied".into() } else { "no denial seen".into() },
+                        tool_calls: vec![],
+                        usage: serde_json::Value::Null,
+                        stop_reason: "end_turn".into(),
+                    })
+                }
+            }
+        }
+        let mock = BashMock { step: Cell::new(0) };
+        let tools = vec![bash_tool()];
+        let perms = Permissions { deny_bash: vec!["rm -rf".into()], ..Default::default() };
+        let out = run_agent(&mock, "", "m", "", "clean up", &tools, &perms, 5)
+            .await
+            .unwrap();
+        assert_eq!(out, "ok: was denied");
     }
 
     #[test]
