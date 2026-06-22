@@ -17,7 +17,7 @@ import { createConsoleSlice } from "./slices/console";
 
 // Re-export the public store API so existing `from "../store"` imports keep resolving.
 export { PROJECT_INIT_PROMPT, TRIAGE_PROMPT, buildTriagePrompt } from "./constants";
-export type { GithubUser, PerfConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "./types";
+export type { GithubUser, PerfConfig, LogConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "./types";
 
 import { newTabId } from "./helpers";
 
@@ -62,6 +62,7 @@ export const useAppStore = create<AppStore>()(
         pageTabOrder:    s.pageTabOrder,
         settingsSection: s.settingsSection,
         perfConfig:      s.perfConfig,
+        logConfig:       s.logConfig,
         idleReaper:      s.idleReaper,
         tunnelRelayUrl:  s.tunnelRelayUrl,
         agentProfiles:   s.agentProfiles,

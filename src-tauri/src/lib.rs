@@ -4,6 +4,7 @@ use tauri::{Manager, RunEvent};
 mod tunnel;
 mod fcm;
 mod perf;
+mod logs;
 mod docstore;
 mod plan_db;
 mod tokens;
@@ -2164,14 +2165,16 @@ pub fn run() {
         .manage(crate::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
+        .manage(logs::LogState::new())
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             log::info!("[startup] process→setup {}ms (native + plugin init)", boot_start.elapsed().as_millis());
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
-            // Cap unbounded log files once at startup to reclaim disk space.
-            perf::cap_logs(&bsc_base_dir());
+            // Cap unbounded log files once at startup to reclaim disk space. Config-driven (#1060):
+            // uses the LogState default here (10k lines) until the frontend pushes the user's value.
+            logs::cap_logs(&bsc_base_dir(), &app.state::<logs::LogState>().get());
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
@@ -2272,6 +2275,13 @@ pub fn run() {
             perf::perf_record_frontend_sample,
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
+            logs::list_log_files,
+            logs::read_log_tail,
+            logs::clear_log,
+            logs::export_log,
+            logs::log_get_config,
+            logs::log_set_config,
+            logs::enforce_log_caps,
             plan_db::plan_upsert_issue,
             plan_db::plan_list_issues,
             plan_db::plan_remove_issue,
