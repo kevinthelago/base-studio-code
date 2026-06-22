@@ -54,18 +54,25 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: '-'
 
-      - name: Assert bsc-plan is in the bundle
+      - name: Assert the sidecars are in the bundle
         shell: bash
         run: |
           echo "== staged externalBin =="
           ls -la src-tauri/binaries || true
-          echo "== searching bundle output for bsc-plan =="
-          hits=$(find target -path '*bundle*' \( -name 'bsc-plan' -o -name 'bsc-plan.exe' \) 2>/dev/null || true)
-          echo "$hits"
-          if [ -z "$hits" ]; then
-            echo "::error::bsc-plan sidecar not found in any bundle output"
+          missing=0
+          for bin in bsc-plan bsc-agent; do
+            echo "== searching bundle output for $bin =="
+            hits=$(find target -path '*bundle*' \( -name "$bin" -o -name "$bin.exe" \) 2>/dev/null || true)
+            echo "$hits"
+            if [ -z "$hits" ]; then
+              echo "::error::$bin sidecar not found in any bundle output"
+              missing=1
+            else
+              echo "OK: $bin present in the bundle"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
             echo "== bundle dirs (diagnostic) =="
             find target -maxdepth 5 -path '*bundle*' -type d 2>/dev/null | head -80
             exit 1
           fi
-          echo "OK: bsc-plan present in the bundle"
