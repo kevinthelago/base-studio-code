@@ -70,6 +70,41 @@ impl HarnessAdapter for ClaudeCodeAdapter {
     }
 }
 
+/// Adapter for `bsc-agent` (the model-agnostic agent runtime, #1078 P2/P3). Launched via the
+/// `$BSC_AGENT_BIN` sidecar (mirroring `$BSC_PLAN_BIN`); provider/model/permissions come from
+/// `BSC_AGENT_*` env, not CLI flags — so there's no `--model` injection and no global config or
+/// folder-trust gate to prepare.
+pub struct BscAgentAdapter;
+
+impl HarnessAdapter for BscAgentAdapter {
+    fn detect_history(&self, _cwd: &str) -> bool {
+        false // resume not supported yet (P3)
+    }
+
+    fn launch_command(&self, prompt: &str, _resume: bool) -> String {
+        // The `bsc-agent` shell name resolves to the sidecar via `$BSC_AGENT_BIN` (see shell_fn).
+        format!("bsc-agent {}", crate::bash_ansi_c_quote(prompt))
+    }
+
+    fn model_flag(&self, _model: &str) -> Option<String> {
+        None // the model is selected via $BSC_AGENT_MODEL, not a CLI flag
+    }
+
+    fn shell_fn(&self, _model_flag: Option<&str>) -> String {
+        // Emit the run-state marker (so the pane's run/idle indicator works) and resolve the
+        // sidecar via $BSC_AGENT_BIN. No `--model` injection — model comes from env.
+        "bsc-agent() { __bsc_state run; \"${BSC_AGENT_BIN:-bsc-agent}\" \"$@\"; }; ".to_string()
+    }
+
+    fn is_harness_launch(&self, launch: &str) -> bool {
+        launch.contains("bsc-agent")
+    }
+
+    fn prepare_config(&self) {} // no global config to self-heal
+
+    fn trust_dir(&self, _cwd: &str) {} // no folder-trust prompt
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,5 +144,30 @@ mod tests {
         let a = ClaudeCodeAdapter;
         assert!(a.is_harness_launch("claude --continue $'hi'"));
         assert!(!a.is_harness_launch("aider --foo"));
+    }
+
+    #[test]
+    fn bsc_agent_launch_bakes_prompt_and_has_no_model_flag() {
+        let a = BscAgentAdapter;
+        let cmd = a.launch_command("do the thing", false);
+        assert!(cmd.starts_with("bsc-agent "));
+        assert_eq!(cmd, format!("bsc-agent {}", crate::bash_ansi_c_quote("do the thing")));
+        assert_eq!(a.model_flag("gpt-5"), None);
+        assert!(!a.detect_history("/anywhere"));
+    }
+
+    #[test]
+    fn bsc_agent_shell_fn_resolves_sidecar_and_marks_run() {
+        let s = BscAgentAdapter.shell_fn(None);
+        assert!(s.contains("BSC_AGENT_BIN"));
+        assert!(s.contains("__bsc_state run"));
+        assert!(!s.contains("--model"));
+    }
+
+    #[test]
+    fn bsc_agent_is_harness_launch() {
+        let a = BscAgentAdapter;
+        assert!(a.is_harness_launch("bsc-agent $'hi'"));
+        assert!(!a.is_harness_launch("claude $'hi'"));
     }
 }
