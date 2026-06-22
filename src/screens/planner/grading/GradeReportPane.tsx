@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { PipelineScreenFrame } from "./PipelineScreenFrame";
 import { useAppStore } from "../../../store";
+import { resolveLlmConfig, hasLlmKey } from "../../../lib/core/llmConfig";
 import { runSectionGrade } from "./gradeDispatch";
 import { runSectionGradeLLM } from "./gradeLLM";
 import type { GradeResult, Severity } from "./grading";
@@ -64,7 +65,7 @@ function GradeCard({ g }: { g: GradeResult }) {
 
 export function GradeReportPane({ projectKey, sectionKey, sectionContent, onClose }: PipelineScreenProps) {
   const grades = useAppStore((s) => (sectionKey ? s.sectionGrades[projectKey]?.[sectionKey] : undefined)) ?? EMPTY;
-  const apiKey = useAppStore((s) => s.claudeApiKey);
+  const hasKey = useAppStore((s) => hasLlmKey(resolveLlmConfig(s)));
   const [tab, setTab] = useState(0);
   const [busy, setBusy] = useState<null | "rubric" | "llm">(null);
   const [err, setErr] = useState<string | null>(null);
@@ -74,7 +75,7 @@ export function GradeReportPane({ projectKey, sectionKey, sectionContent, onClos
   const claudeReview = async () => {
     if (!sectionKey) return;
     setBusy("llm"); setErr(null);
-    try { await runSectionGradeLLM({ projectKey, sectionKey, content: sectionContent, apiKey }); }
+    try { await runSectionGradeLLM({ projectKey, sectionKey, content: sectionContent, llm: resolveLlmConfig(useAppStore.getState()) }); }
     catch (e) { setErr(String(e)); }
     finally { setBusy(null); }
   };
@@ -87,8 +88,8 @@ export function GradeReportPane({ projectKey, sectionKey, sectionContent, onClos
       actions={
         <>
           <button className="btn ghost sm" onClick={grade} disabled={!sectionKey} title="Run the section's rubric grader">Grade</button>
-          <button className="btn ghost sm" onClick={() => void claudeReview()} disabled={!sectionKey || busy === "llm" || !apiKey}
-            title={apiKey ? "Ask Claude to review this section" : "Add a Claude API key in Settings → Integrations"}>
+          <button className="btn ghost sm" onClick={() => void claudeReview()} disabled={!sectionKey || busy === "llm" || !hasKey}
+            title={hasKey ? "Ask the LLM to review this section" : "Add an API key in Settings → Integrations"}>
             {busy === "llm" ? "Reviewing…" : "✦ Claude"}
           </button>
         </>

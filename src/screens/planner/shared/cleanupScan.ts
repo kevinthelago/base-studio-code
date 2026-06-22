@@ -7,6 +7,7 @@
 
 import { useAppStore } from "../../../store";
 import { oneShotComplete } from "../../../lib/core/claudeComplete";
+import { type LlmConfig, hasLlmKey } from "../../../lib/core/llmConfig";
 import { scanDeadCode, DEAD_CODE_SCANNERS, type DeadCodeFinding } from "../../../lib/cleanup/deadcode";
 import { verifyFindings, findingsToGrade, type VerifiedFinding } from "../../../lib/cleanup/deadcodeVerify";
 import { type GradeResult } from "../grading/grading";
@@ -18,14 +19,14 @@ export interface CleanupScanArgs {
   repoPath: string;
   /** Limit scanners to a stack ("js" | "rust"); omit to run all. */
   stack?: "js" | "rust";
-  /** Claude API key — when present, candidates are verified; otherwise left uncertain. */
-  apiKey?: string;
+  /** Active LLM config — when it can make a call, candidates are verified; otherwise left uncertain. */
+  llm?: LlmConfig;
 }
 
 export interface CleanupScanOutcome { grade: GradeResult; scanned: number; errors: string[] }
 
 /** Scan → verify → grade → persist. Returns the grade + a count + any scanner errors. */
-export async function runCleanupScan({ projectKey, sectionKey, repoPath, stack, apiKey }: CleanupScanArgs): Promise<CleanupScanOutcome> {
+export async function runCleanupScan({ projectKey, sectionKey, repoPath, stack, llm }: CleanupScanArgs): Promise<CleanupScanOutcome> {
   const scanners = DEAD_CODE_SCANNERS.filter((s) => !stack || s.stack === stack);
   const candidates: DeadCodeFinding[] = [];
   const errors: string[] = [];
@@ -34,8 +35,8 @@ export async function runCleanupScan({ projectKey, sectionKey, repoPath, stack, 
     if (r.ran) candidates.push(...r.findings);
     else if (r.error) errors.push(`${s.tool}: ${r.error}`);
   }
-  const verified: VerifiedFinding[] = apiKey
-    ? await verifyFindings(candidates, (p) => oneShotComplete(apiKey, p.system, p.user))
+  const verified: VerifiedFinding[] = llm && hasLlmKey(llm)
+    ? await verifyFindings(candidates, (p) => oneShotComplete(llm, p.system, p.user))
     : candidates.map((f) => ({ ...f, verdict: "uncertain", reason: "not verified (no API key)" }));
   const grade = findingsToGrade(verified, sectionKey);
   useAppStore.getState().setSectionGrade(projectKey, sectionKey, grade);
