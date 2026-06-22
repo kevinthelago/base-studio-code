@@ -1,5 +1,16 @@
 import { useAppStore } from "../../store";
 import { ToggleRow } from "./General";
+import type { LlmProvider } from "../../lib/core/llmConfig";
+
+const LLM_PROVIDERS: [LlmProvider, string][] = [
+  ["anthropic", "Anthropic Claude"],
+  ["openai",    "OpenAI"],
+  ["gemini",    "Google Gemini"],
+  ["local",     "Local (Ollama / OpenAI-compatible)"],
+];
+const KEY_PLACEHOLDER: Record<LlmProvider, string> = {
+  anthropic: "sk-ant-…", openai: "sk-…", gemini: "AIza…", local: "",
+};
 
 const TOOLS: [string, string, boolean][] = [
   ["read",    "Read files inside cwd",                  true  ],
@@ -16,6 +27,21 @@ export function IntegrationsSettings() {
   const { claudeApiKey, setClaudeApiKey, autoPlanWithClaude, setAutoPlanWithClaude } = useAppStore();
   const autoCompleteGates = useAppStore(s => s.autoCompleteGates);
   const setAutoCompleteGates = useAppStore(s => s.setAutoCompleteGates);
+  const llmProvider = useAppStore(s => s.llmProvider);
+  const setLlmProvider = useAppStore(s => s.setLlmProvider);
+  const llmModel = useAppStore(s => s.llmModel);
+  const setLlmModel = useAppStore(s => s.setLlmModel);
+  const openaiKey = useAppStore(s => s.openaiKey);
+  const setOpenaiKey = useAppStore(s => s.setOpenaiKey);
+  const geminiKey = useAppStore(s => s.geminiKey);
+  const setGeminiKey = useAppStore(s => s.setGeminiKey);
+  // The key for the selected provider (anthropic reuses claudeApiKey; local needs none).
+  const providerKey = llmProvider === "openai" ? openaiKey : llmProvider === "gemini" ? geminiKey : llmProvider === "anthropic" ? claudeApiKey : "";
+  const setProviderKey = (v: string) => {
+    if (llmProvider === "openai") setOpenaiKey(v);
+    else if (llmProvider === "gemini") setGeminiKey(v);
+    else if (llmProvider === "anthropic") setClaudeApiKey(v);
+  };
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Integrations</h2>
@@ -25,26 +51,46 @@ export function IntegrationsSettings() {
 
       <div className="card">
         <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-          <h3 style={{ margin: 0 }}>Anthropic Claude</h3>
-          <span className="tag green">● healthy</span>
-          <span className="hint">last call 12s ago · 14.2k ctx</span>
+          <h3 style={{ margin: 0 }}>LLM provider</h3>
+          <span className="hint">Powers planning &amp; assistant calls (autopilot, grader, cleanup).</span>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14 }}>
+          <div className="field">
+            <label>Provider</label>
+            <select className="input" value={llmProvider} onChange={(e) => setLlmProvider(e.target.value as LlmProvider)}>
+              {LLM_PROVIDERS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>Model</label>
+            <input
+              className="input"
+              value={llmModel}
+              onChange={(e) => setLlmModel(e.target.value)}
+              placeholder="claude-sonnet-4-6"
+            />
+          </div>
           <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>API key</label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                className="input"
-                type="password"
-                value={claudeApiKey}
-                onChange={(e) => setClaudeApiKey(e.target.value)}
-                placeholder="sk-ant-…"
-              />
-              <button className="btn">show</button>
-              <button className="btn">test</button>
-            </div>
-            <div className="hint">Stored in OS keyring · never written to disk in plaintext. Default model lives in Settings → General.</div>
+            {llmProvider === "local" ? (
+              <div className="hint">Local provider — no API key needed (default endpoint <code>http://localhost:11434/v1</code>).</div>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    className="input"
+                    type="password"
+                    value={providerKey}
+                    onChange={(e) => setProviderKey(e.target.value)}
+                    placeholder={KEY_PLACEHOLDER[llmProvider]}
+                  />
+                  <button className="btn">show</button>
+                  <button className="btn">test</button>
+                </div>
+                <div className="hint">Stored in OS keyring · never written to disk in plaintext. The per-pane agent model lives in Settings → General.</div>
+              </>
+            )}
           </div>
           <div className="field">
             <label>Per-agent context cap</label>

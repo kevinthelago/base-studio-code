@@ -38,7 +38,7 @@ describe("runCleanupScan (#626 slice c)", () => {
 
   it("with an API key, verifies + confirms candidates (lowers the score)", async () => {
     routeInvoke();
-    const out = await runCleanupScan({ projectKey: "p", sectionKey: "cleanup", repoPath: "/r", stack: "js", apiKey: "sk-x" });
+    const out = await runCleanupScan({ projectKey: "p", sectionKey: "cleanup", repoPath: "/r", stack: "js", llm: { provider: "anthropic", model: "claude-sonnet-4-6", apiKey: "sk-x" } });
     expect(out.scanned).toBe(2);
     expect(out.grade.score).toBeLessThan(100);
     expect(out.grade.findings.filter((f) => f.fix === "safe to remove")).toHaveLength(2);
