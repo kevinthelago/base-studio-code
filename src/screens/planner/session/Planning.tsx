@@ -46,6 +46,7 @@ import { catalogLink, repoNameFromLink, mcpRepoName } from "../../../lib/session
 import { resolveAllInstalledMcp } from "../../../lib/session/mcpServers";
 import { toSessionPayloads } from "../../../lib/session/sessionConfig";
 import { writeProjectMcpContext } from "../shared/mcpContext";
+import { McpDownloadModal, type McpDownloadItem } from "../shared/McpDownloadModal";
 import { type McpInstallState } from "../shared/mcpPaneData";
 import { MCP_CATALOG } from "../../../data/mcpCatalog";
 import { buildProjectPaneData } from "../pane/projectPaneData";
@@ -574,6 +575,53 @@ export function Planning({ visible }: { visible: boolean }) {
   // Per-server MCP install lifecycle (#878): seeded by a disk probe on mount, advanced by the
   // download/build button. Keyed by extension id so the MCP pane shows real status.
   const [mcpInstallState, setMcpInstallState] = useState<McpInstallState>({});
+  // Download-confirmation queue (#1055): the blueprint a project uses and the servers the planner
+  // assigns can pull in first-party MCP servers that install from source. Instead of cloning that
+  // third-party code silently, we queue each not-yet-installed server here and surface a modal with
+  // its repo link; the user confirms before anything downloads. `mcpDownloadSeen` guards against
+  // re-queuing the same server (so a re-applied blueprint / poll tick doesn't nag).
+  const [mcpDownloads, setMcpDownloads] = useState<McpDownloadItem[]>([]);
+  const mcpDownloadSeen = useRef<Set<string>>(new Set());
+  // Queue downloadable catalog servers (by name) for the confirmation modal, skipping any already
+  // installed or already queued. State-free (refs + functional setState) so it's a stable callback
+  // safe to invoke from the blueprint effect AND the plan.db poll without staleness.
+  const enqueueMcpDownloads = useCallback(async (names: string[]) => {
+    const fresh: McpDownloadItem[] = [];
+    for (const name of names) {
+      const link = catalogLink(name);
+      if (!link) continue; // not a downloadable first-party server
+      const key = name.toLowerCase();
+      if (mcpDownloadSeen.current.has(key)) continue;
+      const repo = repoNameFromLink(link);
+      try {
+        const r = await invoke<{ downloaded: boolean; built: boolean }>("mcp_status", { name: repo });
+        if (r.downloaded && r.built) { mcpDownloadSeen.current.add(key); continue; } // already installed
+      } catch { /* not installed → prompt */ }
+      mcpDownloadSeen.current.add(key);
+      const cat = MCP_CATALOG.find((c) => c.name.toLowerCase() === key);
+      fresh.push({ name, repo, link, desc: cat?.desc, install: cat?.install, status: "pending" });
+    }
+    if (fresh.length) setMcpDownloads((prev) => [...prev, ...fresh]);
+  }, []);
+  // Download (clone + build) every still-pending/failed queued server, advancing its row status.
+  const confirmMcpDownloads = useCallback(async () => {
+    const setStatus = (name: string, status: McpDownloadItem["status"]) =>
+      setMcpDownloads((p) => p.map((d) => (d.name === name ? { ...d, status } : d)));
+    const targets = mcpDownloads.filter((d) => d.status === "pending" || d.status === "error");
+    await Promise.all(targets.map(async (it) => {
+      setStatus(it.name, "downloading");
+      try { await invoke("mcp_clone", { name: it.repo, url: it.link }); }
+      catch { setStatus(it.name, "error"); return; }
+      setStatus(it.name, "building");
+      try {
+        const r = await invoke<{ ok: boolean }>("mcp_build", { name: it.repo });
+        setStatus(it.name, r.ok ? "ready" : "error");
+      } catch { setStatus(it.name, "error"); }
+    }));
+  }, [mcpDownloads]);
+  // Dismiss the modal: drop the queue but keep the seen-set so skipped servers don't immediately
+  // re-prompt (the user can still install them later from the MCP screen).
+  const cancelMcpDownloads = useCallback(() => setMcpDownloads([]), []);
   // Deploy stage (#919): the project's deployment config — persisted per project, seeded from the
   // linked repos (one proposed service each) until the user/planner fills it in the Deploy pane.
   const deployCfg = useMemo(
@@ -627,8 +675,9 @@ export function Planning({ visible }: { visible: boolean }) {
 
   // Scope the active blueprint's attached MCP servers to this project (#897 Phase 2), so the
   // planner + fleet get the tools the blueprint declares. Idempotent (applyMcpAssign enables +
-  // scopes existing, or adds); clones the downloadable (first-party) ones like the <mcp_assign>
-  // handler. Re-runs when the project or the blueprint's attached-MCP set changes.
+  // scopes existing, or adds). The downloadable (first-party) ones are queued for the
+  // download-confirmation modal (#1055) rather than cloned silently. Re-runs when the project or
+  // the blueprint's attached-MCP set changes.
   const bpMcpKey = useMemo(() => {
     const bp = blueprints.find(b => b.id === effectiveBlueprintId);
     return bp ? collectBlueprintMcp(bp).join("\n") : "";
@@ -638,11 +687,8 @@ export function Planning({ visible }: { visible: boolean }) {
     const store = useAppStore.getState();
     const bp = store.blueprints.find(b => b.id === effectiveBlueprintId);
     if (!bp) return;
-    for (const name of applyBlueprintMcp(store, bp, effectiveProjectId, store.bscBaseDir)) {
-      const link = catalogLink(name);
-      if (link) invoke("mcp_clone", { name: repoNameFromLink(link), url: link }).catch(() => {});
-    }
-  }, [bpMcpKey, effectiveProjectId, effectiveBlueprintId]);
+    void enqueueMcpDownloads(applyBlueprintMcp(store, bp, effectiveProjectId, store.bscBaseDir));
+  }, [bpMcpKey, effectiveProjectId, effectiveBlueprintId, enqueueMcpDownloads]);
 
   // Write the active blueprint's attached SKILLS to the project hub's skills.md (#636 — the write
   // that was built but never wired). inject_skills (Rust) inlines that file into each worker's
@@ -1529,21 +1575,20 @@ export function Planning({ visible }: { visible: boolean }) {
         } catch { /* plan.db not created until the planner sets deploy — ignore */ }
 
         // MCP assignments are DB-owned (#1021) — resolve each assigned catalog name into the MCP-servers
-        // store (idempotent) and clone any first-party server, exactly as the old <mcp_assign> tag did.
-        // The applied-set guards against re-applying/re-cloning the same name every 2s tick.
+        // store (idempotent). First-party servers are queued for the download-confirmation modal
+        // (#1055) instead of cloned silently. The applied-set guards against re-applying the same name
+        // every 2s tick (and the modal's seen-set guards against re-prompting).
         try {
           const dbMcp = await invoke<string[]>("plan_list_mcp", { projectKey: effectiveProjectId });
+          const toDownload: string[] = [];
           for (const name of dbMcp ?? []) {
             const key = `${effectiveProjectId}::${name.toLowerCase()}`;
             if (mcpAppliedRef.current.has(key)) continue;
             mcpAppliedRef.current.add(key);
             applyMcpAssign(store, name, effectiveProjectId, store.bscBaseDir);
-            const link = catalogLink(name);
-            if (link) {
-              invoke("mcp_clone", { name: repoNameFromLink(link), url: link })
-                .catch((e) => console.warn(`mcp_clone(${name}) during planning failed:`, e));
-            }
+            if (catalogLink(name)) toDownload.push(name);
           }
+          if (toDownload.length) void enqueueMcpDownloads(toDownload);
         } catch { /* plan.db not created until the planner assigns an MCP server — ignore */ }
 
         // Authored blueprint is DB-owned (#1022) — the authoring planner records it with `bsc-plan
@@ -2591,6 +2636,14 @@ _Auto-generated by base-studio-code planner._`,
           onKeep={() => { void keepPlanFiles(); }}
           onRestart={() => { setShowBlueprintModal(false); void doClearPlan(); }}
           onDismiss={() => setShowBlueprintModal(false)}
+        />
+      )}
+
+      {mcpDownloads.length > 0 && (
+        <McpDownloadModal
+          items={mcpDownloads}
+          onConfirm={() => { void confirmMcpDownloads(); }}
+          onCancel={cancelMcpDownloads}
         />
       )}
 
