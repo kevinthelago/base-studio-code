@@ -1,17 +1,20 @@
-// Stage the bsc-plan sidecar for Tauri's `bundle.externalBin` (#1089).
+// Stage the bsc-plan + bsc-agent sidecars for Tauri's `bundle.externalBin` (#1089/#1117).
 //
-// Tauri's externalBin requires the binary on disk to be named with the target
-// triple (`binaries/bsc-plan-<triple>[.exe]`); at bundle time the bundler strips
-// the triple and copies it next to the app exe — exactly where `bsc_plan_bin_path()`
-// (current_exe().with_file_name("bsc-plan.exe")) looks at runtime.
+// Tauri's externalBin requires each binary on disk to be named with the target triple
+// (`binaries/<name>-<triple>[.exe]`); at bundle time the bundler strips the triple and
+// copies it next to the app exe — exactly where the runtime resolver looks
+// (current_exe().with_file_name("<name>[.exe]")).
 //
-// Run from `beforeBuildCommand`, so it fires for both a local `tauri build` and
-// every release-workflow leg, keyed off `TAURI_ENV_TARGET_TRIPLE` (set by the Tauri
-// CLI per target). The macOS release builds `universal-apple-darwin`, whose sidecar
-// must itself be a universal binary — so we build both Apple arches and `lipo` them.
+// Run from `beforeBuildCommand`, so it fires for both a local `tauri build` and every
+// release-workflow leg, keyed off `TAURI_ENV_TARGET_TRIPLE` (set by the Tauri CLI per
+// target). The macOS release builds `universal-apple-darwin`, whose sidecars must each be
+// a universal binary — so we build both Apple arches and `lipo` them.
 import { execSync } from "node:child_process";
 import { mkdirSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
+
+/** The sidecar binaries shipped beside the app. */
+const BINS = ["bsc-plan", "bsc-agent"];
 
 const run = (cmd) => execSync(cmd, { stdio: "inherit" });
 
@@ -24,33 +27,35 @@ function hostTriple() {
   return m[1].trim();
 }
 
-/** Build bsc-plan for one real rust target; return the path to the produced binary. */
-function buildOne(triple) {
-  run(`cargo build --release --target ${triple} --bin bsc-plan`);
+/** Build one bin for one real rust target; return the path to the produced binary. */
+function buildOne(name, triple) {
+  run(`cargo build --release --target ${triple} --bin ${name}`);
   const ext = triple.includes("windows") ? ".exe" : "";
-  return join("target", triple, "release", `bsc-plan${ext}`);
+  return join("target", triple, "release", `${name}${ext}`);
 }
 
 const triple = process.env.TAURI_ENV_TARGET_TRIPLE || hostTriple();
 const outDir = join("src-tauri", "binaries");
 mkdirSync(outDir, { recursive: true });
 
-if (triple === "universal-apple-darwin") {
-  // No real rustc target named "universal" — build both slices and fuse with lipo.
-  const arm = buildOne("aarch64-apple-darwin");
-  const intel = buildOne("x86_64-apple-darwin");
-  // Stage the per-arch reals too: Tauri's externalBin check may validate the per-arch
-  // name during each slice's compile (not just the lipo'd universal one), so a real
-  // binary must exist under every name the universal build might look for (#1091).
-  copyFileSync(arm, join(outDir, "bsc-plan-aarch64-apple-darwin"));
-  copyFileSync(intel, join(outDir, "bsc-plan-x86_64-apple-darwin"));
-  const dst = join(outDir, "bsc-plan-universal-apple-darwin");
-  run(`lipo -create -output ${dst} ${arm} ${intel}`);
-  console.log(`staged universal sidecar (+ per-arch) -> ${dst}`);
-} else {
-  const ext = triple.includes("windows") ? ".exe" : "";
-  const src = buildOne(triple);
-  const dst = join(outDir, `bsc-plan-${triple}${ext}`);
-  copyFileSync(src, dst);
-  console.log(`staged sidecar -> ${dst}`);
+for (const name of BINS) {
+  if (triple === "universal-apple-darwin") {
+    // No real rustc target named "universal" — build both slices and fuse with lipo.
+    const arm = buildOne(name, "aarch64-apple-darwin");
+    const intel = buildOne(name, "x86_64-apple-darwin");
+    // Stage the per-arch reals too: Tauri's externalBin check may validate the per-arch
+    // name during each slice's compile (not just the lipo'd universal one), so a real
+    // binary must exist under every name the universal build might look for (#1091).
+    copyFileSync(arm, join(outDir, `${name}-aarch64-apple-darwin`));
+    copyFileSync(intel, join(outDir, `${name}-x86_64-apple-darwin`));
+    const dst = join(outDir, `${name}-universal-apple-darwin`);
+    run(`lipo -create -output ${dst} ${arm} ${intel}`);
+    console.log(`staged universal sidecar (+ per-arch) -> ${dst}`);
+  } else {
+    const ext = triple.includes("windows") ? ".exe" : "";
+    const src = buildOne(name, triple);
+    const dst = join(outDir, `${name}-${triple}${ext}`);
+    copyFileSync(src, dst);
+    console.log(`staged sidecar -> ${dst}`);
+  }
 }
