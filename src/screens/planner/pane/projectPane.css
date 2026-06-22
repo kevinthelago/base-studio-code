@@ -240,7 +240,6 @@
   background: color-mix(in oklch, var(--success), transparent 86%);
   border-color: color-mix(in oklch, var(--success), transparent 55%);
 }
-.features-view .feature-stream { font-family: var(--mono); font-size: 8.5px; color: var(--fg-dim); white-space: nowrap; }
 
 .features-view .feature-behavior {
   font-family: var(--mono); font-size: 9.5px; color: var(--fg-muted);
