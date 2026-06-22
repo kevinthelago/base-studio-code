@@ -1,0 +1,21 @@
+{
+  "name": "Dependencies",
+  "glyph": "◈",
+  "gate": "≥1 dependency locked",
+  "deps": [
+    "context",
+    "repos",
+    "features"
+  ],
+  "gateRule": {
+    "require": [
+      {
+        "signal": "dependenciesDefined",
+        "target": 1,
+        "label": "lock at least one dependency in the manifest"
+      }
+    ]
+  },
+  "blurb": "Lock the libraries every repo depends on — once, so the fleet never fights over them.",
+  "prompt": "Lock the project's dependencies ONCE, here, so the parallel fleet never each adds and redefines\nthem in their own worktrees (which collide at integration). Knowing the stack, the linked repos, and\nthe features, enumerate the libraries each repo needs.\n\nWrite them to `dependencies.json` — a JSON array, one entry per library:\n```json\n[\n  { \"repo\": \"owner/app\", \"ecosystem\": \"npm\",   \"name\": \"zod\",   \"version\": \"^3.23\", \"why\": \"runtime schema validation\" },\n  { \"repo\": \"owner/app\", \"ecosystem\": \"npm\",   \"name\": \"vitest\", \"version\": \"^2.0\",  \"dev\": true, \"why\": \"unit tests\" },\n  { \"repo\": \"owner/api\", \"ecosystem\": \"cargo\", \"name\": \"serde\",  \"version\": \"1\",      \"why\": \"(de)serialization\" }\n]\n```\nFields: `repo` (`owner/repo`; omit to apply to every repo of that ecosystem), `ecosystem` (`npm` or\n`cargo`), `name`, `version` (a range/version; omit ⇒ latest), `dev` (true for dev/test-only deps),\nand a one-line `why`. Propose the set, interrogate it (is each one needed? right version? runtime vs\ndev?), then write the file. These become each repo's real `package.json` / `Cargo.toml` at publish and\nare inlined into every worker as the locked, authoritative set.\n\nGate: at least one dependency is locked in `dependencies.json`."
+}
