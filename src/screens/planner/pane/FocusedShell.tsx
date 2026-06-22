@@ -130,14 +130,6 @@ export function PhaseHeader({ phase, pill, promptHelp }: {
   return (
     <div className="ph-head" style={{ position: "relative" }}>
       {promptHelp && <StagePromptHelp prompts={promptHelp.prompts} onInject={promptHelp.onInject} />}
-      <div className="ph-eyebrow">
-        <span className="num">PHASE {String(phase.index + 1).padStart(2, "0")} / {String(phase.total).padStart(2, "0")}</span>
-        <span>·</span><span>{phase.key}</span>
-        {phase.optional && <span style={{
-          marginLeft: 6, fontSize: 8.5, color: "var(--fg-dim)", border: "1px solid var(--border-soft)",
-          borderRadius: 999, padding: "0 6px", textTransform: "none", letterSpacing: 0,
-        }}>optional</span>}
-      </div>
       <div className="ph-title"><h2>{phase.name}</h2></div>
       <p className="ph-blurb">{phase.blurb}</p>
       <span
