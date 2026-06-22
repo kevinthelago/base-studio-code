@@ -43,11 +43,25 @@ export function deriveTopics(stackText: string, extra: string[] = []): string[] 
   return [...new Set(all)].slice(0, 20);
 }
 
+/** A planned feature, reduced to what the README renders. */
+export interface ReadmeFeature {
+  name: string;
+  behavior?: string;
+}
+
 export interface ReadmeOpts {
   /** `owner/repo`. */
   fullName: string;
-  /** Concise repo description (the project goal's first line). */
+  /** Concise repo description / tagline (the project goal's first line). */
   description: string;
+  /** The full goal prose → the Overview section (falls back to `description`). */
+  goal?: string;
+  /** The scope section text → a Scope section (omitted when absent). */
+  scope?: string;
+  /** The architecture section text → an Architecture section (omitted when absent). */
+  architecture?: string;
+  /** The planned features → a bulleted Features section (omitted when empty). */
+  features?: ReadmeFeature[];
   /** The stack section text (verbatim, for the Tech stack section). */
   stackText?: string;
   /** Workflow filenames under `.github/workflows/` (e.g. `["ci.yml"]`) → CI status badges. */
@@ -57,13 +71,39 @@ export interface ReadmeOpts {
 }
 
 /**
- * Build a thorough README with badges. Badges: one CI status badge per workflow file, plus
- * license + last-commit shields. Falls back gracefully — no workflows ⇒ no CI badges.
+ * A stack-aware Getting-started body. Detects the toolchain from the stack text and emits the
+ * right install/run commands (npm / cargo / pip / go), falling back to a generic comment when
+ * nothing is recognized. Returns the lines *inside* the ```bash fence (clone is added by the caller).
+ */
+function gettingStartedCmds(stackText: string): string[] {
+  const s = stackText.toLowerCase();
+  const out: string[] = [];
+  if (/\bnode(\.?js)?\b|\bnpm\b|\bvite\b|\breact\b|\bnext\b|\btypescript\b|\btauri\b/.test(s)) {
+    out.push("npm install", "npm run dev");
+  }
+  if (/\bcargo\b|\brust\b|\btauri\b/.test(s)) {
+    out.push("cargo build", "cargo run");
+  }
+  if (/\bpython\b|\bdjango\b|\bflask\b|\bfastapi\b/.test(s)) {
+    out.push("pip install -r requirements.txt");
+  }
+  if (/\bgo(lang)?\b/.test(s)) {
+    out.push("go mod download", "go run .");
+  }
+  return out.length ? out : ["# install dependencies and run the project's build/test/dev commands"];
+}
+
+/**
+ * Build a thorough README with badges, driven by whatever plan content is available at publish.
+ * Sections render only when their input is present (graceful fallbacks), in this order: Overview
+ * (full goal), Scope, Features, Tech stack, Architecture, Getting started, Contributing, License.
+ * Badges: one CI status badge per workflow file, plus license + last-commit shields.
  */
 export function buildReadme(opts: ReadmeOpts): string {
-  const { fullName, description, stackText, workflows = [], defaultBranch = "main" } = opts;
+  const { fullName, description, goal, scope, architecture, features = [], stackText, workflows = [], defaultBranch = "main" } = opts;
   const [owner, repo] = fullName.split("/");
   const name = shortName(fullName);
+  const clean = (s?: string) => (s ?? "").trim();
 
   const badges: string[] = [];
   for (const wf of workflows) {
@@ -82,19 +122,39 @@ export function buildReadme(opts: ReadmeOpts): string {
     "",
     "## Overview",
     "",
-    description || "Describe what this project does and who it's for.",
+    clean(goal) || description || "Describe what this project does and who it's for.",
     "",
   ];
-  if (stackText && stackText.trim()) {
-    lines.push("## Tech stack", "", stackText.trim(), "");
+
+  if (clean(scope)) {
+    lines.push("## Scope", "", clean(scope), "");
   }
+
+  const feats = features.filter((f) => f && f.name && f.name.trim());
+  if (feats.length) {
+    lines.push("## Features", "");
+    for (const f of feats) {
+      const b = clean(f.behavior);
+      lines.push(b ? `- **${f.name.trim()}** — ${b}` : `- **${f.name.trim()}**`);
+    }
+    lines.push("");
+  }
+
+  if (clean(stackText)) {
+    lines.push("## Tech stack", "", clean(stackText), "");
+  }
+
+  if (clean(architecture)) {
+    lines.push("## Architecture", "", clean(architecture), "");
+  }
+
   lines.push(
     "## Getting started",
     "",
     "```bash",
     `git clone https://github.com/${owner}/${repo}.git`,
     `cd ${name}`,
-    "# install dependencies and run the project's build/test/dev commands",
+    ...gettingStartedCmds(clean(stackText)),
     "```",
     "",
     "## Contributing",
