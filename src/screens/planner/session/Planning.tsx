@@ -32,7 +32,7 @@ import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks, type PlanIssue } from "../issues/planIssues";
 import { pruneCompletedStreams, doneIssueRefs } from "../fleet/streamCompletion";
 import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
-import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "../pane/ProjectPane";
+import { ProjectPane } from "../pane/ProjectPane";
 import { publishFleetRoster } from "../../../lib/fleet/fleetRoster";
 import { hubToCanonical } from "../../../lib/planner/plannerSync";
 import { tunnelSetPlanState } from "../../../lib/tunnel/tunnelClient";
@@ -321,7 +321,6 @@ export function Planning({ visible }: { visible: boolean }) {
     projectBlueprintId, setProjectBlueprintId,
     uiScreens, uiApproved, planAutomations,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
-    togglePinnedContext,
     addProjectRepo, fleetStartProject,
     agentProfiles,
     commands, schedules,
@@ -475,9 +474,6 @@ export function Planning({ visible }: { visible: boolean }) {
     });
   }, [savedSections, confirmedSet]);
 
-  // Key→section lookup (the section progress rail that also needed the tier grouping was
-  // removed in #776/#778 — the focused pane's blueprint-driven rail replaces it).
-  const sectionByKey = useMemo(() => new Map(sections.map(s => [s.k, s])), [sections]);
   // Sync the planner's commands.json (the reliable channel — surfaced by the file
   // poll like plan sections, so it can't be lost in the PTY stream) into the
   // per-project/repo command store. Additive: file commands merge in; manual
@@ -972,8 +968,6 @@ export function Planning({ visible }: { visible: boolean }) {
   const [restarting, setRestarting] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false); // clear-plan confirmation modal (#…)
 
-  const [docsSync, setDocsSync] = useState<SyncState>("idle");
-  const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
   const [triaging, setTriaging] = useState(false);
   const [triageError, setTriageError] = useState<string | null>(null); // launch-failure surfacing (#551)
   const [triageNote, setTriageNote] = useState<string | null>(null);   // progress-gated relaunch summary (#1004)
@@ -1012,14 +1006,13 @@ export function Planning({ visible }: { visible: boolean }) {
   // ── Planning autopilot (#746) ───────────────────────────────────────────────
   // Driven by the Settings "Automate planning with Claude" toggle. Answers the planner's own
   // discovery questions from the pitch + confirms each stage, driving to a publishable plan for
-  // review (never auto-publishes). The snapshot reads the SAME PLAN_STAGES gate model ProjectPane
-  // renders, so the autopilot and the UI agree on what's left.
+  // review (never auto-publishes). Progress + frontier read the SAME dynamic blueprint gate the
+  // focused pane renders (#1061 retired the legacy PLAN_STAGES gate), so they can't disagree.
   const autopilotProgressPct = useMemo(() => {
-    const required = PLAN_STAGES.filter(st => !st.optional);
-    const fleet = planFleet[effectiveProjectId];
-    const done = required.filter(st => isStageGateMet(st, sections, linkedRepos, fleet)).length;
+    const required = phases.filter(p => !p.optional);
+    const done = required.filter(p => p.status === "complete" || p.status === "ahead").length;
     return required.length ? Math.round((done / required.length) * 100) : 0;
-  }, [sections, linkedRepos, planFleet, effectiveProjectId]);
+  }, [phases]);
   // The plan is "ready" when every non-optional stage's gate is met — gates the Triage launch
   // (#444/#551) the same way the autopilot decides the plan is publishable.
   // Triage unlocks on the SAME completion the focused footer publishes on — the blueprint-driven
@@ -1090,18 +1083,13 @@ export function Planning({ visible }: { visible: boolean }) {
       const grew = len > apLastSnapLen.current;
       apLastSnapLen.current = len;
       const plannerAwaiting = !grew && len > apLastAnswered.current;
-      const fleet = planFleet[effectiveProjectId];
-      // Frontier = first NON-optional stage whose gate isn't met (optional stages never block).
-      const required = PLAN_STAGES.filter(st => !st.optional);
-      const frontier = required.find(st => !isStageGateMet(st, sections, linkedRepos, fleet));
-      // Confirmable = the frontier stage's required sections that are drafted but unconfirmed.
-      const confirmKeys = frontier
-        ? frontier.requiredConfirmed.filter(k => sectionByKey.get(k)?.state === "drafted")
-        : [];
-      const done = required.filter(st => isStageGateMet(st, sections, linkedRepos, fleet)).length;
+      // The dynamic blueprint gate (#1061): non-optional phases done = gate met; the frontier is
+      // the active phase, and its drafted-but-unconfirmed sections are what the autopilot confirms.
+      const required = phases.filter(p => !p.optional);
+      const done = required.filter(p => p.status === "complete" || p.status === "ahead").length;
       return {
-        planReady: !frontier,
-        confirmKeys,
+        planReady: planComplete,
+        confirmKeys: pendingConfirm,
         plannerAwaiting,
         working: grew,
         autoPublish: false, // the feature stops at a publishable plan for review
@@ -1765,52 +1753,6 @@ export function Planning({ visible }: { visible: boolean }) {
   // issues. Every step is idempotent (check-then-create) so re-running acts as a
   // sync. Status is reported through ghStatus, keyed by the buildGhStructure ids,
   // so the GitHubStructureCard reflects each object as it is created.
-  // Context Files → push a consolidated PROJECT_PLAN.md into every repo's .github/.
-  async function handleSyncDocs() {
-    if (!githubToken || publishRepos.length === 0) return;
-    const token = githubToken;
-    setDocsSync("running");
-    try {
-      const put = (path: string, body: unknown) => invoke("github_put", { token, path, body });
-      const rest = <T,>(path: string) => invoke<T>("github_request", { token, path });
-      const parts = [`# ${projectTitle} — Project Plan\n`];
-      for (const s of sections) parts.push(`\n## ${s.title || s.k}\n\n${s.content}\n`);
-      const content = btoa(unescape(encodeURIComponent(parts.join("\n"))));
-      for (const repo of publishRepos) {
-        const path = `repos/${repo}/contents/.github/PROJECT_PLAN.md`;
-        let sha: string | undefined;
-        try { const ex = await rest<{ sha?: string }>(path); sha = ex?.sha; } catch { /* file absent */ }
-        await put(path, { message: "docs: sync project plan", content, ...(sha ? { sha } : {}) });
-      }
-      setDocsSync("done");
-    } catch (e) {
-      console.error("sync docs failed:", e);
-      setDocsSync("error");
-    }
-  }
-
-  // Agents → ensure each fleet stream's `stream:<id>` label exists in every repo.
-  async function handleSyncLabels() {
-    if (!githubToken || publishRepos.length === 0) return;
-    const streams = planFleet[effectiveProjectId]?.streams ?? [];
-    if (streams.length === 0) { setLabelsSync("error"); return; }
-    const token = githubToken;
-    setLabelsSync("running");
-    try {
-      const post = (path: string, body: unknown) => invoke("github_post", { token, path, body });
-      for (const repo of publishRepos) {
-        for (const st of streams) {
-          // Idempotent: GitHub 422s when the label already exists — ignore it.
-          await post(`repos/${repo}/labels`, { name: `stream:${st.id}`, color: "5319e7" }).catch(() => {});
-        }
-      }
-      setLabelsSync("done");
-    } catch (e) {
-      console.error("sync labels failed:", e);
-      setLabelsSync("error");
-    }
-  }
-
   // Header button → clone the repos and launch the planned agent fleet (recommended workers + director).
   async function launchTriage() {
     const fleet = planFleet[effectiveProjectId];
@@ -2520,11 +2462,7 @@ _Auto-generated by base-studio-code planner._`,
           {publishPhase === "idle" ? (
             <ProjectPane
               data={paneData}
-              projectName={projectTitle}
               projectId={effectiveProjectId}
-              sections={sections}
-              linkedRepos={publishRepos}
-              fleet={planFleet[effectiveProjectId]}
               onPerm={(id, perm) => setPlanAgentStreamPerm(effectiveProjectId, id, perm)}
               onPreset={(id, preset, perm) => setPlanAgentStreamPreset(effectiveProjectId, id, preset, perm)}
               onFlow={(id, f) => setPlanAgentStreamFlow(effectiveProjectId, id, {
@@ -2532,11 +2470,6 @@ _Auto-generated by base-studio-code planner._`,
                 push: (f.push === "auto-PR" ? "auto-pr" : f.push) as FlowPush,
                 gate: f.gate as FlowGate,
               })}
-              onTogglePin={(name) => togglePinnedContext(effectiveProjectId, name)}
-              onSyncStructure={githubToken && publishRepos.length > 0 ? handlePublish : undefined}
-              onSyncDocs={githubToken && publishRepos.length > 0 ? handleSyncDocs : undefined}
-              onSyncLabels={githubToken && publishRepos.length > 0 ? handleSyncLabels : undefined}
-              syncState={{ structure: "idle", docs: docsSync, labels: labelsSync }}
               onLinkRepo={(repo) => addProjectRepo(effectiveProjectId, repo)}
               onDeployChange={(next) => setPlanDeployConfig(effectiveProjectId, next)}
               onTopology={(t) => setPlanFleetTopology(effectiveProjectId, t)}
@@ -2556,6 +2489,9 @@ _Auto-generated by base-studio-code planner._`,
                 // Per-stage "?" prompt helper (#…): the user injects a stage prompt on demand
                 // (the auto-injecting conductor was removed).
                 promptHelp: { prompts: focusStagePrompts, onInject: sendPrompt },
+                // The live required-context set (#1061): the Context body names each required file
+                // as written/missing so the gate's "why" is visible at a glance.
+                requiredContext: ctxRequired,
                 // Once a board exists, the publish action reads as "Update GitHub" — a re-sync of
                 // the plan, not a first publish (handlePublish sets activeProjectId on create) (#823).
                 published: !!activeProjectId,
