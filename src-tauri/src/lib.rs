@@ -17,6 +17,7 @@ mod pty;
 mod bsc;
 mod planner;
 mod data;
+mod llm;
 
 // ── Logging / performance ────────────────────────────────────────────────────
 
@@ -814,46 +815,36 @@ async fn pick_directory() -> Option<String> {
 
 // ── Claude API (knowledge store) ─────────────────────────────────────────────
 
+/// Provider-agnostic one-shot chat completion (#1079 / epic #1078). Dispatches to
+/// the `provider` (default `"anthropic"`) via the [`llm`] layer; every provider
+/// normalizes its reply to `{ content: [...], usage }`, so callers are unchanged.
+/// `provider`/`model` are optional — omitting them preserves the legacy Anthropic
+/// `claude-sonnet-4-6` behavior verbatim.
 #[tauri::command]
 async fn kb_chat(
     messages: Vec<serde_json::Value>,
     system: String,
     tools: Vec<serde_json::Value>,
     api_key: String,
+    provider: Option<String>,
+    model: Option<String>,
 ) -> Result<serde_json::Value, String> {
     if api_key.is_empty() {
         return Err("No API key configured. Add it in Settings → Integrations.".to_string());
     }
-    let client = reqwest::Client::new();
-    let body = serde_json::json!({
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 4096,
-        "system": system,
-        "messages": messages,
-        "tools": tools,
-    });
-    let response = client
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", &api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-    if !status.is_success() {
-        let err = json["error"]["message"]
-            .as_str()
-            .unwrap_or("Unknown error")
-            .to_string();
-        return Err(format!("API error ({}): {}", status, err));
+    use llm::LlmProvider;
+    let provider = provider.unwrap_or_else(|| "anthropic".to_string());
+    let req = llm::LlmRequest {
+        model: model.unwrap_or_else(|| "claude-sonnet-4-6".to_string()),
+        system,
+        messages,
+        tools,
+        max_tokens: 4096,
+    };
+    match llm::resolve_provider(&provider)? {
+        llm::ProviderKind::Anthropic => llm::AnthropicProvider.complete(&req, &api_key).await,
+        llm::ProviderKind::OpenAi => llm::OpenAiProvider.complete(&req, &api_key).await,
     }
-    Ok(json)
 }
 
 // ── Workspaces ───────────────────────────────────────────────────────────────
