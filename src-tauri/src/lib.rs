@@ -829,11 +829,13 @@ async fn kb_chat(
     provider: Option<String>,
     model: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    if api_key.is_empty() {
-        return Err("No API key configured. Add it in Settings → Integrations.".to_string());
-    }
     use llm::LlmProvider;
     let provider = provider.unwrap_or_else(|| "anthropic".to_string());
+    let kind = llm::resolve_provider(&provider)?;
+    // Local (Ollama) needs no API key; every hosted provider does.
+    if api_key.is_empty() && !matches!(kind, llm::ProviderKind::Local) {
+        return Err("No API key configured. Add it in Settings → Integrations.".to_string());
+    }
     let req = llm::LlmRequest {
         model: model.unwrap_or_else(|| "claude-sonnet-4-6".to_string()),
         system,
@@ -841,9 +843,11 @@ async fn kb_chat(
         tools,
         max_tokens: 4096,
     };
-    match llm::resolve_provider(&provider)? {
+    match kind {
         llm::ProviderKind::Anthropic => llm::AnthropicProvider.complete(&req, &api_key).await,
         llm::ProviderKind::OpenAi => llm::OpenAiProvider.complete(&req, &api_key).await,
+        llm::ProviderKind::Gemini => llm::GeminiProvider.complete(&req, &api_key).await,
+        llm::ProviderKind::Local => llm::LocalProvider.complete(&req, &api_key).await,
     }
 }
 
