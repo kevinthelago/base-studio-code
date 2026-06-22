@@ -876,7 +876,6 @@ function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
               <span className="feature-name">{f.name}</span>
               <span style={{ flex: 1 }} />
               <span className={"feature-badge" + (done ? " done" : "")}>{done ? "✓ defined" : "○ drafting"}</span>
-              <span className="feature-stream" title="fleet stream">⑂ {f.stream ?? f.slug}</span>
             </div>
             {f.behavior && <div className="feature-behavior">{f.behavior}</div>}
 
