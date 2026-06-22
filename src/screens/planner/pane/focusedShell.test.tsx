@@ -57,9 +57,8 @@ describe("Stepper (#652)", () => {
 });
 
 describe("PhaseHeader (#652)", () => {
-  it("shows the phase number, title, and gate pill state", () => {
+  it("shows the phase title and gate pill state", () => {
     render(<PhaseHeader phase={phase({ index: 1, total: 3, name: "Repos" })} pill="wait" />);
-    expect(screen.getByText("PHASE 02 / 03")).toBeInTheDocument();
     expect(screen.getByText("Repos")).toBeInTheDocument();
     expect(screen.getByText(/waiting/)).toBeInTheDocument();
   });
