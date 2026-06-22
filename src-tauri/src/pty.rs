@@ -5,7 +5,6 @@
 use crate::{
     bsc_base_dir, to_bash_path, to_native_path, nearest_existing_ancestor, split_utf8_at_boundary,
 };
-use crate::harness::HarnessAdapter;
 use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
     BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
@@ -231,6 +230,15 @@ fn bsc_plan_bin_path() -> Option<std::path::PathBuf> {
     p.exists().then_some(p)
 }
 
+/// The absolute path of the `bsc-agent` runtime — the sidecar beside the running app exe (cargo
+/// target dir in dev; bundled sidecar in a release), or None if absent. Exposed as `$BSC_AGENT_BIN`
+/// for the `bsc-agent` shell helper to exec when a session runs on the bsc-agent harness (#1078 P3).
+fn bsc_agent_bin_path() -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) { "bsc-agent.exe" } else { "bsc-agent" };
+    let p = std::env::current_exe().ok()?.with_file_name(exe);
+    p.exists().then_some(p)
+}
+
 /// Build the environment for a session shell.
 ///
 /// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
@@ -293,9 +301,13 @@ pub(crate) async fn pty_create(
     let shell = resolved_shell.program.clone();
     let mut cmd = CommandBuilder::new(&shell);
 
-    // The session-harness adapter (#1078 P0) — owns the launch + pre-launch host setup so an
-    // alternative harness (bsc-agent) can plug in. Claude Code is the only impl today.
-    let harness = crate::harness::ClaudeCodeAdapter;
+    // The session-harness adapter (#1078 P0/P3) — owns the launch + pre-launch host setup. Selected
+    // from the console provider id: "bsc-agent" runs the model-agnostic runtime, everything else
+    // (incl. None) keeps Claude Code, the default. Boxed so both impls share the call sites below.
+    let harness: Box<dyn crate::harness::HarnessAdapter> = match provider_id.as_deref() {
+        Some("bsc-agent") => Box::new(crate::harness::BscAgentAdapter),
+        _ => Box::new(crate::harness::ClaudeCodeAdapter),
+    };
 
     // Self-heal a corrupt ~/.claude.json before this session can launch claude.
     // The repair (drop trailing junk, keep the leading valid object) already runs
@@ -409,6 +421,10 @@ pub(crate) async fn pty_create(
     }
     if let Some(bin) = bsc_plan_bin_path() {
         cmd.env("BSC_PLAN_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // The bsc-agent runtime sidecar (#1078 P3) — the `bsc-agent` harness's shell helper execs it.
+    if let Some(bin) = bsc_agent_bin_path() {
+        cmd.env("BSC_AGENT_BIN", to_bash_path(&bin.to_string_lossy()));
     }
 
     let child = pair.slave.spawn_command(cmd)

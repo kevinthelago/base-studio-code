@@ -736,7 +736,7 @@ fn read_project_files(project_key: String, subdir: String) -> Vec<(String, Strin
 /// keeps the whole value on one physical line (newlines become `\n`) and `$`,
 /// backticks, and double quotes are literal — so no shell expansion, no PS2
 /// continuation, and any prompt content survives intact.
-fn bash_ansi_c_quote(s: &str) -> String {
+pub(crate) fn bash_ansi_c_quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 4);
     out.push_str("$'");
     for c in s.chars() {
