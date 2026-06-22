@@ -84,9 +84,10 @@ function nodeGlyph(p: Phase, i: number): string {
 
 /**
  * The sequenced rail (#668): one node per phase joined by connectors. Solid connectors
- * trace the in-sequence path walked so far; the current node pulses with a "now" marker;
- * a banked-ahead node (gate met out of sequence) is green-ringed, reached by a dashed
- * connector + a "banked" pill. `highlight` pulses phases the user still has to finish.
+ * trace the in-sequence path walked so far; the current node pulses (accent ring); a
+ * banked-ahead node (gate met out of sequence) is green-ringed, reached by a dashed
+ * connector. Each node's glyph (◆ current · ↷ skipped · ✓ done) carries its state.
+ * `highlight` pulses phases the user still has to finish.
  */
 export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
   phases: Phase[]; selectedIdx: number; onSelect: (i: number) => void; highlight?: Set<string>;
@@ -102,13 +103,6 @@ export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
               onClick={() => onSelect(i)}
               title={p.name}
             >
-              {/* Fixed-height marker slot — always present so the node never shifts when a
-                  marker appears/disappears on state change (#668). */}
-              <span className="seqrail-marker">
-                {p.status === "active" && <span className="m-now">◆ now</span>}
-                {p.status === "ahead" && <span className="m-banked">banked</span>}
-                {p.status === "skipped" && <span className="m-skipped">skipped</span>}
-              </span>
               <span className="seqrail-node">{nodeGlyph(p, i)}</span>
               <span className="seqrail-label">{p.name}</span>
             </button>
