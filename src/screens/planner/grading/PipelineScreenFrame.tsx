@@ -10,7 +10,7 @@
 import type { ReactNode } from "react";
 
 export function PipelineScreenFrame({
-  label, badge, statusLabel, statusColor, actions, onClose, footer, fullWidth, children,
+  label, badge, statusLabel, statusColor, actions, onClose, footer, fullWidth, bare, children,
 }: {
   /** The ▸ title, e.g. "preview". */
   label: string;
@@ -28,6 +28,8 @@ export function PipelineScreenFrame({
   /** Fill the parent pane instead of the fixed 420px "second screen" width (e.g. the file
    *  intake surface, which is a full-width stage body). */
   fullWidth?: boolean;
+  /** Hide the header bar entirely — for a bare, full-pane surface (e.g. the file-intake drop box). */
+  bare?: boolean;
   /** The screen body. */
   children: ReactNode;
 }) {
@@ -36,17 +38,19 @@ export function PipelineScreenFrame({
       ...(fullWidth ? { flex: 1, minWidth: 0 } : { flex: "0 0 auto", width: 420, borderLeft: "1px solid var(--border-soft)" }),
       display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", background: "var(--bg-panel)",
     }}>
-      <div style={{
-        padding: "10px 14px", borderBottom: "1px solid var(--border-soft)",
-        display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
-      }}>
-        <span style={{ color: "var(--accent)" }}>▸ {label}</span>
-        {badge}
-        <span style={{ flex: 1 }} />
-        {statusLabel && <span style={{ fontSize: 10, color: statusColor ?? "var(--fg-dim)" }}>{statusLabel}</span>}
-        {actions}
-        {onClose && <button className="btn ghost sm" onClick={onClose} title="Close">✕</button>}
-      </div>
+      {!bare && (
+        <div style={{
+          padding: "10px 14px", borderBottom: "1px solid var(--border-soft)",
+          display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
+        }}>
+          <span style={{ color: "var(--accent)" }}>▸ {label}</span>
+          {badge}
+          <span style={{ flex: 1 }} />
+          {statusLabel && <span style={{ fontSize: 10, color: statusColor ?? "var(--fg-dim)" }}>{statusLabel}</span>}
+          {actions}
+          {onClose && <button className="btn ghost sm" onClick={onClose} title="Close">✕</button>}
+        </div>
+      )}
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         {children}
