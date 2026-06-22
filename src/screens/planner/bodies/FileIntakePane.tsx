@@ -118,7 +118,7 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
       fullWidth
       bare
     >
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, padding: 14, gap: 12, overflow: "auto" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, gap: 12, overflow: "auto" }}>
         {/* Drop zone */}
         <label
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
