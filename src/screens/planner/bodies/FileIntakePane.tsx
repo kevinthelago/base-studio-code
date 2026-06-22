@@ -116,6 +116,7 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
       statusColor={busy ? "var(--accent)" : "var(--fg-dim)"}
       onClose={onClose}
       fullWidth
+      bare
     >
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, padding: 14, gap: 12, overflow: "auto" }}>
         {/* Drop zone */}
@@ -124,6 +125,7 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
           onDragLeave={() => setDragOver(false)}
           onDrop={onDropFiles}
           style={{
+            flex: 1, minHeight: 0,
             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
             padding: "28px 16px", borderRadius: "var(--r-lg)", cursor: "pointer", textAlign: "center",
             border: "1.5px dashed " + (dragOver ? "var(--accent)" : "var(--border)"),
