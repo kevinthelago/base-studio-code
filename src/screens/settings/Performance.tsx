@@ -254,7 +254,7 @@ export function PerformanceSettings() {
 
       <div style={{ fontFamily: "var(--sans)", fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-dim)", marginTop: 12 }}>
         Samples are stored in <code style={{ fontFamily: "var(--mono)" }}>~/.base-studio-code/perf.db</code>.
-        Unbounded log files (audit.log, coord.log) are trimmed to {new Intl.NumberFormat().format(10000)} lines on each startup.
+        View, export, clear, and set retention for the telemetry logs in the <strong>Logs</strong> tab.
       </div>
     </div>
   );

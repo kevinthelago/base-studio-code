@@ -74,8 +74,6 @@ const RETENTION_EVERY: u64 = 100;
 /// up (no agents are even running at a fresh launch), and the 2s disk writes + IPC just pile
 /// contention onto the slowest moment of a launch.
 const STARTUP_GRACE_SECS: u64 = 20;
-/// Text logs longer than this are truncated to their newest N lines.
-pub const LOG_MAX_LINES: usize = 10_000;
 
 struct PerfInner {
     config: PerfConfig,
@@ -291,28 +289,6 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-// ── Log capping ───────────────────────────────────────────────────────────────
-
-/// Truncate `path` to its most recent `LOG_MAX_LINES` lines, in-place.
-/// Silently no-ops if the file doesn't exist or is already short enough.
-pub fn cap_log(path: &Path) {
-    let Ok(text) = std::fs::read_to_string(path) else { return };
-    let lines: Vec<&str> = text.lines().collect();
-    if lines.len() <= LOG_MAX_LINES { return; }
-    let tail = lines[lines.len() - LOG_MAX_LINES..].join("\n") + "\n";
-    if std::fs::write(path, tail.as_bytes()).is_ok() {
-        log::info!("perf: capped {} to {} lines", path.display(), LOG_MAX_LINES);
-    }
-}
-
-/// Cap the four known unbounded log files under `base_dir`.
-pub fn cap_logs(base_dir: &Path) {
-    for name in ["audit.log", "coord.log", "skills.log", "tokens.log"] {
-        let p = base_dir.join(name);
-        if p.exists() { cap_log(&p); }
-    }
-}
-
 // ── Background sampler task ───────────────────────────────────────────────────
 
 /// Spawned as a Tokio task from `run()`. Ticks at 1-second granularity so it
@@ -501,27 +477,6 @@ mod tests {
             .unwrap();
         assert!(rows < 60_000, "size cap pruned the oldest rows (kept {rows})");
         let _ = std::fs::remove_file(&db_path);
-    }
-
-    #[test]
-    fn log_cap_keeps_most_recent_lines() {
-        let pid = std::process::id();
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let path = std::env::temp_dir().join(format!("cap-{pid}-{nanos}.log"));
-        let total = LOG_MAX_LINES + 500;
-        let content: String = (0..total).map(|i| format!("line {i}\n")).collect();
-        std::fs::write(&path, &content).unwrap();
-        cap_log(&path);
-        let result = std::fs::read_to_string(&path).unwrap();
-        let n = result.lines().count();
-        assert_eq!(n, LOG_MAX_LINES);
-        // Last line must be from the end of the original file.
-        assert!(result.contains(&format!("line {}", total - 1)), "newest line retained");
-        assert!(!result.contains("line 0\n"), "oldest line dropped");
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
