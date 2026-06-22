@@ -6,9 +6,13 @@
 //! across providers. This is the same provider abstraction `bsc-agent` will reuse.
 
 mod anthropic;
+mod gemini;
+mod local;
 mod openai;
 
 pub use anthropic::AnthropicProvider;
+pub use gemini::GeminiProvider;
+pub use local::LocalProvider;
 pub use openai::OpenAiProvider;
 
 /// A provider-agnostic chat-completion request. `messages` and `tools` are passed
@@ -33,14 +37,18 @@ pub trait LlmProvider {
 pub enum ProviderKind {
     Anthropic,
     OpenAi,
+    Gemini,
+    Local,
 }
 
-/// Resolve a provider name (`"anthropic"` | `"openai"`) to a [`ProviderKind`].
-/// Errors on an unknown provider rather than silently defaulting.
+/// Resolve a provider name (`"anthropic"` | `"openai"` | `"gemini"` | `"local"`) to a
+/// [`ProviderKind`]. Errors on an unknown provider rather than silently defaulting.
 pub fn resolve_provider(name: &str) -> Result<ProviderKind, String> {
     match name {
         "anthropic" => Ok(ProviderKind::Anthropic),
         "openai" => Ok(ProviderKind::OpenAi),
+        "gemini" => Ok(ProviderKind::Gemini),
+        "local" => Ok(ProviderKind::Local),
         other => Err(format!("Unknown LLM provider: '{other}'")),
     }
 }
@@ -53,7 +61,9 @@ mod tests {
     fn resolve_provider_accepts_known_and_rejects_unknown() {
         assert!(matches!(resolve_provider("anthropic"), Ok(ProviderKind::Anthropic)));
         assert!(matches!(resolve_provider("openai"), Ok(ProviderKind::OpenAi)));
-        assert!(resolve_provider("gemini").is_err());
+        assert!(matches!(resolve_provider("gemini"), Ok(ProviderKind::Gemini)));
+        assert!(matches!(resolve_provider("local"), Ok(ProviderKind::Local)));
+        assert!(resolve_provider("mistral").is_err());
         assert!(resolve_provider("").is_err());
     }
 }
