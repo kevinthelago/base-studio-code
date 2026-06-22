@@ -21,9 +21,10 @@ import {
 import { parseCommandsFile } from "../../../lib/session/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/session/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, SKILLS_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
 } from "../stages/planSections";
+import { parseSkillsFile } from "../../../lib/session/skills";
 import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
@@ -490,6 +491,22 @@ export function Planning({ visible }: { visible: boolean }) {
     for (const [repo, list] of Object.entries(repos))
       for (const c of list) store.addRepoAllowedCommand(effectiveProjectId, repo, c);
   }, [savedSections, effectiveProjectId]);
+
+  // Sync the planner's skills.json (the reliable file-poll channel, like commands.json) into the
+  // GLOBAL skills library (#404/#1086). The planner proposes new reusable skills and writes the
+  // file; this upserts them (by id/name-slug, so a re-emitted skill refines in place) so they
+  // become real, reusable, and delivered to the fleet as `.claude/skills/<slug>/SKILL.md` at launch.
+  // Without this wire the planner's authored skills were written and discarded. Runs only when the
+  // file changes; defaults follow parseSkillsFile (enabled + pinned; global unless the planner
+  // scopes `projects`).
+  const skillsSyncedRef = useRef("");
+  useEffect(() => {
+    const raw = savedSections[SKILLS_KEY] ?? "";
+    if (raw === skillsSyncedRef.current) return;
+    skillsSyncedRef.current = raw;
+    const defs = parseSkillsFile(raw);
+    if (defs.length) useAppStore.getState().upsertSkills(defs);
+  }, [savedSections]);
 
   // Sync fleet.json (the reliable channel — surfaced by the poll as the `fleet`
   // section) into the fleet store. Wholesale-replace, but only when the file's
