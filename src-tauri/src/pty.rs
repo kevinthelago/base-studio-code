@@ -3,9 +3,9 @@
 // (extracted from lib.rs, #758).
 
 use crate::{
-    bsc_base_dir, to_bash_path, to_native_path, nearest_existing_ancestor, claude_launch, claude_model_flag,
-    has_claude_history, split_utf8_at_boundary,
+    bsc_base_dir, to_bash_path, to_native_path, nearest_existing_ancestor, split_utf8_at_boundary,
 };
+use crate::harness::HarnessAdapter;
 use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
     BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
@@ -452,27 +452,25 @@ pub(crate) async fn pty_create(
     // and the baked startup prompt is dropped — so a fresh project would launch
     // into nothing. When there's no history we fall back to a fresh session, which
     // still delivers the prompt.
-    let resume = continue_session.unwrap_or(false) && has_claude_history(&cwd);
+    // The session harness (#1078 P0): ClaudeCodeAdapter is the only impl today; it reproduces the
+    // exact launch behavior this block had inline. bsc-agent becomes a second adapter (P2).
+    let harness = crate::harness::ClaudeCodeAdapter;
+    let resume = continue_session.unwrap_or(false) && harness.detect_history(&cwd);
     let launch = match startup_prompt.as_deref().filter(|s| !s.is_empty()) {
-        Some(p) => Some(claude_launch(p, resume)),
+        Some(p) => Some(harness.launch_command(p, resume)),
         None => init_cmd.as_deref().filter(|s| !s.is_empty()).map(|s| s.to_string()),
     };
     // Whether the launch would start `claude` — the only command the degraded
     // non-bash path replays (an arbitrary bash init_cmd would be invalid there).
-    let launch_claude = launch.as_deref().map(|s| s.contains("claude")).unwrap_or(false);
+    let launch_claude = launch.as_deref().map(|s| harness.is_harness_launch(s)).unwrap_or(false);
     // The default `--model` alias for this session (per-pane override or global
-    // default, mapped from the UI model id). None ⇒ Claude Code's own default.
-    let model_alias = model.as_deref().and_then(claude_model_flag);
+    // default, mapped from the UI model id). None ⇒ the harness's own default.
+    let model_alias = model.as_deref().and_then(|m| harness.model_flag(m));
     // The `claude()` shell wrapper: it emits the run/idle OSC markers AND injects the
     // session's default model, so BOTH the auto-launch below and anything the user
     // types pick it up. Skip the injection when the call already carries `--model`
     // (whole-word match, so prompt text containing the string can't trip it).
-    let claude_fn = match model_alias {
-        Some(m) => format!(
-            "claude() {{ __bsc_state run; case \" $* \" in *\" --model \"*) command claude \"$@\";; *) command claude --model {m} \"$@\";; esac; }}; "
-        ),
-        None => "claude() { __bsc_state run; command claude \"$@\"; }; ".to_string(),
-    };
+    let claude_fn = harness.shell_fn(model_alias.as_deref());
     let init_line = match resolved_shell.kind {
         crate::shell::ShellKind::Bash => {
             let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
@@ -507,7 +505,7 @@ pub(crate) async fn pty_create(
         // are bash-only, so run a degraded init that cd's, clears, and prints a visible
         // notice (no silent breakage, #447).
         crate::shell::ShellKind::PowerShell | crate::shell::ShellKind::Cmd => {
-            crate::shell::non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude, model_alias)
+            crate::shell::non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude, model_alias.as_deref())
         }
     };
     writer.write_all(init_line.as_bytes()).ok();
