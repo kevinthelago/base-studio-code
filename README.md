@@ -1,6 +1,6 @@
 > ⚠️ **This application creates issues, milestones, repositories, etc. by default — please be aware!** The project planning page will show you everything that will be done before it happens.
 
-> 📍 **Where we are:** `1.0.3` is the current release — the **simplicity release**: a foolproof, stripped-down **Default** blueprint for new users (the advanced stages moved to a new **Complete** blueprint), the planner consolidation (Blueprints folded into the planner page, live render-preview), and a batch of polish. **Next up is `1.0.4` — enterprise integration & migration:** pull data from the systems businesses already run on — **ERP, CRM, BPM** and others — into canonical **data models**, then generate your own **bespoke software** to replace them, with compliance baked in. See the [Roadmap](#roadmap).
+> 📍 **Where we are:** `1.0.3` is the **current version — in active development**, focused on **user experience, resiliency, and the core Default (greenfield) blueprint and its triage**. We release builds early and keep improving a version until its theme is complete, so `1.0.3` is *Current*, not done. Landed so far: a foolproof, stripped-down **Default** blueprint (advanced stages moved to a new **Complete** blueprint), the planner consolidation (Blueprints folded into the planner page, live render-preview), the plan working-store moved to **plan.db**, **crash recovery** (one-click restore after an unclean shutdown), and **progress-gated triage** (resumes from plan.db and skips workers that already finished). **Next up is `1.0.4` — enterprise integration & migration:** pull data from the systems businesses already run on — **ERP, CRM, BPM** and others — into canonical **data models**, then generate your own **bespoke software** to replace them, with compliance baked in. See the [Roadmap](#roadmap).
 
 # base-studio-code
 
@@ -125,11 +125,17 @@ base-studio-code (desktop host)
 
 A snapshot of where the platform is and where it's headed. (Dates aren't promised; sequence is.)
 
-**✅ Shipped — `1.0.3` (current) · the simplicity release**
-- A **foolproof Default blueprint** — trimmed to the essential greenfield path (context → repos → deploy → features → UI → structure → permissions); the advanced stages (MCP servers, automations, skills) moved to a new **Complete** blueprint
-- Planning → blueprints → parallel agent **fleet** (least-privilege workers in git worktrees, coordinated by a director)
-- **Blueprints** — lifecycle categories, the drag-reorder editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, file intake, gist sharing, authoring your own blueprint; Blueprints folded into the planner page with the live render-preview pane
-- **Deploy** stage + pane, parallel **console** sessions, **Knowledge Store**, **GitHub** integration, **automations**, **MCP extensions**, the optional **mobile tunnel** (zero-knowledge Cloudflare relay, Noise IK E2E), and enterprise-grade planning dimensions baked into the planner
+**🚧 Current — `1.0.3` · user experience, resiliency & the core Default blueprint and its triage**
+
+> We ship builds from this version early and keep working it until the theme is complete — so `1.0.3` is **Current**, not closed. The items below have landed; the version stays open for more UX, resiliency, and triage polish until done.
+
+- **Simplicity** — a foolproof, trimmed **Default** blueprint (context → repos → deploy → features → UI → structure → permissions); the advanced stages (MCP servers, automations, skills) moved to a new **Complete** blueprint
+- **Planner consolidation** — Blueprints folded into the planner page with the live render-preview; lifecycle categories, the drag-reorder editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, file intake, gist sharing, and authoring your own blueprint
+- **plan.db working store** — the plan's live state (context required-set, fleet + per-stream permissions, deploy, MCP, the authored blueprint, issues) moved into a per-project SQLite store, rehydratable from GitHub
+- **Progress-gated triage** — relaunch reads issue status from plan.db, resumes from what changed, and **skips workers that already finished** so completed work doesn't restart
+- **Resiliency** — **crash recovery** (unclean-shutdown detection + one-click session restore), faster/lazier boot (metrics + logging deferred off the startup path), and durable per-project repo links
+- **Fleet model** — least-privilege workers in git worktrees coordinated by a director; workers build against planned contracts **in parallel** (no runtime dependency-wait) and don't spin up their own sub-agents
+- Parallel **console** sessions, **Knowledge Store**, **GitHub** integration, **automations**, **MCP extensions**, the **Deploy** stage + pane, and the optional **mobile tunnel** (zero-knowledge Cloudflare relay, Noise IK E2E)
 
 **🔜 Next — `1.0.4` · enterprise integration & migration**
 - **Pull data from enterprise systems** — ERP, CRM, BPM, and other software solutions — into canonical **data models** via MCP connectors
@@ -146,6 +152,8 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 ## Versioning & Releases
 
 base-studio-code is at the **`1.0.x`** series and under active development. **`1.0.0` was the first official release** — the first version considered stable and ready for general use. The `1.0.x` line is bumped conservatively: **patch** bumps for fixes and small improvements, **minor** bumps for feature releases (e.g. enterprise integration & migration lands as `1.0.4`).
+
+We work one version at a time, **release-and-continue**: a version ships builds early and stays **Current** — actively worked — until its theme is complete; only then does the next minor become the focus. A released build is a checkpoint, not the end of the version.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
 
