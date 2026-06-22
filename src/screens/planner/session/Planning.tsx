@@ -26,6 +26,7 @@ import {
 } from "../stages/planSections";
 import { parseSkillsFile } from "../../../lib/session/skills";
 import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
+import { parseDependenciesFile, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
@@ -467,7 +468,8 @@ export function Planning({ visible }: { visible: boolean }) {
     const keys = new Set<string>(ANCHOR_KEYS);
     for (const k of Object.keys(savedSections)) {
       // `blueprint` is the authored-blueprint JSON (#923), not a discovery section — never a card.
-      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== "blueprint") keys.add(k);
+      // `dependencies` is the locked manifest JSON (#1111) — gate-driving, not a prose card.
+      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== DEPENDENCIES_KEY && k !== "blueprint") keys.add(k);
     }
     const { project, repos } = groupSections([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
@@ -558,7 +560,7 @@ export function Planning({ visible }: { visible: boolean }) {
       else if (k === FLEET_KEY) fleetJson = v;
       else if (k === "repos") reposJson = v;
       else if (k === SKIPPED_KEY) skippedContent = v;
-      else if (k === COMMANDS_KEY || k === FEATURES_KEY) continue;
+      else if (k === COMMANDS_KEY || k === FEATURES_KEY || k === DEPENDENCIES_KEY) continue;
       else md[k] = v;
     }
     const { files, meta } = hubToCanonical({
@@ -586,6 +588,13 @@ export function Planning({ visible }: { visible: boolean }) {
   // user-facing capability / stream); the board renders them and the gate needs all fully defined.
   const planFeatures = useMemo(
     () => parseFeaturesFile(savedSections[FEATURES_KEY] ?? ""),
+    [savedSections],
+  );
+  // The locked dependency manifest (#1111) — the planner writes dependencies.json (one entry per
+  // library); the Dependencies gate counts it, publish seeds it into each repo's package.json /
+  // Cargo.toml, and each worker inlines its repo's slice.
+  const planDependencies = useMemo(
+    () => parseDependenciesFile(savedSections[DEPENDENCIES_KEY] ?? ""),
     [savedSections],
   );
   // Per-server MCP install lifecycle (#878): seeded by a disk probe on mount, advanced by the
@@ -844,8 +853,10 @@ export function Planning({ visible }: { visible: boolean }) {
       // (#plan-db) — `allConfirmed` (all-defined) alone used to auto-advance after a single feature.
       // Folding the user-confirm in here keeps the gate signal (`featuresConfirmed`) unchanged.
       features: { count: featureState.count, allConfirmed: featuresGateComplete(featureState, confirmedSet.has(FEATURES_KEY)) && featureCycle.length === 0 },
+      // Dependencies (#1111): the gate passes once ≥1 library is locked in the manifest.
+      dependencies: { count: planDependencies.length },
     });
-  }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet]);
+  }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet, planDependencies]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
     const bp = blueprints.find(b => b.id === effectiveBlueprintId);
@@ -1848,10 +1859,10 @@ export function Planning({ visible }: { visible: boolean }) {
       // abort the launch so no agent starts in a fallback dir. (Restored: the refactor had
       // weakened this to a non-fatal .catch that let the launch continue.)
       const worktreeResults = await Promise.all(launchPlan.streams.map(st =>
-        // Seed each worktree's CLAUDE.local.md with the worker's SCOPE (owns/issues/deps),
-        // not the full plan — the worktree lives outside the hub so the planner spec is no
-        // longer an ancestor (#844).
-        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd: buildWorkerScope(st) })
+        // Seed each worktree's CLAUDE.local.md with the worker's SCOPE (owns/issues/deps) plus its
+        // repo's LOCKED dependency manifest (#1111), not the full plan — the worktree lives outside
+        // the hub so the planner spec is no longer an ancestor (#844).
+        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd: buildWorkerScope(st, depsForRepo(planDependencies, st.repo)) })
           .then(path => ({ id: st.id, path, err: null as string | null }))
           .catch(e => ({ id: st.id, path: null as string | null, err: String(e) })),
       ));
@@ -2034,12 +2045,36 @@ export function Planning({ visible }: { visible: boolean }) {
               await put(path, { message: `docs: scaffold ${f.path}`, content }).catch(() => {});
               wrote++;
             }
+
+            // Dependency manifests (#1111): seed the repo's package.json / Cargo.toml from the locked
+            // manifest so the fleet inherits identical, complete deps from the base branch and never
+            // adds its own. Unlike the docs above this is an ADDITIVE MERGE — a pre-existing pinned
+            // version always wins, so we read the current file, merge, and only write on a real change.
+            let manifests = 0;
+            const repoDeps = depsForRepo(planDependencies, fullName);
+            if (repoDeps.length) {
+              const shortRepo = fullName.split("/")[1] ?? fullName;
+              const seedManifest = async (file: string, merge: (existing: string | null) => string | null) => {
+                const path = `repos/${fullName}/contents/${file}`;
+                const cur = await rest<{ sha?: string; content?: string }>(path).catch(() => null);
+                const existing = cur?.content ? decodeURIComponent(escape(atob(cur.content.replace(/\s/g, "")))) : null;
+                const merged = merge(existing);
+                if (merged === null || merged === existing) return; // nothing to add / no change
+                const content = btoa(unescape(encodeURIComponent(merged)));
+                await put(path, { message: `chore: seed ${file} from the locked dependency manifest`, content, ...(cur?.sha ? { sha: cur.sha } : {}) }).catch(() => {});
+                manifests++;
+              };
+              await seedManifest("package.json", (e) => mergeIntoPackageJson(e, shortRepo, repoDeps));
+              await seedManifest("Cargo.toml", (e) => mergeIntoCargoToml(e, shortRepo, repoDeps));
+            }
+
             const bits = [
               projectDesc ? (descOk ? "description" : "description failed") : null,
               topics.length ? (topicsOk ? `${topics.length} topics` : "topics failed") : null,
               wrote ? `${wrote} file${wrote === 1 ? "" : "s"}` : null,
+              manifests ? `${manifests} manifest${manifests === 1 ? "" : "s"}` : null,
             ].filter(Boolean);
-            upd(id, wrote
+            upd(id, (wrote || manifests)
               ? { status: "created", detail: bits.join(" · ") }
               : { status: "exists", detail: bits.length ? `${bits.join(" · ")} · files present` : "already scaffolded" });
           } catch (e) {

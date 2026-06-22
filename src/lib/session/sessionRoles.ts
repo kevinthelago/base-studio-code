@@ -55,6 +55,19 @@ export const DB_OWNED_PLAN_FILES: string[] = [
   "phases.json", "issues.json", "fleet.json", "repos.json", "features.json",
 ];
 
+// Dependency manifests + lockfiles a WORKER must not hand-edit (#1111). The planner locks the
+// project's dependencies once and publish seeds these into every repo; a worker that edits its
+// own manifest in its worktree is exactly the parallel-redefinition that collides at integration.
+// {@link roleWriteRules} denies the file-write tools on these for workers (deny > allow) even when
+// the path falls inside the worker's owned globs — a new dep routes through the director instead.
+// (This gates the Edit/Write TOOLS only; `npm install` / `cargo build` via Bash still regenerate
+// lockfiles normally, so installing the already-locked deps is unaffected.)
+export const DEP_MANIFEST_FILES: string[] = [
+  "package.json", "package-lock.json",
+  "Cargo.toml", "Cargo.lock",
+  "pnpm-lock.yaml", "yarn.lock",
+];
+
 /**
  * Default capability per role. `writeGlobs` are filled per assignment (a worker owns
  * its stream's globs); the defaults are empty so a session with no assigned boundary
@@ -224,11 +237,16 @@ export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
     return { allow: [], deny: [...WRITE_TOOLS] };
   }
   const allow = cap.writeGlobs.flatMap((g) => WRITE_TOOLS.map((t) => `${t}(${g})`));
-  // The planner's *.md/*.json globs would otherwise auto-approve the DB-owned plan-state artifacts
-  // (#1070) — force it to the `bsc-plan` CLI by denying their file forms. deny wins over allow.
-  const deny = cap.role === "planner"
-    ? DB_OWNED_PLAN_FILES.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`))
+  // Role-specific deny set, layered over the write-glob allows (deny wins over allow):
+  // - planner: the DB-owned plan-state artifacts (#1070) — its *.md/*.json globs would otherwise
+  //   auto-approve a stray `deploy.md`/`phases.json`; force it to the `bsc-plan` CLI.
+  // - worker: the dependency manifests + lockfiles (#1111) — the planner locks deps once and
+  //   publish seeds them, so a worker editing its own manifest is the parallel-redefinition that
+  //   collides at integration; a new dep routes through the director.
+  const denyFiles = cap.role === "planner" ? DB_OWNED_PLAN_FILES
+    : cap.role === "worker" ? DEP_MANIFEST_FILES
     : [];
+  const deny = denyFiles.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`));
   return { allow, deny };
 }
 
