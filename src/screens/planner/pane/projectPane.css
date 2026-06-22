@@ -575,7 +575,9 @@
 
 /* scrolling body + footer — the focused render wraps the body in .pp-scroll (not .ph-body),
    so the design's body padding goes here; scoped to .fp to leave the staged pane untouched. */
-.fp .pp-scroll { overflow-x: hidden; padding: 14px 16px 18px; }
+/* Flex column so a stage body that wants to fill the height (the file-intake drop box, flex:1) can,
+   while content bodies stay content-sized and scroll. */
+.fp .pp-scroll { overflow-x: hidden; padding: 14px 16px 18px; display: flex; flex-direction: column; }
 .fp .ph-foot { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; row-gap: 8px;
   padding: 10px 14px; border-top: 1px solid var(--border-soft); background: var(--bg-elev); }
 .fp .ph-foot .prog { font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); white-space: nowrap; }
