@@ -38,7 +38,13 @@ export default defineConfig(async ({ command }) => ({
       clientFiles: ["./src/main.tsx", "./src/App.tsx", "./src/store/index.ts", "./src/screens/Console.tsx"],
     },
     watch: {
-      ignored: ["**/src-tauri/**"],
+      // Vite watches the project root, but this is a Cargo *workspace* — all Rust build output
+      // lands in the repo-root `target/` (tens of thousands of churning artifacts), and
+      // `coverage/`/`dist/` accumulate too. chokidar watching that many files starves Vite's event
+      // loop on Windows, so the dev server is slow to answer the WebView's module requests and the
+      // initial load stalls (instant on a fresh clone → ~50s once `target/` fills up). Ignoring the
+      // build/output dirs keeps the watcher to source files only. (#perf)
+      ignored: ["**/src-tauri/**", "**/target/**", "**/coverage/**", "**/dist/**"],
     },
   },
 }));
