@@ -15,6 +15,7 @@ pub mod connector;
 pub mod reconcile;
 pub mod error;
 pub mod infer;
+pub mod behavior;
 pub mod salesforce;
 
 #[cfg(feature = "duckdb-store")]
@@ -25,10 +26,10 @@ pub use schema::{DataModel, Entity, Field, FieldType};
 pub use connector::{Connector, CsvConnector, RowSet, SourceObject};
 pub use reconcile::{reconcile, verify_reconciled, MergedRecord, Precedence, Reconciled, SourceLoad, VerifyResult};
 pub use infer::{infer, EntityInference, FieldProvenance, InferResult};
-pub use salesforce::{
-    ApexKind, ApexUnit, ApprovalProcess, FlowSummary, FormulaField, PlatformScan,
-    SalesforceConnector, SalesforceField, SalesforceObject, ValidationRule, WorkflowRule,
+pub use behavior::{
+    Automation, AutomationKind, BusinessProcess, DerivedKind, DerivedLogic, PlatformScan,
 };
+pub use salesforce::{SalesforceConnector, SalesforceField, SalesforceObject};
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
