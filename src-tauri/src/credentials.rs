@@ -22,6 +22,13 @@ fn entry(project: &str, source_uid: &str, field: &str) -> Result<Entry, String> 
     Entry::new(SERVICE, &account(project, source_uid, field)).map_err(|e| e.to_string())
 }
 
+/// Read a stored secret for the scan command to build a connector's auth. Returns `None` when
+/// no secret is stored. Internal — never exposed as a Tauri command (secrets don't cross the
+/// bridge outward); only the connector transport, on-device, ever resolves the value.
+pub(crate) fn get_secret(project: &str, source_uid: &str, field: &str) -> Option<String> {
+    entry(project, source_uid, field).ok()?.get_password().ok()
+}
+
 /// Save a connector secret to the OS keychain. Overwrites any existing value for the field.
 #[tauri::command]
 pub fn source_save_secret(

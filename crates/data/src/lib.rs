@@ -38,6 +38,7 @@ pub mod pipefy;
 pub mod linear;
 pub mod rest;
 pub mod presets;
+pub mod registry;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
@@ -72,6 +73,7 @@ pub use pipefy::PipefyConnector;
 pub use linear::LinearConnector;
 pub use rest::{RestConnector, RestResource};
 pub use presets::{VendorPreset, CATALOG as VENDOR_PRESETS};
+pub use registry::{source_connector, LiveSupport, SourceAuth, SourceConnectorMeta, SOURCE_CONNECTORS};
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
