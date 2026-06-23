@@ -39,7 +39,7 @@ const PENDING_BYTES_CAP = 256 * 1024;
 // (#1158), so Claude CLI's own input box (at the bottom) falls below the clip and is hidden by
 // overflow. Sized to clear Claude's full input box (prompt + hint/token lines), not just one row;
 // tweak if it still peeks or over-clips.
-const CLIP_ROWS = 8;
+const CLIP_ROWS = 6;
 
 // Hex equivalents of the oklch design tokens so xterm can use them
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -583,6 +583,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         env: agentEnv,
         providerId,
       }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
+
+      // Show the native input as soon as we LAUNCH a Claude session — don't wait for the OSC-100
+      // "run" signal, which can be missed on a cold start, leaving Claude's own (legacy) input
+      // visible and ours hidden (#1158). OSC-100 "idle" (process exit) still clears it.
+      if (launchesClaude) useAppStore.getState().setPaneClaudeActive(paneId, true);
 
       if (!isNew) {
         // Reconnecting — Ctrl+L repaints the prompt without submitting a command
