@@ -203,7 +203,7 @@ function List({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean 
                   <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 12px", borderTop: "1px solid var(--border-soft)" }}>
                     <span style={{ width: 14, textAlign: "center" }}>{f.identity && <span style={{ fontSize: 9, color: "var(--success)" }}>🔑</span>}</span>
                     <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", minWidth: 128 }}>{f.key}</span>
-                    {f.type === "ref" ? <span style={chip("var(--info)")}>ref → {f.refLabel ?? f.ref}</span> : f.type === "enum" ? <span style={chip("var(--violet)")}>enum</span> : (
+                    {f.type === "ref" ? <span style={chip("var(--info)")}>ref → {f.refLabel ?? f.ref}</span> : f.type === "enum" ? <span style={chip("var(--violet)")}>enum{f.enumValues && f.enumValues.length ? ` · ${f.enumValues.join(" · ")}` : ""}</span> : (
                       <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: 99, padding: "1px 6px" }}>{f.type}</span>
                     )}
                     <span style={{ flex: 1 }} />
