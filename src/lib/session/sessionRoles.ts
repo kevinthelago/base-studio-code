@@ -31,6 +31,11 @@ export interface RoleCapability {
   git: AccessTier;
   /** Editing files on disk (outside any dedicated plan channel). */
   code: AccessTier;
+  /** Network/web tools (`WebFetch`, `WebSearch`) — a live prompt-injection vector (#1107). `none`
+   *  denies them outright at launch; `read` permits fetching, whose RESULTS the session must treat
+   *  as untrusted data (the planner template frames this). This is the gate the per-agent `net`
+   *  profile (#289) ties into; `write` is unused (there's no "network write" tool to grant). */
+  net: AccessTier;
   /** Path globs this role/assignment may write. Empty ⇒ no code writes. */
   writeGlobs: string[];
 }
@@ -75,20 +80,23 @@ export const DEP_MANIFEST_FILES: string[] = [
  * are scoped to plan-section files ({@link PLANNER_WRITE_GLOBS}) so it never needs a
  * permission prompt to write goal.md / phases.json / fleet.json / prompts/*.
  */
+// `net: "read"` across the board preserves today's behavior (WebFetch is currently allowed for
+// every session via the broad Bash grant). The field exists so a per-agent `net` profile (#289) — or
+// a future planner "no web" toggle (#1107) — can set `none` to deny WebFetch/WebSearch at launch.
 export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = {
-  planner: { role: "planner", github: "read", git: "read", code: "write", writeGlobs: PLANNER_WRITE_GLOBS },
-  worker: { role: "worker", github: "read", git: "write", code: "write", writeGlobs: [] },
-  director: { role: "director", github: "write", git: "write", code: "none", writeGlobs: [] },
-  triage: { role: "triage", github: "write", git: "none", code: "none", writeGlobs: [] },
+  planner: { role: "planner", github: "read", git: "read", code: "write", net: "read", writeGlobs: PLANNER_WRITE_GLOBS },
+  worker: { role: "worker", github: "read", git: "write", code: "write", net: "read", writeGlobs: [] },
+  director: { role: "director", github: "write", git: "write", code: "none", net: "read", writeGlobs: [] },
+  triage: { role: "triage", github: "write", git: "none", code: "none", net: "read", writeGlobs: [] },
   // #220 stage roles -- least privilege: observe + report, never edit or merge.
-  tester: { role: "tester", github: "read", git: "read", code: "none", writeGlobs: [] },
-  reviewer: { role: "reviewer", github: "read", git: "read", code: "none", writeGlobs: [] },
-  conductor: { role: "conductor", github: "read", git: "read", code: "none", writeGlobs: [] },
+  tester: { role: "tester", github: "read", git: "read", code: "none", net: "read", writeGlobs: [] },
+  reviewer: { role: "reviewer", github: "read", git: "read", code: "none", net: "read", writeGlobs: [] },
+  conductor: { role: "conductor", github: "read", git: "read", code: "none", net: "read", writeGlobs: [] },
   // #376 issuer -- may open GitHub issues (github:write) but never writes code or git;
   // it only shapes intake and hands off to the director.
-  issuer: { role: "issuer", github: "write", git: "read", code: "none", writeGlobs: [] },
+  issuer: { role: "issuer", github: "write", git: "read", code: "none", net: "read", writeGlobs: [] },
   // #394 juror -- a scoped, read-only reviewer; judges, never edits or merges.
-  juror: { role: "juror", github: "read", git: "read", code: "none", writeGlobs: [] },
+  juror: { role: "juror", github: "read", git: "read", code: "none", net: "read", writeGlobs: [] },
 };
 
 /** A role capability, optionally narrowed/widened per assignment (e.g. writeGlobs). */
@@ -260,7 +268,13 @@ export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
  * delay. Merged into `denyToolRules` at session launch.
  */
 export function roleDeniedTools(cap: RoleCapability): string[] {
-  return cap.role === "worker" ? ["Task"] : [];
+  const out: string[] = [];
+  if (cap.role === "worker") out.push("Task");
+  // Network gate (#1107): `net: "none"` denies the web tools outright at launch — the lever that
+  // turns OFF the planner's (or any agent's) live injection surface. `read` (the default) leaves
+  // them allowed, with results framed as untrusted data.
+  if (cap.net === "none") out.push("WebFetch", "WebSearch");
+  return out;
 }
 
 // ── Launch wiring: command-allowlist denies ────────────────────────────────────
