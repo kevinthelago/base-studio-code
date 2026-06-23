@@ -45,7 +45,7 @@ pub mod store;
 
 pub use error::{DataError, Result};
 pub use schema::{DataModel, Entity, Field, FieldType};
-pub use connector::{Connector, CsvConnector, RowSet, SourceObject};
+pub use connector::{Connector, CsvConnector, RowSet, SourceField, SourceObject};
 pub use reconcile::{reconcile, verify_reconciled, MergedRecord, Precedence, Reconciled, SourceLoad, VerifyResult};
 pub use infer::{infer, EntityInference, FieldProvenance, InferResult};
 pub use behavior::{

@@ -10,7 +10,8 @@ use serde_json::Value;
 use crate::behavior::{
     Automation, AutomationKind, BusinessProcess, DerivedKind, DerivedLogic, PlatformScan,
 };
-use crate::connector::{Connector, RowSet, SourceObject};
+use crate::connector::{Connector, RowSet, SourceField, SourceObject};
+use crate::schema::FieldType;
 use crate::{DataError, Result};
 
 // ── Richer field metadata ─────────────────────────────────────────────────
@@ -216,6 +217,22 @@ fn parse_field(f: &Value) -> Option<SalesforceField> {
     Some(SalesforceField { name, field_type, picklist_values, lookup_targets, calculated_formula })
 }
 
+/// Map a Salesforce field's declared metadata to a vendor-neutral typed [`SourceField`] (#1219):
+/// picklist → enum + its active values, reference → ref + the first lookup target, currency →
+/// money, date/datetime → date, numerics → number, boolean → bool, everything else → string.
+fn source_field(f: &SalesforceField) -> SourceField {
+    let (ty, enum_values, ref_target) = match f.field_type.as_str() {
+        "picklist" | "multipicklist" => (FieldType::Enum, f.picklist_values.clone(), None),
+        "reference" => (FieldType::Ref, vec![], f.lookup_targets.first().cloned()),
+        "currency" => (FieldType::Money, vec![], None),
+        "date" | "datetime" | "time" => (FieldType::Date, vec![], None),
+        "double" | "int" | "integer" | "long" | "percent" => (FieldType::Number, vec![], None),
+        "boolean" => (FieldType::Bool, vec![], None),
+        _ => (FieldType::String, vec![], None),
+    };
+    SourceField { name: f.name.clone(), ty, enum_values, ref_target }
+}
+
 /// Percent-encode a string for use in a URL query parameter (RFC 3986 unreserved chars pass
 /// through; everything else is `%XX`-escaped).
 fn percent_encode(s: &str) -> String {
@@ -274,6 +291,12 @@ impl Connector for SalesforceConnector {
             })
             .collect();
         Ok(RowSet { columns, rows })
+    }
+
+    /// Declared field types from the Describe API (#1219): picklists carry their options as an
+    /// enum, lookups carry their target object as a ref — accuracy value sampling can't match.
+    fn describe_object(&self, object: &str) -> Result<Vec<SourceField>> {
+        Ok(self.describe(object)?.fields.iter().map(source_field).collect())
     }
 
     /// Scan the behavioral layer (#1193): automations (validation / workflow rules, Flows +
@@ -676,6 +699,22 @@ mod tests {
         let color = obj.fields.iter().find(|f| f.name == "Color__c").unwrap();
         assert_eq!(color.field_type, "picklist");
         assert_eq!(color.picklist_values, vec!["Red", "Blue"]);
+    }
+
+    #[test]
+    fn describe_object_maps_declared_types_picklist_enum_and_lookup_ref() {
+        let c = fixture_connector();
+        let fields = c.describe_object("Account").unwrap();
+        let by_name: std::collections::HashMap<&str, &SourceField> =
+            fields.iter().map(|f| (f.name.as_str(), f)).collect();
+        // picklist → enum carrying its active options
+        let ty = by_name["Type"];
+        assert_eq!(ty.ty, FieldType::Enum);
+        assert_eq!(ty.enum_values, vec!["Prospect", "Customer"]);
+        // reference → ref carrying its first lookup target
+        assert_eq!(by_name["OwnerId"].ty, FieldType::Ref);
+        assert_eq!(by_name["OwnerId"].ref_target.as_deref(), Some("User"));
+        assert_eq!(by_name["ParentId"].ref_target.as_deref(), Some("Account"));
     }
 
     // ── Unit: Connector trait ─────────────────────────────────────────
