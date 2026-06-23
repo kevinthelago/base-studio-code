@@ -2,8 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
   isConnected, connectedCount, allSourcesConnected, sourceChecks, coerceSourceConfig, parseSourceConfigTag,
-  type DeclaredSource,
+  deriveDataModel, migrationActive, datamodelSignals, downstreamImpact,
+  type DeclaredSource, type SourceConfig,
 } from "./sourceConfig";
+import { checkDataModel } from "../data/dataModel";
 
 const src = (over: Partial<DeclaredSource>): DeclaredSource => ({ uid: "u", connectorId: "quickbase", status: "declared", fields: {}, ...over });
 
@@ -89,5 +91,60 @@ describe("sourceConfig — coercion (planner channel)", () => {
     expect(parseSourceConfigTag("blah no json here")).toBeNull();
     const parsed = parseSourceConfigTag('prose { "proposed": ["salesforce"] } trailing');
     expect(parsed?.proposed).toEqual(["salesforce"]);
+  });
+});
+
+describe("sourceConfig — derive model + downstream (#1205)", () => {
+  const scannedCfg: SourceConfig = {
+    dataModelName: "Acme Core",
+    proposed: [],
+    sources: [
+      src({
+        uid: "a", connectorId: "quickbase", status: "scanned",
+        objects: [{ name: "Projects", count: 12, fields: ["Name", "Budget"] }, { name: "Tickets", count: 5 }],
+        behaviors: [{ label: "form rule" }, { label: "Pipeline" }],
+      }),
+      // A not-yet-scanned source contributes nothing to the derived model.
+      src({ uid: "b", connectorId: "salesforce", status: "declared" }),
+    ],
+  };
+
+  it("migrationActive: ≥1 declared source", () => {
+    expect(migrationActive(undefined)).toBe(false);
+    expect(migrationActive(defaultSourceConfig())).toBe(false);
+    expect(migrationActive(scannedCfg)).toBe(true);
+  });
+
+  it("deriveDataModel builds entities from scanned objects; fields from columns or a default id", () => {
+    const m = deriveDataModel(scannedCfg, "dm-x");
+    expect(m.id).toBe("dm-x");
+    expect(m.name).toBe("Acme Core");
+    expect(m.entities.length).toBe(2); // only the scanned source's objects
+
+    const proj = m.entities.find((e) => e.key === "projects")!;
+    expect(proj.fields.map((f) => f.key)).toEqual(["name", "budget"]);
+    expect(proj.identity).toEqual(["name"]); // no "id" column ⇒ first field is the identity
+
+    const tick = m.entities.find((e) => e.key === "tickets")!;
+    expect(tick.fields.map((f) => f.key)).toEqual(["id"]); // no columns ⇒ default id
+    expect(tick.identity).toEqual(["id"]);
+  });
+
+  it("the derived model is structurally valid", () => {
+    expect(checkDataModel(deriveDataModel(scannedCfg))).toEqual([]);
+  });
+
+  it("datamodelSignals reflect scan progress", () => {
+    expect(datamodelSignals(undefined)).toEqual({ sourceReachable: false, modelInferred: false, schemaRefined: false });
+    // one scanned + one declared ⇒ reachable + inferred, but not refined (not all scanned)
+    expect(datamodelSignals(scannedCfg)).toEqual({ sourceReachable: true, modelInferred: true, schemaRefined: false });
+    expect(datamodelSignals({ ...scannedCfg, sources: [scannedCfg.sources[0]] }).schemaRefined).toBe(true);
+  });
+
+  it("downstreamImpact counts entities, fields, and behaviors", () => {
+    const imp = downstreamImpact(scannedCfg);
+    expect(imp.entities).toBe(2);
+    expect(imp.fields).toBe(3); // Projects: name + budget; Tickets: id
+    expect(imp.behaviors).toBe(2);
   });
 });

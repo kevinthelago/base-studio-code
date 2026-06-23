@@ -1,5 +1,7 @@
 # Data Platform — Spec
 
+> ⭐ *A golden star, placed on the north-star doc — for the v1.0.4 connector + source-scan arc that grew up around this spec.*
+
 Status: **draft / for review** · Owner: Kevin · Created 2026-06-13
 
 The strategic bet: data is the product. base-studio-code already orchestrates agent
