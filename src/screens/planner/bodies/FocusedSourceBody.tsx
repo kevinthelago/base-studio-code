@@ -14,14 +14,14 @@
 // SourceConfig and never shared with the planning agent, which sees only a redacted handle + the
 // discovered object inventory.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppStore } from "../../../store";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
-  isConnected, sourceChecks, allSourcesConnected,
+  isConnected, sourceChecks, allSourcesConnected, deriveDataModel, downstreamImpact,
   type SourceConfig, type DeclaredSource, type SpecField, type SourceStatus,
 } from "../shared/sourceConfig";
 
@@ -344,6 +344,19 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
   const proposedPending = cfg.proposed.filter((id) => !cfg.sources.some((s) => s.connectorId === id));
   const showCatalog = catalogOpen || total === 0;
 
+  // Close the "data dictates structure" loop (#1205): once every declared source is scanned,
+  // persist the derived canonical Data Model as datamodel.json — the artifact the planner's
+  // features/structure stages design over. Re-persists only when the derived model changes.
+  const persistedSig = useRef("");
+  useEffect(() => {
+    if (!ready || !pid) return;
+    const model = deriveDataModel(cfg, `dm-source-${pid}`);
+    const sig = JSON.stringify(model);
+    if (sig === persistedSig.current) return;
+    persistedSig.current = sig;
+    void invoke("data_persist_model", { projectKey: pid, model, refined: true }).catch(() => {});
+  }, [ready, pid, cfg]);
+
   const filteredConnectors = CONNECTORS.filter((c) => {
     const q = query.trim().toLowerCase();
     return !q || c.name.toLowerCase().includes(q) || c.authLabel.toLowerCase().includes(q);
@@ -641,6 +654,27 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
           ))}
         </div>
       )}
+
+      {/* downstream impact — the "data dictates structure" payoff (#1205) */}
+      {ready && (() => {
+        const imp = downstreamImpact(cfg);
+        return (
+          <div data-testid="downstream-impact" style={{
+            borderRadius: "var(--r-md)", padding: "10px 12px",
+            background: "color-mix(in oklch, var(--violet), transparent 92%)",
+            border: "1px solid color-mix(in oklch, var(--violet), transparent 80%)",
+            display: "flex", flexDirection: "column", gap: 4,
+          }}>
+            <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: ".06em", color: "var(--violet)" }}>✦ WHAT YOUR APP IS BUILT FROM</span>
+            <span style={{ fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.5 }}>
+              Seeds <b style={{ color: "var(--fg)" }}>{imp.entities} {imp.entities === 1 ? "entity" : "entities"}</b>
+              {" · "}<b style={{ color: "var(--fg)" }}>{imp.fields} {imp.fields === 1 ? "field" : "fields"}</b> into <span style={{ color: "var(--violet)" }}>features</span> + <span style={{ color: "var(--violet)" }}>structure</span>
+              {imp.behaviors > 0 && <> · <b style={{ color: "var(--fg)" }}>{imp.behaviors} {imp.behaviors === 1 ? "behavior" : "behaviors"}</b> carried over</>}.
+            </span>
+            <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>persisted to the project's canonical Data Model · the planner designs over this</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }

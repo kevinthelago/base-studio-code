@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../../store";
 import { defaultSourceConfig } from "../shared/sourceConfig";
 import { FocusedSourceBody } from "./FocusedSourceBody";
@@ -89,5 +90,24 @@ describe("FocusedSourceBody — readiness", () => {
     // OAuth connectors connect with one click (no secret form).
     fireEvent.click(screen.getByRole("button", { name: /connect to salesforce/i }));
     await waitFor(() => expect(within(screen.getByTestId("source-readiness")).getByText(/1 of 1 connected/)).toBeTruthy());
+  });
+});
+
+describe("FocusedSourceBody — closes the data-dictates-structure loop (#1205)", () => {
+  it("once every source is scanned, persists the derived model + shows the downstream-impact recap", async () => {
+    render(<FocusedSourceBody projectId="p1" />);
+    fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
+    fireEvent.change(screen.getByPlaceholderText("acme.quickbase.com"), { target: { value: "acme.quickbase.com" } });
+    fireEvent.change(screen.getByLabelText("User Token"), { target: { value: "tok" } });
+    fireEvent.click(screen.getByRole("button", { name: /save & connect/i }));
+
+    // The recap appears once the source is scanned (gate met) …
+    await waitFor(() => expect(screen.getByTestId("downstream-impact")).toBeTruthy());
+    expect(screen.getByTestId("downstream-impact").textContent).toMatch(/Seeds .* into features/i);
+    // … and the derived model is persisted as the canonical artifact (refined, the user confirmed it).
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith(
+      "data_persist_model",
+      expect.objectContaining({ projectKey: "p1", refined: true }),
+    );
   });
 });
