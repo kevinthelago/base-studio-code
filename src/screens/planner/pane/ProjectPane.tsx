@@ -1191,7 +1191,7 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
     case "repos":
       return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} />;
     case "deploy":
-      return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} />;
+      return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} dependencies={data?.dependencies} registries={data?.registries} />;
     case "context":
       return <FocusedContextBody context={data?.context} onView={onView} requiredContext={requiredContext} />;
     case "ui":

@@ -12,6 +12,7 @@ import type { PlanGrade } from "../../../lib/planner/planGrade";
 import type { PlanFeature } from "../issues/featureList";
 import type { Blueprint } from "../stages/blueprints";
 import type { DeployConfig } from "../shared/deployConfig";
+import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 import type { Topology, RelationshipArtifact, AgentRelationship } from "../relationship/relationshipGraph";
 
 export type { PlanGrade };
@@ -151,6 +152,11 @@ export interface ProjectPaneData {
   authoredBlueprint?: Blueprint;
   /** The deployment & infrastructure config (#919) — the Deploy stage pane's editable state. */
   deploy?: DeployConfig;
+  /** The locked dependency manifest (#1127/#1133) — authored in the Deploy stage; surfaced in the
+   *  Deploy pane so the user sees the libraries each repo depends on and where they're sourced. */
+  dependencies?: PlanDependency[];
+  /** Non-default registries the dependencies are fetched from (#1133), keyed by `source`. */
+  registries?: Record<string, DependencyRegistry>;
   /** Agent-coordination topology (#…) — the effective director/peer/hybrid mode, the
    *  Permissions stage configures it and the Structure graph reflects it. */
   topology?: Topology;
