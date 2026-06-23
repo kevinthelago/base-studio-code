@@ -34,6 +34,7 @@ pub mod stripe;
 pub mod zendesk;
 pub mod jira;
 pub mod rest;
+pub mod presets;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
@@ -64,6 +65,7 @@ pub use stripe::StripeConnector;
 pub use zendesk::ZendeskConnector;
 pub use jira::JiraConnector;
 pub use rest::{RestConnector, RestResource};
+pub use presets::{VendorPreset, CATALOG as VENDOR_PRESETS};
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
