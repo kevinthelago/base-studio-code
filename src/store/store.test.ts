@@ -1142,6 +1142,24 @@ describe("agent fleet store", () => {
     expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
   });
 
+  it("fleetStartProject sets the pane provider from fleetHarness (#1078 P5)", () => {
+    // Default harness ⇒ every fleet pane runs on claude.
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub", fleetHarness: "claude" });
+    useAppStore.getState().fleetStartProject("HC", fleet, "hc-key");
+    let st = useAppStore.getState();
+    let i = st.findFleetTabIdx("hc-key");
+    expect(st.paneProviders[`t${i}p0`]).toBe("claude"); // director
+    expect(st.paneProviders[`t${i}p1`]).toBe("claude"); // worker
+
+    // bsc-agent harness ⇒ director + workers launch on bsc-agent.
+    useAppStore.setState({ fleetHarness: "bsc-agent" });
+    useAppStore.getState().fleetStartProject("HB", fleet, "hb-key");
+    st = useAppStore.getState();
+    i = st.findFleetTabIdx("hb-key");
+    expect(st.paneProviders[`t${i}p0`]).toBe("bsc-agent");
+    expect(st.paneProviders[`t${i}p1`]).toBe("bsc-agent");
+  });
+
   it("prefers Rust-provided hub + worktree paths over the bscBaseDir mirror (#905)", () => {
     // bscBaseDir EMPTY — the exact condition that silently dropped every session at
     // user root, because projectHubCwd/agentWorktreeCwd return "" and the PTY then
