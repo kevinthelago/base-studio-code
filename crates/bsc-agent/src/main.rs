@@ -61,7 +61,13 @@ async fn main() {
             run_agent(&llm::GeminiProvider, &api_key, &model, &system, &task, &tools, &perms, &tele, 20).await
         }
         llm::ProviderKind::Local => {
-            let p = llm::LocalProvider { base_url: llm::DEFAULT_LOCAL_BASE_URL.into() };
+            // The OpenAI-compatible endpoint for local models — $BSC_AGENT_BASE_URL (set by the
+            // app from the user's config), falling back to Ollama's default when unset/empty.
+            let base_url = std::env::var("BSC_AGENT_BASE_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| llm::DEFAULT_LOCAL_BASE_URL.into());
+            let p = llm::LocalProvider { base_url };
             run_agent(&p, &api_key, &model, &system, &task, &tools, &perms, &tele, 20).await
         }
     };
