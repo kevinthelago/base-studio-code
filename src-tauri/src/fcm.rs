@@ -179,6 +179,31 @@ pub fn build_autom_failed_message(
     })
 }
 
+/// Build an FCM push for a worker the warden quarantined (#1102) — a possible prompt
+/// injection / session hijack. High-signal: the user wants this on their phone immediately,
+/// since a hijacked session can't be trusted to report itself. `detail` is the deterministic
+/// trip summary (out-of-lane file / denied command), never untrusted prose.
+pub fn build_warden_message(
+    device_token: &str,
+    session: &str,
+    detail: &str,
+) -> serde_json::Value {
+    let body = if detail.trim().is_empty() {
+        "A worker was paused — it drifted off its assigned plan.".to_string()
+    } else {
+        notification_body(detail)
+    };
+    serde_json::json!({
+        "token": device_token,
+        "notification": { "title": "Studio Code — worker quarantined", "body": body },
+        "data": { "type": "warden_quarantine", "session": session, "detail": detail },
+        "apns": {
+            "headers": { "apns-priority": "10" },
+            "payload": { "aps": { "sound": "default", "mutable-content": 1 } }
+        }
+    })
+}
+
 #[derive(Serialize)]
 struct JwtClaims<'a> {
     iss: &'a str,
@@ -379,6 +404,22 @@ mod tests {
     fn build_message_falls_back_to_a_title_when_session_name_is_blank() {
         let m = build_message("tok", "p1", "hi", "   ");
         assert_eq!(m["notification"]["title"], "Studio Code");
+    }
+
+    #[test]
+    fn build_warden_message_matches_the_mobile_contract() {
+        let m = build_warden_message("tok-9", "t0p1", "denied-command: gh repo delete acme/api");
+        assert_eq!(m["notification"]["title"], "Studio Code — worker quarantined");
+        assert_eq!(m["notification"]["body"], "denied-command: gh repo delete acme/api");
+        assert_eq!(m["data"]["type"], "warden_quarantine");
+        assert_eq!(m["data"]["session"], "t0p1");
+        assert_eq!(m["data"]["detail"], "denied-command: gh repo delete acme/api");
+        assert!(m["data"]["session"].is_string() && m["data"]["detail"].is_string());
+        assert_eq!(m["token"], "tok-9");
+        assert_eq!(m["apns"]["headers"]["apns-priority"], "10");
+        // A blank detail still yields a meaningful banner, never an empty body.
+        let blank = build_warden_message("tok", "t0p2", "  ");
+        assert_eq!(blank["notification"]["body"], "A worker was paused — it drifted off its assigned plan.");
     }
 
     #[test]
