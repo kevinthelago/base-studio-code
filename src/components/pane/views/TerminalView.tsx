@@ -759,6 +759,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       )}
       <div
         ref={containerRef}
+        // While Claude is connected, the native input bar's cover strip overlaps the terminal's
+        // bottom rows (#1158): the class adds matching bottom scroll-padding to xterm's viewport so
+        // those covered lines can be scrolled up clear of the input to read them.
+        className={claudeActive ? "term-with-input" : undefined}
         style={{
           flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px",
           display: criticalChecks.length > 0 ? "none" : undefined,
