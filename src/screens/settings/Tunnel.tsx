@@ -11,26 +11,23 @@ import {
   tunnelSetInputGranted,
   tunnelUnpair,
 } from "../../lib/tunnel/tunnelClient";
+import {
+  runRelayProbe,
+  emptyLegs,
+  freshRoomId,
+  type ProbeLegs,
+  type ProbeLeg,
+  type MinimalSocket,
+} from "../../lib/tunnel/relayProbe";
+
+// `relayHealthUrl` now lives with the probe orchestration; re-exported here so existing
+// importers (and tests) keep resolving it from this module.
+export { relayHealthUrl } from "../../lib/tunnel/relayProbe";
 
 // A "Deploy to Cloudflare" link prefilled with the relay workspace, so a user can
 // stand up their own zero-knowledge relay in their own account (BYO).
 const DEPLOY_URL =
   "https://deploy.workers.cloudflare.com/?url=https://github.com/kevinthelago/base-studio-code/tree/main/relay";
-
-/**
- * Map a user-entered relay URL (any of `http(s)://` / `ws(s)://`, with or without a
- * scheme or trailing slash) to its `https` `/health` probe endpoint. The relay serves
- * `/health` over plain HTTPS GET (the `wss://` form is only for the tunnel upgrade), so
- * the Test button normalizes to `https` before probing.
- */
-export function relayHealthUrl(relayUrl: string): string {
-  const trimmed = relayUrl.trim().replace(/\/+$/, "");
-  const normalized = trimmed
-    .replace(/^wss:\/\//i, "https://")
-    .replace(/^ws:\/\//i, "http://");
-  const withScheme = /^https?:\/\//i.test(normalized) ? normalized : `https://${normalized}`;
-  return `${withScheme}/health`;
-}
 
 /**
  * Deep-link to the user's Cloudflare dashboard for their relay. Cloudflare resolves the `:account`
@@ -51,14 +48,30 @@ export function cloudflareDashUrl(relayUrl: string): string {
   return m ? `${base}/workers/services/view/${m[1]}/production` : `${base}/workers-and-pages`;
 }
 
-/** How long to wait for the relay's `/health` before calling the Test a failure. */
+/** Per-leg deadline for the relay probe before that leg is called a failure. */
 const TEST_TIMEOUT_MS = 6000;
 
 type RelayTest =
   | { state: "idle" }
-  | { state: "testing" }
-  | { state: "ok"; version?: string }
-  | { state: "fail"; detail: string };
+  | { state: "running"; legs: ProbeLegs; version?: string }
+  | { state: "done"; legs: ProbeLegs; version?: string };
+
+const LEG_LABELS: Array<{ key: keyof ProbeLegs; label: string }> = [
+  { key: "reach", label: "Reachable" },
+  { key: "join", label: "Room join" },
+  { key: "relay", label: "Relay handshake" },
+];
+
+/** Glyph + color for a single probe leg's status. */
+function legGlyph(status: ProbeLeg["status"]): { glyph: string; color: string } {
+  switch (status) {
+    case "ok": return { glyph: "✓", color: "var(--success, #2ea043)" };
+    case "fail": return { glyph: "✗", color: "var(--danger)" };
+    case "running": return { glyph: "◌", color: "var(--fg-muted)" };
+    case "skip": return { glyph: "–", color: "var(--fg-muted)" };
+    default: return { glyph: "·", color: "var(--fg-muted)" };
+  }
+}
 
 export function TunnelSettings() {
   const tunnelRelayUrl = useAppStore((s) => s.tunnelRelayUrl);
@@ -132,35 +145,24 @@ export function TunnelSettings() {
     }
   }, [sync]);
 
-  // Probe the relay's /health to confirm it's reachable and is actually a tunnel relay,
-  // before the user relies on it for pairing. A real round-trip (GET → JSON), bounded by
-  // a timeout; failures surface the reason rather than silently doing nothing.
+  // Probe the relay across three distinct legs — reachability, room-join, and an
+  // end-to-end relayed frame — so a failure points at WHICH layer is broken rather than a
+  // single opaque pass/fail. Each leg updates inline as it resolves (via onLeg).
   const onTest = useCallback(async () => {
     const target = tunnelRelayUrl.trim();
     if (!target) return;
-    setTest({ state: "testing" });
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TEST_TIMEOUT_MS);
-    try {
-      const res = await fetch(relayHealthUrl(target), { signal: ctrl.signal });
-      if (!res.ok) {
-        setTest({ state: "fail", detail: `relay returned HTTP ${res.status}` });
-        return;
-      }
-      const body = (await res.json().catch(() => null)) as
-        | { service?: string; version?: string }
-        | null;
-      if (body?.service !== "msc-tunnel-relay") {
-        setTest({ state: "fail", detail: "reachable, but not a tunnel relay" });
-        return;
-      }
-      setTest({ state: "ok", version: body.version });
-    } catch (e) {
-      const aborted = e instanceof DOMException && e.name === "AbortError";
-      setTest({ state: "fail", detail: aborted ? "timed out" : "could not reach relay" });
-    } finally {
-      clearTimeout(timer);
-    }
+    setTest({ state: "running", legs: emptyLegs() });
+    const result = await runRelayProbe(target, {
+      fetchFn: fetch,
+      // The browser WebSocket's strict DOM event types are wider than the minimal surface
+      // the probe uses (onopen/onmessage/send/close); adapt it through the interface.
+      makeSocket: (url) => new WebSocket(url) as unknown as MinimalSocket,
+      timeoutMs: TEST_TIMEOUT_MS,
+      genId: freshRoomId,
+      onLeg: (legs) =>
+        setTest((prev) => (prev.state === "running" ? { ...prev, legs } : prev)),
+    });
+    setTest({ state: "done", legs: result.legs, version: result.version });
   }, [tunnelRelayUrl]);
 
   const onConnect = useCallback(async () => {
@@ -227,10 +229,10 @@ export function TunnelSettings() {
             />
             <button
               className="btn"
-              disabled={busy || running || test.state === "testing" || !canConnect}
+              disabled={busy || running || test.state === "running" || !canConnect}
               onClick={onTest}
             >
-              {test.state === "testing" ? "testing…" : "test"}
+              {test.state === "running" ? "testing…" : "test"}
             </button>
             <button className="btn" onClick={() => openUrl(DEPLOY_URL)}>
               deploy a relay →
@@ -243,17 +245,30 @@ export function TunnelSettings() {
               manage in Cloudflare ↗
             </button>
           </div>
-          <div className="hint">
-            {test.state === "ok" ? (
-              <span style={{ color: "var(--success, #2ea043)" }}>
-                ✓ relay reachable{test.version ? ` · v${test.version}` : ""}
-              </span>
-            ) : test.state === "fail" ? (
-              <span style={{ color: "var(--danger)" }}>✗ {test.detail}</span>
-            ) : (
-              "Your own Cloudflare Worker (free tier is enough). Deploy once, paste the URL it prints."
-            )}
-          </div>
+          {test.state === "idle" ? (
+            <div className="hint">
+              Your own Cloudflare Worker (free tier is enough). Deploy once, paste the URL it prints.
+            </div>
+          ) : (
+            <div
+              className="hint"
+              style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8 }}
+              role="status"
+              aria-live="polite"
+            >
+              {LEG_LABELS.map(({ key, label }) => {
+                const leg = test.legs[key];
+                const { glyph, color } = legGlyph(leg.status);
+                return (
+                  <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                    <span style={{ color, fontFamily: "var(--mono)", width: 12, textAlign: "center" }}>{glyph}</span>
+                    <span style={{ color: leg.status === "fail" ? "var(--danger)" : "var(--fg)", minWidth: 110 }}>{label}</span>
+                    {leg.detail && <span style={{ color: "var(--fg-muted)" }}>{leg.detail}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {running && payload ? (

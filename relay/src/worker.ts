@@ -5,13 +5,11 @@
 // traversal with no port-forwarding). It can never read terminal data, so it's safe to
 // deploy into the user's OWN Cloudflare account (BYO). See ../docs/tunnel-protocol.md.
 
-import { parseConnect } from "./protocol";
+import { parseConnect, healthBody, HEALTH_CORS_HEADERS } from "./protocol";
 import { RelayRoom, type Env } from "./room";
 import { checkRateLimit, DEFAULT_RATE_LIMIT } from "./rateLimit";
 
 export { RelayRoom };
-
-const VERSION = "0.1.0";
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -21,10 +19,7 @@ export default {
     // the desktop app's webview can run its "Test relay" probe cross-origin; the body is
     // public liveness metadata (no secrets), so `*` is safe here.
     if (url.pathname === "/health") {
-      return Response.json(
-        { ok: true, service: "msc-tunnel-relay", version: VERSION },
-        { headers: { "Access-Control-Allow-Origin": "*" } },
-      );
+      return Response.json(healthBody(), { headers: { ...HEALTH_CORS_HEADERS } });
     }
 
     // The pairing endpoint: a peer upgrades to a WebSocket on its room.

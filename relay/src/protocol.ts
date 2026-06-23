@@ -7,6 +7,22 @@
 // so they're unit-testable without a workerd runtime; the Durable Object (`room.ts`)
 // and Worker entry (`worker.ts`) are thin glue over these.
 
+/** Relay identity + version, surfaced by the `/health` liveness probe. */
+export const RELAY_SERVICE = "msc-tunnel-relay";
+export const RELAY_VERSION = "0.1.0";
+
+/**
+ * The `/health` response body — content-free liveness metadata only (no room ids, no
+ * peer state, no secrets), so it's safe to serve CORS-open to the desktop webview's
+ * "Test relay" probe. Keep it free of anything a third party shouldn't learn.
+ */
+export function healthBody(): { ok: true; service: string; version: string } {
+  return { ok: true, service: RELAY_SERVICE, version: RELAY_VERSION };
+}
+
+/** CORS headers for `/health` — open `*` because the body is public liveness metadata. */
+export const HEALTH_CORS_HEADERS = { "Access-Control-Allow-Origin": "*" } as const;
+
 /** Max bytes per forwarded frame — a generous ciphertext cap; larger ⇒ abuse/bug. */
 export const MAX_FRAME_BYTES = 256 * 1024;
 
