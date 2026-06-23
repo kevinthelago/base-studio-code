@@ -33,7 +33,34 @@ fn compose_system(start: &Path) -> String {
             parts.push(c);
         }
     }
+    let skills = compose_skills(start);
+    if !skills.is_empty() {
+        parts.push(format!("# Skills\n\n{skills}"));
+    }
     parts.join("\n\n")
+}
+
+/// Concatenate the project's skills — every `<start>/.claude/skills/<slug>/SKILL.md`, sorted by
+/// slug for determinism — so a bsc-agent session has the same skill context Claude Code discovers.
+/// Returns "" when there's no skills dir. (#1078 P3 parity)
+fn compose_skills(start: &Path) -> String {
+    let dir = start.join(".claude").join("skills");
+    let Ok(entries) = std::fs::read_dir(&dir) else { return String::new() };
+    let mut slugs: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
+    slugs.sort();
+    let mut out: Vec<String> = Vec::new();
+    for slug in slugs {
+        if let Ok(c) = std::fs::read_to_string(slug.join("SKILL.md")) {
+            if !c.trim().is_empty() {
+                out.push(c);
+            }
+        }
+    }
+    out.join("\n\n")
 }
 
 #[tokio::main]
@@ -132,5 +159,28 @@ mod tests {
         fs::write(dir.join("CLAUDE.local.md"), "PLAN-ONLY-MARKER").unwrap();
         assert!(compose_system(&dir).contains("PLAN-ONLY-MARKER"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn folds_in_skills_sorted_by_slug() {
+        let dir = std::env::temp_dir().join(format!("bsc-agent-skills-{}", std::process::id()));
+        let skills = dir.join(".claude").join("skills");
+        fs::create_dir_all(skills.join("aaa")).unwrap();
+        fs::create_dir_all(skills.join("bbb")).unwrap();
+        fs::write(skills.join("aaa").join("SKILL.md"), "SKILL-AAA").unwrap();
+        fs::write(skills.join("bbb").join("SKILL.md"), "SKILL-BBB").unwrap();
+
+        let s = compose_system(&dir);
+        assert!(s.contains("# Skills"), "skills header: {s}");
+        let (a, b) = (s.find("SKILL-AAA"), s.find("SKILL-BBB"));
+        assert!(a.is_some() && b.is_some() && a < b, "sorted by slug: {s}");
+
+        // No skills dir ⇒ no Skills section.
+        let bare = std::env::temp_dir().join(format!("bsc-agent-noskills-{}", std::process::id()));
+        fs::create_dir_all(&bare).unwrap();
+        assert!(!compose_system(&bare).contains("# Skills"));
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&bare);
     }
 }
