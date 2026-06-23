@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pin, FolderInput, X, Maximize2, Minimize2, Power, PowerOff } from "lucide-react";
+import { Maximize2, Minimize2, Power, PowerOff } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
 
@@ -35,7 +35,7 @@ interface PaneMenuProps {
 
 export function PaneMenu({
   agent, model, active, available, maxHeight, fullscreen, disabled,
-  onToggleFullscreen, onToggleDisable, onPickDirectory, onClose, onRename, onViewChange, onModel,
+  onToggleFullscreen, onToggleDisable, onClose, onRename, onViewChange, onModel,
 }: PaneMenuProps) {
   return (
     <div style={{
@@ -117,9 +117,6 @@ export function PaneMenu({
           danger={!disabled}
           onClick={() => { onToggleDisable?.(); onClose?.(); }}
         />
-        <ActionRow Icon={Pin}         label="pin knowledge…" sub="surface a block in context" />
-        <ActionRow Icon={FolderInput} label="set cwd…"       sub="change working dir" onClick={() => { onPickDirectory?.(); onClose?.(); }} />
-        <ActionRow Icon={X}           label="close pane"     sub="" danger onClick={onClose} />
       </MenuSection>
     </div>
   );

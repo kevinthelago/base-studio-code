@@ -32,14 +32,16 @@ describe("PaneShell", () => {
     expect(onFocus).toHaveBeenCalled();
   });
 
-  it("calls onMenuToggle when the menu button is clicked", () => {
+  it("opens the consolidated menu from the model button (#1181)", () => {
     const onMenuToggle = vi.fn();
     render(
       <PaneShell agent="test" onMenuToggle={onMenuToggle}>
         <div>content</div>
       </PaneShell>
     );
-    fireEvent.click(screen.getByTitle("Pane menu"));
+    // The model pill is now the single menu trigger (the ⋯ button is gone).
+    expect(screen.queryByTitle("Pane menu")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Model, screens & pane options"));
     expect(onMenuToggle).toHaveBeenCalled();
   });
 
@@ -50,17 +52,6 @@ describe("PaneShell", () => {
       </PaneShell>
     );
     expect(screen.queryByTitle("Open project directory")).not.toBeInTheDocument();
-  });
-
-  it("calls onPickDirectory from the menu's set-cwd action", () => {
-    const onPickDirectory = vi.fn();
-    render(
-      <PaneShell agent="test" menuOpen onPickDirectory={onPickDirectory}>
-        <div>content</div>
-      </PaneShell>
-    );
-    fireEvent.click(screen.getByText("set cwd…"));
-    expect(onPickDirectory).toHaveBeenCalled();
   });
 
   it("no longer renders a standalone maximize button in the header (#1149 — it's in the menu)", () => {
@@ -114,47 +105,45 @@ describe("PaneShell", () => {
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
-  it("opens the view-switcher dropdown from the ▾ button (#1149)", () => {
+  it("a RUNNING pane shows the harness + model in the pill (footer hidden) (#1181)", () => {
     render(
-      <PaneShell agent="my-agent" active="console" available={["console", "files"]}>
-        <div>content</div>
-      </PaneShell>
-    );
-    // The view-switch button is titled "<current view> · switch screen".
-    fireEvent.click(screen.getByTitle("Console · switch screen"));
-    expect(screen.getByText("SWITCH SCREEN")).toBeInTheDocument();
-    expect(screen.getByText("Alt+1")).toBeInTheDocument();
-  });
-
-  it("splits the view dropdown into SWITCH SCREEN + INSPECT groups (#1149)", () => {
-    render(
-      <PaneShell agent="my-agent" active="console" available={["console", "files", "tools"]}>
-        <div>content</div>
-      </PaneShell>
-    );
-    fireEvent.click(screen.getByTitle("Console · switch screen"));
-    expect(screen.getByText("SWITCH SCREEN")).toBeInTheDocument();
-    expect(screen.getByText("INSPECT")).toBeInTheDocument();
-    expect(screen.getByText("Tools & permissions")).toBeInTheDocument();
-  });
-
-  it("renders the new header chrome: repo, role badge, harness/model pill, and footer state (#1149)", () => {
-    render(
-      <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" branch="wt/checkout" status="run">
+      <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" claudeActive>
         <div>content</div>
       </PaneShell>
     );
     expect(screen.getByText("· checkout")).toBeInTheDocument();
     expect(screen.getByText("WORKER")).toBeInTheDocument();       // role badge
     expect(screen.getByText("bsc-agent")).toBeInTheDocument();    // openai ⇒ bsc-agent harness
-    expect(screen.getByText("sonnet-4.5")).toBeInTheDocument();   // model
-    expect(screen.getByText("⎇ wt/checkout")).toBeInTheDocument();// footer branch
+    expect(screen.getByText("sonnet-4.5")).toBeInTheDocument();   // running model
+    expect(screen.queryByText("undetected")).not.toBeInTheDocument();
+  });
+
+  it("prefers the actual runningModel from the CLI over the configured one (#1181)", () => {
+    render(
+      <PaneShell agent="worker-A" provider="claude" model="sonnet-4.5" runningModel="opus-4.5" claudeActive>
+        <div>content</div>
+      </PaneShell>
+    );
+    expect(screen.getByText("opus-4.5")).toBeInTheDocument();      // transcript-reported model wins
+    expect(screen.queryByText("sonnet-4.5")).not.toBeInTheDocument();
+  });
+
+  it("an IDLE pane shows an undetected pill + the status footer (#1181)", () => {
+    render(
+      <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" branch="wt/checkout" status="run">
+        <div>content</div>
+      </PaneShell>
+    );
+    expect(screen.getByText("undetected")).toBeInTheDocument(); // nothing running ⇒ no model name
+    expect(screen.queryByText("sonnet-4.5")).not.toBeInTheDocument();
+    expect(screen.getByText("· checkout")).toBeInTheDocument();
+    expect(screen.getByText("⎇ wt/checkout")).toBeInTheDocument();// footer branch (shown when not active)
     expect(screen.getByText("running")).toBeInTheDocument();      // footer state
   });
 
-  it("labels a claude-provider pane as the Claude Code harness", () => {
+  it("labels a claude-provider pane as the Claude Code harness when running", () => {
     render(
-      <PaneShell agent="director" provider="claude" role="director">
+      <PaneShell agent="director" provider="claude" role="director" claudeActive>
         <div>content</div>
       </PaneShell>
     );
