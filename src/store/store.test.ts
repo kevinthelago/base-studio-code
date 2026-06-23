@@ -572,10 +572,21 @@ describe("pane state", () => {
     expect(paneViews[2]).toBe("console");
   });
 
-  it("setAllPanesView sets every pane to the same view", () => {
-    useAppStore.setState({ paneViews: ["console", "files", "branches"] });
+  it("setAllPanesView fills every pane slot of the active tab — even from an empty paneViews (#1182)", () => {
+    // The bug: paneViews defaults to [] and was only grown lazily, so `.map` over it was a no-op
+    // and the Alt+Shift+digit "switch all" hotkey did nothing. The active tab here is 3×3 = 9 panes.
+    useAppStore.setState({ paneViews: [], activeTabIdx: 0 });
     useAppStore.getState().setAllPanesView("log");
-    expect(useAppStore.getState().paneViews).toEqual(["log", "log", "log"]);
+    const pv = useAppStore.getState().paneViews;
+    expect(pv).toHaveLength(9);
+    expect(pv.every((v) => v === "log")).toBe(true);
+  });
+
+  it("setAllPanesView covers a smaller active tab and keeps any higher existing indices", () => {
+    // Active tab 2 is 1×1, but paneViews already has 4 entries (from a larger tab) — all switch.
+    useAppStore.setState({ paneViews: ["console", "files", "branches", "changes"], activeTabIdx: 2 });
+    useAppStore.getState().setAllPanesView("files");
+    expect(useAppStore.getState().paneViews).toEqual(["files", "files", "files", "files"]);
   });
 
   it("setFocusedAgentName updates breadcrumb label", () => {
