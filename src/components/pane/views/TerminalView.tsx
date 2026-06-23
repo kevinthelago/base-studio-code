@@ -11,7 +11,7 @@ import { gateClaudeLaunch } from "../../../lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/console/terminal";
 import { composeStartupPrompt } from "../../../lib/session/checkpoint";
 import { composeReferenceContext } from "../../../lib/session/assignments";
-import { resolveMcpServers } from "../../../lib/session/mcpServers";
+import { resolveMcpServers, toBscAgentMcp } from "../../../lib/session/mcpServers";
 import { resolveHooks } from "../../../lib/session/hooks";
 import { toSessionPayloads } from "../../../lib/session/sessionConfig";
 import { resolveSkills, toSkillCfgs } from "../../../lib/session/skills";
@@ -398,6 +398,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
             const cap = roleCapability(bscRole, { writeGlobs: st.paneRoleGlobs[paneId] ?? [] });
             e.BSC_AGENT_PERMS = JSON.stringify(bscAgentPerms(cap));
           }
+          // MCP: pass the resolved stdio servers so bsc-agent's client connects them ($BSC_AGENT_MCP).
+          const { mcp } = toSessionPayloads(st.paneMcpServers[paneId] ?? resolveMcpServers(st.mcpServers, ""), []);
+          const bscMcp = toBscAgentMcp(mcp);
+          if (bscMcp.length > 0) e.BSC_AGENT_MCP = JSON.stringify(bscMcp);
         }
         return Object.keys(e).length > 0 ? e : undefined;
       })();
