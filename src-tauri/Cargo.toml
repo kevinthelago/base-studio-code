@@ -64,6 +64,10 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # framework. Pulling this in compiles bundled DuckDB into the desktop build.
 bsc-data = { path = "../crates/data" }
 
+# On-device credential store for migration source connectors (#1194): secrets go to the OS
+# keychain (Windows Credential Manager / macOS Keychain), never to the plan config or the planner.
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+
 # Per-project plan store (#plan-db) — shared with the `bsc-plan` agent CLI. The Tauri
 # commands below are a thin wrapper over this crate's `Store`.
 plandb = { path = "../crates/plandb" }

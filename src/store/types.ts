@@ -21,6 +21,7 @@ import type { PipelineRunState } from "../screens/planner/grading/pipelineRuntim
 import type { GradeResult } from "../screens/planner/grading/grading";
 import type { Blueprint, BlueprintSection } from "../screens/planner/stages/blueprints";
 import type { DeployConfig } from "../screens/planner/shared/deployConfig";
+import type { SourceConfig } from "../screens/planner/shared/sourceConfig";
 import type { DataModel } from "../screens/planner/data/dataModel";
 import type { PaneDescriptor } from "../lib/tunnel/tunnel";
 import type { DirectorMode, IntegrationStrategy } from "../screens/planner/shared/integrationStrategy";
@@ -605,6 +606,16 @@ export interface AppStore {
    *  stage pane; the `deploymentDefined` gate signal derives from it. */
   planDeployConfig: Record<string, DeployConfig>;
   setPlanDeployConfig: (projectId: string, cfg: DeployConfig) => void;
+  /** Per-project migration SOURCE config (#source-pane) — the legacy systems a project migrates
+   *  from, declared + connected read-only in the Source stage pane; the `sourcesConnected` gate
+   *  signal derives from it. Secret credentials are NEVER stored here (they live in the OS keychain). */
+  planSourceConfig: Record<string, SourceConfig>;
+  setPlanSourceConfig: (projectId: string, cfg: SourceConfig) => void;
+  /** Per-project GitHub repository visibility for publish (#…). Absent ⇒ false ⇒ repos are created
+   *  PRIVATE (the default); set true to create them public. Applied by `handlePublish` when it
+   *  creates a missing repo. */
+  reposPublic: Record<string, boolean>;
+  setReposPublic: (projectId: string, isPublic: boolean) => void;
   /** Optional stages the user deliberately SKIPPED (#921). The flow stops on every optional stage;
    *  skipping marks it resolved (frontier advances, never blocks completion) but renders distinctly. */
   planSkippedSections:  Record<string, string[]>;
