@@ -445,17 +445,28 @@ pub fn data_platform_scan(
     };
     match connector_id.as_str() {
         "sap-odata" => scan_odata(&fields, &secret),
-        "quickbase" => scan_quickbase(&fields, &secret),
+        "quickbase" => scan_quickbase(QUICKBASE_API, &fields, &secret),
         // OAuth connectors: `secret` is the keychain access token; instance metadata
         // (Salesforce instance_url, QuickBooks realmId) arrives via `fields` from the OAuth flow.
         "salesforce" => scan_salesforce(&fields, &secret),
-        "hubspot" => scan_hubspot(&secret),
-        "monday" => scan_monday(&secret),
-        "quickbooks" => scan_quickbooks(&fields, &secret),
+        "hubspot" => scan_hubspot(HUBSPOT_API, &secret),
+        "monday" => scan_monday(MONDAY_API, &secret),
+        "quickbooks" => scan_quickbooks(QUICKBOOKS_API, &fields, &secret),
         "dynamics365" => scan_dynamics(&fields, &secret),
         other => Ok(ScanResult::pending(format!("no live transport for {other}"))),
     }
 }
+
+// Production API bases for the connectors whose host is fixed (not derived from a user field).
+// Passed into the transport fns so tests can point them at a local mock server (#1198).
+#[cfg(feature = "source-stage")]
+const QUICKBASE_API: &str = "https://api.quickbase.com/v1";
+#[cfg(feature = "source-stage")]
+const HUBSPOT_API: &str = "https://api.hubapi.com";
+#[cfg(feature = "source-stage")]
+const MONDAY_API: &str = "https://api.monday.com/v2";
+#[cfg(feature = "source-stage")]
+const QUICKBOOKS_API: &str = "https://quickbooks.api.intuit.com";
 
 /// Salesforce: bearer token over the org's instance URL (from the OAuth token response).
 #[cfg(feature = "source-stage")]
@@ -481,12 +492,12 @@ fn scan_salesforce(fields: &std::collections::HashMap<String, String>, token: &s
 
 /// HubSpot: bearer token over the public API host.
 #[cfg(feature = "source-stage")]
-fn scan_hubspot(token: &str) -> Result<ScanResult, String> {
+fn scan_hubspot(api_base: &str, token: &str) -> Result<ScanResult, String> {
     let client = reqwest::blocking::Client::new();
-    let t = token.to_string();
+    let (t, base) = (token.to_string(), api_base.to_string());
     let fetch = move |path: &str| -> bsc_data::Result<serde_json::Value> {
         client
-            .get(format!("https://api.hubapi.com/{path}"))
+            .get(format!("{base}/{path}"))
             .bearer_auth(&t)
             .header("Accept", "application/json")
             .send()
@@ -499,12 +510,12 @@ fn scan_hubspot(token: &str) -> Result<ScanResult, String> {
 
 /// monday.com: GraphQL POST with the token in the Authorization header.
 #[cfg(feature = "source-stage")]
-fn scan_monday(token: &str) -> Result<ScanResult, String> {
+fn scan_monday(api_url: &str, token: &str) -> Result<ScanResult, String> {
     let client = reqwest::blocking::Client::new();
-    let t = token.to_string();
+    let (t, url) = (token.to_string(), api_url.to_string());
     let fetch = move |gql: &str| -> bsc_data::Result<serde_json::Value> {
         client
-            .post("https://api.monday.com/v2")
+            .post(&url)
             .header("Authorization", &t)
             .header("Content-Type", "application/json")
             .json(&serde_json::json!({ "query": gql }))
@@ -518,16 +529,16 @@ fn scan_monday(token: &str) -> Result<ScanResult, String> {
 
 /// QuickBooks Online: bearer token, company (realm) from the OAuth callback.
 #[cfg(feature = "source-stage")]
-fn scan_quickbooks(fields: &std::collections::HashMap<String, String>, token: &str) -> Result<ScanResult, String> {
+fn scan_quickbooks(api_base: &str, fields: &std::collections::HashMap<String, String>, token: &str) -> Result<ScanResult, String> {
     let realm = match fields.get("realm").filter(|s| !s.is_empty()) {
         Some(r) => r.clone(),
         None => return Ok(ScanResult::pending("missing company realm — re-authorize")),
     };
     let client = reqwest::blocking::Client::new();
-    let (t, r) = (token.to_string(), realm.clone());
+    let (t, r, base) = (token.to_string(), realm.clone(), api_base.to_string());
     let fetch = move |sql: &str| -> bsc_data::Result<serde_json::Value> {
         client
-            .get(format!("https://quickbooks.api.intuit.com/v3/company/{r}/query"))
+            .get(format!("{base}/v3/company/{r}/query"))
             .query(&[("query", sql)])
             .bearer_auth(&t)
             .header("Accept", "application/json")
@@ -589,7 +600,7 @@ fn scan_odata(fields: &std::collections::HashMap<String, String>, secret: &str) 
 
 /// Quickbase: a user token + realm header; GET tables/fields, POST records query.
 #[cfg(feature = "source-stage")]
-fn scan_quickbase(fields: &std::collections::HashMap<String, String>, secret: &str) -> Result<ScanResult, String> {
+fn scan_quickbase(api_base: &str, fields: &std::collections::HashMap<String, String>, secret: &str) -> Result<ScanResult, String> {
     let realm = fields
         .get("realm")
         .cloned()
@@ -597,7 +608,7 @@ fn scan_quickbase(fields: &std::collections::HashMap<String, String>, secret: &s
         .ok_or("missing realm hostname")?;
     let app_id = fields.get("appId").cloned().unwrap_or_default();
     let client = reqwest::blocking::Client::new();
-    let base = "https://api.quickbase.com/v1";
+    let base = api_base.to_string();
     let (realm_h, token) = (realm.clone(), secret.to_string());
     let fetch = move |desc: &str| -> bsc_data::Result<serde_json::Value> {
         let req = if let Some(table) = desc.strip_prefix("records:") {
@@ -736,5 +747,172 @@ mod tests {
         assert_eq!(by_key["active"], FieldType::Bool);
 
         std::fs::remove_file(&csv).ok();
+    }
+}
+
+// ── live-scan transport integration tests (#1198) ──────────────────────────
+// Drive the reqwest transports against a localhost mock that serves canned fixtures, verifying
+// auth headers, base-URL + descriptor→request mapping (incl. GET vs POST), and the ScanResult
+// mapping — coverage the connectors' own fixtures (which stub the transport) can't give.
+#[cfg(all(test, feature = "source-stage"))]
+mod scan_it {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    /// A localhost HTTP mock: returns the first route whose substring appears in the request
+    /// (path + headers + body), or 401 if `auth` (case-insensitive) is set and absent. Stops on drop.
+    struct MockApi {
+        base: String,
+        shutdown: Arc<AtomicBool>,
+    }
+    impl Drop for MockApi {
+        fn drop(&mut self) {
+            self.shutdown.store(true, Ordering::Relaxed);
+        }
+    }
+
+    fn fields(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    fn mock(auth: &'static str, routes: Vec<(&'static str, &'static str)>) -> MockApi {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let sd = shutdown.clone();
+        std::thread::spawn(move || {
+            let want = auth.to_lowercase();
+            while !sd.load(Ordering::Relaxed) {
+                match listener.accept() {
+                    Ok((mut s, _)) => {
+                        s.set_nonblocking(false).ok();
+                        s.set_read_timeout(Some(Duration::from_millis(200))).ok();
+                        // Read until the headers + declared body have arrived (POST bodies can split
+                        // across packets), or the read times out.
+                        let mut data: Vec<u8> = Vec::new();
+                        let mut chunk = [0u8; 4096];
+                        loop {
+                            match s.read(&mut chunk) {
+                                Ok(0) => break,
+                                Ok(k) => {
+                                    data.extend_from_slice(&chunk[..k]);
+                                    let sep = data.windows(4).position(|w| w == b"\r\n\r\n");
+                                    if let Some(p) = sep {
+                                        let head = String::from_utf8_lossy(&data[..p]).to_lowercase();
+                                        let need = head
+                                            .split("content-length:")
+                                            .nth(1)
+                                            .and_then(|s| s.trim_start().split(|c: char| !c.is_ascii_digit()).next())
+                                            .and_then(|s| s.parse::<usize>().ok())
+                                            .unwrap_or(0);
+                                        if data.len() >= p + 4 + need {
+                                            break;
+                                        }
+                                    }
+                                }
+                                Err(_) => break,
+                            }
+                        }
+                        let req = String::from_utf8_lossy(&data);
+                        let (status, body) = if !want.is_empty() && !req.to_lowercase().contains(&want) {
+                            ("401 Unauthorized", "{\"error\":\"unauthorized\"}")
+                        } else {
+                            (
+                                "200 OK",
+                                routes.iter().find(|(m, _)| req.contains(m)).map(|(_, b)| *b).unwrap_or("{}"),
+                            )
+                        };
+                        let _ = write!(
+                            s,
+                            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            body.len(), body
+                        );
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(4))
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        MockApi { base: format!("http://{addr}"), shutdown }
+    }
+
+    #[test]
+    fn odata_basic_auth_lists_entity_sets() {
+        let srv = mock(
+            "authorization: basic ",
+            vec![
+                ("Customers", r#"{"value":[{"CustomerID":"ACME","CompanyName":"Acme"}]}"#),
+                ("GET / HTTP", r#"{"value":[{"name":"Customers","kind":"EntitySet"}]}"#),
+            ],
+        );
+        let f = fields(&[("serviceUrl", &srv.base), ("user", "u")]);
+        let r = scan_odata(&f, "pw").unwrap();
+        assert!(r.live, "reason: {:?}", r.reason);
+        assert!(r.objects.iter().any(|o| o.name == "Customers"));
+    }
+
+    #[test]
+    fn quickbase_token_header_lists_tables_and_behaviors() {
+        let srv = mock(
+            "qb-user-token tok123",
+            vec![
+                ("records/query", r#"{"fields":[{"id":6,"label":"Name"}],"data":[{"6":{"value":"Apollo"}}]}"#),
+                ("fields", r#"[{"id":6,"label":"Name","required":true,"unique":true}]"#),
+                ("tables", r#"[{"id":"bqt1","name":"Projects"}]"#),
+            ],
+        );
+        let f = fields(&[("realm", "acme.quickbase.com"), ("appId", "app1")]);
+        let r = scan_quickbase(&srv.base, &f, "tok123").unwrap();
+        assert!(r.live, "reason: {:?}", r.reason);
+        assert!(r.objects.iter().any(|o| o.name == "Projects"));
+        assert!(r.behaviors.iter().any(|b| b.label == "Projects.Name"));
+    }
+
+    #[test]
+    fn hubspot_bearer_lists_objects_and_workflows() {
+        let srv = mock(
+            "authorization: bearer tok123",
+            vec![
+                ("automation", r#"{"workflows":[{"id":1,"name":"Lead nurture","type":"DRIP","enabled":true}]}"#),
+                ("properties/contacts", r#"{"results":[{"name":"email","label":"Email"}]}"#),
+                ("objects/contacts", r#"{"results":[{"id":"1","properties":{"email":"a@acme.com"}}]}"#),
+            ],
+        );
+        let r = scan_hubspot(&srv.base, "tok123").unwrap();
+        assert!(r.live, "reason: {:?}", r.reason);
+        assert!(r.objects.iter().any(|o| o.name == "contacts"));
+        assert!(r.behaviors.iter().any(|b| b.label == "Lead nurture"));
+    }
+
+    #[test]
+    fn monday_graphql_post_lists_boards_and_process() {
+        let srv = mock(
+            "authorization: tok123",
+            vec![
+                ("items_page", r#"{"data":{"boards":[{"items_page":{"items":[{"name":"Build","column_values":[{"id":"status","text":"Todo"}]}]}}]}}"#),
+                ("boards", r#"{"data":{"boards":[{"id":"101","name":"Projects","columns":[{"id":"status","title":"Status","type":"status","settings_str":"{\"labels\":{\"0\":\"Todo\",\"1\":\"Done\"}}"}]}]}}"#),
+            ],
+        );
+        let r = scan_monday(&srv.base, "tok123").unwrap();
+        assert!(r.live, "reason: {:?}", r.reason);
+        assert!(r.objects.iter().any(|o| o.name == "Projects"));
+        assert!(r.behaviors.iter().any(|b| b.label.contains("Status")));
+    }
+
+    #[test]
+    fn wrong_auth_is_rejected_and_surfaces_as_an_error() {
+        // The mock 401s when the bearer token is absent — proves the transport actually sends it.
+        let srv = mock(
+            "authorization: bearer correct",
+            vec![("automation", r#"{"workflows":[]}"#), ("properties", r#"{"results":[]}"#)],
+        );
+        let r = scan_hubspot(&srv.base, "wrong-token");
+        assert!(r.is_err(), "a 401 from the source must surface as a scan error");
     }
 }
