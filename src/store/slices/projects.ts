@@ -422,6 +422,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneNames             = { ...s.paneNames };
           const newPaneRoles             = { ...s.paneRoles };
           const newPaneProfiles             = { ...s.paneProfiles };
+          const newPaneProviders            = { ...s.paneProviders };
           const newFleetPaneStreams      = { ...s.fleetPaneStreams };
           const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
           const newPaneRepos                = { ...s.paneRepos };
@@ -433,6 +434,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // MCP exposure is role-aware (#1054): the director sees every installed server (it
           // coordinates the whole fleet), while each worker gets the global servers plus only the
           // servers its stream was assigned. Hooks/skills still share the project scope.
+          // Which harness the fleet runs on (#1078 P5): "claude" (default) or "bsc-agent" (any LLM).
+          const fleetHarness = s.fleetHarness ?? "claude";
           const fleetAllMcp = resolveAllInstalledMcp(s.mcpServers);
           const fleetHooks = resolveHooks(s.hooks, projectKey);
           const fleetSkills = resolveSkills(s.skills, projectKey);
@@ -476,6 +479,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               delete newPaneMcpServers[key];
               delete newPaneHooks[key];
               delete newPaneRoles[key];
+              delete newPaneProviders[key];
               delete newPaneProfiles[key];
               delete newFleetPaneStreams[key];
               delete newPaneRoleGlobs[key];
@@ -543,6 +547,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 newPaneHooks[key] = fleetHooks;
                 newPaneSkills[key] = fleetSkills;
                 newPaneRoles[key] = sess === null ? "director" : "worker";
+                newPaneProviders[key] = fleetHarness;
                 // One roster row per live session (#734). Director has no repo/branch.
                 rosterRows.push(sess === null
                   ? [key, "director", "-", "-", "director"].join("\t")
@@ -594,6 +599,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneHooks: newPaneHooks,
             paneSkills: newPaneSkills,
             paneRoles: newPaneRoles,
+            paneProviders: newPaneProviders,
             paneProfiles: newPaneProfiles,
             fleetPaneStreams: newFleetPaneStreams,
             paneRoleGlobs: newPaneRoleGlobs,
