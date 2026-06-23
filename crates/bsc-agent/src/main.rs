@@ -7,6 +7,7 @@
 //! stdout — it runs inside the PTY like `claude` does.
 
 mod agent;
+mod mcp;
 mod permissions;
 mod telemetry;
 
@@ -86,7 +87,29 @@ async fn main() {
     // System prompt = the CLAUDE.md chain (ancestors + cwd) + CLAUDE.local.md (the plan),
     // matching Claude Code's context loading so a bsc-agent worker sees the same context.
     let system = compose_system(&std::env::current_dir().unwrap_or_default());
-    let tools = vec![read_file_tool(), write_file_tool(), edit_file_tool(), bash_tool()];
+    let mut tools = vec![read_file_tool(), write_file_tool(), edit_file_tool(), bash_tool()];
+    // MCP tools ($BSC_AGENT_MCP, a JSON array of server cfgs) — connect each (best-effort: a
+    // failed server is logged + skipped), add its tools (namespaced mcp__<server>__<tool>), and
+    // keep the clients alive for the session so the child processes aren't dropped.
+    let mut _mcp_clients = Vec::new();
+    if let Ok(raw) = std::env::var("BSC_AGENT_MCP") {
+        if !raw.trim().is_empty() {
+            match serde_json::from_str::<Vec<mcp::McpServerCfg>>(&raw) {
+                Ok(cfgs) => {
+                    for cfg in &cfgs {
+                        match mcp::connect(cfg).await {
+                            Ok((client, mut mtools)) => {
+                                tools.append(&mut mtools);
+                                _mcp_clients.push(client);
+                            }
+                            Err(e) => eprintln!("bsc-agent: mcp '{}' connect failed: {e}", cfg.name),
+                        }
+                    }
+                }
+                Err(e) => eprintln!("bsc-agent: BSC_AGENT_MCP parse error: {e}"),
+            }
+        }
+    }
     // Least-privilege gate ($BSC_AGENT_PERMS); permissive when unset.
     let perms = permissions::Permissions::from_env();
     // Native telemetry: audit.log + tokens.log + transcript ($BSC_AUDIT_LOG / $BSC_TOKENS_LOG);
