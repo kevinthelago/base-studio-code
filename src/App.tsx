@@ -23,6 +23,7 @@ import { SuperUserAchievement } from "./components/SuperUserAchievement";
 import { CrashRecoveryBanner } from "./components/CrashRecoveryBanner";
 import { QuarantineBanner } from "./components/QuarantineBanner";
 import { useWarden } from "./lib/fleet/useWarden";
+import { useTunnelAutomations } from "./lib/tunnel/useTunnelAutomations";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/console/detachWindow";
 import { accentVars } from "./lib/settings/appearance";
 
@@ -176,6 +177,7 @@ export default function App() {
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
   useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
+  useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
 
   const {
     activeScreen, setScreen,
