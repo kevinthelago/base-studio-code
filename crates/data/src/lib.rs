@@ -17,6 +17,7 @@ pub mod error;
 pub mod infer;
 pub mod behavior;
 pub mod salesforce;
+pub mod monday;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
@@ -30,6 +31,7 @@ pub use behavior::{
     Automation, AutomationKind, BusinessProcess, DerivedKind, DerivedLogic, PlatformScan,
 };
 pub use salesforce::{SalesforceConnector, SalesforceField, SalesforceObject};
+pub use monday::MondayConnector;
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
