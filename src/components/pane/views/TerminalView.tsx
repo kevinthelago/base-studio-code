@@ -26,6 +26,7 @@ import { SessionReadinessBanner } from "../../SessionReadinessBanner";
 import { SessionFailure } from "../../SessionFailure";
 import { tokenForRepo } from "../../../lib/github/repoCredentials";
 import { getProvider } from "../../../lib/console/providers";
+import { ConsoleInput } from "../ConsoleInput";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -110,6 +111,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const inClaudeRef  = useRef(false);               // true between __bsc_state run/idle
   const claudeActiveRef = useRef<"run" | "idle">("idle"); // current within-session status
   const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Drives the native ConsoleInput overlay (#1149): true while a Claude session is the running
+  // program in this pane, so we hide Claude's own input and type on its behalf. State (not a ref)
+  // because the overlay's visibility must re-render.
+  const [claudeActive, setClaudeActive] = useState(false);
+  // Set by the mount effect so the overlay's submit can re-arm the run/idle status the way pressing
+  // Enter in xterm does (our input bypasses term.onData).
+  const markRunRef = useRef<() => void>(() => {});
   // ms of silence after last printable output → claude is back at its prompt (idle).
   // Kept generous: Claude pauses mid-turn (thinking, tool calls, API waits) often
   // exceed a second, and reading those as "idle" would wrongly enqueue a pane that
@@ -203,6 +211,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       }, QUIET_MS);
     }
 
+    // Re-arm "run" after the native ConsoleInput submits (it writes to the PTY directly, bypassing
+    // term.onData's own Enter→run logic), so the focus queue doesn't leave the pane stuck "idle".
+    markRunRef.current = () => {
+      if (!inClaudeRef.current) return;
+      claudeActiveRef.current = "run";
+      onStatusChangeRef.current?.("run");
+      armQuietTimer();
+    };
+
     // OSC 7: bash reports cwd after every prompt via our injected PROMPT_COMMAND.
     // Format: ESC ] 7 ; file://localhost/path BEL
     term.parser.registerOscHandler(7, (data) => {
@@ -219,6 +236,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         inClaudeRef.current = true;
         claudeActiveRef.current = "run";
         onStatusChangeRef.current?.("run");
+        setClaudeActive(true); // claude is the running program → show the native input (#1149)
         armQuietTimer();
         // Mark this pane as a claude pane so the next app launch can resume
         // it with `claude --continue` (#36). The setter no-ops when the
@@ -227,6 +245,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         useAppStore.getState().setPaneWasClaude(paneId, true);
       } else if (data === "idle") {
         inClaudeRef.current = false;
+        setClaudeActive(false); // claude exited → hide the native input, restore the full terminal
         if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
         onClaudeIdle();
       }
@@ -557,6 +576,9 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       if (!isNew) {
         // Reconnecting — Ctrl+L repaints the prompt without submitting a command
         invoke("pty_write", { paneId, data: "\x0c" }).catch((e) => log.error(`console[${paneId}] repaint write failed: ${e}`));
+        // A reconnected Claude pane is already running its REPL (no fresh OSC-100 "run" to catch),
+        // so re-show the native input for it (#1149).
+        if (isClaudeProvider && useAppStore.getState().paneWasClaude[paneId]) setClaudeActive(true);
       }
     });
 
@@ -652,10 +674,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // Call term.focus() whenever this pane becomes the focused one. focus() reaches
   // into xterm's textarea, which only exists after open() — skip until opened.
   useEffect(() => {
-    if (focused && visible) {
+    // When the native input is up (#1149), let IT hold the caret — don't yank focus back into xterm.
+    if (focused && visible && !claudeActive) {
       requestAnimationFrame(() => { if (openedRef.current) termRef.current?.focus(); });
     }
-  }, [focused, visible]);
+  }, [focused, visible, claudeActive]);
 
   // Apply global font-zoom changes to the live terminal, re-fitting so rows/cols
   // recompute for the new cell size and the PTY is resized to match. The skip on
@@ -696,7 +719,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   return (
     <div
       style={{
-        flex: 1, minHeight: 0,
+        flex: 1, minHeight: 0, position: "relative",
         background: TERM_THEME.background as string,
         display: visible ? "flex" : "none",
         flexDirection: "column",
@@ -739,6 +762,16 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         style={{
           flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px",
           display: criticalChecks.length > 0 ? "none" : undefined,
+        }}
+      />
+      {/* Native input (#1149): replaces Claude's built-in prompt while a Claude session is active —
+          overlays the bottom ~4 rows (Claude's input region) and routes typing to the PTY. */}
+      <ConsoleInput
+        active={claudeActive && visible && criticalChecks.length === 0}
+        focused={focused}
+        onSend={(data) => {
+          invoke("pty_write", { paneId, data }).catch(console.error);
+          if (data.includes("\r")) markRunRef.current?.();
         }}
       />
     </div>
