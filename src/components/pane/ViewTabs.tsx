@@ -1,7 +1,7 @@
-import { Terminal, FolderOpen, GitBranch, GitCompareArrows, History, ShieldCheck } from "lucide-react";
+import { Terminal, FolderOpen, GitBranch, GitCompareArrows, History, ShieldCheck, Activity } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type ViewKey = "console" | "files" | "branches" | "changes" | "log" | "tools";
+export type ViewKey = "console" | "files" | "branches" | "changes" | "log" | "tools" | "telemetry";
 
 // `group` (#1149) splits the view-switcher dropdown into the working SCREENs (terminal, files,
 // git views) and the INSPECT panels (tools & permissions, …) — mirroring the Console-Shell design.
@@ -12,6 +12,7 @@ export const VIEW_DEFS: Record<ViewKey, { Icon: LucideIcon; label: string; hint:
   changes:  { Icon: GitCompareArrows, label: "Changes", hint: "diff vs HEAD",   hotkey: "Alt+4", group: "screen" },
   log:      { Icon: History,    label: "Log",      hint: "recent commits",      hotkey: "Alt+5", group: "screen" },
   tools:    { Icon: ShieldCheck, label: "Tools & permissions", hint: "mcp + role posture", hotkey: "Alt+6", group: "inspect" },
+  telemetry:{ Icon: Activity,   label: "Telemetry · cost", hint: "tokens + spend", hotkey: "Alt+7", group: "inspect" },
 };
 
 interface ViewTabsProps {

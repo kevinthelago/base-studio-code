@@ -13,7 +13,12 @@ const MODELS: Array<{ id: ModelId; tone: string; price: string }> = [
 
 interface PaneMenuProps {
   agent: string;
+  /** The model configured for this pane (what `claude --model` launches next). */
   model: ModelId;
+  /** The model the CLI is ACTUALLY running right now (mapped from the transcript, #1181), when
+   *  known and a Claude family the menu offers. Drives the selected highlight so the menu
+   *  reflects reality; absent ⇒ fall back to the configured `model`. */
+  runningModel?: ModelId;
   active: ViewKey;
   available: ViewKey[];
   /** Caps the menu height so it scrolls instead of clipping past the window edge. */
@@ -34,9 +39,12 @@ interface PaneMenuProps {
 }
 
 export function PaneMenu({
-  agent, model, active, available, maxHeight, fullscreen, disabled,
+  agent, model, runningModel, active, available, maxHeight, fullscreen, disabled,
   onToggleFullscreen, onToggleDisable, onClose, onRename, onViewChange, onModel,
 }: PaneMenuProps) {
+  // The highlighted row reflects what's ACTUALLY running when known (#1181), else the
+  // configured model. Selecting a different row still sets the model for the next launch.
+  const selected = runningModel ?? model;
   return (
     <div style={{
       width: 268,
@@ -68,7 +76,8 @@ export function PaneMenu({
       {/* Model */}
       <MenuSection label="model">
         {MODELS.map((m) => {
-          const on = m.id === model;
+          const on = m.id === selected;
+          const isRunning = runningModel != null && m.id === runningModel;
           return (
             <MenuRow key={m.id} on={on} onClick={onModel ? () => { onModel(m.id); onClose?.(); } : undefined}>
               <span style={{
@@ -76,6 +85,7 @@ export function PaneMenu({
                 background: on ? "var(--accent)" : "var(--border)",
               }} />
               <span style={{ color: on ? "var(--accent)" : "var(--fg)", flex: 1 }}>{m.id}</span>
+              {isRunning && <span style={{ color: "var(--accent)", fontSize: 9, marginRight: 6 }}>running</span>}
               <span style={{ color: "var(--fg-dim)", fontSize: 9.5, marginRight: 6 }}>{m.tone}</span>
               <span style={{ color: "var(--fg-dim)", fontSize: 9.5, fontFamily: "var(--sans)" }}>{m.price}</span>
             </MenuRow>
