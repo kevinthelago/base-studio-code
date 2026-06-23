@@ -37,8 +37,9 @@ const PENDING_BYTES_CAP = 256 * 1024;
 
 // Rows the terminal grows TALLER than its visible clip box while a Claude session is connected
 // (#1158), so Claude CLI's own input box (at the bottom) falls below the clip and is hidden by
-// overflow. ~Claude's input height + a margin; tweak if it peeks or over-clips.
-const CLIP_ROWS = 4;
+// overflow. Sized to clear Claude's full input box (prompt + hint/token lines), not just one row;
+// tweak if it still peeks or over-clips.
+const CLIP_ROWS = 8;
 
 // Hex equivalents of the oklch design tokens so xterm can use them
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -774,6 +775,9 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       }}>
         <div
           ref={containerRef}
+          // `term-with-input` adds bottom scroll-padding to xterm's viewport (tokens.css) so the
+          // user can still scroll all the way down even with the bottom rows clipped.
+          className={claudeActive ? "term-with-input" : undefined}
           style={{
             height: claudeActive ? `calc(100% + ${Math.round(terminalFontSize * 1.4 * CLIP_ROWS)}px)` : "100%",
             padding: "6px 4px",
