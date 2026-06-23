@@ -344,12 +344,18 @@ pub fn data_load_reconciled(
 #[serde(rename_all = "camelCase")]
 pub struct ScanField {
     name: String,
-    /// One of string/number/bool/date/money/enum — value-inferred from the sampled rows.
+    /// One of string/number/bool/date/money/enum/ref — declared by the connector when its API
+    /// exposes field types (#1219), otherwise value-inferred from the sampled rows.
     #[serde(rename = "type")]
     ty: String,
-    /// Observed values when `ty == "enum"` (low-cardinality categorical column); else empty.
+    /// Values when `ty == "enum"` — the connector's declared options, else the observed values
+    /// of a low-cardinality categorical column; empty otherwise.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     enum_values: Vec<String>,
+    /// Target object name when `ty == "ref"` and the connector declared the relationship (a
+    /// Salesforce lookup); `None` when the ref is left to downstream name-matching.
+    #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+    ref_target: Option<String>,
 }
 
 /// A discovered object + a (bounded-sample) record count.
@@ -481,7 +487,23 @@ fn infer_fields(columns: &[String], rs: Option<&bsc_data::RowSet>) -> Vec<ScanFi
                 None => vec![],
             };
             let (ty, enum_values) = infer_typed(&samples);
-            ScanField { name: name.clone(), ty, enum_values }
+            ScanField { name: name.clone(), ty, enum_values, ref_target: None }
+        })
+        .collect()
+}
+
+/// Build typed fields from a connector's **declared** schema (#1219) — the source system's own
+/// field types (Salesforce picklists → enum + options, lookups → ref + target). Used in
+/// preference to value inference whenever `describe_object` returns a non-empty schema.
+#[cfg(feature = "source-stage")]
+fn declared_fields(declared: &[bsc_data::SourceField]) -> Vec<ScanField> {
+    declared
+        .iter()
+        .map(|f| ScanField {
+            name: f.name.clone(),
+            ty: field_type_str(f.ty).to_string(),
+            enum_values: f.enum_values.clone(),
+            ref_target: f.ref_target.clone(),
         })
         .collect()
 }
@@ -494,7 +516,13 @@ fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, Stri
     for o in objs.into_iter().take(12) {
         let rs = conn.read(&o.name).ok();
         let count = rs.as_ref().map(|r| r.rows.len()).unwrap_or(0);
-        let fields = infer_fields(&o.columns, rs.as_ref());
+        // Prefer the connector's declared types; fall back to value inference when it has none.
+        let declared = conn.describe_object(&o.name).unwrap_or_default();
+        let fields = if declared.is_empty() {
+            infer_fields(&o.columns, rs.as_ref())
+        } else {
+            declared_fields(&declared)
+        };
         objects.push(ScanObject { name: o.name, count, fields });
     }
     let platform = conn.scan_platform().map_err(|e| e.to_string())?;
