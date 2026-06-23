@@ -19,8 +19,9 @@ export interface BlueprintImportModalProps {
   /** Gist id → the locally-imported copy's recorded upstream `updatedAt` (#955). Present ⇒ already
    *  imported; a newer item `updatedAt` ⇒ out of date, so an "Update" button renders. */
   importedById?: Record<string, { updatedAt?: string }>;
-  /** Import (or update-in-place) a gist by id; the current `updatedAt` is recorded for freshness. */
-  onImport: (gistId: string, updatedAt?: string) => void;
+  /** Import (or update-in-place) a gist by id; the current `updatedAt` is recorded for freshness.
+   *  May be async — a rejection is surfaced to the user (the import never fails silently, #1042). */
+  onImport: (gistId: string, updatedAt?: string) => void | Promise<void>;
   /** Fall back to the manual paste-a-URL / ID dialog. */
   onManualImport: () => void;
   onClose: () => void;
@@ -53,6 +54,9 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
   const [busyId, setBusyId] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [toast, setToast] = useState("");
+  // A failed import surfaces here (persistent until the next attempt / dismiss) rather than
+  // being swallowed — the user must know an import didn't land and why (#1042).
+  const [importError, setImportError] = useState<string | null>(null);
   const timers = useRef<number[]>([]);
 
   const load = useCallback(() => {
@@ -76,15 +80,20 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
     timers.current.push(window.setTimeout(() => setToast(""), 1900));
   };
 
-  const doImport = (it: BlueprintGistItem) => {
+  const doImport = async (it: BlueprintGistItem) => {
     setBusyId(it.id);
-    onImport(it.id, it.updatedAt);
-    // The parent imports asynchronously and re-renders this modal with an updated `importedById`
-    // (the row flips to "Imported"); clear the local busy state + confirm shortly after.
-    timers.current.push(window.setTimeout(() => {
-      setBusyId((cur) => (cur === it.id ? null : cur));
+    setImportError(null);
+    try {
+      // Await the parent's resolve+install so the outcome is REAL — a success flashes the
+      // confirmation (the parent re-renders the row to "Imported"); a failure surfaces the
+      // reason instead of the old fire-and-forget flash that lied on error (#1042).
+      await onImport(it.id, it.updatedAt);
       flash(`Imported “${it.name}”`);
-    }, 1300));
+    } catch (e) {
+      setImportError(`Couldn't import “${it.name}”: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusyId((cur) => (cur === it.id ? null : cur));
+    }
   };
 
   const q = query.trim().toLowerCase();
@@ -174,6 +183,25 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
 
         {/* body */}
         <div style={{ flex: 1, minHeight: 0, overflowX: "hidden", overflowY: "auto", padding: "14px 20px" }}>
+          {importError && (
+            <div
+              role="alert"
+              style={{
+                display: "flex", alignItems: "flex-start", gap: 9, marginBottom: 11, padding: "10px 12px",
+                borderRadius: "var(--r-md)", fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.5,
+                color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 90%)",
+                border: "1px solid color-mix(in oklch, var(--danger), transparent 62%)",
+              }}
+            >
+              <AlertTriangle size={14} style={{ flex: "0 0 auto", marginTop: 1 }} />
+              <span style={{ flex: 1, color: "var(--fg)" }}>{importError}</span>
+              <button
+                onClick={() => setImportError(null)}
+                aria-label="Dismiss error"
+                style={{ background: "transparent", border: 0, color: "var(--fg-dim)", cursor: "pointer", padding: 0, display: "flex" }}
+              ><X size={13} /></button>
+            </div>
+          )}
           {statusLoading && (
             <>
               {[0, 1, 2, 3].map((i) => (
@@ -239,11 +267,11 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                           <Check size={13} />Imported
                         </button>
                       ) : stale ? (
-                        <button onClick={() => doImport(it)} title="Upstream has newer changes — pull the update" style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "color-mix(in oklch, var(--accent), transparent 88%)", border: "1px solid var(--accent-dim)", color: "var(--accent)", fontWeight: 600, fontFamily: "var(--mono)", fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <button onClick={() => void doImport(it)} title="Upstream has newer changes — pull the update" style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "color-mix(in oklch, var(--accent), transparent 88%)", border: "1px solid var(--accent-dim)", color: "var(--accent)", fontWeight: 600, fontFamily: "var(--mono)", fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
                           <ArrowUpCircle size={13} />Update
                         </button>
                       ) : (
-                        <button onClick={() => doImport(it)} title="Import into your library" style={{ ...ctaBtn, height: 26, padding: "0 13px", fontSize: 10.5 }}>
+                        <button onClick={() => void doImport(it)} title="Import into your library" style={{ ...ctaBtn, height: 26, padding: "0 13px", fontSize: 10.5 }}>
                           <Download size={13} />Import
                         </button>
                       )}
