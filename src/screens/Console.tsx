@@ -77,6 +77,8 @@ const PaneAt = memo(function PaneAt({
   const paneProvider = useAppStore((s) => s.paneProviders[pid]);
   const paneRepoFull = useAppStore((s) => s.paneRepos[pid]);
   const paneBranch = useAppStore((s) => s.paneStream[pid]?.branch);
+  // While a Claude session is active, the native console input replaces the status footer (#1158).
+  const claudeActive = useAppStore((s) => !!s.paneClaudeActive[pid]);
   // Prefer the assigned repo's short name; fall back to the cwd's basename.
   const repoShort = (paneRepoFull ?? cwd)?.split(/[\\/]/).filter(Boolean).pop();
   // Idle-reaped (#849): the PTY was killed for idleness. Unmount the terminal (this frees
@@ -100,6 +102,7 @@ const PaneAt = memo(function PaneAt({
       branch={paneBranch}
       role={paneRole}
       provider={paneProvider}
+      claudeActive={claudeActive}
       available={["console", "files", "branches", "changes", "log", "tools"]}
       active={view}
       menuOpen={menuOpen}

@@ -290,6 +290,10 @@ export interface AppStore {
   /** Console provider id per pane (persisted). Absent ⇒ "claude" (default). */
   paneProviders: Record<string, string>;
   setPaneProvider: (paneId: string, providerId: string) => void;
+  /** Whether a Claude session is the running program in each pane (#1158) — transient. Drives the
+   *  native console input (which replaces Claude's prompt) and hides the pane's status footer. */
+  paneClaudeActive: Record<string, boolean>;
+  setPaneClaudeActive: (paneId: string, active: boolean) => void;
   setPaneProfile: (paneId: string, profileId: string | null) => void;
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
