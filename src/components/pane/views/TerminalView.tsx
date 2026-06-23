@@ -506,6 +506,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
              { event: "PreToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
              { event: "PostToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
              { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
+             // Tainted-turn gate (#1167): marks the session tainted after it ingests untrusted
+             // input (WebFetch / curl / gh view) and blocks an outward/destructive command (exfil,
+             // force-push, repo-delete) that runs within the taint window — injection can't act in
+             // the turn it was read. Conservative: only the dangerous set is gated; normal work passes.
+             { event: "PreToolUse", matcher: "", command: "bsc-taint" },
              // Worker-only Stop hook (#369): when a worker tries to end its turn, bounce it
              // once toward continuing / deferring to the director via bsc-ask instead of
              // stopping to ask the user. `stop_hook_active` prevents an infinite loop.
