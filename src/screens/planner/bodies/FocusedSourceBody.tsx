@@ -21,9 +21,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppStore } from "../../../store";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
-  isConnected, sourceChecks, allSourcesConnected, deriveDataModel, downstreamImpact,
-  type SourceConfig, type DeclaredSource, type SpecField, type SourceStatus,
+  isConnected, sourceChecks, allSourcesConnected, deriveDataModel,
+  type SourceConfig, type DeclaredSource, type SpecField, type SourceStatus, type PlatformScanView,
 } from "../shared/sourceConfig";
+import { ScanViews } from "./ScanViews";
 
 const MONO = "var(--mono)";
 
@@ -406,7 +407,7 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
   // the pane stays demonstrable until every connector's live transport / OAuth app is in place.
   async function runScan(uid: string, connectorId: string, fields: Record<string, string>, fallbackHandle: string) {
     try {
-      const res = await invoke<{ live: boolean; instance?: string; handle?: string; objects?: { name: string; count: number; fields?: string[] }[]; behaviors?: { label: string }[] }>(
+      const res = await invoke<{ live: boolean; instance?: string; handle?: string; objects?: { name: string; count: number; fields?: string[] }[]; behaviors?: { label: string }[]; platform?: PlatformScanView }>(
         "data_platform_scan",
         { connectorId, project: pid, sourceUid: uid, fields },
       );
@@ -417,6 +418,7 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
           ...(res.instance ? { instance: res.instance } : {}),
           objects: res.objects ?? [],
           behaviors: res.behaviors ?? [],
+          platform: res.platform,
         });
         return;
       }
@@ -655,26 +657,10 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
         </div>
       )}
 
-      {/* downstream impact — the "data dictates structure" payoff (#1205) */}
-      {ready && (() => {
-        const imp = downstreamImpact(cfg);
-        return (
-          <div data-testid="downstream-impact" style={{
-            borderRadius: "var(--r-md)", padding: "10px 12px",
-            background: "color-mix(in oklch, var(--violet), transparent 92%)",
-            border: "1px solid color-mix(in oklch, var(--violet), transparent 80%)",
-            display: "flex", flexDirection: "column", gap: 4,
-          }}>
-            <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: ".06em", color: "var(--violet)" }}>✦ WHAT YOUR APP IS BUILT FROM</span>
-            <span style={{ fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.5 }}>
-              Seeds <b style={{ color: "var(--fg)" }}>{imp.entities} {imp.entities === 1 ? "entity" : "entities"}</b>
-              {" · "}<b style={{ color: "var(--fg)" }}>{imp.fields} {imp.fields === 1 ? "field" : "fields"}</b> into <span style={{ color: "var(--violet)" }}>features</span> + <span style={{ color: "var(--violet)" }}>structure</span>
-              {imp.behaviors > 0 && <> · <b style={{ color: "var(--fg)" }}>{imp.behaviors} {imp.behaviors === 1 ? "behavior" : "behaviors"}</b> carried over</>}.
-            </span>
-            <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>persisted to the project's canonical Data Model · the planner designs over this</span>
-          </div>
-        );
-      })()}
+      {/* scanned-result visualizations — the "data dictates structure" payoff (#1205/#1209):
+          Graph · List · Process over the derived model + captured behaviors. The header carries
+          the downstream-impact recap. */}
+      {ready && <ScanViews cfg={cfg} dataModelName={cfg.dataModelName || "Source Data Model"} />}
     </div>
   );
 }

@@ -368,12 +368,24 @@ pub struct ScanResult {
     handle: Option<String>,
     objects: Vec<ScanObject>,
     behaviors: Vec<ScanBehavior>,
+    /// The structured behavior scan (automations / business processes / derived logic) for the
+    /// Source pane's Process visualization (#1209); `behaviors` above stays as flat labels for the
+    /// recap + chips.
+    platform: bsc_data::PlatformScan,
 }
 
 #[cfg(feature = "source-stage")]
 impl ScanResult {
     fn pending(reason: impl Into<String>) -> Self {
-        ScanResult { live: false, reason: Some(reason.into()), instance: None, handle: None, objects: vec![], behaviors: vec![] }
+        ScanResult {
+            live: false,
+            reason: Some(reason.into()),
+            instance: None,
+            handle: None,
+            objects: vec![],
+            behaviors: vec![],
+            platform: bsc_data::PlatformScan::default(),
+        }
     }
 }
 
@@ -415,7 +427,8 @@ fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, Stri
         let count = conn.read(&o.name).map(|rs| rs.rows.len()).unwrap_or(0);
         objects.push(ScanObject { name: o.name, count, fields: o.columns });
     }
-    let behaviors = behaviors_summary(&conn.scan_platform().map_err(|e| e.to_string())?);
+    let platform = conn.scan_platform().map_err(|e| e.to_string())?;
+    let behaviors = behaviors_summary(&platform);
     Ok(ScanResult {
         live: true,
         reason: None,
@@ -423,6 +436,7 @@ fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, Stri
         instance: Some(instance),
         objects,
         behaviors,
+        platform,
     })
 }
 
@@ -877,6 +891,8 @@ mod scan_it {
         let proj = r.objects.iter().find(|o| o.name == "Projects").unwrap();
         assert_eq!(proj.fields, vec!["Name"]); // field labels → ScanObject.fields (#1211)
         assert!(r.behaviors.iter().any(|b| b.label == "Projects.Name"));
+        // Structured behaviors surface for the Process visualization (#1209).
+        assert!(r.platform.automations.iter().any(|a| a.name == "Projects.Name"));
     }
 
     #[test]
