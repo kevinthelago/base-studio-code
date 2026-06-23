@@ -52,6 +52,7 @@ export const useAppStore = create<AppStore>()(
         paneDirectorMode: s.paneDirectorMode,
         paneStream: s.paneStream,
         disabledPanes:   s.disabledPanes,
+        endedPanes:      s.endedPanes,   // #920: a finished worker's resting state survives restart
         githubConnected: s.githubConnected,
         githubToken:     s.githubToken,
         repoGithubTokens: s.repoGithubTokens,
