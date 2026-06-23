@@ -8,6 +8,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::behavior::PlatformScan;
 use crate::error::Result;
 
 /// A readable object a connector exposes (a table, sheet, endpoint, or file) and its
@@ -50,6 +51,14 @@ pub trait Connector {
     fn objects(&self) -> Result<Vec<SourceObject>>;
     /// Read one object by name into a [`RowSet`].
     fn read(&self, object: &str) -> Result<RowSet>;
+
+    /// Scan the source's behavioral layer — automations, business processes, and derived
+    /// logic (#1193). Default: nothing. A data-only source (a CSV file, a plain table) has
+    /// no behavior to carry; connectors over systems that do (Salesforce, Quickbase, …)
+    /// override this. Read-only (#782).
+    fn scan_platform(&self) -> Result<PlatformScan> {
+        Ok(PlatformScan::default())
+    }
 }
 
 /// Reference connector: reads a single CSV file. The object name is the file stem.
@@ -113,6 +122,8 @@ mod tests {
         assert_eq!(objs.len(), 1);
         assert_eq!(objs[0].columns, vec!["id", "name", "balance"]);
         assert_eq!(c.read(&objs[0].name).unwrap().rows.len(), 2);
+        // A data-only connector carries no behavior — it inherits the empty default.
+        assert!(c.scan_platform().unwrap().is_empty());
 
         std::fs::remove_file(&path).ok();
     }
