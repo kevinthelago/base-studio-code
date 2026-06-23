@@ -157,6 +157,267 @@ pub const CATALOG: &[VendorPreset] = &[
         category: "support",
         resources: &[("tickets", "tickets", None), ("contacts", "contacts", None)],
     },
+    // BPM / GRC / process (the SoftExpert neighbourhood)
+    VendorPreset {
+        id: "bizagi",
+        label: "Bizagi",
+        category: "bpm-grc",
+        resources: &[("cases", "cases", Some("data")), ("processes", "processes", Some("data"))],
+    },
+    VendorPreset {
+        id: "appian",
+        label: "Appian",
+        category: "bpm-grc",
+        resources: &[("records", "records", Some("data")), ("processes", "processes", Some("data"))],
+    },
+    VendorPreset {
+        id: "camunda",
+        label: "Camunda",
+        category: "bpm-grc",
+        resources: &[
+            ("process-definitions", "process-definition", None),
+            ("process-instances", "process-instance", None),
+            ("tasks", "task", None),
+        ],
+    },
+    VendorPreset {
+        id: "processmaker",
+        label: "ProcessMaker",
+        category: "bpm-grc",
+        resources: &[("cases", "cases", Some("data")), ("processes", "processes", Some("data"))],
+    },
+    VendorPreset {
+        id: "pega",
+        label: "Pega",
+        category: "bpm-grc",
+        resources: &[("cases", "cases", Some("data")), ("dataobjects", "data", Some("data"))],
+    },
+    // CRM
+    VendorPreset {
+        id: "keap",
+        label: "Keap",
+        category: "crm",
+        resources: &[
+            ("contacts", "contacts", Some("contacts")),
+            ("companies", "companies", Some("companies")),
+            ("opportunities", "opportunities", Some("opportunities")),
+        ],
+    },
+    VendorPreset {
+        id: "bullhorn",
+        label: "Bullhorn",
+        category: "crm",
+        resources: &[
+            ("candidates", "query/Candidate", Some("data")),
+            ("joborders", "query/JobOrder", Some("data")),
+            ("placements", "query/Placement", Some("data")),
+        ],
+    },
+    VendorPreset {
+        id: "creatio",
+        label: "Creatio",
+        category: "crm",
+        resources: &[("contacts", "Contact", Some("value")), ("accounts", "Account", Some("value"))],
+    },
+    VendorPreset {
+        id: "salesflare",
+        label: "Salesflare",
+        category: "crm",
+        resources: &[
+            ("contacts", "contacts", None),
+            ("accounts", "accounts", None),
+            ("opportunities", "opportunities", None),
+        ],
+    },
+    // ERP / accounting
+    VendorPreset {
+        id: "dynamics-bc",
+        label: "Dynamics 365 Business Central",
+        category: "erp",
+        resources: &[
+            ("customers", "customers", Some("value")),
+            ("items", "items", Some("value")),
+            ("salesOrders", "salesOrders", Some("value")),
+        ],
+    },
+    VendorPreset {
+        id: "sap-b1",
+        label: "SAP Business One",
+        category: "erp",
+        resources: &[
+            ("businessPartners", "BusinessPartners", Some("value")),
+            ("orders", "Orders", Some("value")),
+            ("items", "Items", Some("value")),
+        ],
+    },
+    VendorPreset {
+        id: "acumatica",
+        label: "Acumatica",
+        category: "erp",
+        resources: &[
+            ("customers", "Customer", None),
+            ("salesOrders", "SalesOrder", None),
+            ("stockItems", "StockItem", None),
+        ],
+    },
+    VendorPreset {
+        id: "zoho-books",
+        label: "Zoho Books",
+        category: "accounting",
+        resources: &[
+            ("invoices", "invoices", Some("invoices")),
+            ("contacts", "contacts", Some("contacts")),
+            ("items", "items", Some("items")),
+        ],
+    },
+    // HR / HRIS
+    VendorPreset {
+        id: "bamboohr",
+        label: "BambooHR",
+        category: "hr",
+        resources: &[("employees", "employees/directory", Some("employees"))],
+    },
+    VendorPreset {
+        id: "personio",
+        label: "Personio",
+        category: "hr",
+        resources: &[("employees", "company/employees", Some("data"))],
+    },
+    VendorPreset {
+        id: "gusto",
+        label: "Gusto",
+        category: "hr",
+        resources: &[("employees", "employees", None), ("payrolls", "payrolls", None)],
+    },
+    VendorPreset {
+        id: "workday",
+        label: "Workday",
+        category: "hr",
+        resources: &[("workers", "workers", Some("data"))],
+    },
+    // Support / helpdesk
+    VendorPreset {
+        id: "intercom",
+        label: "Intercom",
+        category: "support",
+        resources: &[
+            ("contacts", "contacts", Some("data")),
+            ("companies", "companies", Some("data")),
+            ("conversations", "conversations", Some("conversations")),
+        ],
+    },
+    VendorPreset {
+        id: "front",
+        label: "Front",
+        category: "support",
+        resources: &[
+            ("conversations", "conversations", Some("_results")),
+            ("contacts", "contacts", Some("_results")),
+        ],
+    },
+    // Marketing
+    VendorPreset {
+        id: "mailchimp",
+        label: "Mailchimp",
+        category: "marketing",
+        resources: &[("lists", "lists", Some("lists")), ("campaigns", "campaigns", Some("campaigns"))],
+    },
+    VendorPreset {
+        id: "activecampaign",
+        label: "ActiveCampaign",
+        category: "marketing",
+        resources: &[("contacts", "contacts", Some("contacts")), ("deals", "deals", Some("deals"))],
+    },
+    VendorPreset {
+        id: "klaviyo",
+        label: "Klaviyo",
+        category: "marketing",
+        resources: &[("profiles", "profiles", Some("data")), ("lists", "lists", Some("data"))],
+    },
+    // E-commerce
+    VendorPreset {
+        id: "shopify",
+        label: "Shopify",
+        category: "ecommerce",
+        resources: &[
+            ("products", "products", Some("products")),
+            ("orders", "orders", Some("orders")),
+            ("customers", "customers", Some("customers")),
+        ],
+    },
+    VendorPreset {
+        id: "bigcommerce",
+        label: "BigCommerce",
+        category: "ecommerce",
+        resources: &[
+            ("products", "catalog/products", Some("data")),
+            ("orders", "orders", Some("data")),
+            ("customers", "customers", Some("data")),
+        ],
+    },
+    VendorPreset {
+        id: "woocommerce",
+        label: "WooCommerce",
+        category: "ecommerce",
+        resources: &[
+            ("products", "products", None),
+            ("orders", "orders", None),
+            ("customers", "customers", None),
+        ],
+    },
+    // Project / work management
+    VendorPreset {
+        id: "smartsheet",
+        label: "Smartsheet",
+        category: "work",
+        resources: &[("sheets", "sheets", Some("data"))],
+    },
+    VendorPreset {
+        id: "wrike",
+        label: "Wrike",
+        category: "work",
+        resources: &[("tasks", "tasks", Some("data")), ("projects", "folders", Some("data"))],
+    },
+    VendorPreset {
+        id: "clickup",
+        label: "ClickUp",
+        category: "work",
+        resources: &[("tasks", "task", Some("tasks"))],
+    },
+    VendorPreset {
+        id: "trello",
+        label: "Trello",
+        category: "work",
+        resources: &[
+            ("boards", "members/me/boards", None),
+            ("cards", "members/me/cards", None),
+        ],
+    },
+    VendorPreset {
+        id: "notion",
+        label: "Notion",
+        category: "work",
+        resources: &[("search", "search", Some("results"))],
+    },
+    // Billing / subscriptions
+    VendorPreset {
+        id: "chargebee",
+        label: "Chargebee",
+        category: "billing",
+        resources: &[
+            ("subscriptions", "subscriptions", Some("list")),
+            ("customers", "customers", Some("list")),
+        ],
+    },
+    VendorPreset {
+        id: "recurly",
+        label: "Recurly",
+        category: "billing",
+        resources: &[
+            ("accounts", "accounts", Some("data")),
+            ("subscriptions", "subscriptions", Some("data")),
+        ],
+    },
 ];
 
 /// Look up a packaged preset by vendor id.
