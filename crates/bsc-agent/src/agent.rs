@@ -3,9 +3,10 @@
 
 use crate::permissions::Permissions;
 use crate::telemetry::Telemetry;
-use llm::{LlmProvider, Msg, ToolDef, Turn};
+use llm::{LlmProvider, Msg, ToolDef, Turn, TurnResult};
 use serde_json::Value;
 use std::path::Path;
+use std::time::Duration;
 
 /// A tool executor: takes the model-supplied `args` and returns its result (or error).
 pub type ToolFn = Box<dyn Fn(&Value) -> Result<String, String>>;
@@ -49,7 +50,7 @@ pub async fn run_agent<P: LlmProvider>(
             model: model.to_string(),
             max_tokens: 4096,
         };
-        let result = provider.turn(&turn, api_key).await?;
+        let result = turn_with_retry(provider, &turn, api_key, Duration::from_millis(500)).await?;
         // Record every assistant turn to the transcript (cost accounting reads its usage).
         telemetry.record_assistant(model, &result.usage);
         if !result.text.is_empty() {
@@ -93,6 +94,50 @@ pub async fn run_agent<P: LlmProvider>(
     }
     telemetry.finish();
     Err(format!("agent did not finish within {max_steps} steps"))
+}
+
+/// How many times a *transient* provider error is retried before the loop gives up.
+const MAX_TURN_RETRIES: usize = 3;
+
+/// Whether a provider error is worth retrying. Every provider in `crates/llm` formats its
+/// errors identically — `"Request failed: …"` for a reqwest send failure (network / timeout /
+/// connection reset) and `"API error (<status>): …"` for an HTTP error — so we can classify
+/// transport, rate-limit (429), and server/overload (5xx, incl. Anthropic's 529) failures as
+/// retryable while auth/4xx and malformed-request errors fail fast. (#1078 P4)
+fn is_transient_error(err: &str) -> bool {
+    err.starts_with("Request failed:")   // reqwest send: network / timeout / connection
+        || err.contains("API error (429") // rate limited
+        || err.contains("API error (5")   // 5xx server / overload (status is 3 digits, so "(5" ⇒ 5xx)
+}
+
+/// Run one provider turn, retrying *transient* failures with exponential backoff so a network
+/// blip or rate-limit doesn't abort the whole agent run. Permanent errors (auth, bad request)
+/// return immediately. `base_backoff` is the first delay (doubled each retry); tests pass
+/// `Duration::ZERO`. (#1078 P4 graceful degradation)
+async fn turn_with_retry<P: LlmProvider>(
+    provider: &P,
+    turn: &Turn,
+    api_key: &str,
+    base_backoff: Duration,
+) -> Result<TurnResult, String> {
+    let mut attempt = 0;
+    loop {
+        match provider.turn(turn, api_key).await {
+            Ok(r) => return Ok(r),
+            Err(e) if attempt < MAX_TURN_RETRIES && is_transient_error(&e) => {
+                let backoff = base_backoff * (1u32 << attempt); // base, 2x, 4x
+                eprintln!(
+                    "bsc-agent: transient provider error (attempt {}/{}), retrying in {}ms: {e}",
+                    attempt + 1,
+                    MAX_TURN_RETRIES,
+                    backoff.as_millis(),
+                );
+                tokio::time::sleep(backoff).await;
+                attempt += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 /// Persist the conversation as JSON (best-effort) so a later `--continue` can resume it.
@@ -228,7 +273,8 @@ pub fn bash_tool() -> Tool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use llm::{LlmRequest, ToolCall, TurnResult};
+    use llm::{LlmRequest, ToolCall};
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::cell::Cell;
 
     /// A provider that scripts two turns: (1) call `read_file` on a temp path, then
@@ -451,6 +497,68 @@ mod tests {
         std::fs::write(&garbage, "not json {{").unwrap();
         assert!(load_conversation(&garbage).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn is_transient_error_classifies_retryable_vs_permanent() {
+        // Transient: transport, rate-limit, 5xx (every provider formats these identically).
+        assert!(is_transient_error("Request failed: error sending request"));
+        assert!(is_transient_error("API error (429 Too Many Requests): slow down"));
+        assert!(is_transient_error("API error (503 Service Unavailable): try again"));
+        assert!(is_transient_error("API error (529): Overloaded"));
+        // Permanent: auth / bad request / not found — no point retrying.
+        assert!(!is_transient_error("API error (401 Unauthorized): bad key"));
+        assert!(!is_transient_error("API error (400 Bad Request): context too long"));
+        assert!(!is_transient_error("Failed to parse response: eof"));
+    }
+
+    /// A provider whose `turn` fails (with `err`) for the first `fail_times` calls, then
+    /// succeeds — so the retry policy can be exercised without real network/timing.
+    struct FlakyProvider {
+        calls: AtomicUsize,
+        fail_times: usize,
+        err: String,
+    }
+    impl LlmProvider for FlakyProvider {
+        async fn complete(&self, _r: &LlmRequest, _k: &str) -> Result<serde_json::Value, String> {
+            unreachable!()
+        }
+        async fn turn(&self, _t: &Turn, _k: &str) -> Result<TurnResult, String> {
+            let n = self.calls.fetch_add(1, Ordering::SeqCst);
+            if n < self.fail_times {
+                Err(self.err.clone())
+            } else {
+                Ok(TurnResult { text: "ok".into(), ..Default::default() })
+            }
+        }
+    }
+    fn empty_turn() -> Turn {
+        Turn { system: String::new(), messages: vec![], tools: vec![], model: "m".into(), max_tokens: 16 }
+    }
+
+    #[tokio::test]
+    async fn turn_with_retry_recovers_from_transient_failures() {
+        let p = FlakyProvider { calls: AtomicUsize::new(0), fail_times: 2, err: "API error (503): down".into() };
+        let r = turn_with_retry(&p, &empty_turn(), "", Duration::ZERO).await.unwrap();
+        assert_eq!(r.text, "ok");
+        assert_eq!(p.calls.load(Ordering::SeqCst), 3, "two transient failures then success");
+    }
+
+    #[tokio::test]
+    async fn turn_with_retry_fails_fast_on_permanent_error() {
+        let p = FlakyProvider { calls: AtomicUsize::new(0), fail_times: 9, err: "API error (401): bad key".into() };
+        let err = turn_with_retry(&p, &empty_turn(), "", Duration::ZERO).await.unwrap_err();
+        assert!(err.contains("401"));
+        assert_eq!(p.calls.load(Ordering::SeqCst), 1, "permanent error is not retried");
+    }
+
+    #[tokio::test]
+    async fn turn_with_retry_gives_up_after_max_transient() {
+        let p = FlakyProvider { calls: AtomicUsize::new(0), fail_times: 99, err: "Request failed: timed out".into() };
+        let err = turn_with_retry(&p, &empty_turn(), "", Duration::ZERO).await.unwrap_err();
+        assert!(err.contains("timed out"));
+        // 1 initial attempt + MAX_TURN_RETRIES retries.
+        assert_eq!(p.calls.load(Ordering::SeqCst), MAX_TURN_RETRIES + 1);
     }
 
     #[test]
