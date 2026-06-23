@@ -24,6 +24,9 @@ pub mod hubspot;
 pub mod airtable;
 pub mod sql;
 pub mod odata;
+pub mod servicenow;
+pub mod netsuite;
+pub mod zoho;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
@@ -44,6 +47,9 @@ pub use hubspot::HubSpotConnector;
 pub use airtable::AirtableConnector;
 pub use sql::SqlConnector;
 pub use odata::ODataConnector;
+pub use servicenow::ServiceNowConnector;
+pub use netsuite::NetSuiteConnector;
+pub use zoho::ZohoConnector;
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
