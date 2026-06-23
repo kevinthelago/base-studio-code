@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp, toMcpPayload, mcpFromCatalog, blankMcpServer, type McpServer } from "./mcpServers";
+import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp, toMcpPayload, toBscAgentMcp, mcpFromCatalog, blankMcpServer, type McpServer, type McpServerPayload } from "./mcpServers";
 import { MCP_CATALOG } from "../../data/mcpCatalog";
 
 // Helper: a minimal enabled stdio server; `name` defaults to the id for readable asserts.
@@ -98,5 +98,16 @@ describe("catalog templates + blank", () => {
 
   it("blankMcpServer produces an empty stdio shape", () => {
     expect(blankMcpServer()).toMatchObject({ transport: "stdio", command: "", enabled: false, projects: [] });
+  });
+});
+
+describe("toBscAgentMcp", () => {
+  it("keeps stdio servers, drops http, and maps env to an object", () => {
+    const payloads: McpServerPayload[] = [
+      { name: "fs", transport: "stdio", command: "mcp-fs", args: ["--root", "."], env: [["TOKEN", "x"]] },
+      { name: "web", transport: "http", args: [], url: "https://example.com", env: [] },
+    ];
+    const out = toBscAgentMcp(payloads);
+    expect(out).toEqual([{ name: "fs", command: "mcp-fs", args: ["--root", "."], env: { TOKEN: "x" } }]);
   });
 });
