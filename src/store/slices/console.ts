@@ -384,7 +384,16 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
       setPaneView: (idx, view) =>
         set((s) => { const v = [...s.paneViews]; v[idx] = view; return { paneViews: v }; }),
       setAllPanesView: (view) =>
-        set((s) => ({ paneViews: s.paneViews.map(() => view) })),
+        set((s) => {
+          // paneViews is a shared index→view map that defaults to [] and is only grown lazily by
+          // setPaneView — so mapping over it was a silent no-op until a pane had been switched
+          // individually. Fill at least the ACTIVE tab's pane slots (the point of "switch all"),
+          // keeping any higher indices a larger tab may have populated. (#1182)
+          const tab = s.tabs[s.activeTabIdx];
+          const [c, r] = tab ? tab.layout.split("×").map(Number) : [0, 0];
+          const count = Math.max((c || 0) * (r || 0), s.paneViews.length);
+          return { paneViews: Array.from({ length: count }, () => view) };
+        }),
       setPaneName: (tabIdx, paneIdx, name) =>
         set((s) => ({
           paneNames: {

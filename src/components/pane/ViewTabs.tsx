@@ -15,6 +15,10 @@ export const VIEW_DEFS: Record<ViewKey, { Icon: LucideIcon; label: string; hint:
   telemetry:{ Icon: Activity,   label: "Telemetry · cost", hint: "tokens + spend", hotkey: "Alt+7", group: "inspect" },
 };
 
+/** Views in their canonical (hotkey) order — index i ⇒ Alt+(i+1) / Alt+Shift+(i+1). The single
+ *  source the view hotkeys (useHotkeys) map digits through, so the keys never drift from VIEW_DEFS. */
+export const VIEW_ORDER: ViewKey[] = ["console", "files", "branches", "changes", "log", "tools", "telemetry"];
+
 interface ViewTabsProps {
   active: ViewKey;
   available: ViewKey[];
