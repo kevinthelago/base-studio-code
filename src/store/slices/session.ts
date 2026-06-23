@@ -8,7 +8,7 @@ import { repoPromptKey } from "../../lib/session/startupPrompt";
 import { DEFAULT_AUTO_FOCUS_MODE } from "../../lib/console/focusQueue";
 
 type SessionSlice = Pick<AppStore,
-  "mcpServers" | "addMcpServer" | "updateMcpServer" | "removeMcpServer" | "toggleMcpServer" | "setMcpServerProjects" | "hooks" | "addHook" | "updateHook" | "removeHook" | "toggleHook" | "setHookProjects" | "paneMcpServers" | "paneHooks" | "skills" | "addSkill" | "installBundledSkills" | "updateSkill" | "removeSkill" | "toggleSkill" | "toggleSkillPin" | "setSkillProjects" | "upsertSkills" | "paneSkills" | "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
+  "mcpServers" | "addMcpServer" | "updateMcpServer" | "removeMcpServer" | "toggleMcpServer" | "setMcpServerProjects" | "hooks" | "addHook" | "updateHook" | "removeHook" | "toggleHook" | "setHookProjects" | "paneMcpServers" | "paneHooks" | "skills" | "addSkill" | "installBundledSkills" | "updateSkill" | "removeSkill" | "toggleSkill" | "toggleSkillPin" | "setSkillProjects" | "upsertSkills" | "paneSkills" | "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
@@ -166,6 +166,10 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
 
       autoResumeClaude: true,
       setAutoResumeClaude: (v) => set({ autoResumeClaude: v }),
+      // #1107: when ON, a detected prompt-injection marker in the plan HARD-blocks publish (must be
+      // resolved). Default OFF = acknowledge-to-clear (findings surfaced; the user reviews + proceeds).
+      injectionHardGate: false,
+      setInjectionHardGate: (v) => set({ injectionHardGate: v }),
 
       autoPlanWithClaude: false,
       setAutoPlanWithClaude: (v) => set({ autoPlanWithClaude: v }),

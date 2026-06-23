@@ -57,6 +57,7 @@ export function GeneralSettings() {
     defaultModel, setDefaultModel,
     autoResumeClaude, setAutoResumeClaude,
     autoAdvanceOnReply, setAutoAdvanceOnReply,
+    injectionHardGate, setInjectionHardGate,
   } = useAppStore();
 
   async function chooseBaseDir() {
@@ -138,6 +139,27 @@ export function GeneralSettings() {
           >
             When you send a response to a console, jump focus to the next one waiting in the queue
             (Ctrl+Shift+N cycles manually). Works while maximized.
+          </ToggleRow>
+        </div>
+      </div>
+
+      <div style={{ height: 18 }} />
+
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
+          <h3 style={{ margin: 0 }}>Planner security</h3>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <ToggleRow
+            on={injectionHardGate}
+            onToggle={() => setInjectionHardGate(!injectionHardGate)}
+            title="Hard-block the plan on prompt-injection markers"
+          >
+            The planner reviews untrusted repos and web pages, then authors the kickoffs the whole
+            fleet runs. The plan is scanned for injected instructions (permission-widening, exfiltration,
+            push/merge, CI/hook tampering, &ldquo;ignore previous instructions&rdquo;). <b>On:</b> a flagged
+            plan <b>cannot publish</b> until the marker is removed. <b>Off (default):</b> findings are
+            surfaced and you acknowledge them to proceed.
           </ToggleRow>
         </div>
       </div>
