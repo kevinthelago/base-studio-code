@@ -59,6 +59,12 @@ const PLANNING_PROCESS_MD: &str = include_str!("../templates/planning-process.md
 // mislead it. The `bsc-plan blueprint set` spec + the four authoring stages live in this intro.
 const PLANNING_BLUEPRINT_INTRO: &str = include_str!("../templates/planning-blueprint-intro.md");
 
+// Anti prompt-injection framing for the planner (#1107). The planner is the most input-exposed
+// session (it reviews repos + the web) AND a trust amplifier (its output seeds the fleet's trusted
+// kickoffs/profiles/issues). Distinct from the worker template (`injection-resistance.md`): the
+// emphasis is "never transcribe a read instruction into a deliverable", not owned-glob scope.
+const PLANNER_INJECTION_RESISTANCE_MD: &str = include_str!("../templates/planner-injection-resistance.md");
+
 /// One-line directive per planning stage (#542/#666) for the assembled active-stages
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
@@ -190,6 +196,12 @@ pub(crate) async fn setup_workspaces(
     } else {
         format!("{}{}", PLANNING_NEW_INTRO.replace("{PITCH}", &pitch), PLANNING_PROCESS_MD)
     };
+
+    // Anti prompt-injection framing (#1107) — applied to EVERY planner spec (new / existing /
+    // authoring). The planner reads untrusted repo + web content and emits trusted fleet
+    // instruction, so it must treat all reviewed content as data and never transcribe an embedded
+    // directive into a kickoff/section/profile/issue.
+    planning_md.push_str(PLANNER_INJECTION_RESISTANCE_MD);
 
     // Modular planning stages (#512/#542): prepend the project's enabled stages (from
     // its blueprint) as the authoritative scope — disabled stages are declared out of
