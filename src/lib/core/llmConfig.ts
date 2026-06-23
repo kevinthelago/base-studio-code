@@ -40,3 +40,15 @@ export function resolveLlmConfig(s: LlmConfigSource): LlmConfig {
 export function hasLlmKey(cfg: LlmConfig): boolean {
   return cfg.provider === "local" || !!cfg.apiKey;
 }
+
+/** The `BSC_AGENT_*` env a bsc-agent session needs to reach the configured LLM (#1078 P3b).
+ *  The runtime reads provider/model/key (+ base URL for `local`) from these. */
+export function bscAgentEnv(cfg: LlmConfig): Record<string, string> {
+  const e: Record<string, string> = {
+    BSC_AGENT_PROVIDER: cfg.provider,
+    BSC_AGENT_MODEL: cfg.model,
+  };
+  if (cfg.apiKey) e.BSC_AGENT_API_KEY = cfg.apiKey;
+  if (cfg.baseUrl) e.BSC_AGENT_BASE_URL = cfg.baseUrl;
+  return e;
+}
