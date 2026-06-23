@@ -26,6 +26,28 @@ export interface PlanDependency {
   dev?: boolean;
   /** One-line rationale — surfaced in the worker manifest so the choice is legible. */
   why?: string;
+  /** The registry this is fetched from (#1127) — a KEY into the manifest's `registries` map. Absent
+   *  ⇒ the ecosystem's public default (npm registry / crates.io). A non-public source generates the
+   *  registry config (`.npmrc` / `.cargo/config.toml`) at publish. */
+  source?: string;
+}
+
+/** A non-default registry a dependency is fetched from (#1127). The `auth` token's VALUE lives in the
+ *  host vault — only its secret NAME is recorded here (and as a deploy secret). */
+export interface DependencyRegistry {
+  /** Registry base URL (npm) / index URL (cargo). */
+  url: string;
+  /** npm scope this registry serves (e.g. `@acme`). Absent ⇒ the npm default registry. Ignored by cargo. */
+  scope?: string;
+  /** Name of the auth-token secret (value lives in the host vault; recorded as a deploy secret). */
+  auth?: string;
+}
+
+/** The full dependency manifest (#1127): the locked libraries plus the non-default registries they
+ *  come from, keyed by the `source` each dependency references. */
+export interface DependencyManifest {
+  dependencies: PlanDependency[];
+  registries: Record<string, DependencyRegistry>;
 }
 
 function str(v: unknown): string | undefined {
@@ -33,22 +55,24 @@ function str(v: unknown): string | undefined {
 }
 
 /**
- * Parse `dependencies.json` into a clean list. Accepts a bare JSON array of dependency objects, or
- * `{ "dependencies": [...] }`. Tolerant: bad JSON ⇒ []; an entry without a name or a recognized
- * ecosystem (`npm` | `cargo`) is dropped; duplicates (same repo+ecosystem+name) are de-duped, first
- * write winning.
+ * Parse `dependencies.json` into the full manifest (#1127). Accepts a bare JSON array of dependency
+ * objects (the #1111 form, ⇒ no registries), or `{ "dependencies": [...], "registries": {...} }`.
+ * Tolerant: bad JSON ⇒ empty manifest; a dependency without a name or a recognized ecosystem
+ * (`npm` | `cargo`) is dropped; duplicates (same repo+ecosystem+name) are de-duped, first write
+ * winning; a registry without a string `url` is dropped.
  */
-export function parseDependenciesFile(raw: string): PlanDependency[] {
+export function parseDependencyManifest(raw: string): DependencyManifest {
+  const empty: DependencyManifest = { dependencies: [], registries: {} };
   const t = (raw ?? "").trim();
-  if (!t) return [];
+  if (!t) return empty;
   let data: unknown;
-  try { data = JSON.parse(t); } catch { return []; }
+  try { data = JSON.parse(t); } catch { return empty; }
+  const obj = (data && typeof data === "object" && !Array.isArray(data)) ? data as Record<string, unknown> : null;
   const arr: unknown[] = Array.isArray(data)
     ? data
-    : (data && typeof data === "object" && Array.isArray((data as { dependencies?: unknown }).dependencies))
-      ? (data as { dependencies: unknown[] }).dependencies
-      : [];
-  const out: PlanDependency[] = [];
+    : (obj && Array.isArray(obj.dependencies)) ? obj.dependencies as unknown[] : [];
+
+  const dependencies: PlanDependency[] = [];
   const seen = new Set<string>();
   for (const item of arr) {
     if (!item || typeof item !== "object") continue;
@@ -60,16 +84,33 @@ export function parseDependenciesFile(raw: string): PlanDependency[] {
     const key = `${repo ?? "*"}|${eco}|${name.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({
+    dependencies.push({
       repo,
       ecosystem: eco,
       name,
       version: str(o.version),
       dev: o.dev === true,
       why: str(o.why),
+      source: str(o.source),
     });
   }
-  return out;
+
+  const registries: Record<string, DependencyRegistry> = {};
+  const regRaw = obj && obj.registries && typeof obj.registries === "object" && !Array.isArray(obj.registries)
+    ? obj.registries as Record<string, unknown> : {};
+  for (const [k, v] of Object.entries(regRaw)) {
+    if (!v || typeof v !== "object") continue;
+    const r = v as Record<string, unknown>;
+    const url = str(r.url);
+    if (!url) continue;
+    registries[k] = { url, scope: str(r.scope), auth: str(r.auth) };
+  }
+  return { dependencies, registries };
+}
+
+/** Parse just the dependency list (#1111 back-compat — the count/gate/seeding callers). */
+export function parseDependenciesFile(raw: string): PlanDependency[] {
+  return parseDependencyManifest(raw).dependencies;
 }
 
 /** The dependencies that apply to a given repo: those tagged with that `owner/repo`, plus the
@@ -136,9 +177,13 @@ function sortedRecord(r: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.keys(r).sort().map((k) => [k, r[k]]));
 }
 
-/** A single `name = "version"` Cargo dependency line. */
+/** A single Cargo dependency line. A dep with a non-default `source` takes the table form so cargo
+ *  resolves it against the named registry: `name = { version = "x", registry = "src" }`. */
 function cargoDepLine(d: PlanDependency): string {
-  return `${d.name} = "${d.version ?? "*"}"`;
+  const ver = d.version ?? "*";
+  return d.source
+    ? `${d.name} = { version = "${ver}", registry = "${d.source}" }`
+    : `${d.name} = "${ver}"`;
 }
 
 /**
@@ -194,6 +239,52 @@ export function mergeIntoCargoToml(existing: string | null, crateName: string, d
   return out;
 }
 
+// ── Registry config writers (#1127) ──────────────────────────────────────────────
+// Generate the source/registry config so a private dependency is fetchable from the first commit.
+// Only the registries a repo's deps actually reference are emitted; public-only repos get nothing.
+
+/** The `//host[/path]/` key npm's `.npmrc` uses for an auth token, derived from a registry URL. */
+function npmrcHostKey(url: string): string {
+  return url.replace(/^https?:/i, "").replace(/\/?$/, "/");
+}
+
+/** The registry KEYs (sorted, deterministic) that a repo's deps of one ecosystem reference and that
+ *  are actually defined in the registries map. */
+function usedRegistries(registries: Record<string, DependencyRegistry>, deps: PlanDependency[], eco: DependencyEcosystem): string[] {
+  const used = new Set(deps.filter((d) => d.ecosystem === eco && d.source && registries[d.source]).map((d) => d.source!));
+  return [...used].sort();
+}
+
+/**
+ * Build a repo's `.npmrc` from the registries its npm deps reference (#1127): a scoped registry as
+ * `@scope:registry=<url>`, an unscoped one as the default `registry=<url>`, plus a `${SECRET}` auth
+ * token line when the registry declares one. Returns null when no npm dep uses a private source.
+ */
+export function buildNpmrc(registries: Record<string, DependencyRegistry>, deps: PlanDependency[]): string | null {
+  const keys = usedRegistries(registries, deps, "npm");
+  if (!keys.length) return null;
+  const lines: string[] = [];
+  for (const key of keys) {
+    const r = registries[key];
+    lines.push(r.scope ? `${r.scope}:registry=${r.url}` : `registry=${r.url}`);
+    if (r.auth) lines.push(`${npmrcHostKey(r.url)}:_authToken=\${${r.auth}}`);
+  }
+  return lines.join("\n") + "\n";
+}
+
+/**
+ * Build a repo's `.cargo/config.toml` from the registries its cargo deps reference (#1127) — one
+ * `[registries.<name>]` table with the index URL each. Returns null when no cargo dep uses a private
+ * source. (Cargo reads the token from `CARGO_REGISTRIES_<NAME>_TOKEN`, kept out of the file.)
+ */
+export function buildCargoConfig(registries: Record<string, DependencyRegistry>, deps: PlanDependency[]): string | null {
+  const keys = usedRegistries(registries, deps, "cargo");
+  if (!keys.length) return null;
+  const lines: string[] = [];
+  for (const key of keys) lines.push(`[registries.${key}]`, `index = "${registries[key].url}"`, "");
+  return lines.join("\n").replace(/\n+$/, "\n");
+}
+
 /**
  * Render the locked dependency set for ONE repo as the worker-context block inlined into its
  * CLAUDE.local.md (#1111) — the single authority every worker reads, with the guardrail that the
@@ -206,9 +297,11 @@ export function buildWorkerDependencyBlock(deps: PlanDependency[]): string {
   const fmt = (d: PlanDependency) => {
     const ver = d.version ? `@${d.version}` : "";
     const dev = d.dev ? " *(dev)*" : "";
+    const src = d.source ? ` *(from \`${d.source}\` registry)*` : "";
     const why = d.why ? ` — ${d.why}` : "";
-    return `  - \`${d.name}${ver}\`${dev}${why}`;
+    return `  - \`${d.name}${ver}\`${dev}${src}${why}`;
   };
+  const hasSource = deps.some((d) => d.source);
   const lines = ["## Dependencies (locked by the planner)", ""];
   if (npm.length) lines.push("**npm** (`package.json`):", ...npm.map(fmt), "");
   if (cargo.length) lines.push("**cargo** (`Cargo.toml`):", ...cargo.map(fmt), "");
@@ -218,5 +311,12 @@ export function buildWorkerDependencyBlock(deps: PlanDependency[]): string {
     "worktrees is exactly what collides at integration. If you genuinely need a new dependency, request",
     "it from the director (`bsc-ask`) rather than adding it yourself.",
   );
+  if (hasSource) {
+    lines.push(
+      "",
+      "Private-registry sources are already wired in `.npmrc` / `.cargo/config.toml` (their auth tokens",
+      "come from the environment) — don't reconfigure them.",
+    );
+  }
   return lines.join("\n");
 }

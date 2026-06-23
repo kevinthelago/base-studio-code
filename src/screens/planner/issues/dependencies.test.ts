@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseDependenciesFile, depsForRepo, bucketByEcosystem,
-  mergeIntoPackageJson, mergeIntoCargoToml, buildWorkerDependencyBlock,
-  type PlanDependency,
+  parseDependenciesFile, parseDependencyManifest, depsForRepo, bucketByEcosystem,
+  mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, buildWorkerDependencyBlock,
+  type PlanDependency, type DependencyRegistry,
 } from "./dependencies";
 
 describe("parseDependenciesFile (#1111)", () => {
@@ -36,6 +36,36 @@ describe("parseDependenciesFile (#1111)", () => {
   it("marks dev dependencies", () => {
     const deps = parseDependenciesFile(JSON.stringify([{ ecosystem: "npm", name: "vitest", dev: true }]));
     expect(deps[0].dev).toBe(true);
+  });
+});
+
+describe("parseDependencyManifest — sources + registries (#1127)", () => {
+  it("parses the registries map and per-dep source", () => {
+    const m = parseDependencyManifest(JSON.stringify({
+      registries: { internal: { url: "https://npm.internal/", scope: "@acme", auth: "INTERNAL_NPM_TOKEN" } },
+      dependencies: [{ ecosystem: "npm", name: "@acme/ui", version: "^2", source: "internal" }],
+    }));
+    expect(m.registries.internal).toEqual({ url: "https://npm.internal/", scope: "@acme", auth: "INTERNAL_NPM_TOKEN" });
+    expect(m.dependencies[0].source).toBe("internal");
+  });
+
+  it("drops a registry without a string url", () => {
+    const m = parseDependencyManifest(JSON.stringify({
+      registries: { bad: { scope: "@x" }, ok: { url: "https://r/" } },
+      dependencies: [],
+    }));
+    expect(m.registries.bad).toBeUndefined();
+    expect(m.registries.ok).toBeTruthy();
+  });
+
+  it("is back-compatible with the #1111 bare-array form (no registries)", () => {
+    const m = parseDependencyManifest(JSON.stringify([{ ecosystem: "npm", name: "zod" }]));
+    expect(m.dependencies).toHaveLength(1);
+    expect(m.registries).toEqual({});
+  });
+
+  it("parseDependenciesFile still returns just the list", () => {
+    expect(parseDependenciesFile(JSON.stringify({ dependencies: [{ ecosystem: "cargo", name: "serde" }] }))).toHaveLength(1);
   });
 });
 
@@ -114,6 +144,52 @@ describe("mergeIntoCargoToml (#1111)", () => {
   it("returns null when there are no cargo deps", () => {
     expect(mergeIntoCargoToml(null, "api", [{ ecosystem: "npm", name: "zod" }])).toBeNull();
   });
+
+  it("writes the registry table form for a dep with a private source (#1127)", () => {
+    const out = mergeIntoCargoToml(null, "api", [
+      { ecosystem: "cargo", name: "acme-core", version: "0.3", source: "internal" },
+      { ecosystem: "cargo", name: "serde", version: "1" },
+    ])!;
+    expect(out).toContain(`acme-core = { version = "0.3", registry = "internal" }`);
+    expect(out).toContain(`serde = "1"`);
+  });
+});
+
+describe("registry config writers (#1127)", () => {
+  const registries: Record<string, DependencyRegistry> = {
+    internal: { url: "https://npm.internal/", scope: "@acme", auth: "INTERNAL_NPM_TOKEN" },
+    crates: { url: "https://crates.internal/index/" },
+  };
+
+  it("buildNpmrc emits a scoped registry + an auth-token line keyed by host", () => {
+    const npmrc = buildNpmrc(registries, [{ ecosystem: "npm", name: "@acme/ui", source: "internal" }])!;
+    expect(npmrc).toContain("@acme:registry=https://npm.internal/");
+    expect(npmrc).toContain("//npm.internal/:_authToken=${INTERNAL_NPM_TOKEN}");
+  });
+
+  it("buildNpmrc uses a default registry line when the registry has no scope", () => {
+    const noScope: Record<string, DependencyRegistry> = { mirror: { url: "https://npm.mirror/" } };
+    const npmrc = buildNpmrc(noScope, [{ ecosystem: "npm", name: "left-pad", source: "mirror" }])!;
+    expect(npmrc).toContain("registry=https://npm.mirror/");
+    expect(npmrc).not.toContain("_authToken");
+  });
+
+  it("buildNpmrc is null when no npm dep uses a private source", () => {
+    expect(buildNpmrc(registries, [{ ecosystem: "npm", name: "zod" }])).toBeNull();
+    expect(buildNpmrc(registries, [{ ecosystem: "cargo", name: "serde", source: "crates" }])).toBeNull();
+  });
+
+  it("buildCargoConfig emits a [registries.<name>] table with the index url", () => {
+    const cfg = buildCargoConfig(registries, [{ ecosystem: "cargo", name: "acme-core", source: "crates" }])!;
+    expect(cfg).toContain("[registries.crates]");
+    expect(cfg).toContain(`index = "https://crates.internal/index/"`);
+  });
+
+  it("config writers only emit registries actually used and defined", () => {
+    // 'ghost' isn't in the registries map ⇒ ignored.
+    expect(buildNpmrc(registries, [{ ecosystem: "npm", name: "x", source: "ghost" }])).toBeNull();
+    expect(buildCargoConfig(registries, [{ ecosystem: "cargo", name: "y" }])).toBeNull();
+  });
 });
 
 describe("buildWorkerDependencyBlock (#1111)", () => {
@@ -134,5 +210,18 @@ describe("buildWorkerDependencyBlock (#1111)", () => {
 
   it("is empty when the repo has no locked deps", () => {
     expect(buildWorkerDependencyBlock([])).toBe("");
+  });
+
+  it("notes a dependency's registry source and the already-wired config (#1127)", () => {
+    const md = buildWorkerDependencyBlock([
+      { ecosystem: "npm", name: "@acme/ui", version: "^2", source: "internal" },
+    ]);
+    expect(md).toContain("from `internal` registry");
+    expect(md).toMatch(/already wired in `\.npmrc`/);
+  });
+
+  it("omits the source note when every dep is from the public default", () => {
+    const md = buildWorkerDependencyBlock([{ ecosystem: "npm", name: "zod" }]);
+    expect(md).not.toContain("registry");
   });
 });
