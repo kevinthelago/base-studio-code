@@ -205,4 +205,27 @@ describe("sourceConfig — scan visualizations view-model (#1209)", () => {
     expect(isMultiSource(vizCfg)).toBe(true);
     expect(isMultiSource({ ...vizCfg, sources: [vizCfg.sources[0]] })).toBe(false);
   });
+
+  it("honors typed discovered fields — real types + enum values flow to the model + view (#1219)", () => {
+    const cfg: SourceConfig = {
+      dataModelName: "M", proposed: [],
+      sources: [src({
+        uid: "x", connectorId: "sql", status: "scanned",
+        objects: [{ name: "Account", count: 5, fields: [
+          { name: "id", type: "string" },
+          { name: "revenue", type: "money" },
+          { name: "tier", type: "enum", enumValues: ["A", "B", "C"] },
+        ] }],
+      })],
+    };
+    const acct = deriveDataModel(cfg).entities[0];
+    const byKey = Object.fromEntries(acct.fields.map((f) => [f.key, f]));
+    expect(byKey.revenue.type).toBe("money");
+    expect(byKey.tier.type).toBe("enum");
+    expect(byKey.tier.enum_values).toEqual(["A", "B", "C"]);
+
+    const tier = scanEntities(cfg)[0].fields.find((f) => f.key === "tier")!;
+    expect(tier.type).toBe("enum");
+    expect(tier.enumValues).toEqual(["A", "B", "C"]);
+  });
 });
