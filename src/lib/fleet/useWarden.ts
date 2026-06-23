@@ -1,21 +1,28 @@
 // The always-on warden (#1102): periodically checks every live WORKER against its trusted plan
-// anchor and, on a deterministic trip (out-of-lane edit / gate-denied command — possible prompt
-// injection or hijack), HARD-PAUSES it: kills the PTY, marks it quarantined, and fires a mobile
-// push so the user is alerted even off the desktop. Asymmetric by design — the watcher (this app
-// loop) reads only structured, trusted telemetry (the plan, the git diff, the bsc-audit log),
-// never the issue/PR/web prose a worker ingests, so it can't itself be steered by an injection.
-//
-// Mount once at the app root (App.tsx) so it runs regardless of the active screen — a hijack must
-// be caught while the user is anywhere. Mirrors useCoordinator's loop shape.
+// anchor and, on a trip, HARD-PAUSES it: kills the PTY, marks it quarantined, and fires a mobile
+// push so the user is alerted even off the desktop. Two layers:
+//   1. Deterministic (every tick, free): out-of-lane edit / gate-denied command → conformance.ts.
+//   2. LLM judge (sampled, ~every JUDGE_EVERY ticks, needs an API key): a fuzzy "on-task?" second
+//      opinion on ONE worker that catches semantic drift the rules can't see (wardenJudge.ts).
+// Both feed the same hard-pause. Asymmetric by design — the watcher reads only structured, trusted
+// telemetry (the plan, the git diff, the bsc-audit log), never the worker-ingested prose, so it
+// can't itself be steered by an injection. Mount once at the app root so it runs on any screen.
 
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
 import { roleCapability } from "../session/sessionRoles";
+import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
+import { oneShotComplete } from "../core/claudeComplete";
 import { planWarden, parseAuditCommands, type WardenSession } from "./warden";
+import { buildJudgePrompt, parseJudgeVerdict, selectForJudging } from "./wardenJudge";
 import { log } from "../core/log";
 
-const POLL_MS = 6000; // heavier than the coord loop (reads a git diff per worker) — every ~6s
+const POLL_MS = 6000;   // heavier than the coord loop (reads a git diff per worker) — every ~6s
+const JUDGE_EVERY = 5;  // run the LLM spot-check ~every 5 ticks (~30s), one worker, round-robin
+
+/** Panes mid-quarantine, so a slow kill+push doesn't double-fire across ticks. */
+type InFlight = { current: Set<string> };
 
 /** Gather one live worker's trusted activity + anchor, or null if it can't be evaluated. */
 async function buildSession(paneId: string): Promise<WardenSession | null> {
@@ -41,9 +48,52 @@ async function buildSession(paneId: string): Promise<WardenSession | null> {
   };
 }
 
+/** Hard-pause a worker: kill the PTY FIRST (a hijacked session can't be trusted to stop itself),
+ *  then record the quarantine and fire the mobile push. Per-pane guarded so it fires once. */
+async function quarantinePane(paneId: string, streamId: string, summary: string, inFlight: InFlight): Promise<void> {
+  if (inFlight.current.has(paneId)) return;
+  inFlight.current.add(paneId);
+  try {
+    await invoke("pty_kill", { paneId }).catch((e) => log.error(`warden: pty_kill ${paneId} failed: ${e}`));
+    useAppStore.getState().markQuarantine(paneId, { streamId, summary, at: Date.now() });
+    // Mobile alert (#1102 slice 2a): a "quarantine" coord event → FCM push to paired phones.
+    await invoke("tunnel_emit_coord_event", { kind: "quarantine", session: paneId, refKey: summary, at: Date.now() })
+      .catch((e) => log.error(`warden: quarantine push ${paneId} failed: ${e}`));
+    log.warn(`warden: quarantined ${paneId} (${streamId}) — ${summary}`);
+  } finally {
+    inFlight.current.delete(paneId);
+  }
+}
+
+/** Escalate one worker to the LLM judge; quarantine it if the judge says it drifted. Fail-open:
+ *  any error / unparseable reply leaves the worker running (the deterministic check is the gate). */
+async function judgeAndMaybeQuarantine(session: WardenSession, cfg: LlmConfig, inFlight: InFlight): Promise<void> {
+  const stream = useAppStore.getState().fleetPaneStreams[session.paneId];
+  if (!stream) return;
+  const { system, user } = buildJudgePrompt({
+    streamId: session.anchor.streamId,
+    ownedGlobs: session.anchor.ownedGlobs,
+    issues: stream.issues,
+    changedFiles: session.activity.changedFiles,
+    commands: session.activity.commands,
+  });
+  const reply = await oneShotComplete(cfg, system, user).catch((e) => {
+    log.error(`warden: judge call failed for ${session.paneId}: ${e}`);
+    return "";
+  });
+  if (!reply) return;
+  const verdict = parseJudgeVerdict(reply);
+  if (verdict.drifted) {
+    await quarantinePane(session.paneId, session.anchor.streamId, `LLM judge: ${verdict.reason}`, inFlight);
+  }
+}
+
 export function useWarden(): void {
-  // Panes a quarantine is mid-actuation for, so a slow kill+push doesn't double-fire next tick.
   const inFlight = useRef<Set<string>>(new Set());
+  const tickCount = useRef(0);     // drives the judge cadence
+  const judgeCursor = useRef(0);   // round-robin cursor for sampling
+  const judging = useRef(false);   // one judge call in flight at a time
+
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -56,32 +106,24 @@ export function useWarden(): void {
       const sessions = (await Promise.all(panes.map(buildSession))).filter((s): s is WardenSession => s !== null);
       if (cancelled) return;
 
+      // Layer 1 — deterministic hard-pause (every tick, free).
       for (const trip of planWarden(sessions, quarantined)) {
-        if (inFlight.current.has(trip.paneId)) continue;
-        inFlight.current.add(trip.paneId);
-        // HARD auto-pause: kill the PTY first (a hijacked session can't be trusted to stop
-        // itself), then record + alert. Order matters — stop the blast radius before anything else.
-        void (async () => {
-          try {
-            await invoke("pty_kill", { paneId: trip.paneId }).catch((e) =>
-              log.error(`warden: pty_kill ${trip.paneId} failed: ${e}`));
-            useAppStore.getState().markQuarantine(trip.paneId, {
-              streamId: trip.streamId,
-              summary: trip.summary,
-              at: Date.now(),
-            });
-            // Mobile alert (#1102 slice 2a): a "quarantine" coord event → FCM push to paired phones.
-            await invoke("tunnel_emit_coord_event", {
-              kind: "quarantine",
-              session: trip.paneId,
-              refKey: trip.summary,
-              at: Date.now(),
-            }).catch((e) => log.error(`warden: quarantine push ${trip.paneId} failed: ${e}`));
-            log.warn(`warden: quarantined ${trip.paneId} (${trip.streamId}) — ${trip.summary}`);
-          } finally {
-            inFlight.current.delete(trip.paneId);
+        void quarantinePane(trip.paneId, trip.streamId, trip.summary, inFlight);
+      }
+
+      // Layer 2 — LLM-judge spot-check (sampled, gated on an API key, one call at a time).
+      tickCount.current += 1;
+      if (tickCount.current % JUDGE_EVERY === 0 && !judging.current) {
+        const cfg = resolveLlmConfig(st);
+        if (hasLlmKey(cfg)) {
+          const skip = new Set([...quarantined, ...Object.keys(useAppStore.getState().quarantinedPanes)]);
+          const pick = selectForJudging(sessions.map((s) => s.paneId), judgeCursor.current++, skip);
+          const session = pick ? sessions.find((s) => s.paneId === pick) : undefined;
+          if (session) {
+            judging.current = true;
+            void judgeAndMaybeQuarantine(session, cfg, inFlight).finally(() => { judging.current = false; });
           }
-        })();
+        }
       }
     };
     void tick();
