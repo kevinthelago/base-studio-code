@@ -18,6 +18,7 @@ mod bsc;
 mod planner;
 mod data;
 mod credentials;
+mod source_oauth;
 mod harness;
 
 // ── Logging / performance ────────────────────────────────────────────────────
@@ -2296,6 +2297,7 @@ pub fn run() {
             credentials::source_save_secret,
             credentials::source_has_secret,
             credentials::source_delete_secret,
+            source_oauth::source_oauth_begin,
             planner::setup_workspaces,
             setup_kb_workspace,
             clone_repo,
