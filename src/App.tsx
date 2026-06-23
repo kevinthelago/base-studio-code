@@ -15,6 +15,7 @@ import { useTunnelSync } from "./hooks/useTunnelSync";
 import { startPerfMonitor, recordStoreWrite } from "./lib/core/perf";
 import { log } from "./lib/core/log";
 import { ConsoleScreen } from "./screens/Console";
+import { paneIdFor } from "./lib/console/paneIdentity";
 import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
 import { SkillsStatus } from "./screens/skills/SkillsStatus";
 import type { Tab } from "./components/chrome/Tabstrip";
@@ -316,8 +317,11 @@ export default function App() {
 
   function killTabPtys(tabIdx: number, layout: string) {
     const [c, r] = layout.split("×").map(Number);
+    const tab = tabs[tabIdx];
     for (let i = 0; i < c * r; i++) {
-      invoke("pty_kill", { paneId: `t${tabIdx}p${i}` }).catch(console.error);
+      // Kill the pane's RESOLVED identity id (#1176) — manual panes are `man:<tabId>:p<idx>`,
+      // so the old positional `t{tabIdx}p{i}` would miss the real session and leak it.
+      invoke("pty_kill", { paneId: paneIdFor(tab, tabIdx, i) }).catch(console.error);
     }
   }
 
@@ -327,10 +331,10 @@ export default function App() {
     const [newCols, newRows] = layout.split("×").map(Number);
     const oldCount = oldCols * oldRows;
     const newCount = newCols * newRows;
-    // Kill PTY sessions for panes that will no longer exist
+    // Kill PTY sessions for panes that will no longer exist (resolved identity id, #1176).
     if (newCount < oldCount) {
       for (let i = newCount; i < oldCount; i++) {
-        invoke("pty_kill", { paneId: `t${tabIdx}p${i}` }).catch(console.error);
+        invoke("pty_kill", { paneId: paneIdFor(tab, tabIdx, i) }).catch(console.error);
       }
     }
     setTabLayout(tabIdx, layout);
