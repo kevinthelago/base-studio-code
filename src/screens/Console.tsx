@@ -70,6 +70,14 @@ const PaneAt = memo(function PaneAt({
   const defaultModel = useAppStore((s) => s.defaultModel);
   const paneModel = useAppStore((s) => s.paneModels[pid]);
   const setPaneModel = useAppStore((s) => s.setPaneModel);
+  // Header/footer chrome data (#1149) — read from the store where known; the header degrades
+  // gracefully when a field is absent (e.g. no role/branch assigned to an ad-hoc console).
+  const paneRole = useAppStore((s) => s.paneRoles[pid]);
+  const paneProvider = useAppStore((s) => s.paneProviders[pid]);
+  const paneRepoFull = useAppStore((s) => s.paneRepos[pid]);
+  const paneBranch = useAppStore((s) => s.paneStream[pid]?.branch);
+  // Prefer the assigned repo's short name; fall back to the cwd's basename.
+  const repoShort = (paneRepoFull ?? cwd)?.split(/[\\/]/).filter(Boolean).pop();
   // Idle-reaped (#849): the PTY was killed for idleness. Unmount the terminal (this frees
   // its renderer buffer + the dead session) and show a resume placeholder; resuming clears
   // the flag, remounting TerminalView, which spawns a fresh PTY (--continue resumes it).
@@ -87,6 +95,10 @@ const PaneAt = memo(function PaneAt({
       status={disabled ? "idle" : status}
       model={paneModel ?? defaultModel}
       onModel={(m) => setPaneModel(pid, m)}
+      repo={repoShort}
+      branch={paneBranch}
+      role={paneRole}
+      provider={paneProvider}
       available={["console", "files", "branches", "changes", "log"]}
       active={view}
       menuOpen={menuOpen}
