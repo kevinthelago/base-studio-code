@@ -11,6 +11,8 @@
 // keychain on the device and are never persisted here or shared with the planning agent). The config
 // keeps only non-secret fields, a redacted `handle`, and the discovered (not extracted) inventory.
 
+import type { DataModel, Entity, Field } from "../data/dataModel";
+
 /** How a connector authenticates — drives which card the per-source ConnectionSpec renders. */
 export type AuthMethod = "oauth" | "token" | "password" | "basic" | "apiKey" | "upload";
 
@@ -148,8 +150,10 @@ export function connector(id: string): Connector {
   };
 }
 
-/** An object/table the scan discovered in a connected source (a count, not extracted rows). */
-export interface DiscoveredObject { name: string; count: number }
+/** An object/table the scan discovered in a connected source (a count, not extracted rows).
+ *  `fields` are the discovered column names when the connector surfaces them (used to seed the
+ *  derived Data Model's entity fields). */
+export interface DiscoveredObject { name: string; count: number; fields?: string[] }
 /** A behavior (business rule / automation) the scan found — these shape the target app, not just data. */
 export interface SourceBehavior { label: string }
 
@@ -224,6 +228,70 @@ export function sourceChecks(cfg: SourceConfig): SourceCheck[] {
     { id: "connected", label: "Connect & scan every source", ok: total > 0 && scanned === total, detail: `${scanned}/${total} connected` },
     { id: "healthy", label: "No connection errors", ok: errored === 0, detail: errored ? `${errored} failed` : "all healthy" },
   ];
+}
+
+// ── Derive the canonical Data Model from a scan (#1205 — "data dictates structure") ─────────────
+// The scanned sources seed the project's canonical Data Model: one entity per discovered object
+// (deduped across sources), fields from the discovered columns when present (else a default `id`
+// identity to start from). This is what `features`/`structure` design over — persisted to
+// datamodel.json by the Source pane and surfaced as the downstream-impact recap.
+
+/** Slug a source object/column name into a safe Data Model key (matches dataModel.ts SAFE_IDENT). */
+function safeKey(raw: string): string {
+  const s = raw.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  return /^[a-z_]/.test(s) ? s : `e_${s}`;
+}
+
+/** Build a Data Model from the scanned sources — entities from discovered objects, fields from
+ *  their columns (or a default `id` key), deduped by entity key. */
+export function deriveDataModel(cfg: SourceConfig, id = "dm-source"): DataModel {
+  const entities: Entity[] = [];
+  const seen = new Set<string>();
+  for (const s of cfg.sources) {
+    if (s.status !== "scanned") continue;
+    for (const o of s.objects ?? []) {
+      const key = safeKey(o.name) || "entity";
+      if (seen.has(key)) continue; // one entity per object name, across sources
+      seen.add(key);
+      const fseen = new Set<string>();
+      const cols = (o.fields ?? [])
+        .map(safeKey)
+        .filter((k) => k && !fseen.has(k) && (fseen.add(k), true));
+      const fields: Field[] = cols.length
+        ? cols.map((k) => ({ key: k, type: "string" as const }))
+        : [{ key: "id", type: "string" as const, required: true }];
+      const identity = fields.some((f) => f.key === "id") ? ["id"] : fields[0] ? [fields[0].key] : [];
+      entities.push({ key, label: o.name, fields, identity });
+    }
+  }
+  return { id, name: cfg.dataModelName || "Source Data Model", version: 1, entities };
+}
+
+/** Whether a migration source is active for the project (≥1 declared source) — drives the `source`
+ *  stage's `migrationSourceEnabled` so the stage applies. */
+export function migrationActive(cfg: SourceConfig | undefined): boolean {
+  return !!cfg && cfg.sources.length > 0;
+}
+
+/** The datamodel.json gate signals derived from the live scan state (feeds derivePlanStageState),
+ *  so the source stage's gate reflects scan progress without a round-trip to disk. */
+export function datamodelSignals(cfg: SourceConfig | undefined): { sourceReachable: boolean; modelInferred: boolean; schemaRefined: boolean } {
+  if (!cfg) return { sourceReachable: false, modelInferred: false, schemaRefined: false };
+  return {
+    sourceReachable: cfg.sources.some((s) => s.status === "scanning" || s.status === "scanned"),
+    modelInferred: cfg.sources.some((s) => s.status === "scanned"),
+    schemaRefined: allSourcesConnected(cfg),
+  };
+}
+
+/** The downstream-impact recap: what the scanned sources seed into features + structure. */
+export function downstreamImpact(cfg: SourceConfig): { entities: number; fields: number; behaviors: number } {
+  const m = deriveDataModel(cfg);
+  return {
+    entities: m.entities.length,
+    fields: m.entities.reduce((n, e) => n + e.fields.length, 0),
+    behaviors: cfg.sources.reduce((n, s) => n + (s.behaviors?.length ?? 0), 0),
+  };
 }
 
 // ── Sample scan (#source-pane) — the discovered inventory a connect surfaces. Until the native

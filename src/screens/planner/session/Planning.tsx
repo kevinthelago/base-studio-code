@@ -53,7 +53,7 @@ import { type McpInstallState } from "../shared/mcpPaneData";
 import { MCP_CATALOG } from "../../../data/mcpCatalog";
 import { buildProjectPaneData } from "../pane/projectPaneData";
 import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag } from "../shared/deployConfig";
-import { allSourcesConnected } from "../shared/sourceConfig";
+import { allSourcesConnected, migrationActive, datamodelSignals } from "../shared/sourceConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
@@ -868,8 +868,12 @@ export function Planning({ visible }: { visible: boolean }) {
       features: { count: featureState.count, allConfirmed: featuresGateComplete(featureState, confirmedSet.has(FEATURES_KEY)) && featureCycle.length === 0 },
       // Dependencies (#1111/#1127): the Deploy gate passes once ≥1 library is locked in the manifest.
       dependencies: { count: planDependencies.length },
+      // Source migration (#1205): the scan drives whether the source stage applies + its gate
+      // signals, so the source-inferred schema can dictate features/structure.
+      migrationSourceEnabled: migrationActive(sourceCfg),
+      datamodelArtifact: datamodelSignals(sourceCfg),
     });
-  }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet, planDependencies]);
+  }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet, planDependencies, sourceCfg]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
     const bp = blueprints.find(b => b.id === effectiveBlueprintId);
