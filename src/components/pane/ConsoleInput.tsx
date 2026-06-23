@@ -9,12 +9,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const LINE_PX = 18;   // textarea line box (fontSize 12 · line-height 18px)
 const MAX_LINES = 5;  // grow up to 5 lines, then the textarea scrolls
-// Rows of opaque "cover" this bar overlaps above itself, onto the terminal's bottom rows — enough to
-// seat Claude CLI's own input box neatly behind ours when a Claude session is connected. The matching
-// `.term-with-input .xterm-viewport` bottom padding (tokens.css) adds the scroll room to read lines
-// that fall under the cover. Tweak if Claude's input box height changes.
-export const COVER_LINES = 3;
-export const COVER_PX = LINE_PX * COVER_LINES;
 
 interface ConsoleInputProps {
   /** Shown only when a Claude session is active in this pane. */
@@ -57,16 +51,12 @@ export function ConsoleInput({ active, focused, onSend }: ConsoleInputProps) {
 
   return (
     <div
-      style={{ flex: "0 0 auto", position: "relative", background: "#0c0e11" }}
+      style={{
+        flex: "0 0 auto", display: "flex", alignItems: "flex-end", gap: 7,
+        padding: "5px 10px", background: "#0c0e11", borderTop: "1px solid #1a1e24",
+      }}
       onClick={() => taRef.current?.focus()}
     >
-      {/* Cover strip — overlaps the terminal's bottom rows so Claude CLI's own input box is seated
-          neatly BEHIND this bar (only rendered while Claude is connected, i.e. `active`). */}
-      <div style={{
-        position: "absolute", bottom: "100%", left: 0, right: 0, height: COVER_PX,
-        background: "#0c0e11", borderTop: "1px solid #1a1e24",
-      }} />
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 7, padding: "5px 10px" }}>
       <span style={{ color: "#9aa6f0", fontFamily: "var(--mono)", fontSize: 12, lineHeight: `${LINE_PX}px`, flex: "0 0 auto" }}>›</span>
       <textarea
         ref={taRef}
@@ -93,7 +83,6 @@ export function ConsoleInput({ active, focused, onSend }: ConsoleInputProps) {
         title="Send to the agent (Enter)"
         style={{ cursor: "pointer", flex: "0 0 auto", color: "#9aa6f0", fontFamily: "var(--mono)", fontSize: 10, lineHeight: `${LINE_PX}px` }}
       >send ⏎</span>
-      </div>
     </div>
   );
 }
