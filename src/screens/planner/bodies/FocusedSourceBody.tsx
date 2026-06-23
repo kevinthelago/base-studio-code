@@ -14,7 +14,7 @@
 // SourceConfig and never shared with the planning agent, which sees only a redacted handle + the
 // discovered object inventory.
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../../store";
 import {
@@ -24,11 +24,6 @@ import {
 } from "../shared/sourceConfig";
 
 const MONO = "var(--mono)";
-
-// Simulated connect/scan cadence (ms). Until native read-only connectors land, "Save & connect"
-// walks declared → connecting → scanning → scanned so every state is real in the pane.
-const CONNECT_MS = 220;
-const SCAN_MS = 240;
 
 const STATUS_DOT: Record<SourceStatus, string> = {
   declared: "var(--fg-dim)",
@@ -332,7 +327,6 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
   const [secrets, setSecrets] = useState<Record<string, Record<string, string>>>({});
 
   const seq = useRef(0);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const persist = (next: SourceConfig) => setPlanSourceConfig(pid, next);
 
   // Patch one source by uid, reading the latest config from the store (safe across timeouts).
@@ -393,41 +387,53 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
     setExpanded((p) => { const n = new Set(p); if (n.has(uid)) n.delete(uid); else n.add(uid); return n; });
   }
 
-  // Connect: declared → connecting → scanning → scanned. Each secret field is persisted to the OS
-  // keychain (#1194) — it leaves component state for the device's secure store and is NEVER written
-  // to the config or shared with the planner. The discovered inventory still comes from the sample
-  // shape until the live per-connector scan transport (OAuth flows / HTTP / DB drivers) lands.
+  // Connect: save each secret field to the OS keychain (#1194) — it leaves component state for the
+  // device's secure store, never written to the config or shared with the planner — then run the
+  // live read-only scan. The inventory comes from the backend when a connector has live transport;
+  // otherwise (OAuth / SQL driver / OpenAPI discovery pending) it falls back to the sample shape.
   function connect(uid: string) {
     const src = cfg.sources.find((s) => s.uid === uid);
     if (!src) return;
     const c = connector(src.connectorId);
-    const handle = redactedHandle({ ...src, instance: src.instance || c.name });
+    const fallbackHandle = redactedHandle({ ...src, instance: src.instance || c.name });
+    const fieldsSnapshot = { ...(src.fields ?? {}) };
 
-    // Move secret drafts to the device keychain before clearing them from local state.
     const draft = secrets[uid] ?? {};
     const saved = Object.entries(draft).filter(([, v]) => v.trim());
-    for (const [field, value] of saved) {
-      void invoke("source_save_secret", { project: pid, sourceUid: uid, field, value }).catch(() => {});
-    }
+    const saves = saved.map(([field, value]) =>
+      invoke("source_save_secret", { project: pid, sourceUid: uid, field, value }).catch(() => {})
+    );
 
     patchSource(uid, { status: "connecting" });
     // Drop the local secret draft — it's on the device keychain now, never re-shown.
     setSecrets((p) => { const n = { ...p }; delete n[uid]; return n; });
     setRevealed((p) => { const n = new Set(p); n.delete(uid); return n; });
-    timers.current.push(setTimeout(() => {
-      patchSource(uid, { status: "scanning", secretSaved: saved.length > 0, handle, instance: src.instance || c.name });
-      timers.current.push(setTimeout(() => {
-        const scan = sampleScan(src.connectorId);
-        patchSource(uid, { status: "scanned", objects: scan.objects, behaviors: scan.behaviors });
-      }, SCAN_MS));
-    }, CONNECT_MS));
+
+    void Promise.all(saves).then(async () => {
+      patchSource(uid, { status: "scanning", secretSaved: saved.length > 0, handle: fallbackHandle, instance: src.instance || c.name });
+      try {
+        const res = await invoke<{ live: boolean; instance?: string; handle?: string; objects?: { name: string; count: number }[]; behaviors?: { label: string }[] }>(
+          "data_platform_scan",
+          { connectorId: src.connectorId, project: pid, sourceUid: uid, fields: fieldsSnapshot },
+        );
+        if (res?.live) {
+          patchSource(uid, {
+            status: "scanned",
+            instance: res.instance || src.instance || c.name,
+            handle: res.handle || fallbackHandle,
+            objects: res.objects ?? [],
+            behaviors: res.behaviors ?? [],
+          });
+          return;
+        }
+      } catch { /* fall through to the sample shape */ }
+      const scan = sampleScan(src.connectorId);
+      patchSource(uid, { status: "scanned", objects: scan.objects, behaviors: scan.behaviors });
+    });
   }
   function retry(uid: string) {
     patchSource(uid, { status: "declared", error: undefined });
   }
-
-  // Clear pending timers if the pane unmounts mid-connect.
-  useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);
 
   // ── readiness line ──
   const nextNeeded = cfg.sources.find((s) => s.status !== "scanned");
