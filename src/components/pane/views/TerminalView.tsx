@@ -17,6 +17,7 @@ import { toSessionPayloads } from "../../../lib/session/sessionConfig";
 import { resolveSkills, toSkillCfgs } from "../../../lib/session/skills";
 import { PendingPtyData } from "../../../lib/console/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/console/resumeClaude";
+import { isManualPaneId } from "../../../lib/console/paneIdentity";
 import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms } from "../../../lib/session/sessionRoles";
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
 import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/planner/fleet/flowPermissions";
@@ -549,16 +550,19 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // For non-Claude providers: explicit initCmd wins; otherwise fall back to the
       // provider's own launch command so the CLI auto-starts on mount.
       const st = useAppStore.getState();
+      // Manual consoles are never auto-recovered (#1176): suppress the crash-resume signals so a
+      // fresh "+" pane can't inherit a prior session's `claude --continue` even with auto-resume on.
+      const manual = isManualPaneId(paneId);
       const effectiveInitCmd = isClaudeProvider
         ? resolveInitCmd({
             explicit: initCmd,
             startupPrompt,
             paneWasClaude: !!st.paneWasClaude[paneId],
-            autoResumeClaude: st.autoResumeClaude,
+            autoResumeClaude: manual ? false : st.autoResumeClaude,
             // Crash recovery (#1041): resume only after an unclean shutdown (silent, if opted in) or
-            // a banner "restore" click — never on a clean restart.
+            // a banner "restore" click — never on a clean restart, and never for a manual console.
             wasUncleanShutdown: st.uncleanShutdown,
-            restoreRequested: !!st.restoreRequested[paneId],
+            restoreRequested: manual ? false : !!st.restoreRequested[paneId],
           })
         : (initCmd && initCmd.length > 0 ? initCmd : provider.buildLaunchCmd());
       // The model new claude launches use (per-pane override, else the global
