@@ -179,9 +179,12 @@ Connector-/data-oriented pipelines, alongside the existing ones:
 - `check-licensing` (builtin, gate) — robots/ToS/license clearance per source.
 - `load-data` (builtin) — write a verified staged load into the Data Model + lineage.
 
-**Asymmetric edge:** connectors are *agent-generated and verified* from specs (OpenAPI,
-OData — SAP speaks it — JDBC, Salesforce Bulk API), not hand-built. A connector can ship
-as an **MCP server** (the Extensions/MCP work, #33, already does real MCP servers + hooks).
+**Connectors are native.** Each connector is an in-process **Rust** implementation of the
+`Connector` trait (`crates/data/src/connector.rs`) — first-party for the systems users migrate
+from. They are thin, read-only (#782) HTTP/query mappers (Salesforce speaks REST + SOQL +
+Tooling; SAP speaks OData; SQL via a driver; monday.com via GraphQL). Running in the desktop
+host keeps **credentials and bulk row data inside the host's trust boundary — never in the
+planner's context** (#1194). The trait is the seam, so the heavy data path stays in Rust.
 
 ---
 
@@ -194,7 +197,7 @@ Each row ≈ one GitHub issue/branch. Order top-down; later rows depend on earli
 3. **`crates/data`** — DuckDB-backed per-project data store + lineage table.
 4. **`data-migration-blueprint`** — sections/substeps/gates as built-in; conductor-driven.
 5. **`data-collection-blueprint`** — built-in w/ `sourceMode` scrape/fetch; licensing + quality gates.
-6. **Connector framework** — interface + agent-generated connector (MCP) against one real source (start with CSV/SQL/Salesforce export).
+6. **Connector framework (native)** — the `Connector` trait + first-party in-process Rust connectors: CSV ✓, Salesforce ✓ (data + behavior scan), then QuickBooks, Quickbase, monday.com, SQL, Dynamics. Read-only; credentials held by the host.
 7. **Director reconciliation** — multi-source merge by `Entity.identity`, precedence rule, lineage.
 8. **Build side (future)** — metadata-driven app generation over a Data Model. Separate epic.
 
@@ -207,12 +210,71 @@ Each row ≈ one GitHub issue/branch. Order top-down; later rows depend on earli
 
 **Decided:**
 - **Storage = DuckDB.** Confirmed for `crates/data` (#781) — embeddable, columnar, per-project.
-- **Connector packaging = MCP servers.** Connectors ship as MCP servers, reusing the
-  Extensions/MCP work (#33) — sandboxable and already wired. (#784)
+- **Connector packaging = native (in-process Rust).** Connectors implement the `Connector`
+  trait in `crates/data` and run inside the desktop host — **not** MCP servers. This keeps
+  credentials *and* bulk row data inside the host's trust boundary (never in the planner's
+  context, #782/#1194); the bundled code is small (thin HTTP/query mappers), and the trait is
+  the seam so packaging can evolve later without touching anything downstream. *(Supersedes the
+  earlier #784 MCP-packaging decision.)*
 - **Migration is read-only.** No write-back into systems of record, ever; base-studio-code
   only reads from a source, maps, and loads into the Data Model. (#782)
+
+- **Platform behaviors are migratable, not just data (v1.0.4, #1193).** The scan captures the
+  source's *behavioral layer* in addition to its data — see §10.
 
 **Open:**
 - **Data Model authoring** — hand-built, agent-inferred from samples, or seeded from a
   library of canonical domain models (CRM/ERP/finance)? Probably all three; which first?
 - **Where the Data Model lives in the nav** — under Projects (planning) or its own top-level surface as the platform grows?
+
+---
+
+## 10. Platform behavior capture — "automations, business processes, and data are all migratable" (v1.0.4, #1193)
+
+A data-only scan copies *rows*. To **replace** a system you must also carry its *behavior* —
+the logic that made those rows mean something. So the source scan is widened from a data
+inventory into a **full platform scan**: it reads **data types AND configurations AND
+behaviors**, and the planner distills them into a **Platform Behavior Summary** that becomes
+part of what the generated app reproduces.
+
+**Read-only still holds (#782).** We *read* the configuration/behavior and *reproduce* it in
+the new app; we never write back into the system of record. Migration is read → summarize →
+regenerate, never source mutation.
+
+### 10.1 What a full scan captures (Salesforce as the first connector)
+
+| Layer | Captured | Salesforce surface |
+|---|---|---|
+| **Data** *(have)* | objects, fields, types, picklists→enum, lookups→ref, sample rows, counts | Describe + SOQL |
+| **Automations** | validation rules, workflow rules + field updates, Flows / Process Builder | Tooling API (`ValidationRule`, `WorkflowRule`, `Flow`) |
+| **Business processes** | approval processes (and their steps) | Tooling API (`ProcessDefinition`) |
+| **Derived logic** | formula fields, Apex triggers/classes (name + body, for summarization) | Describe (`calculatedFormula`) + Tooling (`ApexClass`/`ApexTrigger`) |
+| **Structure / access** *(lighter, later)* | record types, page layouts, profiles / permission sets | Tooling / Metadata API |
+
+### 10.2 The Platform Behavior Summary (the new artifact)
+
+The scan produces a structured **`PlatformScan`** (a sibling output to the inferred Data Model).
+The planner summarizes it in the Source pane — *"this system runs N validation rules, M Flows,
+K approval processes"* — and turns each behavior into a **migratable artifact** the generated
+app implements:
+
+- **validation rule** → an app-level validation / `Field.validate` rule on the Data Model,
+- **workflow rule / Flow** → a generated automation (a rule or scheduled job),
+- **approval process** → a generated approval workflow,
+- **formula field / Apex** → app logic (a computed field or a service function), summarized for
+  the worker to re-implement against the new stack.
+
+Nothing is auto-ported blind: every captured behavior is **surfaced with provenance** in the
+right pane (which source it came from, its source formula/definition) and the user confirms what
+carries over — same "see everything" posture as the inferred schema (§4 of the source-pane brief).
+
+### 10.3 Where it slots in
+
+- **Connector trait (`crates/data/src/connector.rs`):** gains a behavior surface alongside the
+  existing data surface; CSV exposes only data, Salesforce (`salesforce.rs`) implements the full
+  scan. Connectors that can't see behavior simply return an empty `PlatformScan`.
+- **`source` stage:** the behavior summary renders under the inferred model in `FocusedSourceBody`;
+  its gate signals extend `modelInferred`/`schemaRefined` with the behavior review.
+- **Publish / fleet:** captured behaviors become **load + logic issues** for the build-time
+  streams (data load *plus* the automations/processes/logic to regenerate), each with the source
+  definition attached for the worker.

@@ -7,6 +7,9 @@
 
 use serde_json::Value;
 
+use crate::behavior::{
+    Automation, AutomationKind, BusinessProcess, DerivedKind, DerivedLogic, PlatformScan,
+};
 use crate::connector::{Connector, RowSet, SourceObject};
 use crate::{DataError, Result};
 
@@ -28,6 +31,10 @@ pub struct SalesforceField {
     /// Object API names this field may point to; non-empty only when
     /// `field_type` is `"reference"`.
     pub lookup_targets: Vec<String>,
+    /// The formula expression for a calculated/formula field, e.g. `Amount * 0.9`;
+    /// `Some` only when the field is `calculated` in the describe (`calculatedFormula`).
+    /// Captured so the behavior scan can carry derived logic into the new app (#1193).
+    pub calculated_formula: Option<String>,
 }
 
 /// A Salesforce object with full field metadata, as returned by [`SalesforceConnector::describe`].
@@ -199,7 +206,14 @@ fn parse_field(f: &Value) -> Option<SalesforceField> {
         vec![]
     };
 
-    Some(SalesforceField { name, field_type, picklist_values, lookup_targets })
+    // Formula fields carry derived logic — capture the expression for the behavior scan (#1193).
+    let calculated_formula = if f["calculated"].as_bool().unwrap_or(false) {
+        f["calculatedFormula"].as_str().filter(|s| !s.is_empty()).map(str::to_string)
+    } else {
+        None
+    };
+
+    Some(SalesforceField { name, field_type, picklist_values, lookup_targets, calculated_formula })
 }
 
 /// Percent-encode a string for use in a URL query parameter (RFC 3986 unreserved chars pass
@@ -261,6 +275,200 @@ impl Connector for SalesforceConnector {
             .collect();
         Ok(RowSet { columns, rows })
     }
+
+    /// Scan the behavioral layer (#1193): automations (validation / workflow rules, Flows +
+    /// legacy Process Builder), business processes (approval processes), and derived logic
+    /// (formula fields + Apex). Tooling-API SOQL + describes, read-only (#782).
+    fn scan_platform(&self) -> Result<PlatformScan> {
+        Ok(PlatformScan {
+            automations: self.scan_automations()?,
+            business_processes: self.scan_business_processes()?,
+            derived_logic: self.scan_derived_logic()?,
+        })
+    }
+}
+
+// ── Platform behavior scan (#1193, generalized #1195) ──────────────────────
+//
+// A data-only scan copies rows; to *replace* a system you must also carry its
+// behavior. Salesforce maps its Tooling-API records into the vendor-neutral
+// model in `behavior.rs` (#1195) — read-only (#782); the planner summarizes and
+// the generated app reproduces them.
+
+impl SalesforceConnector {
+    /// Run a Tooling-API SOQL query and return its `records` array (empty if absent).
+    fn tooling_query(&self, soql: &str) -> Result<Vec<Value>> {
+        let body = self.get(&format!("/tooling/query?q={}", percent_encode(soql)))?;
+        Ok(body["records"].as_array().cloned().unwrap_or_default())
+    }
+
+    /// Describe every queryable object — used to harvest formula fields (derived logic).
+    fn described_objects(&self) -> Result<Vec<SalesforceObject>> {
+        self.list_object_names()?.iter().map(|n| self.describe(n)).collect()
+    }
+
+    /// Automations: validation rules, workflow rules, and Flows + legacy Process Builder.
+    fn scan_automations(&self) -> Result<Vec<Automation>> {
+        let src = &self.name;
+        let mut out = Vec::new();
+        for v in self.tooling_query(
+            "SELECT ValidationName, Active, ErrorMessage, EntityDefinition.QualifiedApiName, Metadata FROM ValidationRule",
+        )? {
+            out.extend(parse_validation(&v, src));
+        }
+        for v in self.tooling_query("SELECT Name, TableEnumOrId, Metadata FROM WorkflowRule")? {
+            out.extend(parse_workflow(&v, src));
+        }
+        for v in self
+            .tooling_query("SELECT DeveloperName, MasterLabel, ProcessType, Status, Metadata FROM Flow")?
+        {
+            out.extend(parse_flow(&v, src));
+        }
+        Ok(out)
+    }
+
+    /// Business processes: approval processes.
+    fn scan_business_processes(&self) -> Result<Vec<BusinessProcess>> {
+        Ok(self
+            .tooling_query("SELECT Name, TableEnumOrId, State, Type FROM ProcessDefinition WHERE Type = 'Approval'")?
+            .iter()
+            .filter_map(|v| parse_approval(v, &self.name))
+            .collect())
+    }
+
+    /// Derived logic: formula fields (from describes) + Apex classes/triggers.
+    fn scan_derived_logic(&self) -> Result<Vec<DerivedLogic>> {
+        let src = &self.name;
+        let mut out = formula_logic_from(&self.described_objects()?, src);
+        for v in self.tooling_query("SELECT Name, Status, Body FROM ApexClass")? {
+            out.extend(parse_apex(&v, false, src));
+        }
+        for v in self.tooling_query("SELECT Name, TableEnumOrId, Status, Body FROM ApexTrigger")? {
+            out.extend(parse_apex(&v, true, src));
+        }
+        Ok(out)
+    }
+}
+
+/// Harvest formula fields from already-described objects into derived logic.
+fn formula_logic_from(objects: &[SalesforceObject], source: &str) -> Vec<DerivedLogic> {
+    objects
+        .iter()
+        .flat_map(|o| {
+            o.fields.iter().filter_map(move |f| {
+                f.calculated_formula.as_ref().map(|formula| DerivedLogic {
+                    source: source.to_string(),
+                    kind: DerivedKind::Formula,
+                    name: f.name.clone(),
+                    object: Some(o.name.clone()),
+                    expression: formula.clone(),
+                })
+            })
+        })
+        .collect()
+}
+
+fn parse_validation(v: &Value, source: &str) -> Option<Automation> {
+    let name = v["ValidationName"].as_str()?.to_string();
+    let object = v["EntityDefinition"]["QualifiedApiName"].as_str().unwrap_or("").to_string();
+    let active = v["Active"].as_bool().or_else(|| v["Metadata"]["active"].as_bool()).unwrap_or(false);
+    let error_message = v["ErrorMessage"]
+        .as_str()
+        .or_else(|| v["Metadata"]["errorMessage"].as_str())
+        .unwrap_or("")
+        .to_string();
+    let condition = v["Metadata"]["errorConditionFormula"].as_str().unwrap_or("").to_string();
+    let actions = if error_message.is_empty() {
+        vec![]
+    } else {
+        vec![format!("error: {error_message}")]
+    };
+    Some(Automation {
+        source: source.to_string(),
+        kind: AutomationKind::Validation,
+        name,
+        object,
+        active,
+        trigger: "onSave".to_string(),
+        condition,
+        actions,
+    })
+}
+
+fn parse_workflow(v: &Value, source: &str) -> Option<Automation> {
+    let name = v["Name"].as_str()?.to_string();
+    let object = v["TableEnumOrId"].as_str().unwrap_or("").to_string();
+    let active = v["Metadata"]["active"].as_bool().unwrap_or(false);
+    let trigger = v["Metadata"]["triggerType"].as_str().unwrap_or("").to_string();
+    let actions = v["Metadata"]["actions"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|act| {
+                    act["name"].as_str().or_else(|| act["type"].as_str()).map(str::to_string)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(Automation {
+        source: source.to_string(),
+        kind: AutomationKind::Workflow,
+        name,
+        object,
+        active,
+        trigger,
+        condition: String::new(),
+        actions,
+    })
+}
+
+fn parse_flow(v: &Value, source: &str) -> Option<Automation> {
+    let label = v["MasterLabel"].as_str().unwrap_or("").to_string();
+    // Flow rows favour DeveloperName; fall back to the label so a name is always present.
+    let name = v["DeveloperName"].as_str().filter(|s| !s.is_empty()).unwrap_or(&label).to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let process_type = v["ProcessType"].as_str().unwrap_or("").to_string();
+    // Legacy Process Builder is a `Flow` with ProcessType = "Workflow"; keep it first-class.
+    let kind = if process_type == "Workflow" {
+        AutomationKind::ProcessBuilder
+    } else {
+        AutomationKind::Flow
+    };
+    let active = v["Status"].as_str().map(|s| s == "Active").unwrap_or(false);
+    let object = v["Metadata"]["start"]["object"].as_str().unwrap_or("").to_string();
+    Some(Automation {
+        source: source.to_string(),
+        kind,
+        name,
+        object,
+        active,
+        trigger: process_type,
+        condition: String::new(),
+        actions: vec![],
+    })
+}
+
+fn parse_approval(v: &Value, source: &str) -> Option<BusinessProcess> {
+    // Defensive: keep only Approval-type definitions even if the WHERE clause is ignored.
+    if let Some(ty) = v["Type"].as_str() {
+        if ty != "Approval" {
+            return None;
+        }
+    }
+    let name = v["Name"].as_str()?.to_string();
+    let object = v["TableEnumOrId"].as_str().unwrap_or("").to_string();
+    let active = v["State"].as_str().map(|s| s == "Active").unwrap_or(false);
+    Some(BusinessProcess { source: source.to_string(), name, object, active, steps: vec![] })
+}
+
+fn parse_apex(v: &Value, is_trigger: bool, source: &str) -> Option<DerivedLogic> {
+    let name = v["Name"].as_str()?.to_string();
+    let object = if is_trigger { v["TableEnumOrId"].as_str().map(str::to_string) } else { None };
+    let expression =
+        v["Body"].as_str().filter(|s| !s.is_empty() && *s != "(hidden)").unwrap_or("").to_string();
+    Some(DerivedLogic { source: source.to_string(), kind: DerivedKind::Code, name, object, expression })
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -318,7 +526,10 @@ mod tests {
             {"name": "Color__c", "type": "picklist", "picklistValues": [
                 {"value": "Red",  "active": true},
                 {"value": "Blue", "active": true}
-            ]}
+            ]},
+            {"name": "Price__c", "type": "currency"},
+            {"name": "Discounted_Price__c", "type": "currency",
+             "calculated": true, "calculatedFormula": "Price__c * 0.9"}
         ]
     }"#;
 
@@ -331,15 +542,61 @@ mod tests {
         ]
     }"#;
 
+    // ── Tooling-API fixtures (behavior scan, #1193) ───────────────────
+    // Each is a Tooling query response. Routed by the object name embedded in
+    // the (percent-encoded) SOQL, so it must be matched before the data `/query`.
+
+    const VALIDATION_RULES: &str = r#"{ "records": [
+        {"ValidationName": "Account_Must_Have_Type", "Active": true,
+         "ErrorMessage": "Type is required", "EntityDefinition": {"QualifiedApiName": "Account"},
+         "Metadata": {"active": true, "errorConditionFormula": "ISBLANK(TEXT(Type))", "errorMessage": "Type is required"}}
+    ]}"#;
+
+    const WORKFLOW_RULES: &str = r#"{ "records": [
+        {"Name": "Notify Owner On Big Deal", "TableEnumOrId": "Opportunity",
+         "Metadata": {"active": true, "triggerType": "onCreateOrTriggeringUpdate",
+                      "actions": [{"name": "Email_Owner", "type": "Alert"}]}}
+    ]}"#;
+
+    const FLOWS: &str = r#"{ "records": [
+        {"DeveloperName": "Auto_Assign_Owner", "MasterLabel": "Auto Assign Owner",
+         "ProcessType": "Workflow", "Status": "Active",
+         "Metadata": {"start": {"object": "Lead"}}},
+        {"DeveloperName": "New_Case_Intake", "MasterLabel": "New Case Intake",
+         "ProcessType": "AutoLaunchedFlow", "Status": "Active",
+         "Metadata": {"start": {"object": "Case"}}}
+    ]}"#;
+
+    const PROCESS_DEFS: &str = r#"{ "records": [
+        {"Name": "Discount Approval", "TableEnumOrId": "Opportunity", "State": "Active", "Type": "Approval"}
+    ]}"#;
+
+    const APEX_CLASSES: &str = r#"{ "records": [
+        {"Name": "AccountService", "Status": "Active", "Body": "public class AccountService {}"}
+    ]}"#;
+
+    const APEX_TRIGGERS: &str = r#"{ "records": [
+        {"Name": "OpportunityTrigger", "TableEnumOrId": "Opportunity", "Status": "Active",
+         "Body": "trigger OpportunityTrigger on Opportunity (before insert) {}"}
+    ]}"#;
+
     /// Build a fixture-backed connector that routes by URL suffix.
     ///
     /// Routes are checked in declaration order — most-specific first so that
-    /// `/sobjects/Account/describe/` is matched before the catch-all `/sobjects/`.
+    /// `/sobjects/Account/describe/` is matched before the catch-all `/sobjects/`,
+    /// and each Tooling query (matched by its object name) before the data `/query`.
     fn fixture_connector() -> SalesforceConnector {
         let routes: Vec<(&'static str, &'static str)> = vec![
             ("/sobjects/Account/describe/",   ACCOUNT_DESCRIBE),
             ("/sobjects/Contact/describe/",   CONTACT_DESCRIBE),
             ("/sobjects/Widget__c/describe/", WIDGET_DESCRIBE),
+            // Tooling queries — matched by object name in the encoded SOQL, before `/query`.
+            ("ValidationRule",                VALIDATION_RULES),
+            ("WorkflowRule",                  WORKFLOW_RULES),
+            ("ProcessDefinition",             PROCESS_DEFS),
+            ("ApexClass",                     APEX_CLASSES),
+            ("ApexTrigger",                   APEX_TRIGGERS),
+            ("FROM%20Flow",                   FLOWS),
             ("/query",                        ACCOUNT_QUERY),
             ("/sobjects/",                    GLOBAL_DESCRIBE), // least-specific last
         ];
@@ -457,6 +714,78 @@ mod tests {
     fn connector_name_is_preserved() {
         let c = fixture_connector();
         assert_eq!(c.name(), "test-org");
+    }
+
+    // ── Behavior scan (#1193) ─────────────────────────────────────────
+
+    #[test]
+    fn describe_captures_formula_field_expression() {
+        let c = fixture_connector();
+        let obj = c.describe("Widget__c").unwrap();
+        let formula = obj.fields.iter().find(|f| f.name == "Discounted_Price__c").unwrap();
+        assert_eq!(formula.calculated_formula.as_deref(), Some("Price__c * 0.9"));
+        // A plain field carries no expression.
+        let price = obj.fields.iter().find(|f| f.name == "Price__c").unwrap();
+        assert_eq!(price.calculated_formula, None);
+    }
+
+    #[test]
+    fn scan_platform_captures_all_behavior_categories() {
+        let c = fixture_connector();
+        // Trait method — no args; the connector describes objects for formula fields itself.
+        let scan = c.scan_platform().unwrap();
+
+        // ── Automations: 1 validation + 1 workflow + 2 flows ──
+        assert_eq!(scan.automations.len(), 4);
+        for a in &scan.automations {
+            assert_eq!(a.source, "test-org", "every behavior carries its source for lineage");
+        }
+
+        let vr = scan
+            .automations
+            .iter()
+            .find(|a| a.kind == AutomationKind::Validation)
+            .unwrap();
+        assert_eq!(vr.name, "Account_Must_Have_Type");
+        assert_eq!(vr.object, "Account");
+        assert!(vr.active);
+        assert_eq!(vr.condition, "ISBLANK(TEXT(Type))");
+        assert_eq!(vr.actions, vec!["error: Type is required"]);
+
+        let wr = scan.automations.iter().find(|a| a.kind == AutomationKind::Workflow).unwrap();
+        assert_eq!(wr.object, "Opportunity");
+        assert_eq!(wr.trigger, "onCreateOrTriggeringUpdate");
+        assert_eq!(wr.actions, vec!["Email_Owner"]);
+
+        // Legacy Process Builder (ProcessType=Workflow) stays first-class and distinct from a true Flow.
+        let pb = scan.automations.iter().find(|a| a.kind == AutomationKind::ProcessBuilder).unwrap();
+        assert_eq!(pb.name, "Auto_Assign_Owner");
+        assert_eq!(pb.object, "Lead");
+        let flow = scan.automations.iter().find(|a| a.kind == AutomationKind::Flow).unwrap();
+        assert_eq!(flow.name, "New_Case_Intake");
+
+        // ── Business processes: 1 approval ──
+        assert_eq!(scan.business_processes.len(), 1);
+        assert_eq!(scan.business_processes[0].name, "Discount Approval");
+        assert_eq!(scan.business_processes[0].object, "Opportunity");
+        assert!(scan.business_processes[0].active);
+
+        // ── Derived logic: 1 formula field + 2 Apex units ──
+        let formula = scan
+            .derived_logic
+            .iter()
+            .find(|d| d.kind == DerivedKind::Formula)
+            .unwrap();
+        assert_eq!(formula.name, "Discounted_Price__c");
+        assert_eq!(formula.object.as_deref(), Some("Widget__c"));
+        assert_eq!(formula.expression, "Price__c * 0.9");
+
+        let code: Vec<&str> =
+            scan.derived_logic.iter().filter(|d| d.kind == DerivedKind::Code).map(|d| d.name.as_str()).collect();
+        assert!(code.contains(&"AccountService"), "Apex class captured");
+        assert!(code.contains(&"OpportunityTrigger"), "Apex trigger captured");
+        let trig = scan.derived_logic.iter().find(|d| d.name == "OpportunityTrigger").unwrap();
+        assert_eq!(trig.object.as_deref(), Some("Opportunity"));
     }
 
     // ── Security: credentials not stored or leaked ────────────────────

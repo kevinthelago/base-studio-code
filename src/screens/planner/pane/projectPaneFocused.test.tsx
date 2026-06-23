@@ -119,6 +119,31 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(onLinkRepo).toHaveBeenCalledWith("acme/web");
   });
 
+  it("repos stage: GitHub visibility defaults to private and toggles to public (#…)", () => {
+    const onSetReposPublic = vi.fn();
+    render(<ProjectPane focus={baseFocus(reposPhase)} onSetReposPublic={onSetReposPublic} reposPublic={false} />);
+    const priv = screen.getByText("🔒 Private");
+    const pub = screen.getByText("🌐 Public");
+    expect(priv).toHaveAttribute("aria-pressed", "true");   // private is the default
+    expect(pub).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(pub);
+    expect(onSetReposPublic).toHaveBeenCalledWith(true);
+    // clicking the already-active option is a no-op (no redundant flip)
+    fireEvent.click(priv);
+    expect(onSetReposPublic).toHaveBeenCalledTimes(1);
+  });
+
+  it("repos stage: reflects the public selection when reposPublic is set", () => {
+    render(<ProjectPane focus={baseFocus(reposPhase)} onSetReposPublic={vi.fn()} reposPublic />);
+    expect(screen.getByText("🌐 Public")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("created public")).toBeInTheDocument();
+  });
+
+  it("repos stage: hides the visibility control when no setter is wired", () => {
+    render(<ProjectPane focus={baseFocus(reposPhase)} />);
+    expect(screen.queryByText("🔒 Private")).not.toBeInTheDocument();
+  });
+
   it("shows an empty context state (no mock files) on a fresh plan", () => {
     render(<ProjectPane focus={baseFocus()} />); // context phase active, no data
     expect(screen.getByText(/No context files yet/)).toBeInTheDocument();

@@ -330,6 +330,295 @@ pub fn data_load_reconciled(
     Ok(ReconcileReport { entity: String::new(), records: 0, conflicts: 0, field_lineage: 0, sources: 0 })
 }
 
+// ── live platform scan (#1197 source-pane wiring) ──────────────────────────
+// Build a read-only connector with a reqwest transport (auth resolved from the OS keychain) and
+// run objects() + scan_platform(), returning the redacted inventory the Source pane shows. The
+// planner never sees the credential — only this on-device transport resolves it (#1194).
+// Connectors without a live transport (OAuth / SQL driver / OpenAPI discovery) return
+// `live: false` so the pane falls back to its sample shape. Object counts are from a bounded
+// sample read, not the source total.
+
+/// A discovered object + a (bounded-sample) record count.
+#[cfg(feature = "source-stage")]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanObject {
+    name: String,
+    count: usize,
+}
+
+/// A behavior the scan surfaced (an automation / process / formula).
+#[cfg(feature = "source-stage")]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanBehavior {
+    label: String,
+}
+
+/// The redacted result the Source pane renders. `live: false` ⇒ the pane uses its sample shape.
+#[cfg(feature = "source-stage")]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanResult {
+    live: bool,
+    reason: Option<String>,
+    instance: Option<String>,
+    handle: Option<String>,
+    objects: Vec<ScanObject>,
+    behaviors: Vec<ScanBehavior>,
+}
+
+#[cfg(feature = "source-stage")]
+impl ScanResult {
+    fn pending(reason: impl Into<String>) -> Self {
+        ScanResult { live: false, reason: Some(reason.into()), instance: None, handle: None, objects: vec![], behaviors: vec![] }
+    }
+}
+
+/// Concise behavior labels from a connector's platform scan (capped for the pane).
+#[cfg(feature = "source-stage")]
+fn behaviors_summary(scan: &bsc_data::PlatformScan) -> Vec<ScanBehavior> {
+    let mut out = Vec::new();
+    for a in &scan.automations {
+        out.push(ScanBehavior { label: a.name.clone() });
+    }
+    for p in &scan.business_processes {
+        out.push(ScanBehavior { label: p.name.clone() });
+    }
+    for d in &scan.derived_logic {
+        out.push(ScanBehavior { label: format!("{} (formula)", d.name) });
+    }
+    out.truncate(8);
+    out
+}
+
+/// The bare host of a URL/hostname (drops scheme + path), for a friendly instance label.
+#[cfg(feature = "source-stage")]
+fn host_of(url: &str) -> String {
+    url.trim_end_matches('/')
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or(url)
+        .to_string()
+}
+
+/// Run objects() (bounded, with a sample-count read) + scan_platform() over a built connector.
+#[cfg(feature = "source-stage")]
+fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, String> {
+    let objs = conn.objects().map_err(|e| e.to_string())?;
+    let mut objects = Vec::new();
+    for o in objs.into_iter().take(12) {
+        let count = conn.read(&o.name).map(|rs| rs.rows.len()).unwrap_or(0);
+        objects.push(ScanObject { name: o.name, count });
+    }
+    let behaviors = behaviors_summary(&conn.scan_platform().map_err(|e| e.to_string())?);
+    Ok(ScanResult {
+        live: true,
+        reason: None,
+        handle: Some(format!("{instance} · held by app")),
+        instance: Some(instance),
+        objects,
+        behaviors,
+    })
+}
+
+/// Run a read-only scan of a source connector, resolving its secret from the OS keychain.
+#[cfg(feature = "source-stage")]
+#[tauri::command]
+pub fn data_platform_scan(
+    connector_id: String,
+    project: String,
+    source_uid: String,
+    fields: std::collections::HashMap<String, String>,
+) -> Result<ScanResult, String> {
+    let meta = bsc_data::source_connector(&connector_id)
+        .ok_or_else(|| format!("unknown connector `{connector_id}`"))?;
+    if let bsc_data::LiveSupport::Pending(reason) = meta.live {
+        return Ok(ScanResult::pending(reason));
+    }
+    let secret = match meta.secret_field {
+        Some(f) => crate::credentials::get_secret(&project, &source_uid, f)
+            .ok_or_else(|| format!("no stored credential for {connector_id}"))?,
+        None => String::new(),
+    };
+    match connector_id.as_str() {
+        "sap-odata" => scan_odata(&fields, &secret),
+        "quickbase" => scan_quickbase(&fields, &secret),
+        // OAuth connectors: `secret` is the keychain access token; instance metadata
+        // (Salesforce instance_url, QuickBooks realmId) arrives via `fields` from the OAuth flow.
+        "salesforce" => scan_salesforce(&fields, &secret),
+        "hubspot" => scan_hubspot(&secret),
+        "monday" => scan_monday(&secret),
+        "quickbooks" => scan_quickbooks(&fields, &secret),
+        "dynamics365" => scan_dynamics(&fields, &secret),
+        other => Ok(ScanResult::pending(format!("no live transport for {other}"))),
+    }
+}
+
+/// Salesforce: bearer token over the org's instance URL (from the OAuth token response).
+#[cfg(feature = "source-stage")]
+fn scan_salesforce(fields: &std::collections::HashMap<String, String>, token: &str) -> Result<ScanResult, String> {
+    let instance = match fields.get("instanceUrl").filter(|s| !s.is_empty()) {
+        Some(i) => i.clone(),
+        None => return Ok(ScanResult::pending("missing instanceUrl — re-authorize")),
+    };
+    let client = reqwest::blocking::Client::new();
+    let t = token.to_string();
+    let fetch = move |url: &str| -> bsc_data::Result<serde_json::Value> {
+        client
+            .get(url)
+            .bearer_auth(&t)
+            .header("Accept", "application/json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::SalesforceConnector::new(host_of(&instance), instance.clone(), "v59.0", fetch), host_of(&instance))
+}
+
+/// HubSpot: bearer token over the public API host.
+#[cfg(feature = "source-stage")]
+fn scan_hubspot(token: &str) -> Result<ScanResult, String> {
+    let client = reqwest::blocking::Client::new();
+    let t = token.to_string();
+    let fetch = move |path: &str| -> bsc_data::Result<serde_json::Value> {
+        client
+            .get(format!("https://api.hubapi.com/{path}"))
+            .bearer_auth(&t)
+            .header("Accept", "application/json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::HubSpotConnector::new("hubspot", fetch), "hubspot".to_string())
+}
+
+/// monday.com: GraphQL POST with the token in the Authorization header.
+#[cfg(feature = "source-stage")]
+fn scan_monday(token: &str) -> Result<ScanResult, String> {
+    let client = reqwest::blocking::Client::new();
+    let t = token.to_string();
+    let fetch = move |gql: &str| -> bsc_data::Result<serde_json::Value> {
+        client
+            .post("https://api.monday.com/v2")
+            .header("Authorization", &t)
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({ "query": gql }))
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::MondayConnector::new("monday", fetch), "monday.com".to_string())
+}
+
+/// QuickBooks Online: bearer token, company (realm) from the OAuth callback.
+#[cfg(feature = "source-stage")]
+fn scan_quickbooks(fields: &std::collections::HashMap<String, String>, token: &str) -> Result<ScanResult, String> {
+    let realm = match fields.get("realm").filter(|s| !s.is_empty()) {
+        Some(r) => r.clone(),
+        None => return Ok(ScanResult::pending("missing company realm — re-authorize")),
+    };
+    let client = reqwest::blocking::Client::new();
+    let (t, r) = (token.to_string(), realm.clone());
+    let fetch = move |sql: &str| -> bsc_data::Result<serde_json::Value> {
+        client
+            .get(format!("https://quickbooks.api.intuit.com/v3/company/{r}/query"))
+            .query(&[("query", sql)])
+            .bearer_auth(&t)
+            .header("Accept", "application/json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::QuickBooksConnector::new("quickbooks", fetch), realm)
+}
+
+/// Dynamics 365: bearer token over the org's Web API (OData). Needs the org URL configured.
+#[cfg(feature = "source-stage")]
+fn scan_dynamics(fields: &std::collections::HashMap<String, String>, token: &str) -> Result<ScanResult, String> {
+    let org = match fields.get("orgUrl").filter(|s| !s.is_empty()) {
+        Some(o) => o.trim_end_matches('/').to_string(),
+        None => return Ok(ScanResult::pending("Dynamics org URL not configured")),
+    };
+    let client = reqwest::blocking::Client::new();
+    let (t, base) = (token.to_string(), format!("{org}/api/data/v9.2"));
+    let fetch = move |path: &str| -> bsc_data::Result<serde_json::Value> {
+        let url = if path.is_empty() { format!("{base}/") } else { format!("{base}/{path}") };
+        client
+            .get(&url)
+            .bearer_auth(&t)
+            .header("Accept", "application/json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::ODataConnector::new(host_of(&org), fetch), host_of(&org))
+}
+
+/// SAP / generic OData: HTTP Basic over the service document (self-describing, GET-only).
+#[cfg(feature = "source-stage")]
+fn scan_odata(fields: &std::collections::HashMap<String, String>, secret: &str) -> Result<ScanResult, String> {
+    let base = fields
+        .get("serviceUrl")
+        .map(|s| s.trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or("missing serviceUrl")?;
+    let user = fields.get("user").cloned().unwrap_or_default();
+    let client = reqwest::blocking::Client::new();
+    let (b, u, p) = (base.clone(), user, secret.to_string());
+    let fetch = move |path: &str| -> bsc_data::Result<serde_json::Value> {
+        let url = if path.is_empty() { format!("{b}/") } else { format!("{b}/{path}") };
+        client
+            .get(&url)
+            .basic_auth(&u, Some(&p))
+            .header("Accept", "application/json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json::<serde_json::Value>())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::ODataConnector::new(host_of(&base), fetch), host_of(&base))
+}
+
+/// Quickbase: a user token + realm header; GET tables/fields, POST records query.
+#[cfg(feature = "source-stage")]
+fn scan_quickbase(fields: &std::collections::HashMap<String, String>, secret: &str) -> Result<ScanResult, String> {
+    let realm = fields
+        .get("realm")
+        .cloned()
+        .filter(|s| !s.is_empty())
+        .ok_or("missing realm hostname")?;
+    let app_id = fields.get("appId").cloned().unwrap_or_default();
+    let client = reqwest::blocking::Client::new();
+    let base = "https://api.quickbase.com/v1";
+    let (realm_h, token) = (realm.clone(), secret.to_string());
+    let fetch = move |desc: &str| -> bsc_data::Result<serde_json::Value> {
+        let req = if let Some(table) = desc.strip_prefix("records:") {
+            client.post(format!("{base}/records/query")).json(&serde_json::json!({ "from": table }))
+        } else if let Some(table) = desc.strip_prefix("fields:") {
+            client.get(format!("{base}/fields?tableId={table}"))
+        } else {
+            // "tables?appId=…" — the connector already appended the app id.
+            client.get(format!("{base}/{desc}"))
+        };
+        req.header("QB-Realm-Hostname", &realm_h)
+            .header("Authorization", format!("QB-USER-TOKEN {token}"))
+            .header("Content-Type", "application/json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json::<serde_json::Value>())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::QuickbaseConnector::new(host_of(&realm), app_id, fetch), host_of(&realm))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

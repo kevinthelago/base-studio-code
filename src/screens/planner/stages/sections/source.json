@@ -1,26 +1,21 @@
 {
   "name": "Source",
   "glyph": "⇲",
-  "gate": "model inferred + schema confirmed",
+  "gate": "every declared source connected",
   "deps": [
     "context",
     "repos"
   ],
   "optional": true,
-  "blurb": "Migration source — inventory it, infer the data model, confirm the schema.",
+  "blurb": "Migration source — declare the legacy systems you're migrating from and connect each read-only so it can be scanned.",
   "gateRule": {
     "require": [
       {
-        "signal": "modelInferred",
+        "signal": "sourcesConnected",
         "target": true,
-        "label": "data model inferred from source"
-      },
-      {
-        "signal": "schemaRefined",
-        "target": true,
-        "label": "schema reviewed and confirmed"
+        "label": "connect every declared source read-only"
       }
     ]
   },
-  "prompt": "Identify the migration source (database, SaaS export, or API) and inventory what exists\nthere: its objects/tables, their schemas, and a small representative sample of rows.\nThen propose the canonical data model this project will load into — entities, fields with\ntypes, and the identity key (the fields that decide when two records describe the same\nreal-world thing). Write the model to datamodel.json and set modelInferred to true.\nWalk the proposed schema with the user and refine it; when confirmed, set schemaRefined\nto true.\n\nGate: datamodel.json present with modelInferred and schemaRefined both true."
+  "prompt": "Identify the legacy systems this project is migrating FROM — the SOURCES (a SaaS product like\nQuickBooks / Quickbase / Salesforce, a database, or an API export). Propose the ones implied by the\npitch so the user can confirm them in the Source pane. Each source is connected READ-ONLY, on the\nuser's device: the user enters any credentials in the pane (they go to the OS keychain and are NEVER\nshared with you) — you only ever see a redacted handle plus the discovered object inventory once a\nsource is scanned. As each source connects, its objects/tables and business behaviors (rules,\nautomations) are discovered and feed the project's canonical Data Model.\n\nGate: every source the user declared is connected and scanned."
 }
