@@ -33,6 +33,9 @@ pub mod asana;
 pub mod stripe;
 pub mod zendesk;
 pub mod jira;
+pub mod odoo;
+pub mod pipefy;
+pub mod linear;
 pub mod rest;
 pub mod presets;
 
@@ -64,6 +67,9 @@ pub use asana::AsanaConnector;
 pub use stripe::StripeConnector;
 pub use zendesk::ZendeskConnector;
 pub use jira::JiraConnector;
+pub use odoo::OdooConnector;
+pub use pipefy::PipefyConnector;
+pub use linear::LinearConnector;
 pub use rest::{RestConnector, RestResource};
 pub use presets::{VendorPreset, CATALOG as VENDOR_PRESETS};
 
