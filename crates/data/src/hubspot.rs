@@ -11,7 +11,8 @@
 use serde_json::Value;
 
 use crate::behavior::{Automation, AutomationKind, PlatformScan};
-use crate::connector::{Connector, RowSet, SourceObject};
+use crate::connector::{Connector, RowSet, SourceField, SourceObject};
+use crate::schema::FieldType;
 use crate::Result;
 
 /// A path → parsed-JSON closure. Owns the bearer token; the connector never sees it.
@@ -67,6 +68,27 @@ fn cell_to_string(v: &Value) -> String {
     }
 }
 
+/// Map a HubSpot property's declared `type` to a vendor-neutral [`SourceField`] (#1230):
+/// enumeration → enum + its option values, number → number, date/datetime → date, bool → bool,
+/// everything else (string, phone, etc.) → string.
+fn hs_field(p: &Value) -> Option<SourceField> {
+    let name = p["name"].as_str()?.to_string();
+    let (ty, enum_values) = match p["type"].as_str().unwrap_or("string") {
+        "enumeration" => (
+            FieldType::Enum,
+            p["options"]
+                .as_array()
+                .map(|o| o.iter().filter_map(|v| v["value"].as_str().map(str::to_string)).collect())
+                .unwrap_or_default(),
+        ),
+        "number" => (FieldType::Number, vec![]),
+        "date" | "datetime" => (FieldType::Date, vec![]),
+        "bool" => (FieldType::Bool, vec![]),
+        _ => (FieldType::String, vec![]),
+    };
+    Some(SourceField { name, ty, enum_values, ref_target: None })
+}
+
 impl Connector for HubSpotConnector {
     fn name(&self) -> &str {
         &self.name
@@ -91,6 +113,16 @@ impl Connector for HubSpotConnector {
             .map(|r| columns.iter().map(|c| cell_to_string(&r["properties"][c])).collect())
             .collect();
         Ok(RowSet { columns, rows })
+    }
+
+    /// Declared property types from the CRM properties API (#1230): enumerations carry their
+    /// options as an enum; everything else maps to the closest scalar type.
+    fn describe_object(&self, object: &str) -> Result<Vec<SourceField>> {
+        let body = self.get(&format!("crm/v3/properties/{object}"))?;
+        Ok(body["results"]
+            .as_array()
+            .map(|r| r.iter().filter_map(hs_field).collect())
+            .unwrap_or_default())
     }
 
     /// Capture HubSpot automation workflows.
@@ -166,6 +198,27 @@ mod tests {
         assert_eq!(rs.columns, vec!["firstname", "email"]);
         assert_eq!(rs.rows[0], vec!["Ada", "ada@acme.com"]);
         assert_eq!(rs.rows[1], vec!["Grace", ""]);
+    }
+
+    const TYPED_PROPS: &str = r#"{ "results": [
+        {"name": "amount",    "type": "number"},
+        {"name": "closedate", "type": "date"},
+        {"name": "stage",     "type": "enumeration", "options": [{"value": "new"}, {"value": "won"}]},
+        {"name": "notes",     "type": "string"}
+    ] }"#;
+
+    #[test]
+    fn describe_object_maps_property_types() {
+        let c = HubSpotConnector::with_types("hs", vec!["deals".to_string()], move |_p| {
+            Ok(serde_json::from_str(TYPED_PROPS).unwrap())
+        });
+        let fields = c.describe_object("deals").unwrap();
+        let by = |n: &str| fields.iter().find(|f| f.name == n).unwrap();
+        assert_eq!(by("amount").ty, FieldType::Number);
+        assert_eq!(by("closedate").ty, FieldType::Date);
+        assert_eq!(by("stage").ty, FieldType::Enum);
+        assert_eq!(by("stage").enum_values, vec!["new", "won"]);
+        assert_eq!(by("notes").ty, FieldType::String);
     }
 
     #[test]
