@@ -19,6 +19,7 @@ pub mod behavior;
 pub mod salesforce;
 pub mod monday;
 pub mod quickbooks;
+pub mod quickbase;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
@@ -34,6 +35,7 @@ pub use behavior::{
 pub use salesforce::{SalesforceConnector, SalesforceField, SalesforceObject};
 pub use monday::MondayConnector;
 pub use quickbooks::QuickBooksConnector;
+pub use quickbase::QuickbaseConnector;
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
