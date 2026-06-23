@@ -28,6 +28,10 @@ pub struct SalesforceField {
     /// Object API names this field may point to; non-empty only when
     /// `field_type` is `"reference"`.
     pub lookup_targets: Vec<String>,
+    /// The formula expression for a calculated/formula field, e.g. `Amount * 0.9`;
+    /// `Some` only when the field is `calculated` in the describe (`calculatedFormula`).
+    /// Captured so the behavior scan can carry derived logic into the new app (#1193).
+    pub calculated_formula: Option<String>,
 }
 
 /// A Salesforce object with full field metadata, as returned by [`SalesforceConnector::describe`].
@@ -199,7 +203,14 @@ fn parse_field(f: &Value) -> Option<SalesforceField> {
         vec![]
     };
 
-    Some(SalesforceField { name, field_type, picklist_values, lookup_targets })
+    // Formula fields carry derived logic — capture the expression for the behavior scan (#1193).
+    let calculated_formula = if f["calculated"].as_bool().unwrap_or(false) {
+        f["calculatedFormula"].as_str().filter(|s| !s.is_empty()).map(str::to_string)
+    } else {
+        None
+    };
+
+    Some(SalesforceField { name, field_type, picklist_values, lookup_targets, calculated_formula })
 }
 
 /// Percent-encode a string for use in a URL query parameter (RFC 3986 unreserved chars pass
@@ -263,6 +274,275 @@ impl Connector for SalesforceConnector {
     }
 }
 
+// ── Platform behavior scan (#1193) ─────────────────────────────────────────
+//
+// A data-only scan copies rows; to *replace* a system you must also carry its
+// behavior. These types capture the source's behavioral layer — automations,
+// business processes, and derived logic — read-only (#782); the planner
+// summarizes them and the generated app reproduces them.
+
+/// A validation rule — an automation that rejects a write unless a condition holds.
+/// Maps to an app-level validation / `Field.validate` rule on the Data Model.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidationRule {
+    pub object: String,
+    pub name: String,
+    pub active: bool,
+    pub error_message: String,
+    /// The error-condition formula (a write is blocked when this is true).
+    pub formula: String,
+}
+
+/// A workflow rule — a trigger-on-write automation with field-update / task / alert actions.
+/// Maps to a generated automation (a rule or job) in the new app.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRule {
+    pub object: String,
+    pub name: String,
+    pub active: bool,
+    /// `onCreateOnly` / `onCreateOrTriggeringUpdate` / `onAllChanges`.
+    pub trigger_type: String,
+    /// Action names attached to the rule (field updates, alerts, tasks).
+    pub actions: Vec<String>,
+}
+
+/// A Flow / Process Builder process — declarative automation.
+/// Maps to a generated automation (rule or scheduled job).
+///
+/// Salesforce stores **legacy Process Builder** processes as `Flow` records with
+/// `ProcessType = "Workflow"` (vs `"Flow"` / `"AutoLaunchedFlow"` for true Flows), so the
+/// `FROM Flow` Tooling query captures both — [`Self::is_process_builder`] tells them apart.
+/// Process Builder is deprecated upstream, which makes capturing it for migration *more*
+/// important: it's the automation users most need carried into the replacement (#1193).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowSummary {
+    pub name: String,
+    pub label: String,
+    /// e.g. `Workflow` (Process Builder), `Flow`, `AutoLaunchedFlow`.
+    pub process_type: String,
+    pub status: String,
+    /// The object the flow is triggered on, when declared (record-triggered flows).
+    pub trigger_object: Option<String>,
+}
+
+impl FlowSummary {
+    /// True for a legacy Process Builder process (`ProcessType = "Workflow"`), as opposed to a
+    /// true Flow. Process Builder is deprecated by Salesforce, so it must still be migrated.
+    pub fn is_process_builder(&self) -> bool {
+        self.process_type == "Workflow"
+    }
+}
+
+/// An approval process — a multi-step business process gating a record's state.
+/// Maps to a generated approval workflow.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalProcess {
+    pub name: String,
+    pub object: String,
+    pub active: bool,
+}
+
+/// A formula field — derived logic that computes a value from other fields.
+/// Maps to a computed field on the Data Model / app.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormulaField {
+    pub object: String,
+    pub field: String,
+    /// The field's Salesforce return type (`currency`, `string`, …).
+    pub return_type: String,
+    pub formula: String,
+}
+
+/// The kind of Apex unit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ApexKind {
+    Class,
+    Trigger,
+}
+
+/// An Apex class or trigger — imperative logic.
+/// Summarized for a worker to re-implement against the new stack (not auto-ported).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApexUnit {
+    pub name: String,
+    pub kind: ApexKind,
+    /// The object a trigger fires on; `None` for classes.
+    pub object: Option<String>,
+    pub status: String,
+    /// Source body, when retrieved — large, so optional.
+    pub body: Option<String>,
+}
+
+/// A read-only capture of a source platform's behavioral layer (#1193).
+///
+/// Sibling to the inferred Data Model: the data scan answers "what rows exist",
+/// this answers "what the system *does*". The planner distils it into the
+/// Platform Behavior Summary and the generated app reproduces it.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformScan {
+    pub validation_rules: Vec<ValidationRule>,
+    pub workflow_rules: Vec<WorkflowRule>,
+    pub flows: Vec<FlowSummary>,
+    pub approval_processes: Vec<ApprovalProcess>,
+    pub formula_fields: Vec<FormulaField>,
+    pub apex: Vec<ApexUnit>,
+}
+
+impl SalesforceConnector {
+    /// Scan the platform's behavioral layer: automations, business processes, derived logic.
+    ///
+    /// `described` is the objects already pulled by the data scan ([`Self::describe`] /
+    /// [`Connector::objects`]); formula fields are harvested from them, and the remaining
+    /// categories come from Tooling-API queries. Read-only — never writes back (#782).
+    pub fn scan_platform(&self, described: &[SalesforceObject]) -> Result<PlatformScan> {
+        Ok(PlatformScan {
+            validation_rules: self.scan_validation_rules()?,
+            workflow_rules: self.scan_workflow_rules()?,
+            flows: self.scan_flows()?,
+            approval_processes: self.scan_approval_processes()?,
+            formula_fields: formula_fields_from(described),
+            apex: self.scan_apex()?,
+        })
+    }
+
+    /// Run a Tooling-API SOQL query and return its `records` array (empty if absent).
+    fn tooling_query(&self, soql: &str) -> Result<Vec<Value>> {
+        let body = self.get(&format!("/tooling/query?q={}", percent_encode(soql)))?;
+        Ok(body["records"].as_array().cloned().unwrap_or_default())
+    }
+
+    fn scan_validation_rules(&self) -> Result<Vec<ValidationRule>> {
+        let recs = self.tooling_query(
+            "SELECT ValidationName, Active, ErrorMessage, EntityDefinition.QualifiedApiName, Metadata FROM ValidationRule",
+        )?;
+        Ok(recs.iter().filter_map(parse_validation_rule).collect())
+    }
+
+    fn scan_workflow_rules(&self) -> Result<Vec<WorkflowRule>> {
+        let recs = self.tooling_query("SELECT Name, TableEnumOrId, Metadata FROM WorkflowRule")?;
+        Ok(recs.iter().filter_map(parse_workflow_rule).collect())
+    }
+
+    fn scan_flows(&self) -> Result<Vec<FlowSummary>> {
+        let recs =
+            self.tooling_query("SELECT DeveloperName, MasterLabel, ProcessType, Status, Metadata FROM Flow")?;
+        Ok(recs.iter().filter_map(parse_flow).collect())
+    }
+
+    fn scan_approval_processes(&self) -> Result<Vec<ApprovalProcess>> {
+        let recs =
+            self.tooling_query("SELECT Name, TableEnumOrId, State, Type FROM ProcessDefinition WHERE Type = 'Approval'")?;
+        Ok(recs.iter().filter_map(parse_approval_process).collect())
+    }
+
+    fn scan_apex(&self) -> Result<Vec<ApexUnit>> {
+        let mut units: Vec<ApexUnit> = self
+            .tooling_query("SELECT Name, Status, Body FROM ApexClass")?
+            .iter()
+            .filter_map(|v| parse_apex(v, ApexKind::Class))
+            .collect();
+        units.extend(
+            self.tooling_query("SELECT Name, TableEnumOrId, Status, Body FROM ApexTrigger")?
+                .iter()
+                .filter_map(|v| parse_apex(v, ApexKind::Trigger)),
+        );
+        Ok(units)
+    }
+}
+
+/// Harvest formula fields from already-described objects (derived logic in the data layer).
+fn formula_fields_from(objects: &[SalesforceObject]) -> Vec<FormulaField> {
+    objects
+        .iter()
+        .flat_map(|o| {
+            o.fields.iter().filter_map(move |f| {
+                f.calculated_formula.as_ref().map(|formula| FormulaField {
+                    object: o.name.clone(),
+                    field: f.name.clone(),
+                    return_type: f.field_type.clone(),
+                    formula: formula.clone(),
+                })
+            })
+        })
+        .collect()
+}
+
+fn parse_validation_rule(v: &Value) -> Option<ValidationRule> {
+    let name = v["ValidationName"].as_str()?.to_string();
+    let object = v["EntityDefinition"]["QualifiedApiName"].as_str().unwrap_or("").to_string();
+    let active = v["Active"].as_bool().or_else(|| v["Metadata"]["active"].as_bool()).unwrap_or(false);
+    let error_message = v["ErrorMessage"]
+        .as_str()
+        .or_else(|| v["Metadata"]["errorMessage"].as_str())
+        .unwrap_or("")
+        .to_string();
+    let formula = v["Metadata"]["errorConditionFormula"].as_str().unwrap_or("").to_string();
+    Some(ValidationRule { object, name, active, error_message, formula })
+}
+
+fn parse_workflow_rule(v: &Value) -> Option<WorkflowRule> {
+    let name = v["Name"].as_str()?.to_string();
+    let object = v["TableEnumOrId"].as_str().unwrap_or("").to_string();
+    let active = v["Metadata"]["active"].as_bool().unwrap_or(false);
+    let trigger_type = v["Metadata"]["triggerType"].as_str().unwrap_or("").to_string();
+    let actions = v["Metadata"]["actions"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|act| {
+                    act["name"].as_str().or_else(|| act["type"].as_str()).map(str::to_string)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(WorkflowRule { object, name, active, trigger_type, actions })
+}
+
+fn parse_flow(v: &Value) -> Option<FlowSummary> {
+    let label = v["MasterLabel"].as_str().unwrap_or("").to_string();
+    // Flow rows favour DeveloperName; fall back to the label so a name is always present.
+    let name = v["DeveloperName"].as_str().filter(|s| !s.is_empty()).unwrap_or(&label).to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let process_type = v["ProcessType"].as_str().unwrap_or("").to_string();
+    let status = v["Status"].as_str().unwrap_or("").to_string();
+    let trigger_object = v["Metadata"]["start"]["object"].as_str().map(str::to_string);
+    Some(FlowSummary { name, label, process_type, status, trigger_object })
+}
+
+fn parse_approval_process(v: &Value) -> Option<ApprovalProcess> {
+    // Defensive: keep only Approval-type definitions even if the WHERE clause is ignored.
+    if let Some(ty) = v["Type"].as_str() {
+        if ty != "Approval" {
+            return None;
+        }
+    }
+    let name = v["Name"].as_str()?.to_string();
+    let object = v["TableEnumOrId"].as_str().unwrap_or("").to_string();
+    let active = v["State"].as_str().map(|s| s == "Active").unwrap_or(false);
+    Some(ApprovalProcess { name, object, active })
+}
+
+fn parse_apex(v: &Value, kind: ApexKind) -> Option<ApexUnit> {
+    let name = v["Name"].as_str()?.to_string();
+    let status = v["Status"].as_str().unwrap_or("").to_string();
+    let object = match kind {
+        ApexKind::Trigger => v["TableEnumOrId"].as_str().map(str::to_string),
+        ApexKind::Class => None,
+    };
+    let body = v["Body"].as_str().filter(|s| !s.is_empty() && *s != "(hidden)").map(str::to_string);
+    Some(ApexUnit { name, kind, object, status, body })
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -318,7 +598,10 @@ mod tests {
             {"name": "Color__c", "type": "picklist", "picklistValues": [
                 {"value": "Red",  "active": true},
                 {"value": "Blue", "active": true}
-            ]}
+            ]},
+            {"name": "Price__c", "type": "currency"},
+            {"name": "Discounted_Price__c", "type": "currency",
+             "calculated": true, "calculatedFormula": "Price__c * 0.9"}
         ]
     }"#;
 
@@ -331,15 +614,61 @@ mod tests {
         ]
     }"#;
 
+    // ── Tooling-API fixtures (behavior scan, #1193) ───────────────────
+    // Each is a Tooling query response. Routed by the object name embedded in
+    // the (percent-encoded) SOQL, so it must be matched before the data `/query`.
+
+    const VALIDATION_RULES: &str = r#"{ "records": [
+        {"ValidationName": "Account_Must_Have_Type", "Active": true,
+         "ErrorMessage": "Type is required", "EntityDefinition": {"QualifiedApiName": "Account"},
+         "Metadata": {"active": true, "errorConditionFormula": "ISBLANK(TEXT(Type))", "errorMessage": "Type is required"}}
+    ]}"#;
+
+    const WORKFLOW_RULES: &str = r#"{ "records": [
+        {"Name": "Notify Owner On Big Deal", "TableEnumOrId": "Opportunity",
+         "Metadata": {"active": true, "triggerType": "onCreateOrTriggeringUpdate",
+                      "actions": [{"name": "Email_Owner", "type": "Alert"}]}}
+    ]}"#;
+
+    const FLOWS: &str = r#"{ "records": [
+        {"DeveloperName": "Auto_Assign_Owner", "MasterLabel": "Auto Assign Owner",
+         "ProcessType": "Workflow", "Status": "Active",
+         "Metadata": {"start": {"object": "Lead"}}},
+        {"DeveloperName": "New_Case_Intake", "MasterLabel": "New Case Intake",
+         "ProcessType": "AutoLaunchedFlow", "Status": "Active",
+         "Metadata": {"start": {"object": "Case"}}}
+    ]}"#;
+
+    const PROCESS_DEFS: &str = r#"{ "records": [
+        {"Name": "Discount Approval", "TableEnumOrId": "Opportunity", "State": "Active", "Type": "Approval"}
+    ]}"#;
+
+    const APEX_CLASSES: &str = r#"{ "records": [
+        {"Name": "AccountService", "Status": "Active", "Body": "public class AccountService {}"}
+    ]}"#;
+
+    const APEX_TRIGGERS: &str = r#"{ "records": [
+        {"Name": "OpportunityTrigger", "TableEnumOrId": "Opportunity", "Status": "Active",
+         "Body": "trigger OpportunityTrigger on Opportunity (before insert) {}"}
+    ]}"#;
+
     /// Build a fixture-backed connector that routes by URL suffix.
     ///
     /// Routes are checked in declaration order — most-specific first so that
-    /// `/sobjects/Account/describe/` is matched before the catch-all `/sobjects/`.
+    /// `/sobjects/Account/describe/` is matched before the catch-all `/sobjects/`,
+    /// and each Tooling query (matched by its object name) before the data `/query`.
     fn fixture_connector() -> SalesforceConnector {
         let routes: Vec<(&'static str, &'static str)> = vec![
             ("/sobjects/Account/describe/",   ACCOUNT_DESCRIBE),
             ("/sobjects/Contact/describe/",   CONTACT_DESCRIBE),
             ("/sobjects/Widget__c/describe/", WIDGET_DESCRIBE),
+            // Tooling queries — matched by object name in the encoded SOQL, before `/query`.
+            ("ValidationRule",                VALIDATION_RULES),
+            ("WorkflowRule",                  WORKFLOW_RULES),
+            ("ProcessDefinition",             PROCESS_DEFS),
+            ("ApexClass",                     APEX_CLASSES),
+            ("ApexTrigger",                   APEX_TRIGGERS),
+            ("FROM%20Flow",                   FLOWS),
             ("/query",                        ACCOUNT_QUERY),
             ("/sobjects/",                    GLOBAL_DESCRIBE), // least-specific last
         ];
@@ -457,6 +786,71 @@ mod tests {
     fn connector_name_is_preserved() {
         let c = fixture_connector();
         assert_eq!(c.name(), "test-org");
+    }
+
+    // ── Behavior scan (#1193) ─────────────────────────────────────────
+
+    #[test]
+    fn describe_captures_formula_field_expression() {
+        let c = fixture_connector();
+        let obj = c.describe("Widget__c").unwrap();
+        let formula = obj.fields.iter().find(|f| f.name == "Discounted_Price__c").unwrap();
+        assert_eq!(formula.calculated_formula.as_deref(), Some("Price__c * 0.9"));
+        // A plain field carries no expression.
+        let price = obj.fields.iter().find(|f| f.name == "Price__c").unwrap();
+        assert_eq!(price.calculated_formula, None);
+    }
+
+    #[test]
+    fn scan_platform_captures_all_behavior_categories() {
+        let c = fixture_connector();
+        let described = vec![c.describe("Widget__c").unwrap()];
+        let scan = c.scan_platform(&described).unwrap();
+
+        // Automations — validation rules.
+        assert_eq!(scan.validation_rules.len(), 1);
+        let vr = &scan.validation_rules[0];
+        assert_eq!(vr.object, "Account");
+        assert_eq!(vr.name, "Account_Must_Have_Type");
+        assert!(vr.active);
+        assert_eq!(vr.formula, "ISBLANK(TEXT(Type))");
+
+        // Automations — workflow rules + their actions.
+        assert_eq!(scan.workflow_rules.len(), 1);
+        let wr = &scan.workflow_rules[0];
+        assert_eq!(wr.object, "Opportunity");
+        assert_eq!(wr.trigger_type, "onCreateOrTriggeringUpdate");
+        assert_eq!(wr.actions, vec!["Email_Owner"]);
+
+        // Automations — Flows AND legacy Process Builder (both are `Flow` records).
+        assert_eq!(scan.flows.len(), 2);
+        let pb = scan.flows.iter().find(|f| f.name == "Auto_Assign_Owner").unwrap();
+        assert_eq!(pb.process_type, "Workflow");
+        assert!(pb.is_process_builder(), "ProcessType=Workflow must be detected as Process Builder");
+        assert_eq!(pb.trigger_object.as_deref(), Some("Lead"));
+        let flow = scan.flows.iter().find(|f| f.name == "New_Case_Intake").unwrap();
+        assert!(!flow.is_process_builder(), "AutoLaunchedFlow is a true Flow, not Process Builder");
+
+        // Business processes — approval processes.
+        assert_eq!(scan.approval_processes.len(), 1);
+        assert_eq!(scan.approval_processes[0].name, "Discount Approval");
+        assert_eq!(scan.approval_processes[0].object, "Opportunity");
+        assert!(scan.approval_processes[0].active);
+
+        // Derived logic — formula fields (harvested from described objects).
+        assert_eq!(scan.formula_fields.len(), 1);
+        assert_eq!(scan.formula_fields[0].field, "Discounted_Price__c");
+        assert_eq!(scan.formula_fields[0].formula, "Price__c * 0.9");
+
+        // Derived logic — Apex: one class + one trigger.
+        assert_eq!(scan.apex.len(), 2);
+        assert!(scan
+            .apex
+            .iter()
+            .any(|a| a.kind == ApexKind::Class && a.name == "AccountService"));
+        let trig = scan.apex.iter().find(|a| a.kind == ApexKind::Trigger).unwrap();
+        assert_eq!(trig.name, "OpportunityTrigger");
+        assert_eq!(trig.object.as_deref(), Some("Opportunity"));
     }
 
     // ── Security: credentials not stored or leaked ────────────────────
