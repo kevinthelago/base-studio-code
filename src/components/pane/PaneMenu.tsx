@@ -2,14 +2,11 @@ import { useState } from "react";
 import { Maximize2, Minimize2, Power, PowerOff } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
+import { type ModelId, MODELS } from "../../lib/console/models";
 
-export type ModelId = "haiku-4.5" | "sonnet-4.5" | "opus-4.5";
-
-const MODELS: Array<{ id: ModelId; tone: string; price: string }> = [
-  { id: "haiku-4.5",  tone: "fast",     price: "$"   },
-  { id: "sonnet-4.5", tone: "balanced", price: "$$"  },
-  { id: "opus-4.5",   tone: "deep",     price: "$$$" },
-];
+// Re-exported so existing `import { type ModelId } from "./PaneMenu"` call sites keep working
+// now that the catalog lives in the shared module (#…).
+export type { ModelId };
 
 interface PaneMenuProps {
   agent: string;

@@ -718,6 +718,9 @@ export interface AppStore {
   setPlanAgentStreamProfile: (projectId: string, streamId: string, profileId: string | null) => void;
   /** #297: set one or more flow fields on a stream (merged into its resolved flow). */
   setPlanAgentStreamFlow: (projectId: string, streamId: string, patch: Partial<AgentFlow>) => void;
+  /** #…: set a stream's per-agent LLM model (undefined clears it so the stream inherits the
+   *  global `defaultModel`). Applied at fleet launch as `claude --model <tier>`. */
+  setPlanAgentStreamModel: (projectId: string, streamId: string, model: ModelId | undefined) => void;
   /** #378: set a stream's per-stream integration-strategy override (undefined clears
    *  it so the stream inherits the fleet default). */
   setPlanAgentStreamStrategy: (projectId: string, streamId: string, strategy: IntegrationStrategy | undefined) => void;

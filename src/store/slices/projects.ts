@@ -427,6 +427,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
           const newPaneRepos                = { ...s.paneRepos };
           const newPaneFlows                = { ...s.paneFlows };
+          const newPaneModels               = { ...s.paneModels };
           let   newPaneStatus               = { ...s.paneStatus };
 
           const safeKey = sanitizeProjectKey(projectKey);
@@ -485,6 +486,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               delete newPaneRoleGlobs[key];
               delete newPaneRepos[key];
               delete newPaneFlows[key];
+              delete newPaneModels[key];
               delete newPaneDirectorDrive[key];
               delete newPaneDirectorMode[key];
               delete newPaneStream[key];
@@ -560,6 +562,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // its lane auto-approve (dir/ -> dir/** so the subtree matches).
                 if (sess && sess.owns.length) newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
                 if (sess && sess.flow) newPaneFlows[key] = sess.flow;
+                // Per-agent model (#…) → the pane's `claude --model` at launch. Director (sess===null)
+                // and unset workers fall back to the global `defaultModel` (resolved at pane mount).
+                if (sess && sess.model) newPaneModels[key] = sess.model;
                 delete newDisabledPanes[key];
               } else {
                 // Empty grid cell — start disabled so it doesn't spawn an idle shell.
@@ -605,6 +610,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneRoleGlobs: newPaneRoleGlobs,
             paneRepos: newPaneRepos,
             paneFlows: newPaneFlows,
+            paneModels: newPaneModels,
             paneDirectorDrive: newPaneDirectorDrive,
             paneDirectorMode: newPaneDirectorMode,
             paneStream: newPaneStream,
