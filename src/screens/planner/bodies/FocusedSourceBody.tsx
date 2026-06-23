@@ -406,7 +406,7 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
   // the pane stays demonstrable until every connector's live transport / OAuth app is in place.
   async function runScan(uid: string, connectorId: string, fields: Record<string, string>, fallbackHandle: string) {
     try {
-      const res = await invoke<{ live: boolean; instance?: string; handle?: string; objects?: { name: string; count: number }[]; behaviors?: { label: string }[] }>(
+      const res = await invoke<{ live: boolean; instance?: string; handle?: string; objects?: { name: string; count: number; fields?: string[] }[]; behaviors?: { label: string }[] }>(
         "data_platform_scan",
         { connectorId, project: pid, sourceUid: uid, fields },
       );
