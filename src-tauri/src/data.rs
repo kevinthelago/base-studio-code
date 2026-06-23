@@ -345,6 +345,8 @@ pub fn data_load_reconciled(
 pub struct ScanObject {
     name: String,
     count: usize,
+    /// Discovered column names — seed the derived Data Model's entity fields (#1211).
+    fields: Vec<String>,
 }
 
 /// A behavior the scan surfaced (an automation / process / formula).
@@ -411,7 +413,7 @@ fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, Stri
     let mut objects = Vec::new();
     for o in objs.into_iter().take(12) {
         let count = conn.read(&o.name).map(|rs| rs.rows.len()).unwrap_or(0);
-        objects.push(ScanObject { name: o.name, count });
+        objects.push(ScanObject { name: o.name, count, fields: o.columns });
     }
     let behaviors = behaviors_summary(&conn.scan_platform().map_err(|e| e.to_string())?);
     Ok(ScanResult {
@@ -854,7 +856,9 @@ mod scan_it {
         let f = fields(&[("serviceUrl", &srv.base), ("user", "u")]);
         let r = scan_odata(&f, "pw").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
-        assert!(r.objects.iter().any(|o| o.name == "Customers"));
+        let cust = r.objects.iter().find(|o| o.name == "Customers").unwrap();
+        // Discovered columns flow through to ScanObject.fields (#1211).
+        assert!(cust.fields.contains(&"CustomerID".to_string()) && cust.fields.contains(&"CompanyName".to_string()));
     }
 
     #[test]
@@ -870,7 +874,8 @@ mod scan_it {
         let f = fields(&[("realm", "acme.quickbase.com"), ("appId", "app1")]);
         let r = scan_quickbase(&srv.base, &f, "tok123").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
-        assert!(r.objects.iter().any(|o| o.name == "Projects"));
+        let proj = r.objects.iter().find(|o| o.name == "Projects").unwrap();
+        assert_eq!(proj.fields, vec!["Name"]); // field labels → ScanObject.fields (#1211)
         assert!(r.behaviors.iter().any(|b| b.label == "Projects.Name"));
     }
 
@@ -886,7 +891,8 @@ mod scan_it {
         );
         let r = scan_hubspot(&srv.base, "tok123").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
-        assert!(r.objects.iter().any(|o| o.name == "contacts"));
+        let contacts = r.objects.iter().find(|o| o.name == "contacts").unwrap();
+        assert!(contacts.fields.contains(&"email".to_string())); // property names → fields (#1211)
         assert!(r.behaviors.iter().any(|b| b.label == "Lead nurture"));
     }
 
@@ -901,7 +907,8 @@ mod scan_it {
         );
         let r = scan_monday(&srv.base, "tok123").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
-        assert!(r.objects.iter().any(|o| o.name == "Projects"));
+        let proj = r.objects.iter().find(|o| o.name == "Projects").unwrap();
+        assert_eq!(proj.fields, vec!["Status"]); // board column titles → fields (#1211)
         assert!(r.behaviors.iter().any(|b| b.label.contains("Status")));
     }
 
