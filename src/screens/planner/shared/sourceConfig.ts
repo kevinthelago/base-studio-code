@@ -151,14 +151,14 @@ export function connector(id: string): Connector {
 }
 
 /** A discovered field: name + an inferred type + (for enums) the observed values (#1219). */
-export interface DiscoveredField { name: string; type?: FieldType; enumValues?: string[] }
+export interface DiscoveredField { name: string; type?: FieldType; enumValues?: string[]; ref?: string }
 /** An object/table the scan discovered in a connected source (a count, not extracted rows).
  *  `fields` accepts bare column names (older fixtures) or typed {@link DiscoveredField}s (the live
  *  scan) — used to seed the derived Data Model's entity fields + types. */
 export interface DiscoveredObject { name: string; count: number; fields?: (string | DiscoveredField)[] }
 const fieldName = (f: string | DiscoveredField): string => (typeof f === "string" ? f : f.name);
-const fieldMeta = (f: string | DiscoveredField): { type?: FieldType; enumValues?: string[] } =>
-  typeof f === "string" ? {} : { type: f.type, enumValues: f.enumValues };
+const fieldMeta = (f: string | DiscoveredField): { type?: FieldType; enumValues?: string[]; ref?: string } =>
+  typeof f === "string" ? {} : { type: f.type, enumValues: f.enumValues, ref: f.ref };
 /** A behavior (business rule / automation) the scan found — these shape the target app, not just data. */
 export interface SourceBehavior { label: string }
 
@@ -286,22 +286,31 @@ export function deriveDataModel(cfg: SourceConfig, id = "dm-source"): DataModel 
             key: c.key,
             type: c.meta.type ?? "string",
             ...(c.meta.enumValues && c.meta.enumValues.length ? { enum_values: c.meta.enumValues } : {}),
+            ...(c.meta.ref ? { ref: safeKey(c.meta.ref) } : {}),
           }))
         : [{ key: "id", type: "string" as const, required: true }];
       const identity = fields.some((f) => f.key === "id") ? ["id"] : fields[0] ? [fields[0].key] : [];
       entities.push({ key, label: o.name, fields, identity });
     }
   }
-  // Infer relationships (#1209): a field whose key matches another entity's key is a `ref` to it
-  // (e.g. Contact.account → Account). Gives the graph its edges and the list its ref chips from the
-  // discovered column names alone — no type metadata required.
+  // Resolve relationships. A connector-declared lookup (#1219, e.g. Salesforce AccountId → Account)
+  // wins when its target was scanned — it's exact, and its field key (`accountid`) wouldn't match by
+  // name. Otherwise infer (#1209): a field whose key matches another entity's key is a `ref` to it
+  // (e.g. Contact.account → Account). Either gives the graph its edges and the list its ref chips.
   const entityKeys = new Set(entities.map((e) => e.key));
   for (const e of entities) {
     for (const f of e.fields) {
-      if (f.key !== e.key && entityKeys.has(f.key)) {
+      if (f.ref && entityKeys.has(f.ref)) {
+        f.type = "ref";
+        delete f.enum_values; // a ref isn't an enum
+      } else if (f.key !== e.key && entityKeys.has(f.key)) {
         f.type = "ref";
         f.ref = f.key;
-        delete f.enum_values; // a ref isn't an enum
+        delete f.enum_values;
+      } else if (f.ref) {
+        // Declared ref to an object that wasn't scanned — drop the dangling link, keep a plain field.
+        delete f.ref;
+        if (f.type === "ref") f.type = "string";
       }
     }
   }
