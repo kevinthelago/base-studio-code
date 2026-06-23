@@ -37,6 +37,8 @@ export function IntegrationsSettings() {
   const setGeminiKey = useAppStore(s => s.setGeminiKey);
   const localBaseUrl = useAppStore(s => s.localBaseUrl);
   const setLocalBaseUrl = useAppStore(s => s.setLocalBaseUrl);
+  const fleetHarness = useAppStore(s => s.fleetHarness);
+  const setFleetHarness = useAppStore(s => s.setFleetHarness);
   // The key for the selected provider (anthropic reuses claudeApiKey; local needs none).
   const providerKey = llmProvider === "openai" ? openaiKey : llmProvider === "gemini" ? geminiKey : llmProvider === "anthropic" ? claudeApiKey : "";
   const setProviderKey = (v: string) => {
@@ -105,6 +107,14 @@ export function IntegrationsSettings() {
                 <div className="hint">Stored in OS keyring · never written to disk in plaintext. The per-pane agent model lives in Settings → General.</div>
               </>
             )}
+          </div>
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>Run the agent fleet on</label>
+            <select className="input" value={fleetHarness} onChange={(e) => setFleetHarness(e.target.value as "claude" | "bsc-agent")}>
+              <option value="claude">Claude Code (default)</option>
+              <option value="bsc-agent">bsc-agent — the provider/model above</option>
+            </select>
+            <div className="hint">Workers + director launch on this harness; bsc-agent runs on the selected LLM with the same role permissions, MCP, and context.</div>
           </div>
           <div className="field">
             <label>Per-agent context cap</label>

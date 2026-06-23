@@ -92,6 +92,7 @@ export const useAppStore = create<AppStore>()(
         restrictToBscIssues:  s.restrictToBscIssues,
         coordAutoWake:        s.coordAutoWake,
         defaultModel:         s.defaultModel,
+        fleetHarness:         s.fleetHarness,
         paneModels:           s.paneModels,
         focusTarget:          s.focusTarget,
         fleetPaneStreams:     s.fleetPaneStreams,

@@ -821,6 +821,11 @@ export interface AppStore {
    *  Settings → General). Per-pane override lives in the pane hamburger menu. */
   defaultModel: ModelId;
   setDefaultModel: (m: ModelId) => void;
+  /** Which harness the agent fleet launches on (#1078 P5): "claude" (default) or
+   *  "bsc-agent" — our model-agnostic runtime, on the provider configured in
+   *  Settings → Integrations. Persisted. */
+  fleetHarness: "claude" | "bsc-agent";
+  setFleetHarness: (h: "claude" | "bsc-agent") => void;
   /** Per-pane model override, keyed by paneId. A pane with no entry falls back to
    *  {@link defaultModel}. Applied to `claude --model` at the pane's next launch. */
   paneModels: Record<string, ModelId>;
