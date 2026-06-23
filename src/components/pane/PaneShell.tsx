@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { MoreHorizontal, Maximize2, Minimize2 } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import { VIEW_DEFS, type ViewKey } from "./ViewTabs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
 
@@ -9,11 +9,45 @@ import { PaneMenu, type ModelId } from "./PaneMenu";
 export type { PaneStatus } from "../../lib/console/paneStatus";
 import type { PaneStatus } from "../../lib/console/paneStatus";
 
+// Session-state vocabulary → the footer/dot label + the themed state color (#1149). Our live
+// status is "run" | "on" | "idle"; a disabled pane arrives as "idle" but is labelled "stopped".
+const STATE_META: Record<string, { label: string; color: string; pulse: boolean }> = {
+  run:  { label: "running", color: "var(--state-run)", pulse: true },
+  on:   { label: "ready",   color: "var(--state-run)", pulse: false },
+  idle: { label: "idle",    color: "var(--state-idle)", pulse: false },
+};
+
+// LLM-provider → its themed hue (the dot in the model pill) and the harness it runs under.
+// Absent / "claude" ⇒ Claude Code (anthropic); everything else runs under the bsc-agent shell.
+const PROV_COLOR: Record<string, string> = {
+  claude: "var(--prov-anthropic)", anthropic: "var(--prov-anthropic)",
+  openai: "var(--prov-openai)", codex: "var(--prov-openai)",
+  gemini: "var(--prov-google)", google: "var(--prov-google)",
+  local: "var(--prov-local)", ollama: "var(--prov-local)",
+};
+const harnessOf = (provider?: string) =>
+  !provider || provider === "claude" || provider === "anthropic" ? "Claude Code" : "bsc-agent";
+
 interface PaneShellProps {
   agent: string;
   status?: PaneStatus;
   meta?: string;
   model?: ModelId;
+  /** Repo this pane works in (short `name`, not `owner/name`) — shown after the agent name. */
+  repo?: string;
+  /** Current branch — shown in the footer. */
+  branch?: string;
+  /** Session role (worker/director/…) — shown as a header badge. */
+  role?: string;
+  /** LLM provider id — drives the model-pill dot color + the harness label. */
+  provider?: string;
+  /** Uncommitted-change count — a header badge when > 0. */
+  changes?: number;
+  /** Warning count — a header badge when > 0. */
+  warns?: number;
+  /** Session token + cost rollups — shown in the footer when known. */
+  tok?: string;
+  cost?: string;
   available?: ViewKey[];
   active?: ViewKey;
   banner?: React.ReactNode;
@@ -38,6 +72,14 @@ export function PaneShell({
   agent,
   status = "run",
   model = "sonnet-4.5",
+  repo,
+  branch,
+  role,
+  provider,
+  changes = 0,
+  warns = 0,
+  tok,
+  cost,
   available = ["console", "files"],
   active = "console",
   banner,
@@ -126,12 +168,14 @@ export function PaneShell({
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, [viewOpen]);
 
-  const statusColor =
-    status === "idle" ? "var(--fg-dim)"
-    : status === "run" ? "var(--accent)"
-    : "var(--success)";
-
+  const sm = STATE_META[status] ?? STATE_META.idle;
+  const provColor = PROV_COLOR[provider ?? "claude"] ?? "var(--prov-local)";
+  const harness = harnessOf(provider);
   const { Icon: ViewIcon, label: viewLabel } = VIEW_DEFS[active];
+
+  const chip = (txt: string, bg: string, col: string) => (
+    <span style={{ padding: "0 4px", borderRadius: 5, background: bg, color: col, fontSize: 9, fontFamily: "var(--mono)" }}>{txt}</span>
+  );
 
   return (
     <div
@@ -147,38 +191,22 @@ export function PaneShell({
         zIndex: menuOpen || viewOpen ? 10 : 1,
       }}
     >
-      {/* Head */}
+      {/* Head — the Console-Shell pane header (#1149): status · name · repo · badges,
+          then the view-switch ▾, harness/model pill, role badge, and ⋯ menu. */}
       <div style={{
-        height: 32, flex: "0 0 32px", padding: "0 8px 0 6px",
-        display: "flex", alignItems: "center", gap: 6,
+        height: 36, flex: "0 0 36px", padding: "0 10px",
+        display: "flex", alignItems: "center", gap: 7,
         background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)",
       }}>
 
-        {/* Status indicator — leftmost */}
+        {/* Status dot */}
         <span style={{
-          width: 7, height: 7, borderRadius: "50%", background: statusColor,
-          animation: status === "run" ? "pulse 1.4s ease-in-out infinite" : "none",
-          flex: "0 0 7px",
+          width: 7, height: 7, borderRadius: "50%", background: sm.color,
+          animation: sm.pulse ? "pulse 1.6s ease-in-out infinite" : "none", flex: "0 0 7px",
         }} />
 
-        {/* View selector — the type button AND the title open this dropdown */}
-        <div ref={viewRef} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6, flex: "0 1 auto", minWidth: 0 }}>
-          <button
-            title={`${viewLabel} · switch view`}
-            onClick={() => setViewOpen(!viewOpen)}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: 26, height: 22, borderRadius: 4,
-              background: viewOpen ? "var(--bg-canvas)" : "transparent",
-              border: `1px solid ${viewOpen ? "var(--accent-dim)" : "var(--border-soft)"}`,
-              color: viewOpen ? "var(--accent)" : "var(--fg-muted)",
-              cursor: "pointer",
-            }}
-          >
-            <ViewIcon size={12} />
-          </button>
-
-          {editingName ? (
+        {/* Agent name — double-click to rename */}
+        {editingName ? (
           <input
             ref={nameInputRef}
             value={draftName}
@@ -189,36 +217,78 @@ export function PaneShell({
               if (e.key === "Escape") { setDraftName(agent); setEditingName(false); }
             }}
             style={{
-              fontFamily: "var(--mono)", fontSize: 11.5,
+              fontFamily: "var(--mono)", fontSize: 12,
               background: "var(--bg-canvas)", color: "var(--fg)",
               border: "1px solid var(--accent-dim)", borderRadius: 3,
               padding: "1px 5px", width: 130, outline: "none", flex: "0 0 auto",
             }}
           />
-          ) : (
-            <span
-              onClick={() => setViewOpen(true)}
-              onDoubleClick={() => { setViewOpen(false); setDraftName(agent); setEditingName(true); }}
-              title="Click to switch view; double-click to rename"
-              style={{
-                fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto",
-                cursor: "pointer",
-              }}
-            >{agent}</span>
-          )}
+        ) : (
+          <span
+            onDoubleClick={() => { setDraftName(agent); setEditingName(true); }}
+            title="Double-click to rename"
+            style={{
+              fontFamily: "var(--mono)", fontSize: 12.5, fontWeight: 600, color: "var(--fg)",
+              whiteSpace: "nowrap", flex: "0 0 auto",
+            }}
+          >{agent}</span>
+        )}
+
+        {/* Repo */}
+        {repo && (
+          <span style={{
+            fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto", minWidth: 0,
+          }}>· {repo}</span>
+        )}
+
+        {/* Change / warn badges */}
+        {changes > 0 && (
+          <span style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--fg-muted)", fontFamily: "var(--mono)", fontSize: 10, flex: "0 0 auto" }}>
+            ±{chip(String(changes), "var(--bg-elev2)", "var(--fg-muted)")}
+          </span>
+        )}
+        {warns > 0 && (
+          <span style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--state-wait)", fontFamily: "var(--mono)", fontSize: 10, flex: "0 0 auto" }}>
+            ⚠{chip(String(warns), "color-mix(in oklch, var(--danger), transparent 82%)", "var(--danger)")}
+          </span>
+        )}
+
+        {/* Spacer pushes the controls to the right edge */}
+        <div style={{ flex: 1, minWidth: 0 }} />
+
+        {/* View switcher ▾ */}
+        <div ref={viewRef} style={{ position: "relative", flex: "0 0 auto" }}>
+          <button
+            title={`${viewLabel} · switch screen`}
+            onClick={() => setViewOpen(!viewOpen)}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+              height: 21, padding: "0 7px", borderRadius: 6,
+              border: `1px solid ${viewOpen ? "var(--accent)" : "var(--border)"}`,
+              background: viewOpen ? "var(--bg-canvas)" : "var(--bg-panel)",
+              color: viewOpen ? "var(--accent-text)" : "var(--fg-muted)", cursor: "pointer",
+            }}
+          >
+            <ViewIcon size={11} /><span style={{ fontFamily: "var(--mono)", fontSize: 10 }}>▾</span>
+          </button>
           {viewOpen && (
             <div style={{
-              position: "absolute", top: "calc(100% + 4px)", left: 0,
+              position: "absolute", top: "calc(100% + 4px)", right: 0,
               zIndex: 20,
               background: "var(--bg-panel)",
-              border: "1px solid var(--border-soft)",
+              border: "1px solid var(--border)",
               borderRadius: "var(--r-md)",
-              minWidth: 170,
-              boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
+              minWidth: 180,
+              boxShadow: "0 16px 40px -14px rgba(0,0,0,0.65)",
               overflow: "hidden",
               fontFamily: "var(--mono)",
             }}>
+              <div style={{ padding: "7px 11px", borderBottom: "1px solid var(--border-soft)", display: "flex", gap: 6 }}>
+                <span style={{ fontSize: 9, letterSpacing: ".1em", color: "var(--fg-dim)" }}>SWITCH SCREEN</span>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontSize: 9, color: "var(--fg-dim)" }}>no restart</span>
+              </div>
               {available.map((k) => {
                 const { Icon, label, hotkey } = VIEW_DEFS[k];
                 const on = k === active;
@@ -230,8 +300,8 @@ export function PaneShell({
                       display: "flex", alignItems: "center", gap: 8,
                       padding: "6px 10px",
                       cursor: "pointer",
-                      background: on ? "color-mix(in oklch, var(--accent), transparent 88%)" : "transparent",
-                      color: on ? "var(--accent)" : "var(--fg-muted)",
+                      background: on ? "var(--accent-soft)" : "transparent",
+                      color: on ? "var(--accent-text)" : "var(--fg-muted)",
                     }}
                     onMouseEnter={(e) => {
                       if (!on) (e.currentTarget as HTMLDivElement).style.background = "var(--bg-elev)";
@@ -252,40 +322,49 @@ export function PaneShell({
           )}
         </div>
 
-        {/* Spacer pushes the controls to the right edge */}
-        <div style={{ flex: 1, minWidth: 0 }} />
-
-        {/* Maximize / minimize — one control that swaps by fullscreen state */}
+        {/* Harness + model pill — opens the pane menu's model section */}
         <button
-          title={fullscreen ? "Minimize pane" : "Maximize pane"}
-          onClick={onToggleFullscreen}
+          title="Switch harness / model"
+          onClick={onMenuToggle}
           style={{
-            width: 22, height: 22, borderRadius: 4,
-            border: "1px solid transparent",
-            background: "transparent",
-            color: "var(--fg-muted)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer", flex: "0 0 22px",
+            display: "flex", alignItems: "center", gap: 5, height: 21, padding: "0 8px",
+            border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)",
+            color: "var(--fg)", cursor: "pointer", flex: "0 0 auto", whiteSpace: "nowrap",
           }}
         >
-          {fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+          <span style={{ width: 6, height: 6, borderRadius: 2, background: provColor }} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>{harness}</span>
+          <span style={{ color: "var(--fg-dim)" }}>·</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>{model}</span>
+          <span style={{ color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10 }}>▾</span>
         </button>
 
-        {/* More options */}
+        {/* Role badge */}
+        {role && (
+          <span style={{
+            height: 21, padding: "0 7px", display: "flex", alignItems: "center", borderRadius: 6,
+            background: role === "director" ? "var(--accent-soft)" : "var(--bg-elev2)",
+            color: role === "director" ? "var(--accent-text)" : "var(--fg-muted)",
+            fontFamily: "var(--mono)", fontSize: 10, fontWeight: 600, letterSpacing: ".03em",
+            flex: "0 0 auto", whiteSpace: "nowrap",
+          }}>{role.toUpperCase()}</span>
+        )}
+
+        {/* ⋯ pane menu */}
         <button
           ref={menuButtonRef}
           title="Pane menu"
           onClick={onMenuToggle}
           style={{
-            width: 22, height: 22, borderRadius: 4,
-            border: "1px solid " + (menuOpen ? "var(--accent-dim)" : "transparent"),
+            width: 22, height: 22, borderRadius: 6,
+            border: "1px solid " + (menuOpen ? "var(--accent)" : "transparent"),
             background: menuOpen ? "var(--bg-canvas)" : "transparent",
-            color: menuOpen ? "var(--accent)" : "var(--fg-muted)",
+            color: menuOpen ? "var(--accent-text)" : "var(--fg-muted)",
             display: "flex", alignItems: "center", justifyContent: "center",
             cursor: "pointer", flex: "0 0 22px",
           }}
         >
-          <MoreHorizontal size={12} />
+          <MoreHorizontal size={13} />
         </button>
       </div>
 
@@ -293,6 +372,21 @@ export function PaneShell({
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {children}
+      </div>
+
+      {/* Footer (#1149): session state · branch · tokens · cost. */}
+      <div style={{
+        height: 24, flex: "0 0 24px", display: "flex", alignItems: "center", gap: 12,
+        padding: "0 11px", background: "var(--bg-canvas)", borderTop: "1px solid var(--border-soft)",
+        fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)",
+      }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: sm.color }} />{sm.label}
+        </span>
+        {branch && <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>⎇ {branch}</span>}
+        <div style={{ flex: 1 }} />
+        {tok && <span style={{ color: "var(--fg-dim)", flex: "0 0 auto" }}>{tok} tok</span>}
+        {cost && <span style={{ flex: "0 0 auto" }}>{cost}</span>}
       </div>
 
       {menuOpen && menuPos && createPortal(
