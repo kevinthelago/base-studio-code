@@ -6,6 +6,7 @@ import { FilesView } from "../components/pane/views/FilesView";
 import { BranchesView } from "../components/pane/views/BranchesView";
 import { ChangesView } from "../components/pane/views/ChangesView";
 import { LogView } from "../components/pane/views/LogView";
+import { ToolsView } from "../components/pane/views/ToolsView";
 import { useAppStore } from "../store";
 import { recordRender } from "../lib/core/perf";
 import { resetLaunchGate } from "../lib/fleet/launchGate";
@@ -99,7 +100,7 @@ const PaneAt = memo(function PaneAt({
       branch={paneBranch}
       role={paneRole}
       provider={paneProvider}
-      available={["console", "files", "branches", "changes", "log"]}
+      available={["console", "files", "branches", "changes", "log", "tools"]}
       active={view}
       menuOpen={menuOpen}
       focused={focused}
@@ -129,6 +130,7 @@ const PaneAt = memo(function PaneAt({
       {view === "branches" && <BranchesView small branches={[]} />}
       {view === "changes"  && <ChangesView  small hunks={[]} />}
       {view === "log"      && <LogView      small commits={[]} />}
+      {view === "tools"    && <ToolsView    small role={paneRole} />}
       </>
       )}
     </PaneShell>
