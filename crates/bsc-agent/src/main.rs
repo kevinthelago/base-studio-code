@@ -70,8 +70,14 @@ async fn main() {
     let model = std::env::var("BSC_AGENT_MODEL").unwrap_or_default();
     let api_key = std::env::var("BSC_AGENT_API_KEY").unwrap_or_default();
 
-    // Task: argv (joined) if given, else stdin.
-    let argv: Vec<String> = std::env::args().skip(1).collect();
+    // Task: argv (joined) if given, else stdin. A leading `--continue`/`-c` flag
+    // requests resuming the prior conversation for this cwd (see $BSC_AGENT_SESSION),
+    // mirroring `claude --continue`.
+    let mut argv: Vec<String> = std::env::args().skip(1).collect();
+    let resume = argv.first().map(|a| a == "--continue" || a == "-c").unwrap_or(false);
+    if resume {
+        argv.remove(0);
+    }
     let task = if argv.is_empty() {
         let mut s = String::new();
         let _ = std::io::stdin().read_to_string(&mut s);
@@ -116,6 +122,19 @@ async fn main() {
     // no-op when those aren't set. Emits the contracts the app's readers already consume.
     let tele = telemetry::Telemetry::from_env();
 
+    // Resume: the app hands us the per-cwd conversation file via $BSC_AGENT_SESSION. We persist
+    // the conversation there on exit (so a later launch can resume), and with `--continue` seed
+    // the loop from it. Absent/empty path ⇒ no persistence and always a fresh conversation.
+    let session_path = std::env::var("BSC_AGENT_SESSION")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(std::path::PathBuf::from);
+    let prior: Vec<llm::Msg> = match (resume, &session_path) {
+        (true, Some(p)) => agent::load_conversation(p),
+        _ => Vec::new(),
+    };
+    let session_path = session_path.as_deref();
+
     let kind = match llm::resolve_provider(&provider) {
         Ok(k) => k,
         Err(e) => {
@@ -126,13 +145,13 @@ async fn main() {
 
     let result = match kind {
         llm::ProviderKind::Anthropic => {
-            run_agent(&llm::AnthropicProvider, &api_key, &model, &system, &task, &tools, &perms, &tele, 20).await
+            run_agent(&llm::AnthropicProvider, &api_key, &model, &system, &task, &tools, &perms, &tele, &prior, session_path, 20).await
         }
         llm::ProviderKind::OpenAi => {
-            run_agent(&llm::OpenAiProvider, &api_key, &model, &system, &task, &tools, &perms, &tele, 20).await
+            run_agent(&llm::OpenAiProvider, &api_key, &model, &system, &task, &tools, &perms, &tele, &prior, session_path, 20).await
         }
         llm::ProviderKind::Gemini => {
-            run_agent(&llm::GeminiProvider, &api_key, &model, &system, &task, &tools, &perms, &tele, 20).await
+            run_agent(&llm::GeminiProvider, &api_key, &model, &system, &task, &tools, &perms, &tele, &prior, session_path, 20).await
         }
         llm::ProviderKind::Local => {
             // The OpenAI-compatible endpoint for local models — $BSC_AGENT_BASE_URL (set by the
@@ -142,7 +161,7 @@ async fn main() {
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| llm::DEFAULT_LOCAL_BASE_URL.into());
             let p = llm::LocalProvider { base_url };
-            run_agent(&p, &api_key, &model, &system, &task, &tools, &perms, &tele, 20).await
+            run_agent(&p, &api_key, &model, &system, &task, &tools, &perms, &tele, &prior, session_path, 20).await
         }
     };
 

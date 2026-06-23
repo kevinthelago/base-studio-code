@@ -802,6 +802,32 @@ pub(crate) fn has_claude_history(cwd: &str) -> bool {
         .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
 }
 
+/// Where `bsc-agent` persists (and resumes) the conversation for `cwd`:
+/// `~/.base-studio-code/agent-sessions/<cwd-key>/conversation.json`. The app owns this keying
+/// (mirroring Claude's per-cwd projects dir, via the same `claude_project_dir_name` slug) and hands
+/// the path to the sidecar through `$BSC_AGENT_SESSION`; the sidecar just reads/writes it. The
+/// adapter checks the same path for `detect_history`. Empty cwd ⇒ None (no persistence). (#1144)
+pub(crate) fn bsc_agent_session_path(cwd: &str) -> Option<std::path::PathBuf> {
+    if cwd.is_empty() {
+        return None;
+    }
+    Some(
+        bsc_base_dir()
+            .join("agent-sessions")
+            .join(claude_project_dir_name(cwd))
+            .join("conversation.json"),
+    )
+}
+
+/// Whether `bsc-agent` has a resumable conversation for `cwd` — a non-empty session file exists.
+/// Fail-safe: any uncertainty returns `false`, launching a fresh session. (#1144)
+pub(crate) fn has_bsc_agent_history(cwd: &str) -> bool {
+    bsc_agent_session_path(cwd)
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len() > 0)
+        .unwrap_or(false)
+}
+
 // ── File picker ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -2999,6 +3025,44 @@ mod tests {
 
         // Empty cwd is never resumable.
         assert!(!has_claude_history(""));
+    }
+
+    #[test]
+    fn bsc_agent_session_path_keys_off_cwd() {
+        // Deterministic per-cwd path under agent-sessions/, slugged like Claude's projects dir.
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _home = temp_home("agentsess-path");
+        let cwd = r"C:\Users\Kevin\Projects\demo";
+        let p = super::bsc_agent_session_path(cwd).unwrap();
+        assert!(p.ends_with("conversation.json"));
+        let s = p.to_string_lossy().replace('\\', "/");
+        assert!(s.contains("/agent-sessions/"));
+        assert!(s.contains(&claude_project_dir_name(cwd)));
+        // Empty cwd ⇒ no path (no persistence).
+        assert!(super::bsc_agent_session_path("").is_none());
+    }
+
+    #[test]
+    fn has_bsc_agent_history_requires_nonempty_session_file() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _home = temp_home("agentsess-hist");
+        let cwd = r"C:\Users\Kevin\Projects\demo";
+        let path = super::bsc_agent_session_path(cwd).unwrap();
+
+        // No file yet → fresh.
+        assert!(!super::has_bsc_agent_history(cwd));
+
+        // Empty file → still fresh (an aborted/empty run shouldn't trigger resume).
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        write_file(&path, "");
+        assert!(!super::has_bsc_agent_history(cwd));
+
+        // Non-empty conversation → resume is safe.
+        write_file(&path, "[{\"User\":\"hi\"}]");
+        assert!(super::has_bsc_agent_history(cwd));
+
+        // Empty cwd is never resumable.
+        assert!(!super::has_bsc_agent_history(""));
     }
 
     #[test]

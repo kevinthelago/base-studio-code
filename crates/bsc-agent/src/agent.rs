@@ -5,6 +5,7 @@ use crate::permissions::Permissions;
 use crate::telemetry::Telemetry;
 use llm::{LlmProvider, Msg, ToolDef, Turn};
 use serde_json::Value;
+use std::path::Path;
 
 /// A tool executor: takes the model-supplied `args` and returns its result (or error).
 pub type ToolFn = Box<dyn Fn(&Value) -> Result<String, String>>;
@@ -30,9 +31,14 @@ pub async fn run_agent<P: LlmProvider>(
     tools: &[Tool],
     perms: &Permissions,
     telemetry: &Telemetry,
+    // Prior conversation to resume (empty = fresh), and where to persist the conversation
+    // afterward so a later --continue can resume it (None = don't persist).
+    prior: &[Msg],
+    session_path: Option<&Path>,
     max_steps: usize,
 ) -> Result<String, String> {
-    let mut messages: Vec<Msg> = vec![Msg::User(user.to_string())];
+    let mut messages: Vec<Msg> = prior.to_vec();
+    messages.push(Msg::User(user.to_string()));
     let tool_defs: Vec<ToolDef> = tools.iter().map(|t| t.def.clone()).collect();
 
     for _ in 0..max_steps {
@@ -50,6 +56,11 @@ pub async fn run_agent<P: LlmProvider>(
             println!("{}", result.text);
         }
         if result.tool_calls.is_empty() {
+            // Record the final assistant turn so a resumed session sees it, then persist.
+            messages.push(Msg::Assistant { text: result.text.clone(), tool_calls: vec![] });
+            if let Some(p) = session_path {
+                save_conversation(p, &messages);
+            }
             telemetry.finish();
             return Ok(result.text);
         }
@@ -77,8 +88,29 @@ pub async fn run_agent<P: LlmProvider>(
             messages.push(Msg::ToolResult { id: tc.id.clone(), content: output });
         }
     }
+    if let Some(p) = session_path {
+        save_conversation(p, &messages);
+    }
     telemetry.finish();
     Err(format!("agent did not finish within {max_steps} steps"))
+}
+
+/// Persist the conversation as JSON (best-effort) so a later `--continue` can resume it.
+fn save_conversation(path: &Path, messages: &[Msg]) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(json) = serde_json::to_string(messages) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+/// Load a persisted conversation; empty on any error or if the file is absent.
+pub fn load_conversation(path: &Path) -> Vec<Msg> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
 }
 
 /// The `read_file` tool: read a UTF-8 text file at `args.path`. The first of the
@@ -249,7 +281,7 @@ mod tests {
             file: path.to_string_lossy().into_owned(),
         };
         let tools = vec![read_file_tool()];
-        let out = run_agent(&mock, "", "m", "", "read the file", &tools, &Permissions::default(), &Telemetry::disabled(), 5)
+        let out = run_agent(&mock, "", "m", "", "read the file", &tools, &Permissions::default(), &Telemetry::disabled(), &[], None, 5)
             .await
             .unwrap();
         assert_eq!(out, "done: saw HELLO");
@@ -275,7 +307,7 @@ mod tests {
             }
         }
         let tools = vec![read_file_tool()];
-        let err = run_agent(&Loopy, "", "m", "", "go", &tools, &Permissions::default(), &Telemetry::disabled(), 3)
+        let err = run_agent(&Loopy, "", "m", "", "go", &tools, &Permissions::default(), &Telemetry::disabled(), &[], None, 3)
             .await
             .unwrap_err();
         assert!(err.contains("did not finish"));
@@ -324,7 +356,7 @@ mod tests {
         let mock = BashMock { step: Cell::new(0) };
         let tools = vec![bash_tool()];
         let perms = Permissions { deny_bash: vec!["rm -rf".into()], ..Default::default() };
-        let out = run_agent(&mock, "", "m", "", "clean up", &tools, &perms, &Telemetry::disabled(), 5)
+        let out = run_agent(&mock, "", "m", "", "clean up", &tools, &perms, &Telemetry::disabled(), &[], None, 5)
             .await
             .unwrap();
         assert_eq!(out, "ok: was denied");
@@ -356,13 +388,68 @@ mod tests {
         let tx = dir.join("s.jsonl");
         let tokens = dir.join("tokens.log").to_string_lossy().into_owned();
         let tele = Telemetry::for_test(Some(tokens), Some(tx.clone()));
-        let out = run_agent(&FinalMock, "", "claude-x", "", "hi", &[], &Permissions::default(), &tele, 5)
+        let out = run_agent(&FinalMock, "", "claude-x", "", "hi", &[], &Permissions::default(), &tele, &[], None, 5)
             .await
             .unwrap();
         assert_eq!(out, "all done");
         let v: serde_json::Value = serde_json::from_str(std::fs::read_to_string(&tx).unwrap().trim()).unwrap();
         assert_eq!(v["message"]["model"], "claude-x");
         assert_eq!(v["message"]["usage"]["input_tokens"], 12);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A fresh run persists [User, Assistant] to the session file, and a `--continue` run
+    /// (prior seeded + same session_path) appends to it rather than starting over. (#1144)
+    #[tokio::test]
+    async fn run_agent_persists_and_resumes() {
+        struct OneShot;
+        impl LlmProvider for OneShot {
+            async fn complete(&self, _r: &LlmRequest, _k: &str) -> Result<serde_json::Value, String> {
+                unreachable!()
+            }
+            async fn turn(&self, _t: &Turn, _k: &str) -> Result<TurnResult, String> {
+                Ok(TurnResult {
+                    text: "ok".into(),
+                    tool_calls: vec![],
+                    usage: serde_json::json!({}),
+                    stop_reason: "end_turn".into(),
+                })
+            }
+        }
+        let dir = std::env::temp_dir().join(format!("bsc_p3_resume_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let session = dir.join("conversation.json");
+
+        // Fresh run: records the user turn + the final assistant turn.
+        run_agent(&OneShot, "", "m", "", "first", &[], &Permissions::default(), &Telemetry::disabled(), &[], Some(&session), 5)
+            .await
+            .unwrap();
+        let prior = load_conversation(&session);
+        assert_eq!(prior.len(), 2, "fresh run persists user + assistant");
+        assert!(matches!(&prior[0], Msg::User(s) if s == "first"));
+
+        // Resume: seeded with `prior`, the second exchange appends to the same file.
+        run_agent(&OneShot, "", "m", "", "second", &[], &Permissions::default(), &Telemetry::disabled(), &prior, Some(&session), 5)
+            .await
+            .unwrap();
+        let after = load_conversation(&session);
+        assert_eq!(after.len(), 4, "resume appends rather than restarting");
+        assert!(matches!(&after[2], Msg::User(s) if s == "second"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `load_conversation` is forgiving: a missing or malformed file yields an empty prior
+    /// (a fresh conversation), never a panic. (#1144)
+    #[test]
+    fn load_conversation_empty_on_missing_or_garbage() {
+        let dir = std::env::temp_dir().join(format!("bsc_p3_resume_load_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let missing = dir.join("nope.json");
+        assert!(load_conversation(&missing).is_empty());
+        let garbage = dir.join("garbage.json");
+        std::fs::write(&garbage, "not json {{").unwrap();
+        assert!(load_conversation(&garbage).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
