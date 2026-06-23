@@ -7,7 +7,9 @@ import { BranchesView } from "../components/pane/views/BranchesView";
 import { ChangesView } from "../components/pane/views/ChangesView";
 import { LogView } from "../components/pane/views/LogView";
 import { ToolsView } from "../components/pane/views/ToolsView";
+import { TelemetryView } from "../components/pane/views/TelemetryView";
 import { useAppStore } from "../store";
+import { usePaneTokenUsage, type PaneTokenUsage } from "../lib/console/usePaneTokenUsage";
 import { recordRender } from "../lib/core/perf";
 import { resetLaunchGate } from "../lib/fleet/launchGate";
 import { shouldAdvanceOnReply } from "../lib/console/consoleFocus";
@@ -59,12 +61,14 @@ interface PaneAtProps {
   fullscreen: boolean;
   disabled: boolean;
   hidden: boolean;
+  /** This pane's live token/cost rollup (#1181) — the actual running model + the Telemetry view. */
+  usage?: PaneTokenUsage;
 }
 
 const PaneAt = memo(function PaneAt({
   i, tabIdx, paneId: pid, name, view, status, cwd, initCmd,
   onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange, onStatusChange,
-  onToggleFullscreen, onToggleDisable, menuOpen, focused, fullscreen, disabled, hidden,
+  onToggleFullscreen, onToggleDisable, menuOpen, focused, fullscreen, disabled, hidden, usage,
 }: PaneAtProps) {
   const defaultModel = useAppStore((s) => s.defaultModel);
   const paneModel = useAppStore((s) => s.paneModels[pid]);
@@ -96,12 +100,13 @@ const PaneAt = memo(function PaneAt({
       status={disabled ? "idle" : status}
       model={paneModel ?? defaultModel}
       onModel={(m) => setPaneModel(pid, m)}
+      runningModel={usage?.model}
       repo={repoShort}
       branch={paneBranch}
       role={paneRole}
       provider={paneProvider}
       claudeActive={claudeActive}
-      available={["console", "files", "branches", "changes", "log", "tools"]}
+      available={["console", "files", "branches", "changes", "log", "tools", "telemetry"]}
       active={view}
       menuOpen={menuOpen}
       focused={focused}
@@ -132,6 +137,7 @@ const PaneAt = memo(function PaneAt({
       {view === "changes"  && <ChangesView  small hunks={[]} />}
       {view === "log"      && <LogView      small commits={[]} />}
       {view === "tools"    && <ToolsView    small role={paneRole} />}
+      {view === "telemetry"&& <TelemetryView small usage={usage} />}
       </>
       )}
     </PaneShell>
@@ -174,6 +180,9 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   // Mounted here because ConsoleScreen stays mounted across every screen (#187).
   useCoordinator();
   useIdleReaper(); // #849 — reap idle background PTYs to bound memory
+  // #1181: per-pane token/cost rollup (actual running model + Telemetry view), polled from
+  // the transcripts the `bsc-tokens` hook records. Empty until an agent takes a turn.
+  const tokenUsage = usePaneTokenUsage();
   // #220: the pipeline conductor — auto-advances pipeline runs as stages report.
   useWorkflowConductor();
   // Subscribe per-slice instead of `useAppStore()`-the-whole-state, so a mutation
@@ -383,6 +392,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
         fullscreen={isActiveTab && fullscreenPaneIdx === i}
         disabled={!!disabledPanes[pid]}
         hidden={!isActiveTab || (isFullscreenInTab && i !== fullscreenPaneIdx)}
+        usage={tokenUsage.get(pid)}
       />
     );
   }
