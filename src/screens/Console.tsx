@@ -12,6 +12,7 @@ import { recordRender } from "../lib/core/perf";
 import { resetLaunchGate } from "../lib/fleet/launchGate";
 import { shouldAdvanceOnReply } from "../lib/console/consoleFocus";
 import type { ViewKey } from "../components/pane/ViewTabs";
+import { paneIdFor } from "../lib/console/paneIdentity";
 import { useCoordinator } from "../lib/fleet/useCoordinator";
 import { useWorkflowConductor } from "../lib/fleet/useWorkflowConductor";
 import { useDirectorPump } from "../lib/fleet/useDirectorPump";
@@ -26,13 +27,11 @@ function resolvePaneName(
   return names[tabIdx]?.[paneIdx] ?? `console-${tabIdx + 1}-${paneIdx + 1}`;
 }
 
-function paneId(tabIdx: number, paneIdx: number): string {
-  return `t${tabIdx}p${paneIdx}`;
-}
-
 interface PaneAtProps {
   i: number;
   tabIdx: number;
+  /** Stable identity id for this pane (#1176) — resolved from the tab, not the grid position. */
+  paneId: string;
   name: string;
   view: ViewKey;
   status: "run" | "on" | "idle";
@@ -63,11 +62,10 @@ interface PaneAtProps {
 }
 
 const PaneAt = memo(function PaneAt({
-  i, tabIdx, name, view, status, cwd, initCmd,
+  i, tabIdx, paneId: pid, name, view, status, cwd, initCmd,
   onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange, onStatusChange,
   onToggleFullscreen, onToggleDisable, menuOpen, focused, fullscreen, disabled, hidden,
 }: PaneAtProps) {
-  const pid = paneId(tabIdx, i);
   const defaultModel = useAppStore((s) => s.defaultModel);
   const paneModel = useAppStore((s) => s.paneModels[pid]);
   const setPaneModel = useAppStore((s) => s.setPaneModel);
@@ -243,7 +241,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   useCiWatcher();
 
   const handleStatusChange = useCallback((tabIdx: number, paneIdx: number, status: "run" | "idle") => {
-    const pid = paneId(tabIdx, paneIdx);
+    const pid = paneIdFor(useAppStore.getState().tabs[tabIdx], tabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
 
     // Focus queue is screen-level (one cursor across the app), and after #77
@@ -282,7 +280,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
       const count = (tc || 1) * (tr || 1);
       const waiting = new Set<number>();
       for (let i = 0; i < count; i++) {
-        if ((paneStatuses[paneId(ti, i)] ?? "idle") === "idle") waiting.add(i);
+        if ((paneStatuses[paneIdFor(tabs[ti], ti, i)] ?? "idle") === "idle") waiting.add(i);
       }
       waitingByTab.set(ti, waiting);
     }
@@ -299,8 +297,8 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   // be active. Transient screen-level indices (focus/menu/fullscreen) are read
   // via getState() at call time rather than captured, keeping deps minimal.
   const handleToggleDisable = useCallback((tabIdx: number, paneIdx: number) => {
-    const pid = paneId(tabIdx, paneIdx);
     const st = useAppStore.getState();
+    const pid = paneIdFor(st.tabs[tabIdx], tabIdx, paneIdx);
     const next = !st.disabledPanes[pid];
     setPaneDisabled(pid, next);
     if (next) {
@@ -321,11 +319,11 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   }, [setPaneDisabled, setFocusedPane, setFullscreenPane, setPaneStatus]);
 
   const handleCwdChange = useCallback((tabIdx: number, paneIdx: number, path: string) => {
-    setPaneCwd(paneId(tabIdx, paneIdx), path);
+    setPaneCwd(paneIdFor(useAppStore.getState().tabs[tabIdx], tabIdx, paneIdx), path);
   }, [setPaneCwd]);
 
   const handlePickDirectory = useCallback(async (tabIdx: number, paneIdx: number) => {
-    const pid = paneId(tabIdx, paneIdx);
+    const pid = paneIdFor(useAppStore.getState().tabs[tabIdx], tabIdx, paneIdx);
     const dir = await invoke<string | null>("pick_directory");
     if (!dir) return;
     // cd in the running shell (bash on Windows uses forward slashes)
@@ -357,13 +355,14 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   // and "active tab, but a sibling pane is fullscreened over us" — the
   // downstream visible/render-pause logic then doesn't have to distinguish.
   function renderPane(tabIdx: number, i: number, isFullscreenInTab: boolean) {
-    const pid = paneId(tabIdx, i);
+    const pid = paneIdFor(tabs[tabIdx], tabIdx, i);
     const isActiveTab = tabIdx === activeTabIdx;
     return (
       <PaneAt
         key={`${tabs[tabIdx].runId ?? 0}-${i}`}
         i={i}
         tabIdx={tabIdx}
+        paneId={pid}
         name={resolvePaneName(tabIdx, i, paneNames)}
         view={paneViews[i] ?? "console"}
         status={paneStatuses[pid] ?? "idle"}

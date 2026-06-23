@@ -31,6 +31,11 @@ export interface Tab {
   // 0-based build-tab sequence for multi-tab fleets (#457): 0 = primary "· build",
   // 1 = "· build 2", … Ignored for triage. Absent ⇒ 0.
   seq?: number;
+  // Stable pane IDENTITY ids per grid cell (#1176), minted at fleet/triage launch
+  // (`<projectKey>:<streamId>` / `:director` / `<projectKey>:<repo>:triage`). When present,
+  // `paneIdFor` keys pane state/PTY/recovery off these instead of the grid position. Manual tabs
+  // leave this unset and derive an ephemeral `man:<tabId>:p<idx>` id. Stage 2 populates it.
+  paneIds?: string[];
 }
 
 const LAYOUTS = ["1×1", "2×1", "1×2", "2×2", "3×2", "3×3"] as const;
