@@ -6,6 +6,7 @@
 //! format (Anthropic `tool_use`/`tool_result`, OpenAI `tool_calls`/role:tool,
 //! Gemini `functionCall`/`functionResponse`).
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// A tool the model may call: a name, a one-line description, and a JSON-Schema
@@ -19,7 +20,7 @@ pub struct ToolDef {
 
 /// A tool invocation the model emitted. `id` correlates the call with its result
 /// (synthesized from the name for providers — e.g. Gemini — that don't issue ids).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
@@ -27,7 +28,7 @@ pub struct ToolCall {
 }
 
 /// One conversation message in the normalized turn protocol.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Msg {
     User(String),
     Assistant { text: String, tool_calls: Vec<ToolCall> },

@@ -426,6 +426,14 @@ pub(crate) async fn pty_create(
     if let Some(bin) = bsc_agent_bin_path() {
         cmd.env("BSC_AGENT_BIN", to_bash_path(&bin.to_string_lossy()));
     }
+    // bsc-agent resume (#1144): hand the sidecar the per-cwd conversation file so it persists the
+    // conversation (and, with --continue, resumes it). The app owns the keying; the sidecar just
+    // reads/writes this native path via std::fs. Only meaningful for bsc-agent panes.
+    if provider_id.as_deref() == Some("bsc-agent") {
+        if let Some(p) = crate::bsc_agent_session_path(&cwd) {
+            cmd.env("BSC_AGENT_SESSION", p.to_string_lossy().into_owned());
+        }
+    }
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
