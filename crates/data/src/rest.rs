@@ -23,7 +23,8 @@ pub struct RestResource {
     pub name: String,
     /// Request path/descriptor handed to the fetch closure.
     pub path: String,
-    /// Key under which the record array lives in the response; `None` if the body *is* the array.
+    /// Where the record array lives in the response: a dot-separated path (e.g. `data`, or
+    /// `_embedded.leads` for a nested envelope), or `None` if the body *is* the array.
     pub array_key: Option<String>,
 }
 
@@ -67,7 +68,14 @@ impl RestConnector {
     fn records(&self, res: &RestResource) -> Result<Vec<Value>> {
         let body = (self.fetch)(&res.path)?;
         let arr = match &res.array_key {
-            Some(k) => body[k].as_array().cloned(),
+            // Walk a dot-separated path so nested envelopes (`_embedded.leads`, `d.results`) resolve.
+            Some(k) => {
+                let mut cur = &body;
+                for seg in k.split('.') {
+                    cur = &cur[seg];
+                }
+                cur.as_array().cloned()
+            }
             None => body.as_array().cloned(),
         };
         Ok(arr.unwrap_or_default())
@@ -143,5 +151,16 @@ mod tests {
     #[test]
     fn unknown_resource_errors() {
         assert!(fixture_connector().read("nope").is_err());
+    }
+
+    #[test]
+    fn nested_array_key_resolves_a_dotted_path() {
+        let resources = vec![RestResource::new("leads", "leads", Some("_embedded.leads"))];
+        let c = RestConnector::new("nested", resources, move |_p| {
+            Ok(serde_json::json!({ "_embedded": { "leads": [{"id": 1, "name": "Acme"}] } }))
+        });
+        let rs = c.read("leads").unwrap();
+        assert_eq!(rs.rows.len(), 1);
+        assert_eq!(rs.columns, vec!["id", "name"]);
     }
 }
