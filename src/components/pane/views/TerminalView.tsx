@@ -396,7 +396,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           const bscRole = st.paneRoles[paneId];
           if (bscRole) {
             const cap = roleCapability(bscRole, { writeGlobs: st.paneRoleGlobs[paneId] ?? [] });
-            e.BSC_AGENT_PERMS = JSON.stringify(bscAgentPerms(cap));
+            // Reconcile role ↔ flow (#304, parity with the Claude path): the pane's flow owns
+            // git push / gh pr create, so lift them from the role denies when it permits pushing/
+            // PRing — otherwise an auto-pr worker (github:read) couldn't open its own PR.
+            const granted = flowGrantedPushCommands(st.paneFlows[paneId]);
+            e.BSC_AGENT_PERMS = JSON.stringify(bscAgentPerms(cap, granted));
           }
           // MCP: pass the resolved stdio servers so bsc-agent's client connects them ($BSC_AGENT_MCP).
           const { mcp } = toSessionPayloads(st.paneMcpServers[paneId] ?? resolveMcpServers(st.mcpServers, ""), []);
