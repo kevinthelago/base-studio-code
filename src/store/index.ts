@@ -17,7 +17,7 @@ import { createConsoleSlice } from "./slices/console";
 
 // Re-export the public store API so existing `from "../store"` imports keep resolving.
 export { PROJECT_INIT_PROMPT, TRIAGE_PROMPT, buildTriagePrompt } from "./constants";
-export type { GithubUser, PerfConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "./types";
+export type { GithubUser, PerfConfig, LogConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "./types";
 
 import { newTabId } from "./helpers";
 
@@ -62,6 +62,7 @@ export const useAppStore = create<AppStore>()(
         pageTabOrder:    s.pageTabOrder,
         settingsSection: s.settingsSection,
         perfConfig:      s.perfConfig,
+        logConfig:       s.logConfig,
         idleReaper:      s.idleReaper,
         tunnelRelayUrl:  s.tunnelRelayUrl,
         agentProfiles:   s.agentProfiles,
@@ -71,6 +72,11 @@ export const useAppStore = create<AppStore>()(
         paneFlows:       s.paneFlows,
         kbBlocks:        s.kbBlocks,
         claudeApiKey:    s.claudeApiKey,
+        llmProvider:     s.llmProvider,
+        llmModel:        s.llmModel,
+        openaiKey:       s.openaiKey,
+        geminiKey:       s.geminiKey,
+        localBaseUrl:    s.localBaseUrl,
         schedules:            s.schedules,
         commands:             s.commands,
         automations:          s.automations,
@@ -82,9 +88,11 @@ export const useAppStore = create<AppStore>()(
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         autoPlanWithClaude:   s.autoPlanWithClaude,
+        autoCompleteGates:    s.autoCompleteGates,
         restrictToBscIssues:  s.restrictToBscIssues,
         coordAutoWake:        s.coordAutoWake,
         defaultModel:         s.defaultModel,
+        fleetHarness:         s.fleetHarness,
         paneModels:           s.paneModels,
         focusTarget:          s.focusTarget,
         fleetPaneStreams:     s.fleetPaneStreams,

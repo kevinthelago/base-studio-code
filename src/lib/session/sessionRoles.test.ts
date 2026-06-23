@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   ROLE_DEFAULTS,
   PLANNER_WRITE_GLOBS,
+  DB_OWNED_PLAN_FILES,
+  DEP_MANIFEST_FILES,
   roleCapability,
   classifyCommand,
   checkCommand,
@@ -9,7 +11,35 @@ import {
   canWritePath,
   roleDeniedCommands,
   roleWriteRules,
+  roleDeniedTools,
+  bscAgentPerms,
 } from "./sessionRoles";
+
+describe("bscAgentPerms", () => {
+  it("a code:none role denies the write/edit tools", () => {
+    const p = bscAgentPerms(roleCapability("director")); // github:write, git:write, code:none
+    expect(p.deny_tools).toEqual(["write_file", "edit_file"]);
+    expect(p.write_globs).toEqual([]);
+  });
+  it("a worker (code:write) keeps the write tools and scopes write_globs to its lane", () => {
+    const p = bscAgentPerms(roleCapability("worker", { writeGlobs: ["src/**"] }));
+    expect(p.deny_tools).toEqual([]);
+    expect(p.write_globs).toEqual(["src/**"]);
+  });
+  it("deny_bash reflects roleDeniedCommands (e.g. triage git:none denies git)", () => {
+    const cap = roleCapability("triage"); // git:none
+    expect(bscAgentPerms(cap).deny_bash).toEqual(roleDeniedCommands(cap));
+    expect(bscAgentPerms(cap).deny_bash).toContain("git");
+  });
+  it("lifts flow-granted push commands from deny_bash so an auto-pr worker can open its PR (#304 parity)", () => {
+    const cap = roleCapability("worker", { writeGlobs: ["src/**"] }); // github:read ⇒ denies gh pr create
+    expect(bscAgentPerms(cap).deny_bash).toContain("gh pr create");
+    // With the flow granting push/PR, those two are lifted; other gh-writes stay denied.
+    const lifted = bscAgentPerms(cap, ["git push", "gh pr create"]).deny_bash;
+    expect(lifted).not.toContain("gh pr create");
+    expect(lifted).toContain("gh pr merge");
+  });
+});
 
 describe("classifyCommand", () => {
   it("detects git reads vs writes", () => {
@@ -117,6 +147,17 @@ describe("roleDeniedCommands (launch wiring)", () => {
   });
 });
 
+describe("roleDeniedTools (sub-agent block, #1036)", () => {
+  it("denies the Task tool for workers so they can't spawn their own sub-agents", () => {
+    expect(roleDeniedTools(ROLE_DEFAULTS.worker)).toEqual(["Task"]);
+  });
+  it("does not deny Task for non-worker roles (director coordinates, etc.)", () => {
+    for (const role of ["director", "triage", "tester", "reviewer", "conductor", "issuer", "juror", "planner"] as const) {
+      expect(roleDeniedTools(ROLE_DEFAULTS[role])).toEqual([]);
+    }
+  });
+});
+
 describe("roleWriteRules (write-tool guard)", () => {
   const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
 
@@ -128,28 +169,58 @@ describe("roleWriteRules (write-tool guard)", () => {
     }
   });
 
-  it("planner: auto-approves plan-file globs, no deny list (#509)", () => {
+  it("planner: auto-approves plan-file globs; denies DB-owned plan-state file forms (#509/#1070)", () => {
     const rules = roleWriteRules(ROLE_DEFAULTS.planner);
-    expect(rules.deny).toEqual([]);
-    // Every PLANNER_WRITE_GLOB must be represented in the allow list.
+    // Every PLANNER_WRITE_GLOB is represented in the allow list (section files stay writable).
     for (const glob of PLANNER_WRITE_GLOBS) {
       expect(rules.allow).toContain(`Edit(${glob})`);
       expect(rules.allow).toContain(`Write(${glob})`);
     }
+    // DB-owned artifacts (deploy/phases/issues/fleet/repos/features) are denied as files so the
+    // planner uses `bsc-plan` instead — deny wins over the *.md/*.json glob allow.
+    for (const f of DB_OWNED_PLAN_FILES) {
+      expect(rules.deny).toContain(`Write(${f})`);
+      expect(rules.deny).toContain(`Edit(${f})`);
+    }
+    expect(rules.deny).toContain("Write(deploy.md)");
+  });
+
+  it("does NOT deny the DB-owned plan-state file forms for non-planner roles (#1070)", () => {
+    // The DB-owned deny is planner-specific — a worker writes real repo files, not plan-state artifacts.
+    const workerDeny = roleWriteRules(roleCapability("worker", { writeGlobs: ["src/**"] })).deny;
+    for (const f of DB_OWNED_PLAN_FILES) {
+      if (DEP_MANIFEST_FILES.includes(f)) continue; // (no overlap today, but be precise)
+      expect(workerDeny).not.toContain(`Write(${f})`);
+    }
+  });
+
+  it("worker: locks the dependency manifests — denied even inside an owned glob (#1111)", () => {
+    // Even when the worker owns package.json's directory, the manifest write is denied (deny > allow)
+    // so the fleet can't each redefine deps in parallel worktrees; a new dep routes via the director.
+    const worker = roleCapability("worker", { writeGlobs: ["**"] });
+    const deny = roleWriteRules(worker).deny;
+    for (const f of DEP_MANIFEST_FILES) {
+      expect(deny).toContain(`Edit(${f})`);
+      expect(deny).toContain(`Write(${f})`);
+    }
+    expect(deny).toContain("Write(package.json)");
+    expect(deny).toContain("Write(Cargo.toml)");
   });
 
   it("scopes a worker to its boundary globs (one allow per tool per glob)", () => {
     const worker = roleCapability("worker", { writeGlobs: ["src/api/**", "tests/**"] });
     const rules = roleWriteRules(worker);
-    expect(rules.deny).toEqual([]);
+    // deny is the dependency-manifest lock (#1111), not boundary rules.
+    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`)));
     expect(rules.allow).toContain("Edit(src/api/**)");
     expect(rules.allow).toContain("Write(tests/**)");
     expect(rules.allow).toHaveLength(WRITE_TOOLS.length * 2);
   });
 
-  it("imposes no rules for a boundary-less worker (writes follow the default)", () => {
+  it("imposes only the manifest lock for a boundary-less worker (writes otherwise follow the default)", () => {
     const rules = roleWriteRules(ROLE_DEFAULTS.worker);
-    expect(rules).toEqual({ allow: [], deny: [] });
+    expect(rules.allow).toEqual([]);
+    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`)));
   });
 
   it("agrees with canWritePath: planner writes plan files; worker writes its globs", () => {
@@ -160,8 +231,9 @@ describe("roleWriteRules (write-tool guard)", () => {
     expect(canWritePath(planner, "context/goal.md")).toBe(true);
     expect(canWritePath(planner, "context/_skipped.md")).toBe(true);
     expect(canWritePath(planner, "src/x.ts")).toBe(false);
-    expect(roleWriteRules(planner).deny).toEqual([]);
+    // Section-file globs auto-approve; the DB-owned plan-state file forms are denied (#1070).
     expect(roleWriteRules(planner).allow).toContain("Edit(*.md)");
+    expect(roleWriteRules(planner).deny).toContain("Write(deploy.md)");
 
     // worker with a boundary: every allow-rule glob is exactly a canWritePath-true path.
     const worker = roleCapability("worker", { writeGlobs: ["src/api/**"] });

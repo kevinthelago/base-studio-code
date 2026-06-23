@@ -6,11 +6,15 @@ import { FilesView } from "../components/pane/views/FilesView";
 import { BranchesView } from "../components/pane/views/BranchesView";
 import { ChangesView } from "../components/pane/views/ChangesView";
 import { LogView } from "../components/pane/views/LogView";
+import { ToolsView } from "../components/pane/views/ToolsView";
+import { TelemetryView } from "../components/pane/views/TelemetryView";
 import { useAppStore } from "../store";
+import { usePaneTokenUsage, type PaneTokenUsage } from "../lib/console/usePaneTokenUsage";
 import { recordRender } from "../lib/core/perf";
 import { resetLaunchGate } from "../lib/fleet/launchGate";
 import { shouldAdvanceOnReply } from "../lib/console/consoleFocus";
 import type { ViewKey } from "../components/pane/ViewTabs";
+import { paneIdFor } from "../lib/console/paneIdentity";
 import { useCoordinator } from "../lib/fleet/useCoordinator";
 import { useWorkflowConductor } from "../lib/fleet/useWorkflowConductor";
 import { useDirectorPump } from "../lib/fleet/useDirectorPump";
@@ -25,13 +29,11 @@ function resolvePaneName(
   return names[tabIdx]?.[paneIdx] ?? `console-${tabIdx + 1}-${paneIdx + 1}`;
 }
 
-function paneId(tabIdx: number, paneIdx: number): string {
-  return `t${tabIdx}p${paneIdx}`;
-}
-
 interface PaneAtProps {
   i: number;
   tabIdx: number;
+  /** Stable identity id for this pane (#1176) — resolved from the tab, not the grid position. */
+  paneId: string;
   name: string;
   view: ViewKey;
   status: "run" | "on" | "idle";
@@ -59,17 +61,28 @@ interface PaneAtProps {
   fullscreen: boolean;
   disabled: boolean;
   hidden: boolean;
+  /** This pane's live token/cost rollup (#1181) — the actual running model + the Telemetry view. */
+  usage?: PaneTokenUsage;
 }
 
 const PaneAt = memo(function PaneAt({
-  i, tabIdx, name, view, status, cwd, initCmd,
+  i, tabIdx, paneId: pid, name, view, status, cwd, initCmd,
   onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange, onStatusChange,
-  onToggleFullscreen, onToggleDisable, menuOpen, focused, fullscreen, disabled, hidden,
+  onToggleFullscreen, onToggleDisable, menuOpen, focused, fullscreen, disabled, hidden, usage,
 }: PaneAtProps) {
-  const pid = paneId(tabIdx, i);
   const defaultModel = useAppStore((s) => s.defaultModel);
   const paneModel = useAppStore((s) => s.paneModels[pid]);
   const setPaneModel = useAppStore((s) => s.setPaneModel);
+  // Header/footer chrome data (#1149) — read from the store where known; the header degrades
+  // gracefully when a field is absent (e.g. no role/branch assigned to an ad-hoc console).
+  const paneRole = useAppStore((s) => s.paneRoles[pid]);
+  const paneProvider = useAppStore((s) => s.paneProviders[pid]);
+  const paneRepoFull = useAppStore((s) => s.paneRepos[pid]);
+  const paneBranch = useAppStore((s) => s.paneStream[pid]?.branch);
+  // While a Claude session is active, the native console input replaces the status footer (#1158).
+  const claudeActive = useAppStore((s) => !!s.paneClaudeActive[pid]);
+  // Prefer the assigned repo's short name; fall back to the cwd's basename.
+  const repoShort = (paneRepoFull ?? cwd)?.split(/[\\/]/).filter(Boolean).pop();
   // Idle-reaped (#849): the PTY was killed for idleness. Unmount the terminal (this frees
   // its renderer buffer + the dead session) and show a resume placeholder; resuming clears
   // the flag, remounting TerminalView, which spawns a fresh PTY (--continue resumes it).
@@ -87,7 +100,13 @@ const PaneAt = memo(function PaneAt({
       status={disabled ? "idle" : status}
       model={paneModel ?? defaultModel}
       onModel={(m) => setPaneModel(pid, m)}
-      available={["console", "files", "branches", "changes", "log"]}
+      runningModel={usage?.model}
+      repo={repoShort}
+      branch={paneBranch}
+      role={paneRole}
+      provider={paneProvider}
+      claudeActive={claudeActive}
+      available={["console", "files", "branches", "changes", "log", "tools", "telemetry"]}
       active={view}
       menuOpen={menuOpen}
       focused={focused}
@@ -117,6 +136,8 @@ const PaneAt = memo(function PaneAt({
       {view === "branches" && <BranchesView small branches={[]} />}
       {view === "changes"  && <ChangesView  small hunks={[]} />}
       {view === "log"      && <LogView      small commits={[]} />}
+      {view === "tools"    && <ToolsView    small role={paneRole} />}
+      {view === "telemetry"&& <TelemetryView small usage={usage} />}
       </>
       )}
     </PaneShell>
@@ -159,6 +180,9 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   // Mounted here because ConsoleScreen stays mounted across every screen (#187).
   useCoordinator();
   useIdleReaper(); // #849 — reap idle background PTYs to bound memory
+  // #1181: per-pane token/cost rollup (actual running model + Telemetry view), polled from
+  // the transcripts the `bsc-tokens` hook records. Empty until an agent takes a turn.
+  const tokenUsage = usePaneTokenUsage();
   // #220: the pipeline conductor — auto-advances pipeline runs as stages report.
   useWorkflowConductor();
   // Subscribe per-slice instead of `useAppStore()`-the-whole-state, so a mutation
@@ -226,7 +250,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   useCiWatcher();
 
   const handleStatusChange = useCallback((tabIdx: number, paneIdx: number, status: "run" | "idle") => {
-    const pid = paneId(tabIdx, paneIdx);
+    const pid = paneIdFor(useAppStore.getState().tabs[tabIdx], tabIdx, paneIdx);
     const prev = paneStatusesRef.current[pid] ?? "idle";
 
     // Focus queue is screen-level (one cursor across the app), and after #77
@@ -265,7 +289,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
       const count = (tc || 1) * (tr || 1);
       const waiting = new Set<number>();
       for (let i = 0; i < count; i++) {
-        if ((paneStatuses[paneId(ti, i)] ?? "idle") === "idle") waiting.add(i);
+        if ((paneStatuses[paneIdFor(tabs[ti], ti, i)] ?? "idle") === "idle") waiting.add(i);
       }
       waitingByTab.set(ti, waiting);
     }
@@ -282,8 +306,8 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   // be active. Transient screen-level indices (focus/menu/fullscreen) are read
   // via getState() at call time rather than captured, keeping deps minimal.
   const handleToggleDisable = useCallback((tabIdx: number, paneIdx: number) => {
-    const pid = paneId(tabIdx, paneIdx);
     const st = useAppStore.getState();
+    const pid = paneIdFor(st.tabs[tabIdx], tabIdx, paneIdx);
     const next = !st.disabledPanes[pid];
     setPaneDisabled(pid, next);
     if (next) {
@@ -304,11 +328,11 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   }, [setPaneDisabled, setFocusedPane, setFullscreenPane, setPaneStatus]);
 
   const handleCwdChange = useCallback((tabIdx: number, paneIdx: number, path: string) => {
-    setPaneCwd(paneId(tabIdx, paneIdx), path);
+    setPaneCwd(paneIdFor(useAppStore.getState().tabs[tabIdx], tabIdx, paneIdx), path);
   }, [setPaneCwd]);
 
   const handlePickDirectory = useCallback(async (tabIdx: number, paneIdx: number) => {
-    const pid = paneId(tabIdx, paneIdx);
+    const pid = paneIdFor(useAppStore.getState().tabs[tabIdx], tabIdx, paneIdx);
     const dir = await invoke<string | null>("pick_directory");
     if (!dir) return;
     // cd in the running shell (bash on Windows uses forward slashes)
@@ -340,13 +364,14 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   // and "active tab, but a sibling pane is fullscreened over us" — the
   // downstream visible/render-pause logic then doesn't have to distinguish.
   function renderPane(tabIdx: number, i: number, isFullscreenInTab: boolean) {
-    const pid = paneId(tabIdx, i);
+    const pid = paneIdFor(tabs[tabIdx], tabIdx, i);
     const isActiveTab = tabIdx === activeTabIdx;
     return (
       <PaneAt
         key={`${tabs[tabIdx].runId ?? 0}-${i}`}
         i={i}
         tabIdx={tabIdx}
+        paneId={pid}
         name={resolvePaneName(tabIdx, i, paneNames)}
         view={paneViews[i] ?? "console"}
         status={paneStatuses[pid] ?? "idle"}
@@ -367,12 +392,13 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
         fullscreen={isActiveTab && fullscreenPaneIdx === i}
         disabled={!!disabledPanes[pid]}
         hidden={!isActiveTab || (isFullscreenInTab && i !== fullscreenPaneIdx)}
+        usage={tokenUsage.get(pid)}
       />
     );
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div className="console-theme" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-canvas)" }}>
       {consoleBroadcast && (
         <div style={{
           padding: "3px 14px",

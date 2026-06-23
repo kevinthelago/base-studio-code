@@ -425,6 +425,8 @@ enum PushJob {
     CoordWait { session: String, reason: String },
     /// Automation failed non-transiently (A4).
     AutomFailed { name: String, error: String },
+    /// The warden quarantined a worker — possible prompt injection / hijack (#1102).
+    Warden { session: String, detail: String },
 }
 
 /// Drain `rx` and send an FCM push per paired token for each job. Runs on its own OS thread
@@ -480,6 +482,8 @@ fn spawn_push_worker(mut rx: mpsc::UnboundedReceiver<PushJob>, tokens: Arc<Mutex
                                 fcm::build_coord_wait_message(token, session, reason),
                             PushJob::AutomFailed { name, error } =>
                                 fcm::build_autom_failed_message(token, name, error),
+                            PushJob::Warden { session, detail } =>
+                                fcm::build_warden_message(token, session, detail),
                         };
                         match sender.send_built(msg).await {
                             SendOutcome::Sent => {
@@ -487,6 +491,7 @@ fn spawn_push_worker(mut rx: mpsc::UnboundedReceiver<PushJob>, tokens: Arc<Mutex
                                     PushJob::UserRequest { pane_id, .. } => format!("user_request pane={pane_id}"),
                                     PushJob::CoordWait { session, .. } => format!("coord_wait session={session}"),
                                     PushJob::AutomFailed { name, .. } => format!("autom_failed name={name}"),
+                                    PushJob::Warden { session, .. } => format!("warden_quarantine session={session}"),
                                 });
                             }
                             SendOutcome::DropToken => {
@@ -593,6 +598,17 @@ impl TunnelState {
         let _ = self.push_tx.send(PushJob::AutomFailed {
             name: name.to_string(),
             error: error.to_string(),
+        });
+    }
+
+    /// Queue an FCM `warden_quarantine` push (#1102). Non-blocking. No-op without stored tokens.
+    fn enqueue_warden_push(&self, session: &str, detail: &str) {
+        if self.fcm_tokens.lock().unwrap().is_empty() {
+            return;
+        }
+        let _ = self.push_tx.send(PushJob::Warden {
+            session: session.to_string(),
+            detail: detail.to_string(),
         });
     }
 
@@ -897,6 +913,14 @@ pub fn tunnel_emit_coord_event(
     if (kind == "waiting" || kind == "asking") && !state.fcm_tokens.lock().unwrap().is_empty() {
         if let Some(ref s) = session {
             state.enqueue_coord_wait_push(s, &kind);
+        }
+    }
+    // #1102: the warden quarantined a worker (possible injection/hijack) — high-signal push so
+    // the user is alerted even when the mobile app is backgrounded. `ref_key` carries the
+    // deterministic trip summary (out-of-lane file / denied command), never untrusted prose.
+    if kind == "quarantine" && !state.fcm_tokens.lock().unwrap().is_empty() {
+        if let Some(ref s) = session {
+            state.enqueue_warden_push(s, ref_key.as_deref().unwrap_or(""));
         }
     }
     let _ = state.event_tx.send(ServerMsg::CoordEvent { kind, session, ref_key, at });

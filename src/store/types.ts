@@ -7,6 +7,7 @@ import type { Tab } from "../components/chrome/Tabstrip";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { ModelId } from "../components/pane/PaneMenu";
 import type { KbBlock, Schedule, Command } from "../data/mock";
+import type { LlmProvider } from "../lib/core/llmConfig";
 import type { ReaperConfig } from "../lib/console/idleReaper";
 import type { QueuedPane, FocusTarget, ConsoleAutoFocusMode } from "../lib/console/focusQueue";
 import type { SessionRole } from "../lib/session/sessionRoles";
@@ -57,6 +58,19 @@ export const DEFAULT_PERF_CONFIG: PerfConfig = {
   trackFrontend: true,
 };
 
+/** Retention for the text log streams (#1060). 0 disables a cap. */
+export interface LogConfig {
+  /** Trim a text log to its newest N lines on enforcement. 0 = no line cap. */
+  maxLines: number;
+  /** Trim a text log to its newest bytes if it exceeds this many MB. 0 = no size cap. */
+  maxSizeMb: number;
+}
+
+export const DEFAULT_LOG_CONFIG: LogConfig = {
+  maxLines: 10_000,
+  maxSizeMb: 20,
+};
+
 export interface ToolPermissions {
   allow: string[];
   deny: string[];
@@ -86,6 +100,16 @@ export interface GithubRepo {
   description: string | null;
   pushed_at: string;
   stargazers_count: number;
+}
+
+/** A worker the warden quarantined (#1102): why it tripped + when, for the user-facing surface. */
+export interface QuarantineInfo {
+  /** The stream the quarantined pane belonged to. */
+  streamId: string;
+  /** One-line deterministic trip summary (out-of-lane file / denied command). */
+  summary: string;
+  /** Epoch ms when it was quarantined. */
+  at: number;
 }
 
 export interface AppStore {
@@ -166,6 +190,12 @@ export interface AppStore {
   // Record a pane's live status AND re-roll its tab's state in one step (#435) — the
   // store is the single source of truth for both the pane dot and the tab rollup.
   setPaneStatus: (paneId: string, status: "run" | "on" | "idle") => void;
+  // ── Warden quarantine (#1102) ──
+  /** Panes the warden hard-paused (PTY killed) for drifting off their plan — possible prompt
+   *  injection / hijack. Keyed by pane id; surfaced to the user, who clears it explicitly. */
+  quarantinedPanes: Record<string, QuarantineInfo>;
+  markQuarantine: (paneId: string, info: QuarantineInfo) => void;
+  clearQuarantine: (paneId: string) => void;
   // ── Idle session reaping (#849) ──
   /** Panes whose PTY has been reaped for idleness; the view renders a dormant placeholder
    *  and resumes on focus. Transient (not persisted) — panes relaunch on next app start. */
@@ -193,6 +223,16 @@ export interface AppStore {
   // CLI (with `--continue`) instead of dropping the user back at a bare
   // bash prompt (#36). Set by TerminalView when OSC 100 "run" fires.
   paneWasClaude: Record<string, boolean>;
+  /** Crash recovery (#1041): the previous shutdown was unclean (set once at boot from the
+   *  `was_unclean_shutdown` command). Transient — NOT persisted. Gates session auto-resume (a clean
+   *  quit leaves sessions dormant) + the restore banner. */
+  uncleanShutdown: boolean;
+  setUncleanShutdown: (v: boolean) => void;
+  /** Crash recovery (#1041): panes the user clicked "restore" for — resume with `claude --continue`
+   *  on remount, regardless of the autoResumeClaude setting. Transient. */
+  restoreRequested: Record<string, boolean>;
+  /** Relaunch every `paneWasClaude` pane with `claude --continue`, staggered. Returns the count. */
+  restoreSessionsFromCrash: () => number;
   /** Live agent/terminal pane count (transient, not persisted) — drives the >10 easter egg (#365). */
   liveAgents: number;
   bumpLiveAgents: (delta: number) => void;
@@ -266,6 +306,10 @@ export interface AppStore {
   /** Console provider id per pane (persisted). Absent ⇒ "claude" (default). */
   paneProviders: Record<string, string>;
   setPaneProvider: (paneId: string, providerId: string) => void;
+  /** Whether a Claude session is the running program in each pane (#1158) — transient. Drives the
+   *  native console input (which replaces Claude's prompt) and hides the pane's status footer. */
+  paneClaudeActive: Record<string, boolean>;
+  setPaneClaudeActive: (paneId: string, active: boolean) => void;
   setPaneProfile: (paneId: string, profileId: string | null) => void;
   setActiveTab: (idx: number) => void;
   addTab: (tab: Tab) => void;
@@ -334,6 +378,10 @@ export interface AppStore {
   perfConfig: PerfConfig;
   setPerfConfig: (config: PerfConfig) => void;
 
+  // Log management (#1060)
+  logConfig: LogConfig;
+  setLogConfig: (config: LogConfig) => void;
+
   // Mobile tunnel (#243). The relay Worker URL is persisted (the user's BYO relay);
   // `tunnelRunning` mirrors the Rust client's connected state (transient — NOT
   // persisted) so ConsoleScreen knows whether to push live pane metadata.
@@ -350,6 +398,21 @@ export interface AppStore {
   kbBlocks: KbBlock[];
   claudeApiKey: string;
   setClaudeApiKey: (key: string) => void;
+
+  // API-tier LLM provider config (#1085) — powers kb_chat-backed calls (planning
+  // autopilot, grader, cleanup verifier). `claudeApiKey` doubles as the anthropic key.
+  // Distinct from the per-pane runtime model (defaultModel/paneModels).
+  llmProvider: LlmProvider;
+  setLlmProvider: (p: LlmProvider) => void;
+  llmModel: string;
+  setLlmModel: (m: string) => void;
+  openaiKey: string;
+  setOpenaiKey: (k: string) => void;
+  geminiKey: string;
+  setGeminiKey: (k: string) => void;
+  /** OpenAI-compatible endpoint for the `local` provider (default Ollama). */
+  localBaseUrl: string;
+  setLocalBaseUrl: (u: string) => void;
 
   // Automations
   schedules: Schedule[];
@@ -483,7 +546,14 @@ export interface AppStore {
   setBscBaseDir: (dir: string) => void;
   projectLocalRepos: Record<string, string[]>;
   addProjectRepo: (projectId: string, fullName: string) => void;
-  triageStartProject: (projectName: string, repos: string[], projectId?: string) => void;
+  // `deltas` (#1004): optional per-repo (fullName → lead) since-last-run summary, prepended to
+  // each pane's default triage prompt so a re-run resumes from what changed instead of re-ingesting.
+  // Built by `prepareTriageRun` (which also records the new run marker) and passed in at launch.
+  triageStartProject: (projectName: string, repos: string[], projectId?: string, deltas?: Record<string, string>) => void;
+  // #1004: read each repo's last-triage marker + the since-then changed-issue delta from plan.db,
+  // render a one-line resume lead per repo, and STAMP a fresh run marker (read-before-write). Keyed
+  // by the project's plan.db key (effectiveProjectId). Returns the fullName → lead map for `deltas`.
+  prepareTriageRun: (projectKey: string, repos: string[]) => Promise<Record<string, string>>;
   // Index of this project's triage tab, matched on its STABLE projectKey (#457) — not
   // the derived "· triage" name — so a rename never forks a duplicate. Pass the same
   // (projectName, projectId) used to launch it. -1 when none.
@@ -757,6 +827,11 @@ export interface AppStore {
    *  Enables the "Auto-plan" control on the planner page. */
   autoPlanWithClaude: boolean;
   setAutoPlanWithClaude: (v: boolean) => void;
+  /** #1068: auto-advance planner gates — when a stage's sections are ready, confirm them without
+   *  the manual "approve & continue" click (opt-in; off by default). One global flag every gate
+   *  follows; steps aside while the planning autopilot is running (it owns confirmation then). */
+  autoCompleteGates: boolean;
+  setAutoCompleteGates: (v: boolean) => void;
   /** #738 (security): restrict agents that pull live GitHub issues (triage) to issues
    *  base-studio-code authored — the `bsc-generated` label. ON by default so a hand-created
    *  or injected issue isn't acted on; off works every open issue. */
@@ -766,6 +841,11 @@ export interface AppStore {
    *  Settings → General). Per-pane override lives in the pane hamburger menu. */
   defaultModel: ModelId;
   setDefaultModel: (m: ModelId) => void;
+  /** Which harness the agent fleet launches on (#1078 P5): "claude" (default) or
+   *  "bsc-agent" — our model-agnostic runtime, on the provider configured in
+   *  Settings → Integrations. Persisted. */
+  fleetHarness: "claude" | "bsc-agent";
+  setFleetHarness: (h: "claude" | "bsc-agent") => void;
   /** Per-pane model override, keyed by paneId. A pane with no entry falls back to
    *  {@link defaultModel}. Applied to `claude --model` at the pane's next launch. */
   paneModels: Record<string, ModelId>;

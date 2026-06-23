@@ -5,18 +5,20 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { log } from "../../../lib/core/log";
+import { resolveLlmConfig, bscAgentEnv } from "../../../lib/core/llmConfig";
 import { recordPtyData, bumpTerminals } from "../../../lib/core/perf";
 import { gateClaudeLaunch } from "../../../lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/console/terminal";
 import { composeStartupPrompt } from "../../../lib/session/checkpoint";
 import { composeReferenceContext } from "../../../lib/session/assignments";
-import { resolveMcpServers } from "../../../lib/session/mcpServers";
+import { resolveMcpServers, toBscAgentMcp } from "../../../lib/session/mcpServers";
 import { resolveHooks } from "../../../lib/session/hooks";
 import { toSessionPayloads } from "../../../lib/session/sessionConfig";
 import { resolveSkills, toSkillCfgs } from "../../../lib/session/skills";
 import { PendingPtyData } from "../../../lib/console/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/console/resumeClaude";
-import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/session/sessionRoles";
+import { isManualPaneId } from "../../../lib/console/paneIdentity";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms } from "../../../lib/session/sessionRoles";
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
 import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/planner/fleet/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
@@ -25,6 +27,7 @@ import { SessionReadinessBanner } from "../../SessionReadinessBanner";
 import { SessionFailure } from "../../SessionFailure";
 import { tokenForRepo } from "../../../lib/github/repoCredentials";
 import { getProvider } from "../../../lib/console/providers";
+import { ConsoleInput } from "../ConsoleInput";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -32,6 +35,12 @@ import { getProvider } from "../../../lib/console/providers";
 // realistic switch-away durations and far above what's likely useful before
 // xterm's own scrollback truncates it anyway.
 const PENDING_BYTES_CAP = 256 * 1024;
+
+// Rows the terminal grows TALLER than its visible clip box while a Claude session is connected
+// (#1158), so Claude CLI's own input box (at the bottom) falls below the clip and is hidden by
+// overflow. Sized to clear Claude's full input box (prompt + hint/token lines), not just one row;
+// tweak if it still peeks or over-clips.
+const CLIP_ROWS = 6;
 
 // Hex equivalents of the oklch design tokens so xterm can use them
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -109,6 +118,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const inClaudeRef  = useRef(false);               // true between __bsc_state run/idle
   const claudeActiveRef = useRef<"run" | "idle">("idle"); // current within-session status
   const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Drives the native ConsoleInput (#1158): true while a Claude session is the running program in
+  // this pane. Lifted to the store (transient) so PaneShell can also read it — it hides the pane's
+  // status footer and shows the input bar in its place. The OSC/reconnect handlers below set it.
+  const claudeActive = useAppStore((s) => !!s.paneClaudeActive[paneId]);
+  // Set by the mount effect so the overlay's submit can re-arm the run/idle status the way pressing
+  // Enter in xterm does (our input bypasses term.onData).
+  const markRunRef = useRef<() => void>(() => {});
   // ms of silence after last printable output → claude is back at its prompt (idle).
   // Kept generous: Claude pauses mid-turn (thinking, tool calls, API waits) often
   // exceed a second, and reading those as "idle" would wrongly enqueue a pane that
@@ -202,6 +218,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       }, QUIET_MS);
     }
 
+    // Re-arm "run" after the native ConsoleInput submits (it writes to the PTY directly, bypassing
+    // term.onData's own Enter→run logic), so the focus queue doesn't leave the pane stuck "idle".
+    markRunRef.current = () => {
+      if (!inClaudeRef.current) return;
+      claudeActiveRef.current = "run";
+      onStatusChangeRef.current?.("run");
+      armQuietTimer();
+    };
+
     // OSC 7: bash reports cwd after every prompt via our injected PROMPT_COMMAND.
     // Format: ESC ] 7 ; file://localhost/path BEL
     term.parser.registerOscHandler(7, (data) => {
@@ -218,6 +243,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         inClaudeRef.current = true;
         claudeActiveRef.current = "run";
         onStatusChangeRef.current?.("run");
+        useAppStore.getState().setPaneClaudeActive(paneId, true); // claude running → show the native input (#1158)
         armQuietTimer();
         // Mark this pane as a claude pane so the next app launch can resume
         // it with `claude --continue` (#36). The setter no-ops when the
@@ -226,6 +252,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         useAppStore.getState().setPaneWasClaude(paneId, true);
       } else if (data === "idle") {
         inClaudeRef.current = false;
+        useAppStore.getState().setPaneClaudeActive(paneId, false); // claude exited → restore the status footer
         if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
         onClaudeIdle();
       }
@@ -345,10 +372,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       const providerId = useAppStore.getState().paneProviders[paneId] ?? "claude";
       const provider = getProvider(providerId) ?? getProvider("claude")!;
       const isClaudeProvider = provider.isClaude === true;
+      // The bsc-agent harness also bakes the startup prompt (via BscAgentAdapter in pty_create),
+      // so it keeps startupPrompt like Claude; other bare-shell providers don't (#1078 P3b).
+      const bakesPrompt = isClaudeProvider || providerId === "bsc-agent";
 
-      // Non-Claude providers launch as plain shell commands; don't bake a startup
-      // prompt into them (pty_create's prompt-baking path calls `claude --initial-message`).
-      if (!isClaudeProvider) startupPrompt = undefined;
+      // Providers that don't bake a startup prompt launch as plain shell commands.
+      if (!bakesPrompt) startupPrompt = undefined;
 
       // Serialize `claude` cold-starts so simultaneously-mounted panes don't
       // stampede the shared OAuth credential store and log every session out. A
@@ -378,7 +407,34 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         useAppStore.getState().repoGithubTokens,
         useAppStore.getState().githubToken,
       );
-      const agentEnv = ghToken ? { GH_TOKEN: ghToken } : undefined;
+      // Base session env (GH_TOKEN for gh/git). For a bsc-agent session, also inject the selected
+      // LLM provider/model/key (+ base URL for local) so the runtime talks to the chosen model;
+      // bsc-agent reads these from BSC_AGENT_* env (#1078 P3b). Permissions (BSC_AGENT_PERMS from
+      // the session role) are a follow-up — bsc-agent runs permissive without them.
+      const agentEnv: Record<string, string> | undefined = (() => {
+        const e: Record<string, string> = {};
+        if (ghToken) e.GH_TOKEN = ghToken;
+        if (providerId === "bsc-agent") {
+          const st = useAppStore.getState();
+          Object.assign(e, bscAgentEnv(resolveLlmConfig(st)));
+          // Gate the runtime by the pane's role (same least-privilege model as Claude); bsc-agent
+          // enforces this natively from $BSC_AGENT_PERMS. No role ⇒ permissive (unset).
+          const bscRole = st.paneRoles[paneId];
+          if (bscRole) {
+            const cap = roleCapability(bscRole, { writeGlobs: st.paneRoleGlobs[paneId] ?? [] });
+            // Reconcile role ↔ flow (#304, parity with the Claude path): the pane's flow owns
+            // git push / gh pr create, so lift them from the role denies when it permits pushing/
+            // PRing — otherwise an auto-pr worker (github:read) couldn't open its own PR.
+            const granted = flowGrantedPushCommands(st.paneFlows[paneId]);
+            e.BSC_AGENT_PERMS = JSON.stringify(bscAgentPerms(cap, granted));
+          }
+          // MCP: pass the resolved stdio servers so bsc-agent's client connects them ($BSC_AGENT_MCP).
+          const { mcp } = toSessionPayloads(st.paneMcpServers[paneId] ?? resolveMcpServers(st.mcpServers, ""), []);
+          const bscMcp = toBscAgentMcp(mcp);
+          if (bscMcp.length > 0) e.BSC_AGENT_MCP = JSON.stringify(bscMcp);
+        }
+        return Object.keys(e).length > 0 ? e : undefined;
+      })();
       if (launchesClaude && (initialCwd ?? "") !== "") {
         const cmds = useAppStore.getState().paneAllowedCommands[paneId]
           ?? useAppStore.getState().allowedCommands;
@@ -418,7 +474,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           ...(prof?.deniedCommands ?? []),
         ];
         const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
-        const denyToolRules = [...write.deny, ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
+        // Worker sub-agent block (#1036): deny the Task tool for workers so they can't spin up their
+        // own sub-agents (which floods the coordinator with wake requests). Deny wins over any
+        // profile allow.
+        const denyToolRules = [...write.deny, ...(cap ? roleDeniedTools(cap) : []), ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
         const askToolRules = flowRules.askToolRules;
         // MCP servers + hooks resolved for this session — pre-resolved per pane at tab
         // creation; fall back to globals for ad-hoc consoles.
@@ -448,6 +507,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
              { event: "PreToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
              { event: "PostToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
              { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
+             // Tainted-turn gate (#1167): marks the session tainted after it ingests untrusted
+             // input (WebFetch / curl / gh view) and blocks an outward/destructive command (exfil,
+             // force-push, repo-delete) that runs within the taint window — injection can't act in
+             // the turn it was read. Conservative: only the dangerous set is gated; normal work passes.
+             { event: "PreToolUse", matcher: "", command: "bsc-taint" },
              // Worker-only Stop hook (#369): when a worker tries to end its turn, bounce it
              // once toward continuing / deferring to the director via bsc-ask instead of
              // stopping to ask the user. `stop_hook_active` prevents an infinite loop.
@@ -486,12 +550,19 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // For non-Claude providers: explicit initCmd wins; otherwise fall back to the
       // provider's own launch command so the CLI auto-starts on mount.
       const st = useAppStore.getState();
+      // Manual consoles are never auto-recovered (#1176): suppress the crash-resume signals so a
+      // fresh "+" pane can't inherit a prior session's `claude --continue` even with auto-resume on.
+      const manual = isManualPaneId(paneId);
       const effectiveInitCmd = isClaudeProvider
         ? resolveInitCmd({
             explicit: initCmd,
             startupPrompt,
             paneWasClaude: !!st.paneWasClaude[paneId],
-            autoResumeClaude: st.autoResumeClaude,
+            autoResumeClaude: manual ? false : st.autoResumeClaude,
+            // Crash recovery (#1041): resume only after an unclean shutdown (silent, if opted in) or
+            // a banner "restore" click — never on a clean restart, and never for a manual console.
+            wasUncleanShutdown: st.uncleanShutdown,
+            restoreRequested: manual ? false : !!st.restoreRequested[paneId],
           })
         : (initCmd && initCmd.length > 0 ? initCmd : provider.buildLaunchCmd());
       // The model new claude launches use (per-pane override, else the global
@@ -507,7 +578,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         initCmd: effectiveInitCmd,
         // Only pass startupPrompt for Claude panes — the backend bakes it as
         // `claude --initial-message`, which would be wrong for other providers.
-        startupPrompt: isClaudeProvider ? startupPrompt : undefined,
+        startupPrompt: bakesPrompt ? startupPrompt : undefined,
         model:   paneModel,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
@@ -517,9 +588,17 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         providerId,
       }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
 
+      // Show the native input as soon as we LAUNCH a Claude session — don't wait for the OSC-100
+      // "run" signal, which can be missed on a cold start, leaving Claude's own (legacy) input
+      // visible and ours hidden (#1158). OSC-100 "idle" (process exit) still clears it.
+      if (launchesClaude) useAppStore.getState().setPaneClaudeActive(paneId, true);
+
       if (!isNew) {
         // Reconnecting — Ctrl+L repaints the prompt without submitting a command
         invoke("pty_write", { paneId, data: "\x0c" }).catch((e) => log.error(`console[${paneId}] repaint write failed: ${e}`));
+        // A reconnected Claude pane is already running its REPL (no fresh OSC-100 "run" to catch),
+        // so re-show the native input for it (#1149).
+        if (isClaudeProvider && useAppStore.getState().paneWasClaude[paneId]) useAppStore.getState().setPaneClaudeActive(paneId, true);
       }
     });
 
@@ -615,10 +694,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // Call term.focus() whenever this pane becomes the focused one. focus() reaches
   // into xterm's textarea, which only exists after open() — skip until opened.
   useEffect(() => {
-    if (focused && visible) {
+    // When the native input is up (#1149), let IT hold the caret — don't yank focus back into xterm.
+    if (focused && visible && !claudeActive) {
       requestAnimationFrame(() => { if (openedRef.current) termRef.current?.focus(); });
     }
-  }, [focused, visible]);
+  }, [focused, visible, claudeActive]);
 
   // Apply global font-zoom changes to the live terminal, re-fitting so rows/cols
   // recompute for the new cell size and the PTY is resized to match. The skip on
@@ -659,7 +739,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   return (
     <div
       style={{
-        flex: 1, minHeight: 0,
+        flex: 1, minHeight: 0, position: "relative",
         background: TERM_THEME.background as string,
         display: visible ? "flex" : "none",
         flexDirection: "column",
@@ -697,11 +777,35 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           >✕</span>
         </div>
       )}
-      <div
-        ref={containerRef}
-        style={{
-          flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px",
-          display: criticalChecks.length > 0 ? "none" : undefined,
+      {/* Visible terminal clip box. While Claude CLI is connected (#1158) the inner host grows a
+          few rows TALLER than this box, so its bottom rows — Claude's own input — overflow below
+          the clip and are hidden; the small bottom padding leaves a bit of breathing room above
+          the native input bar. */}
+      <div style={{
+        flex: 1, minHeight: 0, overflow: "hidden",
+        paddingBottom: claudeActive ? 6 : 0,
+        background: TERM_THEME.background as string,
+        display: criticalChecks.length > 0 ? "none" : undefined,
+      }}>
+        <div
+          ref={containerRef}
+          // `term-with-input` adds bottom scroll-padding to xterm's viewport (tokens.css) so the
+          // user can still scroll all the way down even with the bottom rows clipped.
+          className={claudeActive ? "term-with-input" : undefined}
+          style={{
+            height: claudeActive ? `calc(100% + ${Math.round(terminalFontSize * 1.4 * CLIP_ROWS)}px)` : "100%",
+            padding: "6px 4px",
+          }}
+        />
+      </div>
+      {/* Native input (#1149): replaces Claude's built-in prompt while a Claude session is active —
+          overlays the bottom ~4 rows (Claude's input region) and routes typing to the PTY. */}
+      <ConsoleInput
+        active={claudeActive && visible && criticalChecks.length === 0}
+        focused={focused}
+        onSend={(data) => {
+          invoke("pty_write", { paneId, data }).catch(console.error);
+          if (data.includes("\r")) markRunRef.current?.();
         }}
       />
     </div>

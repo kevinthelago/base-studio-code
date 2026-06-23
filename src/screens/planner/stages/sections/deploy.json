@@ -1,7 +1,7 @@
 {
   "name": "Deploy",
   "glyph": "⎈",
-  "gate": "target, envs, pipeline, secrets & release defined",
+  "gate": "shipping + dependencies defined",
   "deps": [
     "repos"
   ],
@@ -11,10 +11,15 @@
         "signal": "deploymentDefined",
         "target": true,
         "label": "define target, environments, pipeline, secrets & release"
+      },
+      {
+        "signal": "dependenciesDefined",
+        "target": 1,
+        "label": "lock at least one dependency in the manifest"
       }
     ]
   },
   "output": "issues",
-  "blurb": "How each service ships — target, environments, pipeline, secrets, release & health.",
-  "prompt": "Define how this project SHIPS, per service (one per linked repo): the deploy TARGET (hosting\nplatform + workload — static / serverless / container / long-running), the ENVIRONMENT ladder\n(dev → staging → prod, each mapped to a branch), the CI/CD PIPELINE (build → test → deploy, with\nthe gating stage), CONFIG + SECRETS per environment (names only — values live in the host vault),\nthe RELEASE strategy (recreate / rolling / blue-green / canary) + rollback policy, and HEALTH\nchecks / observability. Propose sensible defaults from the stack, then interrogate the user and\nlet them set the targets in the Deploy pane. Record the result with `bsc-plan deploy set` (the\nconfig JSON on stdin) — that clears the gate and fills the pane; `bsc-plan deploy get` shows it.\nThese become deployment ISSUES owned by a `deploy` stream at publish.\n\nGate: a target per service, ≥2 environments, a staged pipeline, secrets wired for every env, and\na release strategy chosen."
+  "blurb": "How each service ships — target, environments, pipeline, secrets, release — and the libraries it depends on.",
+  "prompt": "Define how this project SHIPS and what it DEPENDS ON — the two halves of getting it running.\n\n**1. Shipping**, per service (one per linked repo): the deploy TARGET — the hosting `platform` +\n`workload` (static / serverless / container / long-running) and the git `host` the repo lives on\n(github / gitlab / bitbucket / selfhosted). For a CONTAINER workload also set its image `registry`,\n`orchestrator` (k8s / swarm / nomad) and `replicas` (1 / 3 / 5 / auto) — these fill the pane's\ncontainerization & orchestration card. Then the ENVIRONMENT ladder (dev → staging → prod, each\nmapped to a branch), the CI/CD PIPELINE (build → test → deploy, with the gating stage), CONFIG +\nSECRETS per environment (names only — values live in the host vault), the RELEASE strategy\n(recreate / rolling / blue-green / canary) + rollback policy, and HEALTH checks / observability.\nRecord it with `bsc-plan deploy set` (config JSON on stdin) — each service takes `id`, `repo`,\n`path`, `stack`, `host`, `platform`, `workload`, `region`, `build`/`output` (or `runtime` +\n`registry`/`orchestrator`/`replicas` for containers). That fills the Deploy pane; `bsc-plan deploy\nget` shows it.\n\n**2. Dependencies** — lock the libraries every repo needs ONCE, here, so the parallel fleet never\neach adds and redefines them in their own worktrees (which collide at integration). Write them to\n`dependencies.json`:\n```json\n{\n  \"registries\": { \"internal\": { \"url\": \"https://npm.internal/\", \"scope\": \"@acme\", \"auth\": \"INTERNAL_NPM_TOKEN\" } },\n  \"dependencies\": [\n    { \"repo\": \"owner/app\", \"ecosystem\": \"npm\",   \"name\": \"zod\",       \"version\": \"^3.23\", \"why\": \"schema validation\" },\n    { \"repo\": \"owner/app\", \"ecosystem\": \"npm\",   \"name\": \"@acme/ui\",  \"version\": \"^2\",   \"source\": \"internal\", \"why\": \"design system\" },\n    { \"repo\": \"owner/api\", \"ecosystem\": \"cargo\", \"name\": \"serde\",     \"version\": \"1\",      \"why\": \"(de)serialization\" }\n  ]\n}\n```\nPer dependency: `repo` (`owner/repo`; omit ⇒ every repo of that ecosystem), `ecosystem` (`npm` or\n`cargo`), `name`, `version` (omit ⇒ latest), `dev` (test-only), `why`, and `source` — the registry\nKEY when it does NOT come from the public default (npm registry / crates.io). Define each non-public\nregistry once in `registries` (its `url`, npm `scope`, and `auth` = the SECRET NAME for its token),\nand **record that same `auth` secret in the deploy secrets above** so the pipeline can fetch it.\nThese become each repo's real `package.json` / `Cargo.toml` (+ `.npmrc` / `.cargo/config.toml` for\nprivate sources) at publish, and are inlined into every worker as the locked, authoritative set.\nThese shipping + dependency decisions become deployment ISSUES owned by a `deploy` stream at publish.\n\nGate: shipping defined (target per service, ≥2 environments, staged pipeline, secrets, release\nstrategy) AND at least one dependency locked in `dependencies.json`."
 }

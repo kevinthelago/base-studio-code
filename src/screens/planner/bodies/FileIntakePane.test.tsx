@@ -11,11 +11,11 @@ describe("FileIntakePane (#604)", () => {
     useAppStore.setState({ pendingPlannerPrompt: {}, planConfirmedSections: {} });
   });
 
-  it("renders the drop zone and a folder picker (#831)", () => {
+  it("renders the drop zone with click-to-browse-a-folder (#831)", () => {
     vi.mocked(invoke).mockResolvedValue([]);
     render(<FileIntakePane projectKey="p" />);
     expect(screen.getByText(/Drop design files or a folder/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /browse a folder/i })).toBeInTheDocument();
+    expect(screen.getByText(/click to browse a folder/i)).toBeInTheDocument();
   });
 
   it("lists files already staged in the intake manifest", async () => {

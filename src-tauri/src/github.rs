@@ -143,6 +143,45 @@ pub(crate) async fn github_put(
     Ok(json)
 }
 
+/// `PATCH https://api.github.com/{path}` with a JSON body. The REST verb GitHub uses to
+/// *update* an existing resource — notably `PATCH /repos/{owner}/{repo}` to set a repo's
+/// description/homepage at publish (#1114). Mirrors `github_put`: same headers, surfaces a
+/// non-2xx as an `Err` (the caller decides whether that's fatal) rather than swallowing it.
+#[tauri::command]
+pub(crate) async fn github_patch(
+    token: String,
+    path: String,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let _perf = PerfSpan::new("github_patch");
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/{}", path);
+    let response = client
+        .patch(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "base-studio-code/0.2.0")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    if !status.is_success() {
+        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        log::warn!("github_patch {path} HTTP {status}: {msg}");
+        return Err(format!("GitHub API error ({}): {}", status, msg));
+    }
+    Ok(json)
+}
+
 // ── GitHub response cache (ETag-validated, in-memory) ──────────────────────────
 //
 // REST GETs are cached by endpoint path. On the next request we send the stored

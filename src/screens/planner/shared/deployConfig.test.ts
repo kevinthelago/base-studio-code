@@ -1,6 +1,33 @@
 import { describe, it, expect } from "vitest";
-import { defaultDeployConfig, deployChecks, deploymentDefined, coerceDeployConfig, parseDeployConfigTag } from "./deployConfig";
+import { defaultDeployConfig, deployChecks, deploymentDefined, coerceDeployConfig, parseDeployConfigTag, deployIssues } from "./deployConfig";
 import { makeBlueprints } from "../stages/blueprints";
+
+describe("deployIssues (#1167 — Deploy pane)", () => {
+  it("previews one deploy workflow per targeted service + env provisioning + a prod health check", () => {
+    const d = defaultDeployConfig(["acme/web"]);
+    d.services[0].platform = "vercel";
+    d.services[0].workload = "static";
+    const issues = deployIssues(d);
+    expect(issues.some((i) => i.text.includes("Vercel deploy workflow for web → static"))).toBe(true);
+    expect(issues.some((i) => i.text.includes("Provision staging environment"))).toBe(true);
+    expect(issues.some((i) => i.text === "Add prod health check + auto-rollback")).toBe(true);
+  });
+
+  it("flags unwired prod secrets as a blocking issue", () => {
+    const d = defaultDeployConfig(["acme/web"]);
+    d.services[0].platform = "vercel";
+    d.config.secrets = [{ key: "DATABASE_URL", dev: true, staging: true, prod: false }];
+    const issues = deployIssues(d);
+    const sec = issues.find((i) => i.text.includes("Wire prod secrets"));
+    expect(sec).toBeDefined();
+    expect(sec!.blocking).toBe(true);
+    expect(sec!.text).toContain("DATABASE_URL");
+  });
+
+  it("generates nothing service-related until a target is picked", () => {
+    expect(deployIssues(defaultDeployConfig(["acme/web"])).some((i) => i.text.includes("deploy workflow"))).toBe(false);
+  });
+});
 
 describe("deployConfig (#919)", () => {
   it("seeds one proposed service per repo + a default env/pipeline ladder", () => {

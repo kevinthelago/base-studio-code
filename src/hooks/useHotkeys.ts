@@ -11,7 +11,7 @@ import {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,
 } from "../lib/settings/keybindings";
-import type { ViewKey } from "../components/pane/ViewTabs";
+import { VIEW_ORDER } from "../components/pane/ViewTabs";
 
 export interface ShortcutDef {
   id: string;
@@ -40,8 +40,8 @@ export const SHORTCUT_REGISTRY: ShortcutDef[] = [
   { id: "zoom-out",            label: "Zoom terminal out",        keys: "Ctrl+−",              description: "Decrease terminal font size",                          context: "Console" },
   { id: "zoom-reset",          label: "Reset terminal zoom",      keys: "Ctrl+0",              description: "Reset terminal font size to the default",              context: "Console" },
   { id: "send-all-enter",      label: "Broadcast Enter",          keys: "Alt+Shift+Enter",     description: "Send Enter to every pane in the active tab",           context: "Console" },
-  { id: "view-switch",         label: "Switch pane view",         keys: "Alt+1–5",             description: "Switch focused pane's view (console/files/branches/changes/log)", context: "Console" },
-  { id: "view-switch-all",     label: "Switch all pane views",    keys: "Alt+Shift+1–5",       description: "Switch every pane's view at once",                     context: "Console" },
+  { id: "view-switch",         label: "Switch pane view",         keys: "Alt+1–7",             description: "Switch focused pane's view (console/files/branches/changes/log/tools/telemetry)", context: "Console" },
+  { id: "view-switch-all",     label: "Switch all pane views",    keys: "Alt+Shift+1–7",       description: "Switch every pane in the tab to that view at once",    context: "Console" },
 ];
 
 function keyToTermBytes(e: KeyboardEvent): string | null {
@@ -87,8 +87,6 @@ function keyToTermBytes(e: KeyboardEvent): string | null {
 
   return null;
 }
-
-const VIEWS_ORDER: ViewKey[] = ["console", "files", "branches", "changes", "log"];
 
 export function useHotkeys() {
   const {
@@ -248,7 +246,7 @@ export function useHotkeys() {
           (/^Digit[0-9]$/.test(e.code) &&
             (lead === effectiveLeader(bindings, "tab-switch") ||
              lead === effectiveLeader(bindings, "pane-select"))) ||
-          (/^Digit[1-5]$/.test(e.code) &&
+          (/^Digit[1-9]$/.test(e.code) &&
             (lead === effectiveLeader(bindings, "view-switch") ||
              lead === effectiveLeader(bindings, "view-switch-all")));
         const bytes = isNavHotkey ? null : keyToTermBytes(e);
@@ -329,14 +327,17 @@ export function useHotkeys() {
       // Switch pane view by index — Alt+1–5 (focused) / Alt+Shift+1–5 (all) by
       // default; both leaders are rebindable (#773). The all-panes leader is
       // checked first so it wins when it's the more specific combo.
-      const viewDigit = e.code.match(/^Digit([1-5])$/);
+      const viewDigit = e.code.match(/^Digit([1-9])$/);
       if (viewDigit) {
         const allMatch = matchesLeader(e, bindings, "view-switch-all");
         const oneMatch = matchesLeader(e, bindings, "view-switch");
         if (allMatch || oneMatch) {
           if (activeScreen !== "console") return;
+          // Digits map 1:1 onto VIEW_ORDER (console…telemetry); a digit past the last view is a
+          // no-op rather than switching to `undefined`.
+          const view = VIEW_ORDER[parseInt(viewDigit[1], 10) - 1];
+          if (!view) return;
           e.preventDefault();
-          const view = VIEWS_ORDER[parseInt(viewDigit[1], 10) - 1];
           if (allMatch) {
             setAllPanesView(view);
           } else if (focusedPaneIdx >= 0) {

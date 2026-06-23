@@ -22,7 +22,6 @@ describe("ProjectPane focused mode (#652)", () => {
   it("renders the stepper + the selected phase, and selects on step click", () => {
     const onSelect = vi.fn();
     render(<ProjectPane focus={baseFocus({ onSelect })} />);
-    expect(screen.getByText("PHASE 01 / 03")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Context" })).toBeInTheDocument();
     fireEvent.click(screen.getByTitle("Permissions"));
     expect(onSelect).toHaveBeenCalledWith(2);
@@ -31,7 +30,6 @@ describe("ProjectPane focused mode (#652)", () => {
   it("shows a lock banner when browsing a future phase", () => {
     render(<ProjectPane focus={baseFocus({ selectedIdx: 2, activeIdx: 0 })} />);
     expect(screen.getByText(/Locked\./)).toBeInTheDocument();
-    expect(screen.getByText("PHASE 03 / 03")).toBeInTheDocument();
   });
 
   it("renders the file-drop intake surface for the UI stage (#829)", () => {
@@ -62,6 +60,22 @@ describe("ProjectPane focused mode (#652)", () => {
     // clicking the row opens the viewer with the markdown content (#…)
     fireEvent.click(screen.getByText("goal.md"));
     expect(screen.getByText(/The one outcome\./)).toBeInTheDocument();
+  });
+
+  it("names each required context file as written or missing (#1061)", () => {
+    const data = {
+      agents: [], repos: [], structure: [], phaseStructure: [], issues: [],
+      context: [{ name: "goal.md", kind: "doc", tok: "1.2k", pinned: false, scope: "project", content: "# Goal" }],
+    } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    // goal.md is written; scope/users are required-but-missing.
+    render(<ProjectPane data={data} focus={baseFocus({ requiredContext: ["goal", "scope", "users"] })} />);
+    // every required topic is named by its file, including the ones not yet written
+    expect(screen.getByText("scope.md")).toBeInTheDocument();
+    expect(screen.getByText("users.md")).toBeInTheDocument();
+    // exactly the two unwritten ones are flagged "missing"
+    expect(screen.getAllByText("missing")).toHaveLength(2);
+    // and the written/total counter reflects 1 of 3
+    expect(screen.getByText("1/3 written")).toBeInTheDocument();
   });
 
   // #674 — the focused planner shows REAL data (empty states), never the sample mocks.

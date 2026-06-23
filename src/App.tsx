@@ -15,10 +15,14 @@ import { useTunnelSync } from "./hooks/useTunnelSync";
 import { startPerfMonitor, recordStoreWrite } from "./lib/core/perf";
 import { log } from "./lib/core/log";
 import { ConsoleScreen } from "./screens/Console";
+import { paneIdFor } from "./lib/console/paneIdentity";
 import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
 import { SkillsStatus } from "./screens/skills/SkillsStatus";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
+import { CrashRecoveryBanner } from "./components/CrashRecoveryBanner";
+import { QuarantineBanner } from "./components/QuarantineBanner";
+import { useWarden } from "./lib/fleet/useWarden";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/console/detachWindow";
 import { accentVars } from "./lib/settings/appearance";
 
@@ -171,6 +175,7 @@ export default function App() {
   useHotkeys();
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
+  useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
 
   const {
     activeScreen, setScreen,
@@ -226,6 +231,11 @@ export default function App() {
     invoke<string>("get_base_dir")
       .then(setBscBaseDir)
       .catch((e) => log.error(`get_base_dir failed: ${e}`));
+    // Crash recovery (#1041): learn once whether the previous shutdown was unclean — gates the
+    // restore banner + session auto-resume (a clean quit leaves sessions dormant).
+    invoke<boolean>("was_unclean_shutdown")
+      .then((v) => useAppStore.getState().setUncleanShutdown(v))
+      .catch(() => { /* command absent (e.g. tests) — leave false */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -307,8 +317,11 @@ export default function App() {
 
   function killTabPtys(tabIdx: number, layout: string) {
     const [c, r] = layout.split("×").map(Number);
+    const tab = tabs[tabIdx];
     for (let i = 0; i < c * r; i++) {
-      invoke("pty_kill", { paneId: `t${tabIdx}p${i}` }).catch(console.error);
+      // Kill the pane's RESOLVED identity id (#1176) — manual panes are `man:<tabId>:p<idx>`,
+      // so the old positional `t{tabIdx}p{i}` would miss the real session and leak it.
+      invoke("pty_kill", { paneId: paneIdFor(tab, tabIdx, i) }).catch(console.error);
     }
   }
 
@@ -318,10 +331,10 @@ export default function App() {
     const [newCols, newRows] = layout.split("×").map(Number);
     const oldCount = oldCols * oldRows;
     const newCount = newCols * newRows;
-    // Kill PTY sessions for panes that will no longer exist
+    // Kill PTY sessions for panes that will no longer exist (resolved identity id, #1176).
     if (newCount < oldCount) {
       for (let i = newCount; i < oldCount; i++) {
-        invoke("pty_kill", { paneId: `t${tabIdx}p${i}` }).catch(console.error);
+        invoke("pty_kill", { paneId: paneIdFor(tab, tabIdx, i) }).catch(console.error);
       }
     }
     setTabLayout(tabIdx, layout);
@@ -395,6 +408,8 @@ export default function App() {
     <div className="app">
       <SuperUserAchievement />
       <Titlebar workspace={titleWorkspace} />
+      <CrashRecoveryBanner />
+      <QuarantineBanner />
       <div className="shell">
         <Rail active={activeScreen} onNavigate={setScreen} />
         <div className="main">

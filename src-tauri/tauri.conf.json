@@ -4,9 +4,9 @@
   "version": "1.0.3",
   "identifier": "com.basestudio.code",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run build:plan && npm run dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run stage:sidecar && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -20,7 +20,8 @@
         "minHeight": 600,
         "decorations": false,
         "backgroundColor": "#181a1e",
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --no-proxy-server"
       }
     ],
     "security": {
@@ -30,6 +31,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["binaries/bsc-plan", "binaries/bsc-agent"],
     "publisher": "base-studio-code",
     "icon": [
       "icons/32x32.png",

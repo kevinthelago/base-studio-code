@@ -3,14 +3,13 @@
 // (extracted from lib.rs, #758).
 
 use crate::{
-    bsc_base_dir, to_bash_path, to_native_path, nearest_existing_ancestor, claude_launch, claude_model_flag,
-    has_claude_history, split_utf8_at_boundary,
+    bsc_base_dir, to_bash_path, to_native_path, nearest_existing_ancestor, split_utf8_at_boundary,
 };
 use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
-    BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
+    BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_TAINT_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
 };
-use crate::{config, perf, tunnel};
+use crate::{perf, tunnel};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -231,6 +230,15 @@ fn bsc_plan_bin_path() -> Option<std::path::PathBuf> {
     p.exists().then_some(p)
 }
 
+/// The absolute path of the `bsc-agent` runtime — the sidecar beside the running app exe (cargo
+/// target dir in dev; bundled sidecar in a release), or None if absent. Exposed as `$BSC_AGENT_BIN`
+/// for the `bsc-agent` shell helper to exec when a session runs on the bsc-agent harness (#1078 P3).
+fn bsc_agent_bin_path() -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) { "bsc-agent.exe" } else { "bsc-agent" };
+    let p = std::env::current_exe().ok()?.with_file_name(exe);
+    p.exists().then_some(p)
+}
+
 /// Build the environment for a session shell.
 ///
 /// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
@@ -293,13 +301,21 @@ pub(crate) async fn pty_create(
     let shell = resolved_shell.program.clone();
     let mut cmd = CommandBuilder::new(&shell);
 
+    // The session-harness adapter (#1078 P0/P3) — owns the launch + pre-launch host setup. Selected
+    // from the console provider id: "bsc-agent" runs the model-agnostic runtime, everything else
+    // (incl. None) keeps Claude Code, the default. Boxed so both impls share the call sites below.
+    let harness: Box<dyn crate::harness::HarnessAdapter> = match provider_id.as_deref() {
+        Some("bsc-agent") => Box::new(crate::harness::BscAgentAdapter),
+        _ => Box::new(crate::harness::ClaudeCodeAdapter),
+    };
+
     // Self-heal a corrupt ~/.claude.json before this session can launch claude.
     // The repair (drop trailing junk, keep the leading valid object) already runs
     // at workspace setup, but a session launched later (e.g. triage) would hit a
     // config corrupted in the meantime; claude aborts on invalid JSON. Mutex-
     // guarded + atomic, so it's safe alongside trust_claude_dir and concurrent
     // launches, and a no-op when the config is already valid.
-    config::sanitize_claude_config();
+    harness.prepare_config();
 
     // Hardening (#367): never silently fall back to $HOME when a session's configured
     // directory is missing — a failed clone/worktree or a stale persisted cwd would
@@ -321,7 +337,7 @@ pub(crate) async fn pty_create(
         // Pre-accept Claude Code's folder-trust prompt for this directory so the
         // auto-launched `claude` starts already trusted instead of blocking on
         // the "Do you trust the files in this folder?" dialog.
-        config::trust_claude_dir(&effective_cwd);
+        harness.trust_dir(&effective_cwd);
     }
     // Terminal-type defaults (so claude's TUI gets full xterm capabilities) plus
     // any caller-supplied environment (e.g. GH_TOKEN), which takes precedence.
@@ -350,7 +366,7 @@ pub(crate) async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -406,6 +422,18 @@ pub(crate) async fn pty_create(
     if let Some(bin) = bsc_plan_bin_path() {
         cmd.env("BSC_PLAN_BIN", to_bash_path(&bin.to_string_lossy()));
     }
+    // The bsc-agent runtime sidecar (#1078 P3) — the `bsc-agent` harness's shell helper execs it.
+    if let Some(bin) = bsc_agent_bin_path() {
+        cmd.env("BSC_AGENT_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // bsc-agent resume (#1144): hand the sidecar the per-cwd conversation file so it persists the
+    // conversation (and, with --continue, resumes it). The app owns the keying; the sidecar just
+    // reads/writes this native path via std::fs. Only meaningful for bsc-agent panes.
+    if provider_id.as_deref() == Some("bsc-agent") {
+        if let Some(p) = crate::bsc_agent_session_path(&cwd) {
+            cmd.env("BSC_AGENT_SESSION", p.to_string_lossy().into_owned());
+        }
+    }
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
@@ -452,27 +480,24 @@ pub(crate) async fn pty_create(
     // and the baked startup prompt is dropped — so a fresh project would launch
     // into nothing. When there's no history we fall back to a fresh session, which
     // still delivers the prompt.
-    let resume = continue_session.unwrap_or(false) && has_claude_history(&cwd);
+    // The session harness (#1078 P0): ClaudeCodeAdapter is the only impl today; it reproduces the
+    // exact launch behavior this block had inline. bsc-agent becomes a second adapter (P2).
+    let resume = continue_session.unwrap_or(false) && harness.detect_history(&cwd);
     let launch = match startup_prompt.as_deref().filter(|s| !s.is_empty()) {
-        Some(p) => Some(claude_launch(p, resume)),
+        Some(p) => Some(harness.launch_command(p, resume)),
         None => init_cmd.as_deref().filter(|s| !s.is_empty()).map(|s| s.to_string()),
     };
     // Whether the launch would start `claude` — the only command the degraded
     // non-bash path replays (an arbitrary bash init_cmd would be invalid there).
-    let launch_claude = launch.as_deref().map(|s| s.contains("claude")).unwrap_or(false);
+    let launch_claude = launch.as_deref().map(|s| harness.is_harness_launch(s)).unwrap_or(false);
     // The default `--model` alias for this session (per-pane override or global
-    // default, mapped from the UI model id). None ⇒ Claude Code's own default.
-    let model_alias = model.as_deref().and_then(claude_model_flag);
+    // default, mapped from the UI model id). None ⇒ the harness's own default.
+    let model_alias = model.as_deref().and_then(|m| harness.model_flag(m));
     // The `claude()` shell wrapper: it emits the run/idle OSC markers AND injects the
     // session's default model, so BOTH the auto-launch below and anything the user
     // types pick it up. Skip the injection when the call already carries `--model`
     // (whole-word match, so prompt text containing the string can't trip it).
-    let claude_fn = match model_alias {
-        Some(m) => format!(
-            "claude() {{ __bsc_state run; case \" $* \" in *\" --model \"*) command claude \"$@\";; *) command claude --model {m} \"$@\";; esac; }}; "
-        ),
-        None => "claude() { __bsc_state run; command claude \"$@\"; }; ".to_string(),
-    };
+    let claude_fn = harness.shell_fn(model_alias.as_deref());
     let init_line = match resolved_shell.kind {
         crate::shell::ShellKind::Bash => {
             let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
@@ -507,7 +532,7 @@ pub(crate) async fn pty_create(
         // are bash-only, so run a degraded init that cd's, clears, and prints a visible
         // notice (no silent breakage, #447).
         crate::shell::ShellKind::PowerShell | crate::shell::ShellKind::Cmd => {
-            crate::shell::non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude, model_alias)
+            crate::shell::non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude, model_alias.as_deref())
         }
     };
     writer.write_all(init_line.as_bytes()).ok();

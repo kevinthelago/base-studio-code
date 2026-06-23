@@ -93,6 +93,48 @@ describe("autoPlanWithClaude setting (#682)", () => {
   });
 });
 
+describe("autoCompleteGates setting (#1068)", () => {
+  it("is off by default and toggles via the setter", () => {
+    expect(useAppStore.getState().autoCompleteGates).toBe(false);
+    useAppStore.getState().setAutoCompleteGates(true);
+    expect(useAppStore.getState().autoCompleteGates).toBe(true);
+    useAppStore.getState().setAutoCompleteGates(false);
+    expect(useAppStore.getState().autoCompleteGates).toBe(false);
+  });
+});
+
+describe("LLM provider config (#1085)", () => {
+  it("defaults to anthropic + claude-sonnet-4-6 with empty extra keys", () => {
+    const s = useAppStore.getState();
+    expect(s.llmProvider).toBe("anthropic");
+    expect(s.llmModel).toBe("claude-sonnet-4-6");
+    expect(s.openaiKey).toBe("");
+    expect(s.geminiKey).toBe("");
+    expect(s.localBaseUrl).toBe("http://localhost:11434/v1");
+  });
+
+  it("setLocalBaseUrl updates the local endpoint (#1091)", () => {
+    useAppStore.getState().setLocalBaseUrl("http://10.0.0.5:8080/v1");
+    expect(useAppStore.getState().localBaseUrl).toBe("http://10.0.0.5:8080/v1");
+    useAppStore.getState().setLocalBaseUrl("http://localhost:11434/v1"); // restore
+  });
+
+  it("setters update provider, model, and per-provider keys", () => {
+    const g = () => useAppStore.getState();
+    g().setLlmProvider("openai");
+    g().setLlmModel("gpt-5");
+    g().setOpenaiKey("oai");
+    g().setGeminiKey("gem");
+    expect(g().llmProvider).toBe("openai");
+    expect(g().llmModel).toBe("gpt-5");
+    expect(g().openaiKey).toBe("oai");
+    expect(g().geminiKey).toBe("gem");
+    // restore defaults for other tests
+    g().setLlmProvider("anthropic"); g().setLlmModel("claude-sonnet-4-6");
+    g().setOpenaiKey(""); g().setGeminiKey("");
+  });
+});
+
 describe("terminal font zoom", () => {
   it("defaults to the baseline font size", () => {
     expect(useAppStore.getState().terminalFontSize).toBe(12);
@@ -530,10 +572,21 @@ describe("pane state", () => {
     expect(paneViews[2]).toBe("console");
   });
 
-  it("setAllPanesView sets every pane to the same view", () => {
-    useAppStore.setState({ paneViews: ["console", "files", "branches"] });
+  it("setAllPanesView fills every pane slot of the active tab — even from an empty paneViews (#1182)", () => {
+    // The bug: paneViews defaults to [] and was only grown lazily, so `.map` over it was a no-op
+    // and the Alt+Shift+digit "switch all" hotkey did nothing. The active tab here is 3×3 = 9 panes.
+    useAppStore.setState({ paneViews: [], activeTabIdx: 0 });
     useAppStore.getState().setAllPanesView("log");
-    expect(useAppStore.getState().paneViews).toEqual(["log", "log", "log"]);
+    const pv = useAppStore.getState().paneViews;
+    expect(pv).toHaveLength(9);
+    expect(pv.every((v) => v === "log")).toBe(true);
+  });
+
+  it("setAllPanesView covers a smaller active tab and keeps any higher existing indices", () => {
+    // Active tab 2 is 1×1, but paneViews already has 4 entries (from a larger tab) — all switch.
+    useAppStore.setState({ paneViews: ["console", "files", "branches", "changes"], activeTabIdx: 2 });
+    useAppStore.getState().setAllPanesView("files");
+    expect(useAppStore.getState().paneViews).toEqual(["files", "files", "files", "files"]);
   });
 
   it("setFocusedAgentName updates breadcrumb label", () => {
@@ -1100,6 +1153,24 @@ describe("agent fleet store", () => {
     expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
   });
 
+  it("fleetStartProject sets the pane provider from fleetHarness (#1078 P5)", () => {
+    // Default harness ⇒ every fleet pane runs on claude.
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub", fleetHarness: "claude" });
+    useAppStore.getState().fleetStartProject("HC", fleet, "hc-key");
+    let st = useAppStore.getState();
+    let i = st.findFleetTabIdx("hc-key");
+    expect(st.paneProviders[`t${i}p0`]).toBe("claude"); // director
+    expect(st.paneProviders[`t${i}p1`]).toBe("claude"); // worker
+
+    // bsc-agent harness ⇒ director + workers launch on bsc-agent.
+    useAppStore.setState({ fleetHarness: "bsc-agent" });
+    useAppStore.getState().fleetStartProject("HB", fleet, "hb-key");
+    st = useAppStore.getState();
+    i = st.findFleetTabIdx("hb-key");
+    expect(st.paneProviders[`t${i}p0`]).toBe("bsc-agent");
+    expect(st.paneProviders[`t${i}p1`]).toBe("bsc-agent");
+  });
+
   it("prefers Rust-provided hub + worktree paths over the bscBaseDir mirror (#905)", () => {
     // bscBaseDir EMPTY — the exact condition that silently dropped every session at
     // user root, because projectHubCwd/agentWorktreeCwd return "" and the PTY then
@@ -1147,6 +1218,35 @@ describe("agent fleet store", () => {
     expect(names(0)).toContain("Compliance"); // director (pane 0)
     expect(names(1)).toContain("Compliance"); // worker 1
     expect(names(2)).toContain("Compliance"); // worker 2
+  });
+
+  it("director sees every installed server; workers get baseline + only their assigned (#1054)", () => {
+    useAppStore.setState({
+      bscBaseDir: "/base",
+      mcpServers: [
+        { id: "glob", name: "Glob",     enabled: true,  projects: [],      transport: "stdio", command: "x", args: "", env: [] },
+        { id: "dis",  name: "Disabled", enabled: false, projects: [],      transport: "stdio", command: "x", args: "", env: [] },
+        { id: "res",  name: "Research", enabled: false, projects: ["zzz"],  transport: "stdio", command: "x", args: "", env: [] },
+      ],
+    });
+    const f: FleetPlan = {
+      recommended: 2, reasoning: "", director: { enabled: true },
+      streams: [
+        { id: "sci", name: "Sci", repo: "o/r", owns: [], issues: [], dependsOn: [], mcp: ["Research"] },
+        { id: "ui",  name: "UI",  repo: "o/r", owns: [], issues: [], dependsOn: [] },
+      ],
+    };
+    useAppStore.getState().fleetStartProject("Multi", f, "multi-key");
+    const st = useAppStore.getState();
+    const idx = st.findFleetTabIdx("multi-key");
+    const names = (p: number) => (st.paneMcpServers[`t${idx}p${p}`] ?? []).map((e) => e.name).sort();
+    // Director (pane 0) sees ALL installed servers — including the disabled and other-project ones.
+    expect(names(0)).toEqual(["Disabled", "Glob", "Research"]);
+    // The science worker gets the global baseline + its assigned Research (disabled/other-project,
+    // pulled in by the explicit assignment).
+    expect(names(1)).toEqual(["Glob", "Research"]);
+    // The UI worker, with nothing assigned, gets only the global baseline.
+    expect(names(2)).toEqual(["Glob"]);
   });
 
   it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {

@@ -5,6 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../../store";
+import { type LlmConfig, hasLlmKey } from "../../../lib/core/llmConfig";
 import { letterFromScore } from "../../../lib/planner/planGrade";
 import { rubricForSection, type GradeResult, type GradeDimension, type GradeFinding, type Severity, type Rubric } from "./grading";
 
@@ -67,20 +68,21 @@ export async function gradeWithLLM(rubric: Rubric, input: { sectionKey: string; 
   return parseLLMGrade(raw, input.sectionKey);
 }
 
-/** A kb_chat-backed one-shot completion (the real Anthropic call). */
-async function kbComplete(apiKey: string, p: GradePrompt): Promise<string> {
+/** A kb_chat-backed one-shot completion, routed through the active provider (#1085). */
+async function kbComplete(llm: LlmConfig, p: GradePrompt): Promise<string> {
   const res = await invoke<{ content: { type: string; text?: string }[] }>("kb_chat", {
-    messages: [{ role: "user", content: p.user }], system: p.system, tools: [], apiKey,
+    messages: [{ role: "user", content: p.user }], system: p.system, tools: [],
+    apiKey: llm.apiKey, provider: llm.provider, model: llm.model, baseUrl: llm.baseUrl,
   });
   return (res.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("\n");
 }
 
-export interface RunLLMGradeArgs { projectKey: string; sectionKey: string; content?: string; apiKey: string }
+export interface RunLLMGradeArgs { projectKey: string; sectionKey: string; content?: string; llm: LlmConfig }
 
 /** Run the LLM grader for a section and persist the result. Throws if no API key. */
-export async function runSectionGradeLLM({ projectKey, sectionKey, content, apiKey }: RunLLMGradeArgs): Promise<GradeResult> {
-  if (!apiKey) throw new Error("No Claude API key — add one in Settings → Integrations.");
-  const result = await gradeWithLLM(rubricForSection(sectionKey), { sectionKey, content }, (p) => kbComplete(apiKey, p));
+export async function runSectionGradeLLM({ projectKey, sectionKey, content, llm }: RunLLMGradeArgs): Promise<GradeResult> {
+  if (!hasLlmKey(llm)) throw new Error(`No API key for ${llm.provider} — add one in Settings → Integrations.`);
+  const result = await gradeWithLLM(rubricForSection(sectionKey), { sectionKey, content }, (p) => kbComplete(llm, p));
   useAppStore.getState().setSectionGrade(projectKey, sectionKey, result);
   return result;
 }

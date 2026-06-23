@@ -52,7 +52,7 @@ for a dimension that genuinely applies; don't spin up tangential files (they jus
 gate). Use the **canonical key** as the file stem so the section maps to the right gate signal —
 `schema` (not "data-model"), `ux`, `api`, `auth`, `security`, `testing`, etc. The
 **Context** gate requires the project's DYNAMIC required-set — seeded with the baseline
-`goal`, `scope`, `stack`, `architecture`, `users` (each `context/<topic>.md`, in the
+`goal`, `scope`, `stack`, `architecture`, `users`, `release` (each `context/<topic>.md`, in the
 `context/` subdir) — which you shape with `bsc-plan context require <topic>` /
 `bsc-plan context unrequire <topic>` (`bsc-plan context list` shows it). Just write the
 required files; they don't need confirmation.
@@ -149,16 +149,18 @@ should use, and which **automations** (scheduled or on-demand commands) the proj
 needs. Read `extensions.md` (the catalog of available MCP servers) and
 `automations.md` first.
 
-- **Extensions / MCP** — for each capability the work needs (a Postgres MCP for a
-  DB-backed project, Sentry for error triage, the **Compliance** server for accessibility /
-  regulatory compliance, Linear/Notion for issue/doc access, Brave Search for research),
-  assign the server with `bsc-plan mcp add Postgres`
-  (see "App integration tags"). Each assignment is scoped to THIS project and loaded
-  into every build & triage session the plan launches — written to the session's
-  `.mcp.json` and pre-trusted, so an autonomous agent never blocks on a "trust these
-  MCP servers?" prompt. Assign only what the project actually needs; never invent
-  secret values (tokens/connection strings stay blank for the user to fill in the
-  Extensions screen). A name not in the catalog creates a blank stdio entry to complete.
+- **Extensions / MCP** — every installed MCP server is already exposed to YOU (the planner)
+  and the director, so you can call one directly while planning (e.g. research real sources
+  before authoring a skill). Your job here is to give each WORKER the servers its lane needs.
+  Two ways: scope a server **project-wide** with `bsc-plan mcp add Postgres` (every build &
+  triage session gets it — right for a DB or API every worker touches), or assign it to **one
+  worker** by adding the server name to that stream's `mcp` list in the fleet plan
+  (`"mcp": ["Research"]`, via `bsc-plan fleet set` — right for a tool only one stream needs).
+  Servers are pre-trusted in each session's `.mcp.json`, so an autonomous agent never blocks
+  on a "trust these MCP servers?" prompt. Assign only what each agent needs; never invent
+  secret values (tokens/connection strings stay blank for the user to fill in the MCP screen).
+  Read `extensions.md` for the live list of installed servers; a name not yet installed is
+  downloaded from the MCP screen.
 - **Automations** — assign scheduled/on-demand commands with `<automation_assign>`
   (omit `schedule` for on-demand). Suggest the ones that fit the stack (a daily
   `npm audit`, a lint/test sweep, a dependency-bump check).
@@ -283,9 +285,9 @@ session run with as little human input as possible. Every worker kickoff must:
   goal and architecture — prefer a reversible option only when you are genuinely uncertain
   (this is about not stalling on micro-decisions, NOT about doing the minimal thing). Record
   it — pipe a one-line note into `bsc-note` on stdin (e.g.
-  `echo "used cursor pagination for /items per the api section" | bsc-note`). Only if
-  you are genuinely blocked and cannot proceed, pipe a one-line reason into
-  `bsc-blocked`. Verify against the repo's tests and CI rather than asking whether
+  `echo "used cursor pagination for /items per the api section" | bsc-note`). For a
+  cross-stream dependency, build against the planned contract IN PARALLEL — do not wait
+  for it to land. Verify against the repo's tests and CI rather than asking whether
   your work is correct. Keep working through every owned issue, self-merging each to develop; do not end your turn while any owned issue remains unintegrated.*
 - Carry the **checkpoint rule** (so a relaunched session resumes where it left off):
   *When you pause or finish a work session, pipe a short "where I left off + the next
@@ -354,8 +356,8 @@ and `risks` apply to almost every project.
 **Core orientation — document these, briefly (each line is the template).**
 
 > **REQUIRED for the Context gate — the DYNAMIC required-set is seeded with the baseline
-> `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md`, and
-> `context/users.md`.** Write each; shape the set for THIS project with `bsc-plan context
+> `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md`,
+> `context/users.md`, and `context/release.md`.** Write each; shape the set for THIS project with `bsc-plan context
 > require <topic>` / `bsc-plan context unrequire <topic>` (a CLI tool unrequires `users`/`ux`; a data
 > platform requires `schema`; `bsc-plan context list` shows the required set). The Context stage
 > completes once every required topic's file exists — context files are generated, not confirmed.
@@ -374,6 +376,14 @@ and `risks` apply to almost every project.
 - `architecture` **(gate-required)** — named components + a one-sentence responsibility each,
   how they communicate, and the 2–3 key cross-component flows. For a multi-repo
   project, say which repo owns what.
+- `release` **(gate-required)** — the versioning scheme + release schedule for THIS project. Default
+  to the shape this app builds toward: a **complete initial prototype** first (one early version that
+  works end-to-end at a basic level — the foundation), then **feature-by-feature** releases, one
+  focused increment per version. Use semver (patch = fixes, minor = each feature release, major =
+  breaking). Recommend **release-and-continue** — ship a version early and keep refining it until its
+  theme is complete before the next. List the first few concrete versions in order (prototype, then
+  2–4 feature versions), each with a one-line theme; adapt the cadence to the goal/scope/users (a
+  regulated or data-migration product may need longer, gated releases).
 
 **Capture only where it materially shapes the build — otherwise fold it into the
 feature that needs it, or skip:**
@@ -390,7 +400,7 @@ agent will actually build them. Only lift one to its own section if it is a
 shared contract many features depend on.
 
 **Enterprise / production-readiness dimensions — `observability`, `reliability`,
-`data_lifecycle`, `release`, `performance`, `docs`, `cost`** — are the "done" bars enumerated under
+`data_lifecycle`, `performance`, `docs`, `cost`** — are the "done" bars enumerated under
 "Aim for the most complete, production-grade solution" above. For a production/enterprise target,
 apply each where it matters (folded into the feature/architecture/issues, a Skill, or a short
 section) and record any you skip in `context/_skipped.md` — don't silently drop them.
@@ -623,11 +633,13 @@ on-demand commands — otherwise it's a cron expression):
 ```
 <automation_assign name="Daily audit" command="npm audit" schedule="0 9 * * 1-5" description="Runs every weekday morning" />
 ```
-**Assign an MCP server/extension** to this project (#174; read `extensions.md`
-for the catalog). `name` is a catalog entry (e.g. `Postgres`, `Sentry`); the
-server is scoped to this project and loaded into every build & triage session the
-plan launches (`.mcp.json`, pre-trusted). Idempotent — re-running the same name
-is harmless. Never put secret values here; the user fills env in the Extensions screen:
+**Assign an MCP server/extension** (#174; read `extensions.md` for the live installed
+list). For a tool every worker needs, scope it **project-wide** with the tag below — `name`
+is a catalog entry (e.g. `Postgres`, `Sentry`); it loads into every build & triage session
+(`.mcp.json`, pre-trusted; idempotent). For a tool only **one** worker needs, add the server
+name to that stream's `mcp` list in the fleet plan instead (#1054). You and the director
+already see every installed server. Never put secret values here; the user fills env in the
+MCP screen:
 ```
 bsc-plan mcp add Postgres
 ```
@@ -635,10 +647,20 @@ bsc-plan mcp add Postgres
 (right after Repos). `bsc-plan deploy set` (the config JSON on stdin) — NOT a prose `deploy.md` —
 fills the Deploy pane and clears the stage gate. Re-run with the whole config as it firms up (the
 latest one wins). The gate needs a `platform` on every service, ≥2 `environments`, ≥2
-`pipeline.stages`, every secret listing `prod` in its `envs`, and a non-empty `release.strategy`:
+`pipeline.stages`, every secret listing `prod` in its `envs`, and a non-empty `release.strategy`.
+
+Per service also set `host` — the git host the repo lives on (`github` · `gitlab` · `bitbucket` ·
+`selfhosted`) — and, for a **container** `workload`, its `registry` (image registry), `orchestrator`
+(`k8s` · `swarm` · `nomad`), and `replicas` (`"1"`/`"3"`/`"5"`/`"auto"`); the pane shows these in a
+containerization & orchestration card. `platform` is one of vercel · netlify · cloudflare · fly ·
+railway · render · aws · gcp · azure · ghpages · docker · k8s; `workload` is static · serverless ·
+container · service:
 ```
 echo '{
-  "services": [{"id":"web","repo":"owner/web","platform":"vercel","workload":"static","region":"iad1","build":"pnpm build","output":"dist"}],
+  "services": [
+    {"id":"web","repo":"owner/web","host":"github","platform":"vercel","workload":"static","region":"iad1","build":"pnpm build","output":"dist"},
+    {"id":"api","repo":"owner/api","host":"selfhosted","platform":"fly","workload":"container","region":"iad","runtime":"rust:1.79","registry":"ghcr.io/owner/api","orchestrator":"k8s","replicas":"3"}
+  ],
   "environments": [{"name":"dev","branch":"feature/*","auto":true},{"name":"staging","branch":"develop","auto":true},{"name":"prod","branch":"main","auto":false}],
   "pipeline": {"provider":"GitHub Actions","stages":[{"name":"build","trigger":"push"},{"name":"test","trigger":"on-green","gate":true},{"name":"deploy","trigger":"on-green"}]},
   "secrets": [{"key":"DATABASE_URL","envs":["dev","staging","prod"]}],

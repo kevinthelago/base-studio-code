@@ -41,7 +41,7 @@ describe("activeSubstep", () => {
 describe("authored substeps (built-in sections)", () => {
   it("Context exposes the baseline required substeps + a topics loop", () => {
     const keys = (SECTION_DEFS.context.substeps ?? []).map((s) => s.key);
-    expect(keys).toEqual(["goal", "scope", "stack", "architecture", "users", "dimensions"]);
+    expect(keys).toEqual(["goal", "scope", "stack", "architecture", "users", "release", "dimensions"]);
     const loop = SECTION_DEFS.context.substeps?.find((s) => s.key === "dimensions");
     expect(loop?.loop).toBe("topics");
   });
@@ -62,7 +62,7 @@ describe("authored substeps (built-in sections)", () => {
     }
   });
   it("substeps carry onto a built section instance via mkSection", () => {
-    expect(mkSection("context").substeps?.length).toBe(6);
+    expect(mkSection("context").substeps?.length).toBe(7);
   });
 });
 

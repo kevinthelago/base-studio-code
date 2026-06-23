@@ -31,6 +31,37 @@ export function resolveMcpServers(all: McpServer[], projectId: string): McpServe
   );
 }
 
+/**
+ * Every **downloaded** server, regardless of the enable toggle or project scope (#1054). The
+ * planner sees all installed servers — so a freshly downloaded one (which lands disabled) is
+ * available immediately, and the planner can call it while planning and decide which workers need
+ * it. The director gets the same set since it coordinates the whole fleet. "Downloaded" = has a
+ * runnable config (`toMcpPayload` non-null: stdio with a command, http with a url); half-configured
+ * entries are skipped so a broken `.mcp.json` line never reaches a session.
+ */
+export function resolveAllInstalledMcp(all: McpServer[]): McpServer[] {
+  return all.filter(e => toMcpPayload(e) !== null);
+}
+
+/**
+ * A worker's servers (#1054): the fleet-wide baseline — {@link resolveMcpServers} (enabled global +
+ * this-project servers, the #876 behavior every worker shares) — PLUS any server the worker's
+ * stream explicitly assigned by name (`stream.mcp`, case-insensitive). Stream assignment is intent,
+ * so an assigned extra is included regardless of the enable toggle / project scope, as long as it
+ * has a runnable config (`toMcpPayload` non-null). This is how the planner gives one worker the
+ * extra tools its lane needs without handing them to the whole fleet, while project-wide tools
+ * (a DB everyone touches) still ride the baseline.
+ */
+export function resolveStreamMcp(all: McpServer[], streamMcp: string[] = [], projectId = ""): McpServer[] {
+  const base = resolveMcpServers(all, projectId);
+  const baseIds = new Set(base.map(e => e.id));
+  const assigned = new Set(streamMcp.map(n => n.toLowerCase()));
+  const extra = all.filter(
+    e => toMcpPayload(e) !== null && assigned.has(e.name.toLowerCase()) && !baseIds.has(e.id),
+  );
+  return [...base, ...extra];
+}
+
 // ── Backend payload ───────────────────────────────────────────────────────────
 // Shape handed to `ensure_session_settings`; field names match the Rust struct.
 
@@ -60,6 +91,26 @@ export function toMcpPayload(e: McpServer): McpServerPayload | null {
   };
 }
 
+/** The `$BSC_AGENT_MCP` config bsc-agent reads (#1078 P3) — its MCP client is **stdio-only**, so
+ *  http servers are dropped; `env` becomes a plain object (matching the Rust `McpServerCfg`). */
+export interface BscAgentMcpCfg {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+}
+
+export function toBscAgentMcp(payloads: McpServerPayload[]): BscAgentMcpCfg[] {
+  return payloads
+    .filter((p) => p.transport === "stdio" && !!p.command)
+    .map((p) => ({
+      name: p.name,
+      command: p.command as string,
+      args: p.args,
+      env: Object.fromEntries(p.env),
+    }));
+}
+
 // ── Catalog templates ─────────────────────────────────────────────────────────
 // Pre-filled config for well-known catalog entries (keyed by catalog item name).
 // Unknown names fall back to a blank stdio server the user completes.
@@ -75,6 +126,10 @@ const MCP_CATALOG_TEMPLATES: Record<string, Partial<McpServer>> = {
   "Dependency Graph":    { transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
   // Python/uv like Compliance — console-script `plan-grader-mcp` (#897).
   "Plan Grader":         { transport: "stdio", command: "python", args: "-m uv run --directory {dir} plan-grader-mcp" },
+  // Node/tsup → dist/index.js, like Dependency Graph (#1056). Runs offline by default (arXiv/
+  // Semantic Scholar/PubMed/Crossref need no key; local embeddings); optional API keys + GROBID
+  // are env/Docker config the user adds, so no required env here.
+  "Research":            { transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
   // Well-known third-party servers — pruned from the browse catalog (#870) but kept here so the
   // planner's `<mcp_assign name="…" />` (planExtensions.ts) still resolves them to a working config.
   "Postgres":     { transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres", env: [["POSTGRES_CONNECTION_STRING", ""]] },

@@ -84,9 +84,10 @@ function nodeGlyph(p: Phase, i: number): string {
 
 /**
  * The sequenced rail (#668): one node per phase joined by connectors. Solid connectors
- * trace the in-sequence path walked so far; the current node pulses with a "now" marker;
- * a banked-ahead node (gate met out of sequence) is green-ringed, reached by a dashed
- * connector + a "banked" pill. `highlight` pulses phases the user still has to finish.
+ * trace the in-sequence path walked so far; the current node pulses (accent ring); a
+ * banked-ahead node (gate met out of sequence) is green-ringed, reached by a dashed
+ * connector. Each node's glyph (◆ current · ↷ skipped · ✓ done) carries its state.
+ * `highlight` pulses phases the user still has to finish.
  */
 export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
   phases: Phase[]; selectedIdx: number; onSelect: (i: number) => void; highlight?: Set<string>;
@@ -102,13 +103,6 @@ export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
               onClick={() => onSelect(i)}
               title={p.name}
             >
-              {/* Fixed-height marker slot — always present so the node never shifts when a
-                  marker appears/disappears on state change (#668). */}
-              <span className="seqrail-marker">
-                {p.status === "active" && <span className="m-now">◆ now</span>}
-                {p.status === "ahead" && <span className="m-banked">banked</span>}
-                {p.status === "skipped" && <span className="m-skipped">skipped</span>}
-              </span>
               <span className="seqrail-node">{nodeGlyph(p, i)}</span>
               <span className="seqrail-label">{p.name}</span>
             </button>
@@ -136,26 +130,20 @@ export function PhaseHeader({ phase, pill, promptHelp }: {
   return (
     <div className="ph-head" style={{ position: "relative" }}>
       {promptHelp && <StagePromptHelp prompts={promptHelp.prompts} onInject={promptHelp.onInject} />}
-      <div className="ph-eyebrow">
-        <span className="num">PHASE {String(phase.index + 1).padStart(2, "0")} / {String(phase.total).padStart(2, "0")}</span>
-        <span>·</span><span>{phase.key}</span>
-        {phase.optional && <span style={{
-          marginLeft: 6, fontSize: 8.5, color: "var(--fg-dim)", border: "1px solid var(--border-soft)",
-          borderRadius: 999, padding: "0 6px", textTransform: "none", letterSpacing: 0,
-        }}>optional</span>}
+      <div className="ph-title">
+        <h2>{phase.name}</h2>
+        <span
+          className={"ph-gate " + pill}
+          title={tip}
+          onClick={hasReasons ? () => setShowReasons((v) => !v) : undefined}
+          style={{ cursor: hasReasons ? "pointer" : undefined }}
+        >
+          <span className="gd" />
+          gate
+          {hasReasons && <span style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</span>}
+        </span>
       </div>
-      <div className="ph-title"><h2>{phase.name}</h2></div>
       <p className="ph-blurb">{phase.blurb}</p>
-      <span
-        className={"ph-gate " + pill}
-        title={tip}
-        onClick={hasReasons ? () => setShowReasons((v) => !v) : undefined}
-        style={{ cursor: hasReasons ? "pointer" : undefined }}
-      >
-        <span className="gd" />
-        gate · {phase.gate} — {pill === "pass" ? "passing" : "waiting"}
-        {hasReasons && <span style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</span>}
-      </span>
       {hasReasons && showReasons && (
         <div role="status" style={{
           marginTop: 8, padding: "8px 11px", borderRadius: 7, maxWidth: 420,

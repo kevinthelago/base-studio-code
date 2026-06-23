@@ -185,3 +185,21 @@ pub fn plan_require_context(project_key: String, topic: String, required: bool) 
     open(&project_key)?.context_require(&topic, required).map_err(|e| e.to_string())
 }
 
+// ── triage runs (#1004) — per-repo "last triage launch" timestamp + the since-T delta, so a re-run
+//    resumes cheaply from what changed instead of re-ingesting the whole project. ──
+
+#[tauri::command]
+pub fn plan_triage_record_run(project_key: String, repo: String) -> Result<i64, String> {
+    open(&project_key)?.triage_record_run(&repo).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_triage_last_run(project_key: String, repo: String) -> Result<Option<i64>, String> {
+    open(&project_key)?.triage_last_run(&repo).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_issues_changed_since(project_key: String, repo: String, since: i64) -> Result<Vec<PlanIssue>, String> {
+    open(&project_key)?.issues_changed_since(&repo, since).map_err(|e| e.to_string())
+}
+

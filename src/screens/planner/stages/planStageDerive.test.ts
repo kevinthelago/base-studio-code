@@ -163,3 +163,16 @@ describe("planStateToSignals — datamodel signals emitted", () => {
     expect(sig.modelInferred).toBe(true);
   });
 });
+
+describe("dependencies signal (#1111)", () => {
+  it("defaults to zero when no manifest is provided", () => {
+    const s = derivePlanStageState(BASE_INPUT);
+    expect(s.dependencies.count).toBe(0);
+    expect(planStateToSignals(s).dependenciesDefined).toBe(0);
+  });
+
+  it("emits dependenciesDefined as the locked count — the gate (≥1) passes once any is defined", () => {
+    const s = derivePlanStageState({ ...BASE_INPUT, dependencies: { count: 3 } });
+    expect(planStateToSignals(s).dependenciesDefined).toBe(3);
+  });
+});

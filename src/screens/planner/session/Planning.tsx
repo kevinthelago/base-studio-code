@@ -21,17 +21,20 @@ import {
 import { parseCommandsFile } from "../../../lib/session/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "../../../lib/session/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, SKILLS_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
 } from "../stages/planSections";
+import { parseSkillsFile } from "../../../lib/session/skills";
 import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
+import { parseDependencyManifest, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
 import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks, type PlanIssue } from "../issues/planIssues";
+import { pruneCompletedStreams, doneIssueRefs } from "../fleet/streamCompletion";
 import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
-import { ProjectPane, type SyncState, PLAN_STAGES, isStageGateMet } from "../pane/ProjectPane";
+import { ProjectPane } from "../pane/ProjectPane";
 import { publishFleetRoster } from "../../../lib/fleet/fleetRoster";
 import { hubToCanonical } from "../../../lib/planner/plannerSync";
 import { tunnelSetPlanState } from "../../../lib/tunnel/tunnelClient";
@@ -42,6 +45,10 @@ import { applyMcpAssign } from "../shared/planExtensions";
 import { applyBlueprintMcp, collectBlueprintMcp } from "../blueprints/blueprintMcp";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { catalogLink, repoNameFromLink, mcpRepoName } from "../../../lib/session/mcpInstall";
+import { resolveAllInstalledMcp } from "../../../lib/session/mcpServers";
+import { toSessionPayloads } from "../../../lib/session/sessionConfig";
+import { writeProjectMcpContext } from "../shared/mcpContext";
+import { McpDownloadModal, type McpDownloadItem } from "../shared/McpDownloadModal";
 import { type McpInstallState } from "../shared/mcpPaneData";
 import { MCP_CATALOG } from "../../../data/mcpCatalog";
 import { buildProjectPaneData } from "../pane/projectPaneData";
@@ -57,13 +64,14 @@ import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintSha
 import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "../blueprints/blueprintSkills";
 import { buildMcpLibrary } from "../blueprints/blueprintMcp";
 import { publishGist } from "../../../lib/planner/gist/gist";
-import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady } from "../stages/focusedPlan";
+import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, shouldAutoCompleteGate } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt, stagePrompts } from "./plannerConductor";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "../../../lib/core/claudeComplete";
+import { resolveLlmConfig, hasLlmKey } from "../../../lib/core/llmConfig";
 import { fleetProfilesComplete } from "../../../lib/session/profileGen";
 import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "../../../lib/github/issueProvenance";
 import type { DataModel } from "../data/dataModel";
@@ -316,14 +324,15 @@ export function Planning({ visible }: { visible: boolean }) {
     projectBlueprintId, setProjectBlueprintId,
     uiScreens, uiApproved, planAutomations,
     setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow,
-    togglePinnedContext,
     addProjectRepo, fleetStartProject,
     agentProfiles,
     commands, schedules,
     confirmPlanSection,
   } = useAppStore();
   const autoPlanWithClaude = useAppStore(s => s.autoPlanWithClaude);
-  const claudeApiKey = useAppStore(s => s.claudeApiKey);
+  const autoCompleteGates = useAppStore(s => s.autoCompleteGates);
+  // Whether the active API-tier provider can make a call — gates the planning autopilot (#1085).
+  const llmHasKey = useAppStore(s => hasLlmKey(resolveLlmConfig(s)));
   const skillDefs = useAppStore(s => s.skills);
   // The extensions store drives the MCP stage pane (#878); the base dir is read on demand.
   const mcpServers = useAppStore(s => s.mcpServers);
@@ -459,7 +468,8 @@ export function Planning({ visible }: { visible: boolean }) {
     const keys = new Set<string>(ANCHOR_KEYS);
     for (const k of Object.keys(savedSections)) {
       // `blueprint` is the authored-blueprint JSON (#923), not a discovery section — never a card.
-      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== "blueprint") keys.add(k);
+      // `dependencies` is the locked manifest JSON (#1111) — gate-driving, not a prose card.
+      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== DEPENDENCIES_KEY && k !== "blueprint") keys.add(k);
     }
     const { project, repos } = groupSections([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
@@ -470,9 +480,6 @@ export function Planning({ visible }: { visible: boolean }) {
     });
   }, [savedSections, confirmedSet]);
 
-  // Key→section lookup (the section progress rail that also needed the tier grouping was
-  // removed in #776/#778 — the focused pane's blueprint-driven rail replaces it).
-  const sectionByKey = useMemo(() => new Map(sections.map(s => [s.k, s])), [sections]);
   // Sync the planner's commands.json (the reliable channel — surfaced by the file
   // poll like plan sections, so it can't be lost in the PTY stream) into the
   // per-project/repo command store. Additive: file commands merge in; manual
@@ -488,6 +495,22 @@ export function Planning({ visible }: { visible: boolean }) {
     for (const [repo, list] of Object.entries(repos))
       for (const c of list) store.addRepoAllowedCommand(effectiveProjectId, repo, c);
   }, [savedSections, effectiveProjectId]);
+
+  // Sync the planner's skills.json (the reliable file-poll channel, like commands.json) into the
+  // GLOBAL skills library (#404/#1086). The planner proposes new reusable skills and writes the
+  // file; this upserts them (by id/name-slug, so a re-emitted skill refines in place) so they
+  // become real, reusable, and delivered to the fleet as `.claude/skills/<slug>/SKILL.md` at launch.
+  // Without this wire the planner's authored skills were written and discarded. Runs only when the
+  // file changes; defaults follow parseSkillsFile (enabled + pinned; global unless the planner
+  // scopes `projects`).
+  const skillsSyncedRef = useRef("");
+  useEffect(() => {
+    const raw = savedSections[SKILLS_KEY] ?? "";
+    if (raw === skillsSyncedRef.current) return;
+    skillsSyncedRef.current = raw;
+    const defs = parseSkillsFile(raw);
+    if (defs.length) useAppStore.getState().upsertSkills(defs);
+  }, [savedSections]);
 
   // Sync fleet.json (the reliable channel — surfaced by the poll as the `fleet`
   // section) into the fleet store. Wholesale-replace, but only when the file's
@@ -537,7 +560,7 @@ export function Planning({ visible }: { visible: boolean }) {
       else if (k === FLEET_KEY) fleetJson = v;
       else if (k === "repos") reposJson = v;
       else if (k === SKIPPED_KEY) skippedContent = v;
-      else if (k === COMMANDS_KEY || k === FEATURES_KEY) continue;
+      else if (k === COMMANDS_KEY || k === FEATURES_KEY || k === DEPENDENCIES_KEY) continue;
       else md[k] = v;
     }
     const { files, meta } = hubToCanonical({
@@ -567,9 +590,65 @@ export function Planning({ visible }: { visible: boolean }) {
     () => parseFeaturesFile(savedSections[FEATURES_KEY] ?? ""),
     [savedSections],
   );
+  // The locked dependency manifest (#1111/#1127) — authored in the Deploy stage (dependencies.json:
+  // the libraries + the non-default registries they're sourced from). The Deploy gate counts the
+  // deps, publish seeds them into each repo's package.json / Cargo.toml (+ .npmrc / .cargo/config.toml
+  // for private sources), and each worker inlines its repo's slice.
+  const depManifest = useMemo(
+    () => parseDependencyManifest(savedSections[DEPENDENCIES_KEY] ?? ""),
+    [savedSections],
+  );
+  const planDependencies = depManifest.dependencies;
   // Per-server MCP install lifecycle (#878): seeded by a disk probe on mount, advanced by the
   // download/build button. Keyed by extension id so the MCP pane shows real status.
   const [mcpInstallState, setMcpInstallState] = useState<McpInstallState>({});
+  // Download-confirmation queue (#1055): the blueprint a project uses and the servers the planner
+  // assigns can pull in first-party MCP servers that install from source. Instead of cloning that
+  // third-party code silently, we queue each not-yet-installed server here and surface a modal with
+  // its repo link; the user confirms before anything downloads. `mcpDownloadSeen` guards against
+  // re-queuing the same server (so a re-applied blueprint / poll tick doesn't nag).
+  const [mcpDownloads, setMcpDownloads] = useState<McpDownloadItem[]>([]);
+  const mcpDownloadSeen = useRef<Set<string>>(new Set());
+  // Queue downloadable catalog servers (by name) for the confirmation modal, skipping any already
+  // installed or already queued. State-free (refs + functional setState) so it's a stable callback
+  // safe to invoke from the blueprint effect AND the plan.db poll without staleness.
+  const enqueueMcpDownloads = useCallback(async (names: string[]) => {
+    const fresh: McpDownloadItem[] = [];
+    for (const name of names) {
+      const link = catalogLink(name);
+      if (!link) continue; // not a downloadable first-party server
+      const key = name.toLowerCase();
+      if (mcpDownloadSeen.current.has(key)) continue;
+      const repo = repoNameFromLink(link);
+      try {
+        const r = await invoke<{ downloaded: boolean; built: boolean }>("mcp_status", { name: repo });
+        if (r.downloaded && r.built) { mcpDownloadSeen.current.add(key); continue; } // already installed
+      } catch { /* not installed → prompt */ }
+      mcpDownloadSeen.current.add(key);
+      const cat = MCP_CATALOG.find((c) => c.name.toLowerCase() === key);
+      fresh.push({ name, repo, link, desc: cat?.desc, install: cat?.install, status: "pending" });
+    }
+    if (fresh.length) setMcpDownloads((prev) => [...prev, ...fresh]);
+  }, []);
+  // Download (clone + build) every still-pending/failed queued server, advancing its row status.
+  const confirmMcpDownloads = useCallback(async () => {
+    const setStatus = (name: string, status: McpDownloadItem["status"]) =>
+      setMcpDownloads((p) => p.map((d) => (d.name === name ? { ...d, status } : d)));
+    const targets = mcpDownloads.filter((d) => d.status === "pending" || d.status === "error");
+    await Promise.all(targets.map(async (it) => {
+      setStatus(it.name, "downloading");
+      try { await invoke("mcp_clone", { name: it.repo, url: it.link }); }
+      catch { setStatus(it.name, "error"); return; }
+      setStatus(it.name, "building");
+      try {
+        const r = await invoke<{ ok: boolean }>("mcp_build", { name: it.repo });
+        setStatus(it.name, r.ok ? "ready" : "error");
+      } catch { setStatus(it.name, "error"); }
+    }));
+  }, [mcpDownloads]);
+  // Dismiss the modal: drop the queue but keep the seen-set so skipped servers don't immediately
+  // re-prompt (the user can still install them later from the MCP screen).
+  const cancelMcpDownloads = useCallback(() => setMcpDownloads([]), []);
   // Deploy stage (#919): the project's deployment config — persisted per project, seeded from the
   // linked repos (one proposed service each) until the user/planner fills it in the Deploy pane.
   const deployCfg = useMemo(
@@ -587,6 +666,8 @@ export function Planning({ visible }: { visible: boolean }) {
       features: planFeatures,
       authoredBlueprint: planAuthoredBlueprint[effectiveProjectId],
       deployConfig: deployCfg,
+      dependencies: planDependencies,
+      registries: depManifest.registries,
       pinned:   pinnedContext[effectiveProjectId],
       mcpServers,
       projectKey: effectiveProjectId,
@@ -594,7 +675,7 @@ export function Planning({ visible }: { visible: boolean }) {
       topologyOverride: planFleetTopology[effectiveProjectId],
       directorDriveOverride: planFleetDirectorDrive[effectiveProjectId],
     }),
-    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, mcpServers, mcpInstallState],
+    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, mcpInstallState],
   );
 
   // Probe each downloadable MCP server's on-disk state so the pane opens with real status
@@ -623,8 +704,9 @@ export function Planning({ visible }: { visible: boolean }) {
 
   // Scope the active blueprint's attached MCP servers to this project (#897 Phase 2), so the
   // planner + fleet get the tools the blueprint declares. Idempotent (applyMcpAssign enables +
-  // scopes existing, or adds); clones the downloadable (first-party) ones like the <mcp_assign>
-  // handler. Re-runs when the project or the blueprint's attached-MCP set changes.
+  // scopes existing, or adds). The downloadable (first-party) ones are queued for the
+  // download-confirmation modal (#1055) rather than cloned silently. Re-runs when the project or
+  // the blueprint's attached-MCP set changes.
   const bpMcpKey = useMemo(() => {
     const bp = blueprints.find(b => b.id === effectiveBlueprintId);
     return bp ? collectBlueprintMcp(bp).join("\n") : "";
@@ -634,11 +716,8 @@ export function Planning({ visible }: { visible: boolean }) {
     const store = useAppStore.getState();
     const bp = store.blueprints.find(b => b.id === effectiveBlueprintId);
     if (!bp) return;
-    for (const name of applyBlueprintMcp(store, bp, effectiveProjectId, store.bscBaseDir)) {
-      const link = catalogLink(name);
-      if (link) invoke("mcp_clone", { name: repoNameFromLink(link), url: link }).catch(() => {});
-    }
-  }, [bpMcpKey, effectiveProjectId, effectiveBlueprintId]);
+    void enqueueMcpDownloads(applyBlueprintMcp(store, bp, effectiveProjectId, store.bscBaseDir));
+  }, [bpMcpKey, effectiveProjectId, effectiveBlueprintId, enqueueMcpDownloads]);
 
   // Write the active blueprint's attached SKILLS to the project hub's skills.md (#636 — the write
   // that was built but never wired). inject_skills (Rust) inlines that file into each worker's
@@ -656,6 +735,39 @@ export function Planning({ visible }: { visible: boolean }) {
     void writeBlueprintSkillContext({ projectKey: effectiveProjectId, blueprint: bp, skills: store.skills, kb: store.kbBlocks })
       .catch((e) => console.warn("writeBlueprintSkillContext failed:", e));
   }, [bpSkillKey, effectiveProjectId, effectiveBlueprintId]);
+
+  // Write the planner's live extensions.md — the installed MCP servers it can call + the per-worker
+  // assignment directive (#1054). Supersedes the static catalogue setup_workspaces used to write;
+  // re-runs whenever the installed-server set or the project changes.
+  const installedMcpKey = useMemo(
+    () => resolveAllInstalledMcp(mcpServers).map((e) => `${e.id}:${e.name}`).join("\n"),
+    [mcpServers],
+  );
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    void writeProjectMcpContext({ projectKey: effectiveProjectId, servers: resolveAllInstalledMcp(useAppStore.getState().mcpServers) })
+      .catch((e) => console.warn("writeProjectMcpContext failed:", e));
+  }, [installedMcpKey, effectiveProjectId]);
+
+  // Keep the planner session's .mcp.json current as servers are downloaded (#1054). Claude loads MCP
+  // config at startup, so a newly downloaded server is picked up on the planner's next launch /
+  // resume; this keeps the file ready. No-op until the planner dir is known.
+  useEffect(() => {
+    if (!planningDir) return;
+    const cap = roleCapability("planner");
+    const write = roleWriteRules(cap);
+    const mcp = toSessionPayloads(resolveAllInstalledMcp(useAppStore.getState().mcpServers), []).mcp;
+    void invoke("ensure_session_settings", {
+      cwd:             planningDir,
+      allowedCommands: [],
+      deniedCommands:  roleDeniedCommands(cap),
+      mcpServers:      mcp,
+      hooks:           null,
+      allowToolRules:  [...write.allow, "Read", "WebFetch"],
+      denyToolRules:   write.deny,
+      replacePermissions: true,
+    }).catch((e: unknown) => console.warn("planner mcp refresh failed:", e));
+  }, [installedMcpKey, planningDir]);
 
   // ── MCP stage handlers (#878) ──────────────────────────────────────────────
   const onToggleMcp = useCallback((id: string) => useAppStore.getState().toggleMcpServer(id), []);
@@ -745,8 +857,10 @@ export function Planning({ visible }: { visible: boolean }) {
       // (#plan-db) — `allConfirmed` (all-defined) alone used to auto-advance after a single feature.
       // Folding the user-confirm in here keeps the gate signal (`featuresConfirmed`) unchanged.
       features: { count: featureState.count, allConfirmed: featuresGateComplete(featureState, confirmedSet.has(FEATURES_KEY)) && featureCycle.length === 0 },
+      // Dependencies (#1111/#1127): the Deploy gate passes once ≥1 library is locked in the manifest.
+      dependencies: { count: planDependencies.length },
     });
-  }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet]);
+  }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet, planDependencies]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
     const bp = blueprints.find(b => b.id === effectiveBlueprintId);
@@ -826,6 +940,36 @@ export function Planning({ visible }: { visible: boolean }) {
     }
     return base;
   }, [phases, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle]);
+
+  // The single stage-completion primitive (#1068): confirm each pending section + tell the planner
+  // to continue. Shared by manual "approve & continue" (onPrimary), the planning autopilot, and the
+  // auto-complete effect below — one path every gate advances through, so behaviour stays identical
+  // whether the user clicks, the autopilot drives, or a gate self-advances.
+  const confirmStageKeys = useCallback((keys: string[]) => {
+    if (keys.length === 0) return;
+    for (const k of keys) confirmPlanSection(effectiveProjectId, k);
+    const name = keys.map((k) => titleForKey(k)).join(", ") || "section";
+    invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
+  }, [effectiveProjectId, paneId, confirmPlanSection]);
+
+  // Auto-advance gates (#1068): when the global flag is on and the ACTIVE stage has drafted sections
+  // awaiting confirmation, confirm them automatically after a short beat — the same action the
+  // "approve & continue" button performs, minus the click. View-independent (rides `pendingConfirm`,
+  // which tracks the active phase, not the selected one). Default off — an explicit opt-in, so the
+  // planner still never self-confirms; the user authorises the app to confirm on gate-readiness.
+  // Steps aside while the planning autopilot runs (it owns confirmation). The ref stops a ready set
+  // from being re-confirmed on every render.
+  const autoConfirmRef = useRef<string>("");
+  useEffect(() => {
+    if (!shouldAutoCompleteGate(autoCompleteGates, autoPlanWithClaude && llmHasKey, pendingConfirm)) return;
+    const key = `${effectiveProjectId}|${pendingConfirm.join(",")}`;
+    if (autoConfirmRef.current === key) return;
+    const t = setTimeout(() => {
+      autoConfirmRef.current = key;
+      confirmStageKeys(pendingConfirm);
+    }, 800);
+    return () => clearTimeout(t);
+  }, [autoCompleteGates, autoPlanWithClaude, llmHasKey, pendingConfirm, effectiveProjectId, confirmStageKeys]);
   // #1019: clear the cached manifest on a project switch so a stale set never bleeds across.
   useEffect(() => { setCtxRequired([]); ctxRequiredJsonRef.current = ""; }, [effectiveProjectId]);
   // #1028: poll the Context required-set from plan.db and seed the baseline once per project. The gate
@@ -889,10 +1033,9 @@ export function Planning({ visible }: { visible: boolean }) {
   const [restarting, setRestarting] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false); // clear-plan confirmation modal (#…)
 
-  const [docsSync, setDocsSync] = useState<SyncState>("idle");
-  const [labelsSync, setLabelsSync] = useState<SyncState>("idle");
   const [triaging, setTriaging] = useState(false);
   const [triageError, setTriageError] = useState<string | null>(null); // launch-failure surfacing (#551)
+  const [triageNote, setTriageNote] = useState<string | null>(null);   // progress-gated relaunch summary (#1004)
   // GitHub→plan.db recovery (#plan-db): how many planner-published issues GitHub holds when the
   // local plan.db is empty (machine switch / data loss), and whether a recovery is in flight.
   const [recoverable, setRecoverable] = useState(0);
@@ -928,14 +1071,13 @@ export function Planning({ visible }: { visible: boolean }) {
   // ── Planning autopilot (#746) ───────────────────────────────────────────────
   // Driven by the Settings "Automate planning with Claude" toggle. Answers the planner's own
   // discovery questions from the pitch + confirms each stage, driving to a publishable plan for
-  // review (never auto-publishes). The snapshot reads the SAME PLAN_STAGES gate model ProjectPane
-  // renders, so the autopilot and the UI agree on what's left.
+  // review (never auto-publishes). Progress + frontier read the SAME dynamic blueprint gate the
+  // focused pane renders (#1061 retired the legacy PLAN_STAGES gate), so they can't disagree.
   const autopilotProgressPct = useMemo(() => {
-    const required = PLAN_STAGES.filter(st => !st.optional);
-    const fleet = planFleet[effectiveProjectId];
-    const done = required.filter(st => isStageGateMet(st, sections, linkedRepos, fleet)).length;
+    const required = phases.filter(p => !p.optional);
+    const done = required.filter(p => p.status === "complete" || p.status === "ahead").length;
     return required.length ? Math.round((done / required.length) * 100) : 0;
-  }, [sections, linkedRepos, planFleet, effectiveProjectId]);
+  }, [phases]);
   // The plan is "ready" when every non-optional stage's gate is met — gates the Triage launch
   // (#444/#551) the same way the autopilot decides the plan is publishable.
   // Triage unlocks on the SAME completion the focused footer publishes on — the blueprint-driven
@@ -1006,18 +1148,13 @@ export function Planning({ visible }: { visible: boolean }) {
       const grew = len > apLastSnapLen.current;
       apLastSnapLen.current = len;
       const plannerAwaiting = !grew && len > apLastAnswered.current;
-      const fleet = planFleet[effectiveProjectId];
-      // Frontier = first NON-optional stage whose gate isn't met (optional stages never block).
-      const required = PLAN_STAGES.filter(st => !st.optional);
-      const frontier = required.find(st => !isStageGateMet(st, sections, linkedRepos, fleet));
-      // Confirmable = the frontier stage's required sections that are drafted but unconfirmed.
-      const confirmKeys = frontier
-        ? frontier.requiredConfirmed.filter(k => sectionByKey.get(k)?.state === "drafted")
-        : [];
-      const done = required.filter(st => isStageGateMet(st, sections, linkedRepos, fleet)).length;
+      // The dynamic blueprint gate (#1061): non-optional phases done = gate met; the frontier is
+      // the active phase, and its drafted-but-unconfirmed sections are what the autopilot confirms.
+      const required = phases.filter(p => !p.optional);
+      const done = required.filter(p => p.status === "complete" || p.status === "ahead").length;
       return {
-        planReady: !frontier,
-        confirmKeys,
+        planReady: planComplete,
+        confirmKeys: pendingConfirm,
         plannerAwaiting,
         working: grew,
         autoPublish: false, // the feature stops at a publishable plan for review
@@ -1025,21 +1162,19 @@ export function Planning({ visible }: { visible: boolean }) {
       };
     },
     pendingOutput: () => autopilotTxRef.current.slice(apLastAnswered.current),
-    userSim: (system, user) => oneShotComplete(claudeApiKey, system, user),
+    userSim: (system, user) => oneShotComplete(resolveLlmConfig(useAppStore.getState()), system, user),
     sendReply: (text) => {
       invoke("pty_write", { paneId, data: `${text}\r` }).catch(console.error);
       apLastAnswered.current = autopilotTxRef.current.length;
     },
     confirm: (keys) => {
-      for (const k of keys) confirmPlanSection(effectiveProjectId, k);
-      const name = keys.map(k => titleForKey(k)).join(", ") || "section";
-      invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
+      confirmStageKeys(keys);
       apLastAnswered.current = autopilotTxRef.current.length;
     },
     mockPublish: () => { /* feature stops at publishable (autoPublish=false) — unused */ },
     log: (e) => console.debug("[auto-plan]", e.action, e.detail ?? ""),
   };
-  const autopilot = usePlanAutopilot(autopilotDeps, { enabled: autoPlanWithClaude && !!claudeApiKey });
+  const autopilot = usePlanAutopilot(autopilotDeps, { enabled: autoPlanWithClaude && llmHasKey });
 
   // Inject a prompt into the planner session on demand (#…). The app no longer AUTO-injects stage
   // prompts (the old "conductor" caused too many problems — it typed over the user, re-sent lost
@@ -1326,6 +1461,10 @@ export function Planning({ visible }: { visible: boolean }) {
       // (publishing is an explicit, separately-gated step).
       const plannerCap = roleCapability("planner");
       const plannerWrite = roleWriteRules(plannerCap);
+      // Expose EVERY installed MCP server to the planner (#1054), project scope ignored: the planner
+      // is the assignment hub, so it sees all downloaded servers — it can call them while planning
+      // (e.g. research sources for a skill) and assign them to the workers that need them.
+      const plannerMcp = toSessionPayloads(resolveAllInstalledMcp(useAppStore.getState().mcpServers), []).mcp;
       // The role gate covers the planner's scoped plan-file writes + git/gh read-only.
       // WebFetch (docs / version / pricing lookups) and Read are added explicitly here so
       // this single role-launch path fully sources the planner's tools — replacing the
@@ -1334,7 +1473,7 @@ export function Planning({ visible }: { visible: boolean }) {
         cwd:             paths?.planning_dir ?? "",
         allowedCommands: [],
         deniedCommands:  roleDeniedCommands(plannerCap),
-        mcpServers:      null,
+        mcpServers:      plannerMcp,
         hooks:           null,
         allowToolRules:  [...plannerWrite.allow, "Read", "WebFetch"],
         denyToolRules:   plannerWrite.deny,
@@ -1487,21 +1626,20 @@ export function Planning({ visible }: { visible: boolean }) {
         } catch { /* plan.db not created until the planner sets deploy — ignore */ }
 
         // MCP assignments are DB-owned (#1021) — resolve each assigned catalog name into the MCP-servers
-        // store (idempotent) and clone any first-party server, exactly as the old <mcp_assign> tag did.
-        // The applied-set guards against re-applying/re-cloning the same name every 2s tick.
+        // store (idempotent). First-party servers are queued for the download-confirmation modal
+        // (#1055) instead of cloned silently. The applied-set guards against re-applying the same name
+        // every 2s tick (and the modal's seen-set guards against re-prompting).
         try {
           const dbMcp = await invoke<string[]>("plan_list_mcp", { projectKey: effectiveProjectId });
+          const toDownload: string[] = [];
           for (const name of dbMcp ?? []) {
             const key = `${effectiveProjectId}::${name.toLowerCase()}`;
             if (mcpAppliedRef.current.has(key)) continue;
             mcpAppliedRef.current.add(key);
             applyMcpAssign(store, name, effectiveProjectId, store.bscBaseDir);
-            const link = catalogLink(name);
-            if (link) {
-              invoke("mcp_clone", { name: repoNameFromLink(link), url: link })
-                .catch((e) => console.warn(`mcp_clone(${name}) during planning failed:`, e));
-            }
+            if (catalogLink(name)) toDownload.push(name);
           }
+          if (toDownload.length) void enqueueMcpDownloads(toDownload);
         } catch { /* plan.db not created until the planner assigns an MCP server — ignore */ }
 
         // Authored blueprint is DB-owned (#1022) — the authoring planner records it with `bsc-plan
@@ -1678,52 +1816,6 @@ export function Planning({ visible }: { visible: boolean }) {
   // issues. Every step is idempotent (check-then-create) so re-running acts as a
   // sync. Status is reported through ghStatus, keyed by the buildGhStructure ids,
   // so the GitHubStructureCard reflects each object as it is created.
-  // Context Files → push a consolidated PROJECT_PLAN.md into every repo's .github/.
-  async function handleSyncDocs() {
-    if (!githubToken || publishRepos.length === 0) return;
-    const token = githubToken;
-    setDocsSync("running");
-    try {
-      const put = (path: string, body: unknown) => invoke("github_put", { token, path, body });
-      const rest = <T,>(path: string) => invoke<T>("github_request", { token, path });
-      const parts = [`# ${projectTitle} — Project Plan\n`];
-      for (const s of sections) parts.push(`\n## ${s.title || s.k}\n\n${s.content}\n`);
-      const content = btoa(unescape(encodeURIComponent(parts.join("\n"))));
-      for (const repo of publishRepos) {
-        const path = `repos/${repo}/contents/.github/PROJECT_PLAN.md`;
-        let sha: string | undefined;
-        try { const ex = await rest<{ sha?: string }>(path); sha = ex?.sha; } catch { /* file absent */ }
-        await put(path, { message: "docs: sync project plan", content, ...(sha ? { sha } : {}) });
-      }
-      setDocsSync("done");
-    } catch (e) {
-      console.error("sync docs failed:", e);
-      setDocsSync("error");
-    }
-  }
-
-  // Agents → ensure each fleet stream's `stream:<id>` label exists in every repo.
-  async function handleSyncLabels() {
-    if (!githubToken || publishRepos.length === 0) return;
-    const streams = planFleet[effectiveProjectId]?.streams ?? [];
-    if (streams.length === 0) { setLabelsSync("error"); return; }
-    const token = githubToken;
-    setLabelsSync("running");
-    try {
-      const post = (path: string, body: unknown) => invoke("github_post", { token, path, body });
-      for (const repo of publishRepos) {
-        for (const st of streams) {
-          // Idempotent: GitHub 422s when the label already exists — ignore it.
-          await post(`repos/${repo}/labels`, { name: `stream:${st.id}`, color: "5319e7" }).catch(() => {});
-        }
-      }
-      setLabelsSync("done");
-    } catch (e) {
-      console.error("sync labels failed:", e);
-      setLabelsSync("error");
-    }
-  }
-
   // Header button → clone the repos and launch the planned agent fleet (recommended workers + director).
   async function launchTriage() {
     const fleet = planFleet[effectiveProjectId];
@@ -1738,6 +1830,7 @@ export function Planning({ visible }: { visible: boolean }) {
       planReady,
     })) return;
     setTriageError(null);
+    setTriageNote(null);
     setTriaging(true);
     try {
       await Promise.all(publishRepos.map(fullName =>
@@ -1749,15 +1842,31 @@ export function Planning({ visible }: { visible: boolean }) {
       // launch so each worker gets its least-privilege profile (#358), then read
       // the fleet back with the now-assigned profile ids.
       useAppStore.getState().generateFleetProfiles(effectiveProjectId);
-      const launchPlan = useAppStore.getState().planFleet[effectiveProjectId] ?? fleet;
+      const fullPlan = useAppStore.getState().planFleet[effectiveProjectId] ?? fleet;
+      // Progress-gated relaunch (#1004): read each issue's status from plan.db and DON'T restart a
+      // worker whose issues are all complete/verified — it already finished. Prune those streams (their
+      // worktrees/branches persist untouched); launch only the streams with outstanding work, plus the
+      // director if enabled. On a first launch nothing is done, so every stream stays active.
+      const dbIssues = await invoke<PlanIssue[]>("plan_list_issues", { projectKey: effectiveProjectId })
+        .catch(() => [] as PlanIssue[]);
+      const { active, skipped } = pruneCompletedStreams(fullPlan.streams, doneIssueRefs(dbIssues));
+      const launchPlan = { ...fullPlan, streams: active };
+      if (active.length === 0 && !launchPlan.director.enabled) {
+        setTriageError("Every worker's issues are already complete — nothing to relaunch.");
+        return;
+      }
+      if (skipped.length > 0) {
+        setTriageNote(`Skipped ${skipped.length} completed worker${skipped.length === 1 ? "" : "s"} `
+          + `(${skipped.map(s => s.id).join(", ")}) — relaunching ${active.length}.`);
+      }
       // Create each worker's git worktree FAIL-CLOSED (#551/#359): if any can't be created,
       // abort the launch so no agent starts in a fallback dir. (Restored: the refactor had
       // weakened this to a non-fatal .catch that let the launch continue.)
       const worktreeResults = await Promise.all(launchPlan.streams.map(st =>
-        // Seed each worktree's CLAUDE.local.md with the worker's SCOPE (owns/issues/deps),
-        // not the full plan — the worktree lives outside the hub so the planner spec is no
-        // longer an ancestor (#844).
-        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd: buildWorkerScope(st) })
+        // Seed each worktree's CLAUDE.local.md with the worker's SCOPE (owns/issues/deps) plus its
+        // repo's LOCKED dependency manifest (#1111), not the full plan — the worktree lives outside
+        // the hub so the planner spec is no longer an ancestor (#844).
+        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd: buildWorkerScope(st, depsForRepo(planDependencies, st.repo)) })
           .then(path => ({ id: st.id, path, err: null as string | null }))
           .catch(e => ({ id: st.id, path: null as string | null, err: String(e) })),
       ));
@@ -1867,6 +1976,7 @@ export function Planning({ visible }: { visible: boolean }) {
     const rest = <T,>(path: string) => invoke<T>("github_request", { token, path });
     const post = <T,>(path: string, body: unknown) => invoke<T>("github_post", { token, path, body });
     const put = (path: string, body: unknown) => invoke("github_put", { token, path, body });
+    const patch = (path: string, body: unknown) => invoke("github_patch", { token, path, body });
 
     try {
       // ── 1. Repositories — verify each exists; create if missing ───────────
@@ -1899,23 +2009,35 @@ export function Planning({ visible }: { visible: boolean }) {
         }
       }
 
-      // ── 1b. Repo presentation (#848): topics from the stack + a thorough README
-      //        with CI/version badges + the standard community-health files. Files are
-      //        created only when ABSENT (never clobber a hand-written one); a repo with
-      //        no workflows simply omits CI badges; any failure is surfaced, not fatal. ──
+      // ── 1b. Repo presentation (#848, #1114): the repo description (set on EVERY repo,
+      //        created or pre-existing), topics from the stack, and a thorough README built
+      //        from the plan (goal/scope/features/architecture) with CI/version badges, plus
+      //        the standard community-health files. Files are created only when ABSENT (never
+      //        clobber a hand-written one); a repo with no workflows simply omits CI badges;
+      //        any failure is surfaced in the card detail, not fatal. ──
       {
         const stackText = sections.find(s => s.k === "stack")?.content ?? "";
+        const scopeText = sections.find(s => s.k === "scope")?.content ?? "";
+        const archText  = sections.find(s => s.k === "architecture")?.content ?? "";
+        const readmeFeatures = planFeatures.map(f => ({ name: f.name, behavior: f.behavior }));
         const topics = deriveTopics(stackText);
         for (const fullName of repos) {
           const id = `scaffold:${fullName}`;
           upd(id, { status: "running" });
           try {
-            if (topics.length) await put(`repos/${fullName}/topics`, { names: topics }).catch(() => {});
+            // Always (re)apply the description — a create sets it, but a pre-existing repo never had it.
+            let descOk = true;
+            if (projectDesc) await patch(`repos/${fullName}`, { description: projectDesc }).catch(() => { descOk = false; });
+            let topicsOk = true;
+            if (topics.length) await put(`repos/${fullName}/topics`, { names: topics }).catch(() => { topicsOk = false; });
             // CI badges reference the repo's actual workflow files (graceful — none yet ⇒ none).
             const wfs = await rest<{ name: string }[]>(`repos/${fullName}/contents/.github/workflows`).catch(() => []);
             const workflows = (Array.isArray(wfs) ? wfs : []).map(w => w.name).filter(n => /\.ya?ml$/i.test(n));
             const files: ScaffoldFile[] = [
-              { path: "README.md", content: buildReadme({ fullName, description: projectDesc, stackText, workflows }) },
+              { path: "README.md", content: buildReadme({
+                fullName, description: projectDesc, goal: goalContent, scope: scopeText,
+                architecture: archText, features: readmeFeatures, stackText, workflows,
+              }) },
               ...communityFiles(projectTitle),
             ];
             let wrote = 0;
@@ -1927,9 +2049,43 @@ export function Planning({ visible }: { visible: boolean }) {
               await put(path, { message: `docs: scaffold ${f.path}`, content }).catch(() => {});
               wrote++;
             }
-            upd(id, wrote
-              ? { status: "created", detail: `${topics.length} topics · ${wrote} file${wrote === 1 ? "" : "s"}` }
-              : { status: "exists", detail: topics.length ? `${topics.length} topics · files present` : "already scaffolded" });
+
+            // Dependency manifests (#1111/#1127): seed the repo's package.json / Cargo.toml from the
+            // locked manifest — and the registry config (.npmrc / .cargo/config.toml) for any private
+            // SOURCE — so the fleet inherits identical, complete, fetchable deps from the base branch
+            // and never adds its own. An ADDITIVE MERGE for the manifests — a pre-existing pinned
+            // version always wins, so we read the current file, merge, and only write on a real change.
+            let manifests = 0;
+            const repoDeps = depsForRepo(planDependencies, fullName);
+            if (repoDeps.length) {
+              const shortRepo = fullName.split("/")[1] ?? fullName;
+              const seedManifest = async (file: string, merge: (existing: string | null) => string | null) => {
+                const path = `repos/${fullName}/contents/${file}`;
+                const cur = await rest<{ sha?: string; content?: string }>(path).catch(() => null);
+                const existing = cur?.content ? decodeURIComponent(escape(atob(cur.content.replace(/\s/g, "")))) : null;
+                const merged = merge(existing);
+                if (merged === null || merged === existing) return; // nothing to add / no change
+                const content = btoa(unescape(encodeURIComponent(merged)));
+                await put(path, { message: `chore: seed ${file} from the locked dependency manifest`, content, ...(cur?.sha ? { sha: cur.sha } : {}) }).catch(() => {});
+                manifests++;
+              };
+              await seedManifest("package.json", (e) => mergeIntoPackageJson(e, shortRepo, repoDeps));
+              await seedManifest("Cargo.toml", (e) => mergeIntoCargoToml(e, shortRepo, repoDeps));
+              // Registry config for private sources — generated wholesale (not merged): create it only
+              // when absent so a hand-tuned .npmrc / .cargo config is never clobbered.
+              await seedManifest(".npmrc", (e) => (e === null ? buildNpmrc(depManifest.registries, repoDeps) : null));
+              await seedManifest(".cargo/config.toml", (e) => (e === null ? buildCargoConfig(depManifest.registries, repoDeps) : null));
+            }
+
+            const bits = [
+              projectDesc ? (descOk ? "description" : "description failed") : null,
+              topics.length ? (topicsOk ? `${topics.length} topics` : "topics failed") : null,
+              wrote ? `${wrote} file${wrote === 1 ? "" : "s"}` : null,
+              manifests ? `${manifests} manifest${manifests === 1 ? "" : "s"}` : null,
+            ].filter(Boolean);
+            upd(id, (wrote || manifests)
+              ? { status: "created", detail: bits.join(" · ") }
+              : { status: "exists", detail: bits.length ? `${bits.join(" · ")} · files present` : "already scaffolded" });
           } catch (e) {
             upd(id, { status: "error", detail: String(e) });
           }
@@ -2282,7 +2438,15 @@ _Auto-generated by base-studio-code planner._`,
               ? (
                 <>
                   <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{activeProjectNumber}</span>
-                  <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600 }}>{activeProjectName}</h2>
+                  <h2
+                    title={activeProjectName}
+                    style={{
+                      margin: 0, fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600,
+                      // Size to the text, capped — so a long name ellipsizes instead of pushing the
+                      // status pill away; minWidth:0 lets it shrink in a narrow pane.
+                      maxWidth: 282, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}
+                  >{activeProjectName}</h2>
                 </>
               )
               : (
@@ -2294,18 +2458,15 @@ _Auto-generated by base-studio-code planner._`,
                     background: "none", border: "none", outline: "none",
                     fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600,
                     color: planningTitle ? "var(--fg)" : "var(--fg-dim)",
-                    width: Math.max(160, (planningTitle.length || 14) * 9 + 20),
-                    minWidth: 160, maxWidth: 400,
+                    // Size to the text (snug), with a usable floor and a 400px cap so the status
+                    // pill sits right next to the title.
+                    width: Math.min(282, Math.max(56, (planningTitle.length || 14) * 9.5 + 16)),
                     padding: 0,
                   }}
                 />
               )
             }
             <span className="tag amber">● {isExisting ? "expanding" : "drafting"}</span>
-            {publishRepos.length === 1 && <span className="tag">{publishRepos[0]}</span>}
-            {publishRepos.length > 1 && (
-              <span className="tag" title={publishRepos.join("\n")}>{publishRepos.length} repos</span>
-            )}
           </div>
           {autopilot.running && (
             <div style={{ color: "var(--accent)", fontSize: 12, marginTop: 4 }}>
@@ -2325,9 +2486,6 @@ _Auto-generated by base-studio-code planner._`,
         <button className="btn ghost" onClick={handleRestart} disabled={restarting}
           title="Restart the planner session (re-spawns Claude)">
           {restarting ? "restarting…" : "↺ restart"}
-        </button>
-        <button className="btn ghost" onClick={() => setProjectsView("list")}>
-          save & exit
         </button>
         <button className="btn ghost danger" onClick={() => setShowClearConfirm(true)} title="Wipe this project's plan and restart the planner (#664)">
           clear plan
@@ -2364,6 +2522,11 @@ _Auto-generated by base-studio-code planner._`,
       {triageError && (
         <div style={{ padding: "0 24px 8px", color: "var(--danger)", fontSize: 12, fontFamily: "var(--mono)" }}>
           ⚠ {triageError}
+        </div>
+      )}
+      {triageNote && !triageError && (
+        <div style={{ padding: "0 24px 8px", color: "var(--fg-muted)", fontSize: 12, fontFamily: "var(--mono)" }}>
+          ⏭ {triageNote}
         </div>
       )}
       {featureCycle.length > 0 && (
@@ -2411,11 +2574,7 @@ _Auto-generated by base-studio-code planner._`,
           {publishPhase === "idle" ? (
             <ProjectPane
               data={paneData}
-              projectName={projectTitle}
               projectId={effectiveProjectId}
-              sections={sections}
-              linkedRepos={publishRepos}
-              fleet={planFleet[effectiveProjectId]}
               onPerm={(id, perm) => setPlanAgentStreamPerm(effectiveProjectId, id, perm)}
               onPreset={(id, preset, perm) => setPlanAgentStreamPreset(effectiveProjectId, id, preset, perm)}
               onFlow={(id, f) => setPlanAgentStreamFlow(effectiveProjectId, id, {
@@ -2423,11 +2582,6 @@ _Auto-generated by base-studio-code planner._`,
                 push: (f.push === "auto-PR" ? "auto-pr" : f.push) as FlowPush,
                 gate: f.gate as FlowGate,
               })}
-              onTogglePin={(name) => togglePinnedContext(effectiveProjectId, name)}
-              onSyncStructure={githubToken && publishRepos.length > 0 ? handlePublish : undefined}
-              onSyncDocs={githubToken && publishRepos.length > 0 ? handleSyncDocs : undefined}
-              onSyncLabels={githubToken && publishRepos.length > 0 ? handleSyncLabels : undefined}
-              syncState={{ structure: "idle", docs: docsSync, labels: labelsSync }}
               onLinkRepo={(repo) => addProjectRepo(effectiveProjectId, repo)}
               onDeployChange={(next) => setPlanDeployConfig(effectiveProjectId, next)}
               onTopology={(t) => setPlanFleetTopology(effectiveProjectId, t)}
@@ -2447,6 +2601,9 @@ _Auto-generated by base-studio-code planner._`,
                 // Per-stage "?" prompt helper (#…): the user injects a stage prompt on demand
                 // (the auto-injecting conductor was removed).
                 promptHelp: { prompts: focusStagePrompts, onInject: sendPrompt },
+                // The live required-context set (#1061): the Context body names each required file
+                // as written/missing so the gate's "why" is visible at a glance.
+                requiredContext: ctxRequired,
                 // Once a board exists, the publish action reads as "Update GitHub" — a re-sync of
                 // the plan, not a first publish (handlePublish sets activeProjectId on create) (#823).
                 published: !!activeProjectId,
@@ -2462,9 +2619,7 @@ _Auto-generated by base-studio-code planner._`,
                   // then tell the planner in a single message. The gate re-evaluates and the
                   // selection re-follows to the next live phase (#807-followup).
                   if (focusFooter.kind === "approve-continue" && pendingConfirm.length > 0) {
-                    for (const k of pendingConfirm) confirmPlanSection(effectiveProjectId, k);
-                    const name = pendingConfirm.map(k => titleForKey(k)).join(", ");
-                    invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
+                    confirmStageKeys(pendingConfirm);
                   }
                   setFocusSel(null); // re-follow the live phase
                 },
@@ -2527,6 +2682,14 @@ _Auto-generated by base-studio-code planner._`,
           onKeep={() => { void keepPlanFiles(); }}
           onRestart={() => { setShowBlueprintModal(false); void doClearPlan(); }}
           onDismiss={() => setShowBlueprintModal(false)}
+        />
+      )}
+
+      {mcpDownloads.length > 0 && (
+        <McpDownloadModal
+          items={mcpDownloads}
+          onConfirm={() => { void confirmMcpDownloads(); }}
+          onCancel={cancelMcpDownloads}
         />
       )}
 

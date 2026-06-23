@@ -17,7 +17,7 @@ The core value proposition: run many AI coding agents in parallel across multipl
 | State management | Zustand |
 | Styling | CSS custom properties (`src/styles/tokens.css`) |
 | Fonts | Inter (sans) · JetBrains Mono (mono) via Google Fonts |
-| Agent orchestration | Claude API (default: `claude-sonnet-4-6`) |
+| Agent orchestration | Claude Code (default) or the model-agnostic `bsc-agent` shell; pluggable `LlmProvider` — Anthropic (`claude-sonnet-4-6` default), OpenAI, Gemini, local (`crates/llm`) |
 | Mobile tunnel | Relay client (`src-tauri/src/tunnel.rs`) dialing a zero-knowledge Cloudflare Worker relay (`relay/`) — Noise IK E2E + QR pairing |
 | Storage | SQLite (`crates/kb`, `crates/orch`) |
 
@@ -198,6 +198,38 @@ Installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` 
 
 ### Triage
 A per-repo session that resumes the repo's prior conversation (`claude --continue`) with `prompts/<repo>-triage.md`, to work the repo's open issues by priority.
+
+## Roadmap & Release Process
+
+Development is organized into **versions**, worked one at a time. A version is not a frozen
+snapshot you finish before cutting a build — it is a **living milestone** you ship early and keep
+improving until its theme is complete. We release a version, then continue working on that same
+version (refining, fixing, and filling out its theme) until every issue under it is done; only then
+does the next version become the focus. So a version on the roadmap is **Current** (actively being
+built on, even though a build may already be released under that number) rather than **Shipped**.
+
+**The cycle for a version:**
+1. **Open** the version with a theme and its set of issues (the work that defines "complete").
+2. **Build** through those issues on `{issue-number}-{short-description}` branches → `develop`.
+3. **Release** early and often from `develop → main` — a released build does **not** close the
+   version; it's a checkpoint, and work on the same version continues.
+4. **Complete** the version only when all of its issues are done. The next version then becomes
+   Current and step 1 repeats.
+
+At any time exactly one version is **Current**. Earlier versions are **Complete**; later versions
+are **Planned**.
+
+### Roadmap
+
+| Version | Status | Theme |
+|---|---|---|
+| **v1.0.3** | **Current** | User experience, resiliency, and the core **Default** (greenfield) blueprint and its **triage** — the progress-gated relaunch that resumes from plan.db and skips completed workers. Running in parallel, the **model-agnostic agent shell** (`bsc-agent`, epic #1078) lets the platform run on any LLM (Anthropic/OpenAI/Gemini/local); Claude Code stays the default until parity. |
+| v1.0.4 | Planned | **Enterprise integration & migration** — pull data from ERP/CRM/BPM into canonical **data models** via MCP connectors, then generate bespoke software to replace them, with a compliance layer baked into the planner. |
+| v1.0.5 | Planned | **The UI release** — an in-app, Claude-Design-like way to define each page, component, and animation, rendered live by the render-preview (closing the external Claude Design round-trip). |
+
+The agent-shell track ships alongside v1.0.3 but is themed separately on the public [Roadmap](README.md#roadmap)
+("Run on any model"). When v1.0.3 is complete, move it to **Complete**, promote **v1.0.4** to **Current**,
+and add the following **v1.0.6** row as **Planned**.
 
 ## GitHub Workflow
 

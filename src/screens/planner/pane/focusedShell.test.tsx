@@ -33,13 +33,7 @@ describe("Stepper (#652)", () => {
     expect(container.querySelector(".seqrail-seg.complete.attn")).toBeNull(); // only highlighted keys
   });
 
-  it("reserves a fixed marker slot on every node so the icon never shifts (#668)", () => {
-    const { container } = render(<Stepper phases={phases} selectedIdx={1} onSelect={vi.fn()} />);
-    // one always-present marker row per phase (reserves space whether or not a marker shows)
-    expect(container.querySelectorAll(".seqrail-marker").length).toBe(phases.length);
-  });
-
-  it("renders a skipped optional node with the ↷ glyph + skipped marker (#678)", () => {
+  it("renders a skipped optional node with the ↷ glyph (#678)", () => {
     const skipped = [
       phase({ key: "a", name: "A", status: "complete", index: 0 }),
       phase({ key: "ui", name: "UI", status: "skipped", index: 1 }),
@@ -47,11 +41,10 @@ describe("Stepper (#652)", () => {
     ];
     const { container } = render(<Stepper phases={skipped} selectedIdx={2} onSelect={vi.fn()} />);
     expect(container.querySelector(".seqrail-seg.skipped")).toBeTruthy();
-    expect(screen.getByText("skipped")).toBeInTheDocument();
-    expect(screen.getByText("↷")).toBeInTheDocument();
+    expect(screen.getByText("↷")).toBeInTheDocument(); // state shown by the node glyph, not a marker
   });
 
-  it("renders an ahead (banked) node with a dashed connector + banked pill", () => {
+  it("renders an ahead (banked) node reached by a dashed connector", () => {
     const aheadPhases = [
       phase({ key: "a", name: "A", status: "active", index: 0 }),
       phase({ key: "b", name: "B", status: "upcoming", index: 1 }),
@@ -59,24 +52,22 @@ describe("Stepper (#652)", () => {
     ];
     const { container } = render(<Stepper phases={aheadPhases} selectedIdx={0} onSelect={vi.fn()} />);
     expect(container.querySelector(".seqrail-seg.ahead")).toBeTruthy();
-    expect(screen.getByText("banked")).toBeInTheDocument();
     expect(container.querySelector(".seqrail-conn.dashed")).toBeTruthy(); // connector into the banked node
-    expect(screen.getByText("◆ now")).toBeInTheDocument();
   });
 });
 
 describe("PhaseHeader (#652)", () => {
-  it("shows the phase number, title, and gate pill state", () => {
-    render(<PhaseHeader phase={phase({ index: 1, total: 3, name: "Repos" })} pill="wait" />);
-    expect(screen.getByText("PHASE 02 / 03")).toBeInTheDocument();
+  it("shows the phase title and the gate pill", () => {
+    const { container } = render(<PhaseHeader phase={phase({ index: 1, total: 3, name: "Repos" })} pill="wait" />);
     expect(screen.getByText("Repos")).toBeInTheDocument();
-    expect(screen.getByText(/waiting/)).toBeInTheDocument();
+    expect(screen.getByText("gate")).toBeInTheDocument();
+    expect(container.querySelector(".ph-gate.wait")).toBeTruthy();
   });
-  it("renders pass + wait pills", () => {
-    const { rerender } = render(<PhaseHeader phase={phase()} pill="pass" />);
-    expect(screen.getByText(/passing/)).toBeInTheDocument();
+  it("reflects pass/wait state via the pill class", () => {
+    const { container, rerender } = render(<PhaseHeader phase={phase()} pill="pass" />);
+    expect(container.querySelector(".ph-gate.pass")).toBeTruthy();
     rerender(<PhaseHeader phase={phase()} pill="wait" />);
-    expect(screen.getByText(/waiting/)).toBeInTheDocument();
+    expect(container.querySelector(".ph-gate.wait")).toBeTruthy();
   });
 
   it("surfaces unmet gate reasons on click when blocked (#805)", () => {

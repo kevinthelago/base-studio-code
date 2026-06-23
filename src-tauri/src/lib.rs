@@ -4,6 +4,7 @@ use tauri::{Manager, RunEvent};
 mod tunnel;
 mod fcm;
 mod perf;
+mod logs;
 mod docstore;
 mod plan_db;
 mod tokens;
@@ -16,6 +17,7 @@ mod pty;
 mod bsc;
 mod planner;
 mod data;
+mod harness;
 
 // ── Logging / performance ────────────────────────────────────────────────────
 
@@ -734,7 +736,7 @@ fn read_project_files(project_key: String, subdir: String) -> Vec<(String, Strin
 /// keeps the whole value on one physical line (newlines become `\n`) and `$`,
 /// backticks, and double quotes are literal — so no shell expansion, no PS2
 /// continuation, and any prompt content survives intact.
-fn bash_ansi_c_quote(s: &str) -> String {
+pub(crate) fn bash_ansi_c_quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 4);
     out.push_str("$'");
     for c in s.chars() {
@@ -800,6 +802,32 @@ pub(crate) fn has_claude_history(cwd: &str) -> bool {
         .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
 }
 
+/// Where `bsc-agent` persists (and resumes) the conversation for `cwd`:
+/// `~/.base-studio-code/agent-sessions/<cwd-key>/conversation.json`. The app owns this keying
+/// (mirroring Claude's per-cwd projects dir, via the same `claude_project_dir_name` slug) and hands
+/// the path to the sidecar through `$BSC_AGENT_SESSION`; the sidecar just reads/writes it. The
+/// adapter checks the same path for `detect_history`. Empty cwd ⇒ None (no persistence). (#1144)
+pub(crate) fn bsc_agent_session_path(cwd: &str) -> Option<std::path::PathBuf> {
+    if cwd.is_empty() {
+        return None;
+    }
+    Some(
+        bsc_base_dir()
+            .join("agent-sessions")
+            .join(claude_project_dir_name(cwd))
+            .join("conversation.json"),
+    )
+}
+
+/// Whether `bsc-agent` has a resumable conversation for `cwd` — a non-empty session file exists.
+/// Fail-safe: any uncertainty returns `false`, launching a fresh session. (#1144)
+pub(crate) fn has_bsc_agent_history(cwd: &str) -> bool {
+    bsc_agent_session_path(cwd)
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len() > 0)
+        .unwrap_or(false)
+}
+
 // ── File picker ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -813,46 +841,46 @@ async fn pick_directory() -> Option<String> {
 
 // ── Claude API (knowledge store) ─────────────────────────────────────────────
 
+/// Provider-agnostic one-shot chat completion (#1079 / epic #1078). Dispatches to
+/// the `provider` (default `"anthropic"`) via the [`llm`] layer; every provider
+/// normalizes its reply to `{ content: [...], usage }`, so callers are unchanged.
+/// `provider`/`model` are optional — omitting them preserves the legacy Anthropic
+/// `claude-sonnet-4-6` behavior verbatim.
 #[tauri::command]
 async fn kb_chat(
     messages: Vec<serde_json::Value>,
     system: String,
     tools: Vec<serde_json::Value>,
     api_key: String,
+    provider: Option<String>,
+    model: Option<String>,
+    base_url: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    if api_key.is_empty() {
+    use llm::LlmProvider;
+    let provider = provider.unwrap_or_else(|| "anthropic".to_string());
+    let kind = llm::resolve_provider(&provider)?;
+    // Local (Ollama) needs no API key; every hosted provider does.
+    if api_key.is_empty() && !matches!(kind, llm::ProviderKind::Local) {
         return Err("No API key configured. Add it in Settings → Integrations.".to_string());
     }
-    let client = reqwest::Client::new();
-    let body = serde_json::json!({
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 4096,
-        "system": system,
-        "messages": messages,
-        "tools": tools,
-    });
-    let response = client
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", &api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-    if !status.is_success() {
-        let err = json["error"]["message"]
-            .as_str()
-            .unwrap_or("Unknown error")
-            .to_string();
-        return Err(format!("API error ({}): {}", status, err));
+    let req = llm::LlmRequest {
+        model: model.unwrap_or_else(|| "claude-sonnet-4-6".to_string()),
+        system,
+        messages,
+        tools,
+        max_tokens: 4096,
+    };
+    match kind {
+        llm::ProviderKind::Anthropic => llm::AnthropicProvider.complete(&req, &api_key).await,
+        llm::ProviderKind::OpenAi => llm::OpenAiProvider.complete(&req, &api_key).await,
+        llm::ProviderKind::Gemini => llm::GeminiProvider.complete(&req, &api_key).await,
+        llm::ProviderKind::Local => {
+            let base = base_url
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| llm::DEFAULT_LOCAL_BASE_URL.to_string());
+            llm::LocalProvider { base_url: base }.complete(&req, &api_key).await
+        }
     }
-    Ok(json)
 }
 
 // ── Workspaces ───────────────────────────────────────────────────────────────
@@ -889,6 +917,42 @@ fn read_audit_log(limit: usize) -> Vec<String> {
     lines.reverse();
     lines.truncate(limit);
     lines
+}
+
+/// Repo-relative paths a worktree session has touched but not yet committed: tracked changes
+/// vs HEAD (staged + unstaged) plus untracked files. The warden's conformance check (#1102)
+/// uses this as the trusted "what did this worker actually change" signal. Tolerant: returns
+/// empty on any git failure (no repo, git absent) so the warden simply has no file signal
+/// rather than crashing. `cwd` is the session's worktree.
+#[tauri::command]
+fn read_worktree_changes(cwd: String) -> Vec<String> {
+    if cwd.trim().is_empty() {
+        return Vec::new();
+    }
+    let tracked = git_lines(&cwd, &["diff", "--name-only", "HEAD"]);
+    let untracked = git_lines(&cwd, &["ls-files", "--others", "--exclude-standard"]);
+    merge_change_lists(tracked, untracked)
+}
+
+/// Run `git -C <cwd> <args…>` and return its stdout as trimmed, non-empty lines; empty on any
+/// failure (non-zero exit, git missing).
+fn git_lines(cwd: &str, args: &[&str]) -> Vec<String> {
+    match std::process::Command::new("git").arg("-C").arg(cwd).args(args).output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Merge two path lists into one sorted, de-duplicated set (pure; unit-tested). A file that is
+/// both modified and listed elsewhere appears once.
+fn merge_change_lists(a: Vec<String>, b: Vec<String>) -> Vec<String> {
+    let mut set: std::collections::BTreeSet<String> = a.into_iter().collect();
+    set.extend(b);
+    set.into_iter().collect()
 }
 
 /// Read the skill usage log (#406): the newest `limit` TSV lines, newest first.
@@ -1309,6 +1373,15 @@ const FLEET_PROTOCOL_MD: &str = include_str!("../templates/fleet-protocol.md");
 /// (it runs at the hub, so it never gets the worker worktree protocol).
 const DIRECTOR_PROTOCOL_MD: &str = include_str!("../templates/director-protocol.md");
 
+/// Injection-resistance preamble (#1167) appended to every fleet session's CLAUDE.local.md —
+/// authoritative context that content read while working (issues, PRs, web pages, repo files,
+/// other agents' notes) is untrusted DATA, never instructions. The containment half of the
+/// warden (#1102): prevent an injection from acting, not just detect it after.
+const INJECTION_RESISTANCE_MD: &str = include_str!("../templates/injection-resistance.md");
+
+/// Heading marker for {@link INJECTION_RESISTANCE_MD}, used to keep the append idempotent.
+const INJECTION_RESISTANCE_MARKER: &str = "## Untrusted input";
+
 /// Ensure the project hub's CLAUDE.local.md carries the director protocol (#375). Idempotent.
 #[tauri::command]
 fn ensure_director_protocol(project_key: String) -> Result<(), String> {
@@ -1317,6 +1390,12 @@ fn ensure_director_protocol(project_key: String) -> Result<(), String> {
     let cur = std::fs::read_to_string(&local).unwrap_or_default();
     if !cur.contains("## Director protocol") {
         std::fs::write(&local, format!("{cur}{DIRECTOR_PROTOCOL_MD}")).map_err(|e| e.to_string())?;
+    }
+    // Injection-resistance preamble (#1167): the director reads issue/PR prose + authors kickoffs,
+    // so it's a high-value injection target — give it the same untrusted-input rules as workers.
+    let cur = std::fs::read_to_string(&local).unwrap_or_default();
+    if !cur.contains(INJECTION_RESISTANCE_MARKER) {
+        std::fs::write(&local, format!("{cur}{INJECTION_RESISTANCE_MD}")).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -1425,6 +1504,11 @@ fn write_worker_context(
     let cur = std::fs::read_to_string(&wt_local).unwrap_or_default();
     if !cur.contains("## Fleet coordination protocol") {
         let _ = std::fs::write(&wt_local, format!("{cur}{FLEET_PROTOCOL_MD}"));
+    }
+    // Injection-resistance preamble (#1167): untrusted-input rules as authoritative worker context.
+    let cur = std::fs::read_to_string(&wt_local).unwrap_or_default();
+    if !cur.contains(INJECTION_RESISTANCE_MARKER) {
+        let _ = std::fs::write(&wt_local, format!("{cur}{INJECTION_RESISTANCE_MD}"));
     }
     // Inline the blueprint's attached skills (#636) so each worker carries the same skill
     // context the planner had. skills.md lives at the hub (not in the worktree), so the
@@ -2081,6 +2165,36 @@ async fn read_plan_sections(project_key: String) -> Result<std::collections::Has
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Crash-recovery flag (#1041): true when the PREVIOUS shutdown was UNCLEAN — the `.session-lock`
+/// marker survived because the `RunEvent::Exit` handler never ran (crash / kill / power loss /
+/// force-quit). A clean quit deletes the marker, so a normal restart reads `false`. The frontend
+/// reads this once (`was_unclean_shutdown`) to offer restoring the sessions that were running.
+pub(crate) struct UncleanShutdown(pub bool);
+
+/// Path of the session-lock marker (#1041).
+fn session_lock_path() -> std::path::PathBuf {
+    bsc_base_dir().join(".session-lock")
+}
+
+/// Claim the session lock for this run (#1041): returns whether the marker was ALREADY present
+/// (= the previous shutdown was unclean — the Exit handler never deleted it), then (re)writes it.
+/// Pure over an explicit path so it's testable; the pid content is just for debugging.
+fn claim_session_lock(path: &std::path::Path) -> bool {
+    let was_held = path.exists();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, std::process::id().to_string());
+    was_held
+}
+
+/// Whether the previous shutdown was unclean (#1041). The frontend reads this once at boot to offer
+/// restoring the sessions that were running (a clean quit returns `false`).
+#[tauri::command]
+fn was_unclean_shutdown(state: tauri::State<UncleanShutdown>) -> bool {
+    state.0
+}
+
 pub fn run() {
     // rustls 0.23 can't auto-determine a CryptoProvider from features at runtime, so
     // the relay dial's TLS handshake (tokio-tungstenite) would panic the tunnel thread
@@ -2091,6 +2205,14 @@ pub fn run() {
     // Startup timing (#perf): wall clock from here to `setup` ≈ native + plugin init, before the
     // WebView even loads our page. The frontend logs the doc→paint portion separately.
     let boot_start = std::time::Instant::now();
+
+    // Crash recovery (#1041): if the session-lock marker SURVIVED the last run, the previous
+    // shutdown was unclean (the Exit handler never ran to delete it). Read it BEFORE re-writing, then
+    // claim the lock for this run. Existence is the signal; the pid is just for debugging.
+    let unclean_shutdown = claim_session_lock(&session_lock_path());
+    if unclean_shutdown {
+        log::warn!("[startup] previous shutdown was UNCLEAN (session-lock survived) — offering session restore");
+    }
 
     tauri::Builder::default()
         .plugin(
@@ -2126,13 +2248,16 @@ pub fn run() {
         .manage(crate::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
+        .manage(logs::LogState::new())
+        .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             log::info!("[startup] process→setup {}ms (native + plugin init)", boot_start.elapsed().as_millis());
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
-            // Cap unbounded log files once at startup to reclaim disk space.
-            perf::cap_logs(&bsc_base_dir());
+            // Cap unbounded log files once at startup to reclaim disk space. Config-driven (#1060):
+            // uses the LogState default here (10k lines) until the frontend pushes the user's value.
+            logs::cap_logs(&bsc_base_dir(), &app.state::<logs::LogState>().get());
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
@@ -2147,6 +2272,7 @@ pub fn run() {
             github::github_graphql,
             github::github_post,
             github::github_put,
+            github::github_patch,
             oauth::github_client_id,
             oauth::github_device_start,
             oauth::github_device_poll,
@@ -2178,6 +2304,7 @@ pub fn run() {
             config::read_claude_config,
             config::write_claude_config,
             ensure_session_settings,
+            was_unclean_shutdown,
             github_readiness,
             preflight,
             get_preferred_shell,
@@ -2218,6 +2345,7 @@ pub fn run() {
             tunnel::tunnel_automation_failed,
             tunnel::tunnel_set_mcp_state,
             read_audit_log,
+            read_worktree_changes,
             read_skill_log,
             read_hook_log,
             read_mcp_log,
@@ -2232,6 +2360,13 @@ pub fn run() {
             perf::perf_record_frontend_sample,
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
+            logs::list_log_files,
+            logs::read_log_tail,
+            logs::clear_log,
+            logs::export_log,
+            logs::log_get_config,
+            logs::log_set_config,
+            logs::enforce_log_caps,
             plan_db::plan_upsert_issue,
             plan_db::plan_list_issues,
             plan_db::plan_remove_issue,
@@ -2257,6 +2392,9 @@ pub fn run() {
             plan_db::plan_get_blueprint,
             plan_db::plan_list_context,
             plan_db::plan_require_context,
+            plan_db::plan_triage_record_run,
+            plan_db::plan_triage_last_run,
+            plan_db::plan_issues_changed_since,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -2267,6 +2405,10 @@ pub fn run() {
         // `~/.base-studio-code` (#52).
         .run(|app_handle, event| {
             if matches!(event, RunEvent::Exit) {
+                // Clean shutdown (#1041): delete the session-lock marker so the NEXT launch reads a
+                // clean exit and doesn't offer to restore. A crash/kill skips this handler, leaving
+                // the marker → the next launch detects the unclean shutdown.
+                let _ = std::fs::remove_file(session_lock_path());
                 // Signal the tunnel transport (#242b) to close before tearing down PTYs.
                 app_handle.state::<tunnel::TunnelState>().shutdown();
                 crate::pty::kill_all_pty_sessions(app_handle.state::<crate::pty::PtyState>().inner());
@@ -2309,6 +2451,26 @@ pub(crate) mod testutil {
 #[cfg(test)]
 mod tests {
     use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn session_lock_detects_unclean_shutdown() {
+        // #1041: the marker surviving a run = unclean shutdown (the Exit handler never deleted it).
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-lock-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ));
+        let lock = dir.join(".session-lock");
+        // First claim (clean / first run): marker not present yet.
+        assert!(!super::claim_session_lock(&lock), "first claim sees a clean state");
+        assert!(lock.exists(), "claim writes the marker");
+        // A second claim WITHOUT a clean release (no Exit delete) = unclean prior shutdown.
+        assert!(super::claim_session_lock(&lock), "surviving marker => unclean");
+        // A clean release (what RunEvent::Exit does), then a claim = clean again.
+        let _ = std::fs::remove_file(&lock);
+        assert!(!super::claim_session_lock(&lock), "after a clean release the next run is clean");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn director_protocol_assigns_contract_ownership() {
@@ -2923,6 +3085,61 @@ mod tests {
     }
 
     #[test]
+    fn bsc_agent_session_path_keys_off_cwd() {
+        // Deterministic per-cwd path under agent-sessions/, slugged like Claude's projects dir.
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _home = temp_home("agentsess-path");
+        let cwd = r"C:\Users\Kevin\Projects\demo";
+        let p = super::bsc_agent_session_path(cwd).unwrap();
+        assert!(p.ends_with("conversation.json"));
+        let s = p.to_string_lossy().replace('\\', "/");
+        assert!(s.contains("/agent-sessions/"));
+        assert!(s.contains(&claude_project_dir_name(cwd)));
+        // Empty cwd ⇒ no path (no persistence).
+        assert!(super::bsc_agent_session_path("").is_none());
+    }
+
+    #[test]
+    fn has_bsc_agent_history_requires_nonempty_session_file() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _home = temp_home("agentsess-hist");
+        let cwd = r"C:\Users\Kevin\Projects\demo";
+        let path = super::bsc_agent_session_path(cwd).unwrap();
+
+        // No file yet → fresh.
+        assert!(!super::has_bsc_agent_history(cwd));
+
+        // Empty file → still fresh (an aborted/empty run shouldn't trigger resume).
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        write_file(&path, "");
+        assert!(!super::has_bsc_agent_history(cwd));
+
+        // Non-empty conversation → resume is safe.
+        write_file(&path, "[{\"User\":\"hi\"}]");
+        assert!(super::has_bsc_agent_history(cwd));
+
+        // Empty cwd is never resumable.
+        assert!(!super::has_bsc_agent_history(""));
+    }
+
+    #[test]
+    fn merge_change_lists_dedupes_and_sorts() {
+        let merged = super::merge_change_lists(
+            vec!["src/b.ts".into(), "src/a.ts".into(), "src/b.ts".into()],
+            vec!["new.ts".into(), "src/a.ts".into()],
+        );
+        assert_eq!(merged, vec!["new.ts", "src/a.ts", "src/b.ts"]);
+        // Empty inputs yield an empty set.
+        assert!(super::merge_change_lists(vec![], vec![]).is_empty());
+    }
+
+    #[test]
+    fn read_worktree_changes_empty_cwd_is_empty() {
+        assert!(super::read_worktree_changes(String::new()).is_empty());
+        assert!(super::read_worktree_changes("   ".into()).is_empty());
+    }
+
+    #[test]
     fn clear_project_plan_files_removes_md_and_json_only() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = temp_home("cpf");
@@ -3099,6 +3316,45 @@ mod tests {
         super::inject_skills(&hub, &wt_local);
         assert_eq!(after, std::fs::read_to_string(&wt_local).unwrap());
 
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn worker_context_appends_injection_resistance_idempotently() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("injresist");
+        let wt = home.join("wt");
+        let clone = home.join("clone");
+        let hub = home.join("hub");
+        for d in [&wt, &clone, &hub] { std::fs::create_dir_all(d).unwrap(); }
+
+        super::write_worker_context(&wt, &clone, &hub, Some("# scope: owns src/api/**"));
+        let md = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
+        assert!(md.contains("# scope: owns src/api/**"), "keeps the worker scope");
+        assert!(md.contains(super::INJECTION_RESISTANCE_MARKER), "appends the injection-resistance preamble");
+        assert!(md.contains("untrusted data"), "carries the untrusted-input rule");
+
+        // Re-running converges (the preamble isn't appended twice).
+        super::write_worker_context(&wt, &clone, &hub, Some("# scope: owns src/api/**"));
+        let again = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
+        assert_eq!(again.matches(super::INJECTION_RESISTANCE_MARKER).count(), 1, "preamble appears once");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn director_protocol_includes_injection_resistance() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("dirproto");
+        let key = "proj-dir".to_string();
+        super::ensure_director_protocol(key.clone()).unwrap();
+        let md = std::fs::read_to_string(super::project_dir(&key).join("CLAUDE.local.md")).unwrap();
+        assert!(md.contains("## Director protocol"), "director protocol present");
+        assert!(md.contains(super::INJECTION_RESISTANCE_MARKER), "director also gets the injection-resistance preamble");
+        // Idempotent — a second ensure doesn't duplicate either section.
+        super::ensure_director_protocol(key.clone()).unwrap();
+        let again = std::fs::read_to_string(super::project_dir(&key).join("CLAUDE.local.md")).unwrap();
+        assert_eq!(again.matches(super::INJECTION_RESISTANCE_MARKER).count(), 1);
         std::fs::remove_dir_all(&home).ok();
     }
 

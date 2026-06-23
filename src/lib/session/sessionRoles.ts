@@ -44,6 +44,30 @@ export const PLANNER_WRITE_GLOBS: string[] = [
   "context/*.md", "context/*",
 ];
 
+// Structured plan state that lives in plan.db, written ONLY via the `bsc-plan` CLI
+// (repo/phase/feature/fleet/deploy). The planner must never write these as FILES — a stray
+// `deploy.md` / `phases.json` doesn't feed the DB or clear a stage gate, it just rots (#1070).
+// {@link roleWriteRules} denies their file forms for the planner so its `*.md`/`*.json` write glob
+// can't auto-approve them (deny > allow); the planner is forced to the CLI. Section files
+// (`goal.md`, `scope.md`, …) stay writable.
+export const DB_OWNED_PLAN_FILES: string[] = [
+  "deploy.md", "deploy.json",
+  "phases.json", "issues.json", "fleet.json", "repos.json", "features.json",
+];
+
+// Dependency manifests + lockfiles a WORKER must not hand-edit (#1111). The planner locks the
+// project's dependencies once and publish seeds these into every repo; a worker that edits its
+// own manifest in its worktree is exactly the parallel-redefinition that collides at integration.
+// {@link roleWriteRules} denies the file-write tools on these for workers (deny > allow) even when
+// the path falls inside the worker's owned globs — a new dep routes through the director instead.
+// (This gates the Edit/Write TOOLS only; `npm install` / `cargo build` via Bash still regenerate
+// lockfiles normally, so installing the already-locked deps is unaffected.)
+export const DEP_MANIFEST_FILES: string[] = [
+  "package.json", "package-lock.json",
+  "Cargo.toml", "Cargo.lock",
+  "pnpm-lock.yaml", "yarn.lock",
+];
+
 /**
  * Default capability per role. `writeGlobs` are filled per assignment (a worker owns
  * its stream's globs); the defaults are empty so a session with no assigned boundary
@@ -213,7 +237,30 @@ export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
     return { allow: [], deny: [...WRITE_TOOLS] };
   }
   const allow = cap.writeGlobs.flatMap((g) => WRITE_TOOLS.map((t) => `${t}(${g})`));
-  return { allow, deny: [] };
+  // Role-specific deny set, layered over the write-glob allows (deny wins over allow):
+  // - planner: the DB-owned plan-state artifacts (#1070) — its *.md/*.json globs would otherwise
+  //   auto-approve a stray `deploy.md`/`phases.json`; force it to the `bsc-plan` CLI.
+  // - worker: the dependency manifests + lockfiles (#1111) — the planner locks deps once and
+  //   publish seeds them, so a worker editing its own manifest is the parallel-redefinition that
+  //   collides at integration; a new dep routes through the director.
+  const denyFiles = cap.role === "planner" ? DB_OWNED_PLAN_FILES
+    : cap.role === "worker" ? DEP_MANIFEST_FILES
+    : [];
+  const deny = denyFiles.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`));
+  return { allow, deny };
+}
+
+/**
+ * Whole-tool denies by role BEYOND the write-path tools (#1036) — currently the sub-agent **Task**
+ * tool for **workers**. A worker must not spawn its OWN sub-agents: each spawned agent reads as
+ * fresh activity that the always-on coordinator keeps trying to relaunch the worker for (a wake
+ * request every poll), and it blurs the worker's lane. A worker does its assigned issue directly;
+ * spinning up helper sessions is the director's job. Denied by bare tool name — the same whole-tool
+ * deny {@link roleWriteRules} uses for Edit/Write — so it's a hard block at launch, no prompt, no
+ * delay. Merged into `denyToolRules` at session launch.
+ */
+export function roleDeniedTools(cap: RoleCapability): string[] {
+  return cap.role === "worker" ? ["Task"] : [];
 }
 
 // ── Launch wiring: command-allowlist denies ────────────────────────────────────
@@ -254,4 +301,29 @@ export function roleDeniedCommands(cap: RoleCapability): string[] {
   if (cap.github === "none") out.push("gh");
   else if (cap.github === "read") out.push(...GH_WRITE_DENY);
   return out;
+}
+
+/** The permission doc the `bsc-agent` runtime reads from `$BSC_AGENT_PERMS` (#1078 P3) — the
+ *  generic role model rendered to bsc-agent's native shape (vs the Claude `.claude/settings.json`
+ *  syntax {@link roleWriteRules}/{@link roleDeniedTools} produce). `code: "none"` denies the
+ *  write/edit tools outright; `deny_bash` reuses {@link roleDeniedCommands} (substring-matched by
+ *  bsc-agent — coarser than Claude's prefix allowlist); `write_globs` scopes a writer to its lane. */
+export interface BscAgentPerms {
+  deny_tools: string[];
+  deny_bash: string[];
+  write_globs: string[];
+}
+
+/** Render the role capability to bsc-agent's native permission doc. `granted` are the
+ *  GitHub-propagation commands the pane's *flow* permits (from {@link flowGrantedPushCommands}):
+ *  the flow owns `git push` / `gh pr create`, so they're lifted from the role denies when it
+ *  permits pushing/PRing — mirroring the Claude role↔flow reconciliation (#304) so an `auto-pr`
+ *  bsc-agent worker (github:read) can open its own PR. Everything else the role denies stays
+ *  denied. With no flow grant (the default), behavior is unchanged. */
+export function bscAgentPerms(cap: RoleCapability, granted: string[] = []): BscAgentPerms {
+  return {
+    deny_tools: cap.code === "none" ? ["write_file", "edit_file"] : [],
+    deny_bash: roleDeniedCommands(cap).filter((d) => !granted.includes(d)),
+    write_globs: cap.code === "write" ? cap.writeGlobs : [],
+  };
 }

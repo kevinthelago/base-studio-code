@@ -26,6 +26,7 @@ import type {
 import type { PlanFeature } from "../issues/featureList";
 import type { Blueprint } from "../stages/blueprints";
 import type { DeployConfig } from "../shared/deployConfig";
+import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 import { buildMcpServers, type McpInstallState } from "../shared/mcpPaneData";
 import type { McpServer as McpServerDef } from "../../../lib/session/mcpServers";
 
@@ -64,6 +65,9 @@ export interface BuildProjectPaneInput {
   directorDriveOverride?: import("../fleet/directorDrive").DirectorDrive;
   /** The project's deployment & infrastructure config (#919) — the Deploy stage pane's state. */
   deployConfig?: DeployConfig;
+  /** The locked dependency manifest (#1127/#1133) — surfaced in the Deploy pane. */
+  dependencies?: PlanDependency[];
+  registries?: Record<string, DependencyRegistry>;
   sections: Section[];
   /** Context-file names the project has explicitly pinned in the pane (from the
    *  store). When present it drives each context file's `pinned` instead of the
@@ -359,6 +363,8 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     features: input.features ?? [],
     authoredBlueprint: input.authoredBlueprint,
     deploy: input.deployConfig,
+    dependencies: input.dependencies ?? [],
+    registries: input.registries ?? {},
     // Coordination topology: the user's per-project override wins over the planner's
     // fleet.json default, falling back to hybrid (#…).
     topology: input.topologyOverride ?? input.fleet?.topology ?? "hybrid",

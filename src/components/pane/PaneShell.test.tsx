@@ -32,14 +32,16 @@ describe("PaneShell", () => {
     expect(onFocus).toHaveBeenCalled();
   });
 
-  it("calls onMenuToggle when the menu button is clicked", () => {
+  it("opens the consolidated menu from the model button (#1181)", () => {
     const onMenuToggle = vi.fn();
     render(
       <PaneShell agent="test" onMenuToggle={onMenuToggle}>
         <div>content</div>
       </PaneShell>
     );
-    fireEvent.click(screen.getByTitle("Pane menu"));
+    // The model pill is now the single menu trigger (the ⋯ button is gone).
+    expect(screen.queryByTitle("Pane menu")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Model, screens & pane options"));
     expect(onMenuToggle).toHaveBeenCalled();
   });
 
@@ -52,38 +54,35 @@ describe("PaneShell", () => {
     expect(screen.queryByTitle("Open project directory")).not.toBeInTheDocument();
   });
 
-  it("calls onPickDirectory from the menu's set-cwd action", () => {
-    const onPickDirectory = vi.fn();
+  it("no longer renders a standalone maximize button in the header (#1149 — it's in the menu)", () => {
     render(
-      <PaneShell agent="test" menuOpen onPickDirectory={onPickDirectory}>
-        <div>content</div>
-      </PaneShell>
-    );
-    fireEvent.click(screen.getByText("set cwd…"));
-    expect(onPickDirectory).toHaveBeenCalled();
-  });
-
-  it("maximizes via the header toggle when in grid state", () => {
-    const onToggleFullscreen = vi.fn();
-    render(
-      <PaneShell agent="test" onToggleFullscreen={onToggleFullscreen}>
-        <div>content</div>
-      </PaneShell>
-    );
-    expect(screen.queryByTitle("Minimize pane")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTitle("Maximize pane"));
-    expect(onToggleFullscreen).toHaveBeenCalled();
-  });
-
-  it("shows the minimize toggle when already fullscreen", () => {
-    const onToggleFullscreen = vi.fn();
-    render(
-      <PaneShell agent="test" fullscreen onToggleFullscreen={onToggleFullscreen}>
+      <PaneShell agent="test">
         <div>content</div>
       </PaneShell>
     );
     expect(screen.queryByTitle("Maximize pane")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTitle("Minimize pane"));
+    expect(screen.queryByTitle("Minimize pane")).not.toBeInTheDocument();
+  });
+
+  it("maximizes via the pane menu's maximize action", () => {
+    const onToggleFullscreen = vi.fn();
+    render(
+      <PaneShell agent="test" menuOpen onToggleFullscreen={onToggleFullscreen}>
+        <div>content</div>
+      </PaneShell>
+    );
+    fireEvent.click(screen.getByText("maximize pane"));
+    expect(onToggleFullscreen).toHaveBeenCalled();
+  });
+
+  it("shows the menu's minimize action when already fullscreen", () => {
+    const onToggleFullscreen = vi.fn();
+    render(
+      <PaneShell agent="test" fullscreen menuOpen onToggleFullscreen={onToggleFullscreen}>
+        <div>content</div>
+      </PaneShell>
+    );
+    fireEvent.click(screen.getByText("minimize pane"));
     expect(onToggleFullscreen).toHaveBeenCalled();
   });
 
@@ -102,18 +101,53 @@ describe("PaneShell", () => {
         <div>content</div>
       </PaneShell>
     );
-    fireEvent.doubleClick(screen.getByTitle("Click to switch view; double-click to rename"));
+    fireEvent.doubleClick(screen.getByTitle("Double-click to rename"));
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
-  it("opens the view-type dropdown when the agent name is clicked", () => {
+  it("a RUNNING pane shows the harness + model in the pill (#1181)", () => {
     render(
-      <PaneShell agent="my-agent">
+      <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" claudeActive>
         <div>content</div>
       </PaneShell>
     );
-    fireEvent.click(screen.getByTitle("Click to switch view; double-click to rename"));
-    // The dropdown lists the selectable views, each with its hotkey label.
-    expect(screen.getByText("Alt+1")).toBeInTheDocument();
+    expect(screen.getByText("· checkout")).toBeInTheDocument();
+    expect(screen.getByText("WORKER")).toBeInTheDocument();       // role badge
+    expect(screen.getByText("bsc-agent")).toBeInTheDocument();    // openai ⇒ bsc-agent harness
+    expect(screen.getByText("sonnet-4.5")).toBeInTheDocument();   // running model
+    expect(screen.queryByText("undetected")).not.toBeInTheDocument();
+  });
+
+  it("prefers the actual runningModel from the CLI over the configured one (#1181)", () => {
+    render(
+      <PaneShell agent="worker-A" provider="claude" model="sonnet-4.5" runningModel="opus-4.5" claudeActive>
+        <div>content</div>
+      </PaneShell>
+    );
+    expect(screen.getByText("opus-4.5")).toBeInTheDocument();      // transcript-reported model wins
+    expect(screen.queryByText("sonnet-4.5")).not.toBeInTheDocument();
+  });
+
+  it("an IDLE pane shows an undetected pill (no model, no footer) (#1181)", () => {
+    render(
+      <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" branch="wt/checkout" status="run">
+        <div>content</div>
+      </PaneShell>
+    );
+    expect(screen.getByText("undetected")).toBeInTheDocument(); // nothing running ⇒ no model name
+    expect(screen.queryByText("sonnet-4.5")).not.toBeInTheDocument();
+    expect(screen.getByText("· checkout")).toBeInTheDocument(); // repo still shown in the header
+    // The footer was removed entirely (#1181) — no branch/state strip.
+    expect(screen.queryByText("⎇ wt/checkout")).not.toBeInTheDocument();
+  });
+
+  it("labels a claude-provider pane as the Claude Code harness when running", () => {
+    render(
+      <PaneShell agent="director" provider="claude" role="director" claudeActive>
+        <div>content</div>
+      </PaneShell>
+    );
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
+    expect(screen.getByText("DIRECTOR")).toBeInTheDocument();
   });
 });

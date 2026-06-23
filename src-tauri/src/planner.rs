@@ -63,7 +63,7 @@ const PLANNING_BLUEPRINT_INTRO: &str = include_str!("../templates/planning-bluep
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
     let line = match id {
-        "context"     => "**Context** — establish the project's context one topic at a time, each a markdown file at `context/<topic>.md` (canonical key = the file stem). The REQUIRED set is DYNAMIC: the baseline `goal, scope, stack, architecture, users` is seeded for you — shape it for THIS project with `bsc-plan context require <topic>` / `bsc-plan context unrequire <topic>` as the picture clarifies (a CLI tool unrequires `users`/`ux`; a data platform requires `schema`; a realtime API requires `api`). `bsc-plan context list` shows the manifest. ALWAYS write the required files; cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, `context/observability.md`, `context/reliability.md`, `context/data_lifecycle.md`, …; the production-readiness bars in the planning guide are first-class dimensions here — apply where they matter, accessibility/compliance via the Compliance MCP); record every dimension you don't document in `context/_skipped.md`. The required files are done once WRITTEN — they're generated, not confirmed (the gate checks every required `context/<topic>.md` exists). Do NOT create files for tangential topics, or the gate can't complete.",
+        "context"     => "**Context** — establish the project's context one topic at a time, each a markdown file at `context/<topic>.md` (canonical key = the file stem). The REQUIRED set is DYNAMIC: the baseline `goal, scope, stack, architecture, users, release` is seeded for you — shape it for THIS project with `bsc-plan context require <topic>` / `bsc-plan context unrequire <topic>` as the picture clarifies (a CLI tool unrequires `users`/`ux`; a data platform requires `schema`; a realtime API requires `api`). `bsc-plan context list` shows the manifest. The `release` file proposes the versioning + release schedule: default to a COMPLETE initial prototype first, then FEATURE-BY-FEATURE releases (semver; release-and-continue). ALWAYS write the required files; cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, `context/observability.md`, `context/reliability.md`, `context/data_lifecycle.md`, …; the production-readiness bars in the planning guide are first-class dimensions here — apply where they matter, accessibility/compliance via the Compliance MCP); record every dimension you don't document in `context/_skipped.md`. The required files are done once WRITTEN — they're generated, not confirmed (the gate checks every required `context/<topic>.md` exists). Do NOT create files for tangential topics, or the gate can't complete.",
         "repos"       => "**Repos** — decide and link the repositories: emit `<repo_link owner/repo>` for each (clones it into the hub + records the link in plan.db, durable). Do NOT write repos.json — links live in plan.db (`bsc-plan repo list` shows them; `bsc-plan repo add owner/repo` links one directly).",
         "deploy"      => "**Deploy** (right after Repos) — define how each service SHIPS, then RECORD it in the plan DB by piping the config JSON to `bsc-plan deploy set`. **`bsc-plan deploy set` is what clears the gate and fills the Deploy pane — a prose `deploy.md` does NOT** (`bsc-plan deploy get` shows the stored config). JSON fields: `services` (array; each REQUIRES `platform` + `workload` = static|serverless|container|service, plus `id`, `repo`, `region`, `build`, `output`/`runtime`); `environments` (≥2; each `name`, `branch`, `url`, `auto`); `pipeline` (`provider` + `stages`: array of `{name, trigger: push|tag|on-green|manual, gate: bool, cmd}`, ≥2 stages); `secrets` (array of `{key, envs:[…]}` — list `prod` in `envs` for every prod-needed secret); `release` (`strategy` = recreate|rolling|blue-green|canary, `autoRollback`, `keep`, `migrateWithDeploy`); `health` (`probe`, `slo`, `alerts`). The gate (`deploymentDefined`) needs: a `platform` on EVERY service, ≥2 environments, ≥2 pipeline stages, every secret wired for `prod`, and a non-empty `release.strategy`. Propose defaults from the stack, confirm with the user, then pipe the whole config: `echo '{…}' | bsc-plan deploy set` (re-run with the full config as it firms up). A human-readable `deploy.md` is optional reference. Publishes as deployment issues owned by a `deploy` stream.",
         "ui"          => "**UI** — runs AFTER Features: design the screens that deliver the defined capabilities. Write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live. Then author a **Claude Design kickoff** at `prompts/ui-kickoff.md` — a self-contained brief (goal, feature→screen map, each screen's states/flows, design-system constraints) the user pastes into a Claude Design session.",
@@ -279,40 +279,11 @@ pub(crate) async fn setup_workspaces(
     std::fs::write(planning_dir.join("automations.md"), auto_md)
         .map_err(|e| e.to_string())?;
 
-    // Write the extensions catalogue (#174) so the planner's "Automations &
-    // extensions" step knows which MCP servers it can assign. The names mirror the
-    // frontend catalog (src/lib/extensions.ts CATALOG_TEMPLATES) — the source of
-    // truth for each server's transport/command/env; this file is guidance text.
-    // Each `bsc-plan mcp add <name>` scopes that server to THIS project (#1021); every build &
-    // triage session the plan launches then loads it via its `.mcp.json` (pre-trusted, no
-    // blocking prompt).
-    let ext_md = String::from(
-        "# Extensions Catalogue (MCP servers)\n\n\
-         Assign an MCP server/extension to this project by recording it in the plan DB:\n\
-         `bsc-plan mcp add Compliance`   (`bsc-plan mcp list` shows the assigned servers)\n\n\
-         Each assigned server is scoped to THIS project and loaded into every session this\n\
-         plan launches — the director AND every worker — written to each session's\n\
-         `.mcp.json` and pre-trusted, so the agent never blocks on a \"trust these MCP\n\
-         servers?\" prompt. Assign only the servers the project's agents actually need.\n\n\
-         ## First-party servers (recommended)\n\n\
-         These install from source. Assigning one **downloads its repo automatically** into\n\
-         `~/.base-studio-code/mcp/<repo>`; the user then clicks **build** once in the\n\
-         planning page's MCP panel (it runs `python -m uv sync` / `pnpm build`) before the fleet runs.\n\n\
-         - **Compliance** — scan a project or git diff for compliance findings (GDPR, SOC 2,\n\
-           ISO 27001, HIPAA, PCI DSS) and gate CI on severity thresholds.\n\
-         - **Complexity Analyzer** — measure code complexity (cyclomatic, cognitive,\n\
-           hotspots) across a codebase to target refactors.\n\
-         - **Dependency Graph** — explore a project's dependency graph: nodes, neighbors,\n\
-           cycles, and stats.\n\n\
-         ## Other servers\n\n\
-         A name not listed above creates a blank stdio MCP entry the user completes in the\n\
-         MCP panel. Required env values (tokens, connection strings) are left blank for the\n\
-         user to fill — never invent secrets.\n\n\
-         Pair this with the automations step (see automations.md) in the planner's\n\
-         \"Automations & extensions\" step.\n"
-    );
-    std::fs::write(planning_dir.join("extensions.md"), ext_md)
-        .map_err(|e| e.to_string())?;
+    // extensions.md (the planner's live list of installed MCP servers + the per-worker assignment
+    // directive) is written by the frontend now (#1054, shared/mcpContext.ts) so it reflects the
+    // ACTUAL downloaded servers the planner is exposed to, not a static catalogue. The frontend is
+    // the sole writer to avoid a stale-overwrite race; the planner reads it during the
+    // "Automations & extensions" stage, well after this setup runs.
 
     // Write a github_context.md so Claude knows the authenticated user and
     // what repos are available without needing to run `gh api user` first.
@@ -417,7 +388,7 @@ mod tests {
     fn stage_directive_context_seeds_baseline_and_uses_bsc_plan() {
         let d = super::stage_directive("context");
         // Names the baseline required topics — the DYNAMIC set seeded for the project (#1019).
-        for t in ["goal", "scope", "stack", "architecture", "users"] {
+        for t in ["goal", "scope", "stack", "architecture", "users", "release"] {
             assert!(d.contains(t), "context directive names baseline topic {t}");
         }
         // The required-set is shaped via bsc-plan context; non-applicable dimensions go to _skipped.
@@ -569,7 +540,7 @@ mod tests {
         // The context directive names the baseline required topics + the bsc-plan context channel that
         // shapes the dynamic required-set, so the planner seeds what the gate keys on (#1019).
         let ctx = super::stage_directive("context");
-        for t in ["goal", "scope", "stack", "architecture", "users"] {
+        for t in ["goal", "scope", "stack", "architecture", "users", "release"] {
             assert!(ctx.contains(t), "context directive names baseline topic {t}");
         }
         assert!(ctx.contains("bsc-plan context"), "context directive shapes the dynamic required-set");

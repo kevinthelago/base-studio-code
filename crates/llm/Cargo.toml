@@ -1,0 +1,13 @@
+[package]
+name = "bsc-llm"
+version = "0.1.0"
+edition = "2021"
+
+# Lib name `llm` so consumers keep using `llm::...` paths (the package is `bsc-llm`).
+[lib]
+name = "llm"
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

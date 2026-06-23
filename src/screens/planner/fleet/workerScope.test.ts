@@ -20,7 +20,7 @@ describe("buildWorkerScope (#844)", () => {
     expect(md).toContain("`src/login/**`");
     expect(md).toContain("#12, #13");
     expect(md).toContain("branch `auth-ui`");
-    expect(md).toContain("**You depend on:** api");
+    expect(md).toContain("**You build against the contracts of:** api");
   });
 
   it("is a scope, not the full plan — it points cross-cutting context at the director", () => {
@@ -28,7 +28,7 @@ describe("buildWorkerScope (#844)", () => {
     expect(md).toContain("not the full plan");
     expect(md).toContain("defer to the director");
     // Sanity: it stays short (a lane, not a spec).
-    expect(md.length).toBeLessThan(1200);
+    expect(md.length).toBeLessThan(1400);
   });
 
   it("tells the worker the director closes issues — not to run gh issue close (#906)", () => {
@@ -42,6 +42,22 @@ describe("buildWorkerScope (#844)", () => {
     const md = buildWorkerScope(stream({ owns: [], issues: [], dependsOn: [] }));
     expect(md).toContain("none assigned");
     expect(md).toContain("none yet");
-    expect(md).toContain("**You depend on:** none");
+    expect(md).toContain("**You build against the contracts of:** none");
+  });
+
+  it("appends the locked dependency manifest for the worker's repo when present (#1111)", () => {
+    const md = buildWorkerScope(stream(), [
+      { ecosystem: "npm", name: "zod", version: "^3.23", why: "validation" },
+      { ecosystem: "cargo", name: "serde", version: "1" },
+    ]);
+    expect(md).toContain("## Dependencies (locked by the planner)");
+    expect(md).toContain("`zod@^3.23`");
+    expect(md).toContain("`serde@1`");
+    expect(md).toMatch(/Do NOT add to or\s*\n?\s*edit/);
+  });
+
+  it("omits the dependency block entirely when the repo has no locked deps", () => {
+    expect(buildWorkerScope(stream())).not.toContain("Dependencies (locked");
+    expect(buildWorkerScope(stream(), [])).not.toContain("Dependencies (locked");
   });
 });

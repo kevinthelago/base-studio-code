@@ -28,6 +28,7 @@ describe("provider registry", () => {
     expect(ids).toContain("aider");
     expect(ids).toContain("ollama");
     expect(ids).toContain("amazonq");
+    expect(ids).toContain("bsc-agent");
   });
 
   it("registerProvider overwrites an existing entry with the same id", () => {

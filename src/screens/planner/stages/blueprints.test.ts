@@ -297,3 +297,20 @@ describe("lint-as-gate (#897 Phase 4b)", () => {
     expect(evalGate(gate, base).done).toBe(true);                             // signal absent ⇒ passes
   });
 });
+
+describe("Deploy folds in dependencies (#1127)", () => {
+  it("has no standalone dependencies section anymore", () => {
+    expect(SECTION_DEFS.dependencies).toBeUndefined();
+    expect(makeBlueprints().find((b) => b.id === "default")!.sections.map((s) => s.key)).not.toContain("dependencies");
+  });
+
+  it("requires BOTH shipping and a locked dependency before Deploy passes", () => {
+    const gate = SECTION_DEFS.deploy.gateRule!;
+    const signals = gate.require.map((r) => r.signal);
+    expect(signals).toContain("deploymentDefined");
+    expect(signals).toContain("dependenciesDefined");
+    expect(evalGate(gate, { deploymentDefined: true, dependenciesDefined: 0 }).done).toBe(false); // deps missing
+    expect(evalGate(gate, { deploymentDefined: false, dependenciesDefined: 2 }).done).toBe(false); // shipping missing
+    expect(evalGate(gate, { deploymentDefined: true, dependenciesDefined: 1 }).done).toBe(true);  // both ⇒ pass
+  });
+});
