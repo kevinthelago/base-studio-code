@@ -5,6 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { log } from "../../../lib/core/log";
+import { resolveLlmConfig, bscAgentEnv } from "../../../lib/core/llmConfig";
 import { recordPtyData, bumpTerminals } from "../../../lib/core/perf";
 import { gateClaudeLaunch } from "../../../lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/console/terminal";
@@ -345,10 +346,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       const providerId = useAppStore.getState().paneProviders[paneId] ?? "claude";
       const provider = getProvider(providerId) ?? getProvider("claude")!;
       const isClaudeProvider = provider.isClaude === true;
+      // The bsc-agent harness also bakes the startup prompt (via BscAgentAdapter in pty_create),
+      // so it keeps startupPrompt like Claude; other bare-shell providers don't (#1078 P3b).
+      const bakesPrompt = isClaudeProvider || providerId === "bsc-agent";
 
-      // Non-Claude providers launch as plain shell commands; don't bake a startup
-      // prompt into them (pty_create's prompt-baking path calls `claude --initial-message`).
-      if (!isClaudeProvider) startupPrompt = undefined;
+      // Providers that don't bake a startup prompt launch as plain shell commands.
+      if (!bakesPrompt) startupPrompt = undefined;
 
       // Serialize `claude` cold-starts so simultaneously-mounted panes don't
       // stampede the shared OAuth credential store and log every session out. A
@@ -378,7 +381,18 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         useAppStore.getState().repoGithubTokens,
         useAppStore.getState().githubToken,
       );
-      const agentEnv = ghToken ? { GH_TOKEN: ghToken } : undefined;
+      // Base session env (GH_TOKEN for gh/git). For a bsc-agent session, also inject the selected
+      // LLM provider/model/key (+ base URL for local) so the runtime talks to the chosen model;
+      // bsc-agent reads these from BSC_AGENT_* env (#1078 P3b). Permissions (BSC_AGENT_PERMS from
+      // the session role) are a follow-up — bsc-agent runs permissive without them.
+      const agentEnv: Record<string, string> | undefined = (() => {
+        const e: Record<string, string> = {};
+        if (ghToken) e.GH_TOKEN = ghToken;
+        if (providerId === "bsc-agent") {
+          Object.assign(e, bscAgentEnv(resolveLlmConfig(useAppStore.getState())));
+        }
+        return Object.keys(e).length > 0 ? e : undefined;
+      })();
       if (launchesClaude && (initialCwd ?? "") !== "") {
         const cmds = useAppStore.getState().paneAllowedCommands[paneId]
           ?? useAppStore.getState().allowedCommands;
@@ -514,7 +528,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         initCmd: effectiveInitCmd,
         // Only pass startupPrompt for Claude panes — the backend bakes it as
         // `claude --initial-message`, which would be wrong for other providers.
-        startupPrompt: isClaudeProvider ? startupPrompt : undefined,
+        startupPrompt: bakesPrompt ? startupPrompt : undefined,
         model:   paneModel,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,

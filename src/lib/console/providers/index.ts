@@ -8,6 +8,7 @@ import { codexProvider } from "./providers/codex";
 import { aiderProvider } from "./providers/aider";
 import { ollamaProvider } from "./providers/ollama";
 import { amazonQProvider } from "./providers/amazonq";
+import { bscAgentProvider } from "./providers/bscAgent";
 
 registerProvider(claudeProvider);
 registerProvider(geminiProvider);
@@ -15,3 +16,4 @@ registerProvider(codexProvider);
 registerProvider(aiderProvider);
 registerProvider(ollamaProvider);
 registerProvider(amazonQProvider);
+registerProvider(bscAgentProvider);

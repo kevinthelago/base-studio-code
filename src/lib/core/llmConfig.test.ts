@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveLlmConfig, hasLlmKey, type LlmConfigSource } from "./llmConfig";
+import { resolveLlmConfig, hasLlmKey, bscAgentEnv, type LlmConfigSource } from "./llmConfig";
 
 const base: LlmConfigSource = {
   llmProvider: "anthropic",
@@ -46,5 +46,20 @@ describe("hasLlmKey", () => {
   });
   it("is true for local even without a key", () => {
     expect(hasLlmKey({ provider: "local", model: "llama3", apiKey: "", baseUrl: "" })).toBe(true);
+  });
+});
+
+describe("bscAgentEnv", () => {
+  it("always carries provider + model + key when set", () => {
+    const e = bscAgentEnv({ provider: "openai", model: "gpt-5", apiKey: "k", baseUrl: "" });
+    expect(e.BSC_AGENT_PROVIDER).toBe("openai");
+    expect(e.BSC_AGENT_MODEL).toBe("gpt-5");
+    expect(e.BSC_AGENT_API_KEY).toBe("k");
+    expect(e.BSC_AGENT_BASE_URL).toBeUndefined();
+  });
+  it("omits the key for local (none) and carries the base URL", () => {
+    const e = bscAgentEnv({ provider: "local", model: "llama3", apiKey: "", baseUrl: "http://localhost:11434/v1" });
+    expect(e.BSC_AGENT_API_KEY).toBeUndefined();
+    expect(e.BSC_AGENT_BASE_URL).toBe("http://localhost:11434/v1");
   });
 });
