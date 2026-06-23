@@ -55,12 +55,14 @@ use SourceAuth::*;
 
 /// The packaged source-connector catalog (mirrors the frontend `CONNECTORS`).
 pub const SOURCE_CONNECTORS: &[SourceConnectorMeta] = &[
-    SourceConnectorMeta { id: "quickbooks", label: "QuickBooks", auth: OAuth, secret_field: None, live: Pending("OAuth flow not yet wired") },
+    // OAuth connectors store their access token in the keychain under `accessToken` (minted by the
+    // source_oauth flow); the scan builds a bearer transport from it.
+    SourceConnectorMeta { id: "quickbooks", label: "QuickBooks", auth: OAuth, secret_field: Some("accessToken"), live: Live },
     SourceConnectorMeta { id: "quickbase", label: "Quickbase", auth: Token, secret_field: Some("userToken"), live: Live },
-    SourceConnectorMeta { id: "salesforce", label: "Salesforce", auth: OAuth, secret_field: None, live: Pending("OAuth flow not yet wired") },
-    SourceConnectorMeta { id: "hubspot", label: "HubSpot", auth: OAuth, secret_field: None, live: Pending("OAuth flow not yet wired") },
-    SourceConnectorMeta { id: "monday", label: "monday.com", auth: OAuth, secret_field: None, live: Pending("OAuth flow not yet wired") },
-    SourceConnectorMeta { id: "dynamics365", label: "Dynamics 365", auth: OAuth, secret_field: None, live: Pending("OAuth flow not yet wired") },
+    SourceConnectorMeta { id: "salesforce", label: "Salesforce", auth: OAuth, secret_field: Some("accessToken"), live: Live },
+    SourceConnectorMeta { id: "hubspot", label: "HubSpot", auth: OAuth, secret_field: Some("accessToken"), live: Live },
+    SourceConnectorMeta { id: "monday", label: "monday.com", auth: OAuth, secret_field: Some("accessToken"), live: Live },
+    SourceConnectorMeta { id: "dynamics365", label: "Dynamics 365", auth: OAuth, secret_field: Some("accessToken"), live: Live },
     SourceConnectorMeta { id: "netsuite", label: "NetSuite", auth: Token, secret_field: Some("token"), live: Pending("token-based-auth signing not yet wired") },
     SourceConnectorMeta { id: "sap-odata", label: "SAP OData", auth: Basic, secret_field: Some("password"), live: Live },
     SourceConnectorMeta { id: "sql", label: "SQL database", auth: Password, secret_field: Some("password"), live: Pending("database driver not yet wired") },
@@ -97,12 +99,13 @@ mod tests {
     fn credential_connectors_declare_a_secret_field() {
         for c in SOURCE_CONNECTORS {
             match c.auth {
-                // token/password/apiKey/basic connectors must name the keychain field.
-                SourceAuth::Token | SourceAuth::Password | SourceAuth::ApiKey | SourceAuth::Basic => {
+                // credential + oauth connectors all resolve a secret from the keychain (a
+                // user-entered token/password/key, or the oauth-minted access token).
+                SourceAuth::Token | SourceAuth::Password | SourceAuth::ApiKey | SourceAuth::Basic | SourceAuth::OAuth => {
                     assert!(c.secret_field.is_some(), "{} must declare a secret field", c.id);
                 }
-                // oauth / upload carry no in-app secret field.
-                SourceAuth::OAuth | SourceAuth::Upload => assert!(c.secret_field.is_none()),
+                // upload (CSV) carries no secret.
+                SourceAuth::Upload => assert!(c.secret_field.is_none()),
             }
         }
     }

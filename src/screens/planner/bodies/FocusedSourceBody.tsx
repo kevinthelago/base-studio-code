@@ -16,6 +16,8 @@
 
 import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppStore } from "../../../store";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
@@ -387,17 +389,78 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
     setExpanded((p) => { const n = new Set(p); if (n.has(uid)) n.delete(uid); else n.add(uid); return n; });
   }
 
-  // Connect: save each secret field to the OS keychain (#1194) — it leaves component state for the
-  // device's secure store, never written to the config or shared with the planner — then run the
-  // live read-only scan. The inventory comes from the backend when a connector has live transport;
-  // otherwise (OAuth / SQL driver / OpenAPI discovery pending) it falls back to the sample shape.
+  // Run the live read-only scan; on a non-live result or error, fall back to the sample shape so
+  // the pane stays demonstrable until every connector's live transport / OAuth app is in place.
+  async function runScan(uid: string, connectorId: string, fields: Record<string, string>, fallbackHandle: string) {
+    try {
+      const res = await invoke<{ live: boolean; instance?: string; handle?: string; objects?: { name: string; count: number }[]; behaviors?: { label: string }[] }>(
+        "data_platform_scan",
+        { connectorId, project: pid, sourceUid: uid, fields },
+      );
+      if (res?.live) {
+        patchSource(uid, {
+          status: "scanned",
+          handle: res.handle || fallbackHandle,
+          ...(res.instance ? { instance: res.instance } : {}),
+          objects: res.objects ?? [],
+          behaviors: res.behaviors ?? [],
+        });
+        return;
+      }
+    } catch { /* fall through to the sample shape */ }
+    const scan = sampleScan(connectorId);
+    patchSource(uid, { status: "scanned", objects: scan.objects, behaviors: scan.behaviors });
+  }
+
+  // OAuth connect: kick off the browser authorization-code flow, then scan once the token lands in
+  // the keychain. If OAuth isn't configured (no client id) the begin call returns no URL and we
+  // degrade to the sample shape so the pane still works.
+  function oauthConnect(uid: string, src: DeclaredSource, c: ReturnType<typeof connector>) {
+    const fallbackHandle = redactedHandle({ ...src, instance: src.instance || c.name });
+    patchSource(uid, { status: "connecting" });
+    void (async () => {
+      let begin: { authorizeUrl?: string } | null = null;
+      try {
+        begin = await invoke<{ authorizeUrl: string }>("source_oauth_begin", {
+          connectorId: src.connectorId, project: pid, sourceUid: uid, env: src.env ?? "production",
+        });
+      } catch { /* not configured / unavailable */ }
+      if (!begin?.authorizeUrl) {
+        patchSource(uid, { status: "scanning", secretSaved: false, handle: fallbackHandle, instance: src.instance || c.name });
+        void runScan(uid, src.connectorId, { ...(src.fields ?? {}) }, fallbackHandle);
+        return;
+      }
+      await openUrl(begin.authorizeUrl).catch(() => {});
+      const unlisten = await listen<{ sourceUid: string; ok: boolean; instance?: string; realm?: string; error?: string }>(
+        "source-oauth-complete",
+        (ev) => {
+          const p = ev.payload;
+          if (p.sourceUid !== uid) return;
+          unlisten();
+          if (!p.ok) { patchSource(uid, { status: "error", error: p.error ?? "authorization failed" }); return; }
+          // Capture non-secret instance metadata into the config (the token stays in the keychain).
+          const fields = { ...(useAppStore.getState().planSourceConfig[pid]?.sources.find((s) => s.uid === uid)?.fields ?? {}) };
+          if (p.instance) fields.instanceUrl = p.instance;
+          if (p.realm) fields.realm = p.realm;
+          const handle = redactedHandle({ ...src, instance: p.instance || c.name });
+          patchSource(uid, { status: "scanning", secretSaved: true, instance: p.instance || c.name, handle, fields });
+          void runScan(uid, src.connectorId, fields, handle);
+        },
+      );
+    })();
+  }
+
+  // Connect: OAuth connectors run the browser flow; credential connectors save each secret to the
+  // OS keychain (#1194) — it leaves component state for the device's secure store, never written to
+  // the config or shared with the planner — then scan.
   function connect(uid: string) {
     const src = cfg.sources.find((s) => s.uid === uid);
     if (!src) return;
     const c = connector(src.connectorId);
+    if (c.spec.auth === "oauth") { oauthConnect(uid, src, c); return; }
+
     const fallbackHandle = redactedHandle({ ...src, instance: src.instance || c.name });
     const fieldsSnapshot = { ...(src.fields ?? {}) };
-
     const draft = secrets[uid] ?? {};
     const saved = Object.entries(draft).filter(([, v]) => v.trim());
     const saves = saved.map(([field, value]) =>
@@ -409,26 +472,9 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
     setSecrets((p) => { const n = { ...p }; delete n[uid]; return n; });
     setRevealed((p) => { const n = new Set(p); n.delete(uid); return n; });
 
-    void Promise.all(saves).then(async () => {
+    void Promise.all(saves).then(() => {
       patchSource(uid, { status: "scanning", secretSaved: saved.length > 0, handle: fallbackHandle, instance: src.instance || c.name });
-      try {
-        const res = await invoke<{ live: boolean; instance?: string; handle?: string; objects?: { name: string; count: number }[]; behaviors?: { label: string }[] }>(
-          "data_platform_scan",
-          { connectorId: src.connectorId, project: pid, sourceUid: uid, fields: fieldsSnapshot },
-        );
-        if (res?.live) {
-          patchSource(uid, {
-            status: "scanned",
-            instance: res.instance || src.instance || c.name,
-            handle: res.handle || fallbackHandle,
-            objects: res.objects ?? [],
-            behaviors: res.behaviors ?? [],
-          });
-          return;
-        }
-      } catch { /* fall through to the sample shape */ }
-      const scan = sampleScan(src.connectorId);
-      patchSource(uid, { status: "scanned", objects: scan.objects, behaviors: scan.behaviors });
+      void runScan(uid, src.connectorId, fieldsSnapshot, fallbackHandle);
     });
   }
   function retry(uid: string) {

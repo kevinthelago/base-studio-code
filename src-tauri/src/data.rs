@@ -446,8 +446,120 @@ pub fn data_platform_scan(
     match connector_id.as_str() {
         "sap-odata" => scan_odata(&fields, &secret),
         "quickbase" => scan_quickbase(&fields, &secret),
+        // OAuth connectors: `secret` is the keychain access token; instance metadata
+        // (Salesforce instance_url, QuickBooks realmId) arrives via `fields` from the OAuth flow.
+        "salesforce" => scan_salesforce(&fields, &secret),
+        "hubspot" => scan_hubspot(&secret),
+        "monday" => scan_monday(&secret),
+        "quickbooks" => scan_quickbooks(&fields, &secret),
+        "dynamics365" => scan_dynamics(&fields, &secret),
         other => Ok(ScanResult::pending(format!("no live transport for {other}"))),
     }
+}
+
+/// Salesforce: bearer token over the org's instance URL (from the OAuth token response).
+#[cfg(feature = "source-stage")]
+fn scan_salesforce(fields: &std::collections::HashMap<String, String>, token: &str) -> Result<ScanResult, String> {
+    let instance = match fields.get("instanceUrl").filter(|s| !s.is_empty()) {
+        Some(i) => i.clone(),
+        None => return Ok(ScanResult::pending("missing instanceUrl — re-authorize")),
+    };
+    let client = reqwest::blocking::Client::new();
+    let t = token.to_string();
+    let fetch = move |url: &str| -> bsc_data::Result<serde_json::Value> {
+        client
+            .get(url)
+            .bearer_auth(&t)
+            .header("Accept", "application/json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::SalesforceConnector::new(host_of(&instance), instance.clone(), "v59.0", fetch), host_of(&instance))
+}
+
+/// HubSpot: bearer token over the public API host.
+#[cfg(feature = "source-stage")]
+fn scan_hubspot(token: &str) -> Result<ScanResult, String> {
+    let client = reqwest::blocking::Client::new();
+    let t = token.to_string();
+    let fetch = move |path: &str| -> bsc_data::Result<serde_json::Value> {
+        client
+            .get(format!("https://api.hubapi.com/{path}"))
+            .bearer_auth(&t)
+            .header("Accept", "application/json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::HubSpotConnector::new("hubspot", fetch), "hubspot".to_string())
+}
+
+/// monday.com: GraphQL POST with the token in the Authorization header.
+#[cfg(feature = "source-stage")]
+fn scan_monday(token: &str) -> Result<ScanResult, String> {
+    let client = reqwest::blocking::Client::new();
+    let t = token.to_string();
+    let fetch = move |gql: &str| -> bsc_data::Result<serde_json::Value> {
+        client
+            .post("https://api.monday.com/v2")
+            .header("Authorization", &t)
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({ "query": gql }))
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::MondayConnector::new("monday", fetch), "monday.com".to_string())
+}
+
+/// QuickBooks Online: bearer token, company (realm) from the OAuth callback.
+#[cfg(feature = "source-stage")]
+fn scan_quickbooks(fields: &std::collections::HashMap<String, String>, token: &str) -> Result<ScanResult, String> {
+    let realm = match fields.get("realm").filter(|s| !s.is_empty()) {
+        Some(r) => r.clone(),
+        None => return Ok(ScanResult::pending("missing company realm — re-authorize")),
+    };
+    let client = reqwest::blocking::Client::new();
+    let (t, r) = (token.to_string(), realm.clone());
+    let fetch = move |sql: &str| -> bsc_data::Result<serde_json::Value> {
+        client
+            .get(format!("https://quickbooks.api.intuit.com/v3/company/{r}/query"))
+            .query(&[("query", sql)])
+            .bearer_auth(&t)
+            .header("Accept", "application/json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::QuickBooksConnector::new("quickbooks", fetch), realm)
+}
+
+/// Dynamics 365: bearer token over the org's Web API (OData). Needs the org URL configured.
+#[cfg(feature = "source-stage")]
+fn scan_dynamics(fields: &std::collections::HashMap<String, String>, token: &str) -> Result<ScanResult, String> {
+    let org = match fields.get("orgUrl").filter(|s| !s.is_empty()) {
+        Some(o) => o.trim_end_matches('/').to_string(),
+        None => return Ok(ScanResult::pending("Dynamics org URL not configured")),
+    };
+    let client = reqwest::blocking::Client::new();
+    let (t, base) = (token.to_string(), format!("{org}/api/data/v9.2"));
+    let fetch = move |path: &str| -> bsc_data::Result<serde_json::Value> {
+        let url = if path.is_empty() { format!("{base}/") } else { format!("{base}/{path}") };
+        client
+            .get(&url)
+            .bearer_auth(&t)
+            .header("Accept", "application/json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::ODataConnector::new(host_of(&org), fetch), host_of(&org))
 }
 
 /// SAP / generic OData: HTTP Basic over the service document (self-describing, GET-only).
