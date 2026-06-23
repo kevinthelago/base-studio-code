@@ -215,12 +215,12 @@ pub fn source_oauth_begin(
     let token_url = host_for_env(p.token_url, &connector_id, env.as_deref());
     std::thread::spawn(move || {
         let done = match capture_and_exchange(&listener, &token_url, &client_id, &client_secret, &redirect, &verifier, &state) {
-            Ok((token, refresh, instance, realm)) => {
-                let mut ok = crate::credentials::set_secret(&project, &source_uid, "accessToken", &token).is_ok();
-                if let Some(r) = refresh {
+            Ok(tok) => {
+                let mut ok = crate::credentials::set_secret(&project, &source_uid, "accessToken", &tok.access).is_ok();
+                if let Some(r) = tok.refresh {
                     ok &= crate::credentials::set_secret(&project, &source_uid, "refreshToken", &r).is_ok();
                 }
-                OAuthDone { source_uid: source_uid.clone(), ok, instance, realm, error: None }
+                OAuthDone { source_uid: source_uid.clone(), ok, instance: tok.instance, realm: tok.realm, error: None }
             }
             Err(e) => OAuthDone { source_uid: source_uid.clone(), ok: false, instance: None, realm: None, error: Some(e) },
         };
@@ -230,8 +230,18 @@ pub fn source_oauth_begin(
     Ok(OAuthBegin { authorize_url })
 }
 
+/// The tokens (and provider scope hints) captured from an OAuth redirect + code exchange.
+struct ExchangedTokens {
+    access: String,
+    refresh: Option<String>,
+    /// Provider instance/base URL (e.g. Salesforce), when returned.
+    instance: Option<String>,
+    /// QuickBooks company id (`realmId`), when present on the callback.
+    realm: Option<String>,
+}
+
 /// Wait for the browser redirect on the loopback listener, validate `state`, and exchange the
-/// code for tokens. Returns `(access_token, refresh_token?, instance?, realm?)`.
+/// code for tokens.
 fn capture_and_exchange(
     listener: &TcpListener,
     token_url: &str,
@@ -240,7 +250,7 @@ fn capture_and_exchange(
     redirect: &str,
     verifier: &str,
     expected_state: &str,
-) -> Result<(String, Option<String>, Option<String>, Option<String>), String> {
+) -> Result<ExchangedTokens, String> {
     let params = wait_for_redirect(listener, Duration::from_secs(300))?;
     if params.get("state").map(String::as_str) != Some(expected_state) {
         return Err("OAuth state mismatch (possible CSRF) — aborted".into());
@@ -273,7 +283,7 @@ fn capture_and_exchange(
     let access = resp["access_token"].as_str().ok_or("token response missing access_token")?.to_string();
     let refresh = resp["refresh_token"].as_str().map(str::to_string);
     let instance = resp["instance_url"].as_str().map(str::to_string);
-    Ok((access, refresh, instance, realm))
+    Ok(ExchangedTokens { access, refresh, instance, realm })
 }
 
 /// Accept one loopback connection (until `timeout`), parse the callback query, and reply with a
