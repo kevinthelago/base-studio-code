@@ -919,6 +919,42 @@ fn read_audit_log(limit: usize) -> Vec<String> {
     lines
 }
 
+/// Repo-relative paths a worktree session has touched but not yet committed: tracked changes
+/// vs HEAD (staged + unstaged) plus untracked files. The warden's conformance check (#1102)
+/// uses this as the trusted "what did this worker actually change" signal. Tolerant: returns
+/// empty on any git failure (no repo, git absent) so the warden simply has no file signal
+/// rather than crashing. `cwd` is the session's worktree.
+#[tauri::command]
+fn read_worktree_changes(cwd: String) -> Vec<String> {
+    if cwd.trim().is_empty() {
+        return Vec::new();
+    }
+    let tracked = git_lines(&cwd, &["diff", "--name-only", "HEAD"]);
+    let untracked = git_lines(&cwd, &["ls-files", "--others", "--exclude-standard"]);
+    merge_change_lists(tracked, untracked)
+}
+
+/// Run `git -C <cwd> <args…>` and return its stdout as trimmed, non-empty lines; empty on any
+/// failure (non-zero exit, git missing).
+fn git_lines(cwd: &str, args: &[&str]) -> Vec<String> {
+    match std::process::Command::new("git").arg("-C").arg(cwd).args(args).output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Merge two path lists into one sorted, de-duplicated set (pure; unit-tested). A file that is
+/// both modified and listed elsewhere appears once.
+fn merge_change_lists(a: Vec<String>, b: Vec<String>) -> Vec<String> {
+    let mut set: std::collections::BTreeSet<String> = a.into_iter().collect();
+    set.extend(b);
+    set.into_iter().collect()
+}
+
 /// Read the skill usage log (#406): the newest `limit` TSV lines, newest first.
 #[tauri::command]
 fn read_skill_log(limit: usize) -> Vec<String> {
@@ -2289,6 +2325,7 @@ pub fn run() {
             tunnel::tunnel_automation_failed,
             tunnel::tunnel_set_mcp_state,
             read_audit_log,
+            read_worktree_changes,
             read_skill_log,
             read_hook_log,
             read_mcp_log,
@@ -3063,6 +3100,23 @@ mod tests {
 
         // Empty cwd is never resumable.
         assert!(!super::has_bsc_agent_history(""));
+    }
+
+    #[test]
+    fn merge_change_lists_dedupes_and_sorts() {
+        let merged = super::merge_change_lists(
+            vec!["src/b.ts".into(), "src/a.ts".into(), "src/b.ts".into()],
+            vec!["new.ts".into(), "src/a.ts".into()],
+        );
+        assert_eq!(merged, vec!["new.ts", "src/a.ts", "src/b.ts"]);
+        // Empty inputs yield an empty set.
+        assert!(super::merge_change_lists(vec![], vec![]).is_empty());
+    }
+
+    #[test]
+    fn read_worktree_changes_empty_cwd_is_empty() {
+        assert!(super::read_worktree_changes(String::new()).is_empty());
+        assert!(super::read_worktree_changes("   ".into()).is_empty());
     }
 
     #[test]
