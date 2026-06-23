@@ -2,8 +2,40 @@ import { describe, it, expect } from "vitest";
 import {
   parseDependenciesFile, parseDependencyManifest, depsForRepo, bucketByEcosystem,
   mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, buildWorkerDependencyBlock,
+  groupDependenciesBySource,
   type PlanDependency, type DependencyRegistry,
 } from "./dependencies";
+
+describe("groupDependenciesBySource (#1167 — Deploy pane)", () => {
+  it("groups by source: ecosystem defaults for sourceless deps + one group per private registry", () => {
+    const deps: PlanDependency[] = [
+      { ecosystem: "npm", name: "zod", repo: "acme/web" },
+      { ecosystem: "npm", name: "@acme/ui", repo: "acme/web", source: "internal" },
+      { ecosystem: "cargo", name: "serde", repo: "acme/api" },
+    ];
+    const registries: Record<string, DependencyRegistry> = {
+      internal: { url: "https://npm.internal/", scope: "@acme", auth: "TOK" },
+    };
+    const groups = groupDependenciesBySource(deps, registries);
+    // public groups sort before the private one; defaults named after the ecosystem registry
+    expect(groups.map((g) => g.key)).toEqual(["cargo", "npm", "internal"]);
+    const npm = groups.find((g) => g.key === "npm")!;
+    expect(npm.private).toBe(false);
+    expect(npm.name).toBe("npm registry");
+    expect(npm.deps.map((d) => d.name)).toEqual(["zod"]);
+    const priv = groups.find((g) => g.key === "internal")!;
+    expect(priv.private).toBe(true);
+    expect(priv).toMatchObject({ url: "https://npm.internal/", scope: "@acme", auth: "TOK" });
+    expect(priv.deps.map((d) => d.name)).toEqual(["@acme/ui"]);
+  });
+
+  it("falls back to the ecosystem default when a dep's source isn't a known registry", () => {
+    const groups = groupDependenciesBySource([{ ecosystem: "npm", name: "x", source: "ghost" }], {});
+    expect(groups).toHaveLength(1);
+    expect(groups[0].key).toBe("npm");
+    expect(groups[0].private).toBe(false);
+  });
+});
 
 describe("parseDependenciesFile (#1111)", () => {
   it("parses a bare array, keeping only npm/cargo entries with a name", () => {
