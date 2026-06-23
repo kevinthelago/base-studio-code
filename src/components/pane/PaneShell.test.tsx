@@ -126,6 +126,18 @@ describe("PaneShell", () => {
     expect(screen.getByText("Alt+1")).toBeInTheDocument();
   });
 
+  it("splits the view dropdown into SWITCH SCREEN + INSPECT groups (#1149)", () => {
+    render(
+      <PaneShell agent="my-agent" active="console" available={["console", "files", "tools"]}>
+        <div>content</div>
+      </PaneShell>
+    );
+    fireEvent.click(screen.getByTitle("Console · switch screen"));
+    expect(screen.getByText("SWITCH SCREEN")).toBeInTheDocument();
+    expect(screen.getByText("INSPECT")).toBeInTheDocument();
+    expect(screen.getByText("Tools & permissions")).toBeInTheDocument();
+  });
+
   it("renders the new header chrome: repo, role badge, harness/model pill, and footer state (#1149)", () => {
     render(
       <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" branch="wt/checkout" status="run">
