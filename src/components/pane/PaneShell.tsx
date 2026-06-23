@@ -177,6 +177,33 @@ export function PaneShell({
     <span style={{ padding: "0 4px", borderRadius: 5, background: bg, color: col, fontSize: 9, fontFamily: "var(--mono)" }}>{txt}</span>
   );
 
+  // A single row in the view-switcher dropdown (used by both the SCREEN and INSPECT groups).
+  const viewRow = (k: ViewKey) => {
+    const { Icon, label, hotkey } = VIEW_DEFS[k];
+    const on = k === active;
+    return (
+      <div
+        key={k}
+        onClick={() => { onViewChange?.(k); setViewOpen(false); }}
+        style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", cursor: "pointer",
+          background: on ? "var(--accent-soft)" : "transparent",
+          color: on ? "var(--accent-text)" : "var(--fg-muted)",
+        }}
+        onMouseEnter={(e) => { if (!on) (e.currentTarget as HTMLDivElement).style.background = "var(--bg-elev)"; }}
+        onMouseLeave={(e) => { if (!on) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+      >
+        <span style={{ width: 14, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 14px" }}>
+          <Icon size={12} />
+        </span>
+        <span style={{ flex: 1, fontSize: 10.5 }}>{label}</span>
+        <span style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{hotkey}</span>
+      </div>
+    );
+  };
+  const screenViews = available.filter((k) => VIEW_DEFS[k].group === "screen");
+  const inspectViews = available.filter((k) => VIEW_DEFS[k].group === "inspect");
+
   return (
     <div
       ref={paneRef}
@@ -289,35 +316,15 @@ export function PaneShell({
                 <span style={{ flex: 1 }} />
                 <span style={{ fontSize: 9, color: "var(--fg-dim)" }}>no restart</span>
               </div>
-              {available.map((k) => {
-                const { Icon, label, hotkey } = VIEW_DEFS[k];
-                const on = k === active;
-                return (
-                  <div
-                    key={k}
-                    onClick={() => { onViewChange?.(k); setViewOpen(false); }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      padding: "6px 10px",
-                      cursor: "pointer",
-                      background: on ? "var(--accent-soft)" : "transparent",
-                      color: on ? "var(--accent-text)" : "var(--fg-muted)",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!on) (e.currentTarget as HTMLDivElement).style.background = "var(--bg-elev)";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!on) (e.currentTarget as HTMLDivElement).style.background = "transparent";
-                    }}
-                  >
-                    <span style={{ width: 14, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 14px" }}>
-                      <Icon size={12} />
-                    </span>
-                    <span style={{ flex: 1, fontSize: 10.5 }}>{label}</span>
-                    <span style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{hotkey}</span>
+              {screenViews.map(viewRow)}
+              {inspectViews.length > 0 && (
+                <>
+                  <div style={{ padding: "6px 11px", borderTop: "1px solid var(--border-soft)", borderBottom: "1px solid var(--border-soft)" }}>
+                    <span style={{ fontSize: 9, letterSpacing: ".1em", color: "var(--fg-dim)" }}>INSPECT</span>
                   </div>
-                );
-              })}
+                  {inspectViews.map(viewRow)}
+                </>
+              )}
             </div>
           )}
         </div>
