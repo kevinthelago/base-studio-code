@@ -17,7 +17,7 @@ The core value proposition: run many AI coding agents in parallel across multipl
 | State management | Zustand |
 | Styling | CSS custom properties (`src/styles/tokens.css`) |
 | Fonts | Inter (sans) · JetBrains Mono (mono) via Google Fonts |
-| Agent orchestration | Claude API (default: `claude-sonnet-4-6`) |
+| Agent orchestration | Claude Code (default) or the model-agnostic `bsc-agent` shell; pluggable `LlmProvider` — Anthropic (`claude-sonnet-4-6` default), OpenAI, Gemini, local (`crates/llm`) |
 | Mobile tunnel | Relay client (`src-tauri/src/tunnel.rs`) dialing a zero-knowledge Cloudflare Worker relay (`relay/`) — Noise IK E2E + QR pairing |
 | Storage | SQLite (`crates/kb`, `crates/orch`) |
 
@@ -223,11 +223,13 @@ are **Planned**.
 
 | Version | Status | Theme |
 |---|---|---|
-| **v1.0.3** | **Current** | User experience, resiliency, and the core **Default** (greenfield) blueprint and its **triage** — the progress-gated relaunch that resumes from plan.db and skips completed workers. |
-| v1.0.4 | Planned | (Next focus — its issues are worked once v1.0.3 is complete.) |
+| **v1.0.3** | **Current** | User experience, resiliency, and the core **Default** (greenfield) blueprint and its **triage** — the progress-gated relaunch that resumes from plan.db and skips completed workers. Running in parallel, the **model-agnostic agent shell** (`bsc-agent`, epic #1078) lets the platform run on any LLM (Anthropic/OpenAI/Gemini/local); Claude Code stays the default until parity. |
+| v1.0.4 | Planned | **Enterprise integration & migration** — pull data from ERP/CRM/BPM into canonical **data models** via MCP connectors, then generate bespoke software to replace them, with a compliance layer baked into the planner. |
+| v1.0.5 | Planned | **The UI release** — an in-app, Claude-Design-like way to define each page, component, and animation, rendered live by the render-preview (closing the external Claude Design round-trip). |
 
-When v1.0.3 is complete, move it to **Complete**, promote **v1.0.4** to **Current** with its theme,
-and add the following **v1.0.5** row as **Planned**.
+The agent-shell track ships alongside v1.0.3 but is themed separately on the public [Roadmap](README.md#roadmap)
+("Run on any model"). When v1.0.3 is complete, move it to **Complete**, promote **v1.0.4** to **Current**,
+and add the following **v1.0.6** row as **Planned**.
 
 ## GitHub Workflow
 

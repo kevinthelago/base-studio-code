@@ -61,14 +61,15 @@ Config from `BSC_AGENT_*` env (provider/model/key), mirroring the `bsc-plan` env
 | `crates/llm` — shared, Tauri-free provider crate | ✅ merged |
 | P2a — tool-use `turn()` API + `bsc-agent` agent loop + `read_file` | ✅ merged |
 | P2b — core tool set (`write_file`/`edit_file`/`bash`) | ✅ merged |
-| P2c — native permission enforcement | 🔧 in progress |
-| P2d — native telemetry + transcript | 📋 specced (#1110) |
+| P2c — native permission enforcement (#1109) | ✅ merged |
+| P2d — native telemetry + transcript (#1110) | ✅ merged |
+| P3a — `bsc-agent` packaged as a release sidecar (#1117) | ✅ merged |
+| P3b — `BscAgentAdapter` + harness selection in `pty_create`; `bsc-agent` `ConsoleProvider` + `BSC_AGENT_*` env (base URL, role→`BSC_AGENT_PERMS`) (#1120/#1122/#1125/#1128) | ✅ merged |
+| P3 — context-file loading (#1130), `.claude/skills` loading (#1135), MCP client + end-to-end `BSC_AGENT_MCP` (#1137/#1139) | ✅ merged |
 
 ## Remaining roadmap
 
-- **P2d** — telemetry/transcript (contract above). Companion: extend `tokens.rs` `model_pricing` to OpenAI/Gemini families (**rates must be verified, not guessed**).
-- **P3** — `BscAgentAdapter` + a `bsc-agent` `ConsoleProvider`; `bsc-agent` sidecar packaging (its own `externalBin`); MCP client; coordination emitters; resume; context-file + skills loading.
-- **P4** — multi-provider/local runtime hardening (weaker tool-calling, no caching, smaller context).
+- **P4** — multi-provider/local runtime hardening (weaker tool-calling, no caching, smaller context); coordination emitters + resume parity; companion: extend `tokens.rs` `model_pricing` to OpenAI/Gemini families (**rates must be verified, not guessed**).
 - **P5** — fleet on `bsc-agent`: `fleetStartProject`/director/triage choose harness+provider per session; runtime provider config UX; parity test matrix.
 
 ## Top risks
