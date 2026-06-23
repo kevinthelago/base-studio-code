@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-canvas:oklch(0.13 0.005 250); --bg-panel:oklch(0.17 0.005 250);
+    --bg-elev:oklch(0.21 0.006 250);   --bg-elev2:oklch(0.26 0.006 250);
+    --border:oklch(0.30 0.006 250);    --border-soft:oklch(0.24 0.006 250);
+    --fg:oklch(0.94 0.004 250); --fg-muted:oklch(0.66 0.008 250); --fg-dim:oklch(0.46 0.008 250);
+    --accent:oklch(0.80 0.14 70); --accent-dim:oklch(0.55 0.10 70);
+    --success:oklch(0.74 0.13 145); --info:oklch(0.72 0.10 230);
+    --violet:oklch(0.72 0.12 300); --danger:oklch(0.68 0.18 25);
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+    --sans:"Inter",-apple-system,"Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg-canvas);}
+  ::-webkit-scrollbar{width:7px;height:7px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:oklch(0.38 0.006 250 / 0.6);border-radius:99px;}
+  ::-webkit-scrollbar-thumb:hover{background:oklch(0.50 0.008 250 / 0.8);}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @keyframes ring{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.9);opacity:0}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:var(--bg-canvas);font-family:var(--sans);color:var(--fg);display:flex;flex-direction:column;align-items:center;padding:30px 24px 64px;gap:18px;">
+
+  <!-- design harness: state switcher -->
+  <div style="width:560px;max-width:100%;display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;align-items:baseline;gap:10px;">
+      <span style="font-family:var(--mono);font-size:13px;color:var(--fg);letter-spacing:.02em;">Deploy stage · pane redesign</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--fg-dim);">base-studio-code · project planner · phase 03</span>
+    </div>
+    <div style="display:flex;gap:6px;padding:5px;background:var(--bg-panel);border:1px solid var(--border-soft);border-radius:10px;width:max-content;max-width:100%;flex-wrap:wrap;">
+      <sc-for list="{{ switchers }}" as="b" hint-placeholder-count="4">
+        <button onClick="{{ b.onClick }}" style="font-family:var(--mono);font-size:10.5px;padding:6px 13px;border-radius:7px;border:1px solid transparent;cursor:pointer;background:{{ b.bg }};color:{{ b.color }};display:flex;align-items:center;gap:7px;">
+          <span style="width:6px;height:6px;border-radius:50%;background:{{ b.dot }};"></span>{{ b.label }}
+        </button>
+      </sc-for>
+    </div>
+    <span style="font-family:var(--mono);font-size:10px;color:var(--fg-dim);line-height:1.5;">{{ stateNote }}</span>
+  </div>
+
+  <!-- ===== the focused pane ===== -->
+  <div style="width:560px;max-width:100%;height:888px;display:flex;flex-direction:column;background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5);">
+
+    <!-- pane top -->
+    <div style="flex:0 0 auto;padding:9px 15px;background:var(--bg-elev);border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:9px;">
+      <span style="width:9px;height:9px;border-radius:2px;background:linear-gradient(135deg,var(--accent),oklch(0.62 0.14 50));"></span>
+      <span style="font-family:var(--mono);font-size:12px;color:var(--fg);">settlement-webhooks-v2</span>
+      <span style="flex:1;"></span>
+      <span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;color:var(--fg-muted);"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.4s ease-in-out infinite;"></span>planning</span>
+      <span style="font-family:var(--mono);font-size:9.5px;color:var(--fg-dim);">prj_2fa</span>
+    </div>
+
+    <!-- stepper -->
+    <div style="flex:0 0 auto;padding:13px 15px 10px;border-bottom:1px solid var(--border-soft);background:var(--bg-panel);">
+      <div style="display:flex;align-items:flex-start;">
+        <sc-for list="{{ steps }}" as="s" hint-placeholder-count="9">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 auto;position:relative;">
+            <div style="position:relative;width:23px;height:23px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9.5px;font-weight:600;border:1.5px solid {{ s.nodeBorder }};background:{{ s.nodeBg }};color:{{ s.nodeColor }};box-shadow:{{ s.nodeShadow }};">
+              {{ s.mark }}
+              <sc-if value="{{ s.live }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:-1.5px;left:-1.5px;width:23px;height:23px;border-radius:50%;border:1.5px solid var(--accent);animation:ring 1.6s ease-out infinite;"></span></sc-if>
+            </div>
+            <span style="font-family:var(--mono);font-size:7.5px;letter-spacing:.02em;color:{{ s.labelColor }};white-space:nowrap;max-width:50px;overflow:hidden;text-overflow:ellipsis;">{{ s.label }}</span>
+          </div>
+          <sc-if value="{{ s.connector }}" hint-placeholder-val="{{ true }}"><span style="flex:1 1 0;height:2px;background:{{ s.connColor }};margin:11px -1px 0;border-radius:2px;min-width:6px;"></span></sc-if>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- phase header -->
+    <div style="flex:0 0 auto;padding:14px 16px 13px;border-bottom:1px solid var(--border-soft);background:linear-gradient(180deg,var(--bg-elev),var(--bg-panel));">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;font-family:var(--mono);font-size:9.5px;color:var(--fg-dim);letter-spacing:.06em;">
+        <span style="color:var(--accent);">STAGE 03 / 09</span><span>·</span><span>deploy</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="width:26px;height:26px;border-radius:7px;flex:0 0 26px;display:flex;align-items:center;justify-content:center;font-size:14px;background:color-mix(in oklch,var(--accent),transparent 84%);color:var(--accent);">⇡</span>
+        <h2 style="margin:0;font-family:var(--mono);font-size:18px;font-weight:600;color:var(--fg);letter-spacing:-.01em;">Deploy</h2>
+      </div>
+      <p style="margin:6px 0 0;font-size:11.5px;line-height:1.5;color:var(--fg-muted);max-width:50ch;">Define how each service ships — and what it depends on — to a level an agent can implement and the fleet can build against.</p>
+      <span style="display:inline-flex;align-items:center;gap:6px;margin-top:11px;padding:3px 10px;border-radius:99px;font-family:var(--mono);font-size:9.5px;background:{{ gatePillBg }};border:1px solid {{ gatePillBorder }};color:{{ gatePillColor }};">
+        <span style="width:6px;height:6px;border-radius:50%;background:{{ gatePillColor }};{{ gateDotAnim }}"></span>{{ gatePillText }}
+      </span>
+    </div>
+
+    <!-- scrolling body -->
+    <div style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 16px 20px;">
+
+      <!-- ============ EMPTY BODY ============ -->
+      <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px;">
+
+        <!-- proposal hero -->
+        <div style="border-radius:11px;padding:16px;background:color-mix(in oklch,var(--accent),transparent 90%);border:1px solid color-mix(in oklch,var(--accent),transparent 70%);">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;">
+            <span style="font-family:var(--mono);font-size:9px;color:var(--accent);padding:2px 7px;border-radius:99px;background:color-mix(in oklch,var(--accent),transparent 84%);border:1px solid var(--accent-dim);">✦ planner proposal</span>
+            <span style="flex:1;"></span>
+            <span style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);">detected: React · Vite + Rust · axum</span>
+          </div>
+          <div style="font-family:var(--sans);font-size:14px;color:var(--fg);font-weight:600;margin-bottom:4px;">Nothing shipped yet — start from a proposed config</div>
+          <div style="font-family:var(--mono);font-size:10.5px;color:var(--fg-muted);line-height:1.6;margin-bottom:13px;">web → Vercel <span style="color:var(--fg-dim);">static</span> · api → Fly.io <span style="color:var(--fg-dim);">container</span> · GitHub Actions <span style="color:var(--fg-dim);">build → test → deploy</span> · dev → staging → prod</div>
+          <div style="display:flex;gap:8px;">
+            <button onClick="{{ acceptProposal }}" style="height:30px;padding:0 14px;border-radius:6px;border:none;background:var(--accent);color:#1a120a;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer;">Accept &amp; edit →</button>
+            <button style="height:30px;padding:0 13px;border-radius:6px;background:var(--bg-elev);border:1px solid var(--border-soft);color:var(--fg);font-family:var(--mono);font-size:11px;cursor:pointer;">Pick first target</button>
+          </div>
+        </div>
+
+        <div style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.08em;padding:2px 2px 0;">what the planner will fill</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <sc-for list="{{ emptyPreview }}" as="p" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;background:var(--bg-canvas);border:1px dashed var(--border-soft);">
+              <span style="width:18px;height:18px;border-radius:5px;flex:0 0 18px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8.5px;color:var(--fg-dim);border:1px solid var(--border-soft);">{{ p.n }}</span>
+              <span style="font-family:var(--sans);font-size:11.5px;color:var(--fg-muted);">{{ p.label }}</span>
+              <span style="flex:1;"></span>
+              <span style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);">{{ p.hint }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- deps empty -->
+        <div style="border-radius:10px;border:1px solid var(--border-soft);background:var(--bg-canvas);padding:15px 16px;">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;">
+            <span style="width:20px;height:20px;border-radius:6px;flex:0 0 20px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:var(--violet);border:1px solid color-mix(in oklch,var(--violet),transparent 70%);">05</span>
+            <span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--fg);">Dependencies</span>
+            <span style="flex:1;"></span>
+            <span style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);">→ package.json · Cargo.toml</span>
+          </div>
+          <div style="border:1px dashed var(--border);border-radius:9px;padding:20px 16px;text-align:center;background:repeating-linear-gradient(135deg,transparent 0 8px,color-mix(in oklch,var(--fg),transparent 96%) 8px 9px);">
+            <div style="font-family:var(--mono);font-size:11px;color:var(--fg-muted);margin-bottom:5px;">No dependencies locked yet</div>
+            <div style="font-family:var(--mono);font-size:9.5px;color:var(--fg-dim);line-height:1.5;">The planner lists each repo's libraries here as it works this stage.</div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ FULL BODY (partial / configured / multi) ============ -->
+      <sc-if value="{{ notEmpty }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:14px;">
+
+        <!-- group divider A -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:2px;">
+          <span style="font-family:var(--mono);font-size:9.5px;color:var(--accent);letter-spacing:.1em;font-weight:600;">A · HOW IT SHIPS</span>
+          <span style="flex:1;height:1px;background:var(--border-soft);"></span>
+        </div>
+
+        <!-- 01 · TARGET & HOSTING -->
+        <div style="border-radius:10px;border:1px solid {{ cards.target.border }};background:{{ cards.target.bg }};padding:15px 16px;">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+            <span style="width:20px;height:20px;border-radius:6px;flex:0 0 20px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:{{ cards.target.tileColor }};background:{{ cards.target.tileBg }};border:1px solid {{ cards.target.tileBorder }};">{{ cards.target.mark }}</span>
+            <span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--fg);">Target &amp; hosting</span>
+            <span style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);">per service</span>
+            <span style="flex:1;"></span>
+            <span style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);">{{ svcCountLabel }}</span>
+          </div>
+
+          <!-- service tabs -->
+          <div style="display:flex;gap:7px;margin-bottom:12px;">
+            <sc-for list="{{ services }}" as="sv" hint-placeholder-count="2">
+              <button onClick="{{ sv.onClick }}" style="flex:1;display:flex;flex-direction:column;gap:3px;align-items:flex-start;padding:8px 11px;border-radius:8px;cursor:pointer;background:{{ sv.bg }};border:1px solid {{ sv.border }};">
+                <span style="display:flex;align-items:center;gap:6px;width:100%;"><span style="font-family:var(--mono);font-size:12px;color:var(--fg);">{{ sv.id }}</span><span style="flex:1;"></span><span style="width:6px;height:6px;border-radius:50%;background:{{ sv.statusDot }};"></span></span>
+                <span style="font-family:var(--mono);font-size:9px;color:{{ sv.subColor }};">{{ sv.sub }}</span>
+                <span style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:8px;color:{{ sv.hostColor }};"><span style="width:5px;height:5px;border-radius:50%;background:{{ sv.hostColor }};"></span>{{ sv.hostDomain }}</span>
+              </button>
+            </sc-for>
+          </div>
+
+          <!-- selected service -->
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:13px;">
+            <span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;padding:2px 8px;border-radius:99px;background:var(--bg-elev);border:1px solid var(--border-soft);color:{{ sel.hostColor }};"><span style="width:6px;height:6px;border-radius:50%;background:{{ sel.hostColor }};"></span>{{ sel.hostDomain }}</span>
+            <sc-if value="{{ sel.hostSelf }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono);font-size:8px;color:var(--violet);padding:1px 7px;border-radius:99px;background:color-mix(in oklch,var(--violet),transparent 86%);border:1px solid color-mix(in oklch,var(--violet),transparent 72%);">self-hosted</span></sc-if>
+            <span style="font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--bg-elev);border:1px solid var(--border-soft);color:var(--info);">⎇ {{ sel.repo }}/{{ sel.path }}</span>
+            <span style="font-family:var(--mono);font-size:9px;padding:1px 7px;border-radius:99px;background:var(--bg-elev);border:1px solid var(--border-soft);color:var(--fg-muted);">{{ sel.stack }}</span>
+            <span style="flex:1;"></span>
+            <sc-if value="{{ sel.proposed }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono);font-size:8.5px;color:var(--accent);padding:1px 7px;border-radius:99px;background:color-mix(in oklch,var(--accent),transparent 88%);border:1px solid color-mix(in oklch,var(--accent),transparent 74%);">✦ proposed</span></sc-if>
+          </div>
+
+          <!-- platform dropdown -->
+          <div style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">platform</div>
+          <div style="position:relative;">
+            <button onClick="{{ togglePlat }}" style="width:100%;display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;cursor:pointer;background:var(--bg-elev);border:1px solid {{ platBtnBorder }};">
+              <span style="font-size:14px;line-height:1;width:16px;text-align:center;color:{{ selPlatColor }};">{{ selPlatGlyph }}</span>
+              <span style="font-family:var(--mono);font-size:11px;color:{{ selPlatNameColor }};">{{ selPlatName }}</span>
+              <span style="flex:1;"></span>
+              <span style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);">{{ platCount }} options</span>
+              <span style="font-family:var(--mono);font-size:10px;color:var(--fg-dim);display:inline-block;transform:{{ caretTransform }};transition:transform .14s;">▾</span>
+            </button>
+            <sc-if value="{{ platOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:30;max-height:236px;overflow-y:auto;padding:5px;border-radius:9px;background:var(--bg-elev);border:1px solid var(--border);box-shadow:0 14px 40px rgba(0,0,0,.55);">
+                <sc-for list="{{ platforms }}" as="pl" hint-placeholder-count="12">
+                  <button onClick="{{ pl.onClick }}" style-hover="background:var(--bg-elev2);" style="width:100%;display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:6px;cursor:pointer;background:{{ pl.bg }};border:1px solid {{ pl.border }};">
+                    <span style="font-size:14px;line-height:1;width:18px;text-align:center;color:{{ pl.glyphColor }};">{{ pl.glyph }}</span>
+                    <span style="font-family:var(--mono);font-size:10.5px;color:{{ pl.nameColor }};">{{ pl.name }}</span>
+                    <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);padding:1px 6px;border-radius:99px;border:1px solid var(--border-soft);">{{ pl.kind }}</span>
+                    <span style="flex:1;"></span>
+                    <sc-if value="{{ pl.selected }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono);font-size:10px;color:var(--accent);">✓</span></sc-if>
+                  </button>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- workload + fields, OR pick-target prompt -->
+          <sc-if value="{{ sel.configured }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;gap:7px;margin:13px 0 11px;flex-wrap:wrap;">
+              <sc-for list="{{ sel.workloads }}" as="w" hint-placeholder-count="2">
+                <span style="font-family:var(--mono);font-size:9px;padding:2px 9px;border-radius:99px;background:{{ w.bg }};border:1px solid {{ w.border }};color:{{ w.color }};">{{ w.label }}</span>
+              </sc-for>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+              <sc-for list="{{ sel.fields }}" as="f" hint-placeholder-count="3">
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                  <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.05em;">{{ f.k }}</span>
+                  <span style="font-family:var(--mono);font-size:10px;color:var(--fg);background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:4px;padding:5px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ f.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <!-- containerization & orchestration (always visible) -->
+            <div style="margin-top:11px;border-radius:8px;border:1px solid {{ sel.containerBorder }};background:{{ sel.containerBg }};padding:11px 12px;">
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
+                <span style="font-size:11px;line-height:1;color:{{ sel.containerGlyphColor }};">⬢</span>
+                <span style="font-family:var(--mono);font-size:9.5px;color:var(--fg);">Containerization &amp; orchestration</span>
+                <span style="flex:1;"></span>
+                <sc-if value="{{ sel.isContainer }}" hint-placeholder-val="{{ true }}"><span style="font-family:var(--mono);font-size:7.5px;color:var(--violet);padding:1px 7px;border-radius:99px;background:color-mix(in oklch,var(--violet),transparent 86%);border:1px solid color-mix(in oklch,var(--violet),transparent 72%);">distributed</span></sc-if>
+                <sc-if value="{{ sel.notContainer }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono);font-size:7.5px;color:var(--fg-dim);padding:1px 7px;border-radius:99px;background:var(--bg-elev);border:1px solid var(--border-soft);">{{ sel.workloadLabel }}</span></sc-if>
+              </div>
+              <sc-if value="{{ sel.isContainer }}" hint-placeholder-val="{{ true }}">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+                  <div style="display:flex;flex-direction:column;gap:4px;">
+                    <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.05em;">engine · image</span>
+                    <span style="font-family:var(--mono);font-size:10px;color:var(--fg);background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:4px;padding:5px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ sel.engine }} · {{ sel.baseImage }}</span>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:4px;">
+                    <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.05em;">image registry</span>
+                    <span style="font-family:var(--mono);font-size:10px;color:var(--fg);background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:4px;padding:5px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ sel.registry }}</span>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;">
+                  <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.05em;flex:0 0 62px;">orchestrator</span>
+                  <div style="display:inline-flex;border:1px solid var(--border-soft);border-radius:5px;overflow:hidden;background:var(--bg-canvas);">
+                    <sc-for list="{{ sel.orchestrators }}" as="o" hint-placeholder-count="3">
+                      <span style="font-family:var(--mono);font-size:8.5px;padding:3px 9px;background:{{ o.bg }};color:{{ o.color }};border-right:1px solid var(--border-soft);">{{ o.label }}</span>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.05em;flex:0 0 62px;">replicas</span>
+                  <div style="display:inline-flex;border:1px solid var(--border-soft);border-radius:5px;overflow:hidden;background:var(--bg-canvas);">
+                    <sc-for list="{{ sel.replicaSeg }}" as="r" hint-placeholder-count="4">
+                      <span style="font-family:var(--mono);font-size:8.5px;padding:3px 9px;background:{{ r.bg }};color:{{ r.color }};border-right:1px solid var(--border-soft);">{{ r.label }}</span>
+                    </sc-for>
+                  </div>
+                  <span style="flex:1;"></span>
+                  <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);">nodes share the workload</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ sel.notContainer }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:9px;">
+                  <span style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);line-height:1.45;flex:1;">Not containerized — this <b style="color:var(--fg-muted);">{{ sel.workloadLabel }}</b> service deploys without a container image or orchestrator.</span>
+                  <button style="font-family:var(--mono);font-size:8.5px;color:var(--violet);padding:4px 10px;border-radius:99px;background:color-mix(in oklch,var(--violet),transparent 88%);border:1px solid color-mix(in oklch,var(--violet),transparent 72%);cursor:pointer;white-space:nowrap;flex:0 0 auto;">containerize →</button>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+          <sc-if value="{{ sel.unconfigured }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:13px;border:1px dashed color-mix(in oklch,var(--accent),transparent 60%);border-radius:8px;padding:11px 13px;display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--accent);background:color-mix(in oklch,var(--accent),transparent 93%);"><span>↑</span><span>no target for <b>{{ sel.id }}</b> yet — choose a platform from the list above</span></div>
+          </sc-if>
+        </div>
+
+        <!-- 02 · CI/CD PIPELINE (marquee) -->
+        <div style="border-radius:10px;border:1px solid {{ cards.pipeline.border }};background:{{ cards.pipeline.bg }};padding:16px;box-shadow:{{ cards.pipeline.shadow }};">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;">
+            <span style="width:20px;height:20px;border-radius:6px;flex:0 0 20px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:{{ cards.pipeline.tileColor }};background:{{ cards.pipeline.tileBg }};border:1px solid {{ cards.pipeline.tileBorder }};">{{ cards.pipeline.mark }}</span>
+            <span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--fg);">CI / CD pipeline</span>
+            <span style="flex:1;"></span>
+            <span style="font-family:var(--mono);font-size:9px;color:var(--fg-muted);padding:1px 7px;border-radius:99px;background:var(--bg-elev);border:1px solid var(--border-soft);">{{ pipelineProvider }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;">
+            <sc-for list="{{ pipeline }}" as="st" hint-placeholder-count="3">
+              <div style="display:flex;flex-direction:column;gap:8px;padding:12px 13px;border-radius:9px;background:var(--bg-elev);border:1px solid {{ st.cardBorder }};">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span style="width:7px;height:7px;border-radius:50%;background:{{ st.nodeColor }};"></span>
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--fg);text-transform:uppercase;letter-spacing:.04em;">{{ st.name }}</span>
+                  <span style="flex:1;"></span>
+                  <sc-if value="{{ st.gate }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono);font-size:7.5px;color:var(--accent);padding:1px 5px;border-radius:99px;background:color-mix(in oklch,var(--accent),transparent 85%);border:1px solid color-mix(in oklch,var(--accent),transparent 70%);">⛒ gate</span></sc-if>
+                </div>
+                <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);line-height:1.35;">{{ st.cmd }}</span>
+                <div style="display:inline-flex;align-self:flex-start;border:1px solid var(--border-soft);border-radius:5px;overflow:hidden;background:var(--bg-canvas);">
+                  <sc-for list="{{ st.triggers }}" as="tg" hint-placeholder-count="4">
+                    <span style="font-family:var(--mono);font-size:7.5px;padding:3px 5px;background:{{ tg.bg }};color:{{ tg.color }};border-right:1px solid var(--border-soft);">{{ tg.label }}</span>
+                  </sc-for>
+                </div>
+              </div>
+              <sc-if value="{{ st.connector }}" hint-placeholder-val="{{ true }}"><span style="align-self:center;font-family:var(--mono);font-size:14px;color:{{ st.connColor }};padding:3px 0;">{{ st.arrow }}</span></sc-if>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- 03 · ENVIRONMENTS -->
+        <div style="border-radius:10px;border:1px solid {{ cards.envs.border }};background:{{ cards.envs.bg }};padding:15px 16px;">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+            <span style="width:20px;height:20px;border-radius:6px;flex:0 0 20px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:{{ cards.envs.tileColor }};background:{{ cards.envs.tileBg }};border:1px solid {{ cards.envs.tileBorder }};">{{ cards.envs.mark }}</span>
+            <span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--fg);">Environments</span>
+            <span style="flex:1;"></span>
+            <span style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);">branch → env</span>
+          </div>
+          <div style="display:flex;flex-direction:column;">
+            <sc-for list="{{ envs }}" as="e" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;background:var(--bg-elev);border:1px solid var(--border-soft);">
+                <span style="width:7px;height:7px;border-radius:50%;flex:0 0 7px;background:{{ e.dot }};"></span>
+                <span style="font-family:var(--mono);font-size:11px;color:var(--fg);width:52px;">{{ e.name }}</span>
+                <span style="font-family:var(--mono);font-size:7.5px;color:{{ e.tagColor }};padding:1px 5px;border-radius:99px;border:1px solid {{ e.tagBorder }};flex:0 0 auto;">{{ e.tag }}</span>
+                <span style="font-family:var(--mono);font-size:8.5px;color:var(--info);padding:1px 6px;border-radius:3px;background:var(--bg-canvas);border:1px solid var(--border-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">⎇ {{ e.branch }}</span>
+                <span style="flex:1;"></span>
+                <span style="font-family:var(--mono);font-size:8.5px;color:var(--fg-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42%;">{{ e.url }}</span>
+              </div>
+              <sc-if value="{{ e.connector }}" hint-placeholder-val="{{ true }}"><span style="align-self:center;font-family:var(--mono);font-size:11px;color:var(--fg-dim);padding:2px 0;">↓</span></sc-if>
+            </sc-for>
+            <button style="width:100%;height:30px;border-radius:7px;margin-top:8px;background:var(--bg-elev);border:1px dashed var(--border);color:var(--fg-dim);cursor:pointer;font-family:var(--mono);font-size:10px;">＋ add environment</button>
+          </div>
+        </div>
+
+        <!-- 04 · CONFIG & SECRETS -->
+        <div style="border-radius:10px;border:1px solid {{ cards.secrets.border }};background:{{ cards.secrets.bg }};padding:15px 16px;">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;">
+            <span style="width:20px;height:20px;border-radius:6px;flex:0 0 20px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:{{ cards.secrets.tileColor }};background:{{ cards.secrets.tileBg }};border:1px solid {{ cards.secrets.tileBorder }};">{{ cards.secrets.mark }}</span>
+            <span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--fg);">Config &amp; secrets</span>
+            <span style="flex:1;"></span>
+            <span style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);">{{ vault }}</span>
+          </div>
+          <!-- header -->
+          <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:4px;padding:0 0 6px;border-bottom:1px solid var(--border-soft);">
+            <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.04em;">variable</span>
+            <sc-for list="{{ envCols }}" as="c" hint-placeholder-count="3"><span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.04em;">{{ c }}</span></sc-for>
+          </div>
+          <sc-for list="{{ configRows }}" as="row" hint-placeholder-count="4">
+            <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:4px;padding:6px 0;border-bottom:1px solid var(--border-soft);align-items:center;">
+              <span style="font-family:var(--mono);font-size:9.5px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="display:inline-block;width:6px;height:6px;border-radius:2px;margin-right:6px;vertical-align:middle;background:{{ row.dot }};"></span>{{ row.key }}</span>
+              <sc-for list="{{ row.cells }}" as="cell" hint-placeholder-count="3">
+                <span style="font-family:var(--mono);font-size:9px;color:{{ cell.color }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cell.text }}</span>
+              </sc-for>
+            </div>
+          </sc-for>
+          <div style="display:flex;align-items:center;gap:14px;margin-top:10px;font-family:var(--mono);font-size:9px;color:var(--fg-dim);">
+            <span><span style="display:inline-block;width:6px;height:6px;border-radius:2px;margin-right:5px;background:var(--info);"></span>config</span>
+            <span><span style="display:inline-block;width:6px;height:6px;border-radius:2px;margin-right:5px;background:var(--violet);"></span>secret</span>
+            <span style="flex:1;"></span>
+            <span>values live in the vault, never here</span>
+          </div>
+        </div>
+
+        <!-- group divider B -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+          <span style="font-family:var(--mono);font-size:9.5px;color:var(--violet);letter-spacing:.1em;font-weight:600;">B · WHAT IT DEPENDS ON</span>
+          <span style="flex:1;height:1px;background:var(--border-soft);"></span>
+        </div>
+
+        <!-- 05 · DEPENDENCIES (the star) -->
+        <div style="border-radius:10px;border:1px solid {{ cards.deps.border }};background:{{ cards.deps.bg }};padding:16px;">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:5px;">
+            <span style="width:20px;height:20px;border-radius:6px;flex:0 0 20px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:{{ cards.deps.tileColor }};background:{{ cards.deps.tileBg }};border:1px solid {{ cards.deps.tileBorder }};">{{ cards.deps.mark }}</span>
+            <span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--fg);">Dependencies</span>
+            <span style="font-family:var(--mono);font-size:8.5px;color:var(--violet);padding:1px 7px;border-radius:99px;background:color-mix(in oklch,var(--violet),transparent 86%);border:1px solid color-mix(in oklch,var(--violet),transparent 72%);">{{ depCount }} locked · {{ sourceCount }} sources</span>
+            <span style="flex:1;"></span>
+          </div>
+          <div style="font-family:var(--mono);font-size:9px;color:var(--fg-dim);line-height:1.5;margin-bottom:13px;">Locked once so the parallel fleet never redefines them — grouped by the <span style="color:var(--fg-muted);">source</span> each package is pulled from.</div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <sc-for list="{{ sourceGroups }}" as="g" hint-placeholder-count="2">
+              <div style="border-radius:8px;border:1px solid {{ g.frameBorder }};background:{{ g.frameBg }};padding:10px 11px;">
+                <div style="display:flex;align-items:center;gap:7px;">
+                  <span style="font-size:11px;line-height:1;color:{{ g.glyphColor }};">{{ g.glyph }}</span>
+                  <span style="font-family:var(--mono);font-size:10.5px;color:{{ g.nameColor }};">{{ g.name }}</span>
+                  <span style="font-family:var(--mono);font-size:7.5px;color:{{ g.kindColor }};padding:1px 6px;border-radius:99px;background:{{ g.kindBg }};border:1px solid {{ g.kindBorder }};">{{ g.kindLabel }}</span>
+                  <span style="flex:1;"></span>
+                  <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);">{{ g.count }}</span>
+                </div>
+                <sc-if value="{{ g.isPrivate }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:7px;">
+                    <span style="font-family:var(--mono);font-size:8px;color:var(--fg-muted);">{{ g.url }}</span>
+                    <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);padding:1px 6px;border-radius:99px;background:var(--bg-canvas);border:1px solid var(--border-soft);">scope {{ g.scope }}</span>
+                    <span style="flex:1;"></span>
+                    <span style="font-family:var(--mono);font-size:8px;color:var(--violet);padding:1px 7px;border-radius:99px;background:color-mix(in oklch,var(--violet),transparent 88%);border:1px solid color-mix(in oklch,var(--violet),transparent 74%);"><span style="display:inline-block;width:5px;height:5px;border-radius:2px;background:var(--violet);margin-right:4px;vertical-align:middle;"></span>secret {{ g.secret }}</span>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ g.isPublic }}" hint-placeholder-val="{{ true }}">
+                  <div style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);margin-top:4px;">{{ g.url }}</div>
+                </sc-if>
+                <div style="display:flex;flex-direction:column;gap:5px;margin-top:9px;">
+                  <sc-for list="{{ g.deps }}" as="d" hint-placeholder-count="3">
+                    <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;background:var(--bg-elev);border:1px solid var(--border-soft);">
+                      <span style="font-family:var(--mono);font-size:7.5px;color:{{ d.ecoColor }};padding:1px 5px;border-radius:3px;border:1px solid {{ d.ecoBorder }};flex:0 0 auto;">{{ d.ecoLabel }}</span>
+                      <span style="font-family:var(--mono);font-size:10px;color:var(--fg);white-space:nowrap;">{{ d.name }}<span style="color:var(--fg-dim);">@{{ d.version }}</span></span>
+                      <sc-if value="{{ d.dev }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono);font-size:7.5px;color:var(--info);padding:1px 6px;border-radius:99px;background:color-mix(in oklch,var(--info),transparent 88%);border:1px solid color-mix(in oklch,var(--info),transparent 74%);">dev</span></sc-if>
+                      <span style="flex:1;"></span>
+                      <span style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);padding:1px 6px;border-radius:3px;background:var(--bg-canvas);border:1px solid var(--border-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%;">⎇ {{ d.repo }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="font-family:var(--mono);font-size:8px;color:var(--fg-dim);line-height:1.5;margin-top:11px;">Each source maps to a repo's <span style="color:var(--fg-muted);">package.json</span> / <span style="color:var(--fg-muted);">Cargo.toml</span>; private sources also write <span style="color:var(--fg-muted);">.npmrc</span> / <span style="color:var(--fg-muted);">.cargo/config.toml</span> with the token from the vault secret.</div>
+        </div>
+
+        <!-- group divider C · release & health -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+          <span style="font-family:var(--mono);font-size:9.5px;color:var(--fg-muted);letter-spacing:.1em;font-weight:600;">C · RELEASE &amp; HEALTH</span>
+          <span style="flex:1;height:1px;background:var(--border-soft);"></span>
+        </div>
+
+        <!-- 06+07 · RELEASE + HEALTH (compact secondary row) -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+          <div style="border-radius:10px;border:1px solid {{ cards.release.border }};background:{{ cards.release.bg }};padding:14px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
+              <span style="width:18px;height:18px;border-radius:5px;flex:0 0 18px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8.5px;color:{{ cards.release.tileColor }};background:{{ cards.release.tileBg }};border:1px solid {{ cards.release.tileBorder }};">{{ cards.release.mark }}</span>
+              <span style="font-family:var(--sans);font-size:12px;font-weight:600;color:var(--fg);">Release</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:11px;">
+              <sc-for list="{{ strategies }}" as="rs" hint-placeholder-count="4">
+                <span style="font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:99px;background:{{ rs.bg }};border:1px solid {{ rs.border }};color:{{ rs.color }};">{{ rs.label }}</span>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <sc-for list="{{ releaseToggles }}" as="t" hint-placeholder-count="2">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="width:26px;height:15px;border-radius:99px;position:relative;flex:0 0 26px;background:{{ t.trackBg }};border:1px solid {{ t.trackBorder }};"><span style="position:absolute;top:1px;left:{{ t.knobLeft }};width:11px;height:11px;border-radius:50%;background:{{ t.knobColor }};"></span></span>
+                  <span style="font-family:var(--mono);font-size:9px;color:{{ t.labelColor }};line-height:1.3;">{{ t.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="border-radius:10px;border:1px solid {{ cards.health.border }};background:{{ cards.health.bg }};padding:14px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
+              <span style="width:18px;height:18px;border-radius:5px;flex:0 0 18px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8.5px;color:{{ cards.health.tileColor }};background:{{ cards.health.tileBg }};border:1px solid {{ cards.health.tileBorder }};">{{ cards.health.mark }}</span>
+              <span style="font-family:var(--sans);font-size:12px;font-weight:600;color:var(--fg);">Health</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px;">
+              <sc-for list="{{ healthRows }}" as="h" hint-placeholder-count="3">
+                <div style="display:flex;flex-direction:column;gap:3px;">
+                  <span style="display:flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:{{ h.dot }};"></span><span style="font-family:var(--mono);font-size:9px;color:var(--fg-muted);">{{ h.label }}</span></span>
+                  <span style="font-family:var(--mono);font-size:9px;color:var(--fg);padding-left:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ h.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <!-- group divider D -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+          <span style="font-family:var(--mono);font-size:9.5px;color:var(--fg-muted);letter-spacing:.1em;font-weight:600;">D · READINESS</span>
+          <span style="flex:1;height:1px;background:var(--border-soft);"></span>
+        </div>
+
+        <!-- 08 · READINESS SUMMARY -->
+        <div style="border-radius:10px;border:1px solid var(--border-soft);background:var(--bg-canvas);padding:15px 16px;">
+          <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px;">
+            <sc-for list="{{ checks }}" as="c" hint-placeholder-count="6">
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;background:var(--bg-elev);">
+                <span style="width:15px;text-align:center;font-family:var(--mono);font-size:11px;color:{{ c.markColor }};">{{ c.mark }}</span>
+                <span style="font-family:var(--sans);font-size:11px;color:{{ c.labelColor }};">{{ c.label }}</span>
+                <span style="flex:1;"></span>
+                <span style="font-family:var(--mono);font-size:9px;color:{{ c.detailColor }};">{{ c.detail }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px;font-family:var(--mono);font-size:9px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;">
+            deployment issues at publish
+            <span style="flex:1;"></span>
+            stream <span style="font-family:var(--mono);font-size:8.5px;color:var(--accent);padding:1px 7px;border-radius:99px;background:color-mix(in oklch,var(--accent),transparent 86%);border:1px solid var(--accent-dim);text-transform:none;letter-spacing:0;">deploy</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <sc-for list="{{ issues }}" as="i" hint-placeholder-count="5">
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;background:var(--bg-elev);border:1px solid var(--border-soft);">
+                <span style="font-family:var(--mono);font-size:11px;color:{{ i.plusColor }};">＋</span>
+                <span style="font-family:var(--mono);font-size:9.5px;color:{{ i.textColor }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ i.text }}</span>
+                <span style="flex:1;"></span>
+                <span style="font-family:var(--mono);font-size:7.5px;color:{{ i.tagColor }};padding:1px 6px;border-radius:99px;background:var(--bg-canvas);border:1px solid {{ i.tagBorder }};">{{ i.tag }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+      </div>
+      </sc-if>
+    </div>
+
+    <!-- footer / advance bar -->
+    <div style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--border-soft);background:var(--bg-elev);">
+      <button style="height:30px;padding:0 13px;border-radius:6px;background:var(--bg-elev2);border:1px solid var(--border-soft);color:var(--fg);font-family:var(--mono);font-size:11px;cursor:pointer;">← back</button>
+      <span style="font-family:var(--mono);font-size:9.5px;color:var(--fg-dim);">phase 3 of 9</span>
+      <span style="flex:1;"></span>
+      <sc-if value="{{ footerEnabled }}" hint-placeholder-val="{{ false }}">
+        <button style="height:30px;padding:0 14px;border-radius:6px;border:none;background:var(--accent);color:#1a120a;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer;">approve &amp; continue →</button>
+      </sc-if>
+      <sc-if value="{{ footerDisabled }}" hint-placeholder-val="{{ true }}">
+        <span style="display:flex;align-items:center;gap:8px;">
+          <span style="font-family:var(--mono);font-size:9px;color:var(--accent);">still needed: {{ stillNeeded }}</span>
+          <button disabled style="height:30px;padding:0 14px;border-radius:6px;border:none;background:var(--accent);color:#1a120a;font-family:var(--mono);font-size:11px;font-weight:600;opacity:.42;cursor:not-allowed;">approve &amp; continue →</button>
+        </span>
+      </sc-if>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:620,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  state = { scenario: "multi", svc: "api", platOpen: false, platOverride: {} };
+
+  // ---- static catalogs ----
+  platformCat() {
+    return [
+      { id:"vercel", name:"Vercel", glyph:"▲", h:250 },
+      { id:"netlify", name:"Netlify", glyph:"◆", h:195 },
+      { id:"cloudflare", name:"Cloudflare", glyph:"☁", h:70 },
+      { id:"fly", name:"Fly.io", glyph:"✦", h:300 },
+      { id:"railway", name:"Railway", glyph:"◇", h:300 },
+      { id:"render", name:"Render", glyph:"◉", h:230 },
+      { id:"aws", name:"AWS", glyph:"❯", h:70 },
+      { id:"gcp", name:"GCP", glyph:"◐", h:230 },
+      { id:"azure", name:"Azure", glyph:"◭", h:250 },
+      { id:"ghpages", name:"GitHub Pages", glyph:"⎇", h:250 },
+      { id:"docker", name:"Self-host · Docker", glyph:"⬢", h:230 },
+      { id:"k8s", name:"Self-host · Kubernetes", glyph:"⎈", h:230 },
+    ];
+  }
+  platMeta(id){ return this.platformCat().find(p=>p.id===id) || { name:id, glyph:"■", h:250 }; }
+
+  // git hosts — a project's repos can live in different areas (cloud or self-hosted)
+  hostsCat() {
+    return {
+      github:     { key:"github",     domain:"github.com",   label:"GitHub",      kind:"cloud",       color:"var(--info)" },
+      gitlab:     { key:"gitlab",     domain:"gitlab.com",   label:"GitLab",      kind:"cloud",       color:"var(--accent)" },
+      selfhosted: { key:"selfhosted", domain:"git.acme.dev", label:"self-hosted", kind:"self-hosted", color:"var(--violet)" },
+    };
+  }
+  hostMeta(id){ return this.hostsCat()[id] || this.hostsCat().github; }
+
+  servicesFor(scn) {
+    const web = { id:"web", repo:"acme/web", path:"apps/web", stack:"React · Vite", host:"github",
+      platform:"vercel", workload:"static", region:"iad1", build:"pnpm build", output:"dist", configured:true };
+    const api = { id:"api", repo:"acme/api", path:"services/api", stack:"Rust · axum", host:"selfhosted",
+      platform:"fly", workload:"container", region:"iad", image:"Dockerfile", runtime:"rust:1.79", configured:true,
+      registry:"ghcr.io/acme/api", orchestrator:"k8s", replicas:3 };
+    if (scn==="configured") return [ web ];
+    if (scn==="multi") return [ web, api ];
+    if (scn==="partial") return [ { ...web, proposed:false }, { ...api, platform:null, workload:null, configured:false } ];
+    return [ { ...web, configured:false }, { ...api, configured:false } ];
+  }
+
+  // ---- dependency data (brief sample) ----
+  // the flat lock-list — each dep carries its repo AND the source it's pulled from
+  depListFor(scn) {
+    const all = [
+      { name:"zod",        version:"3.23", eco:"npm",   repo:"acme/web",  dev:false, src:"npm" },
+      { name:"@acme/ui",   version:"2",    eco:"npm",   repo:"acme/web",  dev:false, src:"internal" },
+      { name:"vitest",     version:"2.0",  eco:"npm",   repo:"acme/web",  dev:true,  src:"npm" },
+      { name:"serde",      version:"1",    eco:"cargo", repo:"acme/api",  dev:false, src:"cratesio" },
+      { name:"typescript", version:"5.5",  eco:"npm",   repo:"all repos", dev:true,  src:"npm" },
+    ];
+    if (scn==="multi") return all;
+    if (scn==="configured") return all.filter(d=>d.repo!=="acme/api");
+    if (scn==="partial") return all.filter(d=>["zod","vitest"].includes(d.name));
+    return [];
+  }
+  // the registries/sources catalog a project can pull from
+  sources() {
+    return {
+      npm:      { key:"npm",      name:"npm registry", eco:"npm",   kind:"public",  url:"registry.npmjs.org", scope:null,    secret:null },
+      cratesio: { key:"cratesio", name:"crates.io",    eco:"cargo", kind:"public",  url:"crates.io",          scope:null,    secret:null },
+      internal: { key:"internal", name:"internal",     eco:"npm",   kind:"private", url:"https://npm.internal/", scope:"@acme", secret:"INTERNAL_NPM_TOKEN" },
+    };
+  }
+  // deps grouped BY SOURCE — one section per registry the project pulls from
+  sourceGroupsFor(scn) {
+    const list = this.depListFor(scn);
+    const S = this.sources();
+    const order = ["npm","cratesio","internal"];
+    return order.filter(k=>list.some(d=>d.src===k)).map(k=>({ ...S[k], deps:list.filter(d=>d.src===k) }));
+  }
+
+  // ---- readiness ----
+  checksFor(scn) {
+    const svcs = this.servicesFor(scn);
+    const set = svcs.filter(s=>s.configured).length;
+    const total = svcs.length;
+    const depCount = this.depListFor(scn).length;
+    const prodSecrets = (scn==="configured" || scn==="multi");
+    return [
+      { id:"target", label:"Deploy target per service", ok:set===total, detail:set+"/"+total+" services" },
+      { id:"environments", label:"Environment ladder defined", ok:scn!=="empty", detail:"3 environments" },
+      { id:"pipeline", label:"CI/CD pipeline staged", ok:scn!=="empty", detail:"GitHub Actions" },
+      { id:"secrets", label:"Secrets wired for every env", ok:prodSecrets, detail:prodSecrets?"all envs":"prod unset" },
+      { id:"release", label:"Release & rollback strategy", ok:scn!=="empty", detail:"blue-green" },
+      { id:"dependencies", label:"Dependencies locked", ok:depCount>=1, detail:depCount?depCount+" locked":"none yet" },
+    ];
+  }
+
+  // ---- helpers ----
+  segTriggers(active) {
+    return ["push","tag","on-green","manual"].map(t=>({
+      label:t,
+      bg: t===active ? "var(--bg-elev2)" : "transparent",
+      color: t===active ? "var(--fg)" : "var(--fg-dim)",
+    }));
+  }
+  toggle(on, label) {
+    return {
+      label, labelColor: on?"var(--fg)":"var(--fg-muted)",
+      trackBg: on?"color-mix(in oklch,var(--success),transparent 60%)":"var(--bg-elev2)",
+      trackBorder: on?"var(--success)":"var(--border)",
+      knobLeft: on?"12px":"1px", knobColor: on?"var(--success)":"var(--fg-dim)",
+    };
+  }
+
+  renderVals() {
+    const scn = this.state.scenario;
+    const isEmpty = scn==="empty";
+    const checks = this.checksFor(scn);
+    const definedCount = checks.filter(c=>c.ok).length;
+    const gateMet = definedCount===checks.length;
+    const sourceGroups = this.sourceGroupsFor(scn);
+    const depCount = this.depListFor(scn).length;
+
+    // ---- state switcher ----
+    const scenarios = [
+      { key:"empty", label:"Empty", dot:"var(--fg-dim)" },
+      { key:"partial", label:"Partial", dot:"var(--accent)" },
+      { key:"configured", label:"Configured", dot:"var(--success)" },
+      { key:"multi", label:"Multi-service", dot:"var(--info)" },
+    ];
+    const switchers = scenarios.map(s=>({
+      label:s.label, dot:s.dot,
+      bg: s.key===scn ? "var(--bg-elev2)" : "transparent",
+      color: s.key===scn ? "var(--fg)" : "var(--fg-dim)",
+      onClick: ()=>this.setState({ scenario:s.key, svc:"web", platOpen:false, platOverride:{} }),
+    }));
+    const stateNotes = {
+      empty: "Empty / unconfigured — friendly empty state with the planner's proposed starting config from the detected stack.",
+      partial: "Partially configured — api has no target and prod secrets aren't wired; the gate blocks with a 'still needed' reason.",
+      configured: "Configured (gate met) — single web service, all pieces defined incl. locked deps; deploy step completes, UI Design becomes active.",
+      multi: "Multi-service — web + api each own their target/pipeline; shared envs/secrets/release apply across both; deps grouped per repo.",
+    };
+
+    // ---- stepper (9 phases) ----
+    const labels = ["Context","Repos","Deploy","UI Design","Structure","Permissions","MCP","Automations","Skills"];
+    const deployDone = gateMet && (scn==="configured" || scn==="multi");
+    const activeIdx = deployDone ? 3 : 2;
+    const steps = labels.map((label,i)=>{
+      let status = i<activeIdx ? "done" : i===activeIdx ? "active" : "upcoming";
+      const done = status==="done", active = status==="active";
+      return {
+        label,
+        mark: done ? "✓" : active ? String(i+1) : "🔒",
+        nodeBg: active ? "var(--accent)" : done ? "color-mix(in oklch,var(--success),transparent 80%)" : "var(--bg-elev)",
+        nodeBorder: active ? "var(--accent)" : done ? "var(--success)" : "var(--border)",
+        nodeColor: active ? "#1a120a" : done ? "var(--success)" : "var(--fg-dim)",
+        nodeShadow: active ? "0 0 0 4px color-mix(in oklch,var(--accent),transparent 78%)" : "none",
+        labelColor: (active) ? "var(--fg)" : done ? "var(--fg-muted)" : "var(--fg-dim)",
+        live: active,
+        connector: i<labels.length-1,
+        connColor: i<activeIdx ? "var(--success)" : "var(--border)",
+      };
+    });
+
+    // ---- gate pill ----
+    const gatePillText = gateMet ? "✓ ready to ship" : definedCount+"/"+checks.length+" defined";
+    const gatePillColor = gateMet ? "var(--success)" : "var(--accent)";
+    const gatePillBg = gateMet ? "color-mix(in oklch,var(--success),transparent 90%)" : "color-mix(in oklch,var(--accent),transparent 91%)";
+    const gatePillBorder = gateMet ? "color-mix(in oklch,var(--success),transparent 65%)" : "color-mix(in oklch,var(--accent),transparent 65%)";
+    const gateDotAnim = gateMet ? "" : "animation:pulse 1.4s ease-in-out infinite;";
+
+    // ---- hero / narrative ----
+    const heroTitle = gateMet ? "Ready to ship" : definedCount+" of "+checks.length+" defined";
+    const missing = checks.filter(c=>!c.ok).map(c=>c.id);
+    const heroNote = gateMet ? "deployment issues ready to generate" : "missing: "+missing.join(", ");
+    const narrSrc = [
+      { label:"target", ok: checks[0].ok },
+      { label:"pipeline", ok: checks[2].ok },
+      { label:"envs", ok: checks[1].ok },
+      { label:"deps", ok: checks[5].ok },
+    ];
+    const narrative = narrSrc.map((n,i)=>({
+      label:n.label, mark: n.ok?"✓":"○",
+      bg: n.ok ? "color-mix(in oklch,var(--success),transparent 84%)" : "var(--bg-elev)",
+      border: n.ok ? "color-mix(in oklch,var(--success),transparent 60%)" : "var(--border-soft)",
+      color: n.ok ? "var(--success)" : "var(--fg-dim)",
+      labelColor: n.ok ? "var(--fg-muted)" : "var(--fg-dim)",
+      connector: i<narrSrc.length-1,
+      connColor: n.ok ? "var(--success)" : "var(--border)",
+    }));
+
+    // ---- services / selected ----
+    const services = this.servicesFor(scn);
+    let selId = this.state.svc;
+    if (!services.find(s=>s.id===selId)) selId = services[0].id;
+    const svcViews = services.map(s=>{
+      const sov = this.state.platOverride[s.id];
+      const sp = sov || s.platform;
+      const sconf = s.configured || !!sov;
+      return {
+        id:s.id,
+        sub: sconf ? (this.platMeta(sp).glyph+" "+this.platMeta(sp).name) : "no target yet",
+        hostDomain: this.hostMeta(s.host).domain, hostColor: this.hostMeta(s.host).color,
+        bg: s.id===selId ? "color-mix(in oklch,var(--accent),transparent 90%)" : "var(--bg-elev)",
+        border: s.id===selId ? "var(--accent-dim)" : "var(--border-soft)",
+        subColor: s.id===selId ? "var(--accent)" : "var(--fg-dim)",
+        statusDot: sconf ? "var(--success)" : "var(--fg-dim)",
+        onClick: ()=>this.setState({ svc:s.id, platOpen:false }),
+      };
+    });
+    const selRaw = services.find(s=>s.id===selId);
+    const ov = this.state.platOverride[selId];
+    const effPlatform = ov || selRaw.platform;
+    const effConfigured = selRaw.configured || !!ov;
+    const platKinds = {
+      vercel:"static · serverless", netlify:"static · serverless", cloudflare:"static · serverless",
+      fly:"container · service", railway:"container · service", render:"container · service",
+      aws:"serverless · container", gcp:"serverless · container", azure:"serverless · container",
+      ghpages:"static", docker:"container", k8s:"container · service",
+    };
+    const supKinds = effConfigured ? platKinds[effPlatform].split(" · ").map(s=>s.trim()) : [];
+    let effWorkload = selRaw.workload || (effConfigured ? supKinds[0] : null);
+    if (effConfigured && supKinds.length && !supKinds.includes(effWorkload)) effWorkload = supKinds[0];
+    const wlMeta = { static:{label:"static",c:"var(--info)"}, serverless:{label:"serverless",c:"var(--accent)"},
+      container:{label:"container",c:"var(--violet)"}, service:{label:"long-running",c:"var(--success)"} };
+    const wl = effWorkload ? wlMeta[effWorkload] : null;
+    const fields = effWorkload==="container"
+      ? [ {k:"region",v:selRaw.region||"—"}, {k:"image",v:selRaw.image||"Dockerfile"}, {k:"runtime",v:selRaw.runtime||"—"} ]
+      : [ {k:"region",v:selRaw.region||"—"}, {k:"build cmd",v:selRaw.build||"—"}, {k:"output dir",v:selRaw.output||"—"} ];
+    const selHost = this.hostMeta(selRaw.host);
+    // containerization / orchestration (distributed compute) — for container workloads
+    const ORCH = [ { id:"k8s", label:"Kubernetes" }, { id:"swarm", label:"Docker Swarm" }, { id:"nomad", label:"Nomad" } ];
+    const orchActive = selRaw.orchestrator || (effPlatform==="docker" ? "swarm" : "k8s");
+    const orchestrators = ORCH.map(o=>({ label:o.label, bg:o.id===orchActive?"var(--bg-elev2)":"transparent", color:o.id===orchActive?"var(--fg)":"var(--fg-dim)" }));
+    const repActive = String(selRaw.replicas || 3);
+    const replicaSeg = ["1","3","5","auto"].map(r=>({ label:r, bg:r===repActive?"var(--bg-elev2)":"transparent", color:r===repActive?"var(--fg)":"var(--fg-dim)" }));
+    const sel = {
+      id:selRaw.id, repo:selRaw.repo, path:selRaw.path, stack:selRaw.stack,
+      hostDomain: selHost.domain, hostLabel: selHost.label, hostColor: selHost.color, hostSelf: selHost.kind!=="cloud",
+      isContainer: effWorkload==="container",
+      notContainer: effWorkload!=="container",
+      workloadLabel: wl ? wl.label : (effWorkload||"static"),
+      containerBorder: effWorkload==="container" ? "color-mix(in oklch,var(--violet),transparent 80%)" : "var(--border-soft)",
+      containerBg: effWorkload==="container" ? "color-mix(in oklch,var(--violet),transparent 95%)" : "var(--bg-canvas)",
+      containerGlyphColor: effWorkload==="container" ? "var(--violet)" : "var(--fg-dim)",
+      engine: "Docker", baseImage: selRaw.runtime || "node:20",
+      registry: selRaw.registry || ("ghcr.io/"+selRaw.repo),
+      orchestrators, replicaSeg,
+      proposed: false,
+      configured: effConfigured, unconfigured: !effConfigured,
+      workloads: wl ? [ { label:wl.label, bg:"var(--bg-elev2)", border:wlMeta[effWorkload].c, color:wl.c } ] : [],
+      fields,
+    };
+    // platform dropdown
+    const togglePlat = ()=>this.setState(s=>({ platOpen: !s.platOpen }));
+    const platforms = this.platformCat().map(p=>{
+      const on = effConfigured && effPlatform===p.id;
+      return {
+        name:p.name, glyph:p.glyph, kind:platKinds[p.id]||"", selected:on,
+        bg: on ? "color-mix(in oklch,var(--accent),transparent 88%)" : "transparent",
+        border: on ? "color-mix(in oklch,var(--accent),transparent 62%)" : "transparent",
+        glyphColor: "oklch(0.78 0.12 "+p.h+")",
+        nameColor: on ? "var(--fg)" : "var(--fg-muted)",
+        onClick: ()=>this.setState(s=>({ platOverride:{ ...s.platOverride, [selId]:p.id }, platOpen:false })),
+      };
+    });
+    const selMeta = effConfigured ? this.platformCat().find(p=>p.id===effPlatform) : null;
+    const selPlatGlyph = effConfigured ? selMeta.glyph : "▢";
+    const selPlatName = effConfigured ? selMeta.name : "Select a platform…";
+    const selPlatColor = effConfigured ? ("oklch(0.78 0.12 "+selMeta.h+")") : "var(--fg-dim)";
+    const selPlatNameColor = effConfigured ? "var(--fg)" : "var(--fg-dim)";
+    const svcCountLabel = services.length+" service"+(services.length>1?"s":"");
+
+    // ---- pipeline ----
+    const pipeStages = [
+      { name:"build", cmd:"pnpm build · cargo build --release", trigger:"push", gate:false, node:"var(--info)" },
+      { name:"test", cmd:"pnpm test · cargo test", trigger:"on-green", gate:true, node:"var(--accent)" },
+      { name:"deploy", cmd:"vercel deploy · fly deploy", trigger:"on-green", gate:false, node:"var(--success)" },
+    ];
+    const pipeline = pipeStages.map((st,i)=>({
+      name:st.name, cmd:st.cmd, gate:st.gate, nodeColor:st.node,
+      cardBorder: st.gate ? "color-mix(in oklch,var(--accent),transparent 60%)" : "var(--border-soft)",
+      triggers: this.segTriggers(st.trigger),
+      connector: i<pipeStages.length-1,
+      arrow: pipeStages[i+1] && pipeStages[i+1].gate ? "⟱" : "↓",
+      connColor: pipeStages[i+1] && pipeStages[i+1].gate ? "var(--accent)" : "var(--fg-dim)",
+    }));
+
+    // ---- environments ----
+    const envSrc = [
+      { name:"dev", branch:"feature/*", url:"*.preview.acme.dev", auto:true, prod:false },
+      { name:"staging", branch:"develop", url:"staging.acme.dev", auto:true, prod:false },
+      { name:"prod", branch:"main", url:"acme.dev", auto:false, prod:true },
+    ];
+    const envs = envSrc.map((e,i)=>({
+      name:e.name, branch:e.branch, url:e.url,
+      dot: e.prod ? "var(--success)" : "var(--fg-dim)",
+      tag: e.auto ? "auto" : "manual",
+      tagColor: e.auto ? "var(--fg-dim)" : "var(--accent)",
+      tagBorder: e.auto ? "var(--border-soft)" : "color-mix(in oklch,var(--accent),transparent 65%)",
+      connector: i<envSrc.length-1,
+    }));
+
+    // ---- config & secrets ----
+    const envCols = ["dev","staging","prod"];
+    const prodSet = (scn==="configured" || scn==="multi");
+    const cfgRows = [
+      { key:"NODE_ENV", kind:"config", vals:["development","production","production"] },
+      { key:"API_URL", kind:"config", vals:["localhost:8080","api-staging…","api.acme.dev"] },
+      { key:"DATABASE_URL", kind:"secret", set:[true,true,prodSet] },
+      { key:"STRIPE_KEY", kind:"secret", set:[true,true,prodSet] },
+    ];
+    const configRows = cfgRows.map(r=>{
+      const dot = r.kind==="config" ? "var(--info)" : "var(--violet)";
+      let cells;
+      if (r.kind==="config") cells = r.vals.map(v=>({ text:v, color:"var(--fg-muted)" }));
+      else cells = r.set.map(s=> s ? { text:"•••• ✓", color:"var(--violet)" } : { text:"+ wire", color:"var(--danger)" });
+      return { key:r.key, dot, cells };
+    });
+
+    // ---- release + health ----
+    const stratSrc = [
+      { id:"recreate", label:"recreate" }, { id:"rolling", label:"rolling" },
+      { id:"blue-green", label:"blue-green" }, { id:"canary", label:"canary" },
+    ];
+    const strategies = stratSrc.map(s=>{
+      const on = s.id==="blue-green";
+      return { label:s.label,
+        bg: on ? "color-mix(in oklch,var(--accent),transparent 86%)" : "var(--bg-elev)",
+        border: on ? "var(--accent)" : "var(--border-soft)",
+        color: on ? "var(--accent)" : "var(--fg-dim)" };
+    });
+    const releaseToggles = [ this.toggle(true,"Auto-rollback on failed health check"), this.toggle(true,"Run migrations with deploy") ];
+    const healthRows = [
+      { label:"Health probe", value:"/healthz", dot:"var(--success)" },
+      { label:"SLO / uptime", value:"99.9% · p95 < 200ms", dot:"var(--success)" },
+      { label:"Alerts route to", value:"Slack · #deploys", dot:"var(--success)" },
+    ];
+
+    // ---- dependency views — grouped BY SOURCE ----
+    const ecoStyle = {
+      npm:   { c:"var(--info)",   b:"color-mix(in oklch,var(--info),transparent 70%)" },
+      cargo: { c:"var(--accent)", b:"color-mix(in oklch,var(--accent),transparent 70%)" },
+    };
+    const sourceGroupViews = sourceGroups.map(g=>{
+      const priv = g.kind==="private";
+      return {
+        name: g.name,
+        glyph: priv ? "⛁" : "◇",
+        glyphColor: priv ? "var(--violet)" : "var(--fg-muted)",
+        nameColor: priv ? "var(--violet)" : "var(--fg)",
+        kindLabel: priv ? "private" : "public · default",
+        kindColor: priv ? "var(--violet)" : "var(--fg-dim)",
+        kindBg: priv ? "color-mix(in oklch,var(--violet),transparent 86%)" : "var(--bg-elev)",
+        kindBorder: priv ? "color-mix(in oklch,var(--violet),transparent 72%)" : "var(--border-soft)",
+        frameBg: priv ? "color-mix(in oklch,var(--violet),transparent 93%)" : "var(--bg-canvas)",
+        frameBorder: priv ? "color-mix(in oklch,var(--violet),transparent 74%)" : "var(--border-soft)",
+        url: g.url, scope: g.scope || "", secret: g.secret || "",
+        isPrivate: priv, isPublic: !priv,
+        count: g.deps.length + (g.deps.length===1 ? " package" : " packages"),
+        deps: g.deps.map(d=>({
+          name:d.name, version:d.version, dev:d.dev, repo:d.repo,
+          ecoLabel:d.eco, ecoColor:ecoStyle[d.eco].c, ecoBorder:ecoStyle[d.eco].b,
+        })),
+      };
+    });
+
+    // ---- readiness check views ----
+    const checkViews = checks.map(c=>({
+      label:c.label, detail:c.detail, mark:c.ok?"✓":"○",
+      markColor: c.ok?"var(--success)":"var(--fg-dim)",
+      labelColor: c.ok?"var(--fg)":"var(--fg-muted)",
+      detailColor: c.ok?"var(--fg-muted)":"var(--fg-dim)",
+    }));
+    const issueSrc = [
+      { t:"Add GitHub Actions deploy workflow for web → Vercel", tag:"all", blocking:false },
+      { t:"Add Fly.io deploy workflow for api → container", tag:"all", blocking:false },
+      { t:"Provision staging environment + secrets", tag:"staging", blocking:false },
+      { t:"Wire prod secrets (DATABASE_URL, STRIPE_KEY)", tag:"prod", blocking:!prodSet },
+      { t:"Add prod health check + auto-rollback", tag:"prod", blocking:false },
+    ];
+    const issues = issueSrc.map(i=>({
+      text:i.t,
+      plusColor: i.blocking ? "var(--fg-dim)" : "var(--success)",
+      textColor: i.blocking ? "var(--fg-muted)" : "var(--fg)",
+      tag: i.blocking ? "blocking" : i.tag,
+      tagColor: i.blocking ? "var(--danger)" : "var(--fg-dim)",
+      tagBorder: i.blocking ? "color-mix(in oklch,var(--danger),transparent 60%)" : "var(--border-soft)",
+    }));
+
+    // ---- empty preview list ----
+    const emptyPreview = [
+      { n:"01", label:"Target & hosting", hint:"per service" },
+      { n:"02", label:"CI/CD pipeline", hint:"build → test → deploy" },
+      { n:"03", label:"Environments", hint:"dev → staging → prod" },
+      { n:"04", label:"Config & secrets", hint:"vault-managed" },
+      { n:"06", label:"Release & rollback", hint:"strategy + policy" },
+      { n:"07", label:"Health & observability", hint:"probe + alerts" },
+    ];
+
+    // ---- footer ----
+    const stillNeeded = missing.join(", ");
+
+    // ---- per-card "done" highlight (green, matching the rest of the app) ----
+    const GB = "color-mix(in oklch,var(--success),transparent 58%)";
+    const GBG = "color-mix(in oklch,var(--success),transparent 93%)";
+    const GT = "color-mix(in oklch,var(--success),transparent 80%)";
+    const ck = (id)=>checks.find(c=>c.id===id).ok;
+    const mk = (done, num, theme)=>({
+      done,
+      border: done ? GB : theme.b,
+      bg: done ? GBG : "var(--bg-canvas)",
+      shadow: (theme.shadow && !done) ? theme.shadow : "none",
+      tileBg: done ? GT : "var(--bg-elev)",
+      tileBorder: done ? "var(--success)" : theme.tb,
+      tileColor: done ? "var(--success)" : theme.tc,
+      mark: done ? "✓" : num,
+    });
+    const D = { b:"var(--border-soft)", tb:"var(--border-soft)", tc:"var(--fg-dim)" };
+    const cards = {
+      target:   mk(ck("target"), "01", D),
+      pipeline: mk(ck("pipeline"), "02", { b:"color-mix(in oklch,var(--accent),transparent 78%)", tb:"color-mix(in oklch,var(--accent),transparent 65%)", tc:"var(--accent)", shadow:"inset 0 0 0 1px color-mix(in oklch,var(--accent),transparent 92%)" }),
+      envs:     mk(ck("environments"), "03", D),
+      secrets:  mk(ck("secrets"), "04", D),
+      deps:     mk(ck("dependencies"), "05", { b:"color-mix(in oklch,var(--violet),transparent 78%)", tb:"color-mix(in oklch,var(--violet),transparent 65%)", tc:"var(--violet)" }),
+      release:  mk(ck("release"), "06", D),
+      health:   mk(true, "07", D),
+    };
+
+    return {
+      switchers, stateNote: stateNotes[scn],
+      isEmpty, notEmpty: !isEmpty,
+      steps,
+      gatePillText, gatePillColor, gatePillBg, gatePillBorder, gateDotAnim,
+      // hero
+      heroTitle, heroNote,
+      heroBg: gateMet ? "color-mix(in oklch,var(--success),transparent 91%)" : "color-mix(in oklch,var(--accent),transparent 92%)",
+      heroBorder: gateMet ? "color-mix(in oklch,var(--success),transparent 70%)" : "color-mix(in oklch,var(--accent),transparent 74%)",
+      heroDot: gateMet ? "var(--success)" : "var(--accent)",
+      heroDotAnim: gateMet ? "" : "animation:pulse 1.4s ease-in-out infinite;",
+      heroColor: gateMet ? "var(--success)" : "var(--accent)",
+      narrative,
+      cards,
+      // target
+      services: svcViews, sel, platforms, svcCountLabel,
+      togglePlat, platOpen: this.state.platOpen, platCount: platforms.length,
+      selPlatGlyph, selPlatName, selPlatColor, selPlatNameColor,
+      platBtnBorder: this.state.platOpen ? "var(--accent-dim)" : "var(--border-soft)",
+      caretTransform: this.state.platOpen ? "rotate(180deg)" : "rotate(0deg)",
+      // pipeline
+      pipeline, pipelineProvider:"GitHub Actions",
+      // envs
+      envs,
+      // config
+      envCols, configRows, vault:"Fly secrets · Vercel env",
+      // release+health
+      strategies, releaseToggles, healthRows,
+      // deps
+      sourceGroups: sourceGroupViews, depCount, sourceCount: sourceGroups.length,
+      // readiness
+      checks: checkViews, issues,
+      // empty
+      emptyPreview,
+      acceptProposal: ()=>this.setState({ scenario:"configured", svc:"web", platOpen:false, platOverride:{} }),
+      // footer
+      footerEnabled: gateMet, footerDisabled: !gateMet, stillNeeded,
+    };
+  }
+}
+</script>
+</body>
+</html>
