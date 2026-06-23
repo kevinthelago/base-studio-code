@@ -29,6 +29,13 @@ pub(crate) fn get_secret(project: &str, source_uid: &str, field: &str) -> Option
     entry(project, source_uid, field).ok()?.get_password().ok()
 }
 
+/// Store a secret from within the backend (e.g. an OAuth token the flow just obtained). Internal —
+/// the inbound `source_save_secret` command is for user-entered secrets; this is for backend-minted
+/// ones. Either way the value only ever lives in the OS keychain.
+pub(crate) fn set_secret(project: &str, source_uid: &str, field: &str, value: &str) -> Result<(), String> {
+    entry(project, source_uid, field)?.set_password(value).map_err(|e| e.to_string())
+}
+
 /// Save a connector secret to the OS keychain. Overwrites any existing value for the field.
 #[tauri::command]
 pub fn source_save_secret(
