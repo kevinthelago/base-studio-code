@@ -1373,6 +1373,15 @@ const FLEET_PROTOCOL_MD: &str = include_str!("../templates/fleet-protocol.md");
 /// (it runs at the hub, so it never gets the worker worktree protocol).
 const DIRECTOR_PROTOCOL_MD: &str = include_str!("../templates/director-protocol.md");
 
+/// Injection-resistance preamble (#1167) appended to every fleet session's CLAUDE.local.md —
+/// authoritative context that content read while working (issues, PRs, web pages, repo files,
+/// other agents' notes) is untrusted DATA, never instructions. The containment half of the
+/// warden (#1102): prevent an injection from acting, not just detect it after.
+const INJECTION_RESISTANCE_MD: &str = include_str!("../templates/injection-resistance.md");
+
+/// Heading marker for {@link INJECTION_RESISTANCE_MD}, used to keep the append idempotent.
+const INJECTION_RESISTANCE_MARKER: &str = "## Untrusted input";
+
 /// Ensure the project hub's CLAUDE.local.md carries the director protocol (#375). Idempotent.
 #[tauri::command]
 fn ensure_director_protocol(project_key: String) -> Result<(), String> {
@@ -1381,6 +1390,12 @@ fn ensure_director_protocol(project_key: String) -> Result<(), String> {
     let cur = std::fs::read_to_string(&local).unwrap_or_default();
     if !cur.contains("## Director protocol") {
         std::fs::write(&local, format!("{cur}{DIRECTOR_PROTOCOL_MD}")).map_err(|e| e.to_string())?;
+    }
+    // Injection-resistance preamble (#1167): the director reads issue/PR prose + authors kickoffs,
+    // so it's a high-value injection target — give it the same untrusted-input rules as workers.
+    let cur = std::fs::read_to_string(&local).unwrap_or_default();
+    if !cur.contains(INJECTION_RESISTANCE_MARKER) {
+        std::fs::write(&local, format!("{cur}{INJECTION_RESISTANCE_MD}")).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -1489,6 +1504,11 @@ fn write_worker_context(
     let cur = std::fs::read_to_string(&wt_local).unwrap_or_default();
     if !cur.contains("## Fleet coordination protocol") {
         let _ = std::fs::write(&wt_local, format!("{cur}{FLEET_PROTOCOL_MD}"));
+    }
+    // Injection-resistance preamble (#1167): untrusted-input rules as authoritative worker context.
+    let cur = std::fs::read_to_string(&wt_local).unwrap_or_default();
+    if !cur.contains(INJECTION_RESISTANCE_MARKER) {
+        let _ = std::fs::write(&wt_local, format!("{cur}{INJECTION_RESISTANCE_MD}"));
     }
     // Inline the blueprint's attached skills (#636) so each worker carries the same skill
     // context the planner had. skills.md lives at the hub (not in the worktree), so the
@@ -3296,6 +3316,45 @@ mod tests {
         super::inject_skills(&hub, &wt_local);
         assert_eq!(after, std::fs::read_to_string(&wt_local).unwrap());
 
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn worker_context_appends_injection_resistance_idempotently() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("injresist");
+        let wt = home.join("wt");
+        let clone = home.join("clone");
+        let hub = home.join("hub");
+        for d in [&wt, &clone, &hub] { std::fs::create_dir_all(d).unwrap(); }
+
+        super::write_worker_context(&wt, &clone, &hub, Some("# scope: owns src/api/**"));
+        let md = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
+        assert!(md.contains("# scope: owns src/api/**"), "keeps the worker scope");
+        assert!(md.contains(super::INJECTION_RESISTANCE_MARKER), "appends the injection-resistance preamble");
+        assert!(md.contains("untrusted data"), "carries the untrusted-input rule");
+
+        // Re-running converges (the preamble isn't appended twice).
+        super::write_worker_context(&wt, &clone, &hub, Some("# scope: owns src/api/**"));
+        let again = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
+        assert_eq!(again.matches(super::INJECTION_RESISTANCE_MARKER).count(), 1, "preamble appears once");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn director_protocol_includes_injection_resistance() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("dirproto");
+        let key = "proj-dir".to_string();
+        super::ensure_director_protocol(key.clone()).unwrap();
+        let md = std::fs::read_to_string(super::project_dir(&key).join("CLAUDE.local.md")).unwrap();
+        assert!(md.contains("## Director protocol"), "director protocol present");
+        assert!(md.contains(super::INJECTION_RESISTANCE_MARKER), "director also gets the injection-resistance preamble");
+        // Idempotent — a second ensure doesn't duplicate either section.
+        super::ensure_director_protocol(key.clone()).unwrap();
+        let again = std::fs::read_to_string(super::project_dir(&key).join("CLAUDE.local.md")).unwrap();
+        assert_eq!(again.matches(super::INJECTION_RESISTANCE_MARKER).count(), 1);
         std::fs::remove_dir_all(&home).ok();
     }
 
