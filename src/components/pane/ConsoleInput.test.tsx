@@ -17,11 +17,29 @@ describe("ConsoleInput (#1149)", () => {
   it("sends the typed text + CR and clears on Enter", () => {
     const onSend = vi.fn();
     render(<ConsoleInput active onSend={onSend} />);
-    const input = screen.getByPlaceholderText(/Message the agent/) as HTMLInputElement;
+    const input = screen.getByPlaceholderText(/Message the agent/) as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "run the tests" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onSend).toHaveBeenCalledWith("run the tests\r");
     expect(input.value).toBe("");
+  });
+
+  it("inserts a newline on Shift+Enter instead of submitting", () => {
+    const onSend = vi.fn();
+    render(<ConsoleInput active onSend={onSend} />);
+    const input = screen.getByPlaceholderText(/Message the agent/);
+    fireEvent.change(input, { target: { value: "line one" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    expect(onSend).not.toHaveBeenCalled(); // the textarea inserts the newline; no submit
+  });
+
+  it("sends multi-line text as a bracketed paste so newlines don't submit early", () => {
+    const onSend = vi.fn();
+    render(<ConsoleInput active onSend={onSend} />);
+    const input = screen.getByPlaceholderText(/Message the agent/);
+    fireEvent.change(input, { target: { value: "first\nsecond" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("\x1b[200~first\nsecond\x1b[201~\r");
   });
 
   it("sends via the send button too", () => {
