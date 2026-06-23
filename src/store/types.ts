@@ -616,6 +616,10 @@ export interface AppStore {
    *  creates a missing repo. */
   reposPublic: Record<string, boolean>;
   setReposPublic: (projectId: string, isPublic: boolean) => void;
+  /** #1107: per-project signature of the injection findings the user acknowledged (acknowledge-to-
+   *  clear). Cleared when findings change; ignored when the hard-gate setting is on. */
+  planInjectionAck: Record<string, string>;
+  acknowledgePlanInjections: (projectId: string, signature: string) => void;
   /** Optional stages the user deliberately SKIPPED (#921). The flow stops on every optional stage;
    *  skipping marks it resolved (frontier advances, never blocks completion) but renders distinctly. */
   planSkippedSections:  Record<string, string[]>;
@@ -833,6 +837,10 @@ export interface AppStore {
   // Integrations). Gated per pane by paneWasClaude — off by default for
   // panes that never used claude (#36).
   autoResumeClaude: boolean;
+  /** #1107: hard-gate plan publishing on detected prompt-injection markers. ON ⇒ a flagged plan
+   *  cannot publish until the marker is removed; OFF (default) ⇒ acknowledge-to-clear. */
+  injectionHardGate: boolean;
+  setInjectionHardGate: (v: boolean) => void;
   /** #199: auto-relaunch a parked pane when its deps land (opt-in; off by default). */
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;

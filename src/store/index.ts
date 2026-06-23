@@ -87,6 +87,7 @@ export const useAppStore = create<AppStore>()(
         autoFocusMode:        s.autoFocusMode,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
+        injectionHardGate:    s.injectionHardGate,
         autoPlanWithClaude:   s.autoPlanWithClaude,
         autoCompleteGates:    s.autoCompleteGates,
         restrictToBscIssues:  s.restrictToBscIssues,
