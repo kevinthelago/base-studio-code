@@ -68,8 +68,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { id: "fullscreen-toggle", keys: ["Ctrl", "Shift", "F"], desc: "Maximize / restore the focused pane", scope: "Console" },
       { id: "focus-next-waiting", keys: ["Ctrl", "Shift", "N"], desc: "Focus the next pane waiting for input", scope: "Console" },
       { id: "pane-select", keys: ["Ctrl", "Shift", "1–9"], desc: "Select a pane by number (focus → maximize → restore)", scope: "Console" },
-      { id: "view-switch", keys: ["Alt", "1–5"], desc: "Switch the focused pane's view (console / files / branches / changes / log)", scope: "Console" },
-      { id: "view-switch-all", keys: ["Alt", "Shift", "1–5"], desc: "Switch every pane's view", scope: "Console" },
+      { id: "view-switch", keys: ["Alt", "1–7"], desc: "Switch the focused pane's view (console / files / branches / changes / log / tools / telemetry)", scope: "Console" },
+      { id: "view-switch-all", keys: ["Alt", "Shift", "1–7"], desc: "Switch every pane in the tab to that view", scope: "Console" },
     ],
   },
   {
