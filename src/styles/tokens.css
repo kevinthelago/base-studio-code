@@ -72,12 +72,6 @@
   --accent-text:   #9aa6f0; /* accent-on-dark text */
 }
 
-/* Native console input (#1158): when a Claude session is connected, the input bar's cover strip
-   overlaps the terminal's bottom ~3 rows (to seat Claude CLI's own input behind ours). This adds
-   matching bottom scroll room to xterm's viewport so those covered lines can be scrolled up clear
-   of the input to read them. Must stay in sync with COVER_PX in ConsoleInput.tsx (3 × 18px). */
-.term-with-input .xterm-viewport { padding-bottom: 54px; }
-
 /* ===== reset ===== */
 html, body {
   margin: 0; padding: 0;
