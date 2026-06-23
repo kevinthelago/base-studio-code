@@ -61,7 +61,7 @@ const PATTERNS: Pattern[] = [
 
   // Destructive or out-of-lane git / GitHub operations.
   { category: "destructive", label: "destructive or out-of-lane git/GitHub op",
-    re: /(git\s+push\s+(-f\b|--force)|\bforce[\s-]?push\b|gh\s+repo\s+delete\b|\brm\s+-rf\s+[\/~]|git\s+push\b[^.\n]{0,40}\b(main|master)\b)/i },
+    re: /(git\s+push\s+(-f\b|--force)|\bforce[\s-]?push\b|gh\s+repo\s+delete\b|\brm\s+-rf\s+[/~]|git\s+push\b[^.\n]{0,40}\b(main|master)\b)/i },
 
   // CI / workflow / git-hook tampering — hostile verbs only (authoring a workflow is fine).
   { category: "ci", label: "CI/CD or git-hook tampering",
