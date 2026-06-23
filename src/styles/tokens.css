@@ -35,6 +35,43 @@
   --fg-dim:      oklch(0.58 0.008 250);
 }
 
+/* ===== console theme (#1149) — the Live-agent-console "Console Shell" look ===== */
+/* A cool indigo/near-black palette SCOPED to the console surface (applied to the
+   ConsoleScreen root). It overrides the design tokens so the existing pane chrome,
+   views, and menus recolor to the new theme without per-component rewrites, and adds
+   a few helper vars (session-state + LLM-provider hues) the new pane header/footer use.
+   The rest of the app keeps the warm-orange `:root` tokens; lift these to `:root` to go
+   app-wide. Values are taken verbatim from `design/Live agent console design/Console Shell.dc.html`. */
+.console-theme {
+  --bg-canvas:   #070809;  /* pane-grid background (darkest) */
+  --bg-panel:    #0b0d10;  /* pane body */
+  --bg-elev:     #0c0e11;  /* pane header / chrome rows */
+  --bg-elev2:    #15181d;  /* raised chips / inputs */
+  --border:      #262b33;
+  --border-soft: #1a1e24;
+  --fg:          #e7e9ed;
+  --fg-muted:    #7a808a;
+  --fg-dim:      #565c66;
+  --accent:      #5e6ad2;  /* indigo */
+  --accent-dim:  #3a4170;
+  --success:     #46b27f;
+  --info:        #9aa6f0;
+  --violet:      #7d6ae0;
+  --danger:      #db5b54;
+
+  /* Helper vars (new) — session state + provider hues, used by the pane header/footer. */
+  --state-run:     #46b27f;
+  --state-wait:    #d2a24c;
+  --state-idle:    #3a3f48;
+  --state-stopped: #db5b54;
+  --prov-anthropic:#c8825a;
+  --prov-openai:   #5fb3a3;
+  --prov-google:   #5e6ad2;
+  --prov-local:    #969ca6;
+  --accent-soft:   #1a1d3a; /* role-badge / active-row wash */
+  --accent-text:   #9aa6f0; /* accent-on-dark text */
+}
+
 /* ===== reset ===== */
 html, body {
   margin: 0; padding: 0;
