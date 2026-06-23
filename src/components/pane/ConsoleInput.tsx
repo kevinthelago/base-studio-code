@@ -52,8 +52,8 @@ export function ConsoleInput({ active, focused, onSend }: ConsoleInputProps) {
   return (
     <div
       style={{
-        flex: "0 0 auto", display: "flex", alignItems: "flex-end", gap: 7,
-        padding: "5px 10px", background: "#0c0e11", borderTop: "1px solid #1a1e24",
+        flex: "0 0 auto", display: "flex", alignItems: "flex-end", gap: 8,
+        padding: "8px 14px", background: "#0c0e11", borderTop: "1px solid #1a1e24",
       }}
       onClick={() => taRef.current?.focus()}
     >
