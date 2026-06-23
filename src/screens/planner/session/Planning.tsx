@@ -26,7 +26,7 @@ import {
 } from "../stages/planSections";
 import { parseSkillsFile } from "../../../lib/session/skills";
 import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
-import { parseDependenciesFile, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, DEPENDENCIES_KEY } from "../issues/dependencies";
+import { parseDependencyManifest, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
@@ -590,13 +590,15 @@ export function Planning({ visible }: { visible: boolean }) {
     () => parseFeaturesFile(savedSections[FEATURES_KEY] ?? ""),
     [savedSections],
   );
-  // The locked dependency manifest (#1111) — the planner writes dependencies.json (one entry per
-  // library); the Dependencies gate counts it, publish seeds it into each repo's package.json /
-  // Cargo.toml, and each worker inlines its repo's slice.
-  const planDependencies = useMemo(
-    () => parseDependenciesFile(savedSections[DEPENDENCIES_KEY] ?? ""),
+  // The locked dependency manifest (#1111/#1127) — authored in the Deploy stage (dependencies.json:
+  // the libraries + the non-default registries they're sourced from). The Deploy gate counts the
+  // deps, publish seeds them into each repo's package.json / Cargo.toml (+ .npmrc / .cargo/config.toml
+  // for private sources), and each worker inlines its repo's slice.
+  const depManifest = useMemo(
+    () => parseDependencyManifest(savedSections[DEPENDENCIES_KEY] ?? ""),
     [savedSections],
   );
+  const planDependencies = depManifest.dependencies;
   // Per-server MCP install lifecycle (#878): seeded by a disk probe on mount, advanced by the
   // download/build button. Keyed by extension id so the MCP pane shows real status.
   const [mcpInstallState, setMcpInstallState] = useState<McpInstallState>({});
@@ -853,7 +855,7 @@ export function Planning({ visible }: { visible: boolean }) {
       // (#plan-db) — `allConfirmed` (all-defined) alone used to auto-advance after a single feature.
       // Folding the user-confirm in here keeps the gate signal (`featuresConfirmed`) unchanged.
       features: { count: featureState.count, allConfirmed: featuresGateComplete(featureState, confirmedSet.has(FEATURES_KEY)) && featureCycle.length === 0 },
-      // Dependencies (#1111): the gate passes once ≥1 library is locked in the manifest.
+      // Dependencies (#1111/#1127): the Deploy gate passes once ≥1 library is locked in the manifest.
       dependencies: { count: planDependencies.length },
     });
   }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet, planDependencies]);
@@ -2046,9 +2048,10 @@ export function Planning({ visible }: { visible: boolean }) {
               wrote++;
             }
 
-            // Dependency manifests (#1111): seed the repo's package.json / Cargo.toml from the locked
-            // manifest so the fleet inherits identical, complete deps from the base branch and never
-            // adds its own. Unlike the docs above this is an ADDITIVE MERGE — a pre-existing pinned
+            // Dependency manifests (#1111/#1127): seed the repo's package.json / Cargo.toml from the
+            // locked manifest — and the registry config (.npmrc / .cargo/config.toml) for any private
+            // SOURCE — so the fleet inherits identical, complete, fetchable deps from the base branch
+            // and never adds its own. An ADDITIVE MERGE for the manifests — a pre-existing pinned
             // version always wins, so we read the current file, merge, and only write on a real change.
             let manifests = 0;
             const repoDeps = depsForRepo(planDependencies, fullName);
@@ -2066,6 +2069,10 @@ export function Planning({ visible }: { visible: boolean }) {
               };
               await seedManifest("package.json", (e) => mergeIntoPackageJson(e, shortRepo, repoDeps));
               await seedManifest("Cargo.toml", (e) => mergeIntoCargoToml(e, shortRepo, repoDeps));
+              // Registry config for private sources — generated wholesale (not merged): create it only
+              // when absent so a hand-tuned .npmrc / .cargo config is never clobbered.
+              await seedManifest(".npmrc", (e) => (e === null ? buildNpmrc(depManifest.registries, repoDeps) : null));
+              await seedManifest(".cargo/config.toml", (e) => (e === null ? buildCargoConfig(depManifest.registries, repoDeps) : null));
             }
 
             const bits = [
