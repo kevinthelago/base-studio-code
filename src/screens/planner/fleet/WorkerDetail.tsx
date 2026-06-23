@@ -5,12 +5,15 @@
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { CardHead, StatCard, Avatar } from "../../../components/charts";
 import { useAppStore } from "../../../store";
 import { STATUS } from "../../../data/fleet";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
 import { parseAuditLog, type AuditRecord } from "../../agents/auditLog";
+import { loadDoneAudit, type DoneAudit } from "../../../lib/fleet/workerAudit";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { LiveWorker } from "../../../lib/fleet/fleetLive";
 
 const TIER_COLOR: Record<string, string> = {
@@ -55,6 +58,9 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   const setPaneDisabled = useAppStore((s) => s.setPaneDisabled);
   const setPaneProfile = useAppStore((s) => s.setPaneProfile);
   const paused = useAppStore((s) => !!s.disabledPanes[worker.id]);
+  const cwd = useAppStore((s) => s.paneCwds[worker.id]);
+  // Auto-end verdict (#920): present once the worker's PTY exited and its issues were evaluated.
+  const ended = useAppStore((s) => s.endedPanes[worker.id]);
 
   const profile = profileId ? agentProfiles.find((p) => p.id === profileId) : undefined;
   const flow = resolveFlow(paneFlow ?? stream?.flow);
@@ -82,6 +88,17 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
     const t = setInterval(load, 4000);
     return () => { cancelled = true; clearInterval(t); };
   }, [worker.id]);
+
+  // Done-time audit snapshot (#920): the worker's concrete output — branch, commits, changed
+  // files, PR, and the transcript path — read from the worktree at view time. Reloads when the
+  // ended verdict lands so a just-finished worker shows its final snapshot.
+  const [doneAudit, setDoneAudit] = useState<DoneAudit | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!cwd) return; // the render shows "no worktree bound"; nothing to load
+    loadDoneAudit(cwd, worker.repo).then((a) => { if (!cancelled) setDoneAudit(a); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [cwd, worker.repo, ended?.at]);
 
   function openSession() {
     const c = paneCoords(worker.id);
@@ -179,8 +196,60 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                   </div>
                 )}
             </div>
-            <Placeholder title="Throughput" hint="per-stream · not measured yet"
-              body="Per-stream issues-landed / PRs-merged tracking isn't wired up yet. Fleet-wide throughput is on the Fleet board; per-worker history will appear here once it lands." />
+            <div className="card">
+              <CardHead
+                title="Done-time audit"
+                hint={ended ? `ended ${ended.state} · ${ended.summary}` : "live snapshot of this worker's output"}
+              />
+              {!cwd ? (
+                <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>No worktree bound to this pane.</div>
+              ) : !doneAudit ? (
+                <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>reading the worktree…</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {/* branch + PR + transcript */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5 }}>
+                    {doneAudit.branch && (
+                      <span style={{ padding: "2px 8px", borderRadius: 99, border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>⎇ {doneAudit.branch}</span>
+                    )}
+                    {doneAudit.pr ? (
+                      <button
+                        onClick={() => openUrl(doneAudit.pr!.url).catch(() => {})}
+                        title="Open the pull request"
+                        style={{ padding: "2px 9px", borderRadius: 99, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5,
+                          color: doneAudit.pr.merged ? "var(--success)" : "var(--accent)",
+                          background: `color-mix(in oklch, ${doneAudit.pr.merged ? "var(--success)" : "var(--accent)"}, transparent 88%)`,
+                          border: `1px solid color-mix(in oklch, ${doneAudit.pr.merged ? "var(--success)" : "var(--accent)"}, transparent 65%)` }}
+                      >
+                        {doneAudit.pr.merged ? "✓ merged" : doneAudit.pr.state.toLowerCase()} · PR #{doneAudit.pr.number} ↗
+                      </button>
+                    ) : (
+                      <span style={{ color: "var(--fg-dim)" }}>no PR yet</span>
+                    )}
+                    <span style={{ flex: 1 }} />
+                    {doneAudit.transcriptPath && (
+                      <button className="btn ghost" style={{ height: 22, fontSize: 10 }}
+                        onClick={() => revealItemInDir(doneAudit.transcriptPath!).catch(() => {})}
+                        title={doneAudit.transcriptPath}>transcript ↗</button>
+                    )}
+                  </div>
+                  {/* changed files + commits */}
+                  <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+                    {doneAudit.changedFiles.length} uncommitted file{doneAudit.changedFiles.length === 1 ? "" : "s"} · {doneAudit.commits.length} recent commit{doneAudit.commits.length === 1 ? "" : "s"}
+                  </div>
+                  {doneAudit.commits.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+                      {doneAudit.commits.slice(0, 8).map((c, i) => (
+                        <div key={c.hash + i} style={{ display: "grid", gridTemplateColumns: "60px 1fr", gap: 8, alignItems: "center", padding: "7px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
+                          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>{c.hash}</span>
+                          <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.subject}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="card">
               <CardHead title="Activity & audit" hint={`this worker · ${audit.length ? "tool attempts, newest first" : "from the bsc-audit log"}`} />
               {audit.length === 0
