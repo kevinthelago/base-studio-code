@@ -388,6 +388,9 @@ html, body {
 
 @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
 
+/* Indeterminate progress sweep — a short bar tracking left→right (source-stage scan, #source-pane). */
+@keyframes scan{ 0%{transform:translateX(-100%)} 100%{transform:translateX(320%)} }
+
 @keyframes confirm-flash {
   0%   { box-shadow: 0 0 0 0 transparent;                                            transform: scale(1);    }
   20%  { box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent), transparent 30%); transform: scale(1.06); }

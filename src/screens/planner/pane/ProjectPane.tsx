@@ -382,7 +382,13 @@ void FlowBadges;
    ================================================================= */
 
 /** Repos stage body — lists linked repos with clone status. (#674) */
-function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: (r: string) => void }) {
+function FocusedReposBody({ repos, onLinkRepo, isPublic, onSetPublic }: {
+  repos?: Repo[];
+  onLinkRepo?: (r: string) => void;
+  /** Project-level GitHub visibility for repos created at publish (#…). Default false ⇒ private. */
+  isPublic?: boolean;
+  onSetPublic?: (isPublic: boolean) => void;
+}) {
   const [input, setInput] = useState("");
   const [linking, setLinking] = useState(false);
   const list = repos ?? [];
@@ -391,6 +397,36 @@ function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: 
     const v = input.trim();
     if (v.includes("/")) { onLinkRepo?.(v); setInput(""); setLinking(false); }
   };
+
+  // Visibility control (#…): new repos are created PRIVATE by default; this lets the user opt into
+  // public before publishing — replacing the planner having to ask. Shown whether or not repos are
+  // linked yet, since it applies to every repo this project creates.
+  const visibilityControl = onSetPublic && (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>visibility</span>
+      <div style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+        {([[false, "🔒 Private"], [true, "🌐 Public"]] as const).map(([val, label], i) => {
+          const on = !!isPublic === val;
+          return (
+            <button
+              key={label}
+              onClick={() => { if (!on) onSetPublic(val); }}
+              aria-pressed={on}
+              style={{
+                height: 24, padding: "0 11px", border: 0, borderLeft: i ? "1px solid var(--border-soft)" : "none", cursor: on ? "default" : "pointer",
+                fontFamily: "var(--mono)", fontSize: 10.5,
+                background: on ? "var(--bg-elev2)" : "transparent", color: on ? "var(--fg)" : "var(--fg-dim)",
+              }}
+            >{label}</button>
+          );
+        })}
+      </div>
+      <span style={{ flex: 1 }} />
+      <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+        {isPublic ? "created public" : "created private · default"}
+      </span>
+    </div>
+  );
 
   // The "link another repository" affordance — a dashed dropzone that expands into an
   // owner/repo input on click (matches the design's `.dropzone`).
@@ -421,6 +457,7 @@ function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: 
   if (list.length === 0) {
     return (
       <div className="repos-view">
+        {visibilityControl}
         <div className="empty-state">
           <span className="empty-icon">⎇</span>
           <span>No repositories linked yet</span>
@@ -435,6 +472,7 @@ function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: 
 
   return (
     <div className="repos-view">
+      {visibilityControl}
       <div className="tiles">
         <Tile v={list.length} k="repositories" />
         <Tile v={cloned} k="cloned" />
@@ -1146,7 +1184,7 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
   );
 }
 
-function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
+function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
@@ -1155,6 +1193,9 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
   /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
   authoring?: AuthoringWiring;
   onLinkRepo?: (r: string) => void;
+  /** Repos stage: project-level GitHub visibility (default private) + its setter (#…). */
+  reposPublic?: boolean;
+  onSetReposPublic?: (isPublic: boolean) => void;
   /** Deploy stage (#919): persist the edited deployment config. */
   onDeployChange?: (next: DeployConfig) => void;
   onView?: (f: ContextFile) => void;
@@ -1189,7 +1230,7 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
     case "dataLoad":
       return <FocusedLoadBody projectId={projectId} />;
     case "repos":
-      return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} />;
+      return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} />;
     case "deploy":
       return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} dependencies={data?.dependencies} registries={data?.registries} />;
     case "context":
@@ -1239,6 +1280,8 @@ export function ProjectPane({
   // focused mode: one-phase sequenced rail (#652) — the only render mode (#1061)
   focus,
   onLinkRepo,
+  reposPublic,
+  onSetReposPublic,
   onGenerateProfiles,
   onTopology,
   onDirectorDrive,
@@ -1282,6 +1325,9 @@ export function ProjectPane({
   };
   /** Callback to link a repository from the focused repos body (#677). */
   onLinkRepo?: (repo: string) => void;
+  /** Repos stage: project-level GitHub visibility (default private) + its setter (#…). */
+  reposPublic?: boolean;
+  onSetReposPublic?: (isPublic: boolean) => void;
   /** Materialize least-privilege profiles for every fleet stream (#817) — what the focused
    *  Permissions stage needs to satisfy its `profilesComplete` gate. */
   onGenerateProfiles?: () => void;
@@ -1349,7 +1395,7 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
+          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} reposPublic={reposPublic} onSetReposPublic={onSetReposPublic} onView={setViewing}
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} />
         </div>
