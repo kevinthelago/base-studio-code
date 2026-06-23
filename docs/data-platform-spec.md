@@ -179,9 +179,12 @@ Connector-/data-oriented pipelines, alongside the existing ones:
 - `check-licensing` (builtin, gate) — robots/ToS/license clearance per source.
 - `load-data` (builtin) — write a verified staged load into the Data Model + lineage.
 
-**Asymmetric edge:** connectors are *agent-generated and verified* from specs (OpenAPI,
-OData — SAP speaks it — JDBC, Salesforce Bulk API), not hand-built. A connector can ship
-as an **MCP server** (the Extensions/MCP work, #33, already does real MCP servers + hooks).
+**Connectors are native.** Each connector is an in-process **Rust** implementation of the
+`Connector` trait (`crates/data/src/connector.rs`) — first-party for the systems users migrate
+from. They are thin, read-only (#782) HTTP/query mappers (Salesforce speaks REST + SOQL +
+Tooling; SAP speaks OData; SQL via a driver; monday.com via GraphQL). Running in the desktop
+host keeps **credentials and bulk row data inside the host's trust boundary — never in the
+planner's context** (#1194). The trait is the seam, so the heavy data path stays in Rust.
 
 ---
 
@@ -194,7 +197,7 @@ Each row ≈ one GitHub issue/branch. Order top-down; later rows depend on earli
 3. **`crates/data`** — DuckDB-backed per-project data store + lineage table.
 4. **`data-migration-blueprint`** — sections/substeps/gates as built-in; conductor-driven.
 5. **`data-collection-blueprint`** — built-in w/ `sourceMode` scrape/fetch; licensing + quality gates.
-6. **Connector framework** — interface + agent-generated connector (MCP) against one real source (start with CSV/SQL/Salesforce export).
+6. **Connector framework (native)** — the `Connector` trait + first-party in-process Rust connectors: CSV ✓, Salesforce ✓ (data + behavior scan), then QuickBooks, Quickbase, monday.com, SQL, Dynamics. Read-only; credentials held by the host.
 7. **Director reconciliation** — multi-source merge by `Entity.identity`, precedence rule, lineage.
 8. **Build side (future)** — metadata-driven app generation over a Data Model. Separate epic.
 
@@ -207,8 +210,12 @@ Each row ≈ one GitHub issue/branch. Order top-down; later rows depend on earli
 
 **Decided:**
 - **Storage = DuckDB.** Confirmed for `crates/data` (#781) — embeddable, columnar, per-project.
-- **Connector packaging = MCP servers.** Connectors ship as MCP servers, reusing the
-  Extensions/MCP work (#33) — sandboxable and already wired. (#784)
+- **Connector packaging = native (in-process Rust).** Connectors implement the `Connector`
+  trait in `crates/data` and run inside the desktop host — **not** MCP servers. This keeps
+  credentials *and* bulk row data inside the host's trust boundary (never in the planner's
+  context, #782/#1194); the bundled code is small (thin HTTP/query mappers), and the trait is
+  the seam so packaging can evolve later without touching anything downstream. *(Supersedes the
+  earlier #784 MCP-packaging decision.)*
 - **Migration is read-only.** No write-back into systems of record, ever; base-studio-code
   only reads from a source, maps, and loads into the Data Model. (#782)
 

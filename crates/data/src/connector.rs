@@ -1,9 +1,11 @@
 //! The connector framework (#784).
 //!
 //! A connector **reads** from a source into a [`RowSet`] — it never writes back (#782).
-//! The reference implementation is [`CsvConnector`]; further connectors (SQL, Salesforce
-//! Bulk API, OData/SAP) are intended to ship as MCP servers reusing the Extensions/MCP
-//! work (#33), each exposing the same `objects` / `read` surface over MCP tools.
+//! Connectors are **native, in-process Rust** implementations of this trait (not MCP
+//! servers): the reference [`CsvConnector`], the Salesforce connector, and further
+//! first-party connectors (QuickBooks, Quickbase, monday.com, SQL, OData/SAP). Running in
+//! the desktop host keeps credentials and bulk row data inside the host's trust boundary —
+//! never in the planner's context (#1194).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
