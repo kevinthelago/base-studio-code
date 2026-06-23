@@ -257,8 +257,8 @@ export function PaneShell({
         <div style={{ flex: 1, minWidth: 0 }} />
 
         {/* Model pill — the SINGLE consolidated menu trigger (#1181): model · screens · pane
-            actions all live in the one PaneMenu it opens. Shows the running model, or an
-            "undetected" empty state when nothing is live in the pane. */}
+            actions all live in the one PaneMenu it opens. Shows the running model when live, else
+            the configured model the pane will launch with (#…). */}
         <button
           ref={menuButtonRef}
           title="Model, screens & pane options"
@@ -278,9 +278,12 @@ export function PaneShell({
               <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>{modelLabel}</span>
             </>
           ) : (
+            // Idle / not yet live: show the CONFIGURED model (what this pane will launch with) so the
+            // chosen model is always legible on the grid, rather than a bare "undetected" (#…). The
+            // gray dot still signals the session isn't live.
             <>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--state-idle)" }} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>undetected</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{model}</span>
             </>
           )}
           <span style={{ color: menuOpen ? "var(--accent-text)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10 }}>▾</span>

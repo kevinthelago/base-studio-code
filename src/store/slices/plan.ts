@@ -13,7 +13,7 @@ import { repoPromptKey } from "../../lib/session/startupPrompt";
 import { resolveAllowedCommands } from "../../lib/session/allowedCommands";
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "reposPublic" | "setReposPublic" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planKbAssignments" | "addPlanKbAssignment" | "removePlanKbAssignment" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintSections" | "removeBlueprint" | "importBlueprint" | "stagePipelineRuns" | "setStagePipelineRun" | "stagePreview" | "setStagePreview" | "sectionGrades" | "setSectionGrade" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPerm" | "setPlanAgentStreamPreset" | "generateFleetProfiles" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "reposPublic" | "setReposPublic" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planKbAssignments" | "addPlanKbAssignment" | "removePlanKbAssignment" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintSections" | "removeBlueprint" | "importBlueprint" | "stagePipelineRuns" | "setStagePipelineRun" | "stagePreview" | "setStagePreview" | "sectionGrades" | "setSectionGrade" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPerm" | "setPlanAgentStreamPreset" | "generateFleetProfiles" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -364,6 +364,14 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           if (!cur) return {};
           const streams = cur.streams.map((x) =>
             x.id === streamId ? { ...x, flow: normalizeFlow({ ...resolveFlow(x.flow), ...patch }) } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
+      setPlanAgentStreamModel: (projectId, streamId, model) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, model: model ?? undefined } : x);
           return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
         }),
       setPlanAgentStreamStrategy: (projectId, streamId, strategy) =>

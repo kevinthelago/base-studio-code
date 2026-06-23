@@ -1,5 +1,6 @@
 import type { AgentFlow } from "../fleet/agentFlow";
 import { flowOrUndefined } from "../fleet/agentFlow";
+import type { ModelId } from "../../../lib/console/models";
 import { type DirectorDrive, normalizeDirectorDrive, DEFAULT_DIRECTOR_DRIVE } from "../fleet/directorDrive";
 import { type IntegrationStrategy, normalizeStrategy } from "../shared/integrationStrategy";
 import {
@@ -142,6 +143,9 @@ export interface AgentStream {
   profile?: string;
   /** Per-agent execution flow (#297): autonomy + GitHub push policy. Unset ⇒ DEFAULT_FLOW at launch. */
   flow?: AgentFlow;
+  /** Per-agent LLM model (#…) — launches this stream's session under `claude --model <tier>`.
+   *  Unset ⇒ the global `defaultModel` (so the director/baseline stays on the global choice). */
+  model?: ModelId;
   /** Per-stream integration-strategy override (#378). Unset ⇒ the fleet default. */
   strategy?: IntegrationStrategy;
   /** GitHub login this stream's issues are assigned to at publish (#847). A worker is an

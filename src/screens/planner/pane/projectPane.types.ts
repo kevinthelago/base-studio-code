@@ -8,6 +8,7 @@
 
 import type { DirectorDrive } from "../fleet/directorDrive";
 import type { IntegrationStrategy } from "../shared/integrationStrategy";
+import type { ModelId } from "../../../lib/console/models";
 import type { PlanGrade } from "../../../lib/planner/planGrade";
 import type { PlanFeature } from "../issues/featureList";
 import type { Blueprint } from "../stages/blueprints";
@@ -67,6 +68,8 @@ export interface Agent {
   preset: string;
   perm: Perm;
   flow: Flow;
+  /** Per-agent LLM model override (#…); undefined ⇒ inherits the global `defaultModel`. */
+  model?: ModelId;
   /** Per-stream integration-strategy override (#378); undefined ⇒ inherits the fleet default. */
   strategy?: IntegrationStrategy;
   ctx: number;

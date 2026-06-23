@@ -142,6 +142,7 @@ function buildAgents(input: BuildProjectPaneInput): Agent[] {
       preset: s.preset ?? (profile ? profile.name : "Custom"),
       perm: s.perm ? { ...s.perm } : derivePerm(profile, flow.push),
       flow: { autonomy: flow.autonomy, push: mapPush(flow.push), gate: flow.gate },
+      model: s.model,
       strategy: s.strategy,
       ctx: s.owns.length,
     };
