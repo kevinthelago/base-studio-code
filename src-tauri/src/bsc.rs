@@ -25,9 +25,11 @@ pub(crate) const BSC_CHECKPOINT_RC: &str =
 /// PARALLEL rather than parking until an upstream lands. A worker that genuinely needs a decision
 /// defers to the director via `bsc-ask` (which is answered + resumes it); it never blocks on a dep.
 pub(crate) const BSC_DECISIONS_RC: &str =
-    // `printf '%s' '- '` (not `printf '- '`): a format starting with `-` is parsed as an option
-    // flag and the prefix is silently dropped.
-    "bsc-note() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' '- '; cat; printf '\\n'; } >> \"$d\"; }\n";
+    // Provenance (#1167): tag each entry with the writing session (`- [<pane>] …`) so a note from
+    // ANOTHER agent is attributable and a reader can treat a cross-session note as untrusted data,
+    // not an instruction (the internal injection channel). `printf '%s' "…"` (not `printf "- …"`):
+    // a format starting with `-` is parsed as an option flag and the prefix is silently dropped.
+    "bsc-note() { d=\"${BSC_DECISIONS_DOC:-$PWD/DECISIONS.md}\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; { printf '%s' \"- [${BSC_AUDIT_PANE:-?}] \"; cat; printf '\\n'; } >> \"$d\"; }\n";
 
 /// The `bsc-audit` helper (#257): the PreToolUse hook on a gated pane pipes Claude
 /// Code's tool JSON into this; it extracts ONLY the tool name + a short target field
@@ -441,6 +443,7 @@ mod tests {
                 .arg("-c").arg("bsc-note")
                 .env("BASH_ENV", &rc_bash)
                 .env("BSC_DECISIONS_DOC", &doc_bash)
+                .env("BSC_AUDIT_PANE", "t0p1") // provenance (#1167): the writing session
                 .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
                 .spawn().unwrap();
             child.stdin.take().unwrap().write_all(msg.as_bytes()).unwrap();
@@ -449,9 +452,10 @@ mod tests {
         run("chose cursor pagination");
         run("used JWT for auth");
 
+        // Each entry is provenance-tagged with the writing session id (#1167).
         assert_eq!(
             std::fs::read_to_string(&doc).unwrap(),
-            "- chose cursor pagination\n- used JWT for auth\n",
+            "- [t0p1] chose cursor pagination\n- [t0p1] used JWT for auth\n",
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
