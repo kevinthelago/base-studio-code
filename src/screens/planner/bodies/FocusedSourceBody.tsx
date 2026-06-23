@@ -22,7 +22,7 @@ import { useAppStore } from "../../../store";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
   isConnected, sourceChecks, allSourcesConnected, deriveDataModel,
-  type SourceConfig, type DeclaredSource, type SpecField, type SourceStatus, type PlatformScanView,
+  type SourceConfig, type DeclaredSource, type SpecField, type SourceStatus, type PlatformScanView, type DiscoveredField,
 } from "../shared/sourceConfig";
 import { ScanViews } from "./ScanViews";
 
@@ -407,7 +407,7 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
   // the pane stays demonstrable until every connector's live transport / OAuth app is in place.
   async function runScan(uid: string, connectorId: string, fields: Record<string, string>, fallbackHandle: string) {
     try {
-      const res = await invoke<{ live: boolean; instance?: string; handle?: string; objects?: { name: string; count: number; fields?: string[] }[]; behaviors?: { label: string }[]; platform?: PlatformScanView }>(
+      const res = await invoke<{ live: boolean; instance?: string; handle?: string; objects?: { name: string; count: number; fields?: DiscoveredField[] }[]; behaviors?: { label: string }[]; platform?: PlatformScanView }>(
         "data_platform_scan",
         { connectorId, project: pid, sourceUid: uid, fields },
       );
