@@ -228,4 +228,33 @@ describe("sourceConfig — scan visualizations view-model (#1209)", () => {
     expect(tier.type).toBe("enum");
     expect(tier.enumValues).toEqual(["A", "B", "C"]);
   });
+
+  it("resolves connector-declared lookups into refs (target by object name), drops dangling ones (#1219)", () => {
+    const cfg: SourceConfig = {
+      dataModelName: "M", proposed: [],
+      sources: [src({
+        uid: "sf", connectorId: "salesforce", status: "scanned",
+        objects: [
+          { name: "Account", count: 3, fields: [
+            { name: "Id", type: "string" },
+            { name: "OwnerId", type: "ref", ref: "User" },   // declared lookup → scanned object
+            { name: "TerritoryId", type: "ref", ref: "Territory" }, // lookup to an un-scanned object
+          ] },
+          { name: "User", count: 2, fields: [{ name: "Id", type: "string" }] },
+        ],
+      })],
+    };
+    const model = deriveDataModel(cfg);
+    const account = model.entities.find((e) => e.key === "account")!;
+    const byKey = Object.fromEntries(account.fields.map((f) => [f.key, f]));
+    // declared lookup resolves to the target entity's key — name-matching never would (ownerid≠user)
+    expect(byKey.ownerid.type).toBe("ref");
+    expect(byKey.ownerid.ref).toBe("user");
+    // lookup to an object that wasn't scanned: dangling link dropped, left a plain field
+    expect(byKey.territoryid.ref).toBeUndefined();
+    expect(byKey.territoryid.type).toBe("string");
+    // the resolved lookup becomes a graph edge
+    const edges = scanEdges(scanEntities(cfg));
+    expect(edges).toContainEqual({ from: "account", to: "user", label: "ownerid → User" });
+  });
 });
