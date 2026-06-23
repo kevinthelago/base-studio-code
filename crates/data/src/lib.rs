@@ -27,6 +27,13 @@ pub mod odata;
 pub mod servicenow;
 pub mod netsuite;
 pub mod zoho;
+pub mod xero;
+pub mod pipedrive;
+pub mod asana;
+pub mod stripe;
+pub mod zendesk;
+pub mod jira;
+pub mod rest;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
@@ -50,6 +57,13 @@ pub use odata::ODataConnector;
 pub use servicenow::ServiceNowConnector;
 pub use netsuite::NetSuiteConnector;
 pub use zoho::ZohoConnector;
+pub use xero::XeroConnector;
+pub use pipedrive::PipedriveConnector;
+pub use asana::AsanaConnector;
+pub use stripe::StripeConnector;
+pub use zendesk::ZendeskConnector;
+pub use jira::JiraConnector;
+pub use rest::{RestConnector, RestResource};
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
