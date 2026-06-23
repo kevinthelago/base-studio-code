@@ -20,6 +20,8 @@ import { SkillsStatus } from "./screens/skills/SkillsStatus";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
 import { CrashRecoveryBanner } from "./components/CrashRecoveryBanner";
+import { QuarantineBanner } from "./components/QuarantineBanner";
+import { useWarden } from "./lib/fleet/useWarden";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/console/detachWindow";
 import { accentVars } from "./lib/settings/appearance";
 
@@ -172,6 +174,7 @@ export default function App() {
   useHotkeys();
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
+  useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
 
   const {
     activeScreen, setScreen,
@@ -402,6 +405,7 @@ export default function App() {
       <SuperUserAchievement />
       <Titlebar workspace={titleWorkspace} />
       <CrashRecoveryBanner />
+      <QuarantineBanner />
       <div className="shell">
         <Rail active={activeScreen} onNavigate={setScreen} />
         <div className="main">

@@ -102,6 +102,16 @@ export interface GithubRepo {
   stargazers_count: number;
 }
 
+/** A worker the warden quarantined (#1102): why it tripped + when, for the user-facing surface. */
+export interface QuarantineInfo {
+  /** The stream the quarantined pane belonged to. */
+  streamId: string;
+  /** One-line deterministic trip summary (out-of-lane file / denied command). */
+  summary: string;
+  /** Epoch ms when it was quarantined. */
+  at: number;
+}
+
 export interface AppStore {
   // Navigation
   activeScreen: Screen;
@@ -180,6 +190,12 @@ export interface AppStore {
   // Record a pane's live status AND re-roll its tab's state in one step (#435) — the
   // store is the single source of truth for both the pane dot and the tab rollup.
   setPaneStatus: (paneId: string, status: "run" | "on" | "idle") => void;
+  // ── Warden quarantine (#1102) ──
+  /** Panes the warden hard-paused (PTY killed) for drifting off their plan — possible prompt
+   *  injection / hijack. Keyed by pane id; surfaced to the user, who clears it explicitly. */
+  quarantinedPanes: Record<string, QuarantineInfo>;
+  markQuarantine: (paneId: string, info: QuarantineInfo) => void;
+  clearQuarantine: (paneId: string) => void;
   // ── Idle session reaping (#849) ──
   /** Panes whose PTY has been reaped for idleness; the view renders a dormant placeholder
    *  and resumes on focus. Transient (not persisted) — panes relaunch on next app start. */
