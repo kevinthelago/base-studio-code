@@ -31,6 +31,14 @@ describe("bscAgentPerms", () => {
     expect(bscAgentPerms(cap).deny_bash).toEqual(roleDeniedCommands(cap));
     expect(bscAgentPerms(cap).deny_bash).toContain("git");
   });
+  it("lifts flow-granted push commands from deny_bash so an auto-pr worker can open its PR (#304 parity)", () => {
+    const cap = roleCapability("worker", { writeGlobs: ["src/**"] }); // github:read ⇒ denies gh pr create
+    expect(bscAgentPerms(cap).deny_bash).toContain("gh pr create");
+    // With the flow granting push/PR, those two are lifted; other gh-writes stay denied.
+    const lifted = bscAgentPerms(cap, ["git push", "gh pr create"]).deny_bash;
+    expect(lifted).not.toContain("gh pr create");
+    expect(lifted).toContain("gh pr merge");
+  });
 });
 
 describe("classifyCommand", () => {

@@ -314,10 +314,16 @@ export interface BscAgentPerms {
   write_globs: string[];
 }
 
-export function bscAgentPerms(cap: RoleCapability): BscAgentPerms {
+/** Render the role capability to bsc-agent's native permission doc. `granted` are the
+ *  GitHub-propagation commands the pane's *flow* permits (from {@link flowGrantedPushCommands}):
+ *  the flow owns `git push` / `gh pr create`, so they're lifted from the role denies when it
+ *  permits pushing/PRing — mirroring the Claude role↔flow reconciliation (#304) so an `auto-pr`
+ *  bsc-agent worker (github:read) can open its own PR. Everything else the role denies stays
+ *  denied. With no flow grant (the default), behavior is unchanged. */
+export function bscAgentPerms(cap: RoleCapability, granted: string[] = []): BscAgentPerms {
   return {
     deny_tools: cap.code === "none" ? ["write_file", "edit_file"] : [],
-    deny_bash: roleDeniedCommands(cap),
+    deny_bash: roleDeniedCommands(cap).filter((d) => !granted.includes(d)),
     write_globs: cap.code === "write" ? cap.writeGlobs : [],
   };
 }
