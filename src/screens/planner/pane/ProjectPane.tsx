@@ -8,6 +8,7 @@ import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, ContextFile,
   ProjectPaneData, PaneAutomation, PaneSkill, McpServer,
 } from "./projectPaneData";
+import { type ModelId, modelTier, tierToModelId } from "../../../lib/console/models";
 import { featureDefined, type PlanFeature } from "../issues/featureList";
 import type { Phase, GatePill, FooterKind } from "../stages/focusedPlan";
 import {
@@ -217,16 +218,18 @@ function Seg({ options, value, onChange, tiny }: {
   );
 }
 
-function AgentEditor({ a, onPerm, onPreset, onFlow }: {
+function AgentEditor({ a, onPerm, onPreset, onFlow, onModel }: {
   a: Agent;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
 }) {
   const [perm, setPerm] = useState<Perm>(a.perm);
   const [preset, setPreset] = useState(a.preset);
   const [flow, setFlow] = useState<Flow>(a.flow);
-  useEffect(() => { setPerm(a.perm); setPreset(a.preset); setFlow(a.flow); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [model, setModel] = useState<ModelId | undefined>(a.model);
+  useEffect(() => { setPerm(a.perm); setPreset(a.preset); setFlow(a.flow); setModel(a.model); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (k: string, v: Posture) => {
     const next = { ...perm, [k]: v };
     setPerm(next); setPreset("custom");
@@ -266,6 +269,19 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
         </div>
       </div>
 
+      {onModel && (
+        <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
+          <div className="ulabel" style={{ marginBottom: 8 }}>model</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Seg options={["default", "haiku", "sonnet", "opus"]} value={model ? modelTier(model) : "default"}
+              onChange={(v) => { const m = v === "default" ? undefined : tierToModelId(v); setModel(m); onModel(a.id, m); }} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+              {model ? `claude --model ${modelTier(model)}` : "uses the global default"}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
         <div className="ulabel" style={{ marginBottom: 8 }}>flow</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -293,11 +309,12 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
   );
 }
 
-function AgentsA({ agents = [], onPerm, onPreset, onFlow }: {
+function AgentsA({ agents = [], onPerm, onPreset, onFlow, onModel }: {
   agents?: Agent[];
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
 }) {
   const [open, setOpen] = useState<string | null>((agents.find((a) => a.focus) ?? agents[0])?.id ?? null);
   const running = agents.filter((a) => a.status === "run").length;
@@ -362,7 +379,7 @@ function AgentsA({ agents = [], onPerm, onPreset, onFlow }: {
                     {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
                     {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
                   </div>
-                  <AgentEditor a={a} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+                  <AgentEditor a={a} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} />
                 </>
               )}
             </div>
@@ -1087,11 +1104,12 @@ function FocusedPlanBody({ data }: {
 // (posture bar + per-stream editor), plus the "generate profiles" action that materializes the
 // profiles the stage's `profilesComplete` gate requires. Previously a hardcoded "No agents yet"
 // stub that never rendered the fleet — so the stage looked empty even with streams planned.
-function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProfiles, onTopology, onDirectorDrive }: {
+function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive }: {
   data?: ProjectPaneData;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
   onGenerateProfiles?: () => void;
   /** Set the project's coordination topology (#…). */
   onTopology?: (t: Topology) => void;
@@ -1179,12 +1197,12 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
           </button>
         </div>
       )}
-      <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+      <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} />
     </div>
   );
 }
 
-function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
+function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, onView, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
@@ -1202,6 +1220,7 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, repos
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
   onGenerateProfiles?: () => void;
   onTopology?: (t: Topology) => void;
   onDirectorDrive?: (d: DirectorDrive) => void;
@@ -1245,7 +1264,7 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, repos
     case "structure":
       return <FocusedPlanBody data={data} />;
     case "permissions":
-      return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />;
+      return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />;
     case "mcp":
       return <FocusedMcpBody servers={data?.mcpServers} onToggle={onToggleMcp} onBuild={onBuildMcp} onAdd={onAddMcp} onRemove={onRemoveMcp} />;
     case "automations":
@@ -1277,6 +1296,7 @@ export function ProjectPane({
   onPerm,
   onPreset,
   onFlow,
+  onModel,
   // focused mode: one-phase sequenced rail (#652) — the only render mode (#1061)
   focus,
   onLinkRepo,
@@ -1296,6 +1316,8 @@ export function ProjectPane({
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  /** Permissions stage: set a stream's per-agent LLM model (undefined ⇒ global default) (#…). */
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
   /** The sequenced-rail focused mode (#652) — the sole render path (#1061 removed the legacy
    *  staged/flat view + its hardcoded PLAN_STAGES gate). */
   focus?: {
@@ -1396,7 +1418,7 @@ export function ProjectPane({
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
           <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} reposPublic={reposPublic} onSetReposPublic={onSetReposPublic} onView={setViewing}
-            onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
+            onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} />
         </div>
         <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />

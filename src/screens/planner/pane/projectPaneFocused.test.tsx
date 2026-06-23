@@ -177,6 +177,23 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(onGenerateProfiles).toHaveBeenCalled();
   });
 
+  it("Permissions: picks a per-agent model and clears it back to the global default (#…)", () => {
+    const onModel = vi.fn();
+    const permsPhase = { phases: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const data = { agents: [
+      { id: "auth", name: "@auth", role: "worker", status: "idle", repo: "acme/api", color: "#888",
+        initial: "A", owns: ["src/auth/**"], issues: [], preset: "Build",
+        perm: { read: "allow", edit: "allow", create: "allow", run: "ask", net: "deny", push: "ask", pkg: "deny" },
+        flow: { autonomy: "checkpoint", push: "auto-PR", gate: "soft" }, ctx: 1 },
+    ], repos: [], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    render(<ProjectPane data={data} focus={baseFocus(permsPhase)} onModel={onModel} />);
+    // The first agent's editor is open by default → its model segmented control is visible.
+    fireEvent.click(screen.getByText("opus"));
+    expect(onModel).toHaveBeenCalledWith("auth", "opus-4.5"); // tier → ModelId
+    fireEvent.click(screen.getByText("default"));
+    expect(onModel).toHaveBeenCalledWith("auth", undefined);  // back to the global default
+  });
+
   it("renders the Plan review (phases + seam graph) with no in-body approve button (#949)", () => {
     // The Structure stage's only approve control is the footer's "approve & continue" — the
     // duplicate in-body "Approve milestones & seams" button was removed (#949).
