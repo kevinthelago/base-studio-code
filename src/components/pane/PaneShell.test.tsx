@@ -105,7 +105,7 @@ describe("PaneShell", () => {
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
-  it("a RUNNING pane shows the harness + model in the pill (footer hidden) (#1181)", () => {
+  it("a RUNNING pane shows the harness + model in the pill (#1181)", () => {
     render(
       <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" claudeActive>
         <div>content</div>
@@ -128,7 +128,7 @@ describe("PaneShell", () => {
     expect(screen.queryByText("sonnet-4.5")).not.toBeInTheDocument();
   });
 
-  it("an IDLE pane shows an undetected pill + the status footer (#1181)", () => {
+  it("an IDLE pane shows an undetected pill (no model, no footer) (#1181)", () => {
     render(
       <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" branch="wt/checkout" status="run">
         <div>content</div>
@@ -136,9 +136,9 @@ describe("PaneShell", () => {
     );
     expect(screen.getByText("undetected")).toBeInTheDocument(); // nothing running ⇒ no model name
     expect(screen.queryByText("sonnet-4.5")).not.toBeInTheDocument();
-    expect(screen.getByText("· checkout")).toBeInTheDocument();
-    expect(screen.getByText("⎇ wt/checkout")).toBeInTheDocument();// footer branch (shown when not active)
-    expect(screen.getByText("running")).toBeInTheDocument();      // footer state
+    expect(screen.getByText("· checkout")).toBeInTheDocument(); // repo still shown in the header
+    // The footer was removed entirely (#1181) — no branch/state strip.
+    expect(screen.queryByText("⎇ wt/checkout")).not.toBeInTheDocument();
   });
 
   it("labels a claude-provider pane as the Claude Code harness when running", () => {

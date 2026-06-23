@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { type ViewKey } from "./ViewTabs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
+import { prettyModel, toModelId } from "../../lib/console/modelDisplay";
 
 // The canonical pane-status vocabulary lives in lib/paneStatus (#435); re-exported
 // here so existing PaneShell importers keep their import path.
@@ -78,13 +79,10 @@ export function PaneShell({
   status = "run",
   model = "sonnet-4.5",
   repo,
-  branch,
   role,
   provider,
   changes = 0,
   warns = 0,
-  tok,
-  cost,
   claudeActive = false,
   runningModel,
   available = ["console", "files"],
@@ -172,7 +170,7 @@ export function PaneShell({
   // `runningModel` is the actual model the CLI reports (transcript) when known, else the configured
   // one; absent ⇒ fall back to the configured `model`.
   const running = claudeActive;
-  const modelLabel = runningModel ?? model;
+  const modelLabel = prettyModel(runningModel) ?? model;
 
   const chip = (txt: string, bg: string, col: string) => (
     <span style={{ padding: "0 4px", borderRadius: 5, background: bg, color: col, fontSize: 9, fontFamily: "var(--mono)" }}>{txt}</span>
@@ -306,24 +304,6 @@ export function PaneShell({
         {children}
       </div>
 
-      {/* Footer (#1149): session state · branch · tokens · cost. Hidden while a Claude session is
-          active (#1158) — the native console input takes the bottom bar's place. */}
-      {!claudeActive && (
-        <div style={{
-          height: 24, flex: "0 0 24px", display: "flex", alignItems: "center", gap: 12,
-          padding: "0 11px", background: "var(--bg-canvas)", borderTop: "1px solid var(--border-soft)",
-          fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)",
-        }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: sm.color }} />{sm.label}
-          </span>
-          {branch && <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>⎇ {branch}</span>}
-          <div style={{ flex: 1 }} />
-          {tok && <span style={{ color: "var(--fg-dim)", flex: "0 0 auto" }}>{tok} tok</span>}
-          {cost && <span style={{ flex: "0 0 auto" }}>{cost}</span>}
-        </div>
-      )}
-
       {menuOpen && menuPos && createPortal(
         <div ref={menuRef} style={{
           position: "fixed",
@@ -333,7 +313,7 @@ export function PaneShell({
         }}>
           <PaneMenu
             agent={agent}
-            model={model} active={active} available={available}
+            model={model} runningModel={toModelId(runningModel)} active={active} available={available}
             maxHeight={menuPos.maxHeight}
             fullscreen={fullscreen}
             disabled={disabled}
