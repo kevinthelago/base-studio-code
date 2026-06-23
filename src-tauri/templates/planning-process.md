@@ -647,10 +647,20 @@ bsc-plan mcp add Postgres
 (right after Repos). `bsc-plan deploy set` (the config JSON on stdin) — NOT a prose `deploy.md` —
 fills the Deploy pane and clears the stage gate. Re-run with the whole config as it firms up (the
 latest one wins). The gate needs a `platform` on every service, ≥2 `environments`, ≥2
-`pipeline.stages`, every secret listing `prod` in its `envs`, and a non-empty `release.strategy`:
+`pipeline.stages`, every secret listing `prod` in its `envs`, and a non-empty `release.strategy`.
+
+Per service also set `host` — the git host the repo lives on (`github` · `gitlab` · `bitbucket` ·
+`selfhosted`) — and, for a **container** `workload`, its `registry` (image registry), `orchestrator`
+(`k8s` · `swarm` · `nomad`), and `replicas` (`"1"`/`"3"`/`"5"`/`"auto"`); the pane shows these in a
+containerization & orchestration card. `platform` is one of vercel · netlify · cloudflare · fly ·
+railway · render · aws · gcp · azure · ghpages · docker · k8s; `workload` is static · serverless ·
+container · service:
 ```
 echo '{
-  "services": [{"id":"web","repo":"owner/web","platform":"vercel","workload":"static","region":"iad1","build":"pnpm build","output":"dist"}],
+  "services": [
+    {"id":"web","repo":"owner/web","host":"github","platform":"vercel","workload":"static","region":"iad1","build":"pnpm build","output":"dist"},
+    {"id":"api","repo":"owner/api","host":"selfhosted","platform":"fly","workload":"container","region":"iad","runtime":"rust:1.79","registry":"ghcr.io/owner/api","orchestrator":"k8s","replicas":"3"}
+  ],
   "environments": [{"name":"dev","branch":"feature/*","auto":true},{"name":"staging","branch":"develop","auto":true},{"name":"prod","branch":"main","auto":false}],
   "pipeline": {"provider":"GitHub Actions","stages":[{"name":"build","trigger":"push"},{"name":"test","trigger":"on-green","gate":true},{"name":"deploy","trigger":"on-green"}]},
   "secrets": [{"key":"DATABASE_URL","envs":["dev","staging","prod"]}],
