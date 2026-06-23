@@ -223,13 +223,13 @@ are **Planned**.
 
 | Version | Status | Theme |
 |---|---|---|
-| **v1.0.3** | **Current** | User experience, resiliency, and the core **Default** (greenfield) blueprint and its **triage** — the progress-gated relaunch that resumes from plan.db and skips completed workers. Running in parallel, the **model-agnostic agent shell** (`bsc-agent`, epic #1078) lets the platform run on any LLM (Anthropic/OpenAI/Gemini/local); Claude Code stays the default until parity. |
-| v1.0.4 | Planned | **Enterprise integration & migration** — pull data from ERP/CRM/BPM into canonical **data models** via MCP connectors, then generate bespoke software to replace them, with a compliance layer baked into the planner. |
+| v1.0.3 | Complete | User experience, resiliency, and the core **Default** (greenfield) blueprint and its **triage** — the progress-gated relaunch that resumes from plan.db and skips completed workers. Running in parallel, the **model-agnostic agent shell** (`bsc-agent`, epic #1078) lets the platform run on any LLM (Anthropic/OpenAI/Gemini/local); Claude Code stays the default until parity. |
+| **v1.0.4** | **Current** | **Enterprise integration & migration** — connect **read-only** to an existing system (CRM/ERP/BPM, Salesforce first) and **scan the whole platform**: data types *and* configurations *and* behaviors. The planner produces a **Platform Behavior Summary** — objects/fields, automations (validation rules, workflows, Flows/Process Builder), business processes (approval processes), and derived logic (formula fields, Apex) — so **automations, business processes, and data are all migratable**: reproduced as the generated app's schema and logic via canonical **data models** + MCP connectors, with a compliance layer baked into the planner. |
 | v1.0.5 | Planned | **The UI release** — an in-app, Claude-Design-like way to define each page, component, and animation, rendered live by the render-preview (closing the external Claude Design round-trip). |
 
-The agent-shell track ships alongside v1.0.3 but is themed separately on the public [Roadmap](README.md#roadmap)
-("Run on any model"). When v1.0.3 is complete, move it to **Complete**, promote **v1.0.4** to **Current**,
-and add the following **v1.0.6** row as **Planned**.
+The agent-shell track shipped alongside v1.0.3 but is themed separately on the public [Roadmap](README.md#roadmap)
+("Run on any model"). v1.0.3 is now **Complete** and **v1.0.4** is **Current**. When v1.0.4 is complete,
+move it to **Complete** and promote **v1.0.5** to **Current**.
 
 ## GitHub Workflow
 
