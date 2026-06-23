@@ -91,6 +91,26 @@ export function toMcpPayload(e: McpServer): McpServerPayload | null {
   };
 }
 
+/** The `$BSC_AGENT_MCP` config bsc-agent reads (#1078 P3) — its MCP client is **stdio-only**, so
+ *  http servers are dropped; `env` becomes a plain object (matching the Rust `McpServerCfg`). */
+export interface BscAgentMcpCfg {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+}
+
+export function toBscAgentMcp(payloads: McpServerPayload[]): BscAgentMcpCfg[] {
+  return payloads
+    .filter((p) => p.transport === "stdio" && !!p.command)
+    .map((p) => ({
+      name: p.name,
+      command: p.command as string,
+      args: p.args,
+      env: Object.fromEntries(p.env),
+    }));
+}
+
 // ── Catalog templates ─────────────────────────────────────────────────────────
 // Pre-filled config for well-known catalog entries (keyed by catalog item name).
 // Unknown names fall back to a blank stdio server the user completes.
