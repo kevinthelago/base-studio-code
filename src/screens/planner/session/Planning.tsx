@@ -666,6 +666,8 @@ export function Planning({ visible }: { visible: boolean }) {
       features: planFeatures,
       authoredBlueprint: planAuthoredBlueprint[effectiveProjectId],
       deployConfig: deployCfg,
+      dependencies: planDependencies,
+      registries: depManifest.registries,
       pinned:   pinnedContext[effectiveProjectId],
       mcpServers,
       projectKey: effectiveProjectId,
@@ -673,7 +675,7 @@ export function Planning({ visible }: { visible: boolean }) {
       topologyOverride: planFleetTopology[effectiveProjectId],
       directorDriveOverride: planFleetDirectorDrive[effectiveProjectId],
     }),
-    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, mcpServers, mcpInstallState],
+    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, mcpInstallState],
   );
 
   // Probe each downloadable MCP server's on-disk state so the pane opens with real status

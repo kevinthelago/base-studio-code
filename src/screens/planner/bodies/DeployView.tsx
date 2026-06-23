@@ -7,6 +7,7 @@ import {
   PLATFORMS, platform, WORKLOAD, PIPE_TRIGGERS, RELEASE_STRATEGIES, deployChecks,
   type DeployConfig, type Workload, type ReleaseStrategy,
 } from "../shared/deployConfig";
+import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 
 const MONO = "var(--mono)";
 const card: React.CSSProperties = {
@@ -79,7 +80,73 @@ function Toggle({ on, onClick, label, value }: { on: boolean; onClick: () => voi
   );
 }
 
-export function FocusedDeployBody({ deploy, onChange }: { deploy?: DeployConfig; onChange?: (next: DeployConfig) => void }) {
+/** The locked dependency manifest (#1133) — surfaced so the Deploy stage shows the libraries each
+ *  repo depends on (and where they're sourced from), not just the shipping config. */
+function DependenciesSection({ deps, registries }: { deps: PlanDependency[]; registries: Record<string, DependencyRegistry> }) {
+  const regKeys = Object.keys(registries);
+  const ecoColor = (eco: string) => (eco === "cargo" ? "oklch(0.72 0.13 45)" : "var(--info)");
+  const hint = deps.length
+    ? `${deps.length} locked${regKeys.length ? ` · ${regKeys.length} registr${regKeys.length === 1 ? "y" : "ies"}` : ""}`
+    : "none yet";
+  // Group by the repo each dependency is scoped to; ecosystem-wide ones (no repo) sit under "all repos".
+  const groups = new Map<string, PlanDependency[]>();
+  for (const dep of deps) {
+    const k = dep.repo ?? "· all repos";
+    const arr = groups.get(k);
+    if (arr) arr.push(dep); else groups.set(k, [dep]);
+  }
+  return (
+    <Section label="dependencies" hint={hint}>
+      {deps.length === 0 ? (
+        <span style={monoSm}>No dependencies locked yet — the planner lists each repo&apos;s libraries here as it works this stage. They become each repo&apos;s package.json / Cargo.toml at publish.</span>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+          {[...groups.entries()].map(([repo, list]) => (
+            <div key={repo}>
+              <div style={{ ...grpLabel, marginBottom: 7 }}>{repo}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {list.map((dep, i) => (
+                  <span key={`${dep.ecosystem}-${dep.name}-${i}`} style={{ ...chip, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ color: ecoColor(dep.ecosystem), fontSize: 8 }}>{dep.ecosystem}</span>
+                    <span style={{ color: "var(--fg)" }}>{dep.name}{dep.version ? `@${dep.version}` : ""}</span>
+                    {dep.dev && <span style={{ color: "var(--fg-dim)" }}>dev</span>}
+                    {dep.source && <span style={{ color: "var(--accent)" }}>⛁ {dep.source}</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+          {regKeys.length > 0 && (
+            <div>
+              <div style={{ ...grpLabel, marginBottom: 7 }}>registries · sources</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {regKeys.map((k) => {
+                  const r = registries[k];
+                  return (
+                    <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: MONO, fontSize: 10 }}>
+                      <span style={{ ...chip, color: "var(--accent)", borderColor: "var(--accent-dim)" }}>{k}</span>
+                      <span style={{ color: "var(--fg-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.url}</span>
+                      {r.scope && <span style={{ color: "var(--info)" }}>{r.scope}</span>}
+                      <span style={{ flex: 1 }} />
+                      {r.auth && <span style={{ color: "var(--fg-dim)" }}>secret · {r.auth}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+export function FocusedDeployBody({ deploy, onChange, dependencies = [], registries = {} }: {
+  deploy?: DeployConfig;
+  onChange?: (next: DeployConfig) => void;
+  dependencies?: PlanDependency[];
+  registries?: Record<string, DependencyRegistry>;
+}) {
   if (!deploy) {
     return <div style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg-dim)", padding: "8px 2px" }}>Deployment config loads once the repos are linked.</div>;
   }
@@ -88,7 +155,11 @@ export function FocusedDeployBody({ deploy, onChange }: { deploy?: DeployConfig;
   const svc = d.services.find((s) => s.id === d.selService) ?? d.services[0];
   const checks = deployChecks(d);
   const ready = checks.filter((c) => c.ok).length;
-  const allReady = ready === checks.length;
+  // The Deploy GATE needs both shipping AND ≥1 locked dependency (#1127) — reflect that here so the
+  // banner can't read "ready to ship" while the stage is still waiting on dependencies.
+  const depsOk = dependencies.length > 0;
+  const allReady = ready === checks.length && depsOk;
+  const missing = [...checks.filter((c) => !c.ok).map((c) => c.id), ...(depsOk ? [] : ["dependencies"])];
 
   const setSvc = (patch: Partial<typeof svc>) => svc && set({ services: d.services.map((s) => s.id === svc.id ? { ...s, ...patch } : s) });
   const pickPlatform = (pid: string) => {
@@ -114,7 +185,7 @@ export function FocusedDeployBody({ deploy, onChange }: { deploy?: DeployConfig;
         <span style={{ width: 7, height: 7, borderRadius: 99, background: allReady ? "var(--success)" : "var(--accent)" }} />
         <span style={{ fontFamily: MONO, fontSize: 11, color: allReady ? "var(--success)" : "var(--accent)" }}>{allReady ? "Ready to ship" : `${ready}/${checks.length} defined`}</span>
         <span style={{ flex: 1 }} />
-        <span style={monoSm}>{allReady ? "deployment issues ready to generate" : "missing: " + checks.filter((c) => !c.ok).map((c) => c.id).join(", ")}</span>
+        <span style={monoSm}>{allReady ? "deployment issues ready to generate" : "missing: " + missing.join(", ")}</span>
       </div>
 
       {/* 1 · TARGET & HOSTING */}
@@ -253,7 +324,10 @@ export function FocusedDeployBody({ deploy, onChange }: { deploy?: DeployConfig;
         )}
       </Section>
 
-      {/* 5 · RELEASE & ROLLBACK */}
+      {/* 5 · DEPENDENCIES (#1127/#1133) — the libraries each repo needs + their sources */}
+      <DependenciesSection deps={dependencies} registries={registries} />
+
+      {/* 6 · RELEASE & ROLLBACK */}
       <Section label="release · rollback">
         <div style={{ ...grpLabel, marginBottom: 7 }}>strategy</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 6 }}>
