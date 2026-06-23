@@ -46,6 +46,25 @@ export const WORKLOAD: Record<Workload, { label: string; c: string }> = {
   service:    { label: "long-running", c: "var(--success)" },
 };
 
+/** A git host a project's repos can live on — a project may span clouds or a self-hosted server. */
+export interface GitHost { key: string; domain: string; label: string; kind: "cloud" | "self-hosted"; color: string }
+export const HOSTS: Record<string, GitHost> = {
+  github:     { key: "github",     domain: "github.com",  label: "GitHub",      kind: "cloud",       color: "var(--info)" },
+  gitlab:     { key: "gitlab",     domain: "gitlab.com",  label: "GitLab",      kind: "cloud",       color: "var(--accent)" },
+  bitbucket:  { key: "bitbucket",  domain: "bitbucket.org", label: "Bitbucket", kind: "cloud",       color: "var(--info)" },
+  selfhosted: { key: "selfhosted", domain: "self-hosted", label: "self-hosted", kind: "self-hosted", color: "var(--violet)" },
+};
+export function hostMeta(id: string | undefined): GitHost {
+  return HOSTS[id ?? "github"] ?? HOSTS.github;
+}
+
+/** Orchestrators a distributed (container) workload can run under. */
+export const ORCHESTRATORS: { id: string; label: string }[] = [
+  { id: "k8s", label: "Kubernetes" }, { id: "swarm", label: "Docker Swarm" }, { id: "nomad", label: "Nomad" },
+];
+/** Replica-count options for a container workload (string so "auto" fits the same control). */
+export const REPLICA_OPTIONS = ["1", "3", "5", "auto"] as const;
+
 /** A deployable unit — one per linked repo (or sub-path). */
 export interface DeployService {
   id: string;
@@ -60,6 +79,14 @@ export interface DeployService {
   build: string;
   output: string;
   runtime: string;
+  /** Git host the repo lives on (key into {@link HOSTS}) — display only; defaults to github. */
+  host?: string;
+  /** Container image registry for a container workload. Absent ⇒ derived `ghcr.io/<repo>`. */
+  registry?: string;
+  /** Orchestrator id for a distributed container workload (see {@link ORCHESTRATORS}). */
+  orchestrator?: string;
+  /** Replica count for a container workload — a {@link REPLICA_OPTIONS} value ("auto" allowed). */
+  replicas?: string;
 }
 
 export interface DeployEnvironment {
@@ -136,7 +163,7 @@ export function defaultDeployConfig(repos: string[]): DeployConfig {
     return {
       id: short, repo, path: ".", stack: "—",
       platform: "", workload: "static", proposed: true,
-      region: "—", build: "—", output: "dist", runtime: "—",
+      region: "—", build: "—", output: "dist", runtime: "—", host: "github",
     };
   });
   return {
@@ -180,6 +207,31 @@ export function deploymentDefined(d: DeployConfig | undefined): boolean {
   return !!d && deployChecks(d).every((c) => c.ok);
 }
 
+/** A deployment task this config will generate as a `stream:deploy` issue at publish. */
+export interface DeployIssue { text: string; tag: string; blocking: boolean }
+
+/** Preview the `stream:deploy` issues this config generates at publish — one deploy workflow per
+ *  targeted service, environment provisioning, secret wiring (blocking while prod secrets are
+ *  unset), and a prod health check. Pure; surfaced read-only in the Readiness group. */
+export function deployIssues(d: DeployConfig): DeployIssue[] {
+  const out: DeployIssue[] = [];
+  for (const s of d.services) {
+    if (!s.platform) continue;
+    out.push({ text: `Add ${platform(s.platform).name} deploy workflow for ${s.id} → ${WORKLOAD[s.workload].label}`, tag: "all", blocking: false });
+  }
+  for (const e of d.envs.filter((e) => e.id !== "prod" && e.name !== "prod" && e.id !== "dev" && e.name !== "dev")) {
+    out.push({ text: `Provision ${e.name} environment + secrets`, tag: e.name, blocking: false });
+  }
+  const unwired = d.config.secrets.filter((row) => !row.prod);
+  if (unwired.length) {
+    out.push({ text: `Wire prod secrets (${unwired.map((r) => r.key).join(", ")})`, tag: "prod", blocking: true });
+  }
+  if (d.services.some((s) => s.platform)) {
+    out.push({ text: "Add prod health check + auto-rollback", tag: "prod", blocking: false });
+  }
+  return out;
+}
+
 // ── Planner channel (#919): coerce the planner's `<deploy_config>` JSON → a full DeployConfig ──
 // The planner emits a lenient/partial shape; we overlay it onto the seeded defaults so the gate
 // can clear from the planner's output (not only manual pane edits). Defensive: any missing piece
@@ -202,11 +254,16 @@ export function coerceDeployConfig(raw: unknown, repos: string[] = []): DeployCo
     const plat = platform(asStr(s.platform));
     const wl = asStr(s.workload) as Workload;
     const workload: Workload = plat.kinds.includes(wl) ? wl : (plat.kinds[0] ?? "static");
+    const reps = typeof s.replicas === "number" ? String(s.replicas) : asStr(s.replicas);
     return {
       id, repo, path: asStr(s.path, "."), stack: asStr(s.stack, "—"),
       platform: asStr(s.platform), workload, proposed: false,
       region: asStr(s.region, "—"), build: asStr(s.build, "—"),
       output: asStr(s.output, "dist"), runtime: asStr(s.runtime, "—"),
+      host: asStr(s.host) || (base.services[i]?.host ?? "github"),
+      registry: asStr(s.registry) || undefined,
+      orchestrator: asStr(s.orchestrator) || undefined,
+      replicas: reps || undefined,
     };
   });
 
