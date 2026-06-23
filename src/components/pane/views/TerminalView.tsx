@@ -35,6 +35,11 @@ import { ConsoleInput } from "../ConsoleInput";
 // xterm's own scrollback truncates it anyway.
 const PENDING_BYTES_CAP = 256 * 1024;
 
+// Rows the terminal grows TALLER than its visible clip box while a Claude session is connected
+// (#1158), so Claude CLI's own input box (at the bottom) falls below the clip and is hidden by
+// overflow. ~Claude's input height + a margin; tweak if it peeks or over-clips.
+const CLIP_ROWS = 4;
+
 // Hex equivalents of the oklch design tokens so xterm can use them
 const TERM_THEME: import("@xterm/xterm").ITheme = {
   background:          "#181a1f",
@@ -757,17 +762,24 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           >✕</span>
         </div>
       )}
-      <div
-        ref={containerRef}
-        // While Claude is connected, the native input bar's cover strip overlaps the terminal's
-        // bottom rows (#1158): the class adds matching bottom scroll-padding to xterm's viewport so
-        // those covered lines can be scrolled up clear of the input to read them.
-        className={claudeActive ? "term-with-input" : undefined}
-        style={{
-          flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 4px",
-          display: criticalChecks.length > 0 ? "none" : undefined,
-        }}
-      />
+      {/* Visible terminal clip box. While Claude CLI is connected (#1158) the inner host grows a
+          few rows TALLER than this box, so its bottom rows — Claude's own input — overflow below
+          the clip and are hidden; the small bottom padding leaves a bit of breathing room above
+          the native input bar. */}
+      <div style={{
+        flex: 1, minHeight: 0, overflow: "hidden",
+        paddingBottom: claudeActive ? 6 : 0,
+        background: TERM_THEME.background as string,
+        display: criticalChecks.length > 0 ? "none" : undefined,
+      }}>
+        <div
+          ref={containerRef}
+          style={{
+            height: claudeActive ? `calc(100% + ${Math.round(terminalFontSize * 1.4 * CLIP_ROWS)}px)` : "100%",
+            padding: "6px 4px",
+          }}
+        />
+      </div>
       {/* Native input (#1149): replaces Claude's built-in prompt while a Claude session is active —
           overlays the bottom ~4 rows (Claude's input region) and routes typing to the PTY. */}
       <ConsoleInput
