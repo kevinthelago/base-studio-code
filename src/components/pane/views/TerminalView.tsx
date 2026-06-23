@@ -17,7 +17,7 @@ import { toSessionPayloads } from "../../../lib/session/sessionConfig";
 import { resolveSkills, toSkillCfgs } from "../../../lib/session/skills";
 import { PendingPtyData } from "../../../lib/console/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/console/resumeClaude";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools } from "../../../lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms } from "../../../lib/session/sessionRoles";
 import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
 import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/planner/fleet/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
@@ -389,7 +389,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         const e: Record<string, string> = {};
         if (ghToken) e.GH_TOKEN = ghToken;
         if (providerId === "bsc-agent") {
-          Object.assign(e, bscAgentEnv(resolveLlmConfig(useAppStore.getState())));
+          const st = useAppStore.getState();
+          Object.assign(e, bscAgentEnv(resolveLlmConfig(st)));
+          // Gate the runtime by the pane's role (same least-privilege model as Claude); bsc-agent
+          // enforces this natively from $BSC_AGENT_PERMS. No role ⇒ permissive (unset).
+          const bscRole = st.paneRoles[paneId];
+          if (bscRole) {
+            const cap = roleCapability(bscRole, { writeGlobs: st.paneRoleGlobs[paneId] ?? [] });
+            e.BSC_AGENT_PERMS = JSON.stringify(bscAgentPerms(cap));
+          }
         }
         return Object.keys(e).length > 0 ? e : undefined;
       })();

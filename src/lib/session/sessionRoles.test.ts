@@ -12,7 +12,26 @@ import {
   roleDeniedCommands,
   roleWriteRules,
   roleDeniedTools,
+  bscAgentPerms,
 } from "./sessionRoles";
+
+describe("bscAgentPerms", () => {
+  it("a code:none role denies the write/edit tools", () => {
+    const p = bscAgentPerms(roleCapability("director")); // github:write, git:write, code:none
+    expect(p.deny_tools).toEqual(["write_file", "edit_file"]);
+    expect(p.write_globs).toEqual([]);
+  });
+  it("a worker (code:write) keeps the write tools and scopes write_globs to its lane", () => {
+    const p = bscAgentPerms(roleCapability("worker", { writeGlobs: ["src/**"] }));
+    expect(p.deny_tools).toEqual([]);
+    expect(p.write_globs).toEqual(["src/**"]);
+  });
+  it("deny_bash reflects roleDeniedCommands (e.g. triage git:none denies git)", () => {
+    const cap = roleCapability("triage"); // git:none
+    expect(bscAgentPerms(cap).deny_bash).toEqual(roleDeniedCommands(cap));
+    expect(bscAgentPerms(cap).deny_bash).toContain("git");
+  });
+});
 
 describe("classifyCommand", () => {
   it("detects git reads vs writes", () => {
