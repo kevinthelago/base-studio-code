@@ -338,6 +338,20 @@ pub fn data_load_reconciled(
 // `live: false` so the pane falls back to its sample shape. Object counts are from a bounded
 // sample read, not the source total.
 
+/// A discovered field: its name, an inferred type, and (for enums) the observed values (#1219).
+#[cfg(feature = "source-stage")]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanField {
+    name: String,
+    /// One of string/number/bool/date/money/enum — value-inferred from the sampled rows.
+    #[serde(rename = "type")]
+    ty: String,
+    /// Observed values when `ty == "enum"` (low-cardinality categorical column); else empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    enum_values: Vec<String>,
+}
+
 /// A discovered object + a (bounded-sample) record count.
 #[cfg(feature = "source-stage")]
 #[derive(serde::Serialize)]
@@ -345,8 +359,8 @@ pub fn data_load_reconciled(
 pub struct ScanObject {
     name: String,
     count: usize,
-    /// Discovered column names — seed the derived Data Model's entity fields (#1211).
-    fields: Vec<String>,
+    /// Discovered fields with inferred types (#1211 names + #1219 types) — seed the derived model.
+    fields: Vec<ScanField>,
 }
 
 /// A behavior the scan surfaced (an automation / process / formula).
@@ -418,14 +432,70 @@ fn host_of(url: &str) -> String {
         .to_string()
 }
 
+/// The frontend FieldType string for a `bsc_data::FieldType`.
+#[cfg(feature = "source-stage")]
+fn field_type_str(t: FieldType) -> &'static str {
+    match t {
+        FieldType::String => "string",
+        FieldType::Number => "number",
+        FieldType::Bool => "bool",
+        FieldType::Date => "date",
+        FieldType::Money => "money",
+        FieldType::Enum => "enum",
+        FieldType::Ref => "ref",
+    }
+}
+
+/// Infer a column's type from its sampled values (#1219): the base type (bool/number/money/date/
+/// string) plus enum detection — a low-cardinality categorical text column becomes an `enum` with
+/// its observed values. Returns `(type, enum_values)`.
+#[cfg(feature = "source-stage")]
+fn infer_typed(samples: &[&str]) -> (String, Vec<String>) {
+    let base = infer_field_type(samples);
+    if matches!(base, FieldType::String) {
+        let non_empty: Vec<&str> = samples.iter().copied().filter(|s| !s.is_empty()).collect();
+        let mut distinct: Vec<String> = non_empty.iter().map(|s| s.to_string()).collect();
+        distinct.sort();
+        distinct.dedup();
+        // ≥4 non-empty samples, 2–6 distinct values, and repeats (distinct < total) ⇒ categorical.
+        if non_empty.len() >= 4 && (2..=6).contains(&distinct.len()) && distinct.len() < non_empty.len() {
+            return ("enum".to_string(), distinct);
+        }
+    }
+    (field_type_str(base).to_string(), vec![])
+}
+
+/// Build typed fields for an object from its columns + the sampled rows (#1219). Column samples are
+/// matched by name against the read RowSet (falling back to position); no rows ⇒ all `string`.
+#[cfg(feature = "source-stage")]
+fn infer_fields(columns: &[String], rs: Option<&bsc_data::RowSet>) -> Vec<ScanField> {
+    columns
+        .iter()
+        .enumerate()
+        .map(|(ci, name)| {
+            let samples: Vec<&str> = match rs {
+                Some(r) => {
+                    let idx = r.columns.iter().position(|c| c == name).unwrap_or(ci);
+                    r.rows.iter().filter_map(|row| row.get(idx).map(String::as_str)).collect()
+                }
+                None => vec![],
+            };
+            let (ty, enum_values) = infer_typed(&samples);
+            ScanField { name: name.clone(), ty, enum_values }
+        })
+        .collect()
+}
+
 /// Run objects() (bounded, with a sample-count read) + scan_platform() over a built connector.
 #[cfg(feature = "source-stage")]
 fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, String> {
     let objs = conn.objects().map_err(|e| e.to_string())?;
     let mut objects = Vec::new();
     for o in objs.into_iter().take(12) {
-        let count = conn.read(&o.name).map(|rs| rs.rows.len()).unwrap_or(0);
-        objects.push(ScanObject { name: o.name, count, fields: o.columns });
+        let rs = conn.read(&o.name).ok();
+        let count = rs.as_ref().map(|r| r.rows.len()).unwrap_or(0);
+        let fields = infer_fields(&o.columns, rs.as_ref());
+        objects.push(ScanObject { name: o.name, count, fields });
     }
     let platform = conn.scan_platform().map_err(|e| e.to_string())?;
     let behaviors = behaviors_summary(&platform);
@@ -729,6 +799,22 @@ mod tests {
 
     #[cfg(feature = "source-stage")]
     #[test]
+    fn infer_typed_classifies_columns_and_detects_enums() {
+        use super::infer_typed;
+        assert_eq!(infer_typed(&["1.50", "2.99", "3.00"]).0, "money");
+        assert_eq!(infer_typed(&["2024-01-15", "2024-06-01"]).0, "date");
+        assert_eq!(infer_typed(&["1", "2", "3"]).0, "number");
+        assert_eq!(infer_typed(&["true", "false"]).0, "bool");
+        // A low-cardinality categorical column ⇒ enum, with its observed values.
+        let (ty, vals) = infer_typed(&["Green", "Red", "Green", "Yellow", "Red", "Green"]);
+        assert_eq!(ty, "enum");
+        assert_eq!(vals, vec!["Green", "Red", "Yellow"]);
+        // High-cardinality / unique text stays string (not enum).
+        assert_eq!(infer_typed(&["Acme", "Globex", "Initech", "Umbrella", "Stark"]).0, "string");
+    }
+
+    #[cfg(feature = "source-stage")]
+    #[test]
     fn data_source_inventory_returns_columns_from_csv() {
         let tmp = std::env::temp_dir();
         let csv = tmp.join(format!("bsc-inv-{}.csv", std::process::id()));
@@ -872,7 +958,8 @@ mod scan_it {
         assert!(r.live, "reason: {:?}", r.reason);
         let cust = r.objects.iter().find(|o| o.name == "Customers").unwrap();
         // Discovered columns flow through to ScanObject.fields (#1211).
-        assert!(cust.fields.contains(&"CustomerID".to_string()) && cust.fields.contains(&"CompanyName".to_string()));
+        let names: Vec<&str> = cust.fields.iter().map(|f| f.name.as_str()).collect();
+        assert!(names.contains(&"CustomerID") && names.contains(&"CompanyName"));
     }
 
     #[test]
@@ -889,7 +976,7 @@ mod scan_it {
         let r = scan_quickbase(&srv.base, &f, "tok123").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
         let proj = r.objects.iter().find(|o| o.name == "Projects").unwrap();
-        assert_eq!(proj.fields, vec!["Name"]); // field labels → ScanObject.fields (#1211)
+        assert_eq!(proj.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["Name"]); // field labels → ScanObject.fields (#1211)
         assert!(r.behaviors.iter().any(|b| b.label == "Projects.Name"));
         // Structured behaviors surface for the Process visualization (#1209).
         assert!(r.platform.automations.iter().any(|a| a.name == "Projects.Name"));
@@ -908,7 +995,7 @@ mod scan_it {
         let r = scan_hubspot(&srv.base, "tok123").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
         let contacts = r.objects.iter().find(|o| o.name == "contacts").unwrap();
-        assert!(contacts.fields.contains(&"email".to_string())); // property names → fields (#1211)
+        assert!(contacts.fields.iter().any(|f| f.name == "email")); // property names → fields (#1211)
         assert!(r.behaviors.iter().any(|b| b.label == "Lead nurture"));
     }
 
@@ -924,7 +1011,7 @@ mod scan_it {
         let r = scan_monday(&srv.base, "tok123").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
         let proj = r.objects.iter().find(|o| o.name == "Projects").unwrap();
-        assert_eq!(proj.fields, vec!["Status"]); // board column titles → fields (#1211)
+        assert_eq!(proj.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["Status"]); // board column titles → fields (#1211)
         assert!(r.behaviors.iter().any(|b| b.label.contains("Status")));
     }
 
