@@ -10,6 +10,8 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
+
 use crate::behavior::PlatformScan;
 use crate::error::Result;
 
@@ -43,6 +45,27 @@ impl RowSet {
         }
         Ok(RowSet { columns, rows })
     }
+}
+
+/// Render a JSON value as a flat cell: scalars as plain text, nested objects/arrays as compact
+/// JSON. Shared by the native API connectors (#1197).
+pub fn cell_to_string(v: &Value) -> String {
+    match v {
+        Value::Null => String::new(),
+        Value::String(s) => s.clone(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Sorted top-level field names of a JSON object (empty if `rec` isn't an object). Connectors
+/// that derive columns from a sample record use this for a stable, deterministic column order.
+pub fn sorted_record_columns(rec: &Value) -> Vec<String> {
+    let mut cols: Vec<String> =
+        rec.as_object().map(|m| m.keys().cloned().collect()).unwrap_or_default();
+    cols.sort();
+    cols
 }
 
 /// A read-only source of tabular data.
