@@ -1,6 +1,6 @@
 > ⚠️ **This application creates issues, milestones, repositories, etc. by default — please be aware!** The project planning page will show you everything that will be done before it happens.
 
-> 📍 **Where we are:** `1.0.3` is the **current version — in active development**, focused on **user experience, resiliency, and the core Default (greenfield) blueprint and its triage**. We release builds early and keep improving a version until its theme is complete, so `1.0.3` is *Current*, not done. Landed so far: a foolproof, stripped-down **Default** blueprint (advanced stages moved to a new **Complete** blueprint), the planner consolidation (Blueprints folded into the planner page, live render-preview), the plan working-store moved to **plan.db**, **crash recovery** (one-click restore after an unclean shutdown), and **progress-gated triage** (resumes from plan.db and skips workers that already finished). **Next up is `1.0.4` — enterprise integration & migration:** pull data from the systems businesses already run on — **ERP, CRM, BPM** and others — into canonical **data models**, then generate your own **bespoke software** to replace them, with compliance baked in. See the [Roadmap](#roadmap).
+> 📍 **Where we are:** `1.0.3` is the **current version — in active development**, focused on **user experience, resiliency, and the core Default (greenfield) blueprint and its triage**. We release builds early and keep improving a version until its theme is complete, so `1.0.3` is *Current*, not done. Landed so far: a foolproof, stripped-down **Default** blueprint (advanced stages moved to a new **Complete** blueprint), the planner consolidation (Blueprints folded into the planner page, live render-preview), the plan working-store moved to **plan.db**, **crash recovery** (one-click restore after an unclean shutdown), **progress-gated triage** (resumes from plan.db and skips workers that already finished), **dependencies locked once in the Deploy stage** (so the parallel fleet never collides on them), and **richer repo publishing** (description, topics, a plan-driven README). Running in parallel, a strategic pillar has landed: a **model-agnostic agent shell** (`bsc-agent`) that lets the whole platform run on **any** LLM — Anthropic, OpenAI, Gemini, or a local/open-weight model — not just Claude Code. **Next up is `1.0.4` — enterprise integration & migration:** pull data from the systems businesses already run on — **ERP, CRM, BPM** and others — into canonical **data models**, then generate your own **bespoke software** to replace them, with compliance baked in. See the [Roadmap](#roadmap).
 
 # base-studio-code
 
@@ -10,11 +10,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Built with Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app/)
 
-> **The CDE — Claude Development Environment.** It's like an IDE, except the thing you build *with* is a roomful of Claudes running in parallel. (Yes, we made the acronym up. No, we're not taking it back.) 🤖
+> **The CDE — Claude Development Environment.** It's like an IDE, except the thing you build *with* is a roomful of agents running in parallel — Claude by default, or any model you bring. (Yes, we made the acronym up. No, we're not taking it back.) 🤖
 
-Desktop host application for a multi-agent AI development workflow platform. Run many Claude coding agents in parallel across multiple repositories, with standardized knowledge injected per project based on its tech stack.
+Desktop host application for a multi-agent AI development workflow platform. Run many AI coding agents in parallel across multiple repositories — on Claude Code or the model-agnostic `bsc-agent` shell — with standardized knowledge injected per project based on its tech stack.
 
 Pairs **optionally** with **mobile-studio-code**, a standalone companion app that can tunnel into a desktop session over a **zero-knowledge Cloudflare relay** — end-to-end encrypted (Noise IK), paired by QR — so the same agents can be driven from your phone, from anywhere.
+
+### Run on any model
+
+The platform isn't locked to one vendor. Alongside Claude Code, it ships **`bsc-agent`** — a model-agnostic agent shell we built — a native agent runtime so the fleet can be driven by **any** LLM: **Anthropic, OpenAI, Gemini, or a local/open-weight model** (Ollama-compatible). It satisfies the same *contracts* Claude Code does — telemetry (`audit.log` / `tokens.log`), the transcript schema cost-accounting reads, context files (`CLAUDE.md` / `CLAUDE.local.md`), the role/permission model, and MCP config — so every existing reader and UI keeps working unchanged. It enforces permissions and emits telemetry **natively** (no `.claude/settings.json`), loads ancestor context + `.claude/skills`, and speaks MCP. Pick a provider, model, and key in **Settings → Integrations**; **Claude Code stays the default** and you choose the runtime per session. Under the hood: a Tauri-free provider crate (`crates/llm`) behind an `LlmProvider` seam, and a `bsc-agent` sidecar selected via a `HarnessAdapter`.
 
 ## Project Blueprints
 
@@ -29,13 +33,16 @@ The planning arc: **pitch → plan, stage by stage → live preview → gate che
 ## Features
 
 - **Project planning → fleet orchestration** — a dedicated planning session turns a pitch or repo set into a publishable GitHub structure (milestones, granular issues, `stream:` labels), then launches a fleet: one least-privilege worker per stream in its own git worktree, coordinated by a director
-- **Parallel agent sessions** — multiple PTY-backed console panes per workspace tab, each tied to its own Claude instance
+- **Model-agnostic agent shell (`bsc-agent`)** — a native agent runtime so the fleet runs on **any** LLM (Anthropic, OpenAI, Gemini, local), with native tool use, permission enforcement, telemetry + transcript, ancestor context + `.claude/skills` loading, and an MCP client; shipped as a sidecar and selectable per session ([details](#run-on-any-model))
+- **Parallel agent sessions** — multiple PTY-backed console panes per workspace tab, each tied to its own agent instance
 - **Live git context** — repo name, branch, and dirty status auto-detected from the shell's working directory
+- **Dependencies, locked once** — the Deploy stage pins every repo's libraries — and the registry/source each comes from — in one manifest; publish seeds each repo's `package.json` / `Cargo.toml` (plus `.npmrc` / `.cargo/config.toml` for private sources) so the parallel fleet never collides on dependencies
 - **Knowledge Store** — named markdown blocks tagged by tech stack, injected into agent system prompts
-- **GitHub integration** — OAuth/PAT auth, repo overview, Actions workflows, and webhook management
+- **GitHub integration** — OAuth/PAT auth, repo overview, Actions workflows, webhook management, and a richer publish (repo description, stack topics, a plan-driven README)
 - **Extensions (MCP)** — attach Model Context Protocol servers per project, pre-trusted into every agent session
 - **Custom blueprints** — author a reusable planning template in the planner and publish it to a gist
 - **Automations** — cron-scheduled commands and knowledge injections across panes
+- **Log management** — view, filter, limit, clear, and export every log stream from **Settings → Logs**
 - **Data models** *(planned — `1.0.4`)* — a canonical schema layer the data blueprints (migration, scraping) map into, for migrating off enterprise systems
 - **Persist & restore** — workspace layout, pane names, and working directories survive restarts
 
@@ -49,7 +56,8 @@ The planning arc: **pitch → plan, stage by stage → live preview → gate che
 | Terminal | xterm.js v5 + portable-pty (ConPTY on Windows) |
 | Styling | CSS custom properties (`src/styles/tokens.css`) |
 | Fonts | Inter · JetBrains Mono (Google Fonts) |
-| Agent API | Anthropic Claude API (`claude-sonnet-4-6` default) |
+| Agent runtime | Claude Code (default) **or** the model-agnostic `bsc-agent` shell, selected per session via a `HarnessAdapter` |
+| LLM providers | Anthropic · OpenAI · Gemini · local/open-weight — pluggable behind `LlmProvider` (`crates/llm`); `claude-sonnet-4-6` default |
 
 ## Getting Started
 
@@ -114,7 +122,7 @@ base-studio-code/
 
 ```
 base-studio-code (desktop host)
-├── Agent Orchestrator   — parallel Claude sessions (PTY) + planning/fleet
+├── Agent Orchestrator   — parallel agent sessions (PTY: Claude Code or bsc-agent) + planning/fleet
 ├── GitHub Integration   — OAuth, repos, PRs, Actions, hooks
 ├── Knowledge Store      — context blocks keyed by stack tag
 ├── Mobile relay client  — dials the zero-knowledge Cloudflare relay (Noise IK E2E)
@@ -129,11 +137,14 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 
 > We ship builds from this version early and keep working it until the theme is complete — so `1.0.3` is **Current**, not closed. The items below have landed; the version stays open for more UX, resiliency, and triage polish until done.
 
+- **Run on any model** *(parallel pillar)* — a model-agnostic agent shell we own, **`bsc-agent`**: an `LlmProvider` layer (Anthropic, OpenAI, Gemini, local; `crates/llm`) plus a native agent runtime — tool use, native permission enforcement, telemetry + transcript, ancestor context + skills loading, and an MCP client — packaged as a sidecar and selected per session behind a `HarnessAdapter`. It emits the same contracts as Claude Code, which **stays the default until parity**
 - **Simplicity** — a foolproof, trimmed **Default** blueprint (context → repos → deploy → features → UI → structure → permissions); the advanced stages (MCP servers, automations, skills) moved to a new **Complete** blueprint
 - **Planner consolidation** — Blueprints folded into the planner page with the live render-preview; lifecycle categories, the drag-reorder editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, file intake, gist sharing, and authoring your own blueprint
+- **Dependencies in Deploy** — the planner locks every repo's libraries (and their registries/sources) once; publish seeds each repo's `package.json` / `Cargo.toml` (+ `.npmrc` / `.cargo/config.toml`) and the role gate keeps workers from redefining them, so the parallel fleet stops colliding on deps
 - **plan.db working store** — the plan's live state (context required-set, fleet + per-stream permissions, deploy, MCP, the authored blueprint, issues) moved into a per-project SQLite store, rehydratable from GitHub
 - **Progress-gated triage** — relaunch reads issue status from plan.db, resumes from what changed, and **skips workers that already finished** so completed work doesn't restart
-- **Resiliency** — **crash recovery** (unclean-shutdown detection + one-click session restore), faster/lazier boot (metrics + logging deferred off the startup path), and durable per-project repo links
+- **Resiliency** — **crash recovery** (unclean-shutdown detection + one-click session restore), faster/lazier boot (metrics + logging deferred off the startup path), durable per-project repo links, and **log management** (view / filter / limit / clear / export in Settings → Logs)
+- **Richer publishing** — repos go out with a description, stack-derived topics, and a plan-driven README, plus the standard community-health files
 - **Fleet model** — least-privilege workers in git worktrees coordinated by a director; workers build against planned contracts **in parallel** (no runtime dependency-wait) and don't spin up their own sub-agents
 - Parallel **console** sessions, **Knowledge Store**, **GitHub** integration, **automations**, **MCP extensions**, the **Deploy** stage + pane, and the optional **mobile tunnel** (zero-knowledge Cloudflare relay, Noise IK E2E)
 
