@@ -212,7 +212,62 @@ Each row ≈ one GitHub issue/branch. Order top-down; later rows depend on earli
 - **Migration is read-only.** No write-back into systems of record, ever; base-studio-code
   only reads from a source, maps, and loads into the Data Model. (#782)
 
+- **Platform behaviors are migratable, not just data (v1.0.4, #1193).** The scan captures the
+  source's *behavioral layer* in addition to its data — see §10.
+
 **Open:**
 - **Data Model authoring** — hand-built, agent-inferred from samples, or seeded from a
   library of canonical domain models (CRM/ERP/finance)? Probably all three; which first?
 - **Where the Data Model lives in the nav** — under Projects (planning) or its own top-level surface as the platform grows?
+
+---
+
+## 10. Platform behavior capture — "automations, business processes, and data are all migratable" (v1.0.4, #1193)
+
+A data-only scan copies *rows*. To **replace** a system you must also carry its *behavior* —
+the logic that made those rows mean something. So the source scan is widened from a data
+inventory into a **full platform scan**: it reads **data types AND configurations AND
+behaviors**, and the planner distills them into a **Platform Behavior Summary** that becomes
+part of what the generated app reproduces.
+
+**Read-only still holds (#782).** We *read* the configuration/behavior and *reproduce* it in
+the new app; we never write back into the system of record. Migration is read → summarize →
+regenerate, never source mutation.
+
+### 10.1 What a full scan captures (Salesforce as the first connector)
+
+| Layer | Captured | Salesforce surface |
+|---|---|---|
+| **Data** *(have)* | objects, fields, types, picklists→enum, lookups→ref, sample rows, counts | Describe + SOQL |
+| **Automations** | validation rules, workflow rules + field updates, Flows / Process Builder | Tooling API (`ValidationRule`, `WorkflowRule`, `Flow`) |
+| **Business processes** | approval processes (and their steps) | Tooling API (`ProcessDefinition`) |
+| **Derived logic** | formula fields, Apex triggers/classes (name + body, for summarization) | Describe (`calculatedFormula`) + Tooling (`ApexClass`/`ApexTrigger`) |
+| **Structure / access** *(lighter, later)* | record types, page layouts, profiles / permission sets | Tooling / Metadata API |
+
+### 10.2 The Platform Behavior Summary (the new artifact)
+
+The scan produces a structured **`PlatformScan`** (a sibling output to the inferred Data Model).
+The planner summarizes it in the Source pane — *"this system runs N validation rules, M Flows,
+K approval processes"* — and turns each behavior into a **migratable artifact** the generated
+app implements:
+
+- **validation rule** → an app-level validation / `Field.validate` rule on the Data Model,
+- **workflow rule / Flow** → a generated automation (a rule or scheduled job),
+- **approval process** → a generated approval workflow,
+- **formula field / Apex** → app logic (a computed field or a service function), summarized for
+  the worker to re-implement against the new stack.
+
+Nothing is auto-ported blind: every captured behavior is **surfaced with provenance** in the
+right pane (which source it came from, its source formula/definition) and the user confirms what
+carries over — same "see everything" posture as the inferred schema (§4 of the source-pane brief).
+
+### 10.3 Where it slots in
+
+- **Connector trait (`crates/data/src/connector.rs`):** gains a behavior surface alongside the
+  existing data surface; CSV exposes only data, Salesforce (`salesforce.rs`) implements the full
+  scan. Connectors that can't see behavior simply return an empty `PlatformScan`.
+- **`source` stage:** the behavior summary renders under the inferred model in `FocusedSourceBody`;
+  its gate signals extend `modelInferred`/`schemaRefined` with the behavior review.
+- **Publish / fleet:** captured behaviors become **load + logic issues** for the build-time
+  streams (data load *plus* the automations/processes/logic to regenerate), each with the source
+  definition attached for the worker.
