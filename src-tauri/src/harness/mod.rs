@@ -77,13 +77,18 @@ impl HarnessAdapter for ClaudeCodeAdapter {
 pub struct BscAgentAdapter;
 
 impl HarnessAdapter for BscAgentAdapter {
-    fn detect_history(&self, _cwd: &str) -> bool {
-        false // resume not supported yet (P3)
+    fn detect_history(&self, cwd: &str) -> bool {
+        // A resumable conversation exists when the per-cwd session file is present + non-empty
+        // (the app keys + persists it; see `bsc_agent_session_path`). (#1144)
+        crate::has_bsc_agent_history(cwd)
     }
 
-    fn launch_command(&self, prompt: &str, _resume: bool) -> String {
+    fn launch_command(&self, prompt: &str, resume: bool) -> String {
         // The `bsc-agent` shell name resolves to the sidecar via `$BSC_AGENT_BIN` (see shell_fn).
-        format!("bsc-agent {}", crate::bash_ansi_c_quote(prompt))
+        // `--continue` resumes the prior conversation (path via $BSC_AGENT_SESSION), mirroring
+        // `claude --continue`; the flag must precede the baked prompt. (#1144)
+        let flag = if resume { "--continue " } else { "" };
+        format!("bsc-agent {flag}{}", crate::bash_ansi_c_quote(prompt))
     }
 
     fn model_flag(&self, _model: &str) -> Option<String> {
@@ -152,8 +157,11 @@ mod tests {
         let cmd = a.launch_command("do the thing", false);
         assert!(cmd.starts_with("bsc-agent "));
         assert_eq!(cmd, format!("bsc-agent {}", crate::bash_ansi_c_quote("do the thing")));
+        assert!(!cmd.contains("--continue"));
+        // Resume prepends --continue before the baked prompt.
+        let resumed = a.launch_command("do the thing", true);
+        assert_eq!(resumed, format!("bsc-agent --continue {}", crate::bash_ansi_c_quote("do the thing")));
         assert_eq!(a.model_flag("gpt-5"), None);
-        assert!(!a.detect_history("/anywhere"));
     }
 
     #[test]
