@@ -10,14 +10,14 @@ describe("ConsoleInput (#1149)", () => {
 
   it("shows the prompt when a Claude session is active", () => {
     render(<ConsoleInput active onSend={vi.fn()} />);
-    expect(screen.getByPlaceholderText("Message the agent…")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Message the agent/)).toBeInTheDocument();
     expect(screen.getByText("send ⏎")).toBeInTheDocument();
   });
 
   it("sends the typed text + CR and clears on Enter", () => {
     const onSend = vi.fn();
     render(<ConsoleInput active onSend={onSend} />);
-    const input = screen.getByPlaceholderText("Message the agent…") as HTMLInputElement;
+    const input = screen.getByPlaceholderText(/Message the agent/) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "run the tests" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onSend).toHaveBeenCalledWith("run the tests\r");
@@ -27,7 +27,7 @@ describe("ConsoleInput (#1149)", () => {
   it("sends via the send button too", () => {
     const onSend = vi.fn();
     render(<ConsoleInput active onSend={onSend} />);
-    fireEvent.change(screen.getByPlaceholderText("Message the agent…"), { target: { value: "hi" } });
+    fireEvent.change(screen.getByPlaceholderText(/Message the agent/), { target: { value: "hi" } });
     fireEvent.click(screen.getByText("send ⏎"));
     expect(onSend).toHaveBeenCalledWith("hi\r");
   });
@@ -35,7 +35,7 @@ describe("ConsoleInput (#1149)", () => {
   it("forwards Escape (ESC) and an empty-input Ctrl+C (SIGINT) to the PTY", () => {
     const onSend = vi.fn();
     render(<ConsoleInput active onSend={onSend} />);
-    const input = screen.getByPlaceholderText("Message the agent…");
+    const input = screen.getByPlaceholderText(/Message the agent/);
     fireEvent.keyDown(input, { key: "Escape" });
     expect(onSend).toHaveBeenCalledWith("\x1b");
     fireEvent.keyDown(input, { key: "c", ctrlKey: true });
@@ -45,7 +45,7 @@ describe("ConsoleInput (#1149)", () => {
   it("does not intercept Ctrl+C when there is text to copy", () => {
     const onSend = vi.fn();
     render(<ConsoleInput active onSend={onSend} />);
-    const input = screen.getByPlaceholderText("Message the agent…");
+    const input = screen.getByPlaceholderText(/Message the agent/);
     fireEvent.change(input, { target: { value: "keep me" } });
     fireEvent.keyDown(input, { key: "c", ctrlKey: true });
     expect(onSend).not.toHaveBeenCalledWith("\x03");

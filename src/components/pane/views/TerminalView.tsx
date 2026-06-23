@@ -111,10 +111,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const inClaudeRef  = useRef(false);               // true between __bsc_state run/idle
   const claudeActiveRef = useRef<"run" | "idle">("idle"); // current within-session status
   const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Drives the native ConsoleInput overlay (#1149): true while a Claude session is the running
-  // program in this pane, so we hide Claude's own input and type on its behalf. State (not a ref)
-  // because the overlay's visibility must re-render.
-  const [claudeActive, setClaudeActive] = useState(false);
+  // Drives the native ConsoleInput (#1158): true while a Claude session is the running program in
+  // this pane. Lifted to the store (transient) so PaneShell can also read it — it hides the pane's
+  // status footer and shows the input bar in its place. The OSC/reconnect handlers below set it.
+  const claudeActive = useAppStore((s) => !!s.paneClaudeActive[paneId]);
   // Set by the mount effect so the overlay's submit can re-arm the run/idle status the way pressing
   // Enter in xterm does (our input bypasses term.onData).
   const markRunRef = useRef<() => void>(() => {});
@@ -236,7 +236,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         inClaudeRef.current = true;
         claudeActiveRef.current = "run";
         onStatusChangeRef.current?.("run");
-        setClaudeActive(true); // claude is the running program → show the native input (#1149)
+        useAppStore.getState().setPaneClaudeActive(paneId, true); // claude running → show the native input (#1158)
         armQuietTimer();
         // Mark this pane as a claude pane so the next app launch can resume
         // it with `claude --continue` (#36). The setter no-ops when the
@@ -245,7 +245,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         useAppStore.getState().setPaneWasClaude(paneId, true);
       } else if (data === "idle") {
         inClaudeRef.current = false;
-        setClaudeActive(false); // claude exited → hide the native input, restore the full terminal
+        useAppStore.getState().setPaneClaudeActive(paneId, false); // claude exited → restore the status footer
         if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
         onClaudeIdle();
       }
@@ -578,7 +578,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         invoke("pty_write", { paneId, data: "\x0c" }).catch((e) => log.error(`console[${paneId}] repaint write failed: ${e}`));
         // A reconnected Claude pane is already running its REPL (no fresh OSC-100 "run" to catch),
         // so re-show the native input for it (#1149).
-        if (isClaudeProvider && useAppStore.getState().paneWasClaude[paneId]) setClaudeActive(true);
+        if (isClaudeProvider && useAppStore.getState().paneWasClaude[paneId]) useAppStore.getState().setPaneClaudeActive(paneId, true);
       }
     });
 
