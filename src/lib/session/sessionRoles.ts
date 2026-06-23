@@ -302,3 +302,22 @@ export function roleDeniedCommands(cap: RoleCapability): string[] {
   else if (cap.github === "read") out.push(...GH_WRITE_DENY);
   return out;
 }
+
+/** The permission doc the `bsc-agent` runtime reads from `$BSC_AGENT_PERMS` (#1078 P3) — the
+ *  generic role model rendered to bsc-agent's native shape (vs the Claude `.claude/settings.json`
+ *  syntax {@link roleWriteRules}/{@link roleDeniedTools} produce). `code: "none"` denies the
+ *  write/edit tools outright; `deny_bash` reuses {@link roleDeniedCommands} (substring-matched by
+ *  bsc-agent — coarser than Claude's prefix allowlist); `write_globs` scopes a writer to its lane. */
+export interface BscAgentPerms {
+  deny_tools: string[];
+  deny_bash: string[];
+  write_globs: string[];
+}
+
+export function bscAgentPerms(cap: RoleCapability): BscAgentPerms {
+  return {
+    deny_tools: cap.code === "none" ? ["write_file", "edit_file"] : [],
+    deny_bash: roleDeniedCommands(cap),
+    write_globs: cap.code === "write" ? cap.writeGlobs : [],
+  };
+}
