@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { MoreHorizontal } from "lucide-react";
-import { VIEW_DEFS, type ViewKey } from "./ViewTabs";
+import { type ViewKey } from "./ViewTabs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
 
 // The canonical pane-status vocabulary lives in lib/paneStatus (#435); re-exported
@@ -41,6 +40,9 @@ interface PaneShellProps {
   role?: string;
   /** LLM provider id — drives the model-pill dot color + the harness label. */
   provider?: string;
+  /** The actual model the running CLI reports (#1181, from its transcript). When known it's shown
+   *  in the model pill instead of the configured `model`; absent ⇒ fall back to `model`. */
+  runningModel?: string;
   /** Uncommitted-change count — a header badge when > 0. */
   changes?: number;
   /** Warning count — a header badge when > 0. */
@@ -84,6 +86,7 @@ export function PaneShell({
   tok,
   cost,
   claudeActive = false,
+  runningModel,
   available = ["console", "files"],
   active = "console",
   banner,
@@ -102,9 +105,7 @@ export function PaneShell({
   onModel,
   children,
 }: PaneShellProps) {
-  const [viewOpen, setViewOpen] = useState(false);
   const paneRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuPos, setMenuPos] = useState<
@@ -163,50 +164,19 @@ export function PaneShell({
     el?.focus();
   }, [focused]);
 
-  useEffect(() => {
-    if (!viewOpen) return;
-    function onMouseDown(e: MouseEvent) {
-      if (!viewRef.current?.contains(e.target as Node)) setViewOpen(false);
-    }
-    document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
-  }, [viewOpen]);
-
   const sm = STATE_META[status] ?? STATE_META.idle;
   const provColor = PROV_COLOR[provider ?? "claude"] ?? "var(--prov-local)";
   const harness = harnessOf(provider);
-  const { Icon: ViewIcon, label: viewLabel } = VIEW_DEFS[active];
+  // Model-pill state (#1181): a model is "running" when a Claude session is live in the pane
+  // (`claudeActive`, from the OSC-100 signals); otherwise the pill shows an undetected/empty state.
+  // `runningModel` is the actual model the CLI reports (transcript) when known, else the configured
+  // one; absent ⇒ fall back to the configured `model`.
+  const running = claudeActive;
+  const modelLabel = runningModel ?? model;
 
   const chip = (txt: string, bg: string, col: string) => (
     <span style={{ padding: "0 4px", borderRadius: 5, background: bg, color: col, fontSize: 9, fontFamily: "var(--mono)" }}>{txt}</span>
   );
-
-  // A single row in the view-switcher dropdown (used by both the SCREEN and INSPECT groups).
-  const viewRow = (k: ViewKey) => {
-    const { Icon, label, hotkey } = VIEW_DEFS[k];
-    const on = k === active;
-    return (
-      <div
-        key={k}
-        onClick={() => { onViewChange?.(k); setViewOpen(false); }}
-        style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", cursor: "pointer",
-          background: on ? "var(--accent-soft)" : "transparent",
-          color: on ? "var(--accent-text)" : "var(--fg-muted)",
-        }}
-        onMouseEnter={(e) => { if (!on) (e.currentTarget as HTMLDivElement).style.background = "var(--bg-elev)"; }}
-        onMouseLeave={(e) => { if (!on) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-      >
-        <span style={{ width: 14, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 14px" }}>
-          <Icon size={12} />
-        </span>
-        <span style={{ flex: 1, fontSize: 10.5 }}>{label}</span>
-        <span style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{hotkey}</span>
-      </div>
-    );
-  };
-  const screenViews = available.filter((k) => VIEW_DEFS[k].group === "screen");
-  const inspectViews = available.filter((k) => VIEW_DEFS[k].group === "inspect");
 
   return (
     <div
@@ -219,7 +189,7 @@ export function PaneShell({
         display: hidden ? "none" : "flex",
         flexDirection: "column",
         position: "relative",
-        zIndex: menuOpen || viewOpen ? 10 : 1,
+        zIndex: menuOpen ? 10 : 1,
       }}
     >
       {/* Head — the Console-Shell pane header (#1149): status · name · repo · badges,
@@ -288,66 +258,34 @@ export function PaneShell({
         {/* Spacer pushes the controls to the right edge */}
         <div style={{ flex: 1, minWidth: 0 }} />
 
-        {/* View switcher ▾ */}
-        <div ref={viewRef} style={{ position: "relative", flex: "0 0 auto" }}>
-          <button
-            title={`${viewLabel} · switch screen`}
-            onClick={() => setViewOpen(!viewOpen)}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-              height: 21, padding: "0 7px", borderRadius: 6,
-              border: `1px solid ${viewOpen ? "var(--accent)" : "var(--border)"}`,
-              background: viewOpen ? "var(--bg-canvas)" : "var(--bg-panel)",
-              color: viewOpen ? "var(--accent-text)" : "var(--fg-muted)", cursor: "pointer",
-            }}
-          >
-            <ViewIcon size={11} /><span style={{ fontFamily: "var(--mono)", fontSize: 10 }}>▾</span>
-          </button>
-          {viewOpen && (
-            <div style={{
-              position: "absolute", top: "calc(100% + 4px)", right: 0,
-              zIndex: 20,
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--r-md)",
-              minWidth: 180,
-              boxShadow: "0 16px 40px -14px rgba(0,0,0,0.65)",
-              overflow: "hidden",
-              fontFamily: "var(--mono)",
-            }}>
-              <div style={{ padding: "7px 11px", borderBottom: "1px solid var(--border-soft)", display: "flex", gap: 6 }}>
-                <span style={{ fontSize: 9, letterSpacing: ".1em", color: "var(--fg-dim)" }}>SWITCH SCREEN</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ fontSize: 9, color: "var(--fg-dim)" }}>no restart</span>
-              </div>
-              {screenViews.map(viewRow)}
-              {inspectViews.length > 0 && (
-                <>
-                  <div style={{ padding: "6px 11px", borderTop: "1px solid var(--border-soft)", borderBottom: "1px solid var(--border-soft)" }}>
-                    <span style={{ fontSize: 9, letterSpacing: ".1em", color: "var(--fg-dim)" }}>INSPECT</span>
-                  </div>
-                  {inspectViews.map(viewRow)}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Harness + model pill — opens the pane menu's model section */}
+        {/* Model pill — the SINGLE consolidated menu trigger (#1181): model · screens · pane
+            actions all live in the one PaneMenu it opens. Shows the running model, or an
+            "undetected" empty state when nothing is live in the pane. */}
         <button
-          title="Switch harness / model"
+          ref={menuButtonRef}
+          title="Model, screens & pane options"
           onClick={onMenuToggle}
           style={{
             display: "flex", alignItems: "center", gap: 5, height: 21, padding: "0 8px",
-            border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)",
+            border: "1px solid " + (menuOpen ? "var(--accent)" : "var(--border)"), borderRadius: 6,
+            background: menuOpen ? "var(--bg-canvas)" : "var(--bg-panel)",
             color: "var(--fg)", cursor: "pointer", flex: "0 0 auto", whiteSpace: "nowrap",
           }}
         >
-          <span style={{ width: 6, height: 6, borderRadius: 2, background: provColor }} />
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>{harness}</span>
-          <span style={{ color: "var(--fg-dim)" }}>·</span>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>{model}</span>
-          <span style={{ color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10 }}>▾</span>
+          {running ? (
+            <>
+              <span style={{ width: 6, height: 6, borderRadius: 2, background: provColor }} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>{harness}</span>
+              <span style={{ color: "var(--fg-dim)" }}>·</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>{modelLabel}</span>
+            </>
+          ) : (
+            <>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--state-idle)" }} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>undetected</span>
+            </>
+          )}
+          <span style={{ color: menuOpen ? "var(--accent-text)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10 }}>▾</span>
         </button>
 
         {/* Role badge */}
@@ -360,23 +298,6 @@ export function PaneShell({
             flex: "0 0 auto", whiteSpace: "nowrap",
           }}>{role.toUpperCase()}</span>
         )}
-
-        {/* ⋯ pane menu */}
-        <button
-          ref={menuButtonRef}
-          title="Pane menu"
-          onClick={onMenuToggle}
-          style={{
-            width: 22, height: 22, borderRadius: 6,
-            border: "1px solid " + (menuOpen ? "var(--accent)" : "transparent"),
-            background: menuOpen ? "var(--bg-canvas)" : "transparent",
-            color: menuOpen ? "var(--accent-text)" : "var(--fg-muted)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer", flex: "0 0 22px",
-          }}
-        >
-          <MoreHorizontal size={13} />
-        </button>
       </div>
 
       {banner}
