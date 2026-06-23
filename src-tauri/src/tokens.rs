@@ -25,7 +25,8 @@ pub(crate) struct TokenUsage {
     cost_usd: f64,
 }
 
-/// Dollars-per-million-token prices for one model family.
+/// Dollars-per-million-token list prices for one model family: base `input`, `output`, the
+/// 5-minute cache-write rate, and the cache-read (hit) rate.
 struct Pricing {
     input: f64,
     output: f64,
@@ -33,21 +34,74 @@ struct Pricing {
     cache_read: f64,
 }
 
-/// Price table keyed by model-family substring (USD per million tokens). `cache_write`
-/// is the 5-minute cache-write rate (1.25x base input), `cache_read` the cache-read rate
-/// (0.1x base input). Unknown / empty models fall back to Sonnet — the app's default
-/// model (`claude-sonnet-4-6`) — so an unrecognized id is priced conservatively rather
-/// than as $0. These are list prices and may drift; they live in one place to update.
+/// Open-weight model families the app runs through the *local* provider (Ollama / any
+/// OpenAI-compatible endpoint) — self-hosted, so $0. Matched as substrings of the model id.
+const LOCAL_FAMILIES: [&str; 9] =
+    ["llama", "qwen", "mistral", "mixtral", "gemma", "phi", "deepseek", "codestral", "ollama"];
+
+/// Price table keyed by a model-name substring (USD per million tokens), spanning every
+/// provider the app can drive (#1078): Anthropic, OpenAI, Gemini, and local/open-weight.
+/// Matched against the lowercased model id recorded in the transcript, most-specific family
+/// first. Local models are free ($0). An unrecognized *hosted* model falls back to Sonnet —
+/// the app's default — so it's priced conservatively rather than as $0.
+///
+/// Only `input`/`output` affect a session's cost for OpenAI/Gemini/local: those providers'
+/// usage normalizes the prompt-cache counts to 0 (see `crates/llm`), so their `cache_*` rates
+/// are recorded for completeness but never billed; Anthropic's caching is what they price.
+/// List prices as of 2026-06 — they drift, so they live in this one place to update.
 fn model_pricing(model: &str) -> Pricing {
     let m = model.to_ascii_lowercase();
+
+    // ── Anthropic (Claude) ── cache write = 1.25× input, cache read = 0.10× input.
     if m.contains("opus") {
-        Pricing { input: 15.0, output: 75.0, cache_write: 18.75, cache_read: 1.50 }
-    } else if m.contains("haiku") {
-        Pricing { input: 1.0, output: 5.0, cache_write: 1.25, cache_read: 0.10 }
-    } else {
-        // sonnet + anything unrecognized
-        Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 }
+        // Opus 4.8 list price (down from the 4.x-era $15/$75).
+        return Pricing { input: 5.0, output: 25.0, cache_write: 6.25, cache_read: 0.50 };
     }
+    if m.contains("haiku") {
+        return Pricing { input: 1.0, output: 5.0, cache_write: 1.25, cache_read: 0.10 };
+    }
+    if m.contains("sonnet") {
+        return Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 };
+    }
+
+    // ── OpenAI (GPT) ── no cache-write premium (cache_write = input); cache_read is the
+    // "cached input" rate. Size suffixes (nano/mini/pro) take precedence over the family.
+    if m.contains("gpt") {
+        if m.contains("nano") {
+            return Pricing { input: 0.20, output: 1.25, cache_write: 0.20, cache_read: 0.02 };
+        }
+        if m.contains("mini") {
+            return Pricing { input: 0.75, output: 4.50, cache_write: 0.75, cache_read: 0.075 };
+        }
+        if m.contains("pro") {
+            return Pricing { input: 30.0, output: 180.0, cache_write: 30.0, cache_read: 30.0 };
+        }
+        if m.contains("gpt-5.5") {
+            return Pricing { input: 5.0, output: 30.0, cache_write: 5.0, cache_read: 0.50 };
+        }
+        // gpt-5.4 / gpt-5 base, and any unrecognized GPT.
+        return Pricing { input: 2.50, output: 15.0, cache_write: 2.50, cache_read: 0.25 };
+    }
+
+    // ── Google (Gemini) ── cache_read is the context-cache rate; no cache-write premium.
+    if m.contains("gemini") {
+        if m.contains("flash-lite") {
+            return Pricing { input: 0.10, output: 0.40, cache_write: 0.10, cache_read: 0.01 };
+        }
+        if m.contains("flash") {
+            return Pricing { input: 0.30, output: 2.50, cache_write: 0.30, cache_read: 0.03 };
+        }
+        // gemini-2.5-pro (≤200k tier), and any unrecognized Gemini.
+        return Pricing { input: 1.25, output: 10.0, cache_write: 1.25, cache_read: 0.125 };
+    }
+
+    // ── Local / open-weight ── self-hosted, free.
+    if LOCAL_FAMILIES.iter().any(|f| m.contains(f)) {
+        return Pricing { input: 0.0, output: 0.0, cache_write: 0.0, cache_read: 0.0 };
+    }
+
+    // Unknown hosted model → Sonnet (conservative; never $0 for a paid model).
+    Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 }
 }
 
 /// Summed usage across a transcript, plus the last-seen model for pricing.
@@ -221,12 +275,30 @@ mod tests {
         };
         // Sonnet: 3 + 15 + 3.75 + 0.30 = 22.05
         assert!((super::compute_cost(&make("claude-sonnet-4-6")) - 22.05).abs() < 1e-9);
-        // Unknown / empty model falls back to Sonnet pricing.
+        // Unknown / empty HOSTED model falls back to Sonnet pricing.
         assert!((super::compute_cost(&make("")) - 22.05).abs() < 1e-9);
-        // Opus: 15 + 75 + 18.75 + 1.50 = 110.25
-        assert!((super::compute_cost(&make("claude-opus-4-8")) - 110.25).abs() < 1e-9);
+        assert!((super::compute_cost(&make("some-future-hosted-model")) - 22.05).abs() < 1e-9);
+        // Opus 4.8: 5 + 25 + 6.25 + 0.50 = 36.75
+        assert!((super::compute_cost(&make("claude-opus-4-8")) - 36.75).abs() < 1e-9);
         // Haiku: 1 + 5 + 1.25 + 0.10 = 7.35
         assert!((super::compute_cost(&make("claude-haiku-4-5")) - 7.35).abs() < 1e-9);
+        // OpenAI gpt-5.4 base: 2.50 + 15 + 2.50 + 0.25 = 20.25
+        assert!((super::compute_cost(&make("gpt-5.4")) - 20.25).abs() < 1e-9);
+        // gpt-5.4-mini: 0.75 + 4.50 + 0.75 + 0.075 = 6.075 (suffix beats the base family)
+        assert!((super::compute_cost(&make("gpt-5.4-mini")) - 6.075).abs() < 1e-9);
+        // gpt-5.4-nano: 0.20 + 1.25 + 0.20 + 0.02 = 1.67
+        assert!((super::compute_cost(&make("gpt-5.4-nano")) - 1.67).abs() < 1e-9);
+        // gpt-5.5: 5 + 30 + 5 + 0.50 = 40.50
+        assert!((super::compute_cost(&make("gpt-5.5")) - 40.50).abs() < 1e-9);
+        // Gemini 2.5 Pro: 1.25 + 10 + 1.25 + 0.125 = 12.625
+        assert!((super::compute_cost(&make("gemini-2.5-pro")) - 12.625).abs() < 1e-9);
+        // Gemini 2.5 Flash: 0.30 + 2.50 + 0.30 + 0.03 = 3.13
+        assert!((super::compute_cost(&make("gemini-2.5-flash")) - 3.13).abs() < 1e-9);
+        // Gemini 2.5 Flash-Lite: 0.10 + 0.40 + 0.10 + 0.01 = 0.61
+        assert!((super::compute_cost(&make("gemini-2.5-flash-lite")) - 0.61).abs() < 1e-9);
+        // Local / open-weight models are free.
+        assert_eq!(super::compute_cost(&make("llama-3.3-70b")), 0.0);
+        assert_eq!(super::compute_cost(&make("qwen2.5-coder")), 0.0);
         // A realistic small total prices to a small positive number.
         let small = super::TranscriptTotals { model: "claude-sonnet-4-6".into(), input: 10, output: 20, cache_creation: 100, cache_read: 1000 };
         let c = super::compute_cost(&small);
