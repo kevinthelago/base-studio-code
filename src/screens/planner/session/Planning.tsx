@@ -54,6 +54,7 @@ import { MCP_CATALOG } from "../../../data/mcpCatalog";
 import { buildProjectPaneData } from "../pane/projectPaneData";
 import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag } from "../shared/deployConfig";
 import { allSourcesConnected, migrationActive, datamodelSignals } from "../shared/sourceConfig";
+import { destinationDefined, syncDefined } from "../shared/integrationConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
@@ -317,7 +318,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planSections, planConfirmedSections,
     planAuthoredBlueprint, importBlueprint, setAuthoredBlueprint,
     planDeployConfig, setPlanDeployConfig,
-    planSourceConfig,
+    planSourceConfig, planIntegrationConfig,
     reposPublic, setReposPublic,
     injectionHardGate, planInjectionAck, acknowledgePlanInjections,
     planSkippedSections, skipPlanSection,
@@ -667,6 +668,11 @@ export function Planning({ visible }: { visible: boolean }) {
     () => planSourceConfig[effectiveProjectId],
     [planSourceConfig, effectiveProjectId],
   );
+  // Integration stage (#1207): the destination/sink + sync strategy; drives destinationDefined/syncDefined.
+  const intgCfg = useMemo(
+    () => planIntegrationConfig[effectiveProjectId],
+    [planIntegrationConfig, effectiveProjectId],
+  );
   const paneData = useMemo(
     () => buildProjectPaneData({
       fleet:    planFleet[effectiveProjectId],
@@ -937,8 +943,8 @@ export function Planning({ visible }: { visible: boolean }) {
     return out;
   }, [confirmedSet]);
   const signals = useMemo(
-    () => ({ ...planStateToSignals(stageState), hasPlanGaps, featuresPhased: featuresAllPhased(planFeatures), deploymentDefined: deploymentDefined(deployCfg), sourcesConnected: allSourcesConnected(sourceCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals }),
-    [stageState, hasPlanGaps, planFeatures, deployCfg, sourceCfg, isAuthoring, authoringSig, skipSignals, confirmSignals]);
+    () => ({ ...planStateToSignals(stageState), hasPlanGaps, featuresPhased: featuresAllPhased(planFeatures), deploymentDefined: deploymentDefined(deployCfg), sourcesConnected: allSourcesConnected(sourceCfg), destinationDefined: destinationDefined(intgCfg), syncDefined: syncDefined(intgCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals }),
+    [stageState, hasPlanGaps, planFeatures, deployCfg, sourceCfg, intgCfg, isAuthoring, authoringSig, skipSignals, confirmSignals]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
   // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user

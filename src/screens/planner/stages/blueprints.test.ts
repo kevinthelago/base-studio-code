@@ -314,3 +314,42 @@ describe("Deploy folds in dependencies (#1127)", () => {
     expect(evalGate(gate, { deploymentDefined: true, dependenciesDefined: 1 }).done).toBe(true);  // both ⇒ pass
   });
 });
+
+describe("data-integration blueprint (#1207)", () => {
+  const bp = () => makeBlueprints().find((b) => b.id === "data-integration")!;
+
+  it("loads, categorized data / create, with the full extractor section order + Compliance MCP", () => {
+    const b = bp();
+    expect(b).toBeTruthy();
+    expect(b.category).toBe("data");
+    expect(b.mode).toBe("create");
+    expect(b.sections.map((s) => s.key)).toEqual(
+      ["context", "dataSource", "dataModel", "dataMap", "destination", "sync", "dataClean", "structure", "permissions", "deploy"],
+    );
+    expect(b.mcp).toContain("Compliance"); // #1005 Compliance MCP attached
+  });
+
+  it("destination + sync sections gate on their own signals (#1207)", () => {
+    const dest = SECTION_DEFS.destination.gateRule!;
+    expect(dest.require.map((r) => r.signal)).toContain("destinationDefined");
+    expect(evalGate(dest, { destinationDefined: false }).done).toBe(false);
+    expect(evalGate(dest, { destinationDefined: true }).done).toBe(true);
+
+    const sync = SECTION_DEFS.sync.gateRule!;
+    expect(sync.require.map((r) => r.signal)).toContain("syncDefined");
+    expect(evalGate(sync, { syncDefined: false }).done).toBe(false);
+    expect(evalGate(sync, { syncDefined: true }).done).toBe(true);
+  });
+
+  it("sync depends on destination — locks until the destination is defined", () => {
+    const secs = [mkSection("context"), mkSection("destination"), mkSection("sync")];
+    const sync = secs.find((s) => s.key === "sync")!;
+    const ctxDone = sig({ context: { resolved: 1, total: 1, requiredContextReady: true }, repoCount: 1, requiresUi: false });
+    // dep (destination) unmet + own gate unmet ⇒ locked
+    expect(sectionStatus(sync, secs, { ...ctxDone, destinationDefined: false, syncDefined: false }).status).toBe("locked");
+    // dep met, own gate still unmet ⇒ in-progress (unlocked)
+    expect(sectionStatus(sync, secs, { ...ctxDone, destinationDefined: true, syncDefined: false }).status).toBe("in-progress");
+    // own gate met ⇒ complete
+    expect(sectionStatus(sync, secs, { ...ctxDone, destinationDefined: true, syncDefined: true }).status).toBe("complete");
+  });
+});
