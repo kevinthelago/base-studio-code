@@ -8,6 +8,8 @@
 import { Fragment, type CSSProperties } from "react";
 import { sectionStatus, type BlueprintSection } from "../stages/blueprints";
 import type { PlanSignals } from "../stages/stageGate";
+import { stageKind } from "../blueprints/blueprintCatalog";
+import { Ic } from "../blueprints/blueprintIcons";
 
 function fillColor(status: string): string {
   switch (status) {
@@ -76,10 +78,17 @@ function nodeStyle(status: string): CSSProperties {
 
 /**
  * A compact gated-icon progression for cards (#blueprints): one node per enabled, applicable
- * section, showing that stage's `glyph` icon, status-colored like the focused-pane stepper, and
- * joined by connectors. Each node's `title` carries the stage name + blurb + gate (the on-hover
- * help text). Driven by blueprint data + the signal bag — on a signal-less blueprint card it
- * reads as the lifecycle's stage sequence; each gate adds width, so the host pane widens with it.
+ * section, showing that stage's icon, status-colored like the focused-pane stepper, and joined by
+ * connectors. Each node's `title` carries the stage name + blurb + gate (the on-hover help text).
+ * Driven by blueprint data + the signal bag — on a signal-less blueprint card it reads as the
+ * lifecycle's stage sequence; each gate adds width, so the host pane widens with it.
+ *
+ * The icon is resolved through the built-in stage→icon map ({@link stageKind}, keyed by
+ * `section.key`) and rendered as inline SVG via {@link Ic}, exactly like every other blueprint
+ * surface (the editor, StageSummary, the catalog preview). It is deliberately NOT the per-section
+ * `glyph` string: an imported / authored blueprint's sections carry untrusted (or empty) glyph
+ * values, so reading the map keyed by the stage's identity guarantees a real icon for every known
+ * stage and a `category` fallback otherwise — never a blank or a stray literal character.
  */
 export function PlanGateRow({ sections, signals }: {
   sections: BlueprintSection[];
@@ -98,7 +107,7 @@ export function PlanGateRow({ sections, signals }: {
             title={`${section.name} · ${status}\n${section.blurb}${section.gate ? `\nGate: ${section.gate}` : ""}`}
             style={nodeStyle(status)}
           >
-            {status === "complete" ? "✓" : section.glyph}
+            {status === "complete" ? "✓" : <Ic n={stageKind(section.key).glyph} size={13} />}
           </span>
           {i < segments.length - 1 && (
             <span style={{
