@@ -1,8 +1,8 @@
-import { SCREENS, type Screen } from "../../screens/registry";
+import { SCREENS, type Screen } from "@/screens/registry";
 
 // Re-export so existing `import type { Screen } from ".../components/chrome/Rail"` keeps resolving
 // (the type's home is now the screen registry — the single source of truth for screens).
-export type { Screen } from "../../screens/registry";
+export type { Screen } from "@/screens/registry";
 
 interface RailProps {
   active: Screen;
