@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { githubRequest, githubGraphql, isGithubAuthError, DEFAULT_MAX_AGE_SECS } from "./github";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 
 const mockInvoke = vi.mocked(invoke);
 

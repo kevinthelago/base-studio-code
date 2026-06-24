@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { BSC_ISSUE_LABEL, withProvenanceLabel, triageIssueListArgs } from "./issueProvenance";
-import { buildTriagePrompt, TRIAGE_PROMPT, useAppStore } from "../../store";
+import { buildTriagePrompt, TRIAGE_PROMPT, useAppStore } from "@/store";
 
 describe("issue provenance (#738)", () => {
   it("withProvenanceLabel stamps the bsc-generated label, idempotently", () => {

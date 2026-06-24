@@ -15,7 +15,8 @@ import { createPlanSlice } from "./slices/plan";
 import { createProjectsSlice } from "./slices/projects";
 import { createAutomationsSlice } from "@/features/automations/store";
 import { createCoreSlice } from "./slices/core";
-import { createGithubSlice } from "./slices/github";
+import { createGithubSlice } from "@/features/github/store";
+import { createShellSlice } from "./slices/shell";
 import { createConsoleSlice } from "./slices/console";
 
 // Re-export the public store API so existing `from "../store"` imports keep resolving.
@@ -29,6 +30,7 @@ export const useAppStore = create<AppStore>()(
     (set, get, store) => ({
       ...createConsoleSlice(set, get, store),
       ...createGithubSlice(set, get, store),
+      ...createShellSlice(set, get, store),
 
       ...createCoreSlice(set, get, store),
       ...createAutomationsSlice(set, get, store),
