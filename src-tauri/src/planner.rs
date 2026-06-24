@@ -65,6 +65,28 @@ const PLANNING_BLUEPRINT_INTRO: &str = include_str!("../templates/planning-bluep
 // emphasis is "never transcribe a read instruction into a deliverable", not owned-glob scope.
 const PLANNER_INJECTION_RESISTANCE_MD: &str = include_str!("../templates/planner-injection-resistance.md");
 
+// The user-facing planner INTRODUCTION kickoffs (#1240) — the startup prompt baked into the planner
+// launch that has the planner OPEN the conversation (introduce itself, sketch the stage journey,
+// summarize capabilities, ask one orienting question). Trusted, app-authored content (#1107), and
+// per-mode like the CLAUDE.md spec intros — but addressed to the user, not the spec. Distinct from
+// PLANNING_*_INTRO above, which is the Claude-facing instruction set written into CLAUDE.md.
+const PLANNING_INTRO_NEW: &str = include_str!("../templates/planning-intro-new.md");
+const PLANNING_INTRO_EXISTING: &str = include_str!("../templates/planning-intro-existing.md");
+const PLANNING_INTRO_BLUEPRINT: &str = include_str!("../templates/planning-intro-blueprint.md");
+
+/// The user-facing planner introduction kickoff for a session mode (#1240). Returned to the
+/// frontend, which bakes it into the planner's `claude` launch as a fresh-only startup prompt.
+/// `mode`: `"blueprint"` (authoring) | `"existing"` (existing repos) | anything else ⇒ new project.
+#[tauri::command]
+pub(crate) fn planner_intro_prompt(mode: String) -> String {
+    match mode.as_str() {
+        "blueprint" => PLANNING_INTRO_BLUEPRINT,
+        "existing" => PLANNING_INTRO_EXISTING,
+        _ => PLANNING_INTRO_NEW,
+    }
+    .to_string()
+}
+
 /// One-line directive per planning stage (#542/#666) for the assembled active-stages
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
@@ -491,6 +513,32 @@ mod tests {
         assert!(intro.contains("LAUNCHES A FLEET"), "author intro must call out fleet-launching blueprints");
         assert!(intro.contains("`permissions` stage"), "author intro must require a permissions stage for fleets");
         assert!(intro.contains("`repos` stage"), "author intro must require a repos stage for fleets");
+    }
+
+    #[test]
+    fn planner_intro_prompt_selects_by_mode() {
+        // mode → matching template; unknown ⇒ the new-project intro (default).
+        assert_eq!(super::planner_intro_prompt("new".into()), super::PLANNING_INTRO_NEW);
+        assert_eq!(super::planner_intro_prompt("existing".into()), super::PLANNING_INTRO_EXISTING);
+        assert_eq!(super::planner_intro_prompt("blueprint".into()), super::PLANNING_INTRO_BLUEPRINT);
+        assert_eq!(super::planner_intro_prompt("garbage".into()), super::PLANNING_INTRO_NEW);
+    }
+
+    #[test]
+    fn planner_intros_open_the_session_and_ask_one_question() {
+        // Every mode's intro must: open the session (introduce + reference the stage journey),
+        // ask exactly one orienting question, and stop and wait — the #1240 conventions.
+        for (mode, distinct) in
+            [("new", "idea"), ("existing", "existing repositories"), ("blueprint", "reusable")]
+        {
+            let t = super::planner_intro_prompt(mode.into());
+            assert!(t.contains("ONE orienting question"), "intro {mode} must ask one orienting question");
+            assert!(t.contains("Active planning stages"), "intro {mode} must sketch the stage journey");
+            assert!(t.to_lowercase().contains("stop and wait"), "intro {mode} must stop and wait for the user");
+            assert!(t.contains(distinct), "intro {mode} must carry its mode-distinct framing ('{distinct}')");
+            // It's a kickoff, not the spec: it must NOT dump the CLI surface at the user.
+            assert!(!t.contains("bsc-plan"), "intro {mode} must not dump the bsc-plan CLI at the user");
+        }
     }
 
     #[test]
