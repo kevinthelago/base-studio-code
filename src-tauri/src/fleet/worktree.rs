@@ -1,13 +1,5 @@
 use crate::*;
 
-/// Branch/dir slug for a fleet agent — keeps only `[A-Za-z0-9._-]`, every other
-/// char becomes `-`. Must match the frontend `worktreeSlug` so the computed
-/// worktree cwd and the on-disk worktree path agree.
-pub(crate) fn worktree_slug(s: &str) -> String {
-    s.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { c } else { '-' })
-        .collect()
-}
 /// Create (idempotently) a git worktree for one fleet agent: an isolated checkout
 /// of `repo` on a branch named after the agent, at
 /// `~/.base-studio-code/worktrees/<key>/<repoShort>--<agentSlug>` — OUTSIDE the project

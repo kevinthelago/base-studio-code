@@ -16,6 +16,7 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
+use crate::worktree_slug;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -39,14 +40,6 @@ pub struct DiscoveredSession {
 const RUNNING: &str = "running";
 const DORMANT: &str = "dormant";
 const PLANNED: &str = "planned";
-
-/// Mirror of the frontend `worktreeSlug` / Rust `worktree_slug`: keep only `[A-Za-z0-9._-]`.
-fn worktree_slug(agent_id: &str) -> String {
-    agent_id
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' })
-        .collect()
-}
 
 fn push_source(sources: &mut Vec<String>, s: &str) {
     if !sources.iter().any(|x| x == s) {
