@@ -1,0 +1,3 @@
+//! Knowledge base / document store (#1300).
+
+pub mod docstore;
