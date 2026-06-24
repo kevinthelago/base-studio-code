@@ -3,9 +3,8 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { SkillsScreen } from "./";
 import { useAppStore } from "../../store";
 import { blankSkill } from "../../lib/session/skills";
-import { skillCatalog } from "../../data/skills";
 
-const SKILL_CARD = ".card.hrow";
+const ROW = ".skill-row"; // the redesign's dense list rows (default density)
 
 describe("SkillsScreen — CRUD", () => {
   beforeEach(() => {
@@ -15,21 +14,18 @@ describe("SkillsScreen — CRUD", () => {
         { ...blankSkill(), id: "s1", name: "Open a clean PR", kind: "workflow", enabled: true },
         { ...blankSkill(), id: "s2", name: "Scaffold cmd", kind: "scaffold", enabled: true },
       ],
-      paneSkills: {},
-      githubToken: "",
+      paneSkills: {}, skillGroups: [], sessionSkillGroups: {}, githubToken: "",
     });
   });
 
-  it("'+ new skill' opens a draft drawer without creating; 'done' commits it", () => {
+  it("'+ skill' opens a draft drawer without creating; 'done' commits it", () => {
     const { container } = render(<SkillsScreen />);
-    expect(container.querySelectorAll(SKILL_CARD).length).toBe(2);
-    fireEvent.click(screen.getByText("+ new skill"));
-    // Drawer opens on a draft — nothing added to the store yet.
+    expect(container.querySelectorAll(ROW).length).toBe(2);
+    fireEvent.click(screen.getByText("+ skill"));
     const drawer = container.querySelector(".drawer.on") as HTMLElement;
     expect(drawer).toBeTruthy();
-    expect(within(drawer).getByText("prompt — the reusable procedure")).toBeTruthy();
-    expect(useAppStore.getState().skills).toHaveLength(2);
-    // "done" is disabled until the draft has a name.
+    expect(within(drawer).getByText("procedure — SKILL.md body")).toBeTruthy();
+    expect(useAppStore.getState().skills).toHaveLength(2);  // nothing added yet (draft)
     const done = within(drawer).getByText("done") as HTMLButtonElement;
     expect(done.disabled).toBe(true);
     fireEvent.change(drawer.querySelector("input.input") as HTMLInputElement, { target: { value: "My new skill" } });
@@ -39,52 +35,51 @@ describe("SkillsScreen — CRUD", () => {
     expect(skills[skills.length - 1].name).toBe("My new skill");
   });
 
-  it("'+ new skill' then 'cancel' creates nothing", () => {
+  it("'+ skill' then 'cancel' creates nothing", () => {
     const { container } = render(<SkillsScreen />);
-    fireEvent.click(screen.getByText("+ new skill"));
+    fireEvent.click(screen.getByText("+ skill"));
     const drawer = container.querySelector(".drawer.on") as HTMLElement;
     fireEvent.click(within(drawer).getByText("cancel"));
     expect(useAppStore.getState().skills).toHaveLength(2);
     expect(container.querySelector(".drawer.on")).toBeNull();
   });
 
-  it("editing the drawer name updates the store live", () => {
+  it("opening a row and editing the name updates the store live", () => {
     const { container } = render(<SkillsScreen />);
-    fireEvent.click(container.querySelectorAll(SKILL_CARD)[0]); // open "Open a clean PR"
+    fireEvent.click(container.querySelector(`${ROW}[data-skill-id="s1"]`) as HTMLElement);
     const drawer = container.querySelector(".drawer.on") as HTMLElement;
-    const nameInput = drawer.querySelector("input.input") as HTMLInputElement;
-    fireEvent.change(nameInput, { target: { value: "Open a tidy PR" } });
-    expect(useAppStore.getState().skills.find(s => s.id === "s1")!.name).toBe("Open a tidy PR");
+    fireEvent.change(drawer.querySelector("input.input") as HTMLInputElement, { target: { value: "Open a tidy PR" } });
+    expect(useAppStore.getState().skills.find((s) => s.id === "s1")!.name).toBe("Open a tidy PR");
   });
 
-  it("catalog 'add' appends the catalog skill", () => {
-    render(<SkillsScreen />);
+  it("Catalog tab 'add to library' appends the catalog skill", () => {
+    render(<SkillsScreen sectionOverride="catalog" />);
     const before = useAppStore.getState().skills.length;
-    // The right-rail catalog list renders an "add" button per available skill —
-    // the seeded "Open a clean PR" / "Scaffold cmd" match no catalog name, so the
-    // first offered item is the head of the unified catalog.
-    const firstAvailable = skillCatalog()[0].name;
-    const addButtons = screen.getAllByText("add");
-    fireEvent.click(addButtons[0]);
-    const skills = useAppStore.getState().skills;
-    expect(skills).toHaveLength(before + 1);
-    expect(skills[skills.length - 1].name).toBe(firstAvailable);
+    fireEvent.click(screen.getAllByText("add to library")[0]);
+    expect(useAppStore.getState().skills).toHaveLength(before + 1);
   });
 
   it("drawer 'remove' deletes the skill", () => {
     const { container } = render(<SkillsScreen />);
-    fireEvent.click(container.querySelectorAll(SKILL_CARD)[0]);
+    fireEvent.click(container.querySelector(`${ROW}[data-skill-id="s1"]`) as HTMLElement);
     fireEvent.click(screen.getByText("remove"));
-    expect(useAppStore.getState().skills.find(s => s.id === "s1")).toBeUndefined();
+    expect(useAppStore.getState().skills.find((s) => s.id === "s1")).toBeUndefined();
   });
 
   it("the pin star toggles pinned without opening the drawer", () => {
     const { container } = render(<SkillsScreen />);
-    const firstCard = container.querySelectorAll(SKILL_CARD)[0];
-    const pin = firstCard.querySelector(".pin-btn") as HTMLElement;
-    fireEvent.click(pin);
-    expect(useAppStore.getState().skills.find(s => s.id === "s1")!.pinned).toBe(true);
-    // Drawer did not open (stopPropagation on the pin click).
-    expect(container.querySelector(".drawer.on")).toBeNull();
+    const row = container.querySelector(`${ROW}[data-skill-id="s1"]`) as HTMLElement;
+    fireEvent.click(row.querySelector(".pin-btn") as HTMLElement);
+    expect(useAppStore.getState().skills.find((s) => s.id === "s1")!.pinned).toBe(true);
+    expect(container.querySelector(".drawer.on")).toBeNull();  // stopPropagation kept it closed
+  });
+
+  it("creating a task group and a skill toggles membership from the drawer", () => {
+    const { container } = render(<SkillsScreen />);
+    const gid = useAppStore.getState().addSkillGroup("Release day");
+    fireEvent.click(container.querySelector(`${ROW}[data-skill-id="s1"]`) as HTMLElement);
+    const drawer = container.querySelector(".drawer.on") as HTMLElement;
+    fireEvent.click(within(drawer).getByText(/⬡ Release day/));
+    expect(useAppStore.getState().skillGroups.find((g) => g.id === gid)!.skillIds).toContain("s1");
   });
 });

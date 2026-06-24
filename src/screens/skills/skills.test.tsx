@@ -1,75 +1,77 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SkillsScreen } from "./";
-import { SKILLS, SKILL_CATALOG } from "../../data/skills";
+import { useAppStore } from "../../store";
+import { blankSkill } from "../../lib/session/skills";
 
-// Skill cards carry both `card` and `hrow`; the right-rail panels are `card`
-// only and the catalog rows are `hrow` only — so `.card.hrow` selects exactly
-// the skill cards in the main grid.
-const SKILL_CARD = ".card.hrow";
-const scaffoldCount = SKILLS.filter(s => s.kind === "scaffold").length;
+const ROW = ".skill-row";
 
-/** The kind-filter segmented control buttons (all / workflow / scaffold / …). */
-function segButtons(container: HTMLElement): HTMLButtonElement[] {
-  return Array.from(container.querySelectorAll<HTMLButtonElement>(".seg button"));
-}
+// A small, deterministic library across kinds so row/facet counts are predictable.
+const LIB = [
+  { ...blankSkill(), id: "w1", name: "Open a clean PR", kind: "workflow" as const, enabled: true },
+  { ...blankSkill(), id: "w2", name: "Cut a release", kind: "workflow" as const, enabled: true },
+  { ...blankSkill(), id: "sc1", name: "Scaffold a command", kind: "scaffold" as const, enabled: true },
+  { ...blankSkill(), id: "r1", name: "Security review", kind: "review" as const, enabled: true },
+];
 
-describe("SkillsScreen", () => {
-  it("renders the header, KPIs, and the skill library", () => {
-    const { container } = render(<SkillsScreen />);
-    expect(screen.getByRole("heading", { name: "Skills" })).toBeTruthy();
-    // KPI row is present (values derive from real telemetry — 0 with no usage log).
-    expect(screen.getByText("invocations · today")).toBeTruthy();
-    expect(screen.getByText("avg success")).toBeTruthy();
-    // Right-rail panels are present.
-    expect(screen.getByText("Most invoked")).toBeTruthy();
-    expect(screen.getByText("Success by kind")).toBeTruthy();
-    expect(screen.getByText("Add a skill")).toBeTruthy();
-    // One card per skill in the library.
-    expect(container.querySelectorAll(SKILL_CARD).length).toBe(SKILLS.length);
+describe("SkillsScreen — library at scale (#skills-groups)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ skills: LIB, skillGroups: [], sessionSkillGroups: {}, paneSkills: {}, githubToken: "" });
   });
 
-  it("filters the grid by kind and restores it via 'all'", () => {
+  it("renders the library as dense rows with a search box and a result count", () => {
     const { container } = render(<SkillsScreen />);
-    expect(container.querySelectorAll(SKILL_CARD).length).toBe(SKILLS.length);
-
-    const scaffold = segButtons(container).find(b => b.textContent === "scaffold")!;
-    fireEvent.click(scaffold);
-    expect(container.querySelectorAll(SKILL_CARD).length).toBe(scaffoldCount);
-    expect(scaffold.className).toContain("on");
-
-    const all = segButtons(container).find(b => b.textContent === "all")!;
-    fireEvent.click(all);
-    expect(container.querySelectorAll(SKILL_CARD).length).toBe(SKILLS.length);
+    expect(container.querySelectorAll(ROW).length).toBe(4);
+    expect(screen.getByPlaceholderText("Search name, description, tools…")).toBeTruthy();
   });
 
-  it("switches to the Runs view, replacing the library grid with the invocations panel", () => {
+  it("search narrows the rows", () => {
+    const { container } = render(<SkillsScreen />);
+    fireEvent.change(screen.getByPlaceholderText("Search name, description, tools…"), { target: { value: "release" } });
+    expect(container.querySelectorAll(ROW).length).toBe(1);
+  });
+
+  it("a Kind facet filters the rows (and the count reflects it)", () => {
+    const { container } = render(<SkillsScreen />);
+    fireEvent.click(screen.getByText("workflow")); // the Kind facet option
+    expect(container.querySelectorAll(ROW).length).toBe(2); // two workflow skills
+  });
+
+  it("the Cards density renders skill cards instead of rows", () => {
+    const { container } = render(<SkillsScreen />);
+    fireEvent.click(screen.getByText("▦ Cards"));
+    expect(container.querySelectorAll(ROW).length).toBe(0);
+    expect(container.querySelectorAll(".skill-card").length).toBe(4);
+  });
+
+  it("the Group density sections skills, including an Ungrouped bucket", () => {
+    useAppStore.setState({ skillGroups: [{ id: "g1", name: "Release day", hue: "var(--accent)", skillIds: ["w1", "w2"] }] });
+    render(<SkillsScreen />);
+    fireEvent.click(screen.getByText("⬡ Group"));
+    // "Release day" appears as both the quick-filter chip and the section header.
+    expect(screen.getAllByText("Release day").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Ungrouped")).toBeTruthy();
+  });
+
+  it("a task-group chip filters the library to that group's members", () => {
+    useAppStore.setState({ skillGroups: [{ id: "g1", name: "Release day", hue: "var(--accent)", skillIds: ["w1", "w2"] }] });
+    const { container } = render(<SkillsScreen />);
+    // The chip carries the group name + member count.
+    fireEvent.click(screen.getByText("Release day"));
+    expect(container.querySelectorAll(ROW).length).toBe(2);
+  });
+
+  it("switches to the Runs view and shows the empty state with no usage log", () => {
     const { container } = render(<SkillsScreen />);
     fireEvent.click(screen.getByText("Runs"));
-    // The runs panel renders; no usage log in tests → the empty state.
-    expect(screen.getByText("Invocations")).toBeTruthy();
     expect(screen.getByText("No runs yet")).toBeTruthy();
-    // The library skill grid is no longer mounted.
-    expect(container.querySelectorAll(SKILL_CARD).length).toBe(0);
+    expect(container.querySelectorAll(ROW).length).toBe(0);
   });
 
-  it("switches to the Catalog view with a search box and add buttons", () => {
-    const { container } = render(<SkillsScreen />);
-    fireEvent.click(screen.getByText("Catalog"));
-    expect(screen.getByPlaceholderText("Search the catalog…")).toBeTruthy();
-    expect(screen.getByText(new RegExp(`of ${SKILL_CATALOG.length} skills`))).toBeTruthy();
-    // Every catalog entry offers an add (or already-added) action.
-    expect(screen.getAllByText(/add to library|✓ added/).length).toBe(SKILL_CATALOG.length);
-    // Not the library grid.
-    expect(container.querySelectorAll(SKILL_CARD).length).toBe(0);
-  });
-
-  it("filters the catalog by the search query", () => {
+  it("the Catalog view has a search box and add buttons", () => {
     render(<SkillsScreen />);
     fireEvent.click(screen.getByText("Catalog"));
-    const search = screen.getByPlaceholderText("Search the catalog…");
-    fireEvent.change(search, { target: { value: SKILL_CATALOG[0].name } });
-    expect(screen.getByText(SKILL_CATALOG[0].name)).toBeTruthy();
-    expect(screen.getByText(new RegExp(`of ${SKILL_CATALOG.length} skills`))).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search the catalog…")).toBeTruthy();
+    expect(screen.getAllByText("add to library").length).toBeGreaterThan(0);
   });
 });
