@@ -14,6 +14,7 @@ mod config;
 mod github;
 mod shell;
 mod pty;
+mod pty_ledger;
 mod bsc;
 mod planner;
 mod data;
@@ -2351,6 +2352,14 @@ pub fn run() {
         log::warn!("[startup] previous shutdown was UNCLEAN (session-lock survived) — offering session restore");
     }
 
+    // Reap PTY children leaked by a prior run that never reached RunEvent::Exit (#1049). The ledger is
+    // authoritative about what THIS app spawned, so this only ever kills our own orphans (owner gone +
+    // same process) — never the user's terminals. Runs before any session launches.
+    let reaped = pty_ledger::reconcile_on_boot();
+    if reaped > 0 {
+        log::warn!("[startup] reaped {reaped} orphaned PTY child process(es) from a prior unclean run");
+    }
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -2392,9 +2401,18 @@ pub fn run() {
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
-            // Cap unbounded log files once at startup to reclaim disk space. Config-driven (#1060):
-            // uses the LogState default here (10k lines) until the frontend pushes the user's value.
-            logs::cap_logs(&bsc_base_dir(), &app.state::<logs::LogState>().get());
+            // Cap unbounded log files to reclaim disk space — OFF the synchronous boot path
+            // (#1047). A full read/rewrite of audit.log (≈520 KB) + the other TSV streams is
+            // housekeeping, not first-paint work; doing it inline blocked every startup. Defer
+            // past the cold-start window, then run the blocking I/O on a worker thread so it
+            // never stalls first paint or the async runtime. Config-driven (#1060): uses the
+            // LogState default (10k lines) until the frontend pushes the user's value.
+            let cap_base = bsc_base_dir();
+            let cap_cfg = app.state::<logs::LogState>().get();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(perf::STARTUP_GRACE_SECS)).await;
+                tauri::async_runtime::spawn_blocking(move || logs::cap_logs(&cap_base, &cap_cfg));
+            });
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
