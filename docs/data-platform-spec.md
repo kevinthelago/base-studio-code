@@ -93,7 +93,7 @@ interface Field {
 
 ### 3.3 Storage
 
-SQLite (`crates/kb`, `crates/orch`) holds app/plan state fine, but loaded *data* will
+SQLite (`crates/plandb`) holds app/plan state fine, but loaded *data* will
 exceed it. Bridge: **DuckDB** — embeddable, columnar, fits the desktop-authoritative
 model — as the per-project data store; a cloud warehouse story comes later. New crate:
 `crates/data` (Data Model registry + loaded-data store + lineage table).
