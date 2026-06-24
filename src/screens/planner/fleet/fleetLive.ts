@@ -7,7 +7,7 @@
 
 import type { CoordState, Waiter, WaitingSession, AskingSession } from "../../../lib/fleet/coordination";
 import { refKey } from "../../../lib/fleet/coordination";
-import type { FleetSession } from "../../../lib/tunnel/tunnelClient";
+import type { FleetSession } from "@/features/tunnel/lib/tunnelClient";
 
 /** Build the wire `FleetSession` for one dep-blocked waiter. */
 function fromWaiter(w: Waiter, now: number): FleetSession {
