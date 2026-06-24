@@ -3,3 +3,4 @@
 
 pub mod harness;
 pub mod claude_config;
+pub mod launch;
