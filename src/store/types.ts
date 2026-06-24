@@ -487,6 +487,9 @@ export interface AppStore {
    *  (a unique `sanitize(title)-<id>` so a re-used title never inherits stale files). */
   localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number }>;
   addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number }) => void;
+  /** Patch a draft record in place (#1222) — persists a title edit so it survives a reopen;
+   *  keyed by the FROZEN key so the on-disk folder doesn't move. No-ops if the draft is gone. */
+  updateDraftProject: (key: string, patch: Partial<{ title: string; pitch: string }>) => void;
   removeDraftProject: (key: string) => void;
   // Dev reset: clears all project/plan-scoped state (keeps auth, profiles, UI).
   resetProjectData: () => void;
