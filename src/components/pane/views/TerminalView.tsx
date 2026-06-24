@@ -43,6 +43,11 @@ const PENDING_BYTES_CAP = 256 * 1024;
 // tweak if it still peeks or over-clips.
 const CLIP_ROWS = 6;
 
+// Grace before the automatic post-launch redraw nudge (#1221) — long enough for Claude's TUI to
+// finish its first paint, so the nudge repaints a fully-drawn (and possibly jumbled) screen rather
+// than an empty one. The nudge is idempotent + non-destructive, so an imprecise delay is harmless.
+const AUTO_NUDGE_DELAY_MS = 700;
+
 // Hex equivalents of the oklch design tokens so xterm can use them
 const TERM_THEME: import("@xterm/xterm").ITheme = {
   background:          "#181a1f",
@@ -122,6 +127,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const claudeActiveRef = useRef<"run" | "idle">("idle"); // current within-session status
   const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // resize-nudge restore (#1221)
+  const autoNudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // post-launch auto-redraw (#1221)
   // Drives the native ConsoleInput (#1158): true while a Claude session is the running program in
   // this pane. Lifted to the store (transient) so PaneShell can also read it — it hides the pane's
   // status footer and shows the input bar in its place. The OSC/reconnect handlers below set it.
@@ -595,7 +601,20 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // Show the native input as soon as we LAUNCH a Claude session — don't wait for the OSC-100
       // "run" signal, which can be missed on a cold start, leaving Claude's own (legacy) input
       // visible and ours hidden (#1158). OSC-100 "idle" (process exit) still clears it.
-      if (launchesClaude) useAppStore.getState().setPaneClaudeActive(paneId, true);
+      if (launchesClaude) {
+        useAppStore.getState().setPaneClaudeActive(paneId, true);
+        // Auto-redraw (#1221): Claude's TUI sometimes paints jumbled on its first draw (and on a
+        // reconnect — this block runs for both). Request one resize-nudge after it's had a moment to
+        // render, so it self-heals without the user invoking "redraw / fix display" by hand. Keyed
+        // off the launch (which is reliable) rather than the OSC-100 "run" marker (which can be
+        // missed). Routes through the same requestPaneRedraw path as the manual trigger; the nudge
+        // is openedRef-guarded + debounced, so an early/duplicate request no-ops.
+        if (autoNudgeTimerRef.current) clearTimeout(autoNudgeTimerRef.current);
+        autoNudgeTimerRef.current = setTimeout(() => {
+          autoNudgeTimerRef.current = null;
+          useAppStore.getState().requestPaneRedraw(paneId);
+        }, AUTO_NUDGE_DELAY_MS);
+      }
 
       if (!isNew) {
         // Reconnecting — Ctrl+L repaints the prompt without submitting a command
@@ -628,6 +647,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       destroyed = true;
       if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
       if (nudgeTimerRef.current) { clearTimeout(nudgeTimerRef.current); nudgeTimerRef.current = null; }
+      if (autoNudgeTimerRef.current) { clearTimeout(autoNudgeTimerRef.current); autoNudgeTimerRef.current = null; }
       el.removeEventListener("focusin", onFocusIn);
       disposeOnData.dispose();
       unlistenRef.current?.();
