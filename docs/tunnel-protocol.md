@@ -3,14 +3,14 @@
 The tunnel lets **mobile-studio-code** connect to the desktop and mirror its terminal
 panes (view + input) **from anywhere**, over a **zero-knowledge Cloudflare relay**.
 This document is the shared reference for the wire schema; the machine-readable fixture
-is [`src/lib/tunnelProtocol.fixtures.json`](../src/lib/tunnelProtocol.fixtures.json).
+is [`src/lib/tunnel/tunnelProtocol.fixtures.json`](../src/lib/tunnel/tunnelProtocol.fixtures.json).
 
 ## Source of truth
 
 The application schema is owned by the **mobile** client —
 `mobile-studio-code/src/lib/types.ts` (`TunnelClientMessage` / `TunnelServerMessage`).
 That client already ships, so the desktop (`src-tauri/src/tunnel.rs`) and frontend
-(`src/lib/tunnel.ts`) **conform to it**. The TS tests (`src/__tests__/tunnel.test.ts`)
+(`src/lib/tunnel/tunnel.ts`) **conform to it**. The TS tests (`src/lib/tunnel/tunnel.test.ts`)
 and (once it lands) the Rust transport assert against the shared fixture, so a drift
 fails CI on the base side; a breaking change requires **coordinated PRs in both repos**.
 
@@ -77,6 +77,9 @@ Multi-word field names are **camelCase** (`paneId`, `currentTask`, `lastActivity
 | `coord_approve`           | `session`                               | Approve a checkpoint/confirm-paused agent (F2). |
 | `automation_arm`          | `id`, `armed`                           | Arm or disarm an automation on the desktop (A2). |
 | `automation_run_now`      | `id`                                    | Trigger an automation to run immediately (A2). |
+| `plan_advance`            | `projectId`, `stageKey`                 | Advance / jump the live planner to a stage. Honored only when the desktop has granted input (same gate as `pane_input`); dropped otherwise (PT1, #934). |
+| `plan_confirm`            | `projectId`, `section`                  | Confirm a plan section in the live planner. Input-gated (PT1, #934). |
+| `plan_chat`               | `projectId`, `text`                     | Send a chat turn into the live planner session. Input-gated (PT1, #934). |
 
 ### Server → client (`TunnelServerMessage`)
 
@@ -97,6 +100,9 @@ Multi-word field names are **camelCase** (`paneId`, `currentTask`, `lastActivity
 | `automation_ran`      | `id`, `at`, `status`, `note`                                   | Informational: automation fired. status ∈ "ok"/"skipped"/"fail" (A2). |
 | `automation_failed`   | `id`, `at`, `error`                                            | Non-transient automation failure; also triggers an FCM push (A4). |
 | `mcp_list`            | `extensions: McpExtFrame[]`                                    | Full MCP server / hook list (read-only on mobile). Replayed on connect + on every change (M2). |
+| `plan_state`          | `projectId`, `currentStage`, `confirmedSections: string[]`, `files: PlanFile[]`, `messages: PlanMessage[]`, `pipelineRuns: PlanPipelineRun[]` | Full snapshot of the **live planning session** (distinct from the async `plan_sync_*` file path). Replayed on connect (last per-`projectId` payload) and replaces prior state wholesale (PT1, #934). |
+| `plan_event`          | `projectId`, `kind`, `at`, `section?`, `stage?`, `message?`, `run?`            | Transient planner delta — **fire-and-forget, not replayed**. `kind` ∈ `section_confirmed` / `stage_advanced` / `message_appended` / `pipeline_run`; the detail field is set per `kind` (PT1, #934). |
+| `plan_status`         | `projectId`, `currentStage`, `status`                          | Cheap planner header update (active stage + status label). Replayed on connect (PT1, #934). |
 
 `status` ∈ `running | idle | awaiting_input | error` (`PaneStatus`).
 
@@ -121,6 +127,22 @@ Multi-word field names are **camelCase** (`paneId`, `currentTask`, `lastActivity
 ```
 
 `kind` ∈ `"mcp" | "hook"`. `transport` ∈ `"stdio" | "http"` (null for hooks).
+
+#### `plan_state` shapes (PT1, #934)
+
+The live planning session — what the planner is doing *right now* — as opposed to the async file
+reconciliation carried by `plan_sync_*` (which is unchanged). The desktop is the single source of
+truth; the phone mirrors `plan_state` / `plan_status` (read-only) and steers via the input-gated
+`plan_advance` / `plan_confirm` / `plan_chat` drive frames. `messages` is the planner conversation
+(user/assistant **text** turns only — tool blocks are dropped desktop-side, read from the Claude
+transcript). `pipelineRuns` is currently always `[]` (the planner runs no pipelines) but is part of
+the contract — render an empty list gracefully.
+
+```json
+{ "relpath": "goal.md", "content": "# Goal\n…" }                         // PlanFile
+{ "role": "assistant", "text": "Here's the goal.", "at": 1750000000000 } // PlanMessage (role ∈ "user" | "assistant")
+{ "id": "build", "stage": "test", "status": "running" }                  // PlanPipelineRun
+```
 
 ## Connection lifecycle
 
@@ -180,7 +202,7 @@ private key*, and place it at the path above).
 
 Pane *metadata* (names, cwds, statuses) lives in the frontend Zustand store; the pure
 transform that maps it into `pane_list` / `session_state` shapes is
-[`buildPanePayload`](../src/lib/tunnel.ts). PTY bytes are teed from the existing emitter
+[`buildPanePayload`](../src/lib/tunnel/tunnel.ts). PTY bytes are teed from the existing emitter
 thread in `src-tauri/src/lib.rs` into the tunnel's in-process bus (a no-op while nobody
 is connected) and drained by the relay transport (#242). Inbound input/resize is routed
 back into the PTY.
@@ -232,10 +254,20 @@ receives a close frame with reason `"room idle timeout"` or `"room lifetime exce
   receives the notification even when off the relay (`src-tauri/src/fcm.rs`).
 - **T2b** wired all Rust commands into `tunnelClient.ts`, including the previously missing
   `tunnelAckPlanPush`.
-- **T1b** added the Noise IK cross-repo test vector scaffold: the test reads
-  `src/lib/tunnelProtocol.noiseVector.json` (produced by tunnel-mobile T1a) and asserts
-  snow ↔ noble byte-level agreement. Active once the fixture file lands on develop.
+- **T1b / #928** asserts the desktop's snow responder against a **frozen shared Noise IK
+  vector**, `src-tauri/tests/noise_vectors.json` (empty prologue, fixed static + ephemeral
+  keys, byte-exact ciphertext for the IK handshake + a transport message each way). The
+  test is **active** — `noise_ik_matches_shared_test_vector` fails CI on any byte
+  divergence. This flips the original T1a dependency: snow (reference-grade) produces the
+  canonical vector and base vendors it; mobile-studio-code pins the same file and asserts
+  the noble side against it, so any snow ↔ noble mismatch fails a test on at least one side.
 - **T8** refreshed this doc to cover all landed protocol additions (F2/A2/M2/PT2).
+- **PT1** (#934/#985/#986/#987) added the **live planning session** surface, distinct from the
+  `plan_sync_*` file path: `PlanState` + `PlanEvent` + `PlanStatus` ServerMsg and the input-gated
+  `PlanAdvance` + `PlanConfirm` + `PlanChat` ClientMsg (`src-tauri/src/tunnel.rs`); `plan_state` /
+  `plan_status` are replayed on connect, `plan_event` is fire-and-forget. `messages` come from
+  `tokens::read_pane_messages` (the Claude transcript). The TS frame types + fixtures moved under
+  `src/lib/tunnel/`. Mobile counterpart: #1245.
 - **PT2** wired plan_sync message flow: `tunnel_set_plan_state`, `tunnel_ack_plan_push`,
   `tunnelSetPlanState`, `tunnelAckPlanPush` TS bindings; `PlanSyncManifest`, `PlanSyncFiles`,
   `PlanSyncAck` ServerMsg; `PlanSyncManifestRequest`, `PlanSyncPull`, `PlanSyncPush`
