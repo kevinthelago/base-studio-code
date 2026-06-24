@@ -11,7 +11,7 @@ import { useFleetLive } from "../../../hooks/useFleetLive";
 import { useFleetGithub, type FleetGithub } from "../../../hooks/useFleetGithub";
 import { WorkerDetail } from "./WorkerDetail";
 import type { LiveWorker } from "../../../lib/fleet/fleetLive";
-import type { ThroughputSlice } from "../../../lib/github/fleetGithub";
+import type { ThroughputSlice } from "@/features/github/lib/fleetGithub";
 
 const GRID = "150px 96px 1fr 70px 22px";
 

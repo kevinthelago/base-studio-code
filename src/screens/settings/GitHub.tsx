@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppStore, type GithubUser, type GithubRepo } from "../../store";
-import { clearGithubCache } from "../../lib/github/github";
-import { runDeviceFlow, type DeviceStartInfo, type DevicePollResult } from "../../lib/github/githubDeviceFlow";
+import { clearGithubCache } from "@/features/github/lib/github";
+import { runDeviceFlow, type DeviceStartInfo, type DevicePollResult } from "@/features/github/lib/githubDeviceFlow";
 import { ToggleRow } from "./General";
 
 /** Mirror of the backend `DeviceStart` struct (`github_device_start`). */

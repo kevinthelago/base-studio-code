@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { useAppStore } from "../../store";
-import { githubRequest, githubGraphql } from "../../lib/github/github";
+import { useAppStore } from "@/store";
+import { githubRequest, githubGraphql } from "./lib/github";
 import { heatFill } from "./heatFill";
 import { quartileScale } from "./heatScale";
 import { languageStats } from "./languageStats";

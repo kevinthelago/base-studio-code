@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Pulse } from "../screens/github/Pulse";
+import { Pulse } from "@/features/github/Pulse";
 import type { GithubRepo } from "../store";
 
 // The Pulse screen is live-data driven (useRepoPulse → GitHub API). In tests the

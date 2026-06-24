@@ -7,8 +7,8 @@
 // ConsoleScreen. Pure rollup/prompts live in ciStatus.ts; this is the Tauri/React actuator.
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
-import { injectPrompt } from "../fleet/paneInject";
+import { useAppStore } from "@/store";
+import { injectPrompt } from "@/lib/fleet/paneInject";
 import {
   rollupChecks, isTerminalCi, ciWorkerPrompt, ciDirectorMergePrompt, ciDevelopRedPrompt,
   type CheckRun, type CiState,

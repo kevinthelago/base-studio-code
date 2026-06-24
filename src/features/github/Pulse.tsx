@@ -9,13 +9,13 @@ import {
   LineArea, Bars, Donut, HBars, Legend,
   StatCard, CardHead, RangeToggle, Avatar, useTip, fmt,
   type HBarRow, type StatTone,
-} from "../../components/charts";
-import type { GithubRepo } from "../../store";
+} from "@/components/charts";
+import type { GithubRepo } from "@/store";
 import { BranchGraph } from "./BranchGraph";
-import { useRepoPulse, type RepoPulseLive } from "../../hooks/useRepoPulse";
-import type { VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch } from "../../data/repoPulse";
-import type { CiHealth, PulseKpis } from "../../lib/github/repoPulseLive";
-import { BRANCH_STATUS } from "../../data/repoPulse";
+import { useRepoPulse, type RepoPulseLive } from "@/hooks/useRepoPulse";
+import type { VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch } from "@/data/repoPulse";
+import type { CiHealth, PulseKpis } from "./lib/repoPulseLive";
+import { BRANCH_STATUS } from "@/data/repoPulse";
 
 /** Last 7 or 14 days of a velocity slice (the series are stored 14-wide). */
 function sliceVelocity(v: VelocitySlice, range: string): VelocitySlice {
