@@ -58,13 +58,22 @@ export function StageSummary({ sections }: { sections: BlueprintSection[] }) {
         const k = stageKind(s.key);
         const caps = (s.skills?.length ?? 0) + (s.mcp?.length ?? 0);
         return (
-          <div key={s.uid ?? i} style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 0" }}>
-            <span className="mono dim" style={{ fontSize: 9.5, width: 16 }}>{String(i + 1).padStart(2, "0")}</span>
-            <span style={{ width: 22, height: 22, flex: "0 0 22px", borderRadius: 5, background: tint(k.h, 0.16), color: hue(k.h), display: "flex", alignItems: "center", justifyContent: "center" }}><Ic n={k.glyph} size={13} /></span>
-            <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)" }}>{s.name}</span>
-            <span style={{ flex: 1 }} />
-            {caps > 0 && <span className="hint mono">{caps} attached</span>}
-            {s.gateRule && <span className="tag amber">gate</span>}
+          <div key={s.uid ?? i} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "5px 0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <span className="mono dim" style={{ fontSize: 9.5, width: 16 }}>{String(i + 1).padStart(2, "0")}</span>
+              <span style={{ width: 22, height: 22, flex: "0 0 22px", borderRadius: 5, background: tint(k.h, 0.16), color: hue(k.h), display: "flex", alignItems: "center", justifyContent: "center" }}><Ic n={k.glyph} size={13} /></span>
+              <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)" }}>{s.name}</span>
+              <span style={{ flex: 1 }} />
+              {caps > 0 && <span className="hint mono">{caps} attached</span>}
+              {s.gateRule && <span className="tag amber">gate</span>}
+            </div>
+            {/* The prompt is the substance of the stage (#1268) — dense text under the row, the
+                icon as its index. pre-wrap keeps the prompt's own line breaks. */}
+            {s.prompt?.trim() && (
+              <div style={{ marginLeft: 25, fontFamily: "var(--mono)", fontSize: 10, lineHeight: 1.5, color: "var(--fg-dim)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {s.prompt.trim()}
+              </div>
+            )}
           </div>
         );
       })}

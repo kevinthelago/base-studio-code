@@ -8,8 +8,8 @@ import { type Blueprint, type BlueprintSection } from "../stages/blueprints";
 vi.mock("../../../lib/planner/gist/gist", () => ({ listBlueprintGists: vi.fn() }));
 
 const SECTIONS = [
-  { uid: "u1", key: "context", name: "Context", glyph: "◆", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false },
-  { uid: "u2", key: "repos", name: "Repos", glyph: "▦", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false },
+  { uid: "u1", key: "context", name: "Context", glyph: "◆", gate: "", deps: [], blurb: "", prompt: "Establish the goal, users, and scope.", enabled: true, expanded: false },
+  { uid: "u2", key: "repos", name: "Repos", glyph: "▦", gate: "", deps: [], blurb: "", prompt: "Decide the repositories the project needs.", enabled: true, expanded: false },
 ] as BlueprintSection[];
 const PREVIEW: PreviewBlueprint = {
   name: "Fresh BP", icon: "F", h: 70, sections: SECTIONS,
@@ -69,6 +69,7 @@ describe("BlueprintImportModal", () => {
     expect(onPreview).toHaveBeenCalledWith("g-fresh");
     expect(await screen.findByText("Context")).toBeTruthy(); // the blueprint's stages render
     expect(screen.getByText("Repos")).toBeTruthy();
+    expect(screen.getByText("Establish the goal, users, and scope.")).toBeTruthy(); // the stage PROMPT, under its row (#1268)
     expect(screen.getByText(/view raw JSON/i)).toBeTruthy();  // the literal file is one click away
     expect(onImport).not.toHaveBeenCalled();                  // previewing never imports
   });
