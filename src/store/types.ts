@@ -30,6 +30,7 @@ import type { DirectorDrive } from "../screens/planner/fleet/directorDrive";
 import type { ExtensionsSlice } from "@/features/extensions/store";
 import type { SkillsSlice } from "@/features/skills/store";
 import type { AutomationsSlice } from "@/features/automations/store";
+import type { GithubSlice } from "@/features/github/store";
 
 export interface GithubUser {
   login: string;
@@ -130,7 +131,7 @@ export interface EndedInfo {
   at: number;
 }
 
-export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice {
+export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice, GithubSlice {
   // Navigation
   activeScreen: Screen;
   setScreen: (screen: Screen) => void;
@@ -362,26 +363,9 @@ export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice
   setAllPanesView: (view: ViewKey) => void;
   setPaneName: (tabIdx: number, paneIdx: number, name: string) => void;
 
-  // GitHub
-  githubConnected: boolean;
-  githubToken: string;
-  // Repo-scoped GitHub credentials (#158): per-`owner/name` fine-grained token. When
-  // set, a request targeting that repo uses it instead of the global PAT, so a session
-  // can't act on other repos via the proxy. Persisted (Tauri store), never logged.
-  repoGithubTokens: Record<string, string>;
-  setRepoGithubToken: (repo: string, token: string | null) => void;
-  githubUser: GithubUser | null;
-  githubRepos: GithubRepo[];
-  activeRepoName: string;
-  githubPageMode: "summary" | "projects" | "repos";
-  setGithubPageMode: (v: "summary" | "projects" | "repos") => void;
-  setGithubToken: (token: string) => void;
-  setGithubUser: (user: GithubUser | null) => void;
-  setGithubRepos: (repos: GithubRepo[]) => void;
-  setActiveRepo: (name: string) => void;
-  setGithubConnected: (connected: boolean) => void;
-  disconnectGithub: () => void;
-  markGithubTokenInvalid: () => void;
+  // GitHub connection state lives in the GitHub feature slice (`GithubSlice`,
+  // `@/features/github/store`, #1309) — merged via `extends`. (GithubUser / GithubRepo types are
+  // defined above and shared.)
 
   // Automations
   automationsTab: "schedules" | "history";

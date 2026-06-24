@@ -27,7 +27,7 @@ import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus, type SessionVerdict } from "../../../lib/core/diagnostics";
 import { SessionReadinessBanner } from "../../SessionReadinessBanner";
 import { SessionFailure } from "../../SessionFailure";
-import { tokenForRepo } from "../../../lib/github/repoCredentials";
+import { tokenForRepo } from "@/features/github/lib/repoCredentials";
 import { getProvider } from "../../../lib/console/providers";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write

@@ -8,7 +8,7 @@
 
 import type {
   VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch, BranchStatusKey,
-} from "../../data/repoPulse";
+} from "@/data/repoPulse";
 
 // ── GitHub payload shapes (subset of the fields we use) ──────────────────────
 export interface GhAccount { login: string; type?: string }

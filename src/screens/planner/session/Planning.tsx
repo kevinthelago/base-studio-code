@@ -40,8 +40,8 @@ import { publishFleetRoster } from "../../../lib/fleet/fleetRoster";
 import { hubToCanonical } from "../../../lib/planner/plannerSync";
 import { tunnelSetPlanState, tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent } from "../../../lib/tunnel/tunnelClient";
 import type { PlanMessage } from "../../../lib/tunnel/tunnel";
-import { canLaunchTriage, triageLockReason, publishBlockReason } from "../../../lib/github/projectSync";
-import { githubGraphql } from "../../../lib/github/github";
+import { canLaunchTriage, triageLockReason, publishBlockReason } from "@/features/github/lib/projectSync";
+import { githubGraphql } from "@/features/github/lib/github";
 import { planRename, applyRename } from "./renameProject";
 import { planDraftCommit } from "./draftTitle";
 import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
@@ -83,7 +83,7 @@ import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "../../../lib/core/claudeComplete";
 import { resolveLlmConfig, hasLlmKey } from "../../../lib/core/llmConfig";
 import { fleetProfilesComplete } from "../../../lib/session/profileGen";
-import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "../../../lib/github/issueProvenance";
+import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "@/features/github/lib/issueProvenance";
 import type { DataModel } from "../data/dataModel";
 
 // ── <data_model> tag parser (#se-persist) ────────────────────────────────────

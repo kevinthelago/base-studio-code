@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { GitHubPageModeStrip } from "../../github/GitHubSummary";
+import { GitHubPageModeStrip } from "@/features/github/GitHubSummary";
 import { ProjectsPageModeStrip } from "./ProjectsSummary";
 
 // #421: the Projects portfolio summary moved into the GitHub screen, between
