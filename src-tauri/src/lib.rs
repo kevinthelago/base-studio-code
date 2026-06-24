@@ -14,6 +14,7 @@ mod config;
 mod github;
 mod shell;
 mod pty;
+mod pty_ledger;
 mod bsc;
 mod planner;
 mod data;
@@ -2328,6 +2329,14 @@ pub fn run() {
     let unclean_shutdown = claim_session_lock(&session_lock_path());
     if unclean_shutdown {
         log::warn!("[startup] previous shutdown was UNCLEAN (session-lock survived) — offering session restore");
+    }
+
+    // Reap PTY children leaked by a prior run that never reached RunEvent::Exit (#1049). The ledger is
+    // authoritative about what THIS app spawned, so this only ever kills our own orphans (owner gone +
+    // same process) — never the user's terminals. Runs before any session launches.
+    let reaped = pty_ledger::reconcile_on_boot();
+    if reaped > 0 {
+        log::warn!("[startup] reaped {reaped} orphaned PTY child process(es) from a prior unclean run");
     }
 
     tauri::Builder::default()
