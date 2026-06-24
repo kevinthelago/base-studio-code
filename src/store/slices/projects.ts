@@ -21,7 +21,7 @@ import { resolveDirectorDrive } from "../../screens/planner/fleet/directorDrive"
 import { resolveHooks } from "../../lib/session/hooks";
 import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "../../lib/session/mcpServers";
 import { resolveReferenceContext, resolveStartupPrompt } from "../../lib/session/assignments";
-import { resolveSkills } from "../../lib/session/skills";
+import { effectiveSessionSkills, expandGroups } from "../../lib/session/skills";
 import { resolveStrategy, strategySettings } from "../../screens/planner/shared/integrationStrategy";
 import { scriptDocRelpath } from "../../screens/planner/session/planningSession";
 
@@ -273,7 +273,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneRepos             = { ...s.paneRepos };
           const triageMcp                = resolveMcpServers(s.mcpServers, projectId);
           const triageHooks              = resolveHooks(s.hooks, projectId);
-          const triageSkills             = resolveSkills(s.skills, projectId);
           // Checkpoint docs live beside the repo clones, under the project-name
           // key (always present; projectId defaults to "" for ad-hoc triage).
           const projKey = sanitizeProjectKey(projectName);
@@ -333,7 +332,13 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               newPaneCheckpointDocs[key] = checkpointDocRelpath(projKey, fullName ?? "");
               newPaneMcpServers[key] = triageMcp;
               newPaneHooks[key] = triageHooks;
-              newPaneSkills[key] = triageSkills;
+              // Per-session skills (#1056): the project-resolved set, layered with this session's
+              // override + any task groups toggled onto it (#skills-groups), keyed by the stable
+              // triage identity id.
+              newPaneSkills[key] = effectiveSessionSkills(
+                s.skills, projectId, s.sessionSkillOverrides[key],
+                new Set(expandGroups(s.sessionSkillGroups[key] ?? [], s.skillGroups)),
+              );
               newPaneRoles[key] = "triage";
               // Bind the triage pane to its repo so its session GH_TOKEN is scoped to it
               // (#158); a repo with an assigned credential triages with that token only.
@@ -444,7 +449,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const fleetHarness = s.fleetHarness ?? "claude";
           const fleetAllMcp = resolveAllInstalledMcp(s.mcpServers);
           const fleetHooks = resolveHooks(s.hooks, projectKey);
-          const fleetSkills = resolveSkills(s.skills, projectKey);
           // Reference-context assignments resolved per pane below (#326).
           const fleetAssignments = buildAssignments(s);
 
@@ -560,7 +564,13 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // fleet-wide baseline plus its stream's assigned servers (#1054).
                 newPaneMcpServers[key] = sess === null ? fleetAllMcp : resolveStreamMcp(s.mcpServers, sess.mcp, projectKey);
                 newPaneHooks[key] = fleetHooks;
-                newPaneSkills[key] = fleetSkills;
+                // Per-session skills (#1056): project-resolved set + this session's override + any
+                // task groups toggled onto it (#skills-groups), keyed by the worker/director's
+                // stable identity id.
+                newPaneSkills[key] = effectiveSessionSkills(
+                  s.skills, projectKey, s.sessionSkillOverrides[key],
+                  new Set(expandGroups(s.sessionSkillGroups[key] ?? [], s.skillGroups)),
+                );
                 newPaneRoles[key] = sess === null ? "director" : "worker";
                 newPaneProviders[key] = fleetHarness;
                 // One roster row per live session (#734). Director has no repo/branch.

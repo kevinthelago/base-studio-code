@@ -16,7 +16,7 @@ import { composeReferenceContext } from "../../../lib/session/assignments";
 import { resolveMcpServers, toBscAgentMcp } from "../../../lib/session/mcpServers";
 import { resolveHooks } from "../../../lib/session/hooks";
 import { toSessionPayloads } from "../../../lib/session/sessionConfig";
-import { resolveSkills, toSkillCfgs } from "../../../lib/session/skills";
+import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "../../../lib/session/skills";
 import { PendingPtyData } from "../../../lib/console/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/console/resumeClaude";
 import { isManualPaneId } from "../../../lib/console/paneIdentity";
@@ -527,10 +527,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           ?? resolveHooks(useAppStore.getState().hooks, "");
         const { mcp, hooks } = toSessionPayloads(mcpServers, hookDefs);
         // Skills (reusable capability bundles) resolved for this session — like
-        // extensions, pre-resolved per pane at tab creation; fall back to globals
-        // for ad-hoc consoles. Written as .claude/skills/<slug>/SKILL.md.
-        const skillDefs = useAppStore.getState().paneSkills[paneId]
-          ?? resolveSkills(useAppStore.getState().skills, "");
+        // extensions, pre-resolved per pane at tab creation (the fleet/triage snapshot,
+        // already override-aware). Fall back to the global set for an ad-hoc console, still
+        // honoring this pane's per-session override (#1056). Written as .claude/skills/<slug>/SKILL.md.
+        const skillState = useAppStore.getState();
+        const skillDefs = skillState.paneSkills[paneId]
+          ?? effectiveSessionSkills(
+               skillState.skills, "", skillState.sessionSkillOverrides[paneId],
+               new Set(expandGroups(skillState.sessionSkillGroups[paneId] ?? [], skillState.skillGroups)),
+             );
         const skills = toSkillCfgs(skillDefs);
         // Agents audit (#257): on a gated pane (role or profile assigned), install a
         // PreToolUse hooks: log each tool attempt for the Activity feed (bsc-audit),
@@ -538,10 +543,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         const gatedHooks = (cap || prof)
           ? [...hooks,
              { event: "PreToolUse", matcher: "", command: "bsc-audit" },
-             // Skill telemetry (#406): one PreToolUse line per invocation + one
-             // PostToolUse line per success → the skills.log the Skills screen reads.
-             { event: "PreToolUse", matcher: "Skill", command: "bsc-skill" },
-             { event: "PostToolUse", matcher: "Skill", command: "bsc-skill" },
              // MCP-call telemetry (#879 PR 2): time each MCP tool call (Pre stamps start,
              // Post logs round-trip ms + outcome) → mcp.log for the MCP Analytics tab.
              { event: "PreToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
@@ -557,9 +558,19 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
              // stopping to ask the user. `stop_hook_active` prevents an infinite loop.
              ...(role === "worker" ? [{ event: "Stop", matcher: "", command: "bsc-defer" }] : [])]
           : hooks;
+        // Skill telemetry (#406) follows the SKILLS, not the role gate: any session that has
+        // skills written invokes them, so install the bsc-skill Pre/Post hooks whenever skills
+        // are present — incl. an ungated console with a per-session skill (#1056). Without this,
+        // skill runs on a non-role/profile pane were never tallied in the Skills "Runs" view.
+        const sessionHooks = skills.length > 0
+          ? [...gatedHooks,
+             // one PreToolUse line per invocation + one PostToolUse line per success → skills.log
+             { event: "PreToolUse", matcher: "Skill", command: "bsc-skill" },
+             { event: "PostToolUse", matcher: "Skill", command: "bsc-skill" }]
+          : gatedHooks;
         await invoke("ensure_session_settings", {
           cwd: initialCwd, allowedCommands, deniedCommands: denied,
-          mcpServers: mcp, hooks: gatedHooks,
+          mcpServers: mcp, hooks: sessionHooks,
           allowToolRules, denyToolRules, askToolRules,
           skills,
           // Replace (not merge) the permission block so a relaunch reflects the CURRENT
