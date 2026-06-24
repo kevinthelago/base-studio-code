@@ -2,13 +2,13 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
-import { seedSkills, skillFromPayload, type SkillDef } from "../../lib/session/skills";
+import { seedSkills, skillFromPayload, applySessionSkillChoice, skillSlug, type SkillDef } from "../../lib/session/skills";
 import type { KbBlock } from "../../data/mock";
 import { repoPromptKey } from "../../lib/session/startupPrompt";
 import { DEFAULT_AUTO_FOCUS_MODE } from "../../lib/console/focusQueue";
 
 type SessionSlice = Pick<AppStore,
-  "mcpServers" | "addMcpServer" | "updateMcpServer" | "removeMcpServer" | "toggleMcpServer" | "setMcpServerProjects" | "hooks" | "addHook" | "updateHook" | "removeHook" | "toggleHook" | "setHookProjects" | "paneMcpServers" | "paneHooks" | "skills" | "addSkill" | "installBundledSkills" | "updateSkill" | "removeSkill" | "toggleSkill" | "toggleSkillPin" | "setSkillProjects" | "upsertSkills" | "paneSkills" | "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
+  "mcpServers" | "addMcpServer" | "updateMcpServer" | "removeMcpServer" | "toggleMcpServer" | "setMcpServerProjects" | "hooks" | "addHook" | "updateHook" | "removeHook" | "toggleHook" | "setHookProjects" | "paneMcpServers" | "paneHooks" | "skills" | "addSkill" | "installBundledSkills" | "updateSkill" | "removeSkill" | "toggleSkill" | "toggleSkillPin" | "setSkillProjects" | "upsertSkills" | "paneSkills" | "sessionSkillOverrides" | "setSessionSkill" | "resetSessionSkills" | "skillGroups" | "addSkillGroup" | "updateSkillGroup" | "removeSkillGroup" | "toggleSkillGroupMember" | "upsertSkillGroups" | "sessionSkillGroups" | "setSessionSkillGroup" | "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
@@ -99,6 +99,81 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
           return { skills };
         }),
       paneSkills: {},
+
+      sessionSkillOverrides: {},
+      setSessionSkill: (sessionKey, skillId, choice) =>
+        set((s) => {
+          const next = applySessionSkillChoice(s.sessionSkillOverrides[sessionKey], skillId, choice);
+          const map = { ...s.sessionSkillOverrides };
+          // Prune an emptied override so a session with no deviations carries no entry.
+          if (next.add.length === 0 && next.remove.length === 0) delete map[sessionKey];
+          else map[sessionKey] = next;
+          return { sessionSkillOverrides: map };
+        }),
+      resetSessionSkills: (sessionKey) =>
+        set((s) => {
+          const hadOverride = !!s.sessionSkillOverrides[sessionKey];
+          const hadGroups = !!s.sessionSkillGroups[sessionKey];
+          if (!hadOverride && !hadGroups) return {};
+          const overrides = { ...s.sessionSkillOverrides };
+          const groups = { ...s.sessionSkillGroups };
+          delete overrides[sessionKey];
+          delete groups[sessionKey];
+          return { sessionSkillOverrides: overrides, sessionSkillGroups: groups };
+        }),
+
+      // ── Task groups (#skills-groups) ──────────────────────────────────────
+      skillGroups: [],
+      addSkillGroup: (name, hue) => {
+        const id = `grp_${Math.random().toString(36).slice(2, 8)}`;
+        set((s) => ({ skillGroups: [...s.skillGroups, { id, name, hue: hue ?? "var(--accent)", skillIds: [] }] }));
+        return id;
+      },
+      updateSkillGroup: (id, patch) =>
+        set((s) => ({ skillGroups: s.skillGroups.map((g) => (g.id === id ? { ...g, ...patch } : g)) })),
+      removeSkillGroup: (id) =>
+        set((s) => {
+          // Drop the group AND any per-session toggles that referenced it (no dangling ids).
+          const sessionSkillGroups: Record<string, string[]> = {};
+          for (const [k, ids] of Object.entries(s.sessionSkillGroups)) {
+            const kept = ids.filter((g) => g !== id);
+            if (kept.length) sessionSkillGroups[k] = kept;
+          }
+          return { skillGroups: s.skillGroups.filter((g) => g.id !== id), sessionSkillGroups };
+        }),
+      toggleSkillGroupMember: (groupId, skillId) =>
+        set((s) => ({
+          skillGroups: s.skillGroups.map((g) => {
+            if (g.id !== groupId) return g;
+            const has = g.skillIds.includes(skillId);
+            return { ...g, skillIds: has ? g.skillIds.filter((x) => x !== skillId) : [...g.skillIds, skillId] };
+          }),
+        })),
+      upsertSkillGroups: (groups) =>
+        set((s) => {
+          const next = [...s.skillGroups];
+          for (const g of groups) {
+            const slug = skillSlug(g.name);
+            const idx = next.findIndex((x) => (g.id && x.id === g.id) || skillSlug(x.name) === slug);
+            if (idx >= 0) {
+              const rest = { ...g }; delete rest.id;
+              next[idx] = { ...next[idx], ...rest };
+            } else {
+              next.push({ ...g, id: g.id ?? `grp_${Math.random().toString(36).slice(2, 8)}` });
+            }
+          }
+          return { skillGroups: next };
+        }),
+      sessionSkillGroups: {},
+      setSessionSkillGroup: (sessionKey, groupId, on) =>
+        set((s) => {
+          const cur = s.sessionSkillGroups[sessionKey] ?? [];
+          const next = on ? (cur.includes(groupId) ? cur : [...cur, groupId]) : cur.filter((g) => g !== groupId);
+          const map = { ...s.sessionSkillGroups };
+          if (next.length) map[sessionKey] = next;
+          else delete map[sessionKey];
+          return { sessionSkillGroups: map };
+        }),
 
       allowedCommands: [],
       addAllowedCommand: (cmd) =>

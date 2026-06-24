@@ -139,6 +139,12 @@ export const useAppStore = create<AppStore>()(
         mcpServers:            s.mcpServers,
         hooks:                 s.hooks,
         skills:                s.skills,
+        // Per-session skill choices keyed by stable identity (#1056) — persist so a
+        // worker/triage session keeps its assigned skills across a restart.
+        sessionSkillOverrides: s.sessionSkillOverrides,
+        // Task groups + per-session group toggles (#skills-groups) — reusable skill bundles.
+        skillGroups:           s.skillGroups,
+        sessionSkillGroups:    s.sessionSkillGroups,
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint

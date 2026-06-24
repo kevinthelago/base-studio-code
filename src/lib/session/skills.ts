@@ -147,6 +147,157 @@ export function resolveSkills(all: SkillDef[], projectId: string): SkillDef[] {
   );
 }
 
+// ── Per-session assignment (#1056 follow-up) ────────────────────────────────────
+// A session (a console pane, a fleet worker, a triage pane) INHERITS the skills that
+// resolve for its project (enabled + global/project-scoped — see resolveSkills). On top
+// of that the user can choose, per session, to force a skill ON (even one out of the
+// session's project scope) or OFF (one it would otherwise inherit). The choice is keyed by
+// the session's STABLE identity id so it survives a relaunch. The Skills UI (per-session
+// surface) renders sessionSkillState per row; the launch path writes effectiveSessionSkills
+// into the session's `.claude/skills/<slug>/SKILL.md`.
+
+/** A user's per-session skill choices, layered over the inherited resolution. Both are
+ *  skill ids; a skill in neither list inherits its project-resolved state. */
+export interface SessionSkillOverride {
+  /** Force ON for this session (incl. an enabled skill outside the session's project scope). */
+  add: string[];
+  /** Force OFF for this session (a skill it would otherwise inherit). */
+  remove: string[];
+}
+
+/** Why a skill is on/off for a session — drives the per-session row label. */
+export type SessionSkillReason =
+  | "global"        // on: enabled + global (applies to every project)
+  | "project"       // on: enabled + scoped to this session's project
+  | "pinned"        // on (inherited) + pinned (auto-available to the fleet)
+  | "group"         // on: enabled via a task group toggled onto this session/stream
+  | "added"         // on: a user override turned it on for this session
+  | "removed"       // off: a user override turned it off for this session
+  | "out-of-scope"  // off: enabled but scoped to other projects (and not added)
+  | "disabled";     // off: disabled in the library (never written to any session)
+
+export interface SessionSkillState {
+  skill: SkillDef;
+  /** Whether this skill is written into the session (its `.claude/skills/<slug>`). */
+  on: boolean;
+  reason: SessionSkillReason;
+  /** True when the effective state DIFFERS from what the session would inherit — i.e. a
+   *  live user override (added / removed). */
+  overridden: boolean;
+}
+
+/**
+ * The effective on/off state + reason for one skill in one session, given the override and the
+ * skills enabled via the session's task groups (`groupSkillIds`). `disabled` wins over everything
+ * (a disabled skill is never invocable). The baseline is "inherited by project scope OR enabled by
+ * a toggled-on group"; a remove/add per-skill override beats that baseline. An override that matches
+ * the baseline is a no-op (`overridden: false`) so the UI never flags a redundant choice.
+ */
+export function sessionSkillState(
+  skill: SkillDef, projectId: string, override?: SessionSkillOverride, groupSkillIds?: ReadonlySet<string>,
+): SessionSkillState {
+  if (!skill.enabled) return { skill, on: false, reason: "disabled", overridden: false };
+  const inScope = skill.projects.length === 0 || (!!projectId && skill.projects.includes(projectId));
+  const viaGroup = groupSkillIds?.has(skill.id) ?? false;
+  const baseOn = inScope || viaGroup;            // `enabled` already guaranteed above
+  const removed = override?.remove?.includes(skill.id) ?? false;
+  const added = override?.add?.includes(skill.id) ?? false;
+  const on = removed ? false : added ? true : baseOn;
+  const overridden = on !== baseOn;
+  let reason: SessionSkillReason;
+  if (overridden) reason = on ? "added" : "removed";
+  else if (on) reason = inScope ? (skill.pinned ? "pinned" : skill.projects.length === 0 ? "global" : "project") : "group";
+  else reason = "out-of-scope";
+  return { skill, on, reason, overridden };
+}
+
+/** The skills written into a session: every library skill whose {@link sessionSkillState} is `on`
+ *  for this project + override + toggled-on groups. With no override/groups this equals
+ *  {@link resolveSkills}. */
+export function effectiveSessionSkills(
+  all: SkillDef[], projectId: string, override?: SessionSkillOverride, groupSkillIds?: ReadonlySet<string>,
+): SkillDef[] {
+  return all.filter(s => sessionSkillState(s, projectId, override, groupSkillIds).on);
+}
+
+/** Layer a user choice onto a session's override (pure). "on" forces the skill on, "off"
+ *  forces it off, "inherit" clears any override for it. Returns a fresh override; the caller
+ *  drops it from the map when both lists are empty (back to pure inheritance). */
+export function applySessionSkillChoice(
+  override: SessionSkillOverride | undefined, skillId: string, choice: "on" | "off" | "inherit",
+): SessionSkillOverride {
+  const add = new Set(override?.add ?? []);
+  const remove = new Set(override?.remove ?? []);
+  add.delete(skillId);
+  remove.delete(skillId);
+  if (choice === "on") add.add(skillId);
+  else if (choice === "off") remove.add(skillId);
+  return { add: [...add], remove: [...remove] };
+}
+
+// ── Task groups (#skills-groups) ────────────────────────────────────────────────
+// A "task group" is a named, reusable bundle of skills (the redesign's ⬡). Many-to-many with
+// skills (a skill can belong to several groups), keyed by stable skill id. A group is the unit of
+// bulk toggling: toggle a group onto a session (manually, Surface B) or onto a fleet stream (the
+// planner) and every member skill is enabled at once. Groups are LIVE references — editing a
+// group's membership updates every session/stream that has it on, rather than freezing the set.
+
+/** A named bundle of skills, toggled as one. */
+export interface SkillGroup {
+  id: string;
+  name: string;
+  /** Accent hue (a `--token` ref or oklch literal) for the group's ⬡ chip/tile. */
+  hue: string;
+  /** Member skill ids (stable — never names, which can change). */
+  skillIds: string[];
+}
+
+/** The DISTINCT member skill ids across a set of enabled group ids (order-stable, de-duped). An
+ *  unknown group id contributes nothing. Used to expand a session's/stream's toggled-on groups
+ *  into the `groupSkillIds` set that {@link effectiveSessionSkills} folds in. */
+export function expandGroups(groupIds: readonly string[], groups: SkillGroup[]): string[] {
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const out = new Set<string>();
+  for (const gid of groupIds) for (const sid of byId.get(gid)?.skillIds ?? []) out.add(sid);
+  return [...out];
+}
+
+/** Membership count of a group whose member skills still exist in `all` (the chip count). */
+export function groupSkillCount(group: SkillGroup, all: SkillDef[]): number {
+  const ids = new Set(all.map((s) => s.id));
+  return group.skillIds.filter((id) => ids.has(id)).length;
+}
+
+/** Parse the planner's `skill_groups.json` (a JSON array of `{name, hue?, skills?: string[]}`) into
+ *  clean groups. `skills` may be skill ids OR name-slugs (the planner authors by name); they're
+ *  resolved against the library here so the stored group keys by id. Tolerant: malformed input →
+ *  []; a row without a usable name is dropped. Mirrors {@link parseSkillsFile}. */
+export function parseSkillGroupsFile(raw: string, all: SkillDef[]): Array<Omit<SkillGroup, "id"> & { id?: string }> {
+  let data: unknown;
+  try { data = JSON.parse(raw); } catch { return []; }
+  if (!Array.isArray(data)) return [];
+  const bySlug = new Map(all.map((s) => [skillSlug(s.name), s.id]));
+  const byId = new Set(all.map((s) => s.id));
+  const out: Array<Omit<SkillGroup, "id"> & { id?: string }> = [];
+  for (const row of data) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const name = typeof r.name === "string" ? r.name.trim() : "";
+    if (!name) continue;
+    const refs = Array.isArray(r.skills) ? r.skills.filter((x): x is string => typeof x === "string") : [];
+    const skillIds = Array.from(new Set(
+      refs.map((ref) => (byId.has(ref) ? ref : bySlug.get(skillSlug(ref)))).filter((x): x is string => !!x),
+    ));
+    out.push({
+      id: typeof r.id === "string" && r.id ? r.id : undefined,
+      name,
+      hue: typeof r.hue === "string" && r.hue ? r.hue : "var(--accent)",
+      skillIds,
+    });
+  }
+  return out;
+}
+
 // ── Backend payload ─────────────────────────────────────────────────────────
 // Shape handed to `ensure_session_settings` (field names match the Rust SkillCfg).
 
