@@ -72,11 +72,6 @@
   --accent-text:   #9aa6f0; /* accent-on-dark text */
 }
 
-/* Native console input (#1158): while Claude is connected the terminal is grown taller and its
-   bottom rows clipped to hide Claude CLI's own input. This adds bottom scroll room to xterm's
-   viewport so the user can still scroll all the way down to the latest output. */
-.term-with-input .xterm-viewport { padding-bottom: 40px; }
-
 /* ===== reset ===== */
 html, body {
   margin: 0; padding: 0;

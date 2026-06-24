@@ -51,8 +51,8 @@ interface PaneShellProps {
   /** Session token + cost rollups — shown in the footer when known. */
   tok?: string;
   cost?: string;
-  /** A Claude session is active in this pane (#1158): the native console input stands in for the
-   *  status footer, so the footer is hidden to make room for it. */
+  /** A Claude session is live in this pane (from the OSC-100 run/idle signals). Drives the
+   *  model-pill "running" indicator (#1181). */
   claudeActive?: boolean;
   available?: ViewKey[];
   active?: ViewKey;
