@@ -7,12 +7,12 @@
 // effectiveSessionSkills into `.claude/skills/<slug>/SKILL.md`. Pairs with the planner channel,
 // which toggles the same groups onto a stream.
 import { useMemo, useState } from "react";
-import { useAppStore } from "../../store";
-import { KIND, SOURCE_TAG } from "../../data/skills";
+import { useAppStore } from "@/store";
+import { KIND, SOURCE_TAG } from "@/data/skills";
 import {
   sessionSkillState, expandGroups, groupSkillCount,
   type SkillDef, type SessionSkillReason,
-} from "../../lib/session/skills";
+} from "./lib/skills";
 import "./skills.css";
 
 /** Color + copy for each effective-state reason (the row's "why" pill). */
