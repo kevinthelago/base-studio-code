@@ -38,6 +38,7 @@ pub mod pipefy;
 pub mod linear;
 pub mod rest;
 pub mod presets;
+pub mod runtime;
 pub mod registry;
 
 #[cfg(feature = "duckdb-store")]
@@ -73,6 +74,11 @@ pub use pipefy::PipefyConnector;
 pub use linear::LinearConnector;
 pub use rest::{RestConnector, RestResource};
 pub use presets::{VendorPreset, CATALOG as VENDOR_PRESETS};
+pub use runtime::{
+    find_runtime_preset, load_runtime_presets, remove_runtime_preset, runtime_store_path,
+    save_runtime_presets, upsert_runtime_preset, RuntimePreset, RuntimeResource,
+    RUNTIME_AUTH_KINDS,
+};
 pub use registry::{source_connector, LiveSupport, SourceAuth, SourceConnectorMeta, SOURCE_CONNECTORS};
 
 #[cfg(feature = "duckdb-store")]

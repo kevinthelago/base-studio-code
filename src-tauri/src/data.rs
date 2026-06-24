@@ -547,8 +547,11 @@ pub fn data_platform_scan(
     source_uid: String,
     fields: std::collections::HashMap<String, String>,
 ) -> Result<ScanResult, String> {
-    let meta = bsc_data::source_connector(&connector_id)
-        .ok_or_else(|| format!("unknown connector `{connector_id}`"))?;
+    let meta = match bsc_data::source_connector(&connector_id) {
+        Some(m) => m,
+        // Not a built-in — try a runtime (planner-authored) REST preset (#1235).
+        None => return scan_runtime_preset(&connector_id, &project, &source_uid, &fields),
+    };
     if let bsc_data::LiveSupport::Pending(reason) = meta.live {
         return Ok(ScanResult::pending(reason));
     }
@@ -569,6 +572,78 @@ pub fn data_platform_scan(
         "dynamics365" => scan_dynamics(&fields, &secret),
         other => Ok(ScanResult::pending(format!("no live transport for {other}"))),
     }
+}
+
+/// Which keychain field holds a runtime preset's secret, keyed by its declared auth method (#1235).
+#[cfg(feature = "source-stage")]
+fn runtime_secret_field(auth: &str) -> &'static str {
+    match auth {
+        "basic" => "password",
+        "apikey" => "apiKey",
+        "token" => "token",
+        _ => "accessToken", // oauth
+    }
+}
+
+/// Scan a runtime (planner-authored) REST preset (#1235). The connector id isn't a built-in, so
+/// resolve it from the connectors store, pull its secret from the keychain by the auth method, and
+/// build the audited generic REST connector. Read-only (#782); a missing id is the "unknown
+/// connector" error the built-in path would have produced.
+#[cfg(feature = "source-stage")]
+fn scan_runtime_preset(
+    connector_id: &str,
+    project: &str,
+    source_uid: &str,
+    fields: &std::collections::HashMap<String, String>,
+) -> Result<ScanResult, String> {
+    let preset = bsc_data::find_runtime_preset(&bsc_data::runtime_store_path(), connector_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("unknown connector `{connector_id}`"))?;
+    let secret = crate::credentials::get_secret(project, source_uid, runtime_secret_field(&preset.auth))
+        .unwrap_or_default();
+    scan_rest_preset(&preset, fields, &secret)
+}
+
+/// Build + scan the generic REST connector for a runtime preset, applying its declared auth. The
+/// instance base may be supplied per-scan (a tenant URL via `baseUrl`/`instanceUrl`) or default
+/// from the preset; `basic` auth takes `user` from `fields`, the bearer methods take the secret.
+#[cfg(feature = "source-stage")]
+fn scan_rest_preset(
+    preset: &bsc_data::RuntimePreset,
+    fields: &std::collections::HashMap<String, String>,
+    secret: &str,
+) -> Result<ScanResult, String> {
+    let base = fields
+        .get("baseUrl")
+        .or_else(|| fields.get("instanceUrl"))
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .or_else(|| preset.base_url.clone())
+        .filter(|s| !s.is_empty())
+        .ok_or("missing base URL — set baseUrl or the preset's base_url")?;
+    let base = base.trim_end_matches('/').to_string();
+    let user = fields.get("user").cloned().unwrap_or_default();
+    let client = reqwest::blocking::Client::new();
+    let (b, auth, sec, u) = (base.clone(), preset.auth.clone(), secret.to_string(), user);
+    let fetch = move |path: &str| -> bsc_data::Result<serde_json::Value> {
+        let url = if path.is_empty() {
+            format!("{b}/")
+        } else {
+            format!("{b}/{}", path.trim_start_matches('/'))
+        };
+        let req = client.get(&url).header("Accept", "application/json");
+        let req = match auth.as_str() {
+            "basic" => req.basic_auth(&u, Some(&sec)),
+            // oauth / token / apikey ride a bearer header (sanctioned methods, #1199 Part C).
+            _ if !sec.is_empty() => req.bearer_auth(&sec),
+            _ => req,
+        };
+        req.send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&preset.connector(host_of(&base), fetch), host_of(&base))
 }
 
 // Production API bases for the connectors whose host is fixed (not derived from a user field).
