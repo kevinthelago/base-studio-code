@@ -7,7 +7,7 @@ import { McpAnalyticsTab } from "./McpAnalytics";
 import { usePageTabs } from "../../hooks/usePageTabs";
 import { MCP_CATALOG, SCOPE_COPY, type CatalogItem } from "../../data/mcpCatalog";
 import { HOOK_CATALOG } from "../../data/hookCatalog";
-import { mcpFromCatalog, blankMcpServer, type McpServer, type McpTransport } from "../../lib/session/mcpServers";
+import { mcpFromCatalog, blankMcpServer, BUILTIN_MCP_SERVERS, type McpServer, type McpTransport } from "../../lib/session/mcpServers";
 import { hookFromCatalog, blankHook, type Hook } from "../../lib/session/hooks";
 import {
   useGhProjects, scopeChips, DrawerBody, DrawerSlideOver, InstalledRow, CatalogCard, type Scope,
@@ -22,6 +22,11 @@ import "./mcp.css";
 
 /** Install/version status of a downloadable MCP server (#885). */
 type McpStat = "checking" | "current" | "outdated" | "needs-build" | "downloading" | "building" | "updating" | "error";
+
+/** Catalog entries for the built-in servers (#1196) — shown as always-available, never downloadable. */
+const builtInCatalog: CatalogItem[] = MCP_CATALOG.filter(
+  c => c.builtIn || BUILTIN_MCP_SERVERS.some(b => b.name.toLowerCase() === c.name.toLowerCase()),
+);
 
 /** The free-text label shown on a server row / drawer header. */
 function mcpLabel(e: McpServer): string {
@@ -156,14 +161,34 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
     );
   }
 
+  // Built-in tools (#1196) — ship compiled in the app bundle (native sidecars), always available
+  // with no download/build/Docker. Shown as info, not toggleable; rendered in both the empty and
+  // populated installed states.
+  const builtInSection = builtInCatalog.length > 0 && (
+    <>
+      <div className="sec-head">
+        <h3 style={{ color: "var(--fg-dim)" }}>Built-in tools</h3>
+        <span className="hint">always available — no install</span>
+      </div>
+      <div className="catalog">
+        {builtInCatalog.map(c => (
+          <CatalogCard key={c.name} item={c} action={<span className="hint">built-in</span>} />
+        ))}
+      </div>
+    </>
+  );
+
   function installedView() {
     if (mcpServers.length === 0) {
       return (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: "64px 24px", textAlign: "center" }}>
-          <h3 style={{ margin: 0 }}>No MCP servers installed</h3>
-          <p className="hint" style={{ maxWidth: 380, margin: 0 }}>Add MCP servers from the catalog to give your agents new tools.</p>
-          <button className="btn primary" onClick={() => select("catalog")}>Browse the catalog →</button>
-        </div>
+        <>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: "64px 24px", textAlign: "center" }}>
+            <h3 style={{ margin: 0 }}>No MCP servers installed</h3>
+            <p className="hint" style={{ maxWidth: 380, margin: 0 }}>Add MCP servers from the catalog to give your agents new tools.</p>
+            <button className="btn primary" onClick={() => select("catalog")}>Browse the catalog →</button>
+          </div>
+          {builtInSection}
+        </>
       );
     }
     const onCount = mcpServers.filter(e => e.enabled).length;
@@ -194,11 +219,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
             ))}
           </div>
         </div>
-        {/* First-party tools are not built yet — a static, non-fabricated note. */}
-        <div className="sec-head">
-          <h3 style={{ color: "var(--fg-dim)" }}>First-party tools</h3>
-          <span className="hint">coming soon</span>
-        </div>
+        {builtInSection}
       </>
     );
   }
@@ -206,7 +227,8 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   function catalogView() {
     const q = search.trim().toLowerCase();
     const installedNames = new Set(mcpServers.map(e => e.name.toLowerCase()));
-    const available = MCP_CATALOG.filter(c => !installedNames.has(c.name.toLowerCase()));
+    // Built-in servers (#1196) live in the "Built-in tools" section, not the downloadable browse list.
+    const available = MCP_CATALOG.filter(c => !c.builtIn && !installedNames.has(c.name.toLowerCase()));
     const items = q ? available.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)) : available;
     return (
       <>

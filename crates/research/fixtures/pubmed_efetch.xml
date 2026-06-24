@@ -1,0 +1,68 @@
+<?xml version="1.0" ?>
+<!DOCTYPE PubmedArticleSet PUBLIC "-//NLM//DTD PubMedArticle, 1st January 2024//EN" "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_240101.dtd">
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE">
+      <PMID Version="1">31452104</PMID>
+      <Article PubModel="Print">
+        <Journal>
+          <JournalIssue CitedMedium="Print">
+            <PubDate>
+              <Year>2019</Year>
+              <Month>Aug</Month>
+            </PubDate>
+          </JournalIssue>
+          <Title>Nature Methods</Title>
+        </Journal>
+        <ArticleTitle>Deep learning for cellular image analysis.</ArticleTitle>
+        <Abstract>
+          <AbstractText Label="BACKGROUND">Recent advances enable new applications.</AbstractText>
+          <AbstractText Label="RESULTS">We review deep learning methods.</AbstractText>
+        </Abstract>
+        <AuthorList CompleteYN="Y">
+          <Author ValidYN="Y">
+            <LastName>Moen</LastName>
+            <ForeName>Erick</ForeName>
+          </Author>
+          <Author ValidYN="Y">
+            <LastName>Bannon</LastName>
+            <ForeName>Dylan</ForeName>
+          </Author>
+        </AuthorList>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="pubmed">31452104</ArticleId>
+        <ArticleId IdType="doi">10.1038/s41592-019-0403-1</ArticleId>
+        <ArticleId IdType="pmc">PMC6831029</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE">
+      <PMID Version="1">12345678</PMID>
+      <Article PubModel="Print">
+        <Journal>
+          <JournalIssue CitedMedium="Print">
+            <PubDate>
+              <MedlineDate>2005 Spring</MedlineDate>
+            </PubDate>
+          </JournalIssue>
+          <Title>Journal of Theoretical Biology</Title>
+        </Journal>
+        <ArticleTitle>A collective study on modeling.</ArticleTitle>
+        <AuthorList CompleteYN="Y">
+          <Author ValidYN="Y">
+            <CollectiveName>The Modeling Consortium</CollectiveName>
+          </Author>
+        </AuthorList>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="pubmed">12345678</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>

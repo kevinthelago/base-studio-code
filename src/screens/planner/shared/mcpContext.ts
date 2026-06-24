@@ -43,9 +43,10 @@ handing it to the whole fleet; for a tool every worker needs, scope it project-w
 
 ## Installing more
 
-First-party servers install from source — browse and download them in the MCP screen. A downloaded
-server shows up here automatically and becomes assignable. Never invent secret env values; the user
-fills any tokens/keys in the MCP screen.
+Some servers are **built in** (e.g. **Research**) — always available, no install needed. Others
+install from source: browse and download them in the MCP screen, and a downloaded server shows up
+here automatically and becomes assignable. Never invent secret env values; the user fills any
+tokens/keys in the MCP screen.
 `;
 }
 

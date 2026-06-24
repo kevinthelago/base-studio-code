@@ -17,7 +17,7 @@ fn ensure_sidecar_placeholder() {
         return;
     }
     let ext = if target.contains("windows") { ".exe" } else { "" };
-    for name in ["bsc-plan", "bsc-agent"] {
+    for name in ["bsc-plan", "bsc-agent", "bsc-research-mcp"] {
         let path = format!("binaries/{name}-{target}{ext}");
         if !Path::new(&path).exists() {
             let _ = fs::create_dir_all("binaries");

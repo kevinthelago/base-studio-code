@@ -39,8 +39,9 @@ describe("McpScreen + HooksView", () => {
     expect(screen.getByText("MCP servers")).toBeTruthy();
     expect(screen.getByText("GitHub")).toBeTruthy();
     expect(screen.getByText("Filesystem")).toBeTruthy();
-    // First-party group is a static "coming soon" note, not fabricated rows.
-    expect(screen.getByText("First-party tools")).toBeTruthy();
+    // Built-in tools section (#1196) lists the always-available native servers (e.g. Research).
+    expect(screen.getByText("Built-in tools")).toBeTruthy();
+    expect(screen.getByText("Research")).toBeTruthy();
     // The hook is NOT on the MCP page.
     expect(screen.queryByText("Guard lockfiles")).toBeNull();
   });
@@ -49,7 +50,7 @@ describe("McpScreen + HooksView", () => {
     render(<HooksView />);
     expect(screen.getByText("Guard lockfiles")).toBeTruthy();
     expect(screen.queryByText("GitHub")).toBeNull();
-    expect(screen.queryByText("First-party tools")).toBeNull();
+    expect(screen.queryByText("Built-in tools")).toBeNull();
   });
 
   it("shows the MCP enabled count from the store and decrements it on toggle off", () => {

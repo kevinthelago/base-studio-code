@@ -2165,13 +2165,34 @@ fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Resul
         .map_err(|e| e.to_string())
 }
 
+/// The sentinel command the frontend sets for the built-in Research server (#1196). It carries no
+/// real path (the frontend can't know where the app exe lives), so `mcp_server_value` rewrites it to
+/// the bundled `bsc-research-mcp` binary's absolute path at write time.
+const RESEARCH_MCP_MARKER: &str = "bsc-research-mcp";
+
+/// Resolve a stdio MCP command, substituting the bundled-binary absolute path for the built-in
+/// Research marker (#1196). A non-marker command passes through unchanged; the marker falls back to
+/// the bare name when the bundled binary can't be located (e.g. a dev build without the sidecar).
+fn resolve_mcp_command(command: &str, bundled: Option<std::path::PathBuf>) -> String {
+    if command == RESEARCH_MCP_MARKER {
+        if let Some(p) = bundled {
+            return p.to_string_lossy().to_string();
+        }
+    }
+    command.to_string()
+}
+
 /// One MCP server's `.mcp.json` value: stdio `{command,args,env?}` or http `{type,url}`.
 fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
     if m.transport == "http" {
         return serde_json::json!({ "type": "http", "url": m.url.clone().unwrap_or_default() });
     }
     let mut v = serde_json::Map::new();
-    v.insert("command".into(), serde_json::Value::String(m.command.clone().unwrap_or_default()));
+    let command = resolve_mcp_command(
+        &m.command.clone().unwrap_or_default(),
+        pty::bsc_research_mcp_bin_path(),
+    );
+    v.insert("command".into(), serde_json::Value::String(command));
     v.insert("args".into(), serde_json::Value::Array(
         m.args.iter().map(|a| serde_json::Value::String(a.clone())).collect(),
     ));
@@ -3020,6 +3041,22 @@ mod tests {
         assert_eq!(settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "format.sh");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_mcp_command_substitutes_research_marker(){
+        use std::path::PathBuf;
+        // A normal command is untouched.
+        assert_eq!(super::resolve_mcp_command("npx", None), "npx");
+        assert_eq!(
+            super::resolve_mcp_command("npx", Some(PathBuf::from("/x/bsc-research-mcp"))),
+            "npx",
+        );
+        // The Research marker resolves to the bundled binary's absolute path when present…
+        let bin = PathBuf::from("/opt/app/bsc-research-mcp");
+        assert_eq!(super::resolve_mcp_command("bsc-research-mcp", Some(bin.clone())), bin.to_string_lossy());
+        // …and falls back to the bare marker when the bundled binary can't be located (dev build).
+        assert_eq!(super::resolve_mcp_command("bsc-research-mcp", None), "bsc-research-mcp");
     }
 
     #[test]

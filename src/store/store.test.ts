@@ -1220,13 +1220,13 @@ describe("agent fleet store", () => {
       mcpServers: [
         { id: "glob", name: "Glob",     enabled: true,  projects: [],      transport: "stdio", command: "x", args: "", env: [] },
         { id: "dis",  name: "Disabled", enabled: false, projects: [],      transport: "stdio", command: "x", args: "", env: [] },
-        { id: "res",  name: "Research", enabled: false, projects: ["zzz"],  transport: "stdio", command: "x", args: "", env: [] },
+        { id: "sci",  name: "SciTool",  enabled: false, projects: ["zzz"],  transport: "stdio", command: "x", args: "", env: [] },
       ],
     });
     const f: FleetPlan = {
       recommended: 2, reasoning: "", director: { enabled: true },
       streams: [
-        { id: "sci", name: "Sci", repo: "o/r", owns: [], issues: [], dependsOn: [], mcp: ["Research"] },
+        { id: "sci", name: "Sci", repo: "o/r", owns: [], issues: [], dependsOn: [], mcp: ["SciTool"] },
         { id: "ui",  name: "UI",  repo: "o/r", owns: [], issues: [], dependsOn: [] },
       ],
     };
@@ -1234,13 +1234,14 @@ describe("agent fleet store", () => {
     const st = useAppStore.getState();
     const paneKey = (p: number) => p === 0 ? directorPaneId("multi-key") : fleetPaneId("multi-key", ["sci", "ui"][p - 1]);
     const names = (p: number) => (st.paneMcpServers[paneKey(p)] ?? []).map((e) => e.name).sort();
+    // Every session also gets the always-available built-in Research server (#1196).
     // Director (pane 0) sees ALL installed servers — including the disabled and other-project ones.
-    expect(names(0)).toEqual(["Disabled", "Glob", "Research"]);
-    // The science worker gets the global baseline + its assigned Research (disabled/other-project,
-    // pulled in by the explicit assignment).
-    expect(names(1)).toEqual(["Glob", "Research"]);
-    // The UI worker, with nothing assigned, gets only the global baseline.
-    expect(names(2)).toEqual(["Glob"]);
+    expect(names(0)).toEqual(["Disabled", "Glob", "Research", "SciTool"]);
+    // The science worker gets the global baseline + built-in Research + its assigned SciTool
+    // (disabled/other-project, pulled in by the explicit assignment).
+    expect(names(1)).toEqual(["Glob", "Research", "SciTool"]);
+    // The UI worker, with nothing assigned, gets the global baseline + the built-in Research.
+    expect(names(2)).toEqual(["Glob", "Research"]);
   });
 
   it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
@@ -1526,8 +1527,9 @@ describe("mcp servers store", () => {
       streams: [{ id: "s0", name: "S0", repo: "own/web", owns: [], issues: [], dependsOn: [] }],
     };
     useAppStore.getState().fleetStartProject("ExtP", fleet, "proj-key");
-    // director disabled ⇒ pane 0 is the single worker "s0".
-    const ids = (useAppStore.getState().paneMcpServers[fleetPaneId("proj-key", "s0")] ?? []).map(e => e.id);
+    // director disabled ⇒ pane 0 is the single worker "s0". Filter the always-present built-in
+    // server (#1196) to keep this focused on user-server scoping.
+    const ids = (useAppStore.getState().paneMcpServers[fleetPaneId("proj-key", "s0")] ?? []).map(e => e.id).filter(id => id !== "builtin-research");
     expect(ids).toEqual(["g", "p"]);
   });
 });

@@ -1,0 +1,19 @@
+{
+  "offset": 0,
+  "data": [
+    {
+      "citedPaper": {
+        "paperId": "11111111111111111111111111111111111111ab",
+        "title": "Neural Machine Translation by Jointly Learning to Align and Translate",
+        "externalIds": { "DOI": "10.48550/arXiv.1409.0473", "ArXiv": "1409.0473" }
+      }
+    },
+    {
+      "citedPaper": {
+        "paperId": null,
+        "title": "An Untracked Reference",
+        "externalIds": {}
+      }
+    }
+  ]
+}
