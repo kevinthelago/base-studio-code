@@ -12,8 +12,36 @@ import { normalizeFlow, resolveFlow } from "../../screens/planner/fleet/agentFlo
 import { repoPromptKey } from "../../lib/session/startupPrompt";
 import { resolveAllowedCommands } from "../../lib/session/allowedCommands";
 
+/** The `repoPublic` key for one repo within a project (#1227): `<projectKey>::<repoFullName>`,
+ *  the repo-scoped convention used elsewhere (e.g. repoAllowedCommands). */
+export function repoVisibilityKey(projectKey: string, repoId: string): string {
+  return `${projectKey}::${repoId}`;
+}
+
+/**
+ * Resolve a repo's create-time GitHub visibility (#1227): the per-repo override if set, else the
+ * project-level default (`reposPublic`), else **private**. Used at the Repos card + at publish so
+ * the UI and the create call agree.
+ */
+export function resolveRepoPublic(
+  repoPublic: Record<string, boolean>,
+  reposPublic: Record<string, boolean>,
+  projectKey: string,
+  repoId: string,
+): boolean {
+  const k = repoVisibilityKey(projectKey, repoId);
+  if (k in repoPublic) return repoPublic[k];
+  return reposPublic[projectKey] ?? false;
+}
+
+/** Drop every per-repo entry for `projectKey` from a `<projectKey>::<repoId>`-keyed map (#1227). */
+function dropRepoScoped<T>(m: Record<string, T>, projectKey: string): Record<string, T> {
+  const prefix = `${projectKey}::`;
+  return Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith(prefix)));
+}
+
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planKbAssignments" | "addPlanKbAssignment" | "removePlanKbAssignment" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintSections" | "removeBlueprint" | "importBlueprint" | "stagePipelineRuns" | "setStagePipelineRun" | "stagePreview" | "setStagePreview" | "sectionGrades" | "setSectionGrade" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPerm" | "setPlanAgentStreamPreset" | "generateFleetProfiles" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planKbAssignments" | "addPlanKbAssignment" | "removePlanKbAssignment" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintSections" | "removeBlueprint" | "importBlueprint" | "stagePipelineRuns" | "setStagePipelineRun" | "stagePreview" | "setStagePreview" | "sectionGrades" | "setSectionGrade" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPerm" | "setPlanAgentStreamPreset" | "generateFleetProfiles" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -74,6 +102,23 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       planDeployConfig: {},
       setPlanDeployConfig: (projectId, cfg) =>
         set((s) => ({ planDeployConfig: { ...s.planDeployConfig, [projectId]: cfg } })),
+      planSourceConfig: {},
+      setPlanSourceConfig: (projectId, cfg) =>
+        set((s) => ({ planSourceConfig: { ...s.planSourceConfig, [projectId]: cfg } })),
+      planIntegrationConfig: {},
+      setPlanIntegrationConfig: (projectId, cfg) =>
+        set((s) => ({ planIntegrationConfig: { ...s.planIntegrationConfig, [projectId]: cfg } })),
+      reposPublic: {},
+      setReposPublic: (projectId, isPublic) =>
+        set((s) => ({ reposPublic: { ...s.reposPublic, [projectId]: isPublic } })),
+      repoPublic: {},
+      setRepoPublic: (projectKey, repoId, isPublic) =>
+        set((s) => ({ repoPublic: { ...s.repoPublic, [repoVisibilityKey(projectKey, repoId)]: isPublic } })),
+      // #1107: the injection-finding signature the user acknowledged for a project (acknowledge-to-
+      // clear). A signature mismatch (new findings) re-gates; the hard-gate setting ignores this.
+      planInjectionAck: {},
+      acknowledgePlanInjections: (projectId, signature) =>
+        set((s) => ({ planInjectionAck: { ...s.planInjectionAck, [projectId]: signature } })),
       planSkippedSections: {},
       skipPlanSection: (projectId, key) =>
         set((s) => {
@@ -212,6 +257,11 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
             planConfirmedSections: drop(s.planConfirmedSections),
             planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
             planDeployConfig:      drop(s.planDeployConfig),
+            planSourceConfig:      drop(s.planSourceConfig),
+            planIntegrationConfig: drop(s.planIntegrationConfig),
+            reposPublic:           drop(s.reposPublic),
+            repoPublic:            dropRepoScoped(s.repoPublic, projectId),
+            planInjectionAck:      drop(s.planInjectionAck),
             planSkippedSections:   drop(s.planSkippedSections),
             planKbAssignments:     drop(s.planKbAssignments),
             planAutomations:       drop(s.planAutomations),
@@ -358,6 +408,14 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
             x.id === streamId ? { ...x, flow: normalizeFlow({ ...resolveFlow(x.flow), ...patch }) } : x);
           return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
         }),
+      setPlanAgentStreamModel: (projectId, streamId, model) =>
+        set((s) => {
+          const cur = s.planFleet[projectId];
+          if (!cur) return {};
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, model: model ?? undefined } : x);
+          return { planFleet: { ...s.planFleet, [projectId]: { ...cur, streams } } };
+        }),
       setPlanAgentStreamStrategy: (projectId, streamId, strategy) =>
         set((s) => {
           const cur = s.planFleet[projectId];
@@ -442,6 +500,11 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           planConfirmedSections: omitKey(s.planConfirmedSections),
           planAuthoredBlueprint: omitKey(s.planAuthoredBlueprint),
           planDeployConfig:      omitKey(s.planDeployConfig),
+          planSourceConfig:      omitKey(s.planSourceConfig),
+          planIntegrationConfig: omitKey(s.planIntegrationConfig),
+          reposPublic:           omitKey(s.reposPublic),
+          repoPublic:            dropRepoScoped(s.repoPublic, key),
+          planInjectionAck:      omitKey(s.planInjectionAck),
           planSkippedSections:   omitKey(s.planSkippedSections),
           planKbAssignments:     omitKey(s.planKbAssignments),
           planAutomations:       omitKey(s.planAutomations),

@@ -8,6 +8,7 @@ import type {
   Posture, Perm, Flow, Agent, Repo, Issue, Milestone, ContextFile,
   ProjectPaneData, PaneAutomation, PaneSkill, McpServer,
 } from "./projectPaneData";
+import { type ModelId, modelTier, tierToModelId } from "../../../lib/console/models";
 import { featureDefined, type PlanFeature } from "../issues/featureList";
 import type { Phase, GatePill, FooterKind } from "../stages/focusedPlan";
 import {
@@ -29,6 +30,8 @@ import { FocusedLegitimacyBody } from "../bodies/FocusedLegitimacyBody";
 import { FocusedAcquireBody } from "../bodies/FocusedAcquireBody";
 import { FocusedExtractBody } from "../bodies/FocusedExtractBody";
 import { FocusedModelBody } from "../bodies/FocusedModelBody";
+import { FocusedDestinationBody, FocusedSyncBody } from "../bodies/IntegrationBodies";
+import { FocusedIntegrationsBody } from "../bodies/FocusedIntegrationsBody";
 import { FocusedMappingBody } from "../bodies/FocusedMappingBody";
 import { FocusedCleaningBody } from "../bodies/FocusedCleaningBody";
 import { FocusedLoadBody } from "../bodies/FocusedLoadBody";
@@ -217,16 +220,18 @@ function Seg({ options, value, onChange, tiny }: {
   );
 }
 
-function AgentEditor({ a, onPerm, onPreset, onFlow }: {
+function AgentEditor({ a, onPerm, onPreset, onFlow, onModel }: {
   a: Agent;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
 }) {
   const [perm, setPerm] = useState<Perm>(a.perm);
   const [preset, setPreset] = useState(a.preset);
   const [flow, setFlow] = useState<Flow>(a.flow);
-  useEffect(() => { setPerm(a.perm); setPreset(a.preset); setFlow(a.flow); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [model, setModel] = useState<ModelId | undefined>(a.model);
+  useEffect(() => { setPerm(a.perm); setPreset(a.preset); setFlow(a.flow); setModel(a.model); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (k: string, v: Posture) => {
     const next = { ...perm, [k]: v };
     setPerm(next); setPreset("custom");
@@ -266,6 +271,19 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
         </div>
       </div>
 
+      {onModel && (
+        <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
+          <div className="ulabel" style={{ marginBottom: 8 }}>model</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Seg options={["default", "haiku", "sonnet", "opus"]} value={model ? modelTier(model) : "default"}
+              onChange={(v) => { const m = v === "default" ? undefined : tierToModelId(v); setModel(m); onModel(a.id, m); }} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+              {model ? `claude --model ${modelTier(model)}` : "uses the global default"}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
         <div className="ulabel" style={{ marginBottom: 8 }}>flow</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -293,11 +311,12 @@ function AgentEditor({ a, onPerm, onPreset, onFlow }: {
   );
 }
 
-function AgentsA({ agents = [], onPerm, onPreset, onFlow }: {
+function AgentsA({ agents = [], onPerm, onPreset, onFlow, onModel }: {
   agents?: Agent[];
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
 }) {
   const [open, setOpen] = useState<string | null>((agents.find((a) => a.focus) ?? agents[0])?.id ?? null);
   const running = agents.filter((a) => a.status === "run").length;
@@ -362,7 +381,7 @@ function AgentsA({ agents = [], onPerm, onPreset, onFlow }: {
                     {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
                     {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
                   </div>
-                  <AgentEditor a={a} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+                  <AgentEditor a={a} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} />
                 </>
               )}
             </div>
@@ -382,7 +401,16 @@ void FlowBadges;
    ================================================================= */
 
 /** Repos stage body — lists linked repos with clone status. (#674) */
-function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: (r: string) => void }) {
+function FocusedReposBody({ repos, onLinkRepo, isPublic, onSetPublic, repoOverrides, onSetRepoPublic }: {
+  repos?: Repo[];
+  onLinkRepo?: (r: string) => void;
+  /** Project-level DEFAULT GitHub visibility for new repos (#…). Default false ⇒ private. */
+  isPublic?: boolean;
+  onSetPublic?: (isPublic: boolean) => void;
+  /** Per-repo visibility overrides, keyed by repo full-name; absent ⇒ inherits the default (#1227). */
+  repoOverrides?: Record<string, boolean>;
+  onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
+}) {
   const [input, setInput] = useState("");
   const [linking, setLinking] = useState(false);
   const list = repos ?? [];
@@ -390,6 +418,66 @@ function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: 
   const submit = () => {
     const v = input.trim();
     if (v.includes("/")) { onLinkRepo?.(v); setInput(""); setLinking(false); }
+  };
+
+  // Project-level DEFAULT visibility (#1227): new repos inherit this unless individually
+  // overridden on their card below. New repos are PRIVATE by default; flip to set the default for
+  // the whole project (and the fallback for any repo without its own toggle).
+  const visibilityControl = onSetPublic && (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>default</span>
+      <div style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+        {([[false, "🔒 Private"], [true, "🌐 Public"]] as const).map(([val, label], i) => {
+          const on = !!isPublic === val;
+          return (
+            <button
+              key={label}
+              onClick={() => { if (!on) onSetPublic(val); }}
+              aria-pressed={on}
+              style={{
+                height: 24, padding: "0 11px", border: 0, borderLeft: i ? "1px solid var(--border-soft)" : "none", cursor: on ? "default" : "pointer",
+                fontFamily: "var(--mono)", fontSize: 10.5,
+                background: on ? "var(--bg-elev2)" : "transparent", color: on ? "var(--fg)" : "var(--fg-dim)",
+              }}
+            >{label}</button>
+          );
+        })}
+      </div>
+      <span style={{ flex: 1 }} />
+      <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+        default for new repos · override per repo below
+      </span>
+    </div>
+  );
+
+  // A compact per-repo visibility toggle for a card (#1227): resolves to the repo's own override,
+  // else the project default. Setting one card never touches another.
+  const repoVisToggle = (repoId: string) => {
+    if (!onSetRepoPublic) return null;
+    const pub = repoOverrides?.[repoId] ?? !!isPublic;
+    return (
+      <span
+        style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden", marginLeft: 6 }}
+        title={`Visibility when this repo is created on GitHub${repoOverrides?.[repoId] === undefined ? " (using the project default)" : ""}`}
+      >
+        {([[false, "🔒"], [true, "🌐"]] as const).map(([val, glyph], i) => {
+          const on = pub === val;
+          return (
+            <button
+              key={glyph}
+              onClick={() => { if (!on) onSetRepoPublic(repoId, val); }}
+              aria-pressed={on}
+              aria-label={val ? `Make ${repoId} public` : `Make ${repoId} private`}
+              style={{
+                height: 20, padding: "0 6px", border: 0, borderLeft: i ? "1px solid var(--border-soft)" : "none",
+                cursor: on ? "default" : "pointer", fontSize: 10,
+                background: on ? "var(--bg-elev2)" : "transparent", opacity: on ? 1 : 0.5,
+              }}
+            >{glyph}</button>
+          );
+        })}
+      </span>
+    );
   };
 
   // The "link another repository" affordance — a dashed dropzone that expands into an
@@ -421,6 +509,7 @@ function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: 
   if (list.length === 0) {
     return (
       <div className="repos-view">
+        {visibilityControl}
         <div className="empty-state">
           <span className="empty-icon">⎇</span>
           <span>No repositories linked yet</span>
@@ -435,6 +524,7 @@ function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: 
 
   return (
     <div className="repos-view">
+      {visibilityControl}
       <div className="tiles">
         <Tile v={list.length} k="repositories" />
         <Tile v={cloned} k="cloned" />
@@ -453,6 +543,7 @@ function FocusedReposBody({ repos, onLinkRepo }: { repos?: Repo[]; onLinkRepo?: 
                 {r.cloned ? "● cloned" : "○ not cloned"}
               </span>
             )}
+            {repoVisToggle(r.id)}
           </div>
           {r.desc && <div className="repo-desc">{r.desc}</div>}
           <div className="repo-row repo-branchline">
@@ -616,14 +707,26 @@ function FocusedSkillsBody({ skills }: { skills?: PaneSkill[] }) {
       </div>
     );
   }
+  // Skills authored by this planning session (#1056) render FIRST and highlighted, so freshly
+  // generated skills are obvious. Stable sort keeps each group's original order.
+  const ordered = [...list].sort((a, b) => Number(b.isNew ?? false) - Number(a.isNew ?? false));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      {list.map((s) => (
+      {ordered.map((s) => (
         <div key={s.name} style={{
           padding: "8px 10px", borderRadius: 6,
-          background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+          background: s.isNew ? "var(--accent-soft)" : "var(--bg-canvas)",
+          border: s.isNew ? "1px solid var(--accent)" : "1px solid var(--border-soft)",
         }}>
-          <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{s.name}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{s.name}</div>
+            {s.isNew && (
+              <span style={{
+                fontFamily: "var(--mono)", fontSize: 8.5, fontWeight: 600, letterSpacing: ".04em",
+                color: "var(--accent-text)", background: "var(--accent)", borderRadius: 4, padding: "1px 5px",
+              }}>NEW</span>
+            )}
+          </div>
           {s.desc && <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 3 }}>{s.desc}</div>}
         </div>
       ))}
@@ -1049,11 +1152,12 @@ function FocusedPlanBody({ data }: {
 // (posture bar + per-stream editor), plus the "generate profiles" action that materializes the
 // profiles the stage's `profilesComplete` gate requires. Previously a hardcoded "No agents yet"
 // stub that never rendered the fleet — so the stage looked empty even with streams planned.
-function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProfiles, onTopology, onDirectorDrive }: {
+function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive }: {
   data?: ProjectPaneData;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
   onGenerateProfiles?: () => void;
   /** Set the project's coordination topology (#…). */
   onTopology?: (t: Topology) => void;
@@ -1141,12 +1245,12 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
           </button>
         </div>
       )}
-      <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} />
+      <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} />
     </div>
   );
 }
 
-function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
+function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, repoOverrides, onSetRepoPublic, onView, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
@@ -1155,12 +1259,19 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
   /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
   authoring?: AuthoringWiring;
   onLinkRepo?: (r: string) => void;
+  /** Repos stage: project-level DEFAULT visibility (default private) + its setter (#…). */
+  reposPublic?: boolean;
+  onSetReposPublic?: (isPublic: boolean) => void;
+  /** Repos stage: per-repo visibility overrides (keyed by repo full-name) + setter (#1227). */
+  repoOverrides?: Record<string, boolean>;
+  onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
   /** Deploy stage (#919): persist the edited deployment config. */
   onDeployChange?: (next: DeployConfig) => void;
   onView?: (f: ContextFile) => void;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
   onGenerateProfiles?: () => void;
   onTopology?: (t: Topology) => void;
   onDirectorDrive?: (d: DirectorDrive) => void;
@@ -1188,8 +1299,14 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
       return <FocusedCleaningBody projectId={projectId} />;
     case "dataLoad":
       return <FocusedLoadBody projectId={projectId} />;
+    case "destination":
+      return <FocusedDestinationBody projectId={projectId} />;
+    case "sync":
+      return <FocusedSyncBody projectId={projectId} />;
+    case "integrations":
+      return <FocusedIntegrationsBody projectId={projectId} />;
     case "repos":
-      return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} />;
+      return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} />;
     case "deploy":
       return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} dependencies={data?.dependencies} registries={data?.registries} />;
     case "context":
@@ -1204,7 +1321,7 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
     case "structure":
       return <FocusedPlanBody data={data} />;
     case "permissions":
-      return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />;
+      return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />;
     case "mcp":
       return <FocusedMcpBody servers={data?.mcpServers} onToggle={onToggleMcp} onBuild={onBuildMcp} onAdd={onAddMcp} onRemove={onRemoveMcp} />;
     case "automations":
@@ -1236,9 +1353,14 @@ export function ProjectPane({
   onPerm,
   onPreset,
   onFlow,
+  onModel,
   // focused mode: one-phase sequenced rail (#652) — the only render mode (#1061)
   focus,
   onLinkRepo,
+  reposPublic,
+  onSetReposPublic,
+  repoOverrides,
+  onSetRepoPublic,
   onGenerateProfiles,
   onTopology,
   onDirectorDrive,
@@ -1253,6 +1375,8 @@ export function ProjectPane({
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
+  /** Permissions stage: set a stream's per-agent LLM model (undefined ⇒ global default) (#…). */
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
   /** The sequenced-rail focused mode (#652) — the sole render path (#1061 removed the legacy
    *  staged/flat view + its hardcoded PLAN_STAGES gate). */
   focus?: {
@@ -1282,6 +1406,12 @@ export function ProjectPane({
   };
   /** Callback to link a repository from the focused repos body (#677). */
   onLinkRepo?: (repo: string) => void;
+  /** Repos stage: project-level GitHub visibility (default private) + its setter (#…). */
+  reposPublic?: boolean;
+  onSetReposPublic?: (isPublic: boolean) => void;
+  /** Per-repo visibility overrides (keyed by repo full-name) + setter (#1227). */
+  repoOverrides?: Record<string, boolean>;
+  onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
   /** Materialize least-privilege profiles for every fleet stream (#817) — what the focused
    *  Permissions stage needs to satisfy its `profilesComplete` gate. */
   onGenerateProfiles?: () => void;
@@ -1349,8 +1479,8 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
-            onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
+          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} reposPublic={reposPublic} onSetReposPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} onView={setViewing}
+            onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} />
         </div>
         <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />

@@ -14,6 +14,7 @@ import { recordRender } from "../lib/core/perf";
 import { resetLaunchGate } from "../lib/fleet/launchGate";
 import { shouldAdvanceOnReply } from "../lib/console/consoleFocus";
 import type { ViewKey } from "../components/pane/ViewTabs";
+import type { EndedInfo } from "../store/types";
 import { paneIdFor } from "../lib/console/paneIdentity";
 import { useCoordinator } from "../lib/fleet/useCoordinator";
 import { useWorkflowConductor } from "../lib/fleet/useWorkflowConductor";
@@ -54,6 +55,7 @@ interface PaneAtProps {
   onStatusChange: (tabIdx: number, i: number, status: "run" | "idle") => void;
   onToggleFullscreen: (tabIdx: number, i: number) => void;
   onToggleDisable: (tabIdx: number, i: number) => void;
+  onRedraw: (tabIdx: number, i: number) => void;
   // Per-pane booleans (not the raw indices) so a focus/menu change only re-renders
   // the two panes whose flag actually flipped — not all N.
   menuOpen: boolean;
@@ -68,7 +70,7 @@ interface PaneAtProps {
 const PaneAt = memo(function PaneAt({
   i, tabIdx, paneId: pid, name, view, status, cwd, initCmd,
   onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange, onStatusChange,
-  onToggleFullscreen, onToggleDisable, menuOpen, focused, fullscreen, disabled, hidden, usage,
+  onToggleFullscreen, onToggleDisable, onRedraw, menuOpen, focused, fullscreen, disabled, hidden, usage,
 }: PaneAtProps) {
   const defaultModel = useAppStore((s) => s.defaultModel);
   const paneModel = useAppStore((s) => s.paneModels[pid]);
@@ -88,6 +90,10 @@ const PaneAt = memo(function PaneAt({
   // the flag, remounting TerminalView, which spawns a fresh PTY (--continue resumes it).
   const dormant = useAppStore((s) => !!s.dormantPanes[pid]);
   const resumePane = useAppStore((s) => s.resumePane);
+  // Auto-ended (#920): the worker finished and its PTY exited; show a resting card (state from
+  // plan.db) instead of a dead terminal. Persisted, so it survives a restart; reopen relaunches.
+  const ended = useAppStore((s) => s.endedPanes[pid]);
+  const reopenPane = useAppStore((s) => s.reopenPane);
   return (
     <PaneShell
       agent={name}
@@ -95,6 +101,7 @@ const PaneAt = memo(function PaneAt({
       onMenuToggle={() => onMenuToggle(tabIdx, i)}
       onToggleFullscreen={() => onToggleFullscreen(tabIdx, i)}
       onToggleDisable={() => onToggleDisable(tabIdx, i)}
+      onRedraw={() => onRedraw(tabIdx, i)}
       onFocus={() => onFocus(tabIdx, i)}
       onPickDirectory={() => onPickDirectory(tabIdx, i)}
       status={disabled ? "idle" : status}
@@ -117,6 +124,8 @@ const PaneAt = memo(function PaneAt({
     >
       {disabled ? (
         <DisabledConsole onEnable={() => onToggleDisable(tabIdx, i)} />
+      ) : ended ? (
+        <EndedConsole info={ended} onReopen={() => reopenPane(pid)} />
       ) : dormant ? (
         <DormantConsole onResume={() => resumePane(pid)} />
       ) : (
@@ -154,6 +163,29 @@ function DisabledConsole({ onEnable }: { onEnable: () => void }) {
     }}>
       <span>console disabled · session stopped</span>
       <button className="btn" onClick={onEnable}>enable</button>
+    </div>
+  );
+}
+
+/** Resting card for a fleet worker auto-ended after its PTY exited (#920). State + summary
+ *  come from plan.db owned-issue status (done / needs-attention / blocked). Persisted +
+ *  recovery-gated, so it survives a restart (the worker is never silently re-opened); the
+ *  full audit lives on the worker's detail page. Reopen relaunches the session. */
+function EndedConsole({ info, onReopen }: { info: EndedInfo; onReopen: () => void }) {
+  const tone =
+    info.state === "done" ? { color: "var(--success, #2ea043)", label: "✓ finished" }
+    : info.state === "blocked" ? { color: "var(--danger)", label: "■ blocked / failed" }
+    : { color: "var(--accent)", label: "▲ stopped early" };
+  return (
+    <div style={{
+      flex: 1, display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", gap: 10, padding: 16, textAlign: "center",
+      background: "var(--bg-canvas)", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 11,
+    }}>
+      <span style={{ color: tone.color, fontWeight: 600 }}>{tone.label}</span>
+      <span style={{ color: "var(--fg-muted)", maxWidth: 320, lineHeight: 1.5 }}>{info.summary}</span>
+      <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>session ended · audit on the worker detail page</span>
+      <button className="btn" onClick={onReopen}>reopen</button>
     </div>
   );
 }
@@ -357,6 +389,12 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   const handleToggleFullscreen = useCallback((_tabIdx: number, paneIdx: number) =>
     setFullscreenPane(useAppStore.getState().fullscreenPaneIdx === paneIdx ? -1 : paneIdx),
     [setFullscreenPane]);
+  // Resize-nudge redraw (#1221): bump the pane's redraw counter; its terminal nudges the PTY size
+  // (SIGWINCH) and settles back, un-jumbling the Claude CLI's TUI the way a window resize does.
+  const handleRedraw = useCallback((tabIdx: number, paneIdx: number) => {
+    const st = useAppStore.getState();
+    st.requestPaneRedraw(paneIdFor(st.tabs[tabIdx], tabIdx, paneIdx));
+  }, []);
 
   // Per-tab pane renderer. tabIdx + isFullscreenInTab let one helper render
   // BOTH the active tab and the (display:none) background tabs from the same
@@ -386,6 +424,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
         onStatusChange={handleStatusChange}
         onToggleFullscreen={handleToggleFullscreen}
         onToggleDisable={handleToggleDisable}
+        onRedraw={handleRedraw}
         // Screen-level chrome state only applies to the active tab.
         menuOpen={isActiveTab && paneMenuOpenIdx === i}
         focused={isActiveTab && focusedPaneIdx === i}

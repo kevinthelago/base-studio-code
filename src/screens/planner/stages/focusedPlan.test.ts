@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  phasesFrom, activeIndex, clampIndex, gatePill, footerAction, currentGateReady, connectorKind,
+  phasesFrom, activeIndex, clampIndex, gatePill, footerAction, resolveFooter, currentGateReady, connectorKind,
   sectionForPhase, shouldAutoCompleteGate, type Phase, type PhaseStatus,
 } from "./focusedPlan";
 import { confirmedSignal, skippedSignal, type BlueprintSection } from "./blueprints";
@@ -132,6 +132,26 @@ describe("footerAction (#652)", () => {
     expect(footerAction(1, 1, false, true, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
     // Browsing away from the active phase never offers skip.
     expect(footerAction(2, 1, false, false, true).kind).toBe("back-to-current");
+  });
+});
+
+describe("resolveFooter — gate override (#1285)", () => {
+  const blocked = footerAction(1, 1, false, false); // approve-continue, gate blocking
+  it("passes an already-enabled or non-approve action through untouched", () => {
+    const ready = footerAction(1, 1, false, true);
+    expect(resolveFooter(ready, 0, true)).toBe(ready);
+    const publish = footerAction(1, 1, true, false);
+    expect(resolveFooter(publish, 0, true)).toBe(publish);
+  });
+  it("pending-confirm enables WITHOUT marking override (normal one-click approval)", () => {
+    const r = resolveFooter(blocked, 2, true);
+    expect(r.enabled).toBe(true);
+    expect(r.override).toBeUndefined();
+  });
+  it("override enables + flags a blocking gate ONLY when allowed and nothing to confirm", () => {
+    expect(resolveFooter(blocked, 0, false)).toEqual(blocked);          // off → still blocked
+    const r = resolveFooter(blocked, 0, true);
+    expect(r).toMatchObject({ kind: "approve-continue", enabled: true, override: true });
   });
 });
 

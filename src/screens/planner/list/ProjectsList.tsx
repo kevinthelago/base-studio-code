@@ -371,8 +371,11 @@ export function ProjectsList() {
   const [error, setError]         = useState<string | null>(null);
   const [lastSync, setLastSync]   = useState<Date | null>(null);
   const [title, setTitle]         = useState("");
-  const [pitch, setPitch]         = useState("");
   const [newOpen, setNewOpen]     = useState(false);
+  // New-project form: dismiss by clicking outside (no cancel button). The typed title is KEPT in
+  // state on dismiss, so a mistaken click outside doesn't lose it — reopening restores what was typed.
+  const newFormRef = useRef<HTMLDivElement>(null);
+  const newBtnRef  = useRef<HTMLButtonElement>(null);
   const [bpNewOpen, setBpNewOpen] = useState(false);   // rail "+ author a blueprint" inline form
   const [bpTitle, setBpTitle]     = useState("");
   const [importOpen, setImportOpen]   = useState(false); // manual "paste a gist URL / ID" modal
@@ -393,6 +396,19 @@ export function ProjectsList() {
   const [localProjects, setLocalProjects] = useState<{ key: string; title: string; hasPlan: boolean; updatedAt: number; published: boolean }[]>([]);
   // Live fleet (for the per-project "agents running" pill).
   const { workers } = useFleetLive();
+
+  // Dismiss the new-project form on an outside click (#…) — closes without clearing the title, so a
+  // stray click keeps what was typed. The trigger button is excluded so it keeps toggling the form.
+  useEffect(() => {
+    if (!newOpen) return;
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (newFormRef.current?.contains(t) || newBtnRef.current?.contains(t)) return;
+      setNewOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [newOpen]);
 
   const fetchProjects = useCallback(() => {
     if (!githubToken) return;
@@ -550,9 +566,10 @@ export function ProjectsList() {
       await invoke("delete_project_dir", { projectKey: draftKey }).catch(() => {});
     }
     setPlanningTitle(titleTrimmed);
-    setPlanningContext(pitch.trim(), "");
+    // The pitch is described in the planning conversation now — creation only needs the title (#…).
+    setPlanningContext("", "");
     setActiveProjectMeta(null, "", "", 0);
-    addDraftProject(draftKey, { title: titleTrimmed, pitch: pitch.trim(), createdAt: Date.now() });
+    addDraftProject(draftKey, { title: titleTrimmed, pitch: "", createdAt: Date.now() });
     // Bind the blueprint AT CREATION (#988) — the explicit consent point — capturing whatever's
     // selected now. Opening the project later never adopts the (freely-changing) global selection,
     // so its blueprint can't switch without the user's intent.
@@ -560,7 +577,6 @@ export function ProjectsList() {
     setPlanningSession(draftKey);
     setNewOpen(false);
     setTitle("");
-    setPitch("");
     setProjectsView("planning");
   }
 
@@ -810,8 +826,11 @@ export function ProjectsList() {
 
   return (
     <section style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", overflow: "hidden" }}>
-      {/* ░░ MAIN — projects ░░ */}
-      <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column" }}>
+      {/* ░░ MAIN — projects ░░
+          A min-width floor (not 0) so the projects column stays usable in a narrow / half window:
+          the shrinkable blueprints rail (below) gives back space first, instead of this column
+          collapsing to nothing and the fixed-width rail overflowing the clipped section. */}
+      <div style={{ flex: "1 1 0", minWidth: 320, display: "flex", flexDirection: "column" }}>
         {/* fixed header: title · summary · sync/new · new-project form · search+sort */}
         <div style={{ flex: "0 0 auto", padding: "20px 28px 0" }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
@@ -835,12 +854,12 @@ export function ProjectsList() {
             <button className="btn ghost" onClick={fetchProjects} disabled={loading}>
               {loading ? "syncing…" : "↻ sync"}
             </button>
-            <button className="btn primary" onClick={() => { setNewOpen(o => !o); setTitle(""); setPitch(""); }}>+ New project</button>
+            <button ref={newBtnRef} className="btn primary" onClick={() => setNewOpen(o => !o)}>+ New project</button>
           </div>
 
-          {/* new project — inline, toggled by "+ New project" */}
+          {/* new project — inline; click outside to dismiss (the title is kept for next time) */}
           {newOpen && (
-            <div style={{
+            <div ref={newFormRef} style={{
               display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginTop: 14,
               background: "var(--bg-panel)", border: "1px solid var(--accent-dim)", borderRadius: 8,
             }}>
@@ -849,37 +868,28 @@ export function ProjectsList() {
                 autoFocus
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); if (e.key === "Escape") { setNewOpen(false); setTitle(""); setPitch(""); } }}
+                onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); if (e.key === "Escape") setNewOpen(false); }}
                 placeholder="project title…"
                 style={{
-                  flex: "0 0 200px", background: "none", border: "none", outline: "none",
+                  flex: 1, minWidth: 0, background: "none", border: "none", outline: "none",
                   fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
-                  borderRight: "1px solid var(--border-soft)", paddingRight: 8,
                 }}
               />
               {titleConflict && (
                 <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>⚠ exists</span>
               )}
-              <input
-                value={pitch}
-                onChange={e => setPitch(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); }}
-                placeholder="describe what you want to build… (optional)"
-                style={{ flex: 1, background: "none", border: "none", outline: "none", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}
-              />
               <button
                 onClick={handleStartPlanning}
                 disabled={!titleTrimmed || !!titleConflict}
                 className="btn primary"
                 style={{ height: 24, fontSize: 10.5, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4, whiteSpace: "nowrap" }}
               >start planning →</button>
-              <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }} onClick={() => { setNewOpen(false); setTitle(""); setPitch(""); }}>cancel</button>
             </div>
           )}
 
           {/* search + sort */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16, paddingBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, height: 30, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", flex: "0 0 300px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16, paddingBottom: 16, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, height: 30, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", flex: "0 1 300px", minWidth: 0 }}>
               <Search size={13} style={{ color: "var(--fg-dim)" }} />
               <input
                 value={query}
@@ -997,9 +1007,12 @@ export function ProjectsList() {
         </div>
       </div>
 
-      {/* ░░ RAIL — blueprints ░░ (drag-resizable; wider default to seat each card's gate-row, #blueprints) */}
+      {/* ░░ RAIL — blueprints ░░ (drag-resizable; wider default to seat each card's gate-row, #blueprints)
+          Shrinkable (`0 1`, not `0 0`) with a min floor so a narrow / half window reclaims width from
+          the rail instead of it overflowing the clipped section and getting cut off. `overflow:hidden`
+          keeps its cards from forcing it back wide. */}
       <div className="resize-x" {...blueprintsRail.handleProps} title="Drag to resize" />
-      <div style={{ flex: `0 0 ${blueprintsRail.size}px`, display: "flex", flexDirection: "column", background: "var(--bg-panel)", borderLeft: "1px solid var(--border-soft)" }}>
+      <div style={{ flex: `0 1 ${blueprintsRail.size}px`, minWidth: 240, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg-panel)", borderLeft: "1px solid var(--border-soft)" }}>
         <div style={{ flex: "0 0 auto", padding: "20px 18px 14px", borderBottom: "1px solid var(--border-soft)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <span style={{ width: 23, height: 23, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>
@@ -1060,7 +1073,8 @@ export function ProjectsList() {
           source={githubUser?.login ?? DEFAULT_GIST_SOURCE}
           token={githubToken}
           importedById={Object.fromEntries(blueprints.filter(b => b.gist?.id).map(b => [b.gist!.id!, { updatedAt: b.gist!.updatedAt }]))}
-          onImport={(gistId, updatedAt) => { void resolveBlueprintImport(gistId).then(p => importBlueprintPreview(p, { updatedAt })).catch(() => {}); }}
+          onImport={(gistId, updatedAt) => resolveBlueprintImport(gistId).then(p => importBlueprintPreview(p, { updatedAt }))}
+          onPreview={resolveBlueprintImport}
           onManualImport={() => { setCatalogOpen(false); setImportOpen(true); }}
           onClose={() => setCatalogOpen(false)}
         />

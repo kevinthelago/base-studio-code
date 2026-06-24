@@ -1,14 +1,20 @@
 //! The connector framework (#784).
 //!
 //! A connector **reads** from a source into a [`RowSet`] — it never writes back (#782).
-//! The reference implementation is [`CsvConnector`]; further connectors (SQL, Salesforce
-//! Bulk API, OData/SAP) are intended to ship as MCP servers reusing the Extensions/MCP
-//! work (#33), each exposing the same `objects` / `read` surface over MCP tools.
+//! Connectors are **native, in-process Rust** implementations of this trait (not MCP
+//! servers): the reference [`CsvConnector`], the Salesforce connector, and further
+//! first-party connectors (QuickBooks, Quickbase, monday.com, SQL, OData/SAP). Running in
+//! the desktop host keeps credentials and bulk row data inside the host's trust boundary —
+//! never in the planner's context (#1194).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
+
+use crate::behavior::PlatformScan;
 use crate::error::Result;
+use crate::schema::FieldType;
 
 /// A readable object a connector exposes (a table, sheet, endpoint, or file) and its
 /// column names — the source-side schema before any mapping to a Data Model.
@@ -16,6 +22,22 @@ use crate::error::Result;
 pub struct SourceObject {
     pub name: String,
     pub columns: Vec<String>,
+}
+
+/// A column as **declared by the source system** — the connector's own field metadata, when
+/// the API exposes it (#1219). More accurate than inferring a type from sampled values: a
+/// Salesforce picklist becomes [`FieldType::Enum`] with its exact options, and a lookup
+/// becomes [`FieldType::Ref`] with its target object — neither of which value sampling can
+/// recover reliably. Connectors over schema-less sources (CSV, plain SQL text) don't override
+/// [`Connector::describe_object`], so the scan falls back to value inference.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceField {
+    pub name: String,
+    pub ty: FieldType,
+    /// Allowed values when `ty` is [`FieldType::Enum`]; empty otherwise.
+    pub enum_values: Vec<String>,
+    /// Target object name when `ty` is [`FieldType::Ref`]; `None` otherwise.
+    pub ref_target: Option<String>,
 }
 
 /// The result of reading one object: ordered column names + rows of raw string cells.
@@ -42,6 +64,27 @@ impl RowSet {
     }
 }
 
+/// Render a JSON value as a flat cell: scalars as plain text, nested objects/arrays as compact
+/// JSON. Shared by the native API connectors (#1197).
+pub fn cell_to_string(v: &Value) -> String {
+    match v {
+        Value::Null => String::new(),
+        Value::String(s) => s.clone(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Sorted top-level field names of a JSON object (empty if `rec` isn't an object). Connectors
+/// that derive columns from a sample record use this for a stable, deterministic column order.
+pub fn sorted_record_columns(rec: &Value) -> Vec<String> {
+    let mut cols: Vec<String> =
+        rec.as_object().map(|m| m.keys().cloned().collect()).unwrap_or_default();
+    cols.sort();
+    cols
+}
+
 /// A read-only source of tabular data.
 pub trait Connector {
     /// A stable name for this connector instance (recorded as lineage `source`).
@@ -50,6 +93,22 @@ pub trait Connector {
     fn objects(&self) -> Result<Vec<SourceObject>>;
     /// Read one object by name into a [`RowSet`].
     fn read(&self, object: &str) -> Result<RowSet>;
+
+    /// Declared, typed schema for one object — the source system's own field types (#1219).
+    /// Default: empty, meaning "no declared types", and the caller infers types from sampled
+    /// values instead. Connectors whose API exposes field metadata (Salesforce picklists +
+    /// lookups, Quickbase/HubSpot/Airtable field types) override this for accuracy.
+    fn describe_object(&self, _object: &str) -> Result<Vec<SourceField>> {
+        Ok(vec![])
+    }
+
+    /// Scan the source's behavioral layer — automations, business processes, and derived
+    /// logic (#1193). Default: nothing. A data-only source (a CSV file, a plain table) has
+    /// no behavior to carry; connectors over systems that do (Salesforce, Quickbase, …)
+    /// override this. Read-only (#782).
+    fn scan_platform(&self) -> Result<PlatformScan> {
+        Ok(PlatformScan::default())
+    }
 }
 
 /// Reference connector: reads a single CSV file. The object name is the file stem.
@@ -113,6 +172,8 @@ mod tests {
         assert_eq!(objs.len(), 1);
         assert_eq!(objs[0].columns, vec!["id", "name", "balance"]);
         assert_eq!(c.read(&objs[0].name).unwrap().rows.len(), 2);
+        // A data-only connector carries no behavior — it inherits the empty default.
+        assert!(c.scan_platform().unwrap().is_empty());
 
         std::fs::remove_file(&path).ok();
     }

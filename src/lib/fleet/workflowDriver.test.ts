@@ -70,7 +70,7 @@ describe("stagePrompt", () => {
   });
 
   it("includes the seed (prior output) when present", () => {
-    const launch = { item: "#1", stage: "fix", role: "worker" as const, capability: { role: "worker" as const, github: "read" as const, git: "write" as const, code: "write" as const, writeGlobs: [] }, seed: "FAIL: 2 red" };
+    const launch = { item: "#1", stage: "fix", role: "worker" as const, capability: { role: "worker" as const, github: "read" as const, git: "write" as const, code: "write" as const, net: "read" as const, writeGlobs: [] }, seed: "FAIL: 2 red" };
     const p = stagePrompt(launch, "#1");
     expect(p).toContain("Output from the prior stage");
     expect(p).toContain("FAIL: 2 red");

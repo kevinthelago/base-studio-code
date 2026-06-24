@@ -192,7 +192,7 @@ const FOOTER_LABEL: Record<FooterKind, string> = {
 /** The advance bar: back · progress · the context-sensitive primary action. */
 export function PhaseFooter({ phase, action, published, publishLabel, onBack, onPrimary, onSkip }: {
   phase: Phase;
-  action: { kind: FooterKind; enabled: boolean; canSkip?: boolean };
+  action: { kind: FooterKind; enabled: boolean; canSkip?: boolean; override?: boolean };
   /** The project already has a GitHub board — the publish action re-syncs it ("Update GitHub", #823). */
   published?: boolean;
   /** Override the publish action's label (#923) — e.g. "Publish blueprint" for an authoring project,
@@ -204,15 +204,19 @@ export function PhaseFooter({ phase, action, published, publishLabel, onBack, on
   onSkip?: () => void;
 }) {
   const primaryLabel =
-    action.kind === "approve-continue" && !action.enabled ? "gate blocking…"
+    action.override ? "⚠ override gate & continue →"
+    : action.kind === "approve-continue" && !action.enabled ? "gate blocking…"
     : action.kind === "publish" && published ? "⟳ Update GitHub"
     : action.kind === "publish" && publishLabel ? publishLabel
     : FOOTER_LABEL[action.kind];
   const primary = action.kind === "approve-continue" || action.kind === "publish";
   // When the gate is blocking the advance button, the tooltip says what's still needed (#805).
+  // In override mode (#1285) the button IS enabled, but the tooltip warns it bypasses the gate.
   const unmet = phase.unmet ?? [];
-  const blockedTip = action.kind === "approve-continue" && !action.enabled && unmet.length > 0
-    ? "Still needed: " + unmet.map(reasonText).join("; ")
+  const stillNeeded = unmet.length > 0 ? "Still needed: " + unmet.map(reasonText).join("; ") : "";
+  const blockedTip = action.override
+    ? ("Override: advance past this stage's gate without meeting it." + (stillNeeded ? " " + stillNeeded : ""))
+    : action.kind === "approve-continue" && !action.enabled && stillNeeded ? stillNeeded
     : undefined;
   return (
     <div className="ph-foot">
@@ -229,7 +233,13 @@ export function PhaseFooter({ phase, action, published, publishLabel, onBack, on
           skip stage →
         </button>
       )}
-      <button className={"nav-btn" + (primary ? " primary" : "")} disabled={!action.enabled} onClick={onPrimary} title={blockedTip}>
+      <button
+        className={"nav-btn" + (primary ? " primary" : "")}
+        disabled={!action.enabled}
+        onClick={onPrimary}
+        title={blockedTip}
+        style={action.override ? { background: "var(--danger)", borderColor: "var(--danger)", color: "#1a120a" } : undefined}
+      >
         {primaryLabel}
       </button>
     </div>

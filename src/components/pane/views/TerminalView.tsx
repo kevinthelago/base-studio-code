@@ -9,6 +9,8 @@ import { resolveLlmConfig, bscAgentEnv } from "../../../lib/core/llmConfig";
 import { recordPtyData, bumpTerminals } from "../../../lib/core/perf";
 import { gateClaudeLaunch } from "../../../lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/console/terminal";
+import { nudgeSizes } from "../../../lib/console/terminalNudge";
+import { probeJumble } from "../../../lib/console/jumbleProbe";
 import { composeStartupPrompt } from "../../../lib/session/checkpoint";
 import { composeReferenceContext } from "../../../lib/session/assignments";
 import { resolveMcpServers, toBscAgentMcp } from "../../../lib/session/mcpServers";
@@ -27,7 +29,6 @@ import { SessionReadinessBanner } from "../../SessionReadinessBanner";
 import { SessionFailure } from "../../SessionFailure";
 import { tokenForRepo } from "../../../lib/github/repoCredentials";
 import { getProvider } from "../../../lib/console/providers";
-import { ConsoleInput } from "../ConsoleInput";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -36,11 +37,18 @@ import { ConsoleInput } from "../ConsoleInput";
 // xterm's own scrollback truncates it anyway.
 const PENDING_BYTES_CAP = 256 * 1024;
 
-// Rows the terminal grows TALLER than its visible clip box while a Claude session is connected
-// (#1158), so Claude CLI's own input box (at the bottom) falls below the clip and is hidden by
-// overflow. Sized to clear Claude's full input box (prompt + hint/token lines), not just one row;
-// tweak if it still peeks or over-clips.
-const CLIP_ROWS = 6;
+// Grace before the automatic post-launch redraw nudge (#1221) — long enough for Claude's TUI to
+// finish its first paint, so the nudge repaints a fully-drawn (and possibly jumbled) screen rather
+// than an empty one. The nudge is idempotent + non-destructive, so an imprecise delay is harmless.
+const AUTO_NUDGE_DELAY_MS = 700;
+
+// Mid-session jumble probe (#1250): at each Claude settle, sample the bottom input-box rows and
+// auto-nudge when the box chrome is shattered. Hysteresis — two malformed samples (the settle + one
+// quick re-check) before firing — so a lone mid-draw frame doesn't trigger a needless repaint.
+// (#1239 reverted the input overlay/clip box, so these now guard Claude's own native input box.)
+const JUMBLE_CHROME_ROWS = 10; // bottom viewport rows that hold Claude's input box + hint lines
+const JUMBLE_STRIKES = 2;
+const JUMBLE_RECHECK_MS = 250;
 
 // Hex equivalents of the oklch design tokens so xterm can use them
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -79,6 +87,8 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // #799 — true when this console's assigned profile was edited while it's running, so it
   // shows a "relaunch to apply" nudge (settings.json is read at session start).
   const permsStale = useAppStore((s) => !!s.panePermsStale[paneId]);
+  // Resize-nudge redraw (#1221): the pane menu / hotkey bumps this counter to force a TUI repaint.
+  const redrawNonce = useAppStore((s) => s.paneRedrawNonce[paneId] ?? 0);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
@@ -118,13 +128,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const inClaudeRef  = useRef(false);               // true between __bsc_state run/idle
   const claudeActiveRef = useRef<"run" | "idle">("idle"); // current within-session status
   const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Drives the native ConsoleInput (#1158): true while a Claude session is the running program in
-  // this pane. Lifted to the store (transient) so PaneShell can also read it — it hides the pane's
-  // status footer and shows the input bar in its place. The OSC/reconnect handlers below set it.
-  const claudeActive = useAppStore((s) => !!s.paneClaudeActive[paneId]);
-  // Set by the mount effect so the overlay's submit can re-arm the run/idle status the way pressing
-  // Enter in xterm does (our input bypasses term.onData).
-  const markRunRef = useRef<() => void>(() => {});
+  const nudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // resize-nudge restore (#1221)
+  const autoNudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // post-launch auto-redraw (#1221)
+  const jumbleStrikesRef = useRef(0); // consecutive malformed probes (#1250)
+  const probeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // jumble re-check (#1250)
+  // A Claude session is the running program in this pane. Lifted to the store (transient) so
+  // PaneShell can read it to drive the model-pill "running" indicator (#1181); the OSC/reconnect
+  // handlers below set it via setPaneClaudeActive. TerminalView itself no longer consumes it — the
+  // native input overlay it used to gate (#1158) was reverted in #1239 so Claude's own TUI input
+  // shows instead.
   // ms of silence after last printable output → claude is back at its prompt (idle).
   // Kept generous: Claude pauses mid-turn (thinking, tool calls, API waits) often
   // exceed a second, and reading those as "idle" would wrongly enqueue a pane that
@@ -206,6 +218,43 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // pane on idle and the user steps through with Ctrl+Shift+N (or auto-
       // advance-on-reply). Only first-idle ever enqueues a pane, so a cold-
       // starting grid can't yank the cursor around. We don't focus here.
+
+      // Output has settled, so we're looking at a stable frame — probe it for a jumbled redraw
+      // and self-heal mid-session (#1250).
+      probeForJumble();
+    }
+
+    // Detect a jumbled Claude CLI TUI by inspecting the input-box chrome at the bottom of the
+    // viewport, and auto-nudge (the #1221 resize repaint) when it's shattered (#1250). Gated hard on
+    // the **Claude CLI** provider — an API / bsc-agent session renders its own UI, not this box
+    // chrome, and would need a different signal, so we never probe (or nudge) it here.
+    function probeForJumble() {
+      const providerId = useAppStore.getState().paneProviders[paneId] ?? "claude";
+      if (getProvider(providerId)?.isClaude !== true) return;
+      if (!openedRef.current) return;
+      const t = termRef.current;
+      if (!t) return;
+      const buf = t.buffer.active;
+      const bottom = buf.baseY + t.rows; // exclusive index past the last viewport row
+      const rows: string[] = [];
+      for (let y = Math.max(0, bottom - JUMBLE_CHROME_ROWS); y < bottom; y++) {
+        const line = buf.getLine(y);
+        if (line) rows.push(line.translateToString(true));
+      }
+      if (probeJumble(rows, t.cols) !== "malformed") {
+        jumbleStrikesRef.current = 0; // a healthy/unknown frame clears the streak
+        return;
+      }
+      jumbleStrikesRef.current += 1;
+      if (jumbleStrikesRef.current >= JUMBLE_STRIKES) {
+        jumbleStrikesRef.current = 0;
+        useAppStore.getState().requestPaneRedraw(paneId); // same nudge path as the manual control
+        return;
+      }
+      // Persisted? Re-check shortly so two strikes accrue within one settle (prompt fix), not across
+      // separate turns — and a one-off mid-draw frame resets on the healthy re-check.
+      if (probeTimerRef.current) clearTimeout(probeTimerRef.current);
+      probeTimerRef.current = setTimeout(() => { probeTimerRef.current = null; probeForJumble(); }, JUMBLE_RECHECK_MS);
     }
 
     function armQuietTimer() {
@@ -217,15 +266,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         }
       }, QUIET_MS);
     }
-
-    // Re-arm "run" after the native ConsoleInput submits (it writes to the PTY directly, bypassing
-    // term.onData's own Enter→run logic), so the focus queue doesn't leave the pane stuck "idle".
-    markRunRef.current = () => {
-      if (!inClaudeRef.current) return;
-      claudeActiveRef.current = "run";
-      onStatusChangeRef.current?.("run");
-      armQuietTimer();
-    };
 
     // OSC 7: bash reports cwd after every prompt via our injected PROMPT_COMMAND.
     // Format: ESC ] 7 ; file://localhost/path BEL
@@ -591,7 +631,20 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // Show the native input as soon as we LAUNCH a Claude session — don't wait for the OSC-100
       // "run" signal, which can be missed on a cold start, leaving Claude's own (legacy) input
       // visible and ours hidden (#1158). OSC-100 "idle" (process exit) still clears it.
-      if (launchesClaude) useAppStore.getState().setPaneClaudeActive(paneId, true);
+      if (launchesClaude) {
+        useAppStore.getState().setPaneClaudeActive(paneId, true);
+        // Auto-redraw (#1221): Claude's TUI sometimes paints jumbled on its first draw (and on a
+        // reconnect — this block runs for both). Request one resize-nudge after it's had a moment to
+        // render, so it self-heals without the user invoking "redraw / fix display" by hand. Keyed
+        // off the launch (which is reliable) rather than the OSC-100 "run" marker (which can be
+        // missed). Routes through the same requestPaneRedraw path as the manual trigger; the nudge
+        // is openedRef-guarded + debounced, so an early/duplicate request no-ops.
+        if (autoNudgeTimerRef.current) clearTimeout(autoNudgeTimerRef.current);
+        autoNudgeTimerRef.current = setTimeout(() => {
+          autoNudgeTimerRef.current = null;
+          useAppStore.getState().requestPaneRedraw(paneId);
+        }, AUTO_NUDGE_DELAY_MS);
+      }
 
       if (!isNew) {
         // Reconnecting — Ctrl+L repaints the prompt without submitting a command
@@ -623,6 +676,9 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     return () => {
       destroyed = true;
       if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
+      if (nudgeTimerRef.current) { clearTimeout(nudgeTimerRef.current); nudgeTimerRef.current = null; }
+      if (autoNudgeTimerRef.current) { clearTimeout(autoNudgeTimerRef.current); autoNudgeTimerRef.current = null; }
+      if (probeTimerRef.current) { clearTimeout(probeTimerRef.current); probeTimerRef.current = null; }
       el.removeEventListener("focusin", onFocusIn);
       disposeOnData.dispose();
       unlistenRef.current?.();
@@ -693,12 +749,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
   // Call term.focus() whenever this pane becomes the focused one. focus() reaches
   // into xterm's textarea, which only exists after open() — skip until opened.
+  // We focus even while a Claude session is active (#1239): keystrokes go straight to
+  // Claude's own TUI input now that the native overlay is gone.
   useEffect(() => {
-    // When the native input is up (#1149), let IT hold the caret — don't yank focus back into xterm.
-    if (focused && visible && !claudeActive) {
+    if (focused && visible) {
       requestAnimationFrame(() => { if (openedRef.current) termRef.current?.focus(); });
     }
-  }, [focused, visible, claudeActive]);
+  }, [focused, visible]);
 
   // Apply global font-zoom changes to the live terminal, re-fitting so rows/cols
   // recompute for the new cell size and the PTY is resized to match. The skip on
@@ -717,6 +774,38 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
     });
   }, [terminalFontSize, paneId]);
+
+  // Resize-nudge redraw (#1221): force the Claude CLI's TUI to repaint by transiently shrinking the
+  // PTY by one COLUMN — a guaranteed SIGWINCH — then settling back to the true fitted size on the
+  // next tick. This reproduces, per-pane, the recompute a window resize triggers (the manual
+  // workaround for the CLI's jumbled-redraw bug) without touching the OS window. A column delta (not
+  // rows) avoids interacting with the #1158 growing-host input clip box. Non-destructive: a resize
+  // preserves typed input + scrollback. Debounced: while a cycle is in flight (`nudgeTimerRef`),
+  // extra triggers coalesce so rapid taps don't thrash the PTY. The restore re-fits and resizes to
+  // the real dims, so the net size — and the #586 pane_size streamed to mobile — settles correct.
+  function nudgeResize() {
+    const term = termRef.current;
+    if (!term || !openedRef.current || nudgeTimerRef.current) return;
+    fitRef.current?.fit();
+    const sizes = nudgeSizes(term.cols, term.rows);
+    if (!sizes) return; // nothing safe to shrink
+    invoke("pty_resize", { paneId, ...sizes.transient }).catch(console.error);
+    nudgeTimerRef.current = setTimeout(() => {
+      nudgeTimerRef.current = null;
+      const t = termRef.current;
+      if (!t || !openedRef.current) return;
+      fitRef.current?.fit();
+      invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(console.error);
+    }, 60);
+  }
+
+  // Fire a nudge whenever the pane menu / hotkey bumps this pane's redraw counter (#1221). Skip the
+  // initial 0 so a freshly-mounted pane isn't nudged.
+  useEffect(() => {
+    if (redrawNonce === 0) return;
+    nudgeResize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [redrawNonce]);
 
   // Derive critical + warning lists from the verdict for rendering.
   const criticalChecks = readinessVerdict?.failed.filter((c) => c.severity === "critical") ?? [];
@@ -777,37 +866,19 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           >✕</span>
         </div>
       )}
-      {/* Visible terminal clip box. While Claude CLI is connected (#1158) the inner host grows a
-          few rows TALLER than this box, so its bottom rows — Claude's own input — overflow below
-          the clip and are hidden; the small bottom padding leaves a bit of breathing room above
-          the native input bar. */}
+      {/* Terminal host. Normal height (#1239): Claude's own TUI input renders inside the visible
+          box — the #1158 grow-taller-than-the-clip-box hack (to push Claude's input out of view
+          beneath our native overlay) was reverted along with the overlay. */}
       <div style={{
         flex: 1, minHeight: 0, overflow: "hidden",
-        paddingBottom: claudeActive ? 6 : 0,
         background: TERM_THEME.background as string,
         display: criticalChecks.length > 0 ? "none" : undefined,
       }}>
         <div
           ref={containerRef}
-          // `term-with-input` adds bottom scroll-padding to xterm's viewport (tokens.css) so the
-          // user can still scroll all the way down even with the bottom rows clipped.
-          className={claudeActive ? "term-with-input" : undefined}
-          style={{
-            height: claudeActive ? `calc(100% + ${Math.round(terminalFontSize * 1.4 * CLIP_ROWS)}px)` : "100%",
-            padding: "6px 4px",
-          }}
+          style={{ height: "100%", padding: "6px 4px" }}
         />
       </div>
-      {/* Native input (#1149): replaces Claude's built-in prompt while a Claude session is active —
-          overlays the bottom ~4 rows (Claude's input region) and routes typing to the PTY. */}
-      <ConsoleInput
-        active={claudeActive && visible && criticalChecks.length === 0}
-        focused={focused}
-        onSend={(data) => {
-          invoke("pty_write", { paneId, data }).catch(console.error);
-          if (data.includes("\r")) markRunRef.current?.();
-        }}
-      />
     </div>
   );
 }

@@ -27,6 +27,25 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(onSelect).toHaveBeenCalledWith(2);
   });
 
+  it("renders session-authored skills first, with a NEW badge (#1056)", () => {
+    const data = {
+      agents: [], repos: [], structure: [], phaseStructure: [], issues: [], context: [],
+      skills: [
+        { name: "Existing skill", kind: "skill", desc: "old" },
+        { name: "Fresh skill", kind: "skill", desc: "new", isNew: true },
+      ],
+    } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    render(<ProjectPane data={data} focus={baseFocus({
+      phases: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+    })} />);
+    // The authored skill carries a NEW badge…
+    expect(screen.getByText("NEW")).toBeInTheDocument();
+    // …and renders before the pre-existing one (new-first ordering).
+    const fresh = screen.getByText("Fresh skill");
+    const existing = screen.getByText("Existing skill");
+    expect(fresh.compareDocumentPosition(existing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("shows a lock banner when browsing a future phase", () => {
     render(<ProjectPane focus={baseFocus({ selectedIdx: 2, activeIdx: 0 })} />);
     expect(screen.getByText(/Locked\./)).toBeInTheDocument();
@@ -119,6 +138,60 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(onLinkRepo).toHaveBeenCalledWith("acme/web");
   });
 
+  it("repos stage: GitHub visibility defaults to private and toggles to public (#…)", () => {
+    const onSetReposPublic = vi.fn();
+    render(<ProjectPane focus={baseFocus(reposPhase)} onSetReposPublic={onSetReposPublic} reposPublic={false} />);
+    const priv = screen.getByText("🔒 Private");
+    const pub = screen.getByText("🌐 Public");
+    expect(priv).toHaveAttribute("aria-pressed", "true");   // private is the default
+    expect(pub).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(pub);
+    expect(onSetReposPublic).toHaveBeenCalledWith(true);
+    // clicking the already-active option is a no-op (no redundant flip)
+    fireEvent.click(priv);
+    expect(onSetReposPublic).toHaveBeenCalledTimes(1);
+  });
+
+  it("repos stage: reflects the public selection when the project default is set", () => {
+    render(<ProjectPane focus={baseFocus(reposPhase)} onSetReposPublic={vi.fn()} reposPublic />);
+    expect(screen.getByText("🌐 Public")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/default for new repos/)).toBeInTheDocument();
+  });
+
+  it("repos stage: hides the visibility control when no setter is wired", () => {
+    render(<ProjectPane focus={baseFocus(reposPhase)} />);
+    expect(screen.queryByText("🔒 Private")).not.toBeInTheDocument();
+  });
+
+  // #1227 — per-repo visibility overrides.
+  const twoRepos = { agents: [], repos: [
+    { id: "acme/web", branch: "main", ahead: 0, behind: 0, agents: [], primary: false, cloned: false, branches: [] },
+    { id: "acme/api", branch: "main", ahead: 0, behind: 0, agents: [], primary: false, cloned: false, branches: [] },
+  ], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+
+  it("repos stage: each card has its own toggle; setting one doesn't touch the others (#1227)", () => {
+    const onSetRepoPublic = vi.fn();
+    render(<ProjectPane data={twoRepos} focus={baseFocus(reposPhase)} onSetReposPublic={vi.fn()} reposPublic={false} onSetRepoPublic={onSetRepoPublic} repoOverrides={{}} />);
+    // No override ⇒ each card resolves to the project default (private).
+    expect(screen.getByLabelText("Make acme/web private")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Make acme/api private")).toHaveAttribute("aria-pressed", "true");
+    // Flip ONLY web public.
+    fireEvent.click(screen.getByLabelText("Make acme/web public"));
+    expect(onSetRepoPublic).toHaveBeenCalledWith("acme/web", true);
+    expect(onSetRepoPublic).toHaveBeenCalledTimes(1); // api untouched
+  });
+
+  it("repos stage: a per-repo override wins over the project default (#1227)", () => {
+    render(<ProjectPane data={twoRepos} focus={baseFocus(reposPhase)} onSetReposPublic={vi.fn()} reposPublic={false} onSetRepoPublic={vi.fn()} repoOverrides={{ "acme/web": true }} />);
+    expect(screen.getByLabelText("Make acme/web public")).toHaveAttribute("aria-pressed", "true");   // overridden public
+    expect(screen.getByLabelText("Make acme/api private")).toHaveAttribute("aria-pressed", "true");  // inherits private default
+  });
+
+  it("repos stage: the per-repo toggle is hidden when no per-repo setter is wired (#1227)", () => {
+    render(<ProjectPane data={twoRepos} focus={baseFocus(reposPhase)} onSetReposPublic={vi.fn()} reposPublic={false} />);
+    expect(screen.queryByLabelText("Make acme/web public")).not.toBeInTheDocument();
+  });
+
   it("shows an empty context state (no mock files) on a fresh plan", () => {
     render(<ProjectPane focus={baseFocus()} />); // context phase active, no data
     expect(screen.getByText(/No context files yet/)).toBeInTheDocument();
@@ -150,6 +223,23 @@ describe("ProjectPane focused mode (#652)", () => {
     // and the generate-profiles action drives the gate-completing step
     fireEvent.click(screen.getByText("Generate least-privilege profiles"));
     expect(onGenerateProfiles).toHaveBeenCalled();
+  });
+
+  it("Permissions: picks a per-agent model and clears it back to the global default (#…)", () => {
+    const onModel = vi.fn();
+    const permsPhase = { phases: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const data = { agents: [
+      { id: "auth", name: "@auth", role: "worker", status: "idle", repo: "acme/api", color: "#888",
+        initial: "A", owns: ["src/auth/**"], issues: [], preset: "Build",
+        perm: { read: "allow", edit: "allow", create: "allow", run: "ask", net: "deny", push: "ask", pkg: "deny" },
+        flow: { autonomy: "checkpoint", push: "auto-PR", gate: "soft" }, ctx: 1 },
+    ], repos: [], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    render(<ProjectPane data={data} focus={baseFocus(permsPhase)} onModel={onModel} />);
+    // The first agent's editor is open by default → its model segmented control is visible.
+    fireEvent.click(screen.getByText("opus"));
+    expect(onModel).toHaveBeenCalledWith("auth", "opus-4.5"); // tier → ModelId
+    fireEvent.click(screen.getByText("default"));
+    expect(onModel).toHaveBeenCalledWith("auth", undefined);  // back to the global default
   });
 
   it("renders the Plan review (phases + seam graph) with no in-body approve button (#949)", () => {

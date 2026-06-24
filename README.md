@@ -1,6 +1,6 @@
 > ⚠️ **This application creates issues, milestones, repositories, etc. by default — please be aware!** The project planning page will show you everything that will be done before it happens.
 
-> 📍 **Where we are:** `1.0.3` is the **current version — in active development**, focused on **user experience, resiliency, and the core Default (greenfield) blueprint and its triage**. We release builds early and keep improving a version until its theme is complete, so `1.0.3` is *Current*, not done. Landed so far: a foolproof, stripped-down **Default** blueprint (advanced stages moved to a new **Complete** blueprint), the planner consolidation (Blueprints folded into the planner page, live render-preview), the plan working-store moved to **plan.db**, **crash recovery** (one-click restore after an unclean shutdown), **progress-gated triage** (resumes from plan.db and skips workers that already finished), **dependencies locked once in the Deploy stage** (so the parallel fleet never collides on them), and **richer repo publishing** (description, topics, a plan-driven README). Running in parallel, a strategic pillar has landed: a **model-agnostic agent shell** (`bsc-agent`) that lets the whole platform run on **any** LLM — Anthropic, OpenAI, Gemini, or a local/open-weight model — not just Claude Code. **Next up is `1.0.4` — enterprise integration & migration:** pull data from the systems businesses already run on — **ERP, CRM, BPM** and others — into canonical **data models**, then generate your own **bespoke software** to replace them, with compliance baked in. See the [Roadmap](#roadmap).
+> 📍 **Where we are:** `1.0.4` is the **current version — released and in active development**, focused on **enterprise integration & migration**: connect read-only to the systems businesses already run on — **ERP, CRM, BPM** (Salesforce, monday.com, QuickBooks, Quickbase, HubSpot, Airtable, and more) — and scan their **data, configurations, and behaviors** into canonical **data models**, then generate your own **bespoke software** to replace them, with **compliance** baked in. Also landed in `1.0.4`: a **built-in Research MCP** (arXiv · Semantic Scholar · PubMed/PMC · Crossref + native PDF extraction + citation-grounded search) that grounds plans and skills in real sources with no download/build/Docker, plus console polish (native copy/paste, Claude's own TUI input restored). `1.0.3` — user experience, resiliency, the core **Default** blueprint + triage, and the parallel **run-on-any-model** `bsc-agent` pillar — is now **complete**. **Next up is `1.0.5` — the UI release:** an in-app, Claude-Design-like way to define pages, components, and animations with **iterative UI loops** (generate → live-preview → refine), rendered live. See the [Roadmap](#roadmap).
 
 # base-studio-code
 
@@ -43,7 +43,7 @@ The planning arc: **pitch → plan, stage by stage → live preview → gate che
 - **Custom blueprints** — author a reusable planning template in the planner and publish it to a gist
 - **Automations** — cron-scheduled commands and knowledge injections across panes
 - **Log management** — view, filter, limit, clear, and export every log stream from **Settings → Logs**
-- **Data models** *(planned — `1.0.4`)* — a canonical schema layer the data blueprints (migration, scraping) map into, for migrating off enterprise systems
+- **Data models** *(landing — `1.0.4`)* — a canonical schema layer the data blueprints (migration, scraping) map into, for migrating off enterprise systems
 - **Persist & restore** — workspace layout, pane names, and working directories survive restarts
 
 ## Tech Stack
@@ -133,9 +133,9 @@ base-studio-code (desktop host)
 
 A snapshot of where the platform is and where it's headed. (Dates aren't promised; sequence is.)
 
-**🚧 Current — `1.0.3` · user experience, resiliency & the core Default blueprint and its triage**
+**✅ Complete — `1.0.3` · user experience, resiliency & the core Default blueprint and its triage**
 
-> We ship builds from this version early and keep working it until the theme is complete — so `1.0.3` is **Current**, not closed. The items below have landed; the version stays open for more UX, resiliency, and triage polish until done.
+> Shipped, and the focus has moved on to `1.0.4`. The items below landed across the `1.0.3` line (including the parallel **run-on-any-model** pillar).
 
 - **Run on any model** *(parallel pillar)* — a model-agnostic agent shell we own, **`bsc-agent`**: an `LlmProvider` layer (Anthropic, OpenAI, Gemini, local; `crates/llm`) plus a native agent runtime — tool use, native permission enforcement, telemetry + transcript, ancestor context + skills loading, and an MCP client — packaged as a sidecar and selected per session behind a `HarnessAdapter`. It emits the same contracts as Claude Code, which **stays the default until parity**
 - **Simplicity** — a foolproof, trimmed **Default** blueprint (context → repos → deploy → features → UI → structure → permissions); the advanced stages (MCP servers, automations, skills) moved to a new **Complete** blueprint
@@ -148,13 +148,19 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 - **Fleet model** — least-privilege workers in git worktrees coordinated by a director; workers build against planned contracts **in parallel** (no runtime dependency-wait) and don't spin up their own sub-agents
 - Parallel **console** sessions, **Knowledge Store**, **GitHub** integration, **automations**, **MCP extensions**, the **Deploy** stage + pane, and the optional **mobile tunnel** (zero-knowledge Cloudflare relay, Noise IK E2E)
 
-**🔜 Next — `1.0.4` · enterprise integration & migration**
-- **Pull data from enterprise systems** — ERP, CRM, BPM, and other software solutions — into canonical **data models** via MCP connectors
-- **Migrate off an existing solution to bespoke generated software** — map the imported data into your own custom app, generated and run by the fleet
-- **Compliance** — a user-updatable Compliance MCP server (regulations, accessibility, user-protection) integrated into the planner, so generated software is compliant by default
+**🚧 Current — `1.0.4` · enterprise integration & migration**
 
-**🗺️ Then — `1.0.5` · the UI release**
+> Released and in active development — we ship builds early and keep working `1.0.4` until its theme is complete.
+
+- **Pull data from enterprise systems** — ERP, CRM, BPM, and other software solutions — into canonical **data models** via native + MCP connectors (Salesforce, monday.com, QuickBooks, Quickbase, HubSpot, Airtable), capturing **data, configurations, and behaviors** (automations, business processes), not just rows
+- **Migrate off an existing solution to bespoke generated software** — the source scan dictates the app's schema + logic; map it into your own custom app, generated and run by the fleet
+- **Compliance** — a user-updatable Compliance MCP server (regulations, accessibility, user-protection) integrated into the planner, so generated software is compliant by default
+- **Research** — a **built-in** literature MCP server (arXiv · Semantic Scholar · PubMed/PMC · Crossref, native PDF extraction, citation-grounded search), so the planner can ground plans and skills in the latest real sources with no download, build, or Docker
+- **Console polish** — native copy/paste (hotkeys scoped to the Console page) and Claude's own TUI input restored, with auto-redraw nudges for the CLI's jumbled-text bug
+
+**🔜 Next — `1.0.5` · the UI release**
 - An in-app, **Claude-Design-like** way to define each **page, component, and animation** — generate, preview, and iterate UI inside the planner (closing the external Claude Design round-trip), rendered live by the render-preview
+- **UI loops** — iterative design loops that **generate → live-preview → refine** a UI in-app until it's right, the same tight loop the agent fleet runs for code
 
 **Later**
 - The execution-side **conductor** (staged build → test → review → integrate)

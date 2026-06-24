@@ -128,14 +128,15 @@ describe("PaneShell", () => {
     expect(screen.queryByText("sonnet-4.5")).not.toBeInTheDocument();
   });
 
-  it("an IDLE pane shows an undetected pill (no model, no footer) (#1181)", () => {
+  it("an IDLE pane shows the CONFIGURED model in the pill (not 'undetected') (#…)", () => {
     render(
       <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" branch="wt/checkout" status="run">
         <div>content</div>
       </PaneShell>
     );
-    expect(screen.getByText("undetected")).toBeInTheDocument(); // nothing running ⇒ no model name
-    expect(screen.queryByText("sonnet-4.5")).not.toBeInTheDocument();
+    // The chosen model is always legible — shown even when no live session is detected.
+    expect(screen.getByText("sonnet-4.5")).toBeInTheDocument();
+    expect(screen.queryByText("undetected")).not.toBeInTheDocument();
     expect(screen.getByText("· checkout")).toBeInTheDocument(); // repo still shown in the header
     // The footer was removed entirely (#1181) — no branch/state strip.
     expect(screen.queryByText("⎇ wt/checkout")).not.toBeInTheDocument();

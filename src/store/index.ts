@@ -52,6 +52,7 @@ export const useAppStore = create<AppStore>()(
         paneDirectorMode: s.paneDirectorMode,
         paneStream: s.paneStream,
         disabledPanes:   s.disabledPanes,
+        endedPanes:      s.endedPanes,   // #920: a finished worker's resting state survives restart
         githubConnected: s.githubConnected,
         githubToken:     s.githubToken,
         repoGithubTokens: s.repoGithubTokens,
@@ -87,8 +88,10 @@ export const useAppStore = create<AppStore>()(
         autoFocusMode:        s.autoFocusMode,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
+        injectionHardGate:    s.injectionHardGate,
         autoPlanWithClaude:   s.autoPlanWithClaude,
         autoCompleteGates:    s.autoCompleteGates,
+        allowGateOverride:    s.allowGateOverride,
         restrictToBscIssues:  s.restrictToBscIssues,
         coordAutoWake:        s.coordAutoWake,
         defaultModel:         s.defaultModel,
@@ -115,6 +118,8 @@ export const useAppStore = create<AppStore>()(
         planConfirmedSections: s.planConfirmedSections,
         planAuthoredBlueprint: s.planAuthoredBlueprint,
         planDeployConfig:      s.planDeployConfig,
+        reposPublic:           s.reposPublic,   // #1227: repo visibility (default + …)
+        repoPublic:            s.repoPublic,    //        per-repo overrides) survives restart
         planSkippedSections:   s.planSkippedSections,
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,

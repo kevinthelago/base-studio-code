@@ -61,6 +61,26 @@ pub struct PlanFile {
     pub content: String,
 }
 
+/// One chat turn in the live planning session projected to the phone (#934/#987).
+/// Mirrors TS `PlanMessage` in src/lib/tunnel/tunnel.ts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanMessage {
+    pub role: String,
+    pub text: String,
+    pub at: u64,
+}
+
+/// A pipeline run's live state projected to the phone (#220/#987). Mirrors TS
+/// `PlanPipelineRun` in src/lib/tunnel/tunnel.ts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanPipelineRun {
+    pub id: String,
+    pub stage: String,
+    pub status: String,
+}
+
 // ── F2/A2/M2 wire payload types ────────────────────────────────────────────────
 
 /// One agent session in the fleet roster (F2). Mobile renders a "who's running / blocked
@@ -217,6 +237,40 @@ pub enum ServerMsg {
     McpList {
         extensions: Vec<McpExtFrame>,
     },
+    // ── Live planning session (PT1 / #934 / #986) ───────────────────────────
+    /// Full live planner snapshot. Replayed on connect (the last per-projectId payload), so a
+    /// freshly-paired phone mirrors the session immediately. Distinct from `plan_sync_*`.
+    #[serde(rename_all = "camelCase")]
+    PlanState {
+        project_id: String,
+        current_stage: String,
+        confirmed_sections: Vec<String>,
+        files: Vec<PlanFile>,
+        messages: Vec<PlanMessage>,
+        pipeline_runs: Vec<PlanPipelineRun>,
+    },
+    /// A transient planning delta. Fire-and-forget — NOT replayed.
+    #[serde(rename_all = "camelCase")]
+    PlanEvent {
+        project_id: String,
+        kind: String,
+        at: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        section: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stage: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<PlanMessage>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        run: Option<PlanPipelineRun>,
+    },
+    /// Cheap header update (active stage + status). Replayed on connect.
+    #[serde(rename_all = "camelCase")]
+    PlanStatus {
+        project_id: String,
+        current_stage: String,
+        status: String,
+    },
 }
 
 /// Messages the mobile client sends to the desktop. Tagged by snake_case `type`.
@@ -277,6 +331,16 @@ pub enum ClientMsg {
     /// Mobile triggers an automation to run immediately.
     #[serde(rename_all = "camelCase")]
     AutomationRunNow { id: String },
+    // ── Live planning session — drive (PT1 / #934) ──────────────────────────
+    /// Mobile advances (or jumps) the planner to a stage.
+    #[serde(rename_all = "camelCase")]
+    PlanAdvance { project_id: String, stage_key: String },
+    /// Mobile confirms a plan section.
+    #[serde(rename_all = "camelCase")]
+    PlanConfirm { project_id: String, section: String },
+    /// Mobile sends a chat message into the live planner session.
+    #[serde(rename_all = "camelCase")]
+    PlanChat { project_id: String, text: String },
 }
 
 /// One PTY output chunk fanned out to the relay transport (which filters per pane).
@@ -381,6 +445,11 @@ struct Inner {
     /// Full plan file caches per projectId — pushed by the frontend so mobile can
     /// pull individual files via PlanSyncPull.
     plan_files: HashMap<String, Vec<PlanFile>>,
+    // ── Live planning session (PT1 / #934) ───────────────────────────────────
+    /// Last `plan_state` / `plan_status` frame per projectId — replayed to a freshly-paired
+    /// client so it mirrors the live session immediately. `plan_event` is transient (not stored).
+    plan_states: HashMap<String, ServerMsg>,
+    plan_statuses: HashMap<String, ServerMsg>,
     // ── Fleet / coordination (F2) ────────────────────────────────────────────
     /// Latest fleet roster — replayed to freshly-paired mobile clients.
     fleet_sessions: Vec<FleetSession>,
@@ -539,6 +608,8 @@ impl TunnelState {
                 shutdown_tx: None,
                 plan_manifests: HashMap::new(),
                 plan_files: HashMap::new(),
+                plan_states: HashMap::new(),
+                plan_statuses: HashMap::new(),
                 fleet_sessions: Vec::new(),
                 automations: Vec::new(),
                 mcp_extensions: Vec::new(),
@@ -721,6 +792,12 @@ impl TunnelState {
         self.inner.lock().unwrap().plan_manifests.clone()
     }
 
+    /// The last `plan_state` + `plan_status` frames (across projects) to replay on connect (#934).
+    fn plan_frames_snapshot(&self) -> Vec<ServerMsg> {
+        let inner = self.inner.lock().unwrap();
+        inner.plan_states.values().cloned().chain(inner.plan_statuses.values().cloned()).collect()
+    }
+
     fn fleet_snapshot(&self) -> Vec<FleetSession> {
         self.inner.lock().unwrap().fleet_sessions.clone()
     }
@@ -881,6 +958,64 @@ pub fn tunnel_ack_plan_push(
 ) {
     log::debug!("tunnel: plan push ack for {project_id} (applied={applied})");
     let _ = state.event_tx.send(ServerMsg::PlanSyncAck { project_id, applied });
+}
+
+// ── Live planning session (PT1 / #934 / #986) — Tauri commands ──────────────
+//
+// Distinct from `tunnel_set_plan_state` (the async file-sync path, untouched): these project
+// the LIVE planner UI state. State + status are stored per projectId and replayed on connect
+// (like tunnel_set_panes); events are fire-and-forget.
+
+/// Push the full live planner snapshot; stored per projectId for replay + broadcast.
+#[tauri::command]
+pub fn tunnel_emit_plan_state(
+    project_id: String,
+    current_stage: String,
+    confirmed_sections: Vec<String>,
+    files: Vec<PlanFile>,
+    messages: Vec<PlanMessage>,
+    pipeline_runs: Vec<PlanPipelineRun>,
+    state: State<'_, TunnelState>,
+) {
+    let frame = ServerMsg::PlanState {
+        project_id: project_id.clone(),
+        current_stage,
+        confirmed_sections,
+        files,
+        messages,
+        pipeline_runs,
+    };
+    state.inner.lock().unwrap().plan_states.insert(project_id, frame.clone());
+    let _ = state.event_tx.send(frame);
+}
+
+/// Push a transient planning event. Fire-and-forget — never stored or replayed.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn tunnel_emit_plan_event(
+    project_id: String,
+    kind: String,
+    at: u64,
+    section: Option<String>,
+    stage: Option<String>,
+    message: Option<PlanMessage>,
+    run: Option<PlanPipelineRun>,
+    state: State<'_, TunnelState>,
+) {
+    let _ = state.event_tx.send(ServerMsg::PlanEvent { project_id, kind, at, section, stage, message, run });
+}
+
+/// Push the cheap header update (active stage + status); stored per projectId for replay + broadcast.
+#[tauri::command]
+pub fn tunnel_emit_plan_status(
+    project_id: String,
+    current_stage: String,
+    status: String,
+    state: State<'_, TunnelState>,
+) {
+    let frame = ServerMsg::PlanStatus { project_id: project_id.clone(), current_stage, status };
+    state.inner.lock().unwrap().plan_statuses.insert(project_id, frame.clone());
+    let _ = state.event_tx.send(frame);
 }
 
 // ── Fleet / coordination (F2) — Tauri commands ──────────────────────────────
@@ -1474,6 +1609,13 @@ mod transport {
             send_msg(&mut sink, &mut noise_tx, &ServerMsg::PlanSyncManifest { project_id, files }).await?;
         }
 
+        // Replay the last live planner snapshot(s) — plan_state + plan_status — so a
+        // freshly-paired phone mirrors the session immediately (#934). plan_event is transient.
+        let plan_frames = app.try_state::<TunnelState>().map(|s| s.plan_frames_snapshot()).unwrap_or_default();
+        for frame in plan_frames {
+            send_msg(&mut sink, &mut noise_tx, &frame).await?;
+        }
+
         // Replay fleet roster (F2) — non-empty only after the fleet has launched.
         let fleet = app.try_state::<TunnelState>().map(|s| s.fleet_snapshot()).unwrap_or_default();
         if !fleet.is_empty() {
@@ -1564,7 +1706,13 @@ mod transport {
     /// the gate is unit-testable without an `AppHandle` or a live PTY.
     pub fn input_allowed(msg: &ClientMsg, input_granted: bool) -> bool {
         match msg {
-            ClientMsg::PaneInput { .. } | ClientMsg::PaneResize { .. } => input_granted,
+            // PTY mutation + planner drive (advance/confirm/chat) require an explicit grant —
+            // a view-only phone can mirror the planning session but cannot steer it (#934).
+            ClientMsg::PaneInput { .. }
+            | ClientMsg::PaneResize { .. }
+            | ClientMsg::PlanAdvance { .. }
+            | ClientMsg::PlanConfirm { .. }
+            | ClientMsg::PlanChat { .. } => input_granted,
             _ => true,
         }
     }
@@ -1667,6 +1815,19 @@ mod transport {
             ClientMsg::AutomationRunNow { id } => {
                 log::info!("tunnel: mobile triggered automation {id}");
                 let _ = app.emit("tunnel://automation-run-now", serde_json::json!({ "id": id }));
+            }
+            // ── Live planning session — drive (#934) ─────────────────────
+            ClientMsg::PlanAdvance { project_id, stage_key } => {
+                log::info!("tunnel: mobile advanced planner {project_id} → {stage_key}");
+                let _ = app.emit("tunnel://plan-advance", serde_json::json!({ "projectId": project_id, "stageKey": stage_key }));
+            }
+            ClientMsg::PlanConfirm { project_id, section } => {
+                log::info!("tunnel: mobile confirmed section {section} for {project_id}");
+                let _ = app.emit("tunnel://plan-confirm", serde_json::json!({ "projectId": project_id, "section": section }));
+            }
+            ClientMsg::PlanChat { project_id, text } => {
+                log::info!("tunnel: mobile chat into planner {project_id} ({} chars)", text.len());
+                let _ = app.emit("tunnel://plan-chat", serde_json::json!({ "projectId": project_id, "text": text }));
             }
         }
     }
@@ -1871,75 +2032,166 @@ mod tests {
         );
     }
 
-    // ── T1b: Noise IK byte-level match against shared cross-repo test vector ────────
+    // ── #928 / T1b: Noise IK byte-level match against the shared cross-repo vector ──
     //
-    // tunnel-mobile (T1a) generates a deterministic Noise IK session using fixed
-    // keypairs with noble-curves and saves the expected byte sequences to
-    // `src/lib/tunnelProtocol.noiseVector.json`. This test loads that fixture and
-    // replays the handshake with snow, asserting byte-for-byte agreement. Until T1a
-    // lands the vector file, the test body is a no-op (returns early); once it lands
-    // the test gates CI on any snow-vs-noble divergence.
+    // `src-tauri/tests/noise_vectors.json` is the *canonical, frozen* Noise IK test
+    // vector: empty prologue, fixed static AND ephemeral keypairs, and the exact
+    // ciphertext snow produces for the IK handshake + a transport message each way.
+    // snow normally samples a random ephemeral, so a byte-stable handshake is only
+    // reproducible when the ephemeral is pinned via `fixed_ephemeral_key_for_testing_only`
+    // (the two helpers below) — that is what makes a cross-impl vector possible at all.
+    //
+    // The same JSON is vendored into mobile-studio-code, where the noble side asserts
+    // against it; so any snow-vs-noble divergence (prologue, message framing, HKDF
+    // chaining, nonce/rekey) fails a test on at least one side. To regenerate after an
+    // intentional protocol change, run the `generate_noise_vector` authoring tool below
+    // and commit its output.
+
+    /// Build an IK *initiator* with a FIXED ephemeral — identical to `noise::initiator`
+    /// apart from pinning the ephemeral, which `noise::initiator` deliberately does not
+    /// expose (production must use a fresh random ephemeral). Test-vectors only.
+    fn vector_initiator(static_priv: &[u8], remote_pub: &[u8], eph_priv: &[u8]) -> snow::HandshakeState {
+        snow::Builder::new(noise::PARAMS.parse().expect("valid noise params"))
+            .local_private_key(static_priv).unwrap()
+            .remote_public_key(remote_pub).unwrap()
+            .fixed_ephemeral_key_for_testing_only(eph_priv)
+            .build_initiator().unwrap()
+    }
+
+    /// Build an IK *responder* (desktop side) with a FIXED ephemeral. Test-vectors only.
+    fn vector_responder(static_priv: &[u8], eph_priv: &[u8]) -> snow::HandshakeState {
+        snow::Builder::new(noise::PARAMS.parse().expect("valid noise params"))
+            .local_private_key(static_priv).unwrap()
+            .fixed_ephemeral_key_for_testing_only(eph_priv)
+            .build_responder().unwrap()
+    }
+
     #[test]
     fn noise_ik_matches_shared_test_vector() {
         use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD;
 
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../src/lib/tunnelProtocol.noiseVector.json");
-
-        let raw = match std::fs::read_to_string(&path) {
-            Ok(s) => s,
-            Err(_) => {
-                // T1a (tunnel-mobile's Noise vector generation) has not yet landed.
-                // Once src/lib/tunnelProtocol.noiseVector.json is committed, this test
-                // becomes active and will catch any byte-level snow ↔ noble divergence.
-                eprintln!("noise_ik_matches_shared_test_vector: SKIP — T1a vector not yet available");
-                return;
-            }
-        };
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/noise_vectors.json");
+        let raw = std::fs::read_to_string(&path)
+            .expect("src-tauri/tests/noise_vectors.json must exist (the shared Noise vector, #928)");
         let v: serde_json::Value = serde_json::from_str(&raw)
-            .expect("tunnelProtocol.noiseVector.json must be valid JSON");
+            .expect("tests/noise_vectors.json must be valid JSON");
 
-        // Decode the fixed keypairs produced by noble (mobile side).
-        let init_priv = b64.decode(v["initiatorPriv"].as_str().expect("initiatorPriv")).unwrap();
-        let resp_priv = b64.decode(v["responderPriv"].as_str().expect("responderPriv")).unwrap();
-        let resp_pub  = b64.decode(v["responderPub"].as_str().expect("responderPub")).unwrap();
+        // Guard the params: if the tunnel ever changes its Noise suite, the frozen
+        // ciphertext below stops matching — but assert the declared protocol up front so
+        // the failure names the cause instead of looking like a crypto bug.
+        assert_eq!(
+            v["protocolName"].as_str().expect("protocolName"),
+            noise::PARAMS,
+            "the vector is for a different Noise protocol than the tunnel now uses"
+        );
 
-        let mut init = noise::initiator(&init_priv, &resp_pub).unwrap();
-        let mut resp = noise::responder(&resp_priv).unwrap();
-        let mut buf  = vec![0u8; 1024];
-        let mut out  = vec![0u8; 1024];
+        let dec = |k: &str| b64.decode(v[k].as_str().unwrap_or_else(|| panic!("missing key {k}"))).unwrap();
+        let init_static = dec("initStaticPriv");
+        let init_eph    = dec("initEphemeralPriv");
+        let resp_static = dec("respStaticPriv");
+        let resp_pub    = dec("respStaticPub");
+        let resp_eph    = dec("respEphemeralPriv");
+        let msgs = v["messages"].as_array().expect("messages[]");
 
-        // → e, es, s, ss
+        let mut init = vector_initiator(&init_static, &resp_pub, &init_eph);
+        let mut resp = vector_responder(&resp_static, &resp_eph);
+        let mut buf = vec![0u8; 4096];
+        let mut out = vec![0u8; 4096];
+
+        let expect_ct = |i: usize| msgs[i]["ciphertext"].as_str().expect("ciphertext");
+        let payload   = |i: usize| b64.decode(msgs[i]["payload"].as_str().expect("payload")).unwrap();
+
+        // msg1 → e, es, s, ss
         let n = init.write_message(&[], &mut buf).unwrap();
-        assert_eq!(
-            b64.encode(&buf[..n]),
-            v["msg1"].as_str().expect("msg1"),
-            "Noise IK msg1 byte mismatch: snow ↔ noble diverge (T1b)"
-        );
-        resp.read_message(&buf[..n], &mut out).unwrap();
+        assert_eq!(b64.encode(&buf[..n]), expect_ct(0), "msg1 snow ↔ vector divergence (#928)");
+        let m = resp.read_message(&buf[..n], &mut out).unwrap();
+        assert_eq!(m, 0, "msg1 carries no payload");
 
-        // ← e, ee, se
+        // msg2 ← e, ee, se
         let n = resp.write_message(&[], &mut buf).unwrap();
-        assert_eq!(
-            b64.encode(&buf[..n]),
-            v["msg2"].as_str().expect("msg2"),
-            "Noise IK msg2 byte mismatch: snow ↔ noble diverge (T1b)"
-        );
-        init.read_message(&buf[..n], &mut out).unwrap();
+        assert_eq!(b64.encode(&buf[..n]), expect_ct(1), "msg2 snow ↔ vector divergence (#928)");
+        let m = init.read_message(&buf[..n], &mut out).unwrap();
+        assert_eq!(m, 0, "msg2 carries no payload");
 
-        // Transport-mode ciphertext check.
         let mut it = init.into_transport_mode().unwrap();
         let mut rt = resp.into_transport_mode().unwrap();
-        let plaintext = b64.decode(v["plaintext"].as_str().expect("plaintext")).unwrap();
-        let n = it.write_message(&plaintext, &mut buf).unwrap();
-        assert_eq!(
-            b64.encode(&buf[..n]),
-            v["ciphertext"].as_str().expect("ciphertext"),
-            "Noise IK transport ciphertext mismatch: snow ↔ noble diverge (T1b)"
-        );
+
+        // transport init → resp (nonce 0 on the initiator's sending key)
+        let p = payload(2);
+        let n = it.write_message(&p, &mut buf).unwrap();
+        assert_eq!(b64.encode(&buf[..n]), expect_ct(2), "transport init→resp divergence (#928)");
         let m = rt.read_message(&buf[..n], &mut out).unwrap();
-        assert_eq!(&out[..m], &plaintext, "Noise IK transport decrypt mismatch");
+        assert_eq!(&out[..m], &p[..], "transport init→resp decrypt mismatch");
+
+        // transport resp → init (nonce 0 on the responder's sending key)
+        let p = payload(3);
+        let n = rt.write_message(&p, &mut buf).unwrap();
+        assert_eq!(b64.encode(&buf[..n]), expect_ct(3), "transport resp→init divergence (#928)");
+        let m = it.read_message(&buf[..n], &mut out).unwrap();
+        assert_eq!(&out[..m], &p[..], "transport resp→init decrypt mismatch");
+    }
+
+    /// Authoring tool (not a CI test): regenerates `tests/noise_vectors.json`. Run with
+    ///   cargo test -p app --lib generate_noise_vector -- --ignored --nocapture
+    /// and replace the file with the JSON printed between the markers.
+    #[test]
+    #[ignore = "authoring tool — regenerates tests/noise_vectors.json"]
+    fn generate_noise_vector() {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+
+        let is = noise::generate_keypair().unwrap();
+        let ie = noise::generate_keypair().unwrap();
+        let rs = noise::generate_keypair().unwrap();
+        let re = noise::generate_keypair().unwrap();
+
+        let mut init = vector_initiator(&is.private, &rs.public, &ie.private);
+        let mut resp = vector_responder(&rs.private, &re.private);
+        let mut buf = vec![0u8; 4096];
+        let mut out = vec![0u8; 4096];
+
+        let n = init.write_message(&[], &mut buf).unwrap();
+        let msg1 = b64.encode(&buf[..n]);
+        resp.read_message(&buf[..n], &mut out).unwrap();
+        let n = resp.write_message(&[], &mut buf).unwrap();
+        let msg2 = b64.encode(&buf[..n]);
+        init.read_message(&buf[..n], &mut out).unwrap();
+
+        let mut it = init.into_transport_mode().unwrap();
+        let mut rt = resp.into_transport_mode().unwrap();
+        let pa: &[u8] = b"pane_input";
+        let n = it.write_message(pa, &mut buf).unwrap();
+        let ct_a = b64.encode(&buf[..n]);
+        rt.read_message(&buf[..n], &mut out).unwrap();
+        let pb: &[u8] = b"pane_output";
+        let n = rt.write_message(pb, &mut buf).unwrap();
+        let ct_b = b64.encode(&buf[..n]);
+        it.read_message(&buf[..n], &mut out).unwrap();
+
+        let json = serde_json::json!({
+            "$comment": "Canonical Noise IK test vector (#928). FROZEN + shared cross-repo: \
+                         mobile-studio-code vendors this same file and asserts the noble side \
+                         against it. Empty prologue; static AND ephemeral keypairs are fixed so \
+                         the handshake bytes are reproducible. All values base64. Regenerate via \
+                         the `generate_noise_vector` authoring test after an intentional change.",
+            "protocolName": noise::PARAMS,
+            "prologue": "",
+            "initStaticPriv": b64.encode(is.private),
+            "initEphemeralPriv": b64.encode(ie.private),
+            "respStaticPriv": b64.encode(rs.private),
+            "respStaticPub": b64.encode(rs.public),
+            "respEphemeralPriv": b64.encode(re.private),
+            "messages": [
+                { "label": "msg1 init->resp (e, es, s, ss)", "payload": "", "ciphertext": msg1 },
+                { "label": "msg2 resp->init (e, ee, se)", "payload": "", "ciphertext": msg2 },
+                { "label": "transport init->resp", "payload": b64.encode(pa), "ciphertext": ct_a },
+                { "label": "transport resp->init", "payload": b64.encode(pb), "ciphertext": ct_b },
+            ]
+        });
+        println!("<<<NOISE_VECTOR_JSON");
+        println!("{}", serde_json::to_string_pretty(&json).unwrap());
+        println!("NOISE_VECTOR_JSON>>>");
     }
 
     /// A full Noise IK handshake between the desktop (responder) and a mobile peer
@@ -2356,6 +2608,78 @@ mod tests {
         let raw = serde_json::json!({ "type": "automation_run_now", "id": "a2" });
         let msg = serde_json::from_value::<ClientMsg>(raw).unwrap();
         assert!(matches!(msg, ClientMsg::AutomationRunNow { id } if id == "a2"));
+    }
+
+    // ── PT1: live planning frames (#934) ─────────────────────────────────────────
+
+    /// plan_state serializes snake_case-tagged with the camelCase fields the phone expects.
+    #[test]
+    fn plan_state_msg_shape() {
+        let msg = ServerMsg::PlanState {
+            project_id: "proj-bf9cf968".into(),
+            current_stage: "goal".into(),
+            confirmed_sections: vec!["goal".into()],
+            files: vec![PlanFile { relpath: "goal.md".into(), content: "# Goal".into() }],
+            messages: vec![PlanMessage { role: "assistant".into(), text: "hi".into(), at: 1 }],
+            pipeline_runs: vec![PlanPipelineRun { id: "build".into(), stage: "test".into(), status: "running".into() }],
+        };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "plan_state");
+        assert_eq!(v["projectId"], "proj-bf9cf968");
+        assert_eq!(v["currentStage"], "goal");
+        assert_eq!(v["confirmedSections"][0], "goal");
+        assert_eq!(v["files"][0]["relpath"], "goal.md");
+        assert_eq!(v["pipelineRuns"][0]["id"], "build");
+    }
+
+    /// plan_event: snake_case type tag, camelCase fields, absent detail omitted.
+    #[test]
+    fn plan_event_msg_shape() {
+        let msg = ServerMsg::PlanEvent {
+            project_id: "p".into(),
+            kind: "section_confirmed".into(),
+            at: 1,
+            section: Some("goal".into()),
+            stage: None,
+            message: None,
+            run: None,
+        };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "plan_event");
+        assert_eq!(v["kind"], "section_confirmed");
+        assert_eq!(v["section"], "goal");
+        assert!(v.get("stage").is_none()); // skip_serializing_if omits absent detail
+    }
+
+    /// plan_status type tag + camelCase.
+    #[test]
+    fn plan_status_msg_shape() {
+        let msg = ServerMsg::PlanStatus { project_id: "p".into(), current_stage: "scope".into(), status: "in_progress".into() };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "plan_status");
+        assert_eq!(v["currentStage"], "scope");
+        assert_eq!(v["status"], "in_progress");
+    }
+
+    /// The drive frames deserialize from the phone's camelCase wire shape.
+    #[test]
+    fn plan_drive_client_msgs_deserialize() {
+        let adv = serde_json::from_value::<ClientMsg>(serde_json::json!({ "type": "plan_advance", "projectId": "p", "stageKey": "scope" })).unwrap();
+        assert!(matches!(adv, ClientMsg::PlanAdvance { stage_key, .. } if stage_key == "scope"));
+        let con = serde_json::from_value::<ClientMsg>(serde_json::json!({ "type": "plan_confirm", "projectId": "p", "section": "goal" })).unwrap();
+        assert!(matches!(con, ClientMsg::PlanConfirm { section, .. } if section == "goal"));
+        let chat = serde_json::from_value::<ClientMsg>(serde_json::json!({ "type": "plan_chat", "projectId": "p", "text": "hi" })).unwrap();
+        assert!(matches!(chat, ClientMsg::PlanChat { text, .. } if text == "hi"));
+    }
+
+    /// A view-only phone can mirror the planning session but cannot steer it (#934).
+    #[test]
+    fn plan_drive_requires_input_grant() {
+        let chat = ClientMsg::PlanChat { project_id: "p".into(), text: "hi".into() };
+        assert!(!transport::input_allowed(&chat, false));
+        assert!(transport::input_allowed(&chat, true));
+        assert!(!transport::input_allowed(&ClientMsg::PlanAdvance { project_id: "p".into(), stage_key: "scope".into() }, false));
+        assert!(!transport::input_allowed(&ClientMsg::PlanConfirm { project_id: "p".into(), section: "goal".into() }, false));
     }
 
     // ── M2: MCP extension list ───────────────────────────────────────────────────

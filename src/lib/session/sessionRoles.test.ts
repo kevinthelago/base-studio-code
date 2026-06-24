@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ROLE_DEFAULTS,
+  type SessionRole,
   PLANNER_WRITE_GLOBS,
   DB_OWNED_PLAN_FILES,
   DEP_MANIFEST_FILES,
@@ -240,6 +241,53 @@ describe("roleWriteRules (write-tool guard)", () => {
     expect(canWritePath(worker, "src/api/route.ts")).toBe(true);
     expect(canWritePath(worker, "src/web/page.ts")).toBe(false);
     expect(roleWriteRules(worker).allow).toContain("Edit(src/api/**)");
+  });
+});
+
+describe("network gate (#1107)", () => {
+  it("net defaults to read for every role — web tools stay allowed (no behavior change)", () => {
+    for (const role of Object.keys(ROLE_DEFAULTS) as SessionRole[]) {
+      expect(ROLE_DEFAULTS[role].net).toBe("read");
+      expect(roleDeniedTools(ROLE_DEFAULTS[role])).not.toContain("WebFetch");
+    }
+  });
+
+  it("net:'none' denies WebFetch + WebSearch at launch (the planner web kill-switch)", () => {
+    const offline = roleCapability("planner", { net: "none" });
+    expect(roleDeniedTools(offline)).toEqual(expect.arrayContaining(["WebFetch", "WebSearch"]));
+  });
+
+  it("composes with other tool denies (a worker with net:none keeps Task and adds the web denies)", () => {
+    expect(roleDeniedTools(roleCapability("worker", { net: "none" }))).toEqual(["Task", "WebFetch", "WebSearch"]);
+  });
+});
+
+describe("planner privilege containment (#1107)", () => {
+  const planner = ROLE_DEFAULTS.planner;
+
+  it("is read-only on git and GitHub — it can shape the plan but never mutate the repo/GitHub", () => {
+    expect(planner.git).toBe("read");
+    expect(planner.github).toBe("read");
+    expect(checkCommand(planner, "git push").allowed).toBe(false);
+    expect(checkCommand(planner, "gh pr create -t x").allowed).toBe(false);
+    expect(checkCommand(planner, "gh repo delete").allowed).toBe(false);
+  });
+
+  it("confines its code writes to plan files — never repo source or the launch settings", () => {
+    expect(canWritePath(planner, "goal.md")).toBe(true);
+    expect(canWritePath(planner, "prompts/dev-kickoff.md")).toBe(true);
+    expect(canWritePath(planner, "src/App.tsx")).toBe(false);          // no repo source
+    expect(canWritePath(planner, ".claude/settings.json")).toBe(false); // no tampering with its own gate
+  });
+
+  it("no flow grant lifts its git/GitHub denies (the #304 push-lift never applies to the planner)", () => {
+    // bscAgentPerms with the default (no grant) keeps every git/gh write denied, and the planner is
+    // never handed a flow grant in practice (only workers carry an AgentFlow). Even so, codify it.
+    const perms = bscAgentPerms(planner);
+    expect(perms.deny_bash).toContain("git push");
+    expect(perms.deny_bash).toContain("gh pr create");
+    expect(perms.deny_bash).toContain("gh repo delete");
+    expect(perms.write_globs).toEqual(PLANNER_WRITE_GLOBS); // plan files only, no repo lane
   });
 });
 

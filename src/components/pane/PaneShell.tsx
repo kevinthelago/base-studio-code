@@ -51,8 +51,8 @@ interface PaneShellProps {
   /** Session token + cost rollups — shown in the footer when known. */
   tok?: string;
   cost?: string;
-  /** A Claude session is active in this pane (#1158): the native console input stands in for the
-   *  status footer, so the footer is hidden to make room for it. */
+  /** A Claude session is live in this pane (from the OSC-100 run/idle signals). Drives the
+   *  model-pill "running" indicator (#1181). */
   claudeActive?: boolean;
   available?: ViewKey[];
   active?: ViewKey;
@@ -67,6 +67,8 @@ interface PaneShellProps {
   onMenuToggle?: () => void;
   onToggleFullscreen?: () => void;
   onToggleDisable?: () => void;
+  /** Force a TUI repaint of this pane via a resize nudge (#1221). */
+  onRedraw?: () => void;
   onFocus?: () => void;
   onRename?: (name: string) => void;
   onPickDirectory?: () => void;
@@ -97,6 +99,7 @@ export function PaneShell({
   onMenuToggle,
   onToggleFullscreen,
   onToggleDisable,
+  onRedraw,
   onFocus,
   onRename,
   onPickDirectory,
@@ -257,8 +260,8 @@ export function PaneShell({
         <div style={{ flex: 1, minWidth: 0 }} />
 
         {/* Model pill — the SINGLE consolidated menu trigger (#1181): model · screens · pane
-            actions all live in the one PaneMenu it opens. Shows the running model, or an
-            "undetected" empty state when nothing is live in the pane. */}
+            actions all live in the one PaneMenu it opens. Shows the running model when live, else
+            the configured model the pane will launch with (#…). */}
         <button
           ref={menuButtonRef}
           title="Model, screens & pane options"
@@ -278,9 +281,12 @@ export function PaneShell({
               <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>{modelLabel}</span>
             </>
           ) : (
+            // Idle / not yet live: show the CONFIGURED model (what this pane will launch with) so the
+            // chosen model is always legible on the grid, rather than a bare "undetected" (#…). The
+            // gray dot still signals the session isn't live.
             <>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--state-idle)" }} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>undetected</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{model}</span>
             </>
           )}
           <span style={{ color: menuOpen ? "var(--accent-text)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10 }}>▾</span>
@@ -319,6 +325,7 @@ export function PaneShell({
             disabled={disabled}
             onToggleFullscreen={onToggleFullscreen}
             onToggleDisable={onToggleDisable}
+            onRedraw={onRedraw}
             onPickDirectory={onPickDirectory}
             onClose={onMenuToggle}
             onRename={() => { setDraftName(agent); setEditingName(true); onMenuToggle?.(); }}

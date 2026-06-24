@@ -26,10 +26,10 @@ tauri-plugin-store = "2"
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
 log = "0.4"
-time = { version = "0.3", features = ["formatting", "macros"] }
+time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
 # FCM push to the paired mobile app (#846): service-account OAuth2 needs an RS256-signed
 # JWT assertion. `jsonwebtoken` reads the service-account PEM private key directly and
 # signs the assertion; the access-token exchange + the FCM v1 POST reuse `reqwest`.
@@ -45,6 +45,8 @@ rfd = "0.14"
 # encodes the static public key for the pairing QR; `rand` mints room ids + PSKs.
 snow = "0.10"
 base64 = "0.22"
+# PKCE (#1197 OAuth): SHA-256 of the verifier for the S256 code challenge.
+sha2 = "0.10"
 rand = "0.10"
 tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "time", "net", "io-util"] }
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
@@ -63,6 +65,10 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # Data platform (#781/#784): the canonical Data Model store (DuckDB) + connector
 # framework. Pulling this in compiles bundled DuckDB into the desktop build.
 bsc-data = { path = "../crates/data" }
+
+# On-device credential store for migration source connectors (#1194): secrets go to the OS
+# keychain (Windows Credential Manager / macOS Keychain), never to the plan config or the planner.
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 
 # Per-project plan store (#plan-db) — shared with the `bsc-plan` agent CLI. The Tauri
 # commands below are a thin wrapper over this crate's `Store`.

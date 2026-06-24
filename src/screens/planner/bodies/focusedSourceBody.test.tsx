@@ -1,100 +1,115 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
+import { useAppStore } from "../../../store";
+import { defaultSourceConfig } from "../shared/sourceConfig";
 import { FocusedSourceBody } from "./FocusedSourceBody";
 
-// setup.ts already provides a global invoke mock (mockResolvedValue(null));
-// override per-test with mockResolvedValueOnce.
+// The body is store-backed (planSourceConfig keyed by projectId). Reset that slice between tests so
+// each starts from an empty config.
+beforeEach(() => {
+  useAppStore.setState({ planSourceConfig: {} });
+});
 
-const MOCK_INVENTORY = [{ name: "accounts", columns: ["id", "name", "revenue"] }];
-const MOCK_MODEL = {
-  name: "test-project",
-  version: 1,
-  entities: [
-    {
-      key: "accounts",
-      label: "accounts",
-      identity: ["id"],
-      fields: [
-        { key: "id",      label: "id",      type: "string", required: false, enum_values: [] },
-        { key: "name",    label: "name",    type: "string", required: false, enum_values: [] },
-        { key: "revenue", label: "revenue", type: "money",  required: false, enum_values: [] },
-      ],
-    },
-  ],
-};
-
-describe("FocusedSourceBody — render", () => {
-  it("renders the connector picker and skip button by default", () => {
-    render(<FocusedSourceBody projectId="proj-1" />);
-    expect(screen.getByTestId("pick-csv-btn")).toBeTruthy();
-    expect(screen.getByTestId("skip-source-btn")).toBeTruthy();
+describe("FocusedSourceBody — catalog → declare", () => {
+  it("shows the connector catalog and read-only reassurance when nothing is declared", () => {
+    render(<FocusedSourceBody projectId="p1" />);
+    expect(screen.getByTestId("connector-catalog")).toBeTruthy();
+    expect(screen.getByTestId("connector-tile-quickbase")).toBeTruthy();
+    expect(screen.getByText(/Credentials stay on this device/i)).toBeTruthy();
   });
 
-  it("shows the skipped state when Skip is clicked", async () => {
-    render(<FocusedSourceBody projectId="proj-1" />);
-    fireEvent.click(screen.getByTestId("skip-source-btn"));
-    await waitFor(() => expect(screen.getByTestId("source-skipped")).toBeTruthy());
+  it("declaring a connector adds its card and collapses the catalog into a chip-bar", () => {
+    render(<FocusedSourceBody projectId="p1" />);
+    fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
+    // A card appears…
+    expect(screen.getByTestId(/^source-card-/)).toBeTruthy();
+    // …the chip-bar replaces the always-on catalog…
+    expect(screen.getByTestId("source-chips")).toBeTruthy();
+    expect(screen.queryByTestId("connector-catalog")).toBeNull();
+    // …and the config was persisted to the store.
+    expect(useAppStore.getState().planSourceConfig.p1.sources).toHaveLength(1);
   });
 
-  it("allows re-connecting after skipping", async () => {
-    render(<FocusedSourceBody projectId="proj-1" />);
-    fireEvent.click(screen.getByTestId("skip-source-btn"));
-    await waitFor(() => screen.getByTestId("source-skipped"));
-    fireEvent.click(screen.getByText("Connect a source"));
-    await waitFor(() => expect(screen.getByTestId("pick-csv-btn")).toBeTruthy());
+  it("search filters the catalog", () => {
+    render(<FocusedSourceBody projectId="p1" />);
+    fireEvent.change(screen.getByPlaceholderText("Search connectors…"), { target: { value: "salesforce" } });
+    expect(screen.getByTestId("connector-tile-salesforce")).toBeTruthy();
+    expect(screen.queryByTestId("connector-tile-quickbase")).toBeNull();
   });
 });
 
-describe("FocusedSourceBody — CSV flow", () => {
-  beforeEach(() => {
-    vi.mocked(invoke)
-      // pick_csv_file
-      .mockResolvedValueOnce("/tmp/accounts.csv")
-      // data_source_inventory
-      .mockResolvedValueOnce(MOCK_INVENTORY)
-      // data_infer_model
-      .mockResolvedValueOnce(MOCK_MODEL);
+describe("FocusedSourceBody — spec-driven connect (token)", () => {
+  it("requires the realm + secret, then connects → scans → shows discovered objects", async () => {
+    render(<FocusedSourceBody projectId="p1" />);
+    fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
+
+    const connectBtn = screen.getByRole("button", { name: /save & connect/i }) as HTMLButtonElement;
+    expect(connectBtn.disabled).toBe(true); // fields empty
+
+    fireEvent.change(screen.getByPlaceholderText("acme.quickbase.com"), { target: { value: "acme.quickbase.com" } });
+    fireEvent.change(screen.getByLabelText("User Token"), { target: { value: "b2a7c91f" } });
+    expect((screen.getByRole("button", { name: /save & connect/i }) as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: /save & connect/i }));
+
+    // The connect → scanning → scanned surfaces the discovered inventory (in the source card
+    // grid and the aggregate ScanViews — so it can appear more than once).
+    await waitFor(() => expect(screen.getAllByText("Projects").length).toBeGreaterThan(0));
+    expect(screen.getByText(/feeds the «your Data Model» Data Model/)).toBeTruthy();
+    // The secret value is NEVER persisted into the config.
+    const persisted = useAppStore.getState().planSourceConfig.p1.sources[0];
+    expect(persisted.status).toBe("scanned");
+    expect(JSON.stringify(persisted)).not.toContain("b2a7c91f");
   });
 
-  it("loads and displays inferred model after picking a CSV", async () => {
-    render(<FocusedSourceBody projectId="proj-1" />);
-    fireEvent.click(screen.getByTestId("pick-csv-btn"));
-
-    // Wait until all three field rows are visible (model is rendered)
-    await waitFor(() => expect(screen.getByTestId("field-row-accounts-id")).toBeTruthy());
-    expect(screen.getByTestId("field-row-accounts-name")).toBeTruthy();
-    expect(screen.getByTestId("field-row-accounts-revenue")).toBeTruthy();
-    // Confirm button should be available
-    expect(screen.getByTestId("confirm-model-btn")).toBeTruthy();
+  it("reveal toggles the secret field between password and text", () => {
+    render(<FocusedSourceBody projectId="p1" />);
+    fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
+    const secret = screen.getByLabelText("User Token") as HTMLInputElement;
+    expect(secret.type).toBe("password");
+    fireEvent.click(screen.getByRole("button", { name: /reveal user token/i }));
+    expect((screen.getByLabelText("User Token") as HTMLInputElement).type).toBe("text");
   });
 });
 
-describe("FocusedSourceBody — refine interaction", () => {
-  beforeEach(() => {
-    vi.mocked(invoke)
-      .mockResolvedValueOnce("/tmp/accounts.csv") // pick_csv_file
-      .mockResolvedValueOnce(MOCK_INVENTORY)       // data_source_inventory
-      .mockResolvedValueOnce(MOCK_MODEL);           // data_infer_model
+describe("FocusedSourceBody — planner-proposed", () => {
+  it("confirming the proposed banner declares those sources", () => {
+    useAppStore.getState().setPlanSourceConfig("p2", { ...defaultSourceConfig(), dataModelName: "Acme Core", proposed: ["quickbooks", "quickbase"] });
+    render(<FocusedSourceBody projectId="p2" />);
+    fireEvent.click(screen.getByTestId("proposed-confirm"));
+    const cfg = useAppStore.getState().planSourceConfig.p2;
+    expect(cfg.sources.map((s) => s.connectorId).sort()).toEqual(["quickbase", "quickbooks"]);
+    expect(cfg.proposed).toEqual([]); // cleared once acted on
   });
+});
 
-  it("persists the model as refined when Confirm is clicked", async () => {
-    // After loading, data_persist_model call:
-    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+describe("FocusedSourceBody — readiness", () => {
+  it("readiness reaches all-connected once an OAuth source scans", async () => {
+    render(<FocusedSourceBody projectId="p3" />);
+    fireEvent.click(screen.getByTestId("connector-tile-salesforce"));
+    // OAuth connectors connect with one click (no secret form).
+    fireEvent.click(screen.getByRole("button", { name: /connect to salesforce/i }));
+    await waitFor(() => expect(within(screen.getByTestId("source-readiness")).getByText(/1 of 1 connected/)).toBeTruthy());
+  });
+});
 
-    render(<FocusedSourceBody projectId="proj-1" />);
-    fireEvent.click(screen.getByTestId("pick-csv-btn"));
+describe("FocusedSourceBody — closes the data-dictates-structure loop (#1205)", () => {
+  it("once every source is scanned, persists the derived model + shows the downstream-impact recap", async () => {
+    render(<FocusedSourceBody projectId="p1" />);
+    fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
+    fireEvent.change(screen.getByPlaceholderText("acme.quickbase.com"), { target: { value: "acme.quickbase.com" } });
+    fireEvent.change(screen.getByLabelText("User Token"), { target: { value: "tok" } });
+    fireEvent.click(screen.getByRole("button", { name: /save & connect/i }));
 
-    await waitFor(() => screen.getByTestId("confirm-model-btn"));
-    fireEvent.click(screen.getByTestId("confirm-model-btn"));
-
-    await waitFor(() => expect(screen.getByTestId("saved-msg")).toBeTruthy());
-
-    // Verify data_persist_model was called with refined=true
-    const calls = vi.mocked(invoke).mock.calls;
-    const persistCall = calls.find((c) => c[0] === "data_persist_model");
-    expect(persistCall).toBeTruthy();
-    expect((persistCall![1] as Record<string, unknown>).refined).toBe(true);
-    expect((persistCall![1] as Record<string, unknown>).projectKey).toBe("proj-1");
+    // The scanned-result visualizations appear once the source is scanned (gate met); their header
+    // carries the downstream-impact recap …
+    await waitFor(() => expect(screen.getByTestId("scan-views")).toBeTruthy());
+    expect(screen.getByTestId("scan-views").textContent).toMatch(/seeds .* into features/i);
+    // … and the derived model is persisted as the canonical artifact (refined, the user confirmed it).
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith(
+      "data_persist_model",
+      expect.objectContaining({ projectKey: "p1", refined: true }),
+    );
   });
 });

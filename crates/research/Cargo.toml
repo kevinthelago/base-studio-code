@@ -1,0 +1,29 @@
+[package]
+name = "research"
+version = "0.1.0"
+edition = "2021"
+description = "Native literature research for base-studio-code (#1196) — arXiv · Semantic Scholar · PubMed/PMC · Crossref search/retrieval, native PDF extraction, and citation-grounded semantic search. Shipped as the bundled `bsc-research-mcp` stdio MCP server so the planner can ground plans & skills in real sources with no download/build/Docker."
+
+# The core lib (no Tauri, no async runtime) so the bundled MCP binary stays lean and the
+# search/parse logic is unit-testable against recorded fixtures with no live network.
+[lib]
+name = "research"
+
+# The agent-facing MCP server: planner/director/workers call its tools over stdio JSON-RPC.
+# Bundled beside the app exe (Tauri externalBin) and auto-registered in .mcp.json.
+[[bin]]
+name = "bsc-research-mcp"
+path = "src/bin/bsc-research-mcp.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Blocking HTTP for the source clients — keeps the server a simple synchronous stdin loop (no tokio).
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+# Read-only XML DOM for the Atom (arXiv) + E-utilities (PubMed/PMC) responses — pure Rust, no codegen.
+roxmltree = "0.20"
+# Local on-disk cache of fetched records + extracted full text (keyed by canonical id), so repeated
+# grounding is fast/offline-friendly and respects upstream rate limits. `bundled` matches plandb.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# Native PDF text extraction (no Docker/GROBID) for arXiv/PMC-OA/publisher full text.
+pdf-extract = "0.7"

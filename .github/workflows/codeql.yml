@@ -34,20 +34,30 @@ jobs:
       matrix:
         language: [javascript-typescript]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
         with:
           language: ${{ matrix.language }}
           queries: security-extended
+          # Scan SHIPPED code only (#1011). `design/` is a browser-rendered reference
+          # prototype (never bundled — see CLAUDE.md "Design Reference"), and test files are
+          # mocks/fixtures, not attack surface. The remaining lower-priority regex alerts
+          # (incomplete-hostname-regexp / missing-regexp-anchor) live only in those two places,
+          # so excluding them clears the noise without hiding any shipped-code finding.
+          config: |
+            paths-ignore:
+              - design
+              - "**/*.test.ts"
+              - "**/*.test.tsx"
 
       # JS/TS needs no compile; autobuild is effectively a no-op but kept for
       # forward-compat if a buildable language is added to the matrix.
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+        uses: github/codeql-action/autobuild@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
 
       - name: Analyze
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
         with:
           category: "/language:${{ matrix.language }}"

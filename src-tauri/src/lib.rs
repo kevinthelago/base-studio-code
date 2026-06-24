@@ -14,9 +14,13 @@ mod config;
 mod github;
 mod shell;
 mod pty;
+mod pty_ledger;
+mod session_discovery;
 mod bsc;
 mod planner;
 mod data;
+mod credentials;
+mod source_oauth;
 mod harness;
 
 // ── Logging / performance ────────────────────────────────────────────────────
@@ -934,6 +938,120 @@ fn read_worktree_changes(cwd: String) -> Vec<String> {
     merge_change_lists(tracked, untracked)
 }
 
+/// One commit in a worker's done-time audit (#920).
+#[derive(serde::Serialize)]
+struct WorktreeCommit {
+    hash: String,
+    subject: String,
+    author: String,
+    /// Committer date, ISO-8601 (`%cI`).
+    date: String,
+}
+
+/// The current branch name of a worktree (`git rev-parse --abbrev-ref HEAD`); empty on any
+/// failure. Part of the per-worker audit snapshot (#920).
+#[tauri::command]
+fn read_worktree_branch(cwd: String) -> String {
+    if cwd.trim().is_empty() {
+        return String::new();
+    }
+    git_lines(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
+/// The most recent commits on a worktree branch (newest first), for the per-worker audit
+/// snapshot (#920). Tolerant: empty on any git failure. `limit` is clamped to 1..=200.
+#[tauri::command]
+fn read_worktree_commits(cwd: String, limit: usize) -> Vec<WorktreeCommit> {
+    if cwd.trim().is_empty() {
+        return Vec::new();
+    }
+    let n = limit.clamp(1, 200).to_string();
+    // Tab-separated so subjects with spaces survive: %h \t %s \t %an \t %cI.
+    git_lines(&cwd, &["log", "-n", &n, "--format=%h%x09%s%x09%an%x09%cI"])
+        .into_iter()
+        .filter_map(|l| {
+            let mut p = l.splitn(4, '\t');
+            let hash = p.next()?.to_string();
+            if hash.is_empty() {
+                return None;
+            }
+            Some(WorktreeCommit {
+                hash,
+                subject: p.next().unwrap_or("").to_string(),
+                author: p.next().unwrap_or("").to_string(),
+                date: p.next().unwrap_or("").to_string(),
+            })
+        })
+        .collect()
+}
+
+/// A pull request found for a worker's branch (#920) — the concrete "did the work ship" link.
+#[derive(serde::Serialize)]
+struct BranchPr {
+    number: u64,
+    url: String,
+    /// OPEN | CLOSED | MERGED (GitHub's `state`).
+    state: String,
+    merged: bool,
+}
+
+/// Find the PR opened from `branch` on `repo` (`owner/name`), via `gh pr list`. `None` when gh
+/// is absent / unauthenticated / there's no PR — the audit simply shows "no PR yet". (#920)
+#[tauri::command]
+fn find_branch_pr(repo: String, branch: String) -> Option<BranchPr> {
+    if repo.trim().is_empty() || branch.trim().is_empty() {
+        return None;
+    }
+    let out = std::process::Command::new("gh")
+        .args([
+            "pr", "list", "--repo", &repo, "--head", &branch, "--state", "all",
+            "--json", "number,url,state,mergedAt", "--limit", "1",
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    let first = v.as_array()?.first()?;
+    Some(BranchPr {
+        number: first.get("number")?.as_u64()?,
+        url: first.get("url")?.as_str()?.to_string(),
+        state: first.get("state").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+        merged: first.get("mergedAt").map(|m| !m.is_null()).unwrap_or(false),
+    })
+}
+
+/// The newest Claude transcript `.jsonl` for a worker's cwd, so the audit can surface the raw
+/// conversation without re-capturing it (#920). `None` when there's no history. Reuses the same
+/// per-cwd projects-dir slug Claude Code itself uses (`claude_project_dir_name`).
+#[tauri::command]
+fn claude_transcript_path(cwd: String) -> Option<String> {
+    if cwd.trim().is_empty() {
+        return None;
+    }
+    let dir = home_dir()
+        .join(".claude")
+        .join("projects")
+        .join(claude_project_dir_name(&cwd));
+    let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
+    for entry in std::fs::read_dir(&dir).ok()?.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        if let Ok(modified) = entry.metadata().and_then(|m| m.modified()) {
+            if newest.as_ref().map(|(t, _)| modified > *t).unwrap_or(true) {
+                newest = Some((modified, p));
+            }
+        }
+    }
+    newest.map(|(_, p)| p.to_string_lossy().into_owned())
+}
+
 /// Run `git -C <cwd> <args…>` and return its stdout as trimmed, non-empty lines; empty on any
 /// failure (non-zero exit, git missing).
 fn git_lines(cwd: &str, args: &[&str]) -> Vec<String> {
@@ -1532,11 +1650,47 @@ fn inject_skills(hub: &std::path::Path, wt_local: &std::path::Path) {
     let _ = std::fs::write(wt_local, format!("{}\n\n{}\n", cur.trim_end(), trimmed));
 }
 
-/// Append `entry` to a clone's `.git/info/exclude` (idempotent) so app-managed
-/// files stay out of `git status`. No-op when `repo_root` is not a git repo.
+/// Resolve the absolute path git would use for a file under its git dir, via
+/// `git rev-parse --git-path <rel>`. This is the ONLY correct way to locate shared paths like
+/// `info/exclude` across both layouts: in a normal clone `.git` is a directory, but in a linked
+/// **worktree** `.git` is a FILE pointing at `…/.git/worktrees/<id>`, and shared paths resolve to
+/// the common dir — so `repo_root/.git/info/exclude` is simply wrong there. Returns None when git
+/// is unavailable or `repo_root` is not a repo.
+fn git_path(repo_root: &std::path::Path, rel: &str) -> Option<std::path::PathBuf> {
+    let out = std::process::Command::new("git")
+        .arg("-C").arg(repo_root)
+        .args(["rev-parse", "--git-path", rel])
+        .output()
+        .ok()?;
+    if !out.status.success() { return None; }
+    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if p.is_empty() { return None; }
+    // git prints the path relative to the cwd (= repo_root) for a normal clone, or absolute for a
+    // worktree's common dir. Resolve relatives against repo_root; keep absolutes as-is.
+    let pb = std::path::PathBuf::from(&p);
+    Some(if pb.is_absolute() { pb } else { repo_root.join(pb) })
+}
+
+/// Append `entry` to a repo's `info/exclude` (idempotent) so app-managed files (`.mcp.json`,
+/// `.claude/`) stay out of `git status` — and therefore out of the warden's worktree-change signal,
+/// which would otherwise quarantine every fleet worker for an "out-of-lane" edit it never made
+/// (#1102). No-op when `repo_root` is not a git repo.
+///
+/// Resolves the exclude file through git rather than assuming `repo_root/.git/info/exclude`: in a
+/// linked worktree `.git` is a file, so the assumed path doesn't exist and the write silently
+/// fails — the bug that let `.mcp.json` leak into every worker's diff.
 fn git_exclude(repo_root: &std::path::Path, entry: &str) {
     if !repo_root.join(".git").exists() { return; }
-    let exclude = repo_root.join(".git").join("info").join("exclude");
+    // Fall back to the literal path only if git can't resolve it (e.g. git absent) AND `.git` is a
+    // real directory — never write through a worktree's `.git` file.
+    let exclude = git_path(repo_root, "info/exclude").unwrap_or_else(|| {
+        repo_root.join(".git").join("info").join("exclude")
+    });
+    if exclude.parent().map(|p| !p.is_dir()).unwrap_or(false) {
+        // Parent isn't a directory (e.g. unresolved worktree `.git` file) — bail rather than fail.
+        return;
+    }
+    if let Some(parent) = exclude.parent() { let _ = std::fs::create_dir_all(parent); }
     let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
     if existing.lines().any(|l| l.trim() == entry) { return; }
     let next = if existing.trim().is_empty() {
@@ -2048,13 +2202,34 @@ fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Resul
         .map_err(|e| e.to_string())
 }
 
+/// The sentinel command the frontend sets for the built-in Research server (#1196). It carries no
+/// real path (the frontend can't know where the app exe lives), so `mcp_server_value` rewrites it to
+/// the bundled `bsc-research-mcp` binary's absolute path at write time.
+const RESEARCH_MCP_MARKER: &str = "bsc-research-mcp";
+
+/// Resolve a stdio MCP command, substituting the bundled-binary absolute path for the built-in
+/// Research marker (#1196). A non-marker command passes through unchanged; the marker falls back to
+/// the bare name when the bundled binary can't be located (e.g. a dev build without the sidecar).
+fn resolve_mcp_command(command: &str, bundled: Option<std::path::PathBuf>) -> String {
+    if command == RESEARCH_MCP_MARKER {
+        if let Some(p) = bundled {
+            return p.to_string_lossy().to_string();
+        }
+    }
+    command.to_string()
+}
+
 /// One MCP server's `.mcp.json` value: stdio `{command,args,env?}` or http `{type,url}`.
 fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
     if m.transport == "http" {
         return serde_json::json!({ "type": "http", "url": m.url.clone().unwrap_or_default() });
     }
     let mut v = serde_json::Map::new();
-    v.insert("command".into(), serde_json::Value::String(m.command.clone().unwrap_or_default()));
+    let command = resolve_mcp_command(
+        &m.command.clone().unwrap_or_default(),
+        pty::bsc_research_mcp_bin_path(),
+    );
+    v.insert("command".into(), serde_json::Value::String(command));
     v.insert("args".into(), serde_json::Value::Array(
         m.args.iter().map(|a| serde_json::Value::String(a.clone())).collect(),
     ));
@@ -2214,6 +2389,14 @@ pub fn run() {
         log::warn!("[startup] previous shutdown was UNCLEAN (session-lock survived) — offering session restore");
     }
 
+    // Reap PTY children leaked by a prior run that never reached RunEvent::Exit (#1049). The ledger is
+    // authoritative about what THIS app spawned, so this only ever kills our own orphans (owner gone +
+    // same process) — never the user's terminals. Runs before any session launches.
+    let reaped = pty_ledger::reconcile_on_boot();
+    if reaped > 0 {
+        log::warn!("[startup] reaped {reaped} orphaned PTY child process(es) from a prior unclean run");
+    }
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -2255,9 +2438,18 @@ pub fn run() {
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
-            // Cap unbounded log files once at startup to reclaim disk space. Config-driven (#1060):
-            // uses the LogState default here (10k lines) until the frontend pushes the user's value.
-            logs::cap_logs(&bsc_base_dir(), &app.state::<logs::LogState>().get());
+            // Cap unbounded log files to reclaim disk space — OFF the synchronous boot path
+            // (#1047). A full read/rewrite of audit.log (≈520 KB) + the other TSV streams is
+            // housekeeping, not first-paint work; doing it inline blocked every startup. Defer
+            // past the cold-start window, then run the blocking I/O on a worker thread so it
+            // never stalls first paint or the async runtime. Config-driven (#1060): uses the
+            // LogState default (10k lines) until the frontend pushes the user's value.
+            let cap_base = bsc_base_dir();
+            let cap_cfg = app.state::<logs::LogState>().get();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(perf::STARTUP_GRACE_SECS)).await;
+                tauri::async_runtime::spawn_blocking(move || logs::cap_logs(&cap_base, &cap_cfg));
+            });
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
@@ -2291,7 +2483,14 @@ pub fn run() {
             data::data_infer_model,
             data::data_persist_model,
             data::data_load_reconciled,
+            data::data_platform_scan,
+            data::data_connector_catalog,
+            credentials::source_save_secret,
+            credentials::source_has_secret,
+            credentials::source_delete_secret,
+            source_oauth::source_oauth_begin,
             planner::setup_workspaces,
+            planner::planner_intro_prompt,
             setup_kb_workspace,
             clone_repo,
             mcp_clone,
@@ -2336,6 +2535,9 @@ pub fn run() {
             tunnel::tunnel_set_panes,
             tunnel::tunnel_set_sessions,
             tunnel::tunnel_set_plan_state,
+            tunnel::tunnel_emit_plan_state,
+            tunnel::tunnel_emit_plan_event,
+            tunnel::tunnel_emit_plan_status,
             tunnel::tunnel_ack_plan_push,
             tunnel::tunnel_check_relay,
             tunnel::tunnel_set_fleet_state,
@@ -2346,10 +2548,15 @@ pub fn run() {
             tunnel::tunnel_set_mcp_state,
             read_audit_log,
             read_worktree_changes,
+            read_worktree_branch,
+            read_worktree_commits,
+            find_branch_pr,
+            claude_transcript_path,
             read_skill_log,
             read_hook_log,
             read_mcp_log,
             tokens::read_token_usage,
+            tokens::read_pane_messages,
             read_coord_log,
             read_ui_skeleton,
             project_dir_path,
@@ -2360,6 +2567,7 @@ pub fn run() {
             perf::perf_record_frontend_sample,
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
+            session_discovery::discover_sessions,
             logs::list_log_files,
             logs::read_log_tail,
             logs::clear_log,
@@ -2875,6 +3083,22 @@ mod tests {
     }
 
     #[test]
+    fn resolve_mcp_command_substitutes_research_marker(){
+        use std::path::PathBuf;
+        // A normal command is untouched.
+        assert_eq!(super::resolve_mcp_command("npx", None), "npx");
+        assert_eq!(
+            super::resolve_mcp_command("npx", Some(PathBuf::from("/x/bsc-research-mcp"))),
+            "npx",
+        );
+        // The Research marker resolves to the bundled binary's absolute path when present…
+        let bin = PathBuf::from("/opt/app/bsc-research-mcp");
+        assert_eq!(super::resolve_mcp_command("bsc-research-mcp", Some(bin.clone())), bin.to_string_lossy());
+        // …and falls back to the bare marker when the bundled binary can't be located (dev build).
+        assert_eq!(super::resolve_mcp_command("bsc-research-mcp", None), "bsc-research-mcp");
+    }
+
+    #[test]
     fn write_session_skills_writes_skill_files() {
         let dir = std::env::temp_dir().join(format!("bsc-skills-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -3123,6 +3347,19 @@ mod tests {
     }
 
     #[test]
+    fn worktree_audit_commands_tolerate_empty_cwd() {
+        // The per-worker audit snapshot (#920) must never panic on a missing/blank cwd —
+        // it just yields nothing so the UI shows "no data" rather than crashing.
+        assert!(super::read_worktree_branch(String::new()).is_empty());
+        assert!(super::read_worktree_branch("   ".into()).is_empty());
+        assert!(super::read_worktree_commits(String::new(), 10).is_empty());
+        assert!(super::read_worktree_commits("   ".into(), 10).is_empty());
+        assert!(super::claude_transcript_path(String::new()).is_none());
+        assert!(super::find_branch_pr(String::new(), "branch".into()).is_none());
+        assert!(super::find_branch_pr("owner/repo".into(), String::new()).is_none());
+    }
+
+    #[test]
     fn merge_change_lists_dedupes_and_sorts() {
         let merged = super::merge_change_lists(
             vec!["src/b.ts".into(), "src/a.ts".into(), "src/b.ts".into()],
@@ -3137,6 +3374,50 @@ mod tests {
     fn read_worktree_changes_empty_cwd_is_empty() {
         assert!(super::read_worktree_changes(String::new()).is_empty());
         assert!(super::read_worktree_changes("   ".into()).is_empty());
+    }
+
+    /// Regression (#1102): in a linked worktree `.git` is a FILE, so the old
+    /// `repo_root/.git/info/exclude` write silently failed and `.mcp.json` leaked into the worker's
+    /// diff — quarantining every fleet worker for an "out-of-lane" edit it never made. git_exclude
+    /// must resolve the real (common-dir) exclude so the app-managed file is hidden from git, and
+    /// thus from read_worktree_changes (the warden's trusted signal).
+    #[test]
+    fn git_exclude_hides_mcp_json_in_a_worktree() {
+        // Needs the git binary; skip gracefully where it's absent rather than failing the suite.
+        if std::process::Command::new("git").arg("--version").output().is_err() {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("bsc-gx-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let main = base.join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            std::process::Command::new("git").arg("-C").arg(cwd).args(args).output().unwrap()
+        };
+        git(&main, &["init", "-q"]);
+        git(&main, &["config", "user.email", "t@t.t"]);
+        git(&main, &["config", "user.name", "t"]);
+        std::fs::write(main.join("README.md"), "x").unwrap();
+        git(&main, &["add", "-A"]);
+        git(&main, &["commit", "-qm", "init"]);
+
+        // A linked worktree: its `.git` is a FILE, the layout that broke the old exclude.
+        let wt = base.join("wt");
+        git(&main, &["worktree", "add", "-q", wt.to_str().unwrap()]);
+        assert!(wt.join(".git").is_file(), "worktree .git should be a file, not a dir");
+
+        // App writes the session's MCP config + asks git to exclude it (mirrors the launch path).
+        std::fs::write(wt.join(".mcp.json"), "{}").unwrap();
+        super::git_exclude(&wt, ".mcp.json");
+
+        // The warden's signal must NOT see it — pre-fix this listed ".mcp.json" and tripped a trip.
+        let changes = super::read_worktree_changes(wt.to_string_lossy().into_owned());
+        assert!(
+            !changes.iter().any(|f| f == ".mcp.json"),
+            "worktree .mcp.json must be git-excluded, but read_worktree_changes returned {changes:?}",
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

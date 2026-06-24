@@ -8,6 +8,7 @@
 
 import type { DirectorDrive } from "../fleet/directorDrive";
 import type { IntegrationStrategy } from "../shared/integrationStrategy";
+import type { ModelId } from "../../../lib/console/models";
 import type { PlanGrade } from "../../../lib/planner/planGrade";
 import type { PlanFeature } from "../issues/featureList";
 import type { Blueprint } from "../stages/blueprints";
@@ -67,6 +68,8 @@ export interface Agent {
   preset: string;
   perm: Perm;
   flow: Flow;
+  /** Per-agent LLM model override (#…); undefined ⇒ inherits the global `defaultModel`. */
+  model?: ModelId;
   /** Per-stream integration-strategy override (#378); undefined ⇒ inherits the fleet default. */
   strategy?: IntegrationStrategy;
   ctx: number;
@@ -125,7 +128,7 @@ export interface PhaseGroup {
 export interface ContextFile { name: string; kind: string; tok: string; pinned: boolean; scope: string; content: string }
 
 export interface PaneAutomation { name: string; command: string; schedule?: string }
-export interface PaneSkill { name: string; kind: "skill" | "kb"; desc?: string }
+export interface PaneSkill { name: string; kind: "skill" | "kb"; desc?: string; /** Authored by the current planning session (#1056) — rendered first + highlighted. */ isNew?: boolean }
 
 export interface ProjectPaneData {
   agents: Agent[];

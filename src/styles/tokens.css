@@ -72,11 +72,6 @@
   --accent-text:   #9aa6f0; /* accent-on-dark text */
 }
 
-/* Native console input (#1158): while Claude is connected the terminal is grown taller and its
-   bottom rows clipped to hide Claude CLI's own input. This adds bottom scroll room to xterm's
-   viewport so the user can still scroll all the way down to the latest output. */
-.term-with-input .xterm-viewport { padding-bottom: 40px; }
-
 /* ===== reset ===== */
 html, body {
   margin: 0; padding: 0;
@@ -387,6 +382,9 @@ html, body {
 .pane-input .chev{ color:var(--accent); }
 
 @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* Indeterminate progress sweep — a short bar tracking left→right (source-stage scan, #source-pane). */
+@keyframes scan{ 0%{transform:translateX(-100%)} 100%{transform:translateX(320%)} }
 
 @keyframes confirm-flash {
   0%   { box-shadow: 0 0 0 0 transparent;                                            transform: scale(1);    }

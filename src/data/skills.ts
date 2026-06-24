@@ -222,6 +222,24 @@ export const SKILLS: Skill[] = [
     profiles: ["build", "auto"], invocations: 9, success: 89, avgTokensK: 27, lastUsed: "6h ago",
     trend: [1, 1, 2, 2, 3, 4, 4],
   },
+  {
+    id: "web-seo", name: "Web SEO", kind: "workflow", source: "first-party",
+    desc: "Make a generated web app SEO-ready: metadata + Open Graph/Twitter, robots.txt + sitemap.xml, JSON-LD structured data, semantic HTML, and Core Web Vitals — applied only when there's a public web surface.",
+    body: [
+      "Make the web app discoverable and shareable. APPLIES ONLY to a public, crawlable web surface — if this project is a CLI, desktop app, library, internal tool, or API-only service, SKIP this skill entirely (it doesn't apply).",
+      "1. Metadata: a unique, descriptive <title> + meta description per page (or route); a canonical URL; Open Graph (og:title/description/image/url/type) + Twitter Card tags; favicon + app icons. Use the framework's head/metadata API (e.g. Next metadata, react-helmet, SvelteKit <svelte:head>) rather than hand-managed tags.",
+      "2. Crawlability: ship robots.txt (allow + sitemap reference) and a generated sitemap.xml; use clean, semantic routes and correct HTTP status codes (404/301). For content that must be indexable, prefer SSR / SSG / prerender over client-only rendering so crawlers see real HTML — within what the chosen stack supports.",
+      "3. Structured data: add JSON-LD where it fits the domain (Organization/WebSite site-wide; Article, Product, BreadcrumbList, FAQ on the relevant pages). Validate against schema.org types.",
+      "4. Semantic HTML + accessibility (overlaps the a11y bar): one <h1> per page + ordered headings, landmark elements (header/nav/main/footer), descriptive alt text, and a correct <html lang>. Good semantics is good SEO.",
+      "5. Performance / Core Web Vitals: optimize images (right format/size, width+height to avoid CLS, lazy-load below the fold), preconnect to critical origins, and keep LCP/CLS/INP within budget. Avoid render-blocking work on the critical path.",
+      "6. Internationalization (only if multi-locale): hreflang alternates + localized titles/descriptions.",
+      "7. Verify: confirm the baseline (title/description, canonical, OG/Twitter, robots.txt, sitemap.xml, JSON-LD, one h1) is present, and sanity-check with a Lighthouse SEO pass if available.",
+      "Ground specifics (current tag conventions, framework metadata APIs, schema.org types) in the Research MCP rather than guessing.",
+    ].join("\n"),
+    tools: ["read_file", "edit", "write_file", "repo_map"],
+    profiles: ["build"], invocations: 0, success: 0, avgTokensK: 0, lastUsed: "—",
+    trend: [0, 0, 0, 0, 0, 0, 0], pinned: true,
+  },
 ];
 
 // Additional standards a team can add to the library on demand.

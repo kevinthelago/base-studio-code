@@ -5,6 +5,7 @@ import {
   isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, sectionDone,
   SECTION_DEFS, type BlueprintSection, type Blueprint,
 } from "./blueprints";
+import { SKILLS } from "../../../data/skills";
 import { PLAN_STAGES, buildPlanStageState } from "./planStages";
 import { planStateToSignals } from "./planStageDerive";
 import { evalGate } from "./stageGate";
@@ -84,31 +85,31 @@ describe("blueprints — seed library", () => {
     expect(isAuthoringBlueprint(makeBlueprints().find((b) => b.id === "default"))).toBe(false);
   });
 
-  it("canChangeBlueprint: only greenfield projects can switch; others + blueprint-author locked (#923)", () => {
+  it("canChangeBlueprint: any project blueprint can switch; only the blueprint-author lifecycle is locked (#1281)", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
-    expect(canChangeBlueprint(by("default"))).toBe(true);       // greenfield → switchable
-    expect(canChangeBlueprint(by("refactor"))).toBe(false);     // transform → locked
-    expect(canChangeBlueprint(by("harden"))).toBe(false);       // harden → locked
+    expect(canChangeBlueprint(by("default"))).toBe(true);           // greenfield → switchable
+    expect(canChangeBlueprint(by("refactor"))).toBe(true);          // transform → switchable (was locked)
+    expect(canChangeBlueprint(by("harden"))).toBe(true);            // harden → switchable (was locked)
     expect(canChangeBlueprint(by("blueprint-author"))).toBe(false); // authoring → locked
   });
 
-  it("canSwitchBlueprint: greenfield → transform | harden | maintain (#923)", () => {
+  it("canSwitchBlueprint: any project blueprint → any OTHER, except authoring + self (#1281)", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
-    // a maintain-category blueprint (no built-in yet — synthesize from an existing one)
-    const maintain = { ...by("harden"), id: "maint", category: "maintain" as const };
-    // greenfield can move on to transform, harden, or maintain
-    expect(canSwitchBlueprint(by("default"), by("refactor"))).toBe(true);   // → transform
-    expect(canSwitchBlueprint(by("default"), by("harden"))).toBe(true);     // → harden
-    expect(canSwitchBlueprint(by("default"), maintain)).toBe(true);         // → maintain
-    // greenfield → another greenfield / data / itself is NOT allowed
-    expect(canSwitchBlueprint(by("default"), by("complete"))).toBe(false); // → greenfield
-    expect(canSwitchBlueprint(by("default"), by("data-migration"))).toBe(false); // → data
-    // a non-greenfield origin can't switch at all
-    expect(canSwitchBlueprint(by("refactor"), by("harden"))).toBe(false);
-    // anything touching the authoring lifecycle is refused
+    // greenfield → transform / harden — still allowed
+    expect(canSwitchBlueprint(by("default"), by("refactor"))).toBe(true);        // → transform
+    expect(canSwitchBlueprint(by("default"), by("harden"))).toBe(true);          // → harden
+    // previously-refused targets are now allowed (the over-restriction is gone)
+    expect(canSwitchBlueprint(by("default"), by("complete"))).toBe(true);        // → another greenfield
+    expect(canSwitchBlueprint(by("default"), by("data-migration"))).toBe(true);  // → data
+    // a non-greenfield origin can switch now — no more soft-lock (the #1281 bug)
+    expect(canSwitchBlueprint(by("refactor"), by("harden"))).toBe(true);
+    expect(canSwitchBlueprint(by("refactor"), by("default"))).toBe(true);        // transform → back to greenfield
+    // refused: switching to the SAME blueprint (a no-op)
+    expect(canSwitchBlueprint(by("default"), by("default"))).toBe(false);
+    // refused: anything touching the authoring lifecycle
     expect(canSwitchBlueprint(by("blueprint-author"), by("refactor"))).toBe(false);
     expect(canSwitchBlueprint(by("default"), by("blueprint-author"))).toBe(false);
-    // unbound (no current) can't "switch"
+    // refused: unbound (no current) can't "switch"
     expect(canSwitchBlueprint(undefined, by("refactor"))).toBe(false);
   });
 
@@ -312,5 +313,80 @@ describe("Deploy folds in dependencies (#1127)", () => {
     expect(evalGate(gate, { deploymentDefined: true, dependenciesDefined: 0 }).done).toBe(false); // deps missing
     expect(evalGate(gate, { deploymentDefined: false, dependenciesDefined: 2 }).done).toBe(false); // shipping missing
     expect(evalGate(gate, { deploymentDefined: true, dependenciesDefined: 1 }).done).toBe(true);  // both ⇒ pass
+  });
+});
+
+describe("data-integration blueprint (#1207)", () => {
+  const bp = () => makeBlueprints().find((b) => b.id === "data-integration")!;
+
+  it("loads, categorized data / create, with the full extractor section order + Compliance MCP", () => {
+    const b = bp();
+    expect(b).toBeTruthy();
+    expect(b.category).toBe("data");
+    expect(b.mode).toBe("create");
+    expect(b.sections.map((s) => s.key)).toEqual(
+      ["context", "dataSource", "dataModel", "dataMap", "destination", "sync", "dataClean", "integrations", "structure", "permissions", "deploy"],
+    );
+    expect(b.mcp).toContain("Compliance"); // #1005 Compliance MCP attached
+  });
+
+  it("surfaces an optional, non-blocking Integrations stage (#1200)", () => {
+    const intg = bp().sections.find((s) => s.key === "integrations")!;
+    expect(intg).toBeTruthy();
+    expect(intg.optional).toBe(true); // inherited from the section def — shown, never blocks
+    expect(intg.gateRule).toBeUndefined(); // soft/informational, no gate signal
+  });
+
+  it("destination + sync sections gate on their own signals (#1207)", () => {
+    const dest = SECTION_DEFS.destination.gateRule!;
+    expect(dest.require.map((r) => r.signal)).toContain("destinationDefined");
+    expect(evalGate(dest, { destinationDefined: false }).done).toBe(false);
+    expect(evalGate(dest, { destinationDefined: true }).done).toBe(true);
+
+    const sync = SECTION_DEFS.sync.gateRule!;
+    expect(sync.require.map((r) => r.signal)).toContain("syncDefined");
+    expect(evalGate(sync, { syncDefined: false }).done).toBe(false);
+    expect(evalGate(sync, { syncDefined: true }).done).toBe(true);
+  });
+
+  it("sync depends on destination — locks until the destination is defined", () => {
+    const secs = [mkSection("context"), mkSection("destination"), mkSection("sync")];
+    const sync = secs.find((s) => s.key === "sync")!;
+    const ctxDone = sig({ context: { resolved: 1, total: 1, requiredContextReady: true }, repoCount: 1, requiresUi: false });
+    // dep (destination) unmet + own gate unmet ⇒ locked
+    expect(sectionStatus(sync, secs, { ...ctxDone, destinationDefined: false, syncDefined: false }).status).toBe("locked");
+    // dep met, own gate still unmet ⇒ in-progress (unlocked)
+    expect(sectionStatus(sync, secs, { ...ctxDone, destinationDefined: true, syncDefined: false }).status).toBe("in-progress");
+    // own gate met ⇒ complete
+    expect(sectionStatus(sync, secs, { ...ctxDone, destinationDefined: true, syncDefined: true }).status).toBe("complete");
+  });
+});
+
+describe("Web SEO capability (#1293)", () => {
+  it("ships a self-gating web-seo skill in the library", () => {
+    const seo = SKILLS.find((s) => s.id === "web-seo");
+    expect(seo, "web-seo skill present").toBeDefined();
+    expect(seo!.profiles).toContain("build");
+    // Self-gating: only applies to a public web surface.
+    expect(seo!.body ?? "").toMatch(/SKIP|web surface|web-facing/i);
+    expect(seo!.body ?? "").toMatch(/sitemap|robots|Open Graph|JSON-LD/i);
+  });
+
+  it("attaches web-seo to the greenfield web blueprints, not transform/data ones", () => {
+    const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
+    expect(by("default").skills).toContain("web-seo");
+    expect(by("complete").skills).toContain("web-seo");
+    // Not on a transform/data blueprint.
+    expect(by("refactor").skills ?? []).not.toContain("web-seo");
+    expect(by("data-migration").skills ?? []).not.toContain("web-seo");
+  });
+
+  it("every blueprint skill id resolves to a real library skill", () => {
+    const ids = new Set(SKILLS.map((s) => s.id));
+    for (const bp of makeBlueprints()) {
+      for (const sid of bp.skills ?? []) {
+        expect(ids.has(sid), `blueprint '${bp.id}' references unknown skill '${sid}'`).toBe(true);
+      }
+    }
   });
 });

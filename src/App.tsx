@@ -23,6 +23,9 @@ import { SuperUserAchievement } from "./components/SuperUserAchievement";
 import { CrashRecoveryBanner } from "./components/CrashRecoveryBanner";
 import { QuarantineBanner } from "./components/QuarantineBanner";
 import { useWarden } from "./lib/fleet/useWarden";
+import { useWorkerAutoEnd } from "./lib/fleet/useWorkerAutoEnd";
+import { useTunnelAutomations } from "./lib/tunnel/useTunnelAutomations";
+import { useTunnelCoordControl } from "./lib/tunnel/useTunnelCoordControl";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/console/detachWindow";
 import { accentVars } from "./lib/settings/appearance";
 
@@ -176,6 +179,9 @@ export default function App() {
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
   useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
+  useWorkerAutoEnd(); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
+  useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
+  useTunnelCoordControl(); // route a paired phone's wake/approve into the coordinator (#935)
 
   const {
     activeScreen, setScreen,

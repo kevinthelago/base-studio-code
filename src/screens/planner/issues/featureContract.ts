@@ -79,9 +79,12 @@ export interface FeatureContract {
 
 // ── Rendering ──────────────────────────────────────────────────────────────────
 
-/** Escape a value for a single Markdown table cell (pipes would break the row). */
+/** Escape a value for a single Markdown table cell (pipes would break the row).
+ *  Escape the backslash FIRST so the escaping is complete (js/incomplete-sanitization, #1011):
+ *  otherwise an input like `\|` would become `\\|` — a literal backslash + an UNescaped pipe
+ *  that still breaks the row. Then escape pipes and flatten newlines. */
 function cell(s: string): string {
-  return s.replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
+  return s.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
 }
 
 function checklist(items: string[]): string {

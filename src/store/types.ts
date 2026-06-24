@@ -21,6 +21,8 @@ import type { PipelineRunState } from "../screens/planner/grading/pipelineRuntim
 import type { GradeResult } from "../screens/planner/grading/grading";
 import type { Blueprint, BlueprintSection } from "../screens/planner/stages/blueprints";
 import type { DeployConfig } from "../screens/planner/shared/deployConfig";
+import type { SourceConfig } from "../screens/planner/shared/sourceConfig";
+import type { IntegrationConfig } from "../screens/planner/shared/integrationConfig";
 import type { DataModel } from "../screens/planner/data/dataModel";
 import type { PaneDescriptor } from "../lib/tunnel/tunnel";
 import type { DirectorMode, IntegrationStrategy } from "../screens/planner/shared/integrationStrategy";
@@ -112,6 +114,24 @@ export interface QuarantineInfo {
   at: number;
 }
 
+/** The resting state a finished fleet worker lands in, classified from plan.db owned-issue
+ *  status (#920): every owned issue terminal-good ⇒ `done`; some still open ⇒ `needs-attention`
+ *  (stopped early); any blocked/failed ⇒ `blocked`. */
+export type WorkerEndState = "done" | "needs-attention" | "blocked";
+
+/** A fleet worker auto-ended after its PTY exited (#920). Persisted so a restart never
+ *  re-opens/relaunches a finished worker; the view renders a resting card with a reopen action. */
+export interface EndedInfo {
+  /** Done / needs-attention / blocked, from the owned-issue status (not the worker's say-so). */
+  state: WorkerEndState;
+  /** The stream the worker owned. */
+  streamId: string;
+  /** One-line completeness summary (e.g. "3/3 complete · 2/3 landed"). */
+  summary: string;
+  /** Epoch ms when it ended. */
+  at: number;
+}
+
 export interface AppStore {
   // Navigation
   activeScreen: Screen;
@@ -196,6 +216,15 @@ export interface AppStore {
   quarantinedPanes: Record<string, QuarantineInfo>;
   markQuarantine: (paneId: string, info: QuarantineInfo) => void;
   clearQuarantine: (paneId: string) => void;
+  // ── Auto-end finished workers (#920) ──
+  /** Fleet workers auto-ended after their PTY exited, classified from plan.db owned-issue
+   *  status. PERSISTED + recovery-gated so a restart never re-opens a finished worker; the view
+   *  renders a resting card with a reopen action. Keyed by pane id. */
+  endedPanes: Record<string, EndedInfo>;
+  /** Mark a worker pane ended (done/needs-attention/blocked); drops its live status. */
+  markPaneEnded: (paneId: string, info: EndedInfo) => void;
+  /** Clear a pane's ended state so the user can relaunch it (reopen). */
+  reopenPane: (paneId: string) => void;
   // ── Idle session reaping (#849) ──
   /** Panes whose PTY has been reaped for idleness; the view renders a dormant placeholder
    *  and resumes on focus. Transient (not persisted) — panes relaunch on next app start. */
@@ -292,6 +321,11 @@ export interface AppStore {
    *  nudge (Claude Code reads settings.json at session start). Transient; cleared on relaunch (#799). */
   panePermsStale: Record<string, boolean>;
   clearPanePermsStale: (paneId: string) => void;
+  /** Monotonic per-pane counter that drives the resize-nudge redraw (#1221) — a SIGWINCH that
+   *  un-jumbles the Claude CLI's TUI the way a window resize does. Bumped by `requestPaneRedraw`
+   *  (the pane menu / hotkey); the pane's terminal watches its own count and nudges on each bump. */
+  paneRedrawNonce: Record<string, number>;
+  requestPaneRedraw: (paneId: string) => void;
   // Worker write boundary: the stream's owned globs, fed to the role gate as
   // writeGlobs so a worker auto-approves edits within its lane (bsc-confine bounds the repo).
   paneRoleGlobs: Record<string, string[]>;
@@ -458,6 +492,9 @@ export interface AppStore {
    *  (a unique `sanitize(title)-<id>` so a re-used title never inherits stale files). */
   localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number }>;
   addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number }) => void;
+  /** Patch a draft record in place (#1222) — persists a title edit so it survives a reopen;
+   *  keyed by the FROZEN key so the on-disk folder doesn't move. No-ops if the draft is gone. */
+  updateDraftProject: (key: string, patch: Partial<{ title: string; pitch: string }>) => void;
   removeDraftProject: (key: string) => void;
   // Dev reset: clears all project/plan-scoped state (keeps auth, profiles, UI).
   resetProjectData: () => void;
@@ -605,6 +642,30 @@ export interface AppStore {
    *  stage pane; the `deploymentDefined` gate signal derives from it. */
   planDeployConfig: Record<string, DeployConfig>;
   setPlanDeployConfig: (projectId: string, cfg: DeployConfig) => void;
+  /** Per-project migration SOURCE config (#source-pane) — the legacy systems a project migrates
+   *  from, declared + connected read-only in the Source stage pane; the `sourcesConnected` gate
+   *  signal derives from it. Secret credentials are NEVER stored here (they live in the OS keychain). */
+  planSourceConfig: Record<string, SourceConfig>;
+  setPlanSourceConfig: (projectId: string, cfg: SourceConfig) => void;
+  /** Per-project Integration config (#1207) — the destination/sink + sync strategy the Integration
+   *  blueprint's Destination and Sync stages edit; the `destinationDefined` / `syncDefined` gate
+   *  signals derive from it. */
+  planIntegrationConfig: Record<string, IntegrationConfig>;
+  setPlanIntegrationConfig: (projectId: string, cfg: IntegrationConfig) => void;
+  /** Per-project DEFAULT GitHub repo visibility for new repos at publish (#…). Absent ⇒ false ⇒
+   *  PRIVATE; a per-repo override (`repoPublic`) wins over it. Set the default for the project (and
+   *  the fallback for repos with no override). */
+  reposPublic: Record<string, boolean>;
+  setReposPublic: (projectId: string, isPublic: boolean) => void;
+  /** Per-REPO GitHub visibility override (#1227), keyed `<projectKey>::<repoFullName>`. Wins over
+   *  the project default `reposPublic`; absent ⇒ falls back to the default ⇒ private. Resolved by
+   *  `resolveRepoPublic` at the Repos card + at publish. */
+  repoPublic: Record<string, boolean>;
+  setRepoPublic: (projectKey: string, repoId: string, isPublic: boolean) => void;
+  /** #1107: per-project signature of the injection findings the user acknowledged (acknowledge-to-
+   *  clear). Cleared when findings change; ignored when the hard-gate setting is on. */
+  planInjectionAck: Record<string, string>;
+  acknowledgePlanInjections: (projectId: string, signature: string) => void;
   /** Optional stages the user deliberately SKIPPED (#921). The flow stops on every optional stage;
    *  skipping marks it resolved (frontier advances, never blocks completion) but renders distinctly. */
   planSkippedSections:  Record<string, string[]>;
@@ -707,6 +768,9 @@ export interface AppStore {
   setPlanAgentStreamProfile: (projectId: string, streamId: string, profileId: string | null) => void;
   /** #297: set one or more flow fields on a stream (merged into its resolved flow). */
   setPlanAgentStreamFlow: (projectId: string, streamId: string, patch: Partial<AgentFlow>) => void;
+  /** #…: set a stream's per-agent LLM model (undefined clears it so the stream inherits the
+   *  global `defaultModel`). Applied at fleet launch as `claude --model <tier>`. */
+  setPlanAgentStreamModel: (projectId: string, streamId: string, model: ModelId | undefined) => void;
   /** #378: set a stream's per-stream integration-strategy override (undefined clears
    *  it so the stream inherits the fleet default). */
   setPlanAgentStreamStrategy: (projectId: string, streamId: string, strategy: IntegrationStrategy | undefined) => void;
@@ -819,6 +883,10 @@ export interface AppStore {
   // Integrations). Gated per pane by paneWasClaude — off by default for
   // panes that never used claude (#36).
   autoResumeClaude: boolean;
+  /** #1107: hard-gate plan publishing on detected prompt-injection markers. ON ⇒ a flagged plan
+   *  cannot publish until the marker is removed; OFF (default) ⇒ acknowledge-to-clear. */
+  injectionHardGate: boolean;
+  setInjectionHardGate: (v: boolean) => void;
   /** #199: auto-relaunch a parked pane when its deps land (opt-in; off by default). */
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;
@@ -832,6 +900,10 @@ export interface AppStore {
    *  follows; steps aside while the planning autopilot is running (it owns confirmation then). */
   autoCompleteGates: boolean;
   setAutoCompleteGates: (v: boolean) => void;
+  /** Allow the user to override a blocking planner stage gate and advance anyway (#1285). Off by
+   *  default; surfaces a cautionary "override gate & continue" action in the planner footer. */
+  allowGateOverride: boolean;
+  setAllowGateOverride: (v: boolean) => void;
   /** #738 (security): restrict agents that pull live GitHub issues (triage) to issues
    *  base-studio-code authored — the `bsc-generated` label. ON by default so a hand-created
    *  or injected issue isn't acted on; off works every open issue. */

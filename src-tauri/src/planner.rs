@@ -59,11 +59,39 @@ const PLANNING_PROCESS_MD: &str = include_str!("../templates/planning-process.md
 // mislead it. The `bsc-plan blueprint set` spec + the four authoring stages live in this intro.
 const PLANNING_BLUEPRINT_INTRO: &str = include_str!("../templates/planning-blueprint-intro.md");
 
+// Anti prompt-injection framing for the planner (#1107). The planner is the most input-exposed
+// session (it reviews repos + the web) AND a trust amplifier (its output seeds the fleet's trusted
+// kickoffs/profiles/issues). Distinct from the worker template (`injection-resistance.md`): the
+// emphasis is "never transcribe a read instruction into a deliverable", not owned-glob scope.
+const PLANNER_INJECTION_RESISTANCE_MD: &str = include_str!("../templates/planner-injection-resistance.md");
+
+// The user-facing planner INTRODUCTION kickoffs (#1240) — the startup prompt baked into the planner
+// launch that has the planner OPEN the conversation (introduce itself, sketch the stage journey,
+// summarize capabilities, ask one orienting question). Trusted, app-authored content (#1107), and
+// per-mode like the CLAUDE.md spec intros — but addressed to the user, not the spec. Distinct from
+// PLANNING_*_INTRO above, which is the Claude-facing instruction set written into CLAUDE.md.
+const PLANNING_INTRO_NEW: &str = include_str!("../templates/planning-intro-new.md");
+const PLANNING_INTRO_EXISTING: &str = include_str!("../templates/planning-intro-existing.md");
+const PLANNING_INTRO_BLUEPRINT: &str = include_str!("../templates/planning-intro-blueprint.md");
+
+/// The user-facing planner introduction kickoff for a session mode (#1240). Returned to the
+/// frontend, which bakes it into the planner's `claude` launch as a fresh-only startup prompt.
+/// `mode`: `"blueprint"` (authoring) | `"existing"` (existing repos) | anything else ⇒ new project.
+#[tauri::command]
+pub(crate) fn planner_intro_prompt(mode: String) -> String {
+    match mode.as_str() {
+        "blueprint" => PLANNING_INTRO_BLUEPRINT,
+        "existing" => PLANNING_INTRO_EXISTING,
+        _ => PLANNING_INTRO_NEW,
+    }
+    .to_string()
+}
+
 /// One-line directive per planning stage (#542/#666) for the assembled active-stages
 /// section. Unknown ids fall back to a generic line.
 fn stage_directive(id: &str) -> String {
     let line = match id {
-        "context"     => "**Context** — establish the project's context one topic at a time, each a markdown file at `context/<topic>.md` (canonical key = the file stem). The REQUIRED set is DYNAMIC: the baseline `goal, scope, stack, architecture, users, release` is seeded for you — shape it for THIS project with `bsc-plan context require <topic>` / `bsc-plan context unrequire <topic>` as the picture clarifies (a CLI tool unrequires `users`/`ux`; a data platform requires `schema`; a realtime API requires `api`). `bsc-plan context list` shows the manifest. The `release` file proposes the versioning + release schedule: default to a COMPLETE initial prototype first, then FEATURE-BY-FEATURE releases (semver; release-and-continue). ALWAYS write the required files; cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, `context/observability.md`, `context/reliability.md`, `context/data_lifecycle.md`, …; the production-readiness bars in the planning guide are first-class dimensions here — apply where they matter, accessibility/compliance via the Compliance MCP); record every dimension you don't document in `context/_skipped.md`. The required files are done once WRITTEN — they're generated, not confirmed (the gate checks every required `context/<topic>.md` exists). Do NOT create files for tangential topics, or the gate can't complete.",
+        "context"     => "**Context** — establish the project's context one topic at a time, each a markdown file at `context/<topic>.md` (canonical key = the file stem). The REQUIRED set is DYNAMIC: the baseline `goal, scope, stack, architecture, users, release` is seeded for you — shape it for THIS project with `bsc-plan context require <topic>` / `bsc-plan context unrequire <topic>` as the picture clarifies (a CLI tool unrequires `users`/`ux`; a data platform requires `schema`; a realtime API requires `api`). `bsc-plan context list` shows the manifest. The `release` file proposes the versioning + release schedule: default to a COMPLETE initial prototype first, then FEATURE-BY-FEATURE releases (semver; release-and-continue). ALWAYS write the required files; cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, `context/observability.md`, `context/reliability.md`, `context/data_lifecycle.md`, …; the production-readiness bars in the planning guide are first-class dimensions here — apply where they matter, accessibility/compliance via the Compliance MCP, and **SEO for any public web-facing project** (`context/seo.md` — target audience/keywords + indexability; the **Web SEO** skill carries the how; skip it for CLI/desktop/library/internal/API-only)). When the project hinges on specialized or fast-moving techniques (graphics, algorithms, ML, cryptography, distributed systems, physics), ground the `stack`/`architecture` choices in the built-in **Research** MCP — start with `search` `sources:[\"wikipedia\"]` for the lay-of-the-land, then the scientific sources for depth, and cite what you adopt rather than guessing. Record every dimension you don't document in `context/_skipped.md`. The required files are done once WRITTEN — they're generated, not confirmed (the gate checks every required `context/<topic>.md` exists). Do NOT create files for tangential topics, or the gate can't complete.",
         "repos"       => "**Repos** — decide and link the repositories: emit `<repo_link owner/repo>` for each (clones it into the hub + records the link in plan.db, durable). Do NOT write repos.json — links live in plan.db (`bsc-plan repo list` shows them; `bsc-plan repo add owner/repo` links one directly).",
         "deploy"      => "**Deploy** (right after Repos) — define how each service SHIPS, then RECORD it in the plan DB by piping the config JSON to `bsc-plan deploy set`. **`bsc-plan deploy set` is what clears the gate and fills the Deploy pane — a prose `deploy.md` does NOT** (`bsc-plan deploy get` shows the stored config). JSON fields: `services` (array; each REQUIRES `platform` + `workload` = static|serverless|container|service, plus `id`, `repo`, `region`, `build`, `output`/`runtime`); `environments` (≥2; each `name`, `branch`, `url`, `auto`); `pipeline` (`provider` + `stages`: array of `{name, trigger: push|tag|on-green|manual, gate: bool, cmd}`, ≥2 stages); `secrets` (array of `{key, envs:[…]}` — list `prod` in `envs` for every prod-needed secret); `release` (`strategy` = recreate|rolling|blue-green|canary, `autoRollback`, `keep`, `migrateWithDeploy`); `health` (`probe`, `slo`, `alerts`). The gate (`deploymentDefined`) needs: a `platform` on EVERY service, ≥2 environments, ≥2 pipeline stages, every secret wired for `prod`, and a non-empty `release.strategy`. Propose defaults from the stack, confirm with the user, then pipe the whole config: `echo '{…}' | bsc-plan deploy set` (re-run with the full config as it firms up). A human-readable `deploy.md` is optional reference. Publishes as deployment issues owned by a `deploy` stream.",
         "ui"          => "**UI** — runs AFTER Features: design the screens that deliver the defined capabilities. Write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live. Then author a **Claude Design kickoff** at `prompts/ui-kickoff.md` — a self-contained brief (goal, feature→screen map, each screen's states/flows, design-system constraints) the user pastes into a Claude Design session.",
@@ -71,7 +99,7 @@ fn stage_directive(id: &str) -> String {
         "structure"   => "**Structure** — the features are a dependency DAG (`bsc-plan feature list` shows each feature + its `dependsOn`). SEQUENCE them into a roadmap, all IN THE PLAN DB — do NOT write phases.json or any issue files. Issues are generated from the features at GitHub-publish time, not during planning (no `bsc-plan add`). Two writes: (1) define the ordered phases — `bsc-plan phase add \"<name>\" \"<done-when>\"`, foundations first (`bsc-plan phase list` numbers them); (2) assign EVERY feature its phase NUMBER via `echo '{\"slug\":\"…\",\"phase\":<n>}' | bsc-plan feature add` (merges in place). When every feature is phased, present the roadmap + the dependency graph and get the user's approval. (Existing repos: inventory every screen/module first so none is missed.)",
         "permissions" => "**Permissions** — plan the agent fleet IN THE PLAN DB: pipe a FleetPlan JSON (non-overlapping streams with least-privilege profiles + per-stream perms/flows, plus recommended/director/topology) to `bsc-plan fleet set`. Do NOT write fleet.json — `bsc-plan fleet get` shows the stored fleet.",
         "automations" => "**Automations** — propose cron automations (emit `<automation_assign>`).",
-        "skills"      => "**Skills** — select reusable skills from the library (`skills.json`).",
+        "skills"      => "**Skills** — select reusable skills from the library AND author new ones GROUNDED IN REAL SOURCES (`skills.json`). The built-in **Research** MCP is always available (no setup). SEED each new skill from **Wikipedia** first — `search` with `sources:[\"wikipedia\"]`, then `get_fulltext` on the article to lay down the broad skeleton (definitions, sub-topics, key terms). Then REFINE it by looping the scientific sources (arXiv, Semantic Scholar, PubMed/PMC, Crossref): `search` those sub-topics and use `get_fulltext` / `semantic_search` to pull the exact passages, folding that cited, current depth back into the skill. Each pass adds detail + citations — so workers get evidence-based technique, not guesswork. This matters most for specialized, fast-moving areas (3D graphics, algorithms, ML, cryptography, distributed systems, physics). Prefer recent, well-cited work; never fabricate references.",
         // transform / operate stages (#666) — these do NOT produce issues.json.
         "refactor"     => "**Refactor** — identify improvement opportunities (dead code, simplification, performance); write one targeted cleanup issue per area. Do NOT produce `phases.json` or `issues.json`.",
         "cleanup"      => "**Dead & legacy code** — scan for unused/dead code & dependencies, verify each finding, and triage them into refactor units. Do NOT write `issues.json` — the refactor units drive the fleet directly.",
@@ -190,6 +218,12 @@ pub(crate) async fn setup_workspaces(
     } else {
         format!("{}{}", PLANNING_NEW_INTRO.replace("{PITCH}", &pitch), PLANNING_PROCESS_MD)
     };
+
+    // Anti prompt-injection framing (#1107) — applied to EVERY planner spec (new / existing /
+    // authoring). The planner reads untrusted repo + web content and emits trusted fleet
+    // instruction, so it must treat all reviewed content as data and never transcribe an embedded
+    // directive into a kickoff/section/profile/issue.
+    planning_md.push_str(PLANNER_INJECTION_RESISTANCE_MD);
 
     // Modular planning stages (#512/#542): prepend the project's enabled stages (from
     // its blueprint) as the authoritative scope — disabled stages are declared out of
@@ -410,6 +444,37 @@ mod tests {
         assert!(d.contains("ONE feature"), "must mandate one-feature-at-a-time pacing");
     }
 
+    /// Skills directive must steer the planner to GROUND authored skills in the built-in
+    /// Research MCP and cite real sources (#1056/#1196), not just pick from the library.
+    #[test]
+    fn stage_directive_skills_grounds_in_research() {
+        let d = super::stage_directive("skills");
+        assert!(d.contains("Research"), "skills directive must point at the Research MCP");
+        assert!(d.contains("`skills.json`"), "skills are still recorded in skills.json");
+        // Names the concrete grounding tools and the cite-don't-fabricate rule.
+        assert!(d.contains("search") && d.contains("semantic_search"), "must name the Research tools");
+        assert!(d.to_lowercase().contains("cite") || d.to_lowercase().contains("cited"), "must require citing sources");
+        assert!(d.to_lowercase().contains("never fabricate"), "must forbid fabricated references");
+        // Seed-then-refine loop (#1298): Wikipedia seeds, scientific sources refine.
+        assert!(d.contains("Wikipedia") && d.to_lowercase().contains("seed"), "must steer Wikipedia-first skill seeding");
+        assert!(d.to_lowercase().contains("refine"), "must steer refining the seed with the scientific sources");
+    }
+
+    /// Context directive must also nudge grounding stack/architecture in Research (#1056/#1196).
+    #[test]
+    fn stage_directive_context_grounds_techniques_in_research() {
+        let d = super::stage_directive("context");
+        assert!(d.contains("Research"), "context directive must mention the Research MCP for technique grounding");
+    }
+
+    /// Context directive surfaces SEO as a web-conditional production-readiness dimension (#1293).
+    #[test]
+    fn stage_directive_context_includes_web_seo() {
+        let d = super::stage_directive("context");
+        assert!(d.contains("context/seo.md"), "context directive must name the seo dimension file");
+        assert!(d.contains("Web SEO"), "context directive must point at the Web SEO skill");
+    }
+
     /// Structure directive must mention both workshop modes (#355).
     #[test]
     fn stage_directive_structure_sequences_features_without_authoring_issues() {
@@ -479,6 +544,32 @@ mod tests {
         assert!(intro.contains("LAUNCHES A FLEET"), "author intro must call out fleet-launching blueprints");
         assert!(intro.contains("`permissions` stage"), "author intro must require a permissions stage for fleets");
         assert!(intro.contains("`repos` stage"), "author intro must require a repos stage for fleets");
+    }
+
+    #[test]
+    fn planner_intro_prompt_selects_by_mode() {
+        // mode → matching template; unknown ⇒ the new-project intro (default).
+        assert_eq!(super::planner_intro_prompt("new".into()), super::PLANNING_INTRO_NEW);
+        assert_eq!(super::planner_intro_prompt("existing".into()), super::PLANNING_INTRO_EXISTING);
+        assert_eq!(super::planner_intro_prompt("blueprint".into()), super::PLANNING_INTRO_BLUEPRINT);
+        assert_eq!(super::planner_intro_prompt("garbage".into()), super::PLANNING_INTRO_NEW);
+    }
+
+    #[test]
+    fn planner_intros_open_the_session_and_ask_one_question() {
+        // Every mode's intro must: open the session (introduce + reference the stage journey),
+        // ask exactly one orienting question, and stop and wait — the #1240 conventions.
+        for (mode, distinct) in
+            [("new", "idea"), ("existing", "existing repositories"), ("blueprint", "reusable")]
+        {
+            let t = super::planner_intro_prompt(mode.into());
+            assert!(t.contains("ONE orienting question"), "intro {mode} must ask one orienting question");
+            assert!(t.contains("Active planning stages"), "intro {mode} must sketch the stage journey");
+            assert!(t.to_lowercase().contains("stop and wait"), "intro {mode} must stop and wait for the user");
+            assert!(t.contains(distinct), "intro {mode} must carry its mode-distinct framing ('{distinct}')");
+            // It's a kickoff, not the spec: it must NOT dump the CLI surface at the user.
+            assert!(!t.contains("bsc-plan"), "intro {mode} must not dump the bsc-plan CLI at the user");
+        }
     }
 
     #[test]
