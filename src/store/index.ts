@@ -117,6 +117,8 @@ export const useAppStore = create<AppStore>()(
         planConfirmedSections: s.planConfirmedSections,
         planAuthoredBlueprint: s.planAuthoredBlueprint,
         planDeployConfig:      s.planDeployConfig,
+        reposPublic:           s.reposPublic,   // #1227: repo visibility (default + …)
+        repoPublic:            s.repoPublic,    //        per-repo overrides) survives restart
         planSkippedSections:   s.planSkippedSections,
         planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
