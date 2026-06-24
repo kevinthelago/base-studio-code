@@ -97,3 +97,18 @@ pub(crate) fn plan_dir_for(project_key: &str) -> std::path::PathBuf {
 pub(crate) fn context_dir_for(project_key: &str) -> std::path::PathBuf {
     project_dir(project_key).join("context")
 }
+
+/// The nearest existing ancestor directory of `path` (native form), or "" if none
+/// exists. Used by `pty_create` to avoid the silent $HOME fallback when a session's
+/// configured cwd is missing — we land in the closest real directory instead (#367).
+pub(crate) fn nearest_existing_ancestor(path: &str) -> String {
+    let mut p = std::path::Path::new(path);
+    loop {
+        if p.as_os_str().is_empty() { return String::new(); }
+        if p.is_dir() { return p.to_string_lossy().into_owned(); }
+        match p.parent() {
+            Some(parent) => p = parent,
+            None => return String::new(),
+        }
+    }
+}
