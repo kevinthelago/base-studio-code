@@ -644,11 +644,16 @@ export interface AppStore {
    *  signals derive from it. */
   planIntegrationConfig: Record<string, IntegrationConfig>;
   setPlanIntegrationConfig: (projectId: string, cfg: IntegrationConfig) => void;
-  /** Per-project GitHub repository visibility for publish (#…). Absent ⇒ false ⇒ repos are created
-   *  PRIVATE (the default); set true to create them public. Applied by `handlePublish` when it
-   *  creates a missing repo. */
+  /** Per-project DEFAULT GitHub repo visibility for new repos at publish (#…). Absent ⇒ false ⇒
+   *  PRIVATE; a per-repo override (`repoPublic`) wins over it. Set the default for the project (and
+   *  the fallback for repos with no override). */
   reposPublic: Record<string, boolean>;
   setReposPublic: (projectId: string, isPublic: boolean) => void;
+  /** Per-REPO GitHub visibility override (#1227), keyed `<projectKey>::<repoFullName>`. Wins over
+   *  the project default `reposPublic`; absent ⇒ falls back to the default ⇒ private. Resolved by
+   *  `resolveRepoPublic` at the Repos card + at publish. */
+  repoPublic: Record<string, boolean>;
+  setRepoPublic: (projectKey: string, repoId: string, isPublic: boolean) => void;
   /** #1107: per-project signature of the injection findings the user acknowledged (acknowledge-to-
    *  clear). Cleared when findings change; ignored when the hard-gate setting is on. */
   planInjectionAck: Record<string, string>;

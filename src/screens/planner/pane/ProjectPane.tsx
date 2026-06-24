@@ -401,12 +401,15 @@ void FlowBadges;
    ================================================================= */
 
 /** Repos stage body — lists linked repos with clone status. (#674) */
-function FocusedReposBody({ repos, onLinkRepo, isPublic, onSetPublic }: {
+function FocusedReposBody({ repos, onLinkRepo, isPublic, onSetPublic, repoOverrides, onSetRepoPublic }: {
   repos?: Repo[];
   onLinkRepo?: (r: string) => void;
-  /** Project-level GitHub visibility for repos created at publish (#…). Default false ⇒ private. */
+  /** Project-level DEFAULT GitHub visibility for new repos (#…). Default false ⇒ private. */
   isPublic?: boolean;
   onSetPublic?: (isPublic: boolean) => void;
+  /** Per-repo visibility overrides, keyed by repo full-name; absent ⇒ inherits the default (#1227). */
+  repoOverrides?: Record<string, boolean>;
+  onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
 }) {
   const [input, setInput] = useState("");
   const [linking, setLinking] = useState(false);
@@ -417,12 +420,12 @@ function FocusedReposBody({ repos, onLinkRepo, isPublic, onSetPublic }: {
     if (v.includes("/")) { onLinkRepo?.(v); setInput(""); setLinking(false); }
   };
 
-  // Visibility control (#…): new repos are created PRIVATE by default; this lets the user opt into
-  // public before publishing — replacing the planner having to ask. Shown whether or not repos are
-  // linked yet, since it applies to every repo this project creates.
+  // Project-level DEFAULT visibility (#1227): new repos inherit this unless individually
+  // overridden on their card below. New repos are PRIVATE by default; flip to set the default for
+  // the whole project (and the fallback for any repo without its own toggle).
   const visibilityControl = onSetPublic && (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>visibility</span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>default</span>
       <div style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
         {([[false, "🔒 Private"], [true, "🌐 Public"]] as const).map(([val, label], i) => {
           const on = !!isPublic === val;
@@ -442,10 +445,40 @@ function FocusedReposBody({ repos, onLinkRepo, isPublic, onSetPublic }: {
       </div>
       <span style={{ flex: 1 }} />
       <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
-        {isPublic ? "created public" : "created private · default"}
+        default for new repos · override per repo below
       </span>
     </div>
   );
+
+  // A compact per-repo visibility toggle for a card (#1227): resolves to the repo's own override,
+  // else the project default. Setting one card never touches another.
+  const repoVisToggle = (repoId: string) => {
+    if (!onSetRepoPublic) return null;
+    const pub = repoOverrides?.[repoId] ?? !!isPublic;
+    return (
+      <span
+        style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden", marginLeft: 6 }}
+        title={`Visibility when this repo is created on GitHub${repoOverrides?.[repoId] === undefined ? " (using the project default)" : ""}`}
+      >
+        {([[false, "🔒"], [true, "🌐"]] as const).map(([val, glyph], i) => {
+          const on = pub === val;
+          return (
+            <button
+              key={glyph}
+              onClick={() => { if (!on) onSetRepoPublic(repoId, val); }}
+              aria-pressed={on}
+              aria-label={val ? `Make ${repoId} public` : `Make ${repoId} private`}
+              style={{
+                height: 20, padding: "0 6px", border: 0, borderLeft: i ? "1px solid var(--border-soft)" : "none",
+                cursor: on ? "default" : "pointer", fontSize: 10,
+                background: on ? "var(--bg-elev2)" : "transparent", opacity: on ? 1 : 0.5,
+              }}
+            >{glyph}</button>
+          );
+        })}
+      </span>
+    );
+  };
 
   // The "link another repository" affordance — a dashed dropzone that expands into an
   // owner/repo input on click (matches the design's `.dropzone`).
@@ -510,6 +543,7 @@ function FocusedReposBody({ repos, onLinkRepo, isPublic, onSetPublic }: {
                 {r.cloned ? "● cloned" : "○ not cloned"}
               </span>
             )}
+            {repoVisToggle(r.id)}
           </div>
           {r.desc && <div className="repo-desc">{r.desc}</div>}
           <div className="repo-row repo-branchline">
@@ -1204,7 +1238,7 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGen
   );
 }
 
-function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, onView, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
+function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, repoOverrides, onSetRepoPublic, onView, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
@@ -1213,9 +1247,12 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, repos
   /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
   authoring?: AuthoringWiring;
   onLinkRepo?: (r: string) => void;
-  /** Repos stage: project-level GitHub visibility (default private) + its setter (#…). */
+  /** Repos stage: project-level DEFAULT visibility (default private) + its setter (#…). */
   reposPublic?: boolean;
   onSetReposPublic?: (isPublic: boolean) => void;
+  /** Repos stage: per-repo visibility overrides (keyed by repo full-name) + setter (#1227). */
+  repoOverrides?: Record<string, boolean>;
+  onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
   /** Deploy stage (#919): persist the edited deployment config. */
   onDeployChange?: (next: DeployConfig) => void;
   onView?: (f: ContextFile) => void;
@@ -1257,7 +1294,7 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, repos
     case "integrations":
       return <FocusedIntegrationsBody projectId={projectId} />;
     case "repos":
-      return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} />;
+      return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} />;
     case "deploy":
       return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} dependencies={data?.dependencies} registries={data?.registries} />;
     case "context":
@@ -1310,6 +1347,8 @@ export function ProjectPane({
   onLinkRepo,
   reposPublic,
   onSetReposPublic,
+  repoOverrides,
+  onSetRepoPublic,
   onGenerateProfiles,
   onTopology,
   onDirectorDrive,
@@ -1358,6 +1397,9 @@ export function ProjectPane({
   /** Repos stage: project-level GitHub visibility (default private) + its setter (#…). */
   reposPublic?: boolean;
   onSetReposPublic?: (isPublic: boolean) => void;
+  /** Per-repo visibility overrides (keyed by repo full-name) + setter (#1227). */
+  repoOverrides?: Record<string, boolean>;
+  onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
   /** Materialize least-privilege profiles for every fleet stream (#817) — what the focused
    *  Permissions stage needs to satisfy its `profilesComplete` gate. */
   onGenerateProfiles?: () => void;
@@ -1425,7 +1467,7 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} reposPublic={reposPublic} onSetReposPublic={onSetReposPublic} onView={setViewing}
+          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} reposPublic={reposPublic} onSetReposPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} onView={setViewing}
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} />
         </div>
