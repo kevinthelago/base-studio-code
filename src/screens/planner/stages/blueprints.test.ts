@@ -5,6 +5,7 @@ import {
   isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, sectionDone,
   SECTION_DEFS, type BlueprintSection, type Blueprint,
 } from "./blueprints";
+import { SKILLS } from "../../../data/skills";
 import { PLAN_STAGES, buildPlanStageState } from "./planStages";
 import { planStateToSignals } from "./planStageDerive";
 import { evalGate } from "./stageGate";
@@ -358,5 +359,34 @@ describe("data-integration blueprint (#1207)", () => {
     expect(sectionStatus(sync, secs, { ...ctxDone, destinationDefined: true, syncDefined: false }).status).toBe("in-progress");
     // own gate met ⇒ complete
     expect(sectionStatus(sync, secs, { ...ctxDone, destinationDefined: true, syncDefined: true }).status).toBe("complete");
+  });
+});
+
+describe("Web SEO capability (#1293)", () => {
+  it("ships a self-gating web-seo skill in the library", () => {
+    const seo = SKILLS.find((s) => s.id === "web-seo");
+    expect(seo, "web-seo skill present").toBeDefined();
+    expect(seo!.profiles).toContain("build");
+    // Self-gating: only applies to a public web surface.
+    expect(seo!.body ?? "").toMatch(/SKIP|web surface|web-facing/i);
+    expect(seo!.body ?? "").toMatch(/sitemap|robots|Open Graph|JSON-LD/i);
+  });
+
+  it("attaches web-seo to the greenfield web blueprints, not transform/data ones", () => {
+    const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
+    expect(by("default").skills).toContain("web-seo");
+    expect(by("complete").skills).toContain("web-seo");
+    // Not on a transform/data blueprint.
+    expect(by("refactor").skills ?? []).not.toContain("web-seo");
+    expect(by("data-migration").skills ?? []).not.toContain("web-seo");
+  });
+
+  it("every blueprint skill id resolves to a real library skill", () => {
+    const ids = new Set(SKILLS.map((s) => s.id));
+    for (const bp of makeBlueprints()) {
+      for (const sid of bp.skills ?? []) {
+        expect(ids.has(sid), `blueprint '${bp.id}' references unknown skill '${sid}'`).toBe(true);
+      }
+    }
   });
 });
