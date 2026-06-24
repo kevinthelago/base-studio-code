@@ -900,6 +900,10 @@ export interface AppStore {
    *  follows; steps aside while the planning autopilot is running (it owns confirmation then). */
   autoCompleteGates: boolean;
   setAutoCompleteGates: (v: boolean) => void;
+  /** Allow the user to override a blocking planner stage gate and advance anyway (#1285). Off by
+   *  default; surfaces a cautionary "override gate & continue" action in the planner footer. */
+  allowGateOverride: boolean;
+  setAllowGateOverride: (v: boolean) => void;
   /** #738 (security): restrict agents that pull live GitHub issues (triage) to issues
    *  base-studio-code authored — the `bsc-generated` label. ON by default so a hand-created
    *  or injected issue isn't acted on; off works every open issue. */

@@ -91,6 +91,7 @@ export const useAppStore = create<AppStore>()(
         injectionHardGate:    s.injectionHardGate,
         autoPlanWithClaude:   s.autoPlanWithClaude,
         autoCompleteGates:    s.autoCompleteGates,
+        allowGateOverride:    s.allowGateOverride,
         restrictToBscIssues:  s.restrictToBscIssues,
         coordAutoWake:        s.coordAutoWake,
         defaultModel:         s.defaultModel,
