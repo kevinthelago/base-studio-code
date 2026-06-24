@@ -9,6 +9,7 @@ import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQu
 import { DEFAULT_REAPER_CONFIG } from "../../lib/console/idleReaper";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../../lib/console/terminal";
 import { aggregateTabState, clearTabStatuses as clearTabStatusesPure, parsePaneKey } from "../../lib/console/paneStatus";
+import { isManualPaneId } from "../../lib/console/paneIdentity";
 import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "../../lib/console/tabReorder";
 import { newTabId } from "../helpers";
 
@@ -118,10 +119,21 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
       restoreSessionsFromCrash: () => {
         const s = get();
         const panes = Object.keys(s.paneWasClaude).filter((p) => s.paneWasClaude[p]);
-        panes.forEach((paneId, i) => {
-          const m = /^t(\d+)p\d+$/.exec(paneId);
-          if (!m) return;
-          const tabIdx = Number(m[1]);
+        // Stage 3 of stable pane identity (#1176): walk identity ids, not grid positions.
+        // Manual consoles (`man:…`) are never auto-recovered — a scratch shell must not silently
+        // resume. Fleet/triage panes now carry a project-scoped identity id recorded on the tab's
+        // `paneIds[]`, so we locate the hosting tab by that id; a legacy positional id still encodes
+        // its tab index directly (fallback).
+        let scheduled = 0;
+        panes.forEach((paneId) => {
+          if (isManualPaneId(paneId)) return;
+          let tabIdx = s.tabs.findIndex((t) => t.paneIds?.includes(paneId));
+          if (tabIdx < 0) {
+            const m = /^t(\d+)p\d+$/.exec(paneId);
+            if (!m) return; // unrecognized id shape (no host tab) — not recoverable
+            tabIdx = Number(m[1]);
+          }
+          const order = scheduled++;
           // Stagger the relaunches so N Claudes don't cold-start at once (#1041) — each remount
           // resolves to `claude --continue` because restoreRequested is set for the pane.
           setTimeout(() => {
@@ -134,9 +146,9 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
                 tabs: st.tabs.map((t, idx) => (idx === tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
               };
             });
-          }, i * 250);
+          }, order * 250);
         });
-        return panes.length;
+        return scheduled;
       },
       setPaneCwd: (paneId, cwd) =>
         set((s) => ({ paneCwds: { ...s.paneCwds, [paneId]: cwd } })),
