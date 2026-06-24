@@ -9,6 +9,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.4] — 2026-06-24
+
+The **enterprise integration & migration release** — connect read-only to an existing platform
+(Salesforce first), scan its data *and* configuration *and* behavior, and turn that into a
+migratable canonical model the generated app is built from.
+
+### Added
+- **Read-only platform scan** — a Salesforce platform-behavior scan (#1193) generalized onto a `Connector` trait (#1195), surfacing objects/fields and derived logic; it runs live from the Source pane against real credentials (#1194, #1197)
+- **Native connector catalog** (in-process Rust, *not* MCP servers) — QuickBooks Online, monday.com, Quickbase, HubSpot, Airtable, SQL, OData, ServiceNow, NetSuite, Zoho CRM, Xero, Pipedrive, Asana, Stripe, Zendesk, Jira, Odoo, Pipefy, Linear, and a generic REST connector, plus a vendor-preset catalog for smaller systems with gap-sweep batch + nested-envelope support (#1197)
+- **OAuth 2.0 + PKCE flow engine** for source connectors, wired into the live scan and the Source pane and backed by an on-device credential keychain (#1194, #1197)
+- **Source pane** — a dynamic source-connection UI with scan visualizations (Graph · List · Process, #1209), entity field enrichment (`ScanObject.fields`, #1211), value-based + connector-declared field-type inference (Salesforce picklist→enum / lookup→ref; Quickbase/HubSpot/Airtable types) (#1219, #1230), and the full connector catalog surfaced in-pane (#1288)
+- **Data-dictates-structure loop** — a platform scan seeds the canonical Data Model that shapes the generated app (#1205); an **Integration blueprint** for data-extraction apps (#1207); planner-authored native integrations via `bsc-plan integration`, with missing integrations surfaced and addable in-session (#1235, #1200)
+- **Research MCP** — a native Research MCP crate exposed as a built-in server with source clients + automatic `.mcp.json` registration (#1196); the planner grounds skills/techniques in it (#1056)
+- **Session discovery & recovery** — `parsePaneIdentity` recovers meaning from a pane id, `discover_sessions` scans the ledger + project hubs, and recovery reconciles discovered sessions against open tabs; fleet/triage panes mint stable identity ids at launch and crash recovery keys off them (#1266, #1176)
+- **Plan-injection provenance gate** at the confirm boundary, with planner injection framing + a shared injection detector and net-gateable WebFetch under planner-privilege guards (#1107)
+- **Live planning over the tunnel** — project the planning session's state/events/status to a paired phone and drive it remotely; arm/run automations and wake/approve from the phone (#934, #935, #937, #985, #986, #987)
+- User **gate override** with a Settings toggle to advance a plan stage past its gate (#1285)
+- Launch-time planner introduction kickoff (#1240); per-repo public/private visibility + per-agent model selection in the planner (#1227)
+- Blueprint JSON import preview before pulling from a gist, and a persistent link to a published blueprint's gist (#1037)
+- Auto-end finished workers with a durable, reviewable per-worker audit (#920); a PTY orphan reaper — spawn ledger + boot reconcile (#1049); an HTTP test service for live-scan transports (#1198)
+
+### Changed
+- Switch a project to **any** other blueprint (gated by the confirmation modal); the control is renamed "switch blueprint" (#1281)
+- Session-authored skills render first + highlighted in the focused planner pane (#1056)
+- Each stage's prompt is shown under its row in the blueprint preview (#1268)
+- Defer the `perf.db` open + `cap_logs` off the synchronous boot path (#1047)
+- Roadmap refreshed — 1.0.3 Complete, 1.0.4 Current, the UI release slated for 1.0.5 (#1283); connectors documented as native in-process Rust (not MCP servers)
+
+### Fixed
+- **Warden no longer quarantines every fleet worker on launch** — `.mcp.json` is now correctly git-excluded inside worktrees (where `.git` is a file, so the old exclude write silently failed), so it never reads as an out-of-lane edit
+- **Imported gist blueprints render their stage icons** — `PlanGateRow` resolves icons through the stage→icon map by key, and the first-class stages missing from that map were added (#1290)
+- Blueprint gist link works on the live card; orphaned library dupes removed; import failures surfaced instead of swallowed (#1037, #1042)
+- Jumbled Claude TUI mid-session is detected and auto-nudged, and a resize-nudge fires automatically after a pane renders Claude (#1250, #1221); reverted the native console-input overlay to restore Claude's own TUI input (#1239); global hotkeys scoped to the Console page (#1218)
+- Draft project title edits persist on blur/Enter (#1222); renaming a published project updates the GitHub Project board title (#1226)
+- CodeQL hardening — SHA-pinned actions, least-privilege workflow permissions, origin checks, complete sanitization (#1011); bumped quinn-proto for RUSTSEC-2026-0185
+
 ## [1.0.3] — 2026-06-21
 
 The **simplicity release** — make the platform foolproof for new users.
