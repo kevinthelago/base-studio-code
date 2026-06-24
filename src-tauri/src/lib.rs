@@ -1650,11 +1650,47 @@ fn inject_skills(hub: &std::path::Path, wt_local: &std::path::Path) {
     let _ = std::fs::write(wt_local, format!("{}\n\n{}\n", cur.trim_end(), trimmed));
 }
 
-/// Append `entry` to a clone's `.git/info/exclude` (idempotent) so app-managed
-/// files stay out of `git status`. No-op when `repo_root` is not a git repo.
+/// Resolve the absolute path git would use for a file under its git dir, via
+/// `git rev-parse --git-path <rel>`. This is the ONLY correct way to locate shared paths like
+/// `info/exclude` across both layouts: in a normal clone `.git` is a directory, but in a linked
+/// **worktree** `.git` is a FILE pointing at `…/.git/worktrees/<id>`, and shared paths resolve to
+/// the common dir — so `repo_root/.git/info/exclude` is simply wrong there. Returns None when git
+/// is unavailable or `repo_root` is not a repo.
+fn git_path(repo_root: &std::path::Path, rel: &str) -> Option<std::path::PathBuf> {
+    let out = std::process::Command::new("git")
+        .arg("-C").arg(repo_root)
+        .args(["rev-parse", "--git-path", rel])
+        .output()
+        .ok()?;
+    if !out.status.success() { return None; }
+    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if p.is_empty() { return None; }
+    // git prints the path relative to the cwd (= repo_root) for a normal clone, or absolute for a
+    // worktree's common dir. Resolve relatives against repo_root; keep absolutes as-is.
+    let pb = std::path::PathBuf::from(&p);
+    Some(if pb.is_absolute() { pb } else { repo_root.join(pb) })
+}
+
+/// Append `entry` to a repo's `info/exclude` (idempotent) so app-managed files (`.mcp.json`,
+/// `.claude/`) stay out of `git status` — and therefore out of the warden's worktree-change signal,
+/// which would otherwise quarantine every fleet worker for an "out-of-lane" edit it never made
+/// (#1102). No-op when `repo_root` is not a git repo.
+///
+/// Resolves the exclude file through git rather than assuming `repo_root/.git/info/exclude`: in a
+/// linked worktree `.git` is a file, so the assumed path doesn't exist and the write silently
+/// fails — the bug that let `.mcp.json` leak into every worker's diff.
 fn git_exclude(repo_root: &std::path::Path, entry: &str) {
     if !repo_root.join(".git").exists() { return; }
-    let exclude = repo_root.join(".git").join("info").join("exclude");
+    // Fall back to the literal path only if git can't resolve it (e.g. git absent) AND `.git` is a
+    // real directory — never write through a worktree's `.git` file.
+    let exclude = git_path(repo_root, "info/exclude").unwrap_or_else(|| {
+        repo_root.join(".git").join("info").join("exclude")
+    });
+    if exclude.parent().map(|p| !p.is_dir()).unwrap_or(false) {
+        // Parent isn't a directory (e.g. unresolved worktree `.git` file) — bail rather than fail.
+        return;
+    }
+    if let Some(parent) = exclude.parent() { let _ = std::fs::create_dir_all(parent); }
     let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
     if existing.lines().any(|l| l.trim() == entry) { return; }
     let next = if existing.trim().is_empty() {
@@ -3338,6 +3374,50 @@ mod tests {
     fn read_worktree_changes_empty_cwd_is_empty() {
         assert!(super::read_worktree_changes(String::new()).is_empty());
         assert!(super::read_worktree_changes("   ".into()).is_empty());
+    }
+
+    /// Regression (#1102): in a linked worktree `.git` is a FILE, so the old
+    /// `repo_root/.git/info/exclude` write silently failed and `.mcp.json` leaked into the worker's
+    /// diff — quarantining every fleet worker for an "out-of-lane" edit it never made. git_exclude
+    /// must resolve the real (common-dir) exclude so the app-managed file is hidden from git, and
+    /// thus from read_worktree_changes (the warden's trusted signal).
+    #[test]
+    fn git_exclude_hides_mcp_json_in_a_worktree() {
+        // Needs the git binary; skip gracefully where it's absent rather than failing the suite.
+        if std::process::Command::new("git").arg("--version").output().is_err() {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("bsc-gx-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let main = base.join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            std::process::Command::new("git").arg("-C").arg(cwd).args(args).output().unwrap()
+        };
+        git(&main, &["init", "-q"]);
+        git(&main, &["config", "user.email", "t@t.t"]);
+        git(&main, &["config", "user.name", "t"]);
+        std::fs::write(main.join("README.md"), "x").unwrap();
+        git(&main, &["add", "-A"]);
+        git(&main, &["commit", "-qm", "init"]);
+
+        // A linked worktree: its `.git` is a FILE, the layout that broke the old exclude.
+        let wt = base.join("wt");
+        git(&main, &["worktree", "add", "-q", wt.to_str().unwrap()]);
+        assert!(wt.join(".git").is_file(), "worktree .git should be a file, not a dir");
+
+        // App writes the session's MCP config + asks git to exclude it (mirrors the launch path).
+        std::fs::write(wt.join(".mcp.json"), "{}").unwrap();
+        super::git_exclude(&wt, ".mcp.json");
+
+        // The warden's signal must NOT see it — pre-fix this listed ".mcp.json" and tripped a trip.
+        let changes = super::read_worktree_changes(wt.to_string_lossy().into_owned());
+        assert!(
+            !changes.iter().any(|f| f == ".mcp.json"),
+            "worktree .mcp.json must be git-excluded, but read_worktree_changes returned {changes:?}",
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
