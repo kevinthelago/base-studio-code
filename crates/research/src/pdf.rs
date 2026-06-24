@@ -62,6 +62,13 @@ fn is_section_header(line: &str) -> Option<String> {
     if t.is_empty() || t.len() > 80 {
         return None;
     }
+    // Wikipedia plain-text extracts mark sections with `== Heading ==` / `=== Sub ===` (#1298).
+    if t.starts_with("==") && t.ends_with("==") {
+        let inner = t.trim_matches('=').trim();
+        if !inner.is_empty() {
+            return Some(inner.to_string());
+        }
+    }
     let lower = t.to_ascii_lowercase();
     let lower = lower.trim_end_matches('.');
     for k in KNOWN_SECTIONS {
@@ -142,6 +149,11 @@ mod tests {
         assert!(is_section_header("We present a method that uses a neural denoiser to clean frames.").is_none());
         // A bare number is not a header.
         assert!(is_section_header("42").is_none());
+        // Wikipedia `== Heading ==` markers (#1298) — inner text, any level.
+        assert_eq!(is_section_header("== History ==").as_deref(), Some("History"));
+        assert_eq!(is_section_header("=== Backward ray tracing ===").as_deref(), Some("Backward ray tracing"));
+        // Empty markers aren't headers.
+        assert!(is_section_header("====").is_none());
     }
 
     #[test]

@@ -66,6 +66,13 @@ impl Engine {
                 return Ok(t);
             }
         }
+        // Sources that serve article text directly (Wikipedia) — no PDF to download/extract.
+        if let Some(text) = sources::fetch_fulltext(&self.http, id)? {
+            if let Some(c) = &self.cache {
+                let _ = c.put_fulltext(id, &text);
+            }
+            return Ok(text);
+        }
         let paper = self.get_paper(id)?.ok_or_else(|| format!("paper not found: {id}"))?;
         let url = paper
             .pdf_url

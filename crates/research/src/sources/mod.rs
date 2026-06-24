@@ -1,12 +1,13 @@
 //! Per-source clients (#1196). Each submodule keeps a *pure parser* (`parse_*`, fixture-tested with
 //! no network) separate from the thin `search`/`fetch` entry points that build the request URL, call
 //! [`crate::http`], and hand the body to the parser. This module dispatches by [`Source`] and by the
-//! canonical-id scheme (`arxiv:` / `doi:` / `pmid:` / `s2:`).
+//! canonical-id scheme (`arxiv:` / `doi:` / `pmid:` / `s2:` / `wikipedia:`).
 
 pub mod arxiv;
 pub mod crossref;
 pub mod pubmed;
 pub mod semantic_scholar;
+pub mod wikipedia;
 
 use crate::http::Http;
 use crate::types::{Paper, Reference, SearchQuery, Source};
@@ -19,6 +20,7 @@ pub fn search_source(http: &Http, source: Source, query: &SearchQuery) -> Result
         Source::SemanticScholar => semantic_scholar::search(http, query),
         Source::Pubmed => pubmed::search(http, query),
         Source::Crossref => crossref::search(http, query),
+        Source::Wikipedia => wikipedia::search(http, query),
     }
 }
 
@@ -31,6 +33,8 @@ pub fn source_for_id(id: &str) -> Option<Source> {
         Some(Source::Pubmed)
     } else if id.starts_with("s2:") {
         Some(Source::SemanticScholar)
+    } else if id.starts_with("wikipedia:") {
+        Some(Source::Wikipedia)
     } else if id.starts_with("doi:") {
         // DOIs are resolved via Crossref (richest metadata + reference list).
         Some(Source::Crossref)
@@ -46,7 +50,18 @@ pub fn fetch_paper(http: &Http, id: &str) -> Result<Option<Paper>, String> {
         Some(Source::SemanticScholar) => semantic_scholar::fetch(http, id),
         Some(Source::Pubmed) => pubmed::fetch(http, id),
         Some(Source::Crossref) => crossref::fetch(http, id),
-        None => Err(format!("unrecognized id scheme: {id} (expected arxiv:/doi:/pmid:/s2:)")),
+        Some(Source::Wikipedia) => wikipedia::fetch(http, id),
+        None => Err(format!("unrecognized id scheme: {id} (expected arxiv:/doi:/pmid:/s2:/wikipedia:)")),
+    }
+}
+
+/// Native full text for sources that serve article text DIRECTLY (Wikipedia) rather than via a PDF.
+/// Returns `None` for the paper sources, whose full text the engine extracts from a PDF instead — so
+/// the engine tries this first and falls back to its PDF path on `None`.
+pub fn fetch_fulltext(http: &Http, id: &str) -> Result<Option<String>, String> {
+    match source_for_id(id) {
+        Some(Source::Wikipedia) => wikipedia::fetch_fulltext(http, id).map(Some),
+        _ => Ok(None),
     }
 }
 
