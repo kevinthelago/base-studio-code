@@ -1,0 +1,32 @@
+{
+  "$comment": "Canonical Noise IK test vector (#928). FROZEN + shared cross-repo: mobile-studio-code vendors this same file and asserts the noble side against it byte-for-byte. Empty prologue; static AND ephemeral keypairs are fixed so the handshake bytes are reproducible (snow otherwise samples a random ephemeral). All values base64. Regenerate via the `generate_noise_vector` authoring test in src-tauri/src/tunnel.rs after an intentional protocol change.",
+  "protocolName": "Noise_IK_25519_ChaChaPoly_BLAKE2s",
+  "prologue": "",
+  "initStaticPriv": "VtHUW0oFohQ8Yzq0GmdXpfYZed21oseYh0iyDLzFlLk=",
+  "initEphemeralPriv": "zIk+jVl7bWJ5Fg4LfZCSYkMEM9a7MI9QvQinvyVTOMU=",
+  "respStaticPriv": "WAJsdU3YQmmRMqvsPEmc496ytgxL39HsNNXKazZnlTg=",
+  "respStaticPub": "k3WYCuaQHQ+3wi3C0vToeYj9ZZ68gLv1tA7ieTvp3Bs=",
+  "respEphemeralPriv": "f1SthXUTcKt2H1U4k/5RghcQUAkWORj6C9CCA2WmKGo=",
+  "messages": [
+    {
+      "label": "msg1 init->resp (e, es, s, ss)",
+      "payload": "",
+      "ciphertext": "BQJJC1YzQu9lHzAYsnKtNTQxNPD6zbnl51xgXZocAR5FLTT+mhDiRHfmlPWTKBqQLB3DPcPLdbzz4WALhrDhYp2G7EZV8Osb5VdIaW1tlLWxfRYVuX6AOstMjn4G6WCU"
+    },
+    {
+      "label": "msg2 resp->init (e, ee, se)",
+      "payload": "",
+      "ciphertext": "4ZihUUqA1qzcMPKKE9aiBJCumu3wMGQEnJgukKKyK0fBKmgIi+vlZ65luzZIK5A7"
+    },
+    {
+      "label": "transport init->resp",
+      "payload": "cGFuZV9pbnB1dA==",
+      "ciphertext": "kKLemqR8MPsuV3gCo3YqktsO0CnhRs3hebY="
+    },
+    {
+      "label": "transport resp->init",
+      "payload": "cGFuZV9vdXRwdXQ=",
+      "ciphertext": "za+ol7lGv4pSS9u287SMKEALige2NlbSrFpp"
+    }
+  ]
+}
