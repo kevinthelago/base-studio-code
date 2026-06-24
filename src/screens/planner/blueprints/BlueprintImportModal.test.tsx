@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { BlueprintImportModal } from "./BlueprintImportModal";
+import { BlueprintImportModal, type BlueprintImportModalProps } from "./BlueprintImportModal";
 import { listBlueprintGists, type BlueprintGistItem } from "../../../lib/planner/gist/gist";
 
 vi.mock("../../../lib/planner/gist/gist", () => ({ listBlueprintGists: vi.fn() }));
@@ -94,5 +94,56 @@ describe("BlueprintImportModal", () => {
     vi.mocked(listBlueprintGists).mockRejectedValue(new Error("offline"));
     renderModal();
     expect(await screen.findByText("Couldn't reach GitHub")).toBeTruthy();
+  });
+
+  // ── #1042: a per-row import must report its real outcome, never a silent swallow. ──
+
+  function renderWith(onImport: BlueprintImportModalProps["onImport"]) {
+    render(
+      <BlueprintImportModal
+        source="me" token="tok" importedById={IMPORTED}
+        onImport={onImport} onManualImport={vi.fn()} onClose={vi.fn()}
+      />,
+    );
+  }
+
+  it("surfaces an import failure (no silent swallow, no false success) (#1042)", async () => {
+    vi.mocked(listBlueprintGists).mockResolvedValue(ITEMS);
+    const onImport = vi.fn().mockRejectedValue(new Error("no extension.json manifest"));
+    renderWith(onImport);
+    await screen.findByText("Fresh BP");
+
+    fireEvent.click(screen.getByText("Import"));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Couldn't import/i);
+    expect(alert).toHaveTextContent(/no extension\.json manifest/);
+    // The old code flashed "Imported" regardless; assert that false confirmation is gone.
+    expect(screen.queryByText(/Imported .Fresh BP/)).toBeNull();
+  });
+
+  it("confirms a successful import and shows no error (#1042)", async () => {
+    vi.mocked(listBlueprintGists).mockResolvedValue(ITEMS);
+    const onImport = vi.fn().mockResolvedValue(undefined);
+    renderWith(onImport);
+    await screen.findByText("Fresh BP");
+
+    fireEvent.click(screen.getByText("Import"));
+
+    expect(await screen.findByText(/Imported .Fresh BP/)).toBeTruthy();
+    expect(onImport).toHaveBeenCalledWith("g-fresh", "2026-01-01T00:00:00Z");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("lets the user dismiss a surfaced import error (#1042)", async () => {
+    vi.mocked(listBlueprintGists).mockResolvedValue(ITEMS);
+    renderWith(vi.fn().mockRejectedValue(new Error("private gist needs auth")));
+    await screen.findByText("Fresh BP");
+
+    fireEvent.click(screen.getByText("Import"));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Dismiss error"));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

@@ -14,6 +14,7 @@ use serde_json::Value;
 
 use crate::behavior::PlatformScan;
 use crate::error::Result;
+use crate::schema::FieldType;
 
 /// A readable object a connector exposes (a table, sheet, endpoint, or file) and its
 /// column names — the source-side schema before any mapping to a Data Model.
@@ -21,6 +22,22 @@ use crate::error::Result;
 pub struct SourceObject {
     pub name: String,
     pub columns: Vec<String>,
+}
+
+/// A column as **declared by the source system** — the connector's own field metadata, when
+/// the API exposes it (#1219). More accurate than inferring a type from sampled values: a
+/// Salesforce picklist becomes [`FieldType::Enum`] with its exact options, and a lookup
+/// becomes [`FieldType::Ref`] with its target object — neither of which value sampling can
+/// recover reliably. Connectors over schema-less sources (CSV, plain SQL text) don't override
+/// [`Connector::describe_object`], so the scan falls back to value inference.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceField {
+    pub name: String,
+    pub ty: FieldType,
+    /// Allowed values when `ty` is [`FieldType::Enum`]; empty otherwise.
+    pub enum_values: Vec<String>,
+    /// Target object name when `ty` is [`FieldType::Ref`]; `None` otherwise.
+    pub ref_target: Option<String>,
 }
 
 /// The result of reading one object: ordered column names + rows of raw string cells.
@@ -76,6 +93,14 @@ pub trait Connector {
     fn objects(&self) -> Result<Vec<SourceObject>>;
     /// Read one object by name into a [`RowSet`].
     fn read(&self, object: &str) -> Result<RowSet>;
+
+    /// Declared, typed schema for one object — the source system's own field types (#1219).
+    /// Default: empty, meaning "no declared types", and the caller infers types from sampled
+    /// values instead. Connectors whose API exposes field metadata (Salesforce picklists +
+    /// lookups, Quickbase/HubSpot/Airtable field types) override this for accuracy.
+    fn describe_object(&self, _object: &str) -> Result<Vec<SourceField>> {
+        Ok(vec![])
+    }
 
     /// Scan the source's behavioral layer — automations, business processes, and derived
     /// logic (#1193). Default: nothing. A data-only source (a CSV file, a plain table) has

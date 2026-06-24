@@ -338,6 +338,26 @@ pub fn data_load_reconciled(
 // `live: false` so the pane falls back to its sample shape. Object counts are from a bounded
 // sample read, not the source total.
 
+/// A discovered field: its name, an inferred type, and (for enums) the observed values (#1219).
+#[cfg(feature = "source-stage")]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanField {
+    name: String,
+    /// One of string/number/bool/date/money/enum/ref — declared by the connector when its API
+    /// exposes field types (#1219), otherwise value-inferred from the sampled rows.
+    #[serde(rename = "type")]
+    ty: String,
+    /// Values when `ty == "enum"` — the connector's declared options, else the observed values
+    /// of a low-cardinality categorical column; empty otherwise.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    enum_values: Vec<String>,
+    /// Target object name when `ty == "ref"` and the connector declared the relationship (a
+    /// Salesforce lookup); `None` when the ref is left to downstream name-matching.
+    #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+    ref_target: Option<String>,
+}
+
 /// A discovered object + a (bounded-sample) record count.
 #[cfg(feature = "source-stage")]
 #[derive(serde::Serialize)]
@@ -345,6 +365,8 @@ pub fn data_load_reconciled(
 pub struct ScanObject {
     name: String,
     count: usize,
+    /// Discovered fields with inferred types (#1211 names + #1219 types) — seed the derived model.
+    fields: Vec<ScanField>,
 }
 
 /// A behavior the scan surfaced (an automation / process / formula).
@@ -366,12 +388,24 @@ pub struct ScanResult {
     handle: Option<String>,
     objects: Vec<ScanObject>,
     behaviors: Vec<ScanBehavior>,
+    /// The structured behavior scan (automations / business processes / derived logic) for the
+    /// Source pane's Process visualization (#1209); `behaviors` above stays as flat labels for the
+    /// recap + chips.
+    platform: bsc_data::PlatformScan,
 }
 
 #[cfg(feature = "source-stage")]
 impl ScanResult {
     fn pending(reason: impl Into<String>) -> Self {
-        ScanResult { live: false, reason: Some(reason.into()), instance: None, handle: None, objects: vec![], behaviors: vec![] }
+        ScanResult {
+            live: false,
+            reason: Some(reason.into()),
+            instance: None,
+            handle: None,
+            objects: vec![],
+            behaviors: vec![],
+            platform: bsc_data::PlatformScan::default(),
+        }
     }
 }
 
@@ -404,16 +438,95 @@ fn host_of(url: &str) -> String {
         .to_string()
 }
 
+/// The frontend FieldType string for a `bsc_data::FieldType`.
+#[cfg(feature = "source-stage")]
+fn field_type_str(t: FieldType) -> &'static str {
+    match t {
+        FieldType::String => "string",
+        FieldType::Number => "number",
+        FieldType::Bool => "bool",
+        FieldType::Date => "date",
+        FieldType::Money => "money",
+        FieldType::Enum => "enum",
+        FieldType::Ref => "ref",
+    }
+}
+
+/// Infer a column's type from its sampled values (#1219): the base type (bool/number/money/date/
+/// string) plus enum detection — a low-cardinality categorical text column becomes an `enum` with
+/// its observed values. Returns `(type, enum_values)`.
+#[cfg(feature = "source-stage")]
+fn infer_typed(samples: &[&str]) -> (String, Vec<String>) {
+    let base = infer_field_type(samples);
+    if matches!(base, FieldType::String) {
+        let non_empty: Vec<&str> = samples.iter().copied().filter(|s| !s.is_empty()).collect();
+        let mut distinct: Vec<String> = non_empty.iter().map(|s| s.to_string()).collect();
+        distinct.sort();
+        distinct.dedup();
+        // ≥4 non-empty samples, 2–6 distinct values, and repeats (distinct < total) ⇒ categorical.
+        if non_empty.len() >= 4 && (2..=6).contains(&distinct.len()) && distinct.len() < non_empty.len() {
+            return ("enum".to_string(), distinct);
+        }
+    }
+    (field_type_str(base).to_string(), vec![])
+}
+
+/// Build typed fields for an object from its columns + the sampled rows (#1219). Column samples are
+/// matched by name against the read RowSet (falling back to position); no rows ⇒ all `string`.
+#[cfg(feature = "source-stage")]
+fn infer_fields(columns: &[String], rs: Option<&bsc_data::RowSet>) -> Vec<ScanField> {
+    columns
+        .iter()
+        .enumerate()
+        .map(|(ci, name)| {
+            let samples: Vec<&str> = match rs {
+                Some(r) => {
+                    let idx = r.columns.iter().position(|c| c == name).unwrap_or(ci);
+                    r.rows.iter().filter_map(|row| row.get(idx).map(String::as_str)).collect()
+                }
+                None => vec![],
+            };
+            let (ty, enum_values) = infer_typed(&samples);
+            ScanField { name: name.clone(), ty, enum_values, ref_target: None }
+        })
+        .collect()
+}
+
+/// Build typed fields from a connector's **declared** schema (#1219) — the source system's own
+/// field types (Salesforce picklists → enum + options, lookups → ref + target). Used in
+/// preference to value inference whenever `describe_object` returns a non-empty schema.
+#[cfg(feature = "source-stage")]
+fn declared_fields(declared: &[bsc_data::SourceField]) -> Vec<ScanField> {
+    declared
+        .iter()
+        .map(|f| ScanField {
+            name: f.name.clone(),
+            ty: field_type_str(f.ty).to_string(),
+            enum_values: f.enum_values.clone(),
+            ref_target: f.ref_target.clone(),
+        })
+        .collect()
+}
+
 /// Run objects() (bounded, with a sample-count read) + scan_platform() over a built connector.
 #[cfg(feature = "source-stage")]
 fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, String> {
     let objs = conn.objects().map_err(|e| e.to_string())?;
     let mut objects = Vec::new();
     for o in objs.into_iter().take(12) {
-        let count = conn.read(&o.name).map(|rs| rs.rows.len()).unwrap_or(0);
-        objects.push(ScanObject { name: o.name, count });
+        let rs = conn.read(&o.name).ok();
+        let count = rs.as_ref().map(|r| r.rows.len()).unwrap_or(0);
+        // Prefer the connector's declared types; fall back to value inference when it has none.
+        let declared = conn.describe_object(&o.name).unwrap_or_default();
+        let fields = if declared.is_empty() {
+            infer_fields(&o.columns, rs.as_ref())
+        } else {
+            declared_fields(&declared)
+        };
+        objects.push(ScanObject { name: o.name, count, fields });
     }
-    let behaviors = behaviors_summary(&conn.scan_platform().map_err(|e| e.to_string())?);
+    let platform = conn.scan_platform().map_err(|e| e.to_string())?;
+    let behaviors = behaviors_summary(&platform);
     Ok(ScanResult {
         live: true,
         reason: None,
@@ -421,6 +534,7 @@ fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, Stri
         instance: Some(instance),
         objects,
         behaviors,
+        platform,
     })
 }
 
@@ -433,8 +547,11 @@ pub fn data_platform_scan(
     source_uid: String,
     fields: std::collections::HashMap<String, String>,
 ) -> Result<ScanResult, String> {
-    let meta = bsc_data::source_connector(&connector_id)
-        .ok_or_else(|| format!("unknown connector `{connector_id}`"))?;
+    let meta = match bsc_data::source_connector(&connector_id) {
+        Some(m) => m,
+        // Not a built-in — try a runtime (planner-authored) REST preset (#1235).
+        None => return scan_runtime_preset(&connector_id, &project, &source_uid, &fields),
+    };
     if let bsc_data::LiveSupport::Pending(reason) = meta.live {
         return Ok(ScanResult::pending(reason));
     }
@@ -455,6 +572,78 @@ pub fn data_platform_scan(
         "dynamics365" => scan_dynamics(&fields, &secret),
         other => Ok(ScanResult::pending(format!("no live transport for {other}"))),
     }
+}
+
+/// Which keychain field holds a runtime preset's secret, keyed by its declared auth method (#1235).
+#[cfg(feature = "source-stage")]
+fn runtime_secret_field(auth: &str) -> &'static str {
+    match auth {
+        "basic" => "password",
+        "apikey" => "apiKey",
+        "token" => "token",
+        _ => "accessToken", // oauth
+    }
+}
+
+/// Scan a runtime (planner-authored) REST preset (#1235). The connector id isn't a built-in, so
+/// resolve it from the connectors store, pull its secret from the keychain by the auth method, and
+/// build the audited generic REST connector. Read-only (#782); a missing id is the "unknown
+/// connector" error the built-in path would have produced.
+#[cfg(feature = "source-stage")]
+fn scan_runtime_preset(
+    connector_id: &str,
+    project: &str,
+    source_uid: &str,
+    fields: &std::collections::HashMap<String, String>,
+) -> Result<ScanResult, String> {
+    let preset = bsc_data::find_runtime_preset(&bsc_data::runtime_store_path(), connector_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("unknown connector `{connector_id}`"))?;
+    let secret = crate::credentials::get_secret(project, source_uid, runtime_secret_field(&preset.auth))
+        .unwrap_or_default();
+    scan_rest_preset(&preset, fields, &secret)
+}
+
+/// Build + scan the generic REST connector for a runtime preset, applying its declared auth. The
+/// instance base may be supplied per-scan (a tenant URL via `baseUrl`/`instanceUrl`) or default
+/// from the preset; `basic` auth takes `user` from `fields`, the bearer methods take the secret.
+#[cfg(feature = "source-stage")]
+fn scan_rest_preset(
+    preset: &bsc_data::RuntimePreset,
+    fields: &std::collections::HashMap<String, String>,
+    secret: &str,
+) -> Result<ScanResult, String> {
+    let base = fields
+        .get("baseUrl")
+        .or_else(|| fields.get("instanceUrl"))
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .or_else(|| preset.base_url.clone())
+        .filter(|s| !s.is_empty())
+        .ok_or("missing base URL — set baseUrl or the preset's base_url")?;
+    let base = base.trim_end_matches('/').to_string();
+    let user = fields.get("user").cloned().unwrap_or_default();
+    let client = reqwest::blocking::Client::new();
+    let (b, auth, sec, u) = (base.clone(), preset.auth.clone(), secret.to_string(), user);
+    let fetch = move |path: &str| -> bsc_data::Result<serde_json::Value> {
+        let url = if path.is_empty() {
+            format!("{b}/")
+        } else {
+            format!("{b}/{}", path.trim_start_matches('/'))
+        };
+        let req = client.get(&url).header("Accept", "application/json");
+        let req = match auth.as_str() {
+            "basic" => req.basic_auth(&u, Some(&sec)),
+            // oauth / token / apikey ride a bearer header (sanctioned methods, #1199 Part C).
+            _ if !sec.is_empty() => req.bearer_auth(&sec),
+            _ => req,
+        };
+        req.send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&preset.connector(host_of(&base), fetch), host_of(&base))
 }
 
 // Production API bases for the connectors whose host is fixed (not derived from a user field).
@@ -713,6 +902,22 @@ mod tests {
 
     #[cfg(feature = "source-stage")]
     #[test]
+    fn infer_typed_classifies_columns_and_detects_enums() {
+        use super::infer_typed;
+        assert_eq!(infer_typed(&["1.50", "2.99", "3.00"]).0, "money");
+        assert_eq!(infer_typed(&["2024-01-15", "2024-06-01"]).0, "date");
+        assert_eq!(infer_typed(&["1", "2", "3"]).0, "number");
+        assert_eq!(infer_typed(&["true", "false"]).0, "bool");
+        // A low-cardinality categorical column ⇒ enum, with its observed values.
+        let (ty, vals) = infer_typed(&["Green", "Red", "Green", "Yellow", "Red", "Green"]);
+        assert_eq!(ty, "enum");
+        assert_eq!(vals, vec!["Green", "Red", "Yellow"]);
+        // High-cardinality / unique text stays string (not enum).
+        assert_eq!(infer_typed(&["Acme", "Globex", "Initech", "Umbrella", "Stark"]).0, "string");
+    }
+
+    #[cfg(feature = "source-stage")]
+    #[test]
     fn data_source_inventory_returns_columns_from_csv() {
         let tmp = std::env::temp_dir();
         let csv = tmp.join(format!("bsc-inv-{}.csv", std::process::id()));
@@ -854,7 +1059,10 @@ mod scan_it {
         let f = fields(&[("serviceUrl", &srv.base), ("user", "u")]);
         let r = scan_odata(&f, "pw").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
-        assert!(r.objects.iter().any(|o| o.name == "Customers"));
+        let cust = r.objects.iter().find(|o| o.name == "Customers").unwrap();
+        // Discovered columns flow through to ScanObject.fields (#1211).
+        let names: Vec<&str> = cust.fields.iter().map(|f| f.name.as_str()).collect();
+        assert!(names.contains(&"CustomerID") && names.contains(&"CompanyName"));
     }
 
     #[test]
@@ -870,8 +1078,11 @@ mod scan_it {
         let f = fields(&[("realm", "acme.quickbase.com"), ("appId", "app1")]);
         let r = scan_quickbase(&srv.base, &f, "tok123").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
-        assert!(r.objects.iter().any(|o| o.name == "Projects"));
+        let proj = r.objects.iter().find(|o| o.name == "Projects").unwrap();
+        assert_eq!(proj.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["Name"]); // field labels → ScanObject.fields (#1211)
         assert!(r.behaviors.iter().any(|b| b.label == "Projects.Name"));
+        // Structured behaviors surface for the Process visualization (#1209).
+        assert!(r.platform.automations.iter().any(|a| a.name == "Projects.Name"));
     }
 
     #[test]
@@ -886,7 +1097,8 @@ mod scan_it {
         );
         let r = scan_hubspot(&srv.base, "tok123").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
-        assert!(r.objects.iter().any(|o| o.name == "contacts"));
+        let contacts = r.objects.iter().find(|o| o.name == "contacts").unwrap();
+        assert!(contacts.fields.iter().any(|f| f.name == "email")); // property names → fields (#1211)
         assert!(r.behaviors.iter().any(|b| b.label == "Lead nurture"));
     }
 
@@ -901,7 +1113,8 @@ mod scan_it {
         );
         let r = scan_monday(&srv.base, "tok123").unwrap();
         assert!(r.live, "reason: {:?}", r.reason);
-        assert!(r.objects.iter().any(|o| o.name == "Projects"));
+        let proj = r.objects.iter().find(|o| o.name == "Projects").unwrap();
+        assert_eq!(proj.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["Status"]); // board column titles → fields (#1211)
         assert!(r.behaviors.iter().any(|b| b.label.contains("Status")));
     }
 

@@ -6,11 +6,30 @@ import {
   parseConnect,
   nextAlarmAt,
   roomLifetimeExceeded,
+  healthBody,
+  HEALTH_CORS_HEADERS,
+  RELAY_SERVICE,
   MAX_FRAME_BYTES,
   MAX_GUESTS,
   IDLE_TIMEOUT_MS,
   ROOM_TTL_MS,
 } from "../src/protocol";
+
+describe("/health probe payload (#930)", () => {
+  it("identifies the relay so the desktop probe can tell it apart from a random 200", () => {
+    expect(healthBody().service).toBe(RELAY_SERVICE);
+    expect(healthBody().ok).toBe(true);
+    expect(typeof healthBody().version).toBe("string");
+  });
+
+  it("stays content-free — only ok/service/version, never room/peer/secret data", () => {
+    expect(Object.keys(healthBody()).sort()).toEqual(["ok", "service", "version"]);
+  });
+
+  it("stays CORS-open so the webview can probe it cross-origin", () => {
+    expect(HEALTH_CORS_HEADERS["Access-Control-Allow-Origin"]).toBe("*");
+  });
+});
 
 describe("validateRoomId", () => {
   it("accepts 16–64 char base64url ids", () => {

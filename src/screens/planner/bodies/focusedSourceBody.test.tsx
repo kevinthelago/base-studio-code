@@ -53,8 +53,9 @@ describe("FocusedSourceBody — spec-driven connect (token)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /save & connect/i }));
 
-    // The simulated connect → scanning → scanned surfaces the discovered inventory.
-    await waitFor(() => expect(screen.getByText("Projects")).toBeTruthy());
+    // The connect → scanning → scanned surfaces the discovered inventory (in the source card
+    // grid and the aggregate ScanViews — so it can appear more than once).
+    await waitFor(() => expect(screen.getAllByText("Projects").length).toBeGreaterThan(0));
     expect(screen.getByText(/feeds the «your Data Model» Data Model/)).toBeTruthy();
     // The secret value is NEVER persisted into the config.
     const persisted = useAppStore.getState().planSourceConfig.p1.sources[0];
@@ -101,9 +102,10 @@ describe("FocusedSourceBody — closes the data-dictates-structure loop (#1205)"
     fireEvent.change(screen.getByLabelText("User Token"), { target: { value: "tok" } });
     fireEvent.click(screen.getByRole("button", { name: /save & connect/i }));
 
-    // The recap appears once the source is scanned (gate met) …
-    await waitFor(() => expect(screen.getByTestId("downstream-impact")).toBeTruthy());
-    expect(screen.getByTestId("downstream-impact").textContent).toMatch(/Seeds .* into features/i);
+    // The scanned-result visualizations appear once the source is scanned (gate met); their header
+    // carries the downstream-impact recap …
+    await waitFor(() => expect(screen.getByTestId("scan-views")).toBeTruthy());
+    expect(screen.getByTestId("scan-views").textContent).toMatch(/seeds .* into features/i);
     // … and the derived model is persisted as the canonical artifact (refined, the user confirmed it).
     expect(vi.mocked(invoke)).toHaveBeenCalledWith(
       "data_persist_model",

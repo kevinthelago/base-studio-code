@@ -13,7 +13,7 @@ import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } 
 import { newTabId } from "../helpers";
 
 type ConsoleSlice = Pick<AppStore,
-  "activeScreen" | "setScreen" | "hasHydrated" | "setHasHydrated" | "tabs" | "activeTabIdx" | "paneMenuOpenIdx" | "focusedPaneIdx" | "fullscreenPaneIdx" | "consoleBroadcast" | "setConsoleBroadcast" | "focusQueue" | "focusTarget" | "setFocusTarget" | "enqueueFocus" | "removeFocus" | "clearFocusQueue" | "reconcileFocusQueue" | "advanceFocus" | "terminalFontSize" | "setTerminalFontSize" | "accent" | "setAccent" | "keybindings" | "setKeybinding" | "resetKeybinding" | "resetAllKeybindings" | "paneViews" | "paneNames" | "paneCwds" | "paneWasClaude" | "uncleanShutdown" | "setUncleanShutdown" | "restoreRequested" | "restoreSessionsFromCrash" | "achievements" | "unlockAchievement" | "setPaneWasClaude" | "setPaneCwd" | "paneStatus" | "setPaneStatus" | "quarantinedPanes" | "markQuarantine" | "clearQuarantine" | "dormantPanes" | "paneLastActivity" | "idleReaper" | "reapPane" | "resumePane" | "setIdleReaperConfig" | "recomputeTabState" | "clearTabStatuses" | "paneInitCmds" | "setPaneInitCmd" | "paneStartupPromptDocs" | "paneReferenceDocs" | "paneCheckpointDocs" | "paneStartupPromptText" | "paneContinue" | "disabledPanes" | "setPaneDisabled" | "paneRoles" | "setPaneRole" | "agentProfiles" | "setAgentProfiles" | "updateAgentProfile" | "panePermsStale" | "clearPanePermsStale" | "paneProfiles" | "paneRoleGlobs" | "paneRepos" | "paneFlows" | "paneProviders" | "setPaneProvider" | "paneClaudeActive" | "setPaneClaudeActive" | "setPaneProfile" | "setActiveTab" | "addTab" | "closeTab" | "moveTab" | "renameTab" | "setTabState" | "setTabLayout" | "setPaneMenu" | "setFocusedPane" | "setFullscreenPane" | "focusedAgentName" | "setFocusedAgentName" | "setPaneView" | "setAllPanesView" | "setPaneName" | "liveAgents" | "bumpLiveAgents" | "paneDirectorDrive" | "paneDirectorMode" | "paneStream"
+  "activeScreen" | "setScreen" | "hasHydrated" | "setHasHydrated" | "tabs" | "activeTabIdx" | "paneMenuOpenIdx" | "focusedPaneIdx" | "fullscreenPaneIdx" | "consoleBroadcast" | "setConsoleBroadcast" | "focusQueue" | "focusTarget" | "setFocusTarget" | "enqueueFocus" | "removeFocus" | "clearFocusQueue" | "reconcileFocusQueue" | "advanceFocus" | "terminalFontSize" | "setTerminalFontSize" | "accent" | "setAccent" | "keybindings" | "setKeybinding" | "resetKeybinding" | "resetAllKeybindings" | "paneViews" | "paneNames" | "paneCwds" | "paneWasClaude" | "uncleanShutdown" | "setUncleanShutdown" | "restoreRequested" | "restoreSessionsFromCrash" | "achievements" | "unlockAchievement" | "setPaneWasClaude" | "setPaneCwd" | "paneStatus" | "setPaneStatus" | "quarantinedPanes" | "markQuarantine" | "clearQuarantine" | "endedPanes" | "markPaneEnded" | "reopenPane" | "dormantPanes" | "paneLastActivity" | "idleReaper" | "reapPane" | "resumePane" | "setIdleReaperConfig" | "recomputeTabState" | "clearTabStatuses" | "paneInitCmds" | "setPaneInitCmd" | "paneStartupPromptDocs" | "paneReferenceDocs" | "paneCheckpointDocs" | "paneStartupPromptText" | "paneContinue" | "disabledPanes" | "setPaneDisabled" | "paneRoles" | "setPaneRole" | "agentProfiles" | "setAgentProfiles" | "updateAgentProfile" | "panePermsStale" | "clearPanePermsStale" | "paneProfiles" | "paneRoleGlobs" | "paneRepos" | "paneFlows" | "paneProviders" | "setPaneProvider" | "paneClaudeActive" | "setPaneClaudeActive" | "setPaneProfile" | "setActiveTab" | "addTab" | "closeTab" | "moveTab" | "renameTab" | "setTabState" | "setTabLayout" | "setPaneMenu" | "setFocusedPane" | "setFullscreenPane" | "focusedAgentName" | "setFocusedAgentName" | "setPaneView" | "setAllPanesView" | "setPaneName" | "liveAgents" | "bumpLiveAgents" | "paneDirectorDrive" | "paneDirectorMode" | "paneStream"
 >;
 
 export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = (set, get) => ({
@@ -126,7 +126,9 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           // resolves to `claude --continue` because restoreRequested is set for the pane.
           setTimeout(() => {
             set((st) => {
-              if (tabIdx < 0 || tabIdx >= st.tabs.length || st.disabledPanes[paneId]) return {};
+              // Skip disabled panes and auto-ended workers (#920) — a finished worker must not
+              // be re-opened on crash-restore; its ended state is persisted + recovery-gated here.
+              if (tabIdx < 0 || tabIdx >= st.tabs.length || st.disabledPanes[paneId] || st.endedPanes[paneId]) return {};
               return {
                 restoreRequested: { ...st.restoreRequested, [paneId]: true },
                 tabs: st.tabs.map((t, idx) => (idx === tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
@@ -173,6 +175,23 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           const next = { ...s.quarantinedPanes };
           delete next[paneId];
           return { quarantinedPanes: next };
+        }),
+      // ── Auto-end finished workers (#920) ─────────────────────────────────────
+      endedPanes: {},
+      markPaneEnded: (paneId, info) =>
+        set((s) => {
+          if (s.endedPanes[paneId]) return {}; // already ended — never re-mark
+          // Drop the live status so the pane reads as not-running (its PTY has exited).
+          const paneStatus = { ...s.paneStatus };
+          delete paneStatus[paneId];
+          return { endedPanes: { ...s.endedPanes, [paneId]: info }, paneStatus };
+        }),
+      reopenPane: (paneId) =>
+        set((s) => {
+          if (!s.endedPanes[paneId]) return {};
+          const endedPanes = { ...s.endedPanes };
+          delete endedPanes[paneId];
+          return { endedPanes, paneLastActivity: { ...s.paneLastActivity, [paneId]: Date.now() } };
         }),
       // ── Idle session reaping (#849) ──────────────────────────────────────────
       dormantPanes: {},

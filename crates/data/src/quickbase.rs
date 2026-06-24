@@ -14,7 +14,8 @@
 use serde_json::Value;
 
 use crate::behavior::{Automation, AutomationKind, DerivedKind, DerivedLogic, PlatformScan};
-use crate::connector::{Connector, RowSet, SourceObject};
+use crate::connector::{Connector, RowSet, SourceField, SourceObject};
+use crate::schema::FieldType;
 use crate::{DataError, Result};
 
 /// A request-descriptor → parsed-JSON closure. Owns the user token + realm; the connector
@@ -90,6 +91,28 @@ fn cell_to_string(v: &Value) -> String {
     }
 }
 
+/// Map a Quickbase field's declared `fieldType` to a vendor-neutral [`SourceField`] (#1230):
+/// currency → money, numeric/percent/rating/duration → number, date/datetime/timestamp/timeofday
+/// → date, checkbox → bool, text-multiple-choice → enum + its `properties.choices`, else string.
+fn qb_field(f: &Value) -> Option<SourceField> {
+    let name = f["label"].as_str()?.to_string();
+    let (ty, enum_values) = match f["fieldType"].as_str().unwrap_or("text") {
+        "currency" => (FieldType::Money, vec![]),
+        "numeric" | "percent" | "rating" | "duration" => (FieldType::Number, vec![]),
+        "date" | "datetime" | "timestamp" | "timeofday" => (FieldType::Date, vec![]),
+        "checkbox" => (FieldType::Bool, vec![]),
+        "text-multiple-choice" => (
+            FieldType::Enum,
+            f["properties"]["choices"]
+                .as_array()
+                .map(|c| c.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default(),
+        ),
+        _ => (FieldType::String, vec![]),
+    };
+    Some(SourceField { name, ty, enum_values, ref_target: None })
+}
+
 impl Connector for QuickbaseConnector {
     fn name(&self) -> &str {
         &self.name
@@ -131,6 +154,13 @@ impl Connector for QuickbaseConnector {
             .collect();
 
         Ok(RowSet { columns, rows })
+    }
+
+    /// Declared field types from the fields API (#1230): multiple-choice fields carry their
+    /// choices as an enum; numerics/currency/date/checkbox map to the closest scalar type.
+    fn describe_object(&self, object: &str) -> Result<Vec<SourceField>> {
+        let id = self.table_id_by_name(object)?;
+        Ok(self.fields(&id)?.iter().filter_map(qb_field).collect())
     }
 
     /// Capture formula fields (derived logic) and required/unique constraints (validations).
@@ -232,6 +262,30 @@ mod tests {
         assert_eq!(names, vec!["Projects", "Tickets"]);
         let projects = objs.iter().find(|o| o.name == "Projects").unwrap();
         assert_eq!(projects.columns, vec!["Name", "Budget", "Spend %"]);
+    }
+
+    const TYPED_FIELDS: &str = r#"[
+        {"id": 6,  "label": "Name",   "fieldType": "text"},
+        {"id": 7,  "label": "Budget", "fieldType": "currency"},
+        {"id": 8,  "label": "Due",    "fieldType": "date"},
+        {"id": 9,  "label": "Done",   "fieldType": "checkbox"},
+        {"id": 10, "label": "Stage",  "fieldType": "text-multiple-choice", "properties": {"choices": ["Open", "Closed"]}}
+    ]"#;
+
+    #[test]
+    fn describe_object_maps_field_types() {
+        let c = QuickbaseConnector::new("qb", "app", move |desc| {
+            let body = if desc.contains("tables") { TABLES } else { TYPED_FIELDS };
+            Ok(serde_json::from_str(body).unwrap())
+        });
+        let fields = c.describe_object("Projects").unwrap();
+        let by = |n: &str| fields.iter().find(|f| f.name == n).unwrap();
+        assert_eq!(by("Budget").ty, FieldType::Money);
+        assert_eq!(by("Due").ty, FieldType::Date);
+        assert_eq!(by("Done").ty, FieldType::Bool);
+        assert_eq!(by("Stage").ty, FieldType::Enum);
+        assert_eq!(by("Stage").enum_values, vec!["Open", "Closed"]);
+        assert_eq!(by("Name").ty, FieldType::String);
     }
 
     #[test]

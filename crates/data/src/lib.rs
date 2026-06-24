@@ -38,6 +38,7 @@ pub mod pipefy;
 pub mod linear;
 pub mod rest;
 pub mod presets;
+pub mod runtime;
 pub mod registry;
 
 #[cfg(feature = "duckdb-store")]
@@ -45,7 +46,7 @@ pub mod store;
 
 pub use error::{DataError, Result};
 pub use schema::{DataModel, Entity, Field, FieldType};
-pub use connector::{Connector, CsvConnector, RowSet, SourceObject};
+pub use connector::{Connector, CsvConnector, RowSet, SourceField, SourceObject};
 pub use reconcile::{reconcile, verify_reconciled, MergedRecord, Precedence, Reconciled, SourceLoad, VerifyResult};
 pub use infer::{infer, EntityInference, FieldProvenance, InferResult};
 pub use behavior::{
@@ -73,6 +74,11 @@ pub use pipefy::PipefyConnector;
 pub use linear::LinearConnector;
 pub use rest::{RestConnector, RestResource};
 pub use presets::{VendorPreset, CATALOG as VENDOR_PRESETS};
+pub use runtime::{
+    find_runtime_preset, load_runtime_presets, remove_runtime_preset, runtime_store_path,
+    save_runtime_presets, upsert_runtime_preset, RuntimePreset, RuntimeResource,
+    RUNTIME_AUTH_KINDS,
+};
 pub use registry::{source_connector, LiveSupport, SourceAuth, SourceConnectorMeta, SOURCE_CONNECTORS};
 
 #[cfg(feature = "duckdb-store")]
