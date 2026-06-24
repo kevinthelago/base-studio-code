@@ -1011,8 +1011,9 @@ export function Planning({ visible }: { visible: boolean }) {
   // than building software. The in-progress blueprint arrives via the planner's <blueprint> tag.
   const activeBlueprint = useMemo(() => blueprints.find(b => b.id === effectiveBlueprintId), [blueprints, effectiveBlueprintId]);
   const isAuthoring = isAuthoringBlueprint(activeBlueprint);
-  // Blueprint switching (#923): only a greenfield project may switch, and only to a transform/harden
-  // lifecycle. Offer the valid targets in a "switch lifecycle" control.
+  // Blueprint switching (#1281): any project blueprint may switch to any OTHER one — the
+  // reset/keep/export confirmation modal is the safety, not a category rule (only the blueprint-
+  // authoring lifecycle is excluded). Offer every other blueprint as a target.
   const switchTargets = useMemo(
     () => blueprints.filter(b => canSwitchBlueprint(activeBlueprint, b)),
     [blueprints, activeBlueprint]);
@@ -2005,8 +2006,8 @@ export function Planning({ visible }: { visible: boolean }) {
     void handleRestart();
   }
 
-  // Switch the project to a transform/harden lifecycle (#923 — greenfield → transform|harden only;
-  // applyBlueprintToProject enforces the rule + re-seeds the stage config + clears the old progress).
+  // Switch the project to another blueprint (#1281 — any → any other project blueprint, confirmed via
+  // the switch modal; applyBlueprintToProject re-seeds the stage config + clears the old progress).
   // Wipe the on-disk plan files for the old stages, then restart the planner on the new blueprint.
   async function doSwitchBlueprint(targetId: string) {
     setSwitchOpen(false);
