@@ -27,6 +27,25 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(onSelect).toHaveBeenCalledWith(2);
   });
 
+  it("renders session-authored skills first, with a NEW badge (#1056)", () => {
+    const data = {
+      agents: [], repos: [], structure: [], phaseStructure: [], issues: [], context: [],
+      skills: [
+        { name: "Existing skill", kind: "skill", desc: "old" },
+        { name: "Fresh skill", kind: "skill", desc: "new", isNew: true },
+      ],
+    } as unknown as Parameters<typeof ProjectPane>[0]["data"];
+    render(<ProjectPane data={data} focus={baseFocus({
+      phases: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+    })} />);
+    // The authored skill carries a NEW badge…
+    expect(screen.getByText("NEW")).toBeInTheDocument();
+    // …and renders before the pre-existing one (new-first ordering).
+    const fresh = screen.getByText("Fresh skill");
+    const existing = screen.getByText("Existing skill");
+    expect(fresh.compareDocumentPosition(existing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("shows a lock banner when browsing a future phase", () => {
     render(<ProjectPane focus={baseFocus({ selectedIdx: 2, activeIdx: 0 })} />);
     expect(screen.getByText(/Locked\./)).toBeInTheDocument();
