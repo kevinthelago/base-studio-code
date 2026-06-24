@@ -9,7 +9,7 @@ is [`src/lib/tunnel/tunnelProtocol.fixtures.json`](../src/lib/tunnel/tunnelProto
 
 The application schema is owned by the **mobile** client —
 `mobile-studio-code/src/lib/types.ts` (`TunnelClientMessage` / `TunnelServerMessage`).
-That client already ships, so the desktop (`src-tauri/src/tunnel.rs`) and frontend
+That client already ships, so the desktop (`src-tauri/src/mobile/tunnel/`) and frontend
 (`src/lib/tunnel/tunnel.ts`) **conform to it**. The TS tests (`src/lib/tunnel/tunnel.test.ts`)
 and (once it lands) the Rust transport assert against the shared fixture, so a drift
 fails CI on the base side; a breaking change requires **coordinated PRs in both repos**.
@@ -203,14 +203,14 @@ private key*, and place it at the path above).
 Pane *metadata* (names, cwds, statuses) lives in the frontend Zustand store; the pure
 transform that maps it into `pane_list` / `session_state` shapes is
 [`buildPanePayload`](../src/lib/tunnel/tunnel.ts). PTY bytes are teed from the existing emitter
-thread in `src-tauri/src/lib.rs` into the tunnel's in-process bus (a no-op while nobody
+thread in `src-tauri/src/console/pty.rs` into the tunnel's in-process bus (a no-op while nobody
 is connected) and drained by the relay transport (#242). Inbound input/resize is routed
 back into the PTY.
 
 ## Relay test / health probe (`tunnel_check_relay`)
 
 The Settings card can probe any relay URL for liveness via the `tunnelCheckRelay` Tauri
-command (T3b, `src-tauri/src/tunnel.rs`). The command GETs `<relayUrl>/health` with a 5 s
+command (T3b, `src-tauri/src/mobile/tunnel/`). The command GETs `<relayUrl>/health` with a 5 s
 timeout and returns a `RelayDiag`:
 
 | Field | Meaning |
@@ -264,7 +264,7 @@ receives a close frame with reason `"room idle timeout"` or `"room lifetime exce
 - **T8** refreshed this doc to cover all landed protocol additions (F2/A2/M2/PT2).
 - **PT1** (#934/#985/#986/#987) added the **live planning session** surface, distinct from the
   `plan_sync_*` file path: `PlanState` + `PlanEvent` + `PlanStatus` ServerMsg and the input-gated
-  `PlanAdvance` + `PlanConfirm` + `PlanChat` ClientMsg (`src-tauri/src/tunnel.rs`); `plan_state` /
+  `PlanAdvance` + `PlanConfirm` + `PlanChat` ClientMsg (`src-tauri/src/mobile/tunnel/`); `plan_state` /
   `plan_status` are replayed on connect, `plan_event` is fire-and-forget. `messages` come from
   `tokens::read_pane_messages` (the Claude transcript). The TS frame types + fixtures moved under
   `src/lib/tunnel/`. Mobile counterpart: #1245.

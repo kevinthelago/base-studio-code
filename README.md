@@ -101,9 +101,11 @@ cargo test          # Rust backend tests
 
 ```
 base-studio-code/
-├── src-tauri/          # Rust backend (Tauri v2)
-│   ├── src/lib.rs      # PTY, git info, file picker, API proxy commands
+├── src-tauri/          # Rust backend (Tauri v2) — one folder per subsystem under src/
+│   ├── src/            # platform · app · console · agent · project · planner · fleet ·
+│   │                   #   github · sources · extensions · knowledge · observability · mobile
 │   └── tauri.conf.json
+├── crates/             # Tauri-free workspace crates — data · plandb · llm · research · bsc-agent
 ├── src/                # React frontend
 │   ├── App.tsx         # Shell (Titlebar + Rail + screen switcher)
 │   ├── styles/

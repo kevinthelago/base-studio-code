@@ -22,7 +22,7 @@ Mirror the existing skills channel (`skills.json → upsertSkills`, #1086). Pick
   (`~/.base-studio-code/projects/<key>/`). Frontend already has the parser (`parseSkillGroupsFile`)
   and store upsert (`upsertSkillGroups`) — wiring the read is a small **frontend** follow-up
   (poll + `upsertSkillGroups`, parallel to how `skills.json` is read). **Rust:** `setup_workspaces`
-  in `src-tauri/src/lib.rs` should scaffold/allow `skill_groups.json`, and the planner spec
+  in `src-tauri/src/planner/workspace.rs` should scaffold/allow `skill_groups.json`, and the planner spec
   (`CLAUDE.md` template / `src-tauri/templates/*.md`) must document the file + its shape:
   `[{ "name": "Release day", "hue": "var(--accent)", "skills": ["<skill name or slug>", …] }]`.
 
@@ -37,12 +37,12 @@ For "toggle a group onto a stream", the fleet stream model needs `groupIds: stri
 - **Launch:** in `fleetStartProject` (`store/slices/projects.ts`), a worker's effective groups become
   `stream.groupIds ∪ sessionSkillGroups[key]` before the `expandGroups(...)` call already in place
   (one-line change — the resolver already accepts the merged set).
-- **Rust:** wherever `fleet.json` / the stream schema is written/validated (lib.rs `setup_workspaces`,
+- **Rust:** wherever `fleet.json` / the stream schema is written/validated (`planner/workspace.rs` `setup_workspaces`,
   plan.db `crates/plandb`) gains the `groupIds` field; the planner spec documents assigning a group
   to a stream.
 
 ### 3. Planner spec / templates
-Extend the planner `CLAUDE.md` template (in `src-tauri/src/lib.rs` / `src-tauri/templates/`) to teach
+Extend the planner `CLAUDE.md` template (in `src-tauri/src/planner/templates.rs` + `planner/directives.rs`) to teach
 the planner the task-groups concept and the chosen channel from (1)/(2): author reusable groups,
 attach a group to a stream, so a stream's workers get the whole bundle at launch.
 

@@ -37,7 +37,7 @@ A stdio MCP server exposing five tools:
   `src/lib/session/mcpServers.ts`, command marker `bsc-research-mcp`); it's merged into
   `resolveMcpServers` / `resolveAllInstalledMcp` so the planner, director, and every worker get it by
   default, and it stays assignable per-worker via a stream's `mcp` list. When writing `.mcp.json`,
-  `mcp_server_value` (`src-tauri/src/lib.rs`) rewrites the marker to the bundled binary's absolute
+  `mcp_server_value` (`src-tauri/src/extensions/mcp.rs`) rewrites the marker to the bundled binary's absolute
   path (Claude Code spawns `.mcp.json` commands directly, with no PATH/shell-rc).
 - **MCP screen** — Research appears under **Built-in tools** (always available), not the downloadable
   browse list.
