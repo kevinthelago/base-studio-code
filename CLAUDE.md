@@ -18,8 +18,8 @@ The core value proposition: run many AI coding agents in parallel across multipl
 | Styling | CSS custom properties (`src/styles/tokens.css`) |
 | Fonts | Inter (sans) · JetBrains Mono (mono) via Google Fonts |
 | Agent orchestration | Claude Code (default) or the model-agnostic `bsc-agent` shell; pluggable `LlmProvider` — Anthropic (`claude-sonnet-4-6` default), OpenAI, Gemini, local (`crates/llm`) |
-| Mobile tunnel | Relay client (`src-tauri/src/tunnel.rs`) dialing a zero-knowledge Cloudflare Worker relay (`relay/`) — Noise IK E2E + QR pairing |
-| Storage | SQLite (`crates/kb`, `crates/orch`) |
+| Mobile tunnel | Relay client (`src-tauri/src/mobile/tunnel/`) dialing a zero-knowledge Cloudflare Worker relay (`relay/`) — Noise IK E2E + QR pairing |
+| Storage | SQLite (`crates/plandb`, plan store) · DuckDB (`crates/data`, canonical Data Model) |
 
 ## Testing
 
@@ -29,7 +29,7 @@ Every feature or bug fix must include tests as part of the same branch — never
 |---|---|
 | New store action | Unit test covering the action's state transitions and edge cases |
 | New component | Render smoke test + interaction tests for each user-facing behavior |
-| New Rust command | Unit test or integration test in `src-tauri/src/lib.rs` `#[cfg(test)]` module |
+| New Rust command | Unit test in the owning domain module's `#[cfg(test)]` block; cross-cutting tests live in `src-tauri/src/tests.rs` |
 | Bug fix | A regression test that would have caught the original bug |
 
 **Frontend:** Vitest + React Testing Library. Run with `npm test`.
@@ -52,9 +52,31 @@ npm run typecheck    # TypeScript type-check without emit
 ```
 base-studio-code/
 ├── src-tauri/               # Rust backend (Tauri v2)
-│   ├── Cargo.toml           # workspace
+│   ├── Cargo.toml           # workspace root
 │   ├── tauri.conf.json
-│   └── src/main.rs          # Tauri entry; registers commands
+│   └── src/                 # ONE FOLDER PER SUBSYSTEM — the folder tree IS the architecture
+│       ├── main.rs          #   binary entry → app::run()
+│       ├── lib.rs           #   crate root: module declarations + re-exports only (63 LOC)
+│       ├── tests.rs         #   cross-cutting test module (+ testutil.rs)
+│       ├── platform/        #   OS primitives: paths, git, shell, process, fsx
+│       ├── app/             #   Tauri shell: run(), state, recovery, dialog
+│       ├── console/         #   interactive PTY surface: pty, ledger, discovery, settings, shell_rc
+│       ├── agent/           #   agent launch/config: harness, launch, claude_config
+│       ├── project/         #   on-disk hub + plan store: hub, plan_files, plan_db, blueprints, inspect
+│       ├── planner/         #   planning session: templates, directives, workspace
+│       ├── fleet/           #   worker fleet: worktree, director, staging
+│       ├── github/          #   GitHub integration: api, oauth, repos, readiness, git_hooks
+│       ├── sources/         #   migration data sources: data, oauth, credentials
+│       ├── extensions/      #   MCP servers, hooks, skills, cfg
+│       ├── knowledge/       #   KB / document store: docstore, workspace, chat
+│       ├── observability/   #   logs, perf, tokens, audit
+│       └── mobile/          #   paired companion: push + tunnel/{protocol,noise,transport}
+├── crates/                  # workspace crates (Tauri-free, CLI-spawnable)
+│   ├── data/                #   canonical Data Model (DuckDB) + connectors
+│   ├── plandb/              #   per-project plan store (SQLite) + bsc-plan CLI
+│   ├── llm/                 #   model-agnostic LlmProvider abstraction
+│   ├── research/            #   literature research + bsc-research-mcp server
+│   └── bsc-agent/           #   model-agnostic agent runtime
 ├── src/                     # React frontend (TypeScript)
 │   ├── main.tsx             # Vite entry; imports tokens.css
 │   ├── App.tsx              # Shell (Titlebar + Rail + screen switcher)
@@ -83,10 +105,10 @@ base-studio-code/
 
 ```
 base-studio-code (desktop host)
-├── Agent Orchestrator      — spawns/manages parallel Claude API sessions  (crates/orch)
-├── GitHub Integration      — OAuth, repo selection, PR/issue access       (crates/gh)
-├── Knowledge Store         — injectable context blocks keyed by stack tag  (crates/kb)
-├── Mobile relay client     — dials the Cloudflare relay for mobile pairing (src-tauri/src/tunnel.rs)
+├── Agent Orchestrator      — spawns/manages parallel agent sessions       (src-tauri/src/{console,agent,fleet})
+├── GitHub Integration      — OAuth, repo selection, PR/issue access       (src-tauri/src/github)
+├── Knowledge Store         — injectable context blocks keyed by stack tag  (src-tauri/src/knowledge)
+├── Mobile relay client     — dials the Cloudflare relay for mobile pairing (src-tauri/src/mobile/tunnel)
 └── UI Shell                — Tauri WebView running the React frontend
 ```
 
@@ -106,13 +128,13 @@ mobile-studio-code (standalone app — separate repo; usable on its own)
 
 **Tab** — A named workspace containing one CSS grid layout with N panes. Persists across sessions.
 
-**Tunnel** — The **optional** bridge between desktop and the standalone mobile app. Both peers dial out to a **zero-knowledge Cloudflare relay** (`relay/`); the desktop runs the relay client (`src-tauri/src/tunnel.rs`) and the session is end-to-end encrypted with **Noise IK** (the relay only ever sees ciphertext). Pairing is by QR.
+**Tunnel** — The **optional** bridge between desktop and the standalone mobile app. Both peers dial out to a **zero-knowledge Cloudflare relay** (`relay/`); the desktop runs the relay client (`src-tauri/src/mobile/tunnel/`) and the session is end-to-end encrypted with **Noise IK** (the relay only ever sees ciphertext). Pairing is by QR.
 
 **Automation** — A cron-triggered rule that automatically dispatches a command or loads a knowledge block into a specified console pane.
 
 ## Project Planning
 
-The flagship feature. A **dedicated, app-owned planning session** turns a pitch (new project) or an existing repo set into a complete, executable plan: the feature breakdown, the GitHub structure (milestones + granular issues), the parallel-agent fleet, and the context files every downstream session runs under. The user steers the conversation; the planner produces everything. Entry: `src/screens/projects/` (Planning.tsx, ProjectsList.tsx); backend setup: `src-tauri/src/lib.rs` (`setup_workspaces`).
+The flagship feature. A **dedicated, app-owned planning session** turns a pitch (new project) or an existing repo set into a complete, executable plan: the feature breakdown, the GitHub structure (milestones + granular issues), the parallel-agent fleet, and the context files every downstream session runs under. The user steers the conversation; the planner produces everything. Entry: `src/screens/projects/` (Planning.tsx, ProjectsList.tsx); backend setup: `src-tauri/src/planner/workspace.rs` (`setup_workspaces`).
 
 ### The right pane — focused plan view (#652)
 The planning page is a split: the live Claude session (terminal, center) + the **focused project pane** (`ProjectPane.tsx`, `focus` mode). The pane shows **one phase at a time** — a navigable **stepper** (per-phase status from `sectionStatus`: complete/active/locked/upcoming, incomplete phases pulse), a phase header with a **gate pill** (`evalGate`), lock/done banners, the phase body (Context / Structure+grade+lens / Permissions+director, else a generic card), and a **footer advance bar** (back · jump/back-to-current · approve & continue when the gate passes · publish). It auto-follows the live session (`currentSection` = active phase) while letting the user navigate; selection resets on a project/blueprint switch. Pure model: `focusedPlan.ts`; shell: `FocusedShell.tsx`. (Replaced the all-sections scroll + the full-width N-bar.)
@@ -124,7 +146,7 @@ A **blueprint** is the reusable template that seeds a project's plan: an ordered
 - **Switching (#647):** `projectBlueprintId` records which blueprint seeded a project; opening one whose blueprint differs from the selected one prompts to **reset** (re-seed + clear progress/grades + restart, `applyBlueprintToProject`), **keep**, or export files first.
 
 ### The project key
-`effectiveProjectId = planningSessionKey || activeProjectId || planningTitle || planningPitch` (Planning.tsx). In practice `planningSessionKey` wins and is set to the project **title/name** when planning starts (`setPlanningSession(title)`). `sanitize_project_key` (lib.rs) slugifies it: keep `[A-Za-z0-9-]`, everything else to `_`, cap 80 chars. **WARNING: the key is title-derived, not a stable id** — renaming the project changes the key (and its on-disk paths), and two same-titled projects collide. (Open item: mint a stable id at project creation and key the workspaces off that.)
+`effectiveProjectId = planningSessionKey || activeProjectId || planningTitle || planningPitch` (Planning.tsx). In practice `planningSessionKey` wins and is set to the project **title/name** when planning starts (`setPlanningSession(title)`). `sanitize_project_key` (`platform/fsx.rs`) slugifies it: keep `[A-Za-z0-9-]`, everything else to `_`, cap 80 chars. **WARNING: the key is title-derived, not a stable id** — renaming the project changes the key (and its on-disk paths), and two same-titled projects collide. (Open item: mint a stable id at project creation and key the workspaces off that.)
 
 ### Workspace layout
 `setup_workspaces` creates the project hub at `~/.base-studio-code/projects/<key>/`:
@@ -139,7 +161,7 @@ A **blueprint** is the reusable template that seeds a project's plan: an ordered
 ### The planner is plan-only
 Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context and writes plan files, but cannot edit project code, commit, push, or open PRs. Publishing the GitHub structure is done by the **app** (`handlePublish`), not the planner's shell.
 
-### The planning workflow (driven by the planner CLAUDE.md template in lib.rs)
+### The planning workflow (driven by the planner CLAUDE.md template in `planner/templates.rs` + `planner/directives.rs`)
 1. Link repositories; read the Knowledge Base.
 2. **Discovery checklist** (goal, users, scope, ux, stack, architecture, schema, api, security, testing, …) — scan, propose, confirm, one topic at a time. Each becomes a section file + a `<plan_update>` tag (the right panel reveals it live).
 3. **Develop the GitHub structure — the feature workshop** (#318, the deep interactive core): map the features, drive each down (behavior + acceptance / build approach / tools / data + deps), propose-then-interrogate, one feature at a time, then sequence into phases.
@@ -163,7 +185,7 @@ Three kinds of session live around a project, each needing **different** context
 
 ## Console — the execution surface
 
-Where the planned work runs. A **tab** holds a CSS-grid of **panes**; each pane is a PTY session running `claude` in a repo or worktree, with swappable **views** (console chat, files, branches, changes, log). Backend: `pty_create` in lib.rs; launch wiring: `src/components/pane/views/TerminalView.tsx` + `fleetStartProject` in `src/store/index.ts`.
+Where the planned work runs. A **tab** holds a CSS-grid of **panes**; each pane is a PTY session running `claude` in a repo or worktree, with swappable **views** (console chat, files, branches, changes, log). Backend: `pty_create` in `console/pty.rs`; launch wiring: `src/components/pane/views/TerminalView.tsx` + `fleetStartProject` in `src/store/index.ts`.
 
 ### Session roles + the role gate (#219, `src/lib/sessionRoles.ts`)
 Every session has a role bounding its capabilities (least privilege), applied at launch via `ensure_session_settings` to `.claude/settings.json`:
