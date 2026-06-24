@@ -707,14 +707,26 @@ function FocusedSkillsBody({ skills }: { skills?: PaneSkill[] }) {
       </div>
     );
   }
+  // Skills authored by this planning session (#1056) render FIRST and highlighted, so freshly
+  // generated skills are obvious. Stable sort keeps each group's original order.
+  const ordered = [...list].sort((a, b) => Number(b.isNew ?? false) - Number(a.isNew ?? false));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      {list.map((s) => (
+      {ordered.map((s) => (
         <div key={s.name} style={{
           padding: "8px 10px", borderRadius: 6,
-          background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+          background: s.isNew ? "var(--accent-soft)" : "var(--bg-canvas)",
+          border: s.isNew ? "1px solid var(--accent)" : "1px solid var(--border-soft)",
         }}>
-          <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{s.name}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{s.name}</div>
+            {s.isNew && (
+              <span style={{
+                fontFamily: "var(--mono)", fontSize: 8.5, fontWeight: 600, letterSpacing: ".04em",
+                color: "var(--accent-text)", background: "var(--accent)", borderRadius: 4, padding: "1px 5px",
+              }}>NEW</span>
+            )}
+          </div>
           {s.desc && <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 3 }}>{s.desc}</div>}
         </div>
       ))}
