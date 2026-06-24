@@ -19,7 +19,7 @@ pub fn search(http: &Http, query: &SearchQuery) -> Result<Vec<Paper>, String> {
     let body = http.get_text(&url, &[])?;
     let mut papers = parse_search(&body)?;
     if let Some(yf) = query.year_from {
-        papers.retain(|p| p.year.map_or(true, |y| y >= yf));
+        papers.retain(|p| p.year.is_none_or(|y| y >= yf));
     }
     papers.truncate(query.limit.max(1));
     Ok(papers)

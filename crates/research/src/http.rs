@@ -79,25 +79,11 @@ pub fn encode(value: &str) -> String {
     out
 }
 
+/// Truncate to at most `n` chars (on a char boundary), appending `…` when shortened.
 fn truncate(s: &str, n: usize) -> String {
-    if s.len() <= n { s.to_string() } else { format!("{}…", &s[..s.floor_char_boundary(n)]) }
-}
-
-// `str::floor_char_boundary` is unstable; provide a tiny local equivalent.
-trait FloorCharBoundary {
-    fn floor_char_boundary(&self, index: usize) -> usize;
-}
-impl FloorCharBoundary for str {
-    fn floor_char_boundary(&self, index: usize) -> usize {
-        if index >= self.len() {
-            self.len()
-        } else {
-            let mut i = index;
-            while i > 0 && !self.is_char_boundary(i) {
-                i -= 1;
-            }
-            i
-        }
+    match s.char_indices().nth(n) {
+        Some((idx, _)) => format!("{}…", &s[..idx]),
+        None => s.to_string(),
     }
 }
 
