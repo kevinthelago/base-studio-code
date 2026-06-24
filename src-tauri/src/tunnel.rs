@@ -61,6 +61,26 @@ pub struct PlanFile {
     pub content: String,
 }
 
+/// One chat turn in the live planning session projected to the phone (#934/#987).
+/// Mirrors TS `PlanMessage` in src/lib/tunnel/tunnel.ts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanMessage {
+    pub role: String,
+    pub text: String,
+    pub at: u64,
+}
+
+/// A pipeline run's live state projected to the phone (#220/#987). Mirrors TS
+/// `PlanPipelineRun` in src/lib/tunnel/tunnel.ts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanPipelineRun {
+    pub id: String,
+    pub stage: String,
+    pub status: String,
+}
+
 // ── F2/A2/M2 wire payload types ────────────────────────────────────────────────
 
 /// One agent session in the fleet roster (F2). Mobile renders a "who's running / blocked
@@ -217,6 +237,40 @@ pub enum ServerMsg {
     McpList {
         extensions: Vec<McpExtFrame>,
     },
+    // ── Live planning session (PT1 / #934 / #986) ───────────────────────────
+    /// Full live planner snapshot. Replayed on connect (the last per-projectId payload), so a
+    /// freshly-paired phone mirrors the session immediately. Distinct from `plan_sync_*`.
+    #[serde(rename_all = "camelCase")]
+    PlanState {
+        project_id: String,
+        current_stage: String,
+        confirmed_sections: Vec<String>,
+        files: Vec<PlanFile>,
+        messages: Vec<PlanMessage>,
+        pipeline_runs: Vec<PlanPipelineRun>,
+    },
+    /// A transient planning delta. Fire-and-forget — NOT replayed.
+    #[serde(rename_all = "camelCase")]
+    PlanEvent {
+        project_id: String,
+        kind: String,
+        at: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        section: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stage: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<PlanMessage>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        run: Option<PlanPipelineRun>,
+    },
+    /// Cheap header update (active stage + status). Replayed on connect.
+    #[serde(rename_all = "camelCase")]
+    PlanStatus {
+        project_id: String,
+        current_stage: String,
+        status: String,
+    },
 }
 
 /// Messages the mobile client sends to the desktop. Tagged by snake_case `type`.
@@ -277,6 +331,16 @@ pub enum ClientMsg {
     /// Mobile triggers an automation to run immediately.
     #[serde(rename_all = "camelCase")]
     AutomationRunNow { id: String },
+    // ── Live planning session — drive (PT1 / #934) ──────────────────────────
+    /// Mobile advances (or jumps) the planner to a stage.
+    #[serde(rename_all = "camelCase")]
+    PlanAdvance { project_id: String, stage_key: String },
+    /// Mobile confirms a plan section.
+    #[serde(rename_all = "camelCase")]
+    PlanConfirm { project_id: String, section: String },
+    /// Mobile sends a chat message into the live planner session.
+    #[serde(rename_all = "camelCase")]
+    PlanChat { project_id: String, text: String },
 }
 
 /// One PTY output chunk fanned out to the relay transport (which filters per pane).
@@ -381,6 +445,11 @@ struct Inner {
     /// Full plan file caches per projectId — pushed by the frontend so mobile can
     /// pull individual files via PlanSyncPull.
     plan_files: HashMap<String, Vec<PlanFile>>,
+    // ── Live planning session (PT1 / #934) ───────────────────────────────────
+    /// Last `plan_state` / `plan_status` frame per projectId — replayed to a freshly-paired
+    /// client so it mirrors the live session immediately. `plan_event` is transient (not stored).
+    plan_states: HashMap<String, ServerMsg>,
+    plan_statuses: HashMap<String, ServerMsg>,
     // ── Fleet / coordination (F2) ────────────────────────────────────────────
     /// Latest fleet roster — replayed to freshly-paired mobile clients.
     fleet_sessions: Vec<FleetSession>,
@@ -539,6 +608,8 @@ impl TunnelState {
                 shutdown_tx: None,
                 plan_manifests: HashMap::new(),
                 plan_files: HashMap::new(),
+                plan_states: HashMap::new(),
+                plan_statuses: HashMap::new(),
                 fleet_sessions: Vec::new(),
                 automations: Vec::new(),
                 mcp_extensions: Vec::new(),
@@ -721,6 +792,12 @@ impl TunnelState {
         self.inner.lock().unwrap().plan_manifests.clone()
     }
 
+    /// The last `plan_state` + `plan_status` frames (across projects) to replay on connect (#934).
+    fn plan_frames_snapshot(&self) -> Vec<ServerMsg> {
+        let inner = self.inner.lock().unwrap();
+        inner.plan_states.values().cloned().chain(inner.plan_statuses.values().cloned()).collect()
+    }
+
     fn fleet_snapshot(&self) -> Vec<FleetSession> {
         self.inner.lock().unwrap().fleet_sessions.clone()
     }
@@ -881,6 +958,64 @@ pub fn tunnel_ack_plan_push(
 ) {
     log::debug!("tunnel: plan push ack for {project_id} (applied={applied})");
     let _ = state.event_tx.send(ServerMsg::PlanSyncAck { project_id, applied });
+}
+
+// ── Live planning session (PT1 / #934 / #986) — Tauri commands ──────────────
+//
+// Distinct from `tunnel_set_plan_state` (the async file-sync path, untouched): these project
+// the LIVE planner UI state. State + status are stored per projectId and replayed on connect
+// (like tunnel_set_panes); events are fire-and-forget.
+
+/// Push the full live planner snapshot; stored per projectId for replay + broadcast.
+#[tauri::command]
+pub fn tunnel_emit_plan_state(
+    project_id: String,
+    current_stage: String,
+    confirmed_sections: Vec<String>,
+    files: Vec<PlanFile>,
+    messages: Vec<PlanMessage>,
+    pipeline_runs: Vec<PlanPipelineRun>,
+    state: State<'_, TunnelState>,
+) {
+    let frame = ServerMsg::PlanState {
+        project_id: project_id.clone(),
+        current_stage,
+        confirmed_sections,
+        files,
+        messages,
+        pipeline_runs,
+    };
+    state.inner.lock().unwrap().plan_states.insert(project_id, frame.clone());
+    let _ = state.event_tx.send(frame);
+}
+
+/// Push a transient planning event. Fire-and-forget — never stored or replayed.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn tunnel_emit_plan_event(
+    project_id: String,
+    kind: String,
+    at: u64,
+    section: Option<String>,
+    stage: Option<String>,
+    message: Option<PlanMessage>,
+    run: Option<PlanPipelineRun>,
+    state: State<'_, TunnelState>,
+) {
+    let _ = state.event_tx.send(ServerMsg::PlanEvent { project_id, kind, at, section, stage, message, run });
+}
+
+/// Push the cheap header update (active stage + status); stored per projectId for replay + broadcast.
+#[tauri::command]
+pub fn tunnel_emit_plan_status(
+    project_id: String,
+    current_stage: String,
+    status: String,
+    state: State<'_, TunnelState>,
+) {
+    let frame = ServerMsg::PlanStatus { project_id: project_id.clone(), current_stage, status };
+    state.inner.lock().unwrap().plan_statuses.insert(project_id, frame.clone());
+    let _ = state.event_tx.send(frame);
 }
 
 // ── Fleet / coordination (F2) — Tauri commands ──────────────────────────────
@@ -1474,6 +1609,13 @@ mod transport {
             send_msg(&mut sink, &mut noise_tx, &ServerMsg::PlanSyncManifest { project_id, files }).await?;
         }
 
+        // Replay the last live planner snapshot(s) — plan_state + plan_status — so a
+        // freshly-paired phone mirrors the session immediately (#934). plan_event is transient.
+        let plan_frames = app.try_state::<TunnelState>().map(|s| s.plan_frames_snapshot()).unwrap_or_default();
+        for frame in plan_frames {
+            send_msg(&mut sink, &mut noise_tx, &frame).await?;
+        }
+
         // Replay fleet roster (F2) — non-empty only after the fleet has launched.
         let fleet = app.try_state::<TunnelState>().map(|s| s.fleet_snapshot()).unwrap_or_default();
         if !fleet.is_empty() {
@@ -1564,7 +1706,13 @@ mod transport {
     /// the gate is unit-testable without an `AppHandle` or a live PTY.
     pub fn input_allowed(msg: &ClientMsg, input_granted: bool) -> bool {
         match msg {
-            ClientMsg::PaneInput { .. } | ClientMsg::PaneResize { .. } => input_granted,
+            // PTY mutation + planner drive (advance/confirm/chat) require an explicit grant —
+            // a view-only phone can mirror the planning session but cannot steer it (#934).
+            ClientMsg::PaneInput { .. }
+            | ClientMsg::PaneResize { .. }
+            | ClientMsg::PlanAdvance { .. }
+            | ClientMsg::PlanConfirm { .. }
+            | ClientMsg::PlanChat { .. } => input_granted,
             _ => true,
         }
     }
@@ -1667,6 +1815,19 @@ mod transport {
             ClientMsg::AutomationRunNow { id } => {
                 log::info!("tunnel: mobile triggered automation {id}");
                 let _ = app.emit("tunnel://automation-run-now", serde_json::json!({ "id": id }));
+            }
+            // ── Live planning session — drive (#934) ─────────────────────
+            ClientMsg::PlanAdvance { project_id, stage_key } => {
+                log::info!("tunnel: mobile advanced planner {project_id} → {stage_key}");
+                let _ = app.emit("tunnel://plan-advance", serde_json::json!({ "projectId": project_id, "stageKey": stage_key }));
+            }
+            ClientMsg::PlanConfirm { project_id, section } => {
+                log::info!("tunnel: mobile confirmed section {section} for {project_id}");
+                let _ = app.emit("tunnel://plan-confirm", serde_json::json!({ "projectId": project_id, "section": section }));
+            }
+            ClientMsg::PlanChat { project_id, text } => {
+                log::info!("tunnel: mobile chat into planner {project_id} ({} chars)", text.len());
+                let _ = app.emit("tunnel://plan-chat", serde_json::json!({ "projectId": project_id, "text": text }));
             }
         }
     }
@@ -2356,6 +2517,78 @@ mod tests {
         let raw = serde_json::json!({ "type": "automation_run_now", "id": "a2" });
         let msg = serde_json::from_value::<ClientMsg>(raw).unwrap();
         assert!(matches!(msg, ClientMsg::AutomationRunNow { id } if id == "a2"));
+    }
+
+    // ── PT1: live planning frames (#934) ─────────────────────────────────────────
+
+    /// plan_state serializes snake_case-tagged with the camelCase fields the phone expects.
+    #[test]
+    fn plan_state_msg_shape() {
+        let msg = ServerMsg::PlanState {
+            project_id: "proj-bf9cf968".into(),
+            current_stage: "goal".into(),
+            confirmed_sections: vec!["goal".into()],
+            files: vec![PlanFile { relpath: "goal.md".into(), content: "# Goal".into() }],
+            messages: vec![PlanMessage { role: "assistant".into(), text: "hi".into(), at: 1 }],
+            pipeline_runs: vec![PlanPipelineRun { id: "build".into(), stage: "test".into(), status: "running".into() }],
+        };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "plan_state");
+        assert_eq!(v["projectId"], "proj-bf9cf968");
+        assert_eq!(v["currentStage"], "goal");
+        assert_eq!(v["confirmedSections"][0], "goal");
+        assert_eq!(v["files"][0]["relpath"], "goal.md");
+        assert_eq!(v["pipelineRuns"][0]["id"], "build");
+    }
+
+    /// plan_event: snake_case type tag, camelCase fields, absent detail omitted.
+    #[test]
+    fn plan_event_msg_shape() {
+        let msg = ServerMsg::PlanEvent {
+            project_id: "p".into(),
+            kind: "section_confirmed".into(),
+            at: 1,
+            section: Some("goal".into()),
+            stage: None,
+            message: None,
+            run: None,
+        };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "plan_event");
+        assert_eq!(v["kind"], "section_confirmed");
+        assert_eq!(v["section"], "goal");
+        assert!(v.get("stage").is_none()); // skip_serializing_if omits absent detail
+    }
+
+    /// plan_status type tag + camelCase.
+    #[test]
+    fn plan_status_msg_shape() {
+        let msg = ServerMsg::PlanStatus { project_id: "p".into(), current_stage: "scope".into(), status: "in_progress".into() };
+        let v = serde_json::to_value(&msg).unwrap();
+        assert_eq!(v["type"], "plan_status");
+        assert_eq!(v["currentStage"], "scope");
+        assert_eq!(v["status"], "in_progress");
+    }
+
+    /// The drive frames deserialize from the phone's camelCase wire shape.
+    #[test]
+    fn plan_drive_client_msgs_deserialize() {
+        let adv = serde_json::from_value::<ClientMsg>(serde_json::json!({ "type": "plan_advance", "projectId": "p", "stageKey": "scope" })).unwrap();
+        assert!(matches!(adv, ClientMsg::PlanAdvance { stage_key, .. } if stage_key == "scope"));
+        let con = serde_json::from_value::<ClientMsg>(serde_json::json!({ "type": "plan_confirm", "projectId": "p", "section": "goal" })).unwrap();
+        assert!(matches!(con, ClientMsg::PlanConfirm { section, .. } if section == "goal"));
+        let chat = serde_json::from_value::<ClientMsg>(serde_json::json!({ "type": "plan_chat", "projectId": "p", "text": "hi" })).unwrap();
+        assert!(matches!(chat, ClientMsg::PlanChat { text, .. } if text == "hi"));
+    }
+
+    /// A view-only phone can mirror the planning session but cannot steer it (#934).
+    #[test]
+    fn plan_drive_requires_input_grant() {
+        let chat = ClientMsg::PlanChat { project_id: "p".into(), text: "hi".into() };
+        assert!(!transport::input_allowed(&chat, false));
+        assert!(transport::input_allowed(&chat, true));
+        assert!(!transport::input_allowed(&ClientMsg::PlanAdvance { project_id: "p".into(), stage_key: "scope".into() }, false));
+        assert!(!transport::input_allowed(&ClientMsg::PlanConfirm { project_id: "p".into(), section: "goal".into() }, false));
     }
 
     // ── M2: MCP extension list ───────────────────────────────────────────────────
