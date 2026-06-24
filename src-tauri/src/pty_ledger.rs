@@ -94,6 +94,20 @@ pub(crate) fn forget_all_owned() {
     save_unlocked(&v);
 }
 
+/// A snapshot of every recorded ledger entry — the *running-session* source for session
+/// discovery (#1266). Each entry's `pane_id` is the stable identity id, so a live session
+/// can be recovered from its name even when the persisted store has forgotten it.
+pub(crate) fn ledger_entries() -> Vec<LedgerEntry> {
+    let _g = LEDGER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    load_unlocked()
+}
+
+/// Whether `pid` is currently alive (OS-native probe) — reused by discovery to tell a
+/// running session from a stale ledger entry (#1266).
+pub(crate) fn is_pid_alive(pid: u32) -> bool {
+    os_alive(pid)
+}
+
 /// Boot reconcile: tree-kill any straggler from a prior run whose owner is gone, then persist the
 /// survivors (entries still owned by a live instance). Returns the count reaped, for logging.
 pub(crate) fn reconcile_on_boot() -> usize {

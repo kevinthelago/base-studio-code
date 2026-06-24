@@ -15,6 +15,7 @@ mod github;
 mod shell;
 mod pty;
 mod pty_ledger;
+mod session_discovery;
 mod bsc;
 mod planner;
 mod data;
@@ -2529,6 +2530,7 @@ pub fn run() {
             perf::perf_record_frontend_sample,
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
+            session_discovery::discover_sessions,
             logs::list_log_files,
             logs::read_log_tail,
             logs::clear_log,
