@@ -14,15 +14,16 @@
 // SourceConfig and never shared with the planning agent, which sees only a redacted handle + the
 // discovered object inventory.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppStore } from "../../../store";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
-  isConnected, sourceChecks, allSourcesConnected, deriveDataModel,
+  isConnected, sourceChecks, allSourcesConnected, deriveDataModel, presetToConnector, registerPresetConnectors,
   type SourceConfig, type DeclaredSource, type SpecField, type SourceStatus, type PlatformScanView, type DiscoveredField,
+  type Connector, type ConnectorCatalogEntry,
 } from "../shared/sourceConfig";
 import { ScanViews } from "./ScanViews";
 
@@ -324,6 +325,21 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
 
   const [query, setQuery] = useState("");
   const [catalogOpen, setCatalogOpen] = useState(false);
+  // Packaged vendor presets from the backend catalog (#1288) — the 100+ generic-REST integrations
+  // beyond the dedicated connectors. Loaded once; turned into generic-REST Connectors.
+  const [presetConnectors, setPresetConnectors] = useState<Connector[]>([]);
+  useEffect(() => {
+    let alive = true;
+    invoke<ConnectorCatalogEntry[]>("data_connector_catalog")
+      .then((entries) => {
+        if (!alive) return;
+        const list = entries.map(presetToConnector);
+        registerPresetConnectors(list); // so connector(id) resolves a declared preset's connect spec
+        setPresetConnectors(list);
+      })
+      .catch(() => { /* source-stage off or backend unavailable — dedicated connectors still show */ });
+    return () => { alive = false; };
+  }, []);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   // Secret field values — LOCAL ONLY, keyed by source uid → field key. Never persisted.
@@ -358,9 +374,20 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
     void invoke("data_persist_model", { projectKey: pid, model, refined: true }).catch(() => {});
   }, [ready, pid, cfg]);
 
-  const filteredConnectors = CONNECTORS.filter((c) => {
+  // The full catalog (#1288): the dedicated connectors (rich connect specs) + every packaged vendor
+  // preset, deduped by id (a dedicated connector wins over a same-id preset). Search matches the
+  // name, auth, category, AND what the connector pulls — so "CRM" / "invoices" / "sheets" find one.
+  const allConnectors = useMemo(() => {
+    const dedicated = new Set(CONNECTORS.map((c) => c.id));
+    return [...CONNECTORS, ...presetConnectors.filter((p) => !dedicated.has(p.id))];
+  }, [presetConnectors]);
+  const filteredConnectors = allConnectors.filter((c) => {
     const q = query.trim().toLowerCase();
-    return !q || c.name.toLowerCase().includes(q) || c.authLabel.toLowerCase().includes(q);
+    if (!q) return true;
+    return c.name.toLowerCase().includes(q)
+      || c.authLabel.toLowerCase().includes(q)
+      || (c.category ?? "").toLowerCase().includes(q)
+      || c.spec.contributes.toLowerCase().includes(q);
   });
 
   // ── actions ──
