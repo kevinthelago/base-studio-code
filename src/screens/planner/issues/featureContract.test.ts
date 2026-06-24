@@ -63,6 +63,20 @@ describe("renderFeatureContract", () => {
     expect(md).toContain("matches the bound listener");
   });
 
+  it("escapes a backslash before the pipe so the escaping is complete (#1011)", () => {
+    const md = renderFeatureContract(
+      base({
+        produces: [
+          { name: "x", definedIn: "f.rs", signature: "a\\|b", invariants: "ok" },
+        ],
+      }),
+    );
+    // Backslash escaped FIRST (`\` → `\\`), then the pipe (`|` → `\|`): the literal source is
+    // `a\\\|b`. Without backslash-first it'd be `a\\|b` — an escaped backslash + a RAW pipe that
+    // still breaks the row.
+    expect(md).toContain("a\\\\\\|b");
+  });
+
   it("renders dependencies when present", () => {
     const md = renderFeatureContract(base({ dependsOn: ["#35"], blocks: ["#99"] }));
     expect(md).toContain("## Dependencies");
