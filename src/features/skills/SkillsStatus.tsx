@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
-import { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from "../../lib/session/skillTelemetry";
+import { useAppStore } from "@/store";
+import { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from "./lib/skillTelemetry";
 
 /**
  * Live Skills KPIs for the app status bar (Skills page) — replaces the old hardcoded

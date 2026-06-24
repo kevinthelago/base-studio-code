@@ -16,7 +16,7 @@ import { composeReferenceContext } from "../../../lib/session/assignments";
 import { resolveMcpServers, toBscAgentMcp } from "../../../lib/session/mcpServers";
 import { resolveHooks } from "../../../lib/session/hooks";
 import { toSessionPayloads } from "../../../lib/session/sessionConfig";
-import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "../../../lib/session/skills";
+import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills/lib/skills";
 import { PendingPtyData } from "../../../lib/console/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/console/resumeClaude";
 import { isManualPaneId } from "../../../lib/console/paneIdentity";

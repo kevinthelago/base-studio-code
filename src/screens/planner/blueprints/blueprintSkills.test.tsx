@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { buildSkillLibrary, resolveBlueprintSkills } from "./blueprintSkills";
 import { addSkill, removeSkill, mkStageSection } from "./blueprintEdit";
 import { BlueprintEditorView } from "./BlueprintEditor";
-import type { SkillDef } from "../../../lib/session/skills";
+import type { SkillDef } from "@/features/skills/lib/skills";
 import type { KbBlock } from "../../../data/mock";
 import type { BlueprintSection } from "../stages/blueprints";
 

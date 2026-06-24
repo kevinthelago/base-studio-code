@@ -21,7 +21,7 @@ import { resolveDirectorDrive } from "../../screens/planner/fleet/directorDrive"
 import { resolveHooks } from "../../lib/session/hooks";
 import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "../../lib/session/mcpServers";
 import { resolveReferenceContext, resolveStartupPrompt } from "../../lib/session/assignments";
-import { effectiveSessionSkills, expandGroups } from "../../lib/session/skills";
+import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
 import { resolveStrategy, strategySettings } from "../../screens/planner/shared/integrationStrategy";
 import { scriptDocRelpath } from "../../screens/planner/session/planningSession";
 

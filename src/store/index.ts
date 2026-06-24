@@ -5,7 +5,8 @@ import { persistStorage } from "../lib/core/storage";
 import {       deriveTabIdentity } from "../lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "../screens/planner/stages/blueprints";
 import { migrateLegacyExtensions } from "../lib/session/migrateExtensions";
-import {  refreshPackagedSkills } from "../lib/session/skills";
+import { refreshPackagedSkills } from "@/features/skills/lib/skills";
+import { createSkillsSlice } from "@/features/skills/store";
 
 import { type AppStore } from "./types";
 import { createSessionSlice } from "./slices/session";
@@ -32,6 +33,7 @@ export const useAppStore = create<AppStore>()(
 
       ...createPlanSlice(set, get, store),
       ...createSessionSlice(set, get, store),
+      ...createSkillsSlice(set, get, store),
     }),
     {
       name: "app-state",

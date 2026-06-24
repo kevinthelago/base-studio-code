@@ -18,7 +18,7 @@ import { log } from "./lib/core/log";
 import { ConsoleScreen } from "./screens/Console";
 import { paneIdFor } from "./lib/console/paneIdentity";
 import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
-import { SkillsStatus } from "./screens/skills/SkillsStatus";
+import { SkillsStatus } from "@/features/skills";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
 import { CrashRecoveryBanner } from "./components/CrashRecoveryBanner";
@@ -38,7 +38,7 @@ const AutomationsScreen = lazy(() => import("./screens/automations").then((m) =>
 const McpScreen         = lazy(() => import("./screens/mcp").then((m) => ({ default: m.McpScreen })));
 const SettingsScreen    = lazy(() => import("./screens/settings").then((m) => ({ default: m.SettingsScreen })));
 const ProjectsScreen    = lazy(() => import("./screens/planner").then((m) => ({ default: m.ProjectsScreen })));
-const SkillsScreen      = lazy(() => import("./screens/skills").then((m) => ({ default: m.SkillsScreen })));
+const SkillsScreen      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsScreen })));
 const AgentsScreen      = lazy(() => import("./screens/agents").then((m) => ({ default: m.AgentsScreen })));
 
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
