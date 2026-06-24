@@ -5,6 +5,13 @@ import {
   paneCountForLayout,
   pairingPayload,
   type TunnelStatus,
+  type PlanStateFrame,
+  type PlanEventFrame,
+  type PlanStatusFrame,
+  type PlanAdvanceFrame,
+  type PlanConfirmFrame,
+  type PlanChatFrame,
+  type PlanMessage,
 } from "./tunnel";
 import fixtures from "./tunnelProtocol.fixtures.json";
 
@@ -170,5 +177,65 @@ describe("shared protocol fixture", () => {
     for (const m of all) {
       expect(m.type).toMatch(/^[a-z]+(_[a-z]+)*$/);
     }
+  });
+});
+
+// The live planning-session frames (#985 / #934). The fixture JSON below is the cross-repo
+// sync source — keep it BYTE-IDENTICAL with mobile-studio-code/src/lib/planner/sync/fixtures
+// (its fixtures.test.ts asserts the same payloads against the mobile TunnelServerMessage
+// variants). Each test type-narrows a fixture against its frame interface (a compile-time
+// check) plus a runtime shape guard.
+describe("plan-session frames (#985 / #934)", () => {
+  const { serverToClient, clientToServer } = fixtures;
+
+  it("plan_state parses against PlanStateFrame (one file, one message, one run)", () => {
+    const f = serverToClient.plan_state;
+    const frame: PlanStateFrame = {
+      type: "plan_state",
+      projectId: f.projectId,
+      currentStage: f.currentStage,
+      confirmedSections: f.confirmedSections,
+      files: f.files,
+      messages: f.messages.map((m): PlanMessage => ({ role: m.role as PlanMessage["role"], text: m.text, at: m.at })),
+      pipelineRuns: f.pipelineRuns,
+    };
+    expect(frame.files).toHaveLength(1);
+    expect(frame.files[0].relpath).toBe("goal.md");
+    expect(frame.messages[0].role).toBe("assistant");
+    expect(frame.pipelineRuns[0]).toMatchObject({ id: "build", stage: "test", status: "running" });
+  });
+
+  it("plan_event parses against PlanEventFrame (section_confirmed)", () => {
+    const f = serverToClient.plan_event;
+    const frame: PlanEventFrame = {
+      type: "plan_event",
+      projectId: f.projectId,
+      kind: f.kind as PlanEventFrame["kind"],
+      at: f.at,
+      section: f.section,
+    };
+    expect(frame.kind).toBe("section_confirmed");
+    expect(frame.section).toBe("goal");
+  });
+
+  it("plan_status parses against PlanStatusFrame", () => {
+    const f = serverToClient.plan_status;
+    const frame: PlanStatusFrame = { type: "plan_status", projectId: f.projectId, currentStage: f.currentStage, status: f.status };
+    expect(frame).toMatchObject({ currentStage: "scope", status: "in_progress" });
+  });
+
+  it("inbound drive frames parse against their interfaces", () => {
+    const adv: PlanAdvanceFrame = { type: "plan_advance", projectId: clientToServer.plan_advance.projectId, stageKey: clientToServer.plan_advance.stageKey };
+    const con: PlanConfirmFrame = { type: "plan_confirm", projectId: clientToServer.plan_confirm.projectId, section: clientToServer.plan_confirm.section };
+    const chat: PlanChatFrame = { type: "plan_chat", projectId: clientToServer.plan_chat.projectId, text: clientToServer.plan_chat.text };
+    expect(adv.stageKey).toBe("scope");
+    expect(con.section).toBe("goal");
+    expect(chat.text).toContain("specific");
+  });
+
+  it("plan_state keeps the camelCase wire fields the mobile client expects", () => {
+    expect(Object.keys(serverToClient.plan_state).sort()).toEqual(
+      ["confirmedSections", "currentStage", "files", "messages", "pipelineRuns", "projectId", "type"],
+    );
   });
 });

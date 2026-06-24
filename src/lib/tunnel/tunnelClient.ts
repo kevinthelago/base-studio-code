@@ -5,7 +5,10 @@
 // one is the side-effecting boundary the Settings card and ConsoleScreen call.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { PaneDescriptor, SessionMeta, TunnelStatus } from "./tunnel";
+import type {
+  PaneDescriptor, SessionMeta, TunnelStatus,
+  PlanMessage, PlanPipelineRun, PlanEventKind,
+} from "./tunnel";
 import type { CanonicalFile } from "../planner/plannerCore";
 
 /** Structured result from `tunnelCheckRelay` (T3b). All error cases are in the `error`
@@ -65,6 +68,43 @@ export const tunnelSetPlanState = (projectId: string, files: CanonicalFile[]): P
  *  hub directory. Broadcasts `plan_sync_ack` back to the mobile client. */
 export const tunnelAckPlanPush = (projectId: string, applied: boolean): Promise<void> =>
   invoke("tunnel_ack_plan_push", { projectId, applied });
+
+// ── Live planning session (PT1 / #934 / #986) ─────────────────────────────────
+// Project the LIVE planner UI state to a paired phone — distinct from tunnelSetPlanState
+// (the async file-sync path, which stays as-is). State + status are stored Rust-side and
+// replayed on connect; events are fire-and-forget.
+
+/** Push the full live planner snapshot (replayed to newly-paired clients). */
+export const tunnelEmitPlanState = (
+  projectId: string,
+  currentStage: string,
+  confirmedSections: string[],
+  files: CanonicalFile[],
+  messages: PlanMessage[],
+  pipelineRuns: PlanPipelineRun[],
+): Promise<void> =>
+  invoke("tunnel_emit_plan_state", { projectId, currentStage, confirmedSections, files, messages, pipelineRuns });
+
+/** Push the cheap header update (active stage + status); replayed on connect. */
+export const tunnelEmitPlanStatus = (projectId: string, currentStage: string, status: string): Promise<void> =>
+  invoke("tunnel_emit_plan_status", { projectId, currentStage, status });
+
+/** A transient planning delta — fire-and-forget (not replayed). Detail fields are set per `kind`. */
+export interface PlanEventInput {
+  kind: PlanEventKind;
+  at: number;
+  section?: string;
+  stage?: string;
+  message?: PlanMessage;
+  run?: PlanPipelineRun;
+}
+
+/** Push a transient planning event to connected clients. */
+export const tunnelEmitPlanEvent = (projectId: string, ev: PlanEventInput): Promise<void> =>
+  invoke("tunnel_emit_plan_event", {
+    projectId, kind: ev.kind, at: ev.at,
+    section: ev.section, stage: ev.stage, message: ev.message, run: ev.run,
+  });
 
 /** Probe the relay's `/health` endpoint and return per-leg connection diagnostics (T3b).
  *  Always resolves (never rejects) — check `error` for failure details. */
