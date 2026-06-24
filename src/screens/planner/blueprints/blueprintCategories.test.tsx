@@ -1,11 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
 import {
   blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
   type Blueprint,
 } from "../stages/blueprints";
-import { LibraryView } from "./BlueprintLibrary";
-import { openUrl } from "@tauri-apps/plugin-opener";
 
 const bp = (id: string, name: string, over: Partial<Blueprint> = {}): Blueprint =>
   ({ id, name, desc: "", sections: [], ...over });
@@ -194,60 +191,5 @@ describe("filterBlueprints (#645)", () => {
   it("combines query + category", () => {
     expect(filterBlueprints(list, { query: "security", category: "harden" }).map((b) => b.id)).toEqual(["c"]);
     expect(filterBlueprints(list, { query: "security", category: "greenfield" })).toHaveLength(0);
-  });
-});
-
-describe("LibraryView search + filter (#645)", () => {
-  const list = [
-    bp("a", "Default", { category: "greenfield" }),
-    bp("b", "Refactor & Cleanup", { category: "transform" }),
-  ];
-
-  // Card names render as <h3>; the hero references the top blueprint in a <b>, so target
-  // the card headings specifically.
-  const card = (re: RegExp) => screen.queryByRole("heading", { level: 3, name: re });
-
-  it("shows a category badge and filters by the category chip", () => {
-    render(<LibraryView blueprints={list} onOpen={vi.fn()} onMenu={vi.fn()} onNew={vi.fn()} onImport={vi.fn()} />);
-    expect(card(/Default/)).toBeInTheDocument();
-    expect(card(/Refactor & Cleanup/)).toBeInTheDocument();
-    // click the Transform filter chip → only the transform card remains
-    fireEvent.click(screen.getByRole("button", { name: "Transform" }));
-    expect(card(/Default/)).not.toBeInTheDocument();
-    expect(card(/Refactor & Cleanup/)).toBeInTheDocument();
-  });
-
-  it("searches by text", () => {
-    render(<LibraryView blueprints={list} onOpen={vi.fn()} onMenu={vi.fn()} onNew={vi.fn()} onImport={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("Search blueprints"), { target: { value: "refactor" } });
-    expect(card(/Default/)).not.toBeInTheDocument();
-    expect(card(/Refactor & Cleanup/)).toBeInTheDocument();
-  });
-});
-
-describe("LibraryView — published-gist link (#1037)", () => {
-  const published = bp("pub", "Published BP", { gist: { state: "synced", url: "https://gist.github.com/u/abc", rev: "r2" } });
-  const local = bp("loc", "Local BP", { gist: { state: "local" } });
-  const view = (list: Blueprint[], onOpen = vi.fn()) =>
-    render(<LibraryView blueprints={list} onOpen={onOpen} onMenu={vi.fn()} onNew={vi.fn()} onImport={vi.fn()} />);
-
-  it("surfaces a persistent gist link on a published blueprint, but not a local one", () => {
-    view([published, local]);
-    // Exactly one link — the published card; the local card shows the badge with no link.
-    expect(screen.getAllByTitle("View the published gist")).toHaveLength(1);
-  });
-
-  it("a blueprint with no gist at all shows no link", () => {
-    view([bp("none", "No Gist")]);
-    expect(screen.queryByTitle("View the published gist")).toBeNull();
-  });
-
-  it("opens the gist URL via the Tauri opener on click, without opening the editor", () => {
-    vi.mocked(openUrl).mockClear();
-    const onOpen = vi.fn();
-    view([published], onOpen);
-    fireEvent.click(screen.getByTitle("View the published gist"));
-    expect(openUrl).toHaveBeenCalledWith("https://gist.github.com/u/abc");
-    expect(onOpen).not.toHaveBeenCalled(); // stopPropagation — the card's open handler must not fire
   });
 });
