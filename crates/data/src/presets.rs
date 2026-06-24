@@ -37,6 +37,11 @@ impl VendorPreset {
         self.resources.iter().map(|(n, p, k)| RestResource::new(*n, *p, *k)).collect()
     }
 
+    /// The resource object names this preset reads (for the catalog "contributes" blurb, #1288).
+    pub fn resource_names(&self) -> Vec<&'static str> {
+        self.resources.iter().map(|(n, _, _)| *n).collect()
+    }
+
     /// Build a generic REST connector configured for this vendor. `fetch` resolves a resource
     /// path against the instance and carries the auth — never stored by the connector (#1194).
     pub fn connector(
@@ -834,6 +839,15 @@ mod tests {
         let names: Vec<&str> = resources.iter().map(|r| r.name.as_str()).collect();
         assert!(names.contains(&"workflow"));
         assert!(names.contains(&"risk"));
+    }
+
+    #[test]
+    fn resource_names_lists_the_preset_objects() {
+        // Drives the Source-pane catalog "contributes" blurb (#1288).
+        let se = find("softexpert").unwrap();
+        let names = se.resource_names();
+        assert!(names.contains(&"workflow") && names.contains(&"risk"));
+        assert_eq!(names.len(), se.resources().len());
     }
 
     #[test]

@@ -2448,6 +2448,7 @@ pub fn run() {
             data::data_persist_model,
             data::data_load_reconciled,
             data::data_platform_scan,
+            data::data_connector_catalog,
             credentials::source_save_secret,
             credentials::source_has_secret,
             credentials::source_delete_secret,

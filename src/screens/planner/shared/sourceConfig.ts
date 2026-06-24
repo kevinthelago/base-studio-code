@@ -51,6 +51,43 @@ export interface Connector {
   /** Catalog auth blurb, e.g. "OAuth" / "token" / "API key". */
   authLabel: string;
   spec: ConnectionSpec;
+  /** Coarse grouping for the catalog UI (#1288) — `crm`, `erp`, `work`, … ; absent for the
+   *  dedicated core connectors. */
+  category?: string;
+  /** A packaged generic-REST vendor preset (#1288), vs a dedicated connector. */
+  preset?: boolean;
+}
+
+/** A packaged vendor preset from the backend catalog (#1288 — the `data_connector_catalog` command
+ *  over `crates/data` `presets::CATALOG`). The Source pane turns each into a generic-REST connector. */
+export interface ConnectorCatalogEntry {
+  id: string;
+  name: string;
+  category: string;
+  /** "will contribute →" blurb — the preset's resource object names. */
+  contributes: string;
+}
+
+/** Build a Source-pane {@link Connector} from a backend preset entry (#1288): a generic-REST
+ *  connector declared with a base URL + bearer token, described by what the preset pulls. */
+export function presetToConnector(e: ConnectorCatalogEntry): Connector {
+  const badge = e.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "··";
+  return {
+    id: e.id,
+    name: e.name,
+    badge,
+    authLabel: "token",
+    category: e.category,
+    preset: true,
+    spec: {
+      auth: "token",
+      fields: [
+        { key: "baseUrl", label: "base URL", placeholder: "https://api.vendor.com" },
+        { key: "token", label: "API token", secret: true },
+      ],
+      contributes: e.contributes || "resources discovered from the API",
+    },
+  };
 }
 
 const oauth = (label: string, contributes: string, envs = true): ConnectionSpec => ({ auth: "oauth", fields: [], oauthLabel: label, envs, contributes });
@@ -143,8 +180,18 @@ export const CONNECTORS: Connector[] = [
 ];
 
 /** Look up a connector by id, with a safe fallback so an unknown id still renders. */
+/** Runtime registry of packaged vendor presets loaded from the backend catalog (#1288). Lets the
+ *  static {@link connector} resolver return a declared preset's connect spec (base URL + token)
+ *  everywhere — the preset list isn't known at module load (it comes from `data_connector_catalog`). */
+const PRESET_REGISTRY = new Map<string, Connector>();
+
+/** Register the loaded preset connectors so {@link connector} can resolve their specs (#1288). */
+export function registerPresetConnectors(list: Connector[]): void {
+  for (const c of list) PRESET_REGISTRY.set(c.id, c);
+}
+
 export function connector(id: string): Connector {
-  return CONNECTORS.find((c) => c.id === id) ?? {
+  return CONNECTORS.find((c) => c.id === id) ?? PRESET_REGISTRY.get(id) ?? {
     id, name: id, badge: id.slice(0, 2).toUpperCase(), authLabel: "custom",
     spec: { auth: "token", fields: [], contributes: "—" },
   };
