@@ -1,14 +1,13 @@
-// ShellSlice — the residual of the former `github` grab-bag after the GitHub connection state moved
-// to the GitHub feature slice (@/features/github/store, #1309). Holds app-CHROME state (the active
-// automations/settings sub-tab, per-page tab order, detached tabs/sections, perf + log config) and
-// TUNNEL state. The tunnel fields migrate to the Tunnel feature next; the chrome fields belong to
-// app/ eventually. Typed Pick<AppStore, …>.
+// ShellSlice — app-CHROME state: the active automations/settings sub-tab, per-page tab order,
+// detached tabs/sections, and perf + log config. The residual of the former `github` grab-bag after
+// GitHub state moved to the GitHub feature slice and tunnel state to the Tunnel feature slice
+// (#1309); the chrome fields belong to app/ eventually. Typed Pick<AppStore, …>.
 import type { StateCreator } from "zustand";
 import { type AppStore, DEFAULT_PERF_CONFIG, DEFAULT_LOG_CONFIG } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 
 type ShellSlice = Pick<AppStore,
-  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig" | "tunnelRelayUrl" | "setTunnelRelayUrl" | "tunnelRunning" | "setTunnelRunning" | "tunnelExtraPanes" | "setTunnelExtraPanes"
+  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig"
 >;
 
 export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set) => ({
@@ -60,11 +59,4 @@ export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set
           maxSizeMb: config.maxSizeMb,
         }).catch(() => { /* backend may not be ready */ });
       },
-
-      tunnelRelayUrl: "",
-      setTunnelRelayUrl: (url) => set({ tunnelRelayUrl: url }),
-      tunnelRunning: false,
-      setTunnelRunning: (v) => set({ tunnelRunning: v }),
-      tunnelExtraPanes: [],
-      setTunnelExtraPanes: (panes) => set({ tunnelExtraPanes: panes }),
 });

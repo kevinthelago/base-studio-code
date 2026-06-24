@@ -4,7 +4,7 @@ import { relayHealthUrl, TunnelSettings } from "./Tunnel";
 
 // The card calls tunnelStatus() on mount; mock the client so it resolves a stable,
 // not-running status (no QR, no polling) and the probe is the only network we drive.
-vi.mock("../../lib/tunnel/tunnelClient", () => ({
+vi.mock("./lib/tunnelClient", () => ({
   tunnelStart: vi.fn(),
   tunnelStop: vi.fn(),
   tunnelStatus: vi.fn().mockResolvedValue({
