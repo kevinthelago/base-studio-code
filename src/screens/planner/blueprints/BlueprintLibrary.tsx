@@ -5,6 +5,7 @@
 // sections) renders fine even before slice 5 populates gist/origin/uses.
 
 import { useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import { stageKind, tint, hue } from "./blueprintCatalog";
@@ -71,7 +72,11 @@ function BlueprintCard({ bp, index, active, onOpen, onUse, onMenu }: {
   const enabledSecs = bp.sections.filter((s) => s.enabled);
   const caps = enabledSecs.reduce((n, s) => n + (s.skills?.length ?? 0) + (s.mcp?.length ?? 0), 0);
   const gates = enabledSecs.filter((s) => s.gateRule).length;
-  const gb = gistBadge(bpGist(bp));
+  const gist = bpGist(bp);
+  const gb = gistBadge(gist);
+  // A published blueprint (anything but local) links to its gist so the user can verify what's
+  // actually stored upstream — the URL is otherwise only shown once, in the publish modal (#1037).
+  const gistUrl = gist.state !== "local" ? gist.url : undefined;
   const h = bpHue(bp);
   const origin = bpOrigin(bp);
   return (
@@ -101,7 +106,9 @@ function BlueprintCard({ bp, index, active, onOpen, onUse, onMenu }: {
         <span>{enabledSecs.length} stages</span>
         {caps > 0 && <span>· {caps} attached</span>}
         {gates > 0 && <span style={{ color: "var(--accent)" }}>· {gates} gates</span>}
-        <span className="gsync"><i style={{ background: gb.dot }} />{gb.label}</span>
+        {gistUrl
+          ? <button type="button" className="gsync gsync-link" title="View the published gist" onClick={(e) => { e.stopPropagation(); void openUrl(gistUrl).catch(() => {}); }}><i style={{ background: gb.dot }} />{gb.label} ↗</button>
+          : <span className="gsync"><i style={{ background: gb.dot }} />{gb.label}</span>}
         <span className="sp" />
         {/* Select this blueprint for new projects (without opening the editor). */}
         <button
