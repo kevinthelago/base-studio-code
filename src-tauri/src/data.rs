@@ -538,6 +538,35 @@ fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, Stri
     })
 }
 
+/// One entry in the packaged connector catalog surfaced to the Source pane (#1288).
+#[cfg(feature = "source-stage")]
+#[derive(serde::Serialize)]
+pub struct ConnectorCatalogEntry {
+    id: String,
+    name: String,
+    /// Coarse grouping for the catalog UI (`crm`, `erp`, `work`, …).
+    category: String,
+    /// Human "will contribute →" blurb (the preset's resource object names).
+    contributes: String,
+}
+
+/// The packaged vendor-preset catalog (#1288) — the 100+ generic-REST integrations beyond the
+/// dedicated connectors the Source pane hardcodes. Each declares with a base URL + bearer token;
+/// `data_platform_scan` builds an audited read-only REST connector from the preset's resources.
+#[cfg(feature = "source-stage")]
+#[tauri::command]
+pub fn data_connector_catalog() -> Vec<ConnectorCatalogEntry> {
+    bsc_data::presets::CATALOG
+        .iter()
+        .map(|p| ConnectorCatalogEntry {
+            id: p.id.to_string(),
+            name: p.label.to_string(),
+            category: p.category.to_string(),
+            contributes: p.resource_names().join(" · "),
+        })
+        .collect()
+}
+
 /// Run a read-only scan of a source connector, resolving its secret from the OS keychain.
 #[cfg(feature = "source-stage")]
 #[tauri::command]
@@ -596,12 +625,55 @@ fn scan_runtime_preset(
     source_uid: &str,
     fields: &std::collections::HashMap<String, String>,
 ) -> Result<ScanResult, String> {
-    let preset = bsc_data::find_runtime_preset(&bsc_data::runtime_store_path(), connector_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("unknown connector `{connector_id}`"))?;
-    let secret = crate::credentials::get_secret(project, source_uid, runtime_secret_field(&preset.auth))
-        .unwrap_or_default();
-    scan_rest_preset(&preset, fields, &secret)
+    match bsc_data::find_runtime_preset(&bsc_data::runtime_store_path(), connector_id).map_err(|e| e.to_string())? {
+        Some(preset) => {
+            let secret = crate::credentials::get_secret(project, source_uid, runtime_secret_field(&preset.auth))
+                .unwrap_or_default();
+            scan_rest_preset(&preset, fields, &secret)
+        }
+        // Fall back to a PACKAGED vendor preset (#1288): the Source pane declares static CATALOG ids
+        // (the 100+ long tail). These connect with a base URL + bearer token from the keychain.
+        None => match bsc_data::presets::CATALOG.iter().find(|p| p.id == connector_id) {
+            Some(vp) => {
+                let secret = crate::credentials::get_secret(project, source_uid, "token").unwrap_or_default();
+                scan_static_preset(vp, fields, &secret)
+            }
+            None => Err(format!("unknown connector `{connector_id}`")),
+        },
+    }
+}
+
+/// Build + scan the generic REST connector for a PACKAGED vendor preset (#1288). The Source pane
+/// declares the preset id and supplies the instance base URL (`baseUrl`) + a bearer token. Read-only.
+#[cfg(feature = "source-stage")]
+fn scan_static_preset(
+    preset: &bsc_data::presets::VendorPreset,
+    fields: &std::collections::HashMap<String, String>,
+    secret: &str,
+) -> Result<ScanResult, String> {
+    let base = fields
+        .get("baseUrl")
+        .or_else(|| fields.get("instanceUrl"))
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .ok_or("missing base URL — set baseUrl")?;
+    let base = base.trim_end_matches('/').to_string();
+    let client = reqwest::blocking::Client::new();
+    let (b, sec) = (base.clone(), secret.to_string());
+    let fetch = move |path: &str| -> bsc_data::Result<serde_json::Value> {
+        let url = if path.is_empty() {
+            format!("{b}/")
+        } else {
+            format!("{b}/{}", path.trim_start_matches('/'))
+        };
+        let req = client.get(&url).header("Accept", "application/json");
+        let req = if sec.is_empty() { req } else { req.bearer_auth(&sec) };
+        req.send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&preset.connector(host_of(&base), fetch), host_of(&base))
 }
 
 /// Build + scan the generic REST connector for a runtime preset, applying its declared auth. The
