@@ -10,6 +10,7 @@ import { recordPtyData, bumpTerminals } from "../../../lib/core/perf";
 import { gateClaudeLaunch } from "../../../lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/console/terminal";
 import { nudgeSizes } from "../../../lib/console/terminalNudge";
+import { probeJumble } from "../../../lib/console/jumbleProbe";
 import { composeStartupPrompt } from "../../../lib/session/checkpoint";
 import { composeReferenceContext } from "../../../lib/session/assignments";
 import { resolveMcpServers, toBscAgentMcp } from "../../../lib/session/mcpServers";
@@ -47,6 +48,13 @@ const CLIP_ROWS = 6;
 // finish its first paint, so the nudge repaints a fully-drawn (and possibly jumbled) screen rather
 // than an empty one. The nudge is idempotent + non-destructive, so an imprecise delay is harmless.
 const AUTO_NUDGE_DELAY_MS = 700;
+
+// Mid-session jumble probe (#1250): at each Claude settle, sample the bottom input-box rows and
+// auto-nudge when the box chrome is shattered. Hysteresis — two malformed samples (the settle + one
+// quick re-check) before firing — so a lone mid-draw frame doesn't trigger a needless repaint.
+const JUMBLE_CHROME_ROWS = 10; // bottom viewport rows that hold Claude's input box + hint lines
+const JUMBLE_STRIKES = 2;
+const JUMBLE_RECHECK_MS = 250;
 
 // Hex equivalents of the oklch design tokens so xterm can use them
 const TERM_THEME: import("@xterm/xterm").ITheme = {
@@ -128,6 +136,8 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // resize-nudge restore (#1221)
   const autoNudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // post-launch auto-redraw (#1221)
+  const jumbleStrikesRef = useRef(0); // consecutive malformed probes (#1250)
+  const probeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // jumble re-check (#1250)
   // Drives the native ConsoleInput (#1158): true while a Claude session is the running program in
   // this pane. Lifted to the store (transient) so PaneShell can also read it — it hides the pane's
   // status footer and shows the input bar in its place. The OSC/reconnect handlers below set it.
@@ -216,6 +226,43 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // pane on idle and the user steps through with Ctrl+Shift+N (or auto-
       // advance-on-reply). Only first-idle ever enqueues a pane, so a cold-
       // starting grid can't yank the cursor around. We don't focus here.
+
+      // Output has settled, so we're looking at a stable frame — probe it for a jumbled redraw
+      // and self-heal mid-session (#1250).
+      probeForJumble();
+    }
+
+    // Detect a jumbled Claude CLI TUI by inspecting the input-box chrome at the bottom of the
+    // viewport, and auto-nudge (the #1221 resize repaint) when it's shattered (#1250). Gated hard on
+    // the **Claude CLI** provider — an API / bsc-agent session renders its own UI, not this box
+    // chrome, and would need a different signal, so we never probe (or nudge) it here.
+    function probeForJumble() {
+      const providerId = useAppStore.getState().paneProviders[paneId] ?? "claude";
+      if (getProvider(providerId)?.isClaude !== true) return;
+      if (!openedRef.current) return;
+      const t = termRef.current;
+      if (!t) return;
+      const buf = t.buffer.active;
+      const bottom = buf.baseY + t.rows; // exclusive index past the last viewport row
+      const rows: string[] = [];
+      for (let y = Math.max(0, bottom - JUMBLE_CHROME_ROWS); y < bottom; y++) {
+        const line = buf.getLine(y);
+        if (line) rows.push(line.translateToString(true));
+      }
+      if (probeJumble(rows, t.cols) !== "malformed") {
+        jumbleStrikesRef.current = 0; // a healthy/unknown frame clears the streak
+        return;
+      }
+      jumbleStrikesRef.current += 1;
+      if (jumbleStrikesRef.current >= JUMBLE_STRIKES) {
+        jumbleStrikesRef.current = 0;
+        useAppStore.getState().requestPaneRedraw(paneId); // same nudge path as the manual control
+        return;
+      }
+      // Persisted? Re-check shortly so two strikes accrue within one settle (prompt fix), not across
+      // separate turns — and a one-off mid-draw frame resets on the healthy re-check.
+      if (probeTimerRef.current) clearTimeout(probeTimerRef.current);
+      probeTimerRef.current = setTimeout(() => { probeTimerRef.current = null; probeForJumble(); }, JUMBLE_RECHECK_MS);
     }
 
     function armQuietTimer() {
@@ -648,6 +695,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
       if (nudgeTimerRef.current) { clearTimeout(nudgeTimerRef.current); nudgeTimerRef.current = null; }
       if (autoNudgeTimerRef.current) { clearTimeout(autoNudgeTimerRef.current); autoNudgeTimerRef.current = null; }
+      if (probeTimerRef.current) { clearTimeout(probeTimerRef.current); probeTimerRef.current = null; }
       el.removeEventListener("focusin", onFocusIn);
       disposeOnData.dispose();
       unlistenRef.current?.();
