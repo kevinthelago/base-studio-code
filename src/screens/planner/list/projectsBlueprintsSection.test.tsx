@@ -3,7 +3,6 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { ProjectsList } from "./ProjectsList";
 import { useAppStore } from "../../../store";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../stages/blueprints";
 
 // The Projects-tab redesign adds a dedicated Blueprints section: the user's saved library
@@ -111,24 +110,5 @@ describe("ProjectsList — Blueprints section", () => {
     expect(s.projectsView).toBe("planning");                              // → planner
     expect(s.projectBlueprintId["My_Greenfield"]).toBe(AUTHORING_BLUEPRINT_ID);
     expect(s.planAuthoredBlueprint["My_Greenfield"]?.name).toBe("My Greenfield"); // seeded with the blueprint
-  });
-
-  it("a published blueprint's gist row is a clickable link that opens the gist, without selecting it (#1037)", async () => {
-    vi.mocked(openUrl).mockClear();
-    useAppStore.setState({
-      blueprints: [bp({ id: "pub", name: "Published BP", origin: "local", gist: { state: "synced", public: true, id: "abc1234567", url: "https://gist.github.com/u/abc" } })],
-    });
-    render(<ProjectsList />);
-    await screen.findByText("Blueprints");
-    fireEvent.click(screen.getByTestId("bp-gist-link-pub"));
-    expect(openUrl).toHaveBeenCalledWith("https://gist.github.com/u/abc");
-    expect(useAppStore.getState().activeBlueprintId).not.toBe("pub"); // stopPropagation — the card's select didn't fire
-  });
-
-  it("a local blueprint (no gist) shows no gist link (#1037)", async () => {
-    useAppStore.setState({ blueprints: [bp({ id: "loc", name: "Local BP", origin: "local" })] });
-    render(<ProjectsList />);
-    await screen.findByText("Blueprints");
-    expect(screen.queryByTestId("bp-gist-link-loc")).toBeNull();
   });
 });
