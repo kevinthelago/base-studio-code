@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExternalLink, MoreHorizontal, Trash2, Pencil, Check, Search, Layers, GitFork, Shield, Wrench, Database, Link2, Download } from "lucide-react";
 import { useAppStore } from "../../../store";
 import { useFleetLive } from "../../../hooks/useFleetLive";
@@ -63,6 +64,8 @@ interface BpItem {
   vis: Visibility;
   builtIn?: boolean;   // a code-owned app template (can't be deleted)
   gistLabel?: string;
+  /** The published gist's URL, when there is one — makes the gist row a clickable link (#1037). */
+  gistUrl?: string;
   updatedLabel: string;
   sort: number;        // recency key (epoch ms)
 }
@@ -356,9 +359,19 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
           colored by gate status — a preview of the lifecycle this blueprint walks through. */}
       <PlanGateRow sections={b.sections} signals={{}} />
       {b.gistLabel && (
-        <div style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5 }}>
-          <Link2 size={10} />{b.gistLabel}
-        </div>
+        b.gistUrl
+          // Published: open the gist to verify upstream contents / re-find the shareable link (#1037).
+          // stopPropagation so it doesn't also select the blueprint (the card's onClick).
+          ? <button
+              type="button"
+              data-testid={`bp-gist-link-${b.id}`}
+              title="View the published gist"
+              onClick={(e) => { e.stopPropagation(); void openUrl(b.gistUrl!).catch(() => {}); }}
+              style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5, background: "none", border: 0, padding: 0, cursor: "pointer" }}
+            ><Link2 size={10} />{b.gistLabel}<ExternalLink size={9} /></button>
+          : <div style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5 }}>
+              <Link2 size={10} />{b.gistLabel}
+            </div>
       )}
     </div>
   );
@@ -675,6 +688,7 @@ export function ProjectsList() {
         stages: b.sections.length, sections: b.sections, vis,
         builtIn: b.origin === "built-in",
         gistLabel: hasGist ? prettyGist(b.gist) : undefined,
+        gistUrl: b.gist?.url,
         updatedLabel: timeAgoMs(sortMs), sort: sortMs,
       });
     }
