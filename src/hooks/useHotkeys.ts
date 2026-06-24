@@ -6,6 +6,7 @@ import { adjustFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/console/termi
 import { nextFullscreen } from "../lib/console/consoleFocus";
 import { CLEAR_INPUT_BYTES } from "../lib/console/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/console/paneSelect";
+import { paneIdFor } from "../lib/console/paneIdentity";
 import { SCREEN_HOTKEYS } from "../lib/settings/shortcuts";
 import {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
@@ -35,6 +36,7 @@ export const SHORTCUT_REGISTRY: ShortcutDef[] = [
   { id: "fullscreen-toggle",   label: "Fullscreen pane",          keys: "Ctrl+Shift+F",        description: "Maximize or restore the focused console pane",         context: "Console" },
   { id: "focus-next-waiting",  label: "Next waiting pane",        keys: "Ctrl+Shift+N",        description: "Cycle focus to the next agent waiting for a reply",    context: "Console" },
   { id: "clear-input",         label: "Clear pane input",         keys: "Ctrl+Shift+Backspace", description: "Send Ctrl+U to kill the current input line",           context: "Console" },
+  { id: "redraw-pane",         label: "Redraw / fix display",     keys: "Ctrl+Shift+R",        description: "Repaint the focused console pane — un-jumble the Claude CLI's TUI", context: "Console" },
   { id: "pane-select",         label: "Select pane",              keys: "Ctrl+Shift+1–9",      description: "Focus or fullscreen a console pane by number",         context: "Console" },
   { id: "zoom-in",             label: "Zoom terminal in",         keys: "Ctrl++",              description: "Increase terminal font size",                          context: "Console" },
   { id: "zoom-out",            label: "Zoom terminal out",        keys: "Ctrl+−",              description: "Decrease terminal font size",                          context: "Console" },
@@ -166,6 +168,22 @@ export function useHotkeys() {
         e.stopPropagation();
         const next = nextFullscreen(focusedPaneIdx, fullscreenPaneIdx);
         if (next !== null) setFullscreenPane(next);
+        return;
+      }
+
+      // ── Ctrl+Shift+R: redraw / fix display (#1221) ──────────────────────────
+      // Nudge the focused pane's PTY size (a transient SIGWINCH) to force the Claude CLI's TUI to
+      // repaint — the in-app equivalent of dragging the window to un-jumble it. Keys off the STABLE
+      // pane id (paneIdFor), the same id the terminal watches.
+      if (matchesBinding(e, bindings, "redraw-pane")) {
+        if (activeScreen !== "console") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = fullscreenPaneIdx >= 0 ? fullscreenPaneIdx : focusedPaneIdx;
+        if (idx < 0) return;
+        const st = useAppStore.getState();
+        const tab = st.tabs[activeTabIdx];
+        if (tab) st.requestPaneRedraw(paneIdFor(tab, activeTabIdx, idx));
         return;
       }
 
