@@ -55,6 +55,7 @@ interface PaneAtProps {
   onStatusChange: (tabIdx: number, i: number, status: "run" | "idle") => void;
   onToggleFullscreen: (tabIdx: number, i: number) => void;
   onToggleDisable: (tabIdx: number, i: number) => void;
+  onRedraw: (tabIdx: number, i: number) => void;
   // Per-pane booleans (not the raw indices) so a focus/menu change only re-renders
   // the two panes whose flag actually flipped — not all N.
   menuOpen: boolean;
@@ -69,7 +70,7 @@ interface PaneAtProps {
 const PaneAt = memo(function PaneAt({
   i, tabIdx, paneId: pid, name, view, status, cwd, initCmd,
   onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange, onStatusChange,
-  onToggleFullscreen, onToggleDisable, menuOpen, focused, fullscreen, disabled, hidden, usage,
+  onToggleFullscreen, onToggleDisable, onRedraw, menuOpen, focused, fullscreen, disabled, hidden, usage,
 }: PaneAtProps) {
   const defaultModel = useAppStore((s) => s.defaultModel);
   const paneModel = useAppStore((s) => s.paneModels[pid]);
@@ -100,6 +101,7 @@ const PaneAt = memo(function PaneAt({
       onMenuToggle={() => onMenuToggle(tabIdx, i)}
       onToggleFullscreen={() => onToggleFullscreen(tabIdx, i)}
       onToggleDisable={() => onToggleDisable(tabIdx, i)}
+      onRedraw={() => onRedraw(tabIdx, i)}
       onFocus={() => onFocus(tabIdx, i)}
       onPickDirectory={() => onPickDirectory(tabIdx, i)}
       status={disabled ? "idle" : status}
@@ -387,6 +389,12 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   const handleToggleFullscreen = useCallback((_tabIdx: number, paneIdx: number) =>
     setFullscreenPane(useAppStore.getState().fullscreenPaneIdx === paneIdx ? -1 : paneIdx),
     [setFullscreenPane]);
+  // Resize-nudge redraw (#1221): bump the pane's redraw counter; its terminal nudges the PTY size
+  // (SIGWINCH) and settles back, un-jumbling the Claude CLI's TUI the way a window resize does.
+  const handleRedraw = useCallback((tabIdx: number, paneIdx: number) => {
+    const st = useAppStore.getState();
+    st.requestPaneRedraw(paneIdFor(st.tabs[tabIdx], tabIdx, paneIdx));
+  }, []);
 
   // Per-tab pane renderer. tabIdx + isFullscreenInTab let one helper render
   // BOTH the active tab and the (display:none) background tabs from the same
@@ -416,6 +424,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
         onStatusChange={handleStatusChange}
         onToggleFullscreen={handleToggleFullscreen}
         onToggleDisable={handleToggleDisable}
+        onRedraw={handleRedraw}
         // Screen-level chrome state only applies to the active tab.
         menuOpen={isActiveTab && paneMenuOpenIdx === i}
         focused={isActiveTab && focusedPaneIdx === i}

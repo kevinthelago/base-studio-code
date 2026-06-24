@@ -77,6 +77,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     items: [
       { id: "broadcast-toggle", keys: ["Ctrl", "Shift", "C"], desc: "Toggle broadcast — mirror typing to every pane in the tab", scope: "Console" },
       { id: "clear-input", keys: ["Ctrl", "Shift", "Backspace"], desc: "Clear the focused pane's pending input", scope: "Console" },
+      { id: "redraw-pane", keys: ["Ctrl", "Shift", "R"], desc: "Redraw / fix display — repaint a jumbled Claude CLI", scope: "Console" },
       { id: "send-all-enter", keys: ["Alt", "Shift", "Enter"], desc: "Send Enter to every pane in the tab", scope: "Console" },
     ],
   },
