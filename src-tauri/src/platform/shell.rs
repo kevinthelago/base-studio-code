@@ -305,6 +305,91 @@ pub(crate) fn non_bash_init(
     }
 }
 
+// ── PTY byte handling + native↔bash path conversion + ANSI-C quoting (#1300) ──
+// These string/path utilities sit with the shell module because they exist to bridge the PTY
+// session and bash: chunking PTY output on UTF-8 boundaries, translating native↔Git-Bash paths,
+// and ANSI-C-quoting a value for a `claude <token>` launch. Extracted verbatim from `lib.rs`.
+
+/// Splits `bytes` at the last complete UTF-8 character boundary.
+/// Returns `(valid_string, leftover_bytes)` where `leftover_bytes` is any
+/// trailing incomplete multi-byte sequence to prepend to the next read.
+pub(crate) fn split_utf8_at_boundary(bytes: &[u8]) -> (String, Vec<u8>) {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => (s.to_string(), Vec::new()),
+        Err(e) => {
+            let valid_up_to = e.valid_up_to();
+            if e.error_len().is_none() {
+                // Incomplete sequence at end of buffer — hold the trailing
+                // bytes for the next read rather than replacing with U+FFFD.
+                let text = unsafe { std::str::from_utf8_unchecked(&bytes[..valid_up_to]) }.to_string();
+                (text, bytes[valid_up_to..].to_vec())
+            } else {
+                // Genuinely invalid bytes mid-stream — keep going with lossy.
+                (String::from_utf8_lossy(bytes).into_owned(), Vec::new())
+            }
+        }
+    }
+}
+
+/// Converts a native OS path to a bash-compatible POSIX path.
+/// On Windows (Git Bash): `C:\Users\foo` → `/c/Users/foo`.
+/// On Unix: returns the path unchanged.
+pub(crate) fn to_bash_path(p: &str) -> String {
+    #[cfg(windows)]
+    {
+        let s = p.replace('\\', "/");
+        if s.len() >= 2 && s.as_bytes()[1] == b':' {
+            let drive = s[..1].to_lowercase();
+            return format!("/{}{}", drive, &s[2..]);
+        }
+        s
+    }
+    #[cfg(not(windows))]
+    p.to_string()
+}
+
+/// Inverse of [`to_bash_path`]: a git-bash drive path (`/c/Users/...`, as reported by a
+/// bash shell's OSC-7 cwd and then persisted) back to a native `C:/Users/...` path, so
+/// Windows fs/process APIs (`Path::is_dir`, `Command::cwd`) can resolve it. Without this a
+/// restored pane whose worktree/dir genuinely EXISTS reads as "missing" and fails to launch
+/// (#979). Already-native and non-drive paths pass through unchanged; no-op off Windows.
+pub(crate) fn to_native_path(p: &str) -> String {
+    #[cfg(windows)]
+    {
+        let b = p.as_bytes();
+        if b.len() >= 3 && b[0] == b'/' && b[2] == b'/' && (b[1] as char).is_ascii_alphabetic() {
+            let drive = (b[1] as char).to_ascii_uppercase();
+            return format!("{drive}:/{}", &p[3..]);
+        }
+        p.to_string()
+    }
+    #[cfg(not(windows))]
+    p.to_string()
+}
+
+/// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
+///
+/// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
+/// keeps the whole value on one physical line (newlines become `\n`) and `$`,
+/// backticks, and double quotes are literal — so no shell expansion, no PS2
+/// continuation, and any prompt content survives intact.
+pub(crate) fn bash_ansi_c_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    out.push_str("$'");
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(c),
+        }
+    }
+    out.push('\'');
+    out
+}
+
 #[cfg(test)]
 mod tests {
 
