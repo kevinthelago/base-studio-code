@@ -17,6 +17,17 @@ pub(crate) fn sanitize_project_key(key: &str) -> String {
     s.chars().take(80).collect()
 }
 
+/// Slugify a worktree/branch reference: keep `[A-Za-z0-9._-]`, every other char becomes `-`.
+///
+/// Must stay identical to the frontend `worktreeSlug` AND be the single source of truth on the Rust
+/// side — the fleet uses it to *create* a worktree's on-disk path while session discovery uses it to
+/// *recompute* that path; if the two ever diverged, recovery would miss live worktrees (#1300).
+pub(crate) fn worktree_slug(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { c } else { '-' })
+        .collect()
+}
+
 /// Whether `rel` is a safe relative path: not absolute, with no drive prefix, root component, or any
 /// `..` segment. Shared by the pipeline file primitives so a pipeline can never write/read outside
 /// its own project dir.
