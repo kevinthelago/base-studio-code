@@ -12,7 +12,7 @@ mod githooks;
 mod oauth;
 mod config;
 mod github;
-mod shell;
+mod platform;
 mod pty;
 mod pty_ledger;
 mod session_discovery;
@@ -22,6 +22,19 @@ mod data;
 mod credentials;
 mod source_oauth;
 mod harness;
+
+// Shared platform primitives (#1300), re-exported at the crate root so existing call sites resolve
+// unchanged after the move: `crate::NAME` from sibling modules, bare names within lib.rs, and the
+// `crate::shell::*` module path. The definitions now live in `platform/`.
+pub(crate) use platform::shell;
+pub(crate) use platform::paths::{
+    home_dir, bsc_base_dir, documents_dir, project_dir, repo_dir, worktrees_dir,
+    plan_dir_for, context_dir_for, published_marker, is_published, legacy_draft_dir,
+};
+pub(crate) use platform::git::{git_lines, git_output, git_exclude};
+pub(crate) use platform::process::no_window;
+pub(crate) use platform::fsx::{is_safe_relpath, read_files_dir, ingest_section_files, sanitize_project_key};
+pub(crate) use platform::shell::{split_utf8_at_boundary, to_bash_path, to_native_path, bash_ansi_c_quote};
 
 // ── Logging / performance ────────────────────────────────────────────────────
 
@@ -62,63 +75,6 @@ impl Drop for PerfSpan {
 
 // ── PTY commands ─────────────────────────────────────────────────────────────
 
-/// Splits `bytes` at the last complete UTF-8 character boundary.
-/// Returns `(valid_string, leftover_bytes)` where `leftover_bytes` is any
-/// trailing incomplete multi-byte sequence to prepend to the next read.
-pub(crate) fn split_utf8_at_boundary(bytes: &[u8]) -> (String, Vec<u8>) {
-    match std::str::from_utf8(bytes) {
-        Ok(s) => (s.to_string(), Vec::new()),
-        Err(e) => {
-            let valid_up_to = e.valid_up_to();
-            if e.error_len().is_none() {
-                // Incomplete sequence at end of buffer — hold the trailing
-                // bytes for the next read rather than replacing with U+FFFD.
-                let text = unsafe { std::str::from_utf8_unchecked(&bytes[..valid_up_to]) }.to_string();
-                (text, bytes[valid_up_to..].to_vec())
-            } else {
-                // Genuinely invalid bytes mid-stream — keep going with lossy.
-                (String::from_utf8_lossy(bytes).into_owned(), Vec::new())
-            }
-        }
-    }
-}
-
-/// Converts a native OS path to a bash-compatible POSIX path.
-/// On Windows (Git Bash): `C:\Users\foo` → `/c/Users/foo`.
-/// On Unix: returns the path unchanged.
-pub(crate) fn to_bash_path(p: &str) -> String {
-    #[cfg(windows)]
-    {
-        let s = p.replace('\\', "/");
-        if s.len() >= 2 && s.as_bytes()[1] == b':' {
-            let drive = s[..1].to_lowercase();
-            return format!("/{}{}", drive, &s[2..]);
-        }
-        s
-    }
-    #[cfg(not(windows))]
-    p.to_string()
-}
-
-/// Inverse of [`to_bash_path`]: a git-bash drive path (`/c/Users/...`, as reported by a
-/// bash shell's OSC-7 cwd and then persisted) back to a native `C:/Users/...` path, so
-/// Windows fs/process APIs (`Path::is_dir`, `Command::cwd`) can resolve it. Without this a
-/// restored pane whose worktree/dir genuinely EXISTS reads as "missing" and fails to launch
-/// (#979). Already-native and non-drive paths pass through unchanged; no-op off Windows.
-pub(crate) fn to_native_path(p: &str) -> String {
-    #[cfg(windows)]
-    {
-        let b = p.as_bytes();
-        if b.len() >= 3 && b[0] == b'/' && b[2] == b'/' && (b[1] as char).is_ascii_alphabetic() {
-            let drive = (b[1] as char).to_ascii_uppercase();
-            return format!("{drive}:/{}", &p[3..]);
-        }
-        p.to_string()
-    }
-    #[cfg(not(windows))]
-    p.to_string()
-}
-
 /// The nearest existing ancestor directory of `path` (native form), or "" if none
 /// exists. Used by `pty_create` to avoid the silent $HOME fallback when a session's
 /// configured cwd is missing — we land in the closest real directory instead (#367).
@@ -132,47 +88,6 @@ pub(crate) fn nearest_existing_ancestor(path: &str) -> String {
             None => return String::new(),
         }
     }
-}
-
-/// Root of the flat, reusable document library: `~/.base-studio-code/documents`.
-/// Holds standalone markdown blocks (`*.md`) plus the library's own `CLAUDE.md`
-/// and `.claude/settings.json`. These are reusable across every project — they
-/// are referenced from a project's `kb_index.md` via a relative path.
-pub(crate) fn documents_dir() -> std::path::PathBuf {
-    bsc_base_dir().join("documents")
-}
-
-/// The project hub directory and the planner session's CWD: `~/.base-studio-code/projects/<key>`.
-/// Holds the project's `CLAUDE.md` (ancestor-loaded context for repo sessions), plan sections
-/// (`goal.md`…), control files, `prompts/`, and the cloned repos as subdirectories.
-///
-/// ONE location for the life of the project — published or draft (#922). The hub NEVER moves, so
-/// the planner's cwd (and Claude's cwd-keyed `--continue` history) stays stable. Published-ness is
-/// an in-place marker file (`.published`), NOT the directory's location — see [`is_published`] /
-/// [`mark_published`]. This replaces the #904 draft/ vs projects/ split, whose publish-time rename
-/// fought the Windows cwd lock (a live process can't have its cwd renamed), orphaned Claude history,
-/// and wedged into a permanent split-brain when the rename half-failed.
-pub(crate) fn project_dir(project_key: &str) -> std::path::PathBuf {
-    bsc_base_dir().join("projects").join(sanitize_project_key(project_key))
-}
-
-/// The published-marker file inside a project hub (#922): `projects/<key>/.published`. Its presence
-/// means the project has been published to GitHub; absence = draft. The source of published-ness,
-/// replacing directory location.
-fn published_marker(project_key: &str) -> std::path::PathBuf {
-    project_dir(project_key).join(".published")
-}
-
-/// Whether a project hub carries the published marker (#922).
-fn is_published(project_key: &str) -> bool {
-    published_marker(project_key).is_file()
-}
-
-/// The legacy unpublished-hub location from the #904 split: `~/.base-studio-code/draft/<key>`.
-/// Retained ONLY for the one-time migration that consolidates these back under `projects/` (#922)
-/// and for defensive cleanup in `delete_project_dir`.
-fn legacy_draft_dir(project_key: &str) -> std::path::PathBuf {
-    bsc_base_dir().join("draft").join(sanitize_project_key(project_key))
 }
 
 /// Mark a project published (#922): write `projects/<key>/.published`. Unlike the old promote-rename,
@@ -189,67 +104,6 @@ fn mark_published(project_key: String) -> Result<(), String> {
         .map_err(|e| format!("mark_published: {e}"))?;
     log::info!("marked project published: {:?}", dir);
     Ok(())
-}
-
-/// The on-disk clone location of a repo within its project hub:
-/// `projects/<sanitized-project-key>/<short-repo-name>`, where the short name is
-/// the part of `owner/name` after the `/`. Each repo clone is a repo session's CWD.
-pub(crate) fn repo_dir(project_key: &str, repo_full_name: &str) -> std::path::PathBuf {
-    let short = repo_full_name.rsplit('/').next().unwrap_or(repo_full_name);
-    project_dir(project_key).join(short)
-}
-
-/// The fleet's git worktrees live OUTSIDE the project hub, at
-/// `~/.base-studio-code/worktrees/<sanitized-project-key>/`, so the hub's `CLAUDE.md`
-/// (the planner spec) is NOT an ancestor of a worker's CWD. Claude Code loads `CLAUDE.md`
-/// from the cwd and every parent directory, and that walk can't be suppressed per-directory
-/// — keeping worktrees under the hub leaked the full ~52KB planning spec into every worker
-/// session (pulling workers toward planning and inflating per-turn input tokens), and made
-/// the hub-rooted director believe it launches the fleet. Relocating them here makes each
-/// worker load only its own scoped `CLAUDE.local.md` + the repo's tracked `CLAUDE.md` (#844).
-pub(crate) fn worktrees_dir(project_key: &str) -> std::path::PathBuf {
-    bsc_base_dir()
-        .join("worktrees")
-        .join(sanitize_project_key(project_key))
-}
-
-/// Absolute on-disk location of a project's plan section files, which live FLAT
-/// in the project hub: `~/.base-studio-code/projects/<sanitized-project-key>`.
-/// Plan sections sit alongside the control files (CLAUDE.md, kb_index.md, …) in
-/// the planner's CWD.
-fn plan_dir_for(project_key: &str) -> std::path::PathBuf {
-    project_dir(project_key)
-}
-
-/// The Context-stage discovery sections live in their own subdir of the hub (#807):
-/// `projects/<sanitized-key>/context/`. Keeps the discovery topics easy to find (and the
-/// hub uncluttered) for larger / off-script plans. Created only when the blueprint has a
-/// context stage; read alongside the flat root so pre-existing projects still resolve.
-pub(crate) fn context_dir_for(project_key: &str) -> std::path::PathBuf {
-    project_dir(project_key).join("context")
-}
-
-/// Ingest every non-empty `.md`/`.json` section file in `dir` (top level only), keyed by
-/// file stem, into `sections` — skipping the workspace control files. Used to read the hub
-/// root + the `context/` subdir; a later call overrides earlier keys (context/ wins, #807).
-fn ingest_section_files(dir: &std::path::Path, sections: &mut std::collections::HashMap<String, String>) {
-    const CONTROL: &[&str] = &["CLAUDE.md", "kb_index.md", "automations.md", "extensions.md", "github_context.md"];
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() { continue; }
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if CONTROL.contains(&name) { continue; }
-        if !matches!(path.extension().and_then(|e| e.to_str()), Some("md") | Some("json")) { continue; }
-        if let (Some(stem), Ok(content)) =
-            (path.file_stem().and_then(|s| s.to_str()), std::fs::read_to_string(&path))
-        {
-            let content = content.trim().to_string();
-            if !content.is_empty() {
-                sections.insert(stem.to_string(), content);
-            }
-        }
-    }
 }
 
 /// Delete a project's on-disk hub (`projects/<sanitized-key>`) and everything in
@@ -581,19 +435,6 @@ fn delete_blueprint(id: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Reject a relative path that would escape the project hub: absolute paths, a Windows
-/// drive prefix, a root component, or any `..` segment. Shared by the pipeline file
-/// primitives so a pipeline can never write/read outside its own project dir.
-fn is_safe_relpath(rel: &std::path::Path) -> bool {
-    !rel.is_absolute()
-        && !rel.components().any(|c| matches!(
-            c,
-            std::path::Component::ParentDir
-                | std::path::Component::Prefix(_)
-                | std::path::Component::RootDir
-        ))
-}
-
 /// Write one file into a project's hub — the shared persistence primitive pipelines call
 /// (#…). Pipelines own *what*/*where*/*when* they save; this just performs the path-safe
 /// write under `projects/<key>/`. `relpath` is resolved under the project dir; any attempt
@@ -695,33 +536,6 @@ fn scan_dead_code(repo_path: String, tool: String) -> ScanResult {
     }
 }
 
-/// Recursively read every (text) file under `root` as `(relpath → contents)`, capped at
-/// 512 KiB each, skipping unreadable/binary files. relpaths are forward-slashed and
-/// relative to `root`. The generic complement to `read_skeleton_dir` (which filters by
-/// extension) — pipelines persist arbitrary file types (`.vue`, `.svg`, `.html`, …).
-fn read_files_dir(root: &std::path::Path) -> Vec<(String, String)> {
-    fn walk(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, String)>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                walk(base, &p, out);
-            } else {
-                let small = std::fs::metadata(&p).map(|m| m.len() <= 512 * 1024).unwrap_or(false);
-                if small {
-                    if let (Ok(rel), Ok(content)) = (p.strip_prefix(base), std::fs::read_to_string(&p)) {
-                        out.push((rel.to_string_lossy().replace('\\', "/"), content));
-                    }
-                }
-            }
-        }
-    }
-    let mut out = Vec::new();
-    walk(root, root, &mut out);
-    out.sort_by(|a, b| a.0.cmp(&b.0));
-    out
-}
-
 /// Read every file under a project-hub subdir (relpath → contents) so a pipeline can
 /// rehydrate its saved results (#…). Empty when the subdir is missing or `subdir` would
 /// escape the project dir.
@@ -732,29 +546,6 @@ fn read_project_files(project_key: String, subdir: String) -> Vec<(String, Strin
         return Vec::new();
     }
     read_files_dir(&project_dir(&project_key).join(rel))
-}
-
-/// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
-///
-/// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
-/// keeps the whole value on one physical line (newlines become `\n`) and `$`,
-/// backticks, and double quotes are literal — so no shell expansion, no PS2
-/// continuation, and any prompt content survives intact.
-pub(crate) fn bash_ansi_c_quote(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 4);
-    out.push_str("$'");
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '\'' => out.push_str("\\'"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            _ => out.push(c),
-        }
-    }
-    out.push('\'');
-    out
 }
 
 /// Build the shell command that launches `claude` with the baked startup prompt.
@@ -898,20 +689,6 @@ async fn kb_chat(
 // (auto-loaded system prompt) written on every session start so the instructions
 // stay in sync with the app without manual editing.
 
-pub(crate) fn home_dir() -> std::path::PathBuf {
-    let home = if cfg!(windows) {
-        std::env::var("USERPROFILE")
-            .unwrap_or_else(|_| std::env::var("HOME").unwrap_or_default())
-    } else {
-        std::env::var("HOME").unwrap_or_default()
-    };
-    std::path::PathBuf::from(home)
-}
-
-pub(crate) fn bsc_base_dir() -> std::path::PathBuf {
-    home_dir().join(".base-studio-code")
-}
-
 /// Read the Agents audit log (#257): the newest `limit` TSV lines, newest first.
 #[tauri::command]
 fn read_audit_log(limit: usize) -> Vec<String> {
@@ -1050,19 +827,6 @@ fn claude_transcript_path(cwd: String) -> Option<String> {
         }
     }
     newest.map(|(_, p)| p.to_string_lossy().into_owned())
-}
-
-/// Run `git -C <cwd> <args…>` and return its stdout as trimmed, non-empty lines; empty on any
-/// failure (non-zero exit, git missing).
-fn git_lines(cwd: &str, args: &[&str]) -> Vec<String> {
-    match std::process::Command::new("git").arg("-C").arg(cwd).args(args).output() {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect(),
-        _ => Vec::new(),
-    }
 }
 
 /// Merge two path lists into one sorted, de-duplicated set (pure; unit-tested). A file that is
@@ -1212,44 +976,10 @@ async fn setup_kb_workspace() -> Result<String, String> {
     Ok(kb_dir.to_string_lossy().into_owned())
 }
 
-/// Turns an arbitrary project key into a filesystem-safe directory name.
-/// Canonicalize a project key into a filesystem-safe slug.
-///
-/// Must stay byte-for-byte identical to the frontend's paneId sanitization in
-/// Planning.tsx (`replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 80)`) so the PTY id and
-/// the planning directory always correspond. ASCII-only on purpose — Rust's
-/// `char::is_alphanumeric` accepts Unicode letters, which the JS regex does not.
-pub(crate) fn sanitize_project_key(key: &str) -> String {
-    let s: String = key
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
-        .collect();
-    // Truncate so paths stay manageable.
-    s.chars().take(80).collect()
-}
-
 // ── Repository resolution ─────────────────────────────────────────────────────
 //
 // Repos live inside their project hub at `projects/<project>/<short-repo-name>`.
 // clone_repo: clones there via HTTPS; idempotent if the dir already exists.
-
-/// Suppress the console window Windows pops for each child process (#432).
-///
-/// A GUI-subsystem Tauri build has no console, so every `std::process::Command`
-/// it spawns (git, the readiness-probe shell, …) would otherwise flash — or, on
-/// Windows 10, *persist* — its own `cmd`/`conhost` window with no way to close it.
-/// The `CREATE_NO_WINDOW` (0x0800_0000) creation flag spawns the child detached
-/// from any console. No-op on non-Windows. Call it on the `Command` right before
-/// `.status()`/`.output()`/`.spawn()`. (The PTY path is unaffected — it goes
-/// through portable_pty's headless ConPTY, not `std::process`.)
-fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-    cmd
-}
 
 /// Clones `full_name` (an `owner/name` GitHub slug) into the project hub at
 /// `projects/<sanitize(project)>/<short-repo-name>` and returns the clone path.
@@ -1430,16 +1160,6 @@ async fn mcp_status(name: String) -> Result<McpStatusResult, String> {
 fn mcp_update_available(local: &str, remote: &str) -> bool {
     let (l, r) = (local.trim(), remote.trim());
     !l.is_empty() && !r.is_empty() && l != r
-}
-
-/// Run a git command, returning its trimmed stdout on success, else "".
-fn git_output(args: &[&str]) -> String {
-    let mut cmd = std::process::Command::new("git");
-    cmd.args(args);
-    match no_window(&mut cmd).output() {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
-        _ => String::new(),
-    }
 }
 
 #[derive(serde::Serialize)]
@@ -1648,57 +1368,6 @@ fn inject_skills(hub: &std::path::Path, wt_local: &std::path::Path) {
         return; // already injected
     }
     let _ = std::fs::write(wt_local, format!("{}\n\n{}\n", cur.trim_end(), trimmed));
-}
-
-/// Resolve the absolute path git would use for a file under its git dir, via
-/// `git rev-parse --git-path <rel>`. This is the ONLY correct way to locate shared paths like
-/// `info/exclude` across both layouts: in a normal clone `.git` is a directory, but in a linked
-/// **worktree** `.git` is a FILE pointing at `…/.git/worktrees/<id>`, and shared paths resolve to
-/// the common dir — so `repo_root/.git/info/exclude` is simply wrong there. Returns None when git
-/// is unavailable or `repo_root` is not a repo.
-fn git_path(repo_root: &std::path::Path, rel: &str) -> Option<std::path::PathBuf> {
-    let out = std::process::Command::new("git")
-        .arg("-C").arg(repo_root)
-        .args(["rev-parse", "--git-path", rel])
-        .output()
-        .ok()?;
-    if !out.status.success() { return None; }
-    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if p.is_empty() { return None; }
-    // git prints the path relative to the cwd (= repo_root) for a normal clone, or absolute for a
-    // worktree's common dir. Resolve relatives against repo_root; keep absolutes as-is.
-    let pb = std::path::PathBuf::from(&p);
-    Some(if pb.is_absolute() { pb } else { repo_root.join(pb) })
-}
-
-/// Append `entry` to a repo's `info/exclude` (idempotent) so app-managed files (`.mcp.json`,
-/// `.claude/`) stay out of `git status` — and therefore out of the warden's worktree-change signal,
-/// which would otherwise quarantine every fleet worker for an "out-of-lane" edit it never made
-/// (#1102). No-op when `repo_root` is not a git repo.
-///
-/// Resolves the exclude file through git rather than assuming `repo_root/.git/info/exclude`: in a
-/// linked worktree `.git` is a file, so the assumed path doesn't exist and the write silently
-/// fails — the bug that let `.mcp.json` leak into every worker's diff.
-fn git_exclude(repo_root: &std::path::Path, entry: &str) {
-    if !repo_root.join(".git").exists() { return; }
-    // Fall back to the literal path only if git can't resolve it (e.g. git absent) AND `.git` is a
-    // real directory — never write through a worktree's `.git` file.
-    let exclude = git_path(repo_root, "info/exclude").unwrap_or_else(|| {
-        repo_root.join(".git").join("info").join("exclude")
-    });
-    if exclude.parent().map(|p| !p.is_dir()).unwrap_or(false) {
-        // Parent isn't a directory (e.g. unresolved worktree `.git` file) — bail rather than fail.
-        return;
-    }
-    if let Some(parent) = exclude.parent() { let _ = std::fs::create_dir_all(parent); }
-    let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
-    if existing.lines().any(|l| l.trim() == entry) { return; }
-    let next = if existing.trim().is_empty() {
-        format!("{}\n", entry)
-    } else {
-        format!("{}\n{}\n", existing.trim_end(), entry)
-    };
-    let _ = std::fs::write(&exclude, next);
 }
 
 /// Shell commands every spawned repo/console session auto-approves regardless of
