@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, bundledSkillsFromManifest } from "./blueprintShare";
 import { resolveBlueprintSkillPayloads, type SkillPayload } from "./blueprintSkills";
-import { skillFromPayload } from "../../../lib/session/skills";
+import { skillFromPayload } from "@/features/skills/lib/skills";
 import { encodeShareCode, decodeShareCode, wrapExtension } from "../../../lib/planner/gist/manifest";
 import { makeBlueprints } from "../stages/blueprints";
 import { useAppStore } from "../../../store";
 import type { Blueprint } from "../stages/blueprints";
-import type { SkillDef } from "../../../lib/session/skills";
+import type { SkillDef } from "@/features/skills/lib/skills";
 import type { KbBlock } from "../../../data/mock";
 
 const sample = () => makeBlueprints().find((b) => b.id === "default")!;

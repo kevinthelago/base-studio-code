@@ -12,7 +12,7 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../store";
-import { dispatchAutomation } from "../automations/dispatch";
+import { dispatchAutomation } from "@/features/automations/lib/dispatch";
 import { automationToFrame, planArm } from "./automationControl";
 import { tunnelSetAutomations, tunnelAutomationFailed } from "./tunnelClient";
 import { log } from "../core/log";

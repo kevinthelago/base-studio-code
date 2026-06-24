@@ -3,8 +3,8 @@ import { act, render } from "@testing-library/react";
 import { ConsoleScreen } from "../../../screens/Console";
 import { useAppStore } from "../../../store";
 import type { ViewKey } from "../ViewTabs";
-import type { McpServer } from "../../../lib/session/mcpServers";
-import type { Hook } from "../../../lib/session/hooks";
+import type { McpServer } from "@/features/extensions/lib/mcpServers";
+import type { Hook } from "@/features/extensions/lib/hooks";
 
 /**
  * #186: every tab's panes stay mounted across switches so xterm + frontend
