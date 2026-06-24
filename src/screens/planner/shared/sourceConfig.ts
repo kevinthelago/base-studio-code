@@ -11,7 +11,7 @@
 // keychain on the device and are never persisted here or shared with the planning agent). The config
 // keeps only non-secret fields, a redacted `handle`, and the discovered (not extracted) inventory.
 
-import type { DataModel, Entity, Field } from "../data/dataModel";
+import type { DataModel, Entity, Field, FieldType } from "../data/dataModel";
 
 /** How a connector authenticates — drives which card the per-source ConnectionSpec renders. */
 export type AuthMethod = "oauth" | "token" | "password" | "basic" | "apiKey" | "upload";
@@ -150,12 +150,34 @@ export function connector(id: string): Connector {
   };
 }
 
+/** A discovered field: name + an inferred type + (for enums) the observed values (#1219). */
+export interface DiscoveredField { name: string; type?: FieldType; enumValues?: string[]; ref?: string }
 /** An object/table the scan discovered in a connected source (a count, not extracted rows).
- *  `fields` are the discovered column names when the connector surfaces them (used to seed the
- *  derived Data Model's entity fields). */
-export interface DiscoveredObject { name: string; count: number; fields?: string[] }
+ *  `fields` accepts bare column names (older fixtures) or typed {@link DiscoveredField}s (the live
+ *  scan) — used to seed the derived Data Model's entity fields + types. */
+export interface DiscoveredObject { name: string; count: number; fields?: (string | DiscoveredField)[] }
+const fieldName = (f: string | DiscoveredField): string => (typeof f === "string" ? f : f.name);
+const fieldMeta = (f: string | DiscoveredField): { type?: FieldType; enumValues?: string[]; ref?: string } =>
+  typeof f === "string" ? {} : { type: f.type, enumValues: f.enumValues, ref: f.ref };
 /** A behavior (business rule / automation) the scan found — these shape the target app, not just data. */
 export interface SourceBehavior { label: string }
+
+// ── Structured behavior scan (the Process visualization, #1209) ──────────────────────────────
+// Mirrors the Rust `bsc_data::PlatformScan` (serde camelCase). The scan returns this alongside the
+// flat `behaviors` labels; the Process view renders the detail (trigger → condition → actions, etc.).
+export type ScanAutomationKind = "validation" | "workflow" | "flow" | "processBuilder" | "recurring" | "other";
+export interface ScanAutomation {
+  source: string; kind: ScanAutomationKind; name: string; object: string;
+  active: boolean; trigger: string; condition: string; actions: string[];
+}
+export interface ScanBusinessProcess { source: string; name: string; object: string; active: boolean; steps: string[] }
+export type ScanDerivedKind = "formula" | "code";
+export interface ScanDerivedLogic { source: string; kind: ScanDerivedKind; name: string; object?: string; expression: string }
+export interface PlatformScanView {
+  automations: ScanAutomation[];
+  businessProcesses: ScanBusinessProcess[];
+  derivedLogic: ScanDerivedLogic[];
+}
 
 /** The lifecycle of one declared source. `declared` = chosen, not yet authorized; `connecting` =
  *  validating credentials; `scanning` = authorized, discovering objects; `scanned` = inventory in
@@ -178,6 +200,8 @@ export interface DeclaredSource {
   secretSaved?: boolean;
   objects?: DiscoveredObject[];
   behaviors?: SourceBehavior[];
+  /** The structured behavior scan (automations / processes / derived logic) for the Process view (#1209). */
+  platform?: PlatformScanView;
   /** Failure reason for the error state, e.g. "token rejected (401)". */
   error?: string;
 }
@@ -255,13 +279,39 @@ export function deriveDataModel(cfg: SourceConfig, id = "dm-source"): DataModel 
       seen.add(key);
       const fseen = new Set<string>();
       const cols = (o.fields ?? [])
-        .map(safeKey)
-        .filter((k) => k && !fseen.has(k) && (fseen.add(k), true));
+        .map((f) => ({ key: safeKey(fieldName(f)), meta: fieldMeta(f) }))
+        .filter((c) => c.key && !fseen.has(c.key) && (fseen.add(c.key), true));
       const fields: Field[] = cols.length
-        ? cols.map((k) => ({ key: k, type: "string" as const }))
+        ? cols.map((c) => ({
+            key: c.key,
+            type: c.meta.type ?? "string",
+            ...(c.meta.enumValues && c.meta.enumValues.length ? { enum_values: c.meta.enumValues } : {}),
+            ...(c.meta.ref ? { ref: safeKey(c.meta.ref) } : {}),
+          }))
         : [{ key: "id", type: "string" as const, required: true }];
       const identity = fields.some((f) => f.key === "id") ? ["id"] : fields[0] ? [fields[0].key] : [];
       entities.push({ key, label: o.name, fields, identity });
+    }
+  }
+  // Resolve relationships. A connector-declared lookup (#1219, e.g. Salesforce AccountId → Account)
+  // wins when its target was scanned — it's exact, and its field key (`accountid`) wouldn't match by
+  // name. Otherwise infer (#1209): a field whose key matches another entity's key is a `ref` to it
+  // (e.g. Contact.account → Account). Either gives the graph its edges and the list its ref chips.
+  const entityKeys = new Set(entities.map((e) => e.key));
+  for (const e of entities) {
+    for (const f of e.fields) {
+      if (f.ref && entityKeys.has(f.ref)) {
+        f.type = "ref";
+        delete f.enum_values; // a ref isn't an enum
+      } else if (f.key !== e.key && entityKeys.has(f.key)) {
+        f.type = "ref";
+        f.ref = f.key;
+        delete f.enum_values;
+      } else if (f.ref) {
+        // Declared ref to an object that wasn't scanned — drop the dangling link, keep a plain field.
+        delete f.ref;
+        if (f.type === "ref") f.type = "string";
+      }
     }
   }
   return { id, name: cfg.dataModelName || "Source Data Model", version: 1, entities };
@@ -287,11 +337,89 @@ export function datamodelSignals(cfg: SourceConfig | undefined): { sourceReachab
 /** The downstream-impact recap: what the scanned sources seed into features + structure. */
 export function downstreamImpact(cfg: SourceConfig): { entities: number; fields: number; behaviors: number } {
   const m = deriveDataModel(cfg);
-  return {
-    entities: m.entities.length,
-    fields: m.entities.reduce((n, e) => n + e.fields.length, 0),
-    behaviors: cfg.sources.reduce((n, s) => n + (s.behaviors?.length ?? 0), 0),
+  const behaviors = cfg.sources.reduce((n, s) => {
+    const p = s.platform;
+    return n + (p ? p.automations.length + p.businessProcesses.length + p.derivedLogic.length : s.behaviors?.length ?? 0);
+  }, 0);
+  return { entities: m.entities.length, fields: m.entities.reduce((n, e) => n + e.fields.length, 0), behaviors };
+}
+
+// ── Scan visualizations (#1209) — the view-model behind the Graph / List / Process views ─────────
+
+/** A per-source accent color for multi-source provenance (matches the design's SF/QB/QBO mapping). */
+export function connectorColor(connectorId: string): string {
+  const map: Record<string, string> = {
+    salesforce: "var(--info)", quickbase: "var(--accent)", quickbooks: "var(--success)",
+    hubspot: "var(--violet)", monday: "var(--accent)", dynamics365: "var(--info)",
+    netsuite: "var(--success)", "sap-odata": "var(--info)", sql: "var(--accent)",
   };
+  if (map[connectorId]) return map[connectorId];
+  const palette = ["var(--info)", "var(--accent)", "var(--success)", "var(--violet)"];
+  let h = 0;
+  for (const c of connectorId) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return palette[h % palette.length];
+}
+
+export interface ScanViewField { key: string; type: FieldType; required: boolean; identity: boolean; ref?: string; refLabel?: string; enumValues?: string[] }
+export interface ScanViewEntity { key: string; label: string; count: number; source: string; srcColor: string; fields: ScanViewField[] }
+
+/** The entities (with record counts, source provenance, fields + inferred refs) the Graph + List
+ *  views render — built from the derived model and the scanned objects. */
+export function scanEntities(cfg: SourceConfig): ScanViewEntity[] {
+  const model = deriveDataModel(cfg);
+  const labelByKey = new Map(model.entities.map((e) => [e.key, e.label ?? e.key]));
+  const meta = new Map<string, { count: number; source: string }>();
+  for (const s of cfg.sources) {
+    if (s.status !== "scanned") continue;
+    for (const o of s.objects ?? []) {
+      const k = safeKey(o.name) || "entity";
+      if (!meta.has(k)) meta.set(k, { count: o.count, source: s.connectorId }); // first wins (matches dedup)
+    }
+  }
+  return model.entities.map((e) => {
+    const m = meta.get(e.key) ?? { count: 0, source: "" };
+    return {
+      key: e.key,
+      label: e.label ?? e.key,
+      count: m.count,
+      source: m.source,
+      srcColor: connectorColor(m.source),
+      fields: e.fields.map((f) => ({
+        key: f.key, type: f.type, required: !!f.required, identity: e.identity.includes(f.key),
+        ref: f.ref, refLabel: f.ref ? labelByKey.get(f.ref) ?? f.ref : undefined,
+        enumValues: f.enum_values,
+      })),
+    };
+  });
+}
+
+/** All ref relationships as edges for the Graph view. */
+export function scanEdges(entities: ScanViewEntity[]): { from: string; to: string; label: string }[] {
+  const keys = new Set(entities.map((e) => e.key));
+  const edges: { from: string; to: string; label: string }[] = [];
+  for (const e of entities) {
+    for (const f of e.fields) {
+      if (f.ref && keys.has(f.ref)) edges.push({ from: e.key, to: f.ref, label: `${f.key} → ${f.refLabel ?? f.ref}` });
+    }
+  }
+  return edges;
+}
+
+/** The aggregated structured behaviors (across scanned sources) the Process view renders. */
+export function aggregatePlatform(cfg: SourceConfig): PlatformScanView {
+  const out: PlatformScanView = { automations: [], businessProcesses: [], derivedLogic: [] };
+  for (const s of cfg.sources) {
+    if (s.status !== "scanned" || !s.platform) continue;
+    out.automations.push(...s.platform.automations);
+    out.businessProcesses.push(...s.platform.businessProcesses);
+    out.derivedLogic.push(...s.platform.derivedLogic);
+  }
+  return out;
+}
+
+/** Whether ≥2 distinct connector sources fed the scan (drives per-source provenance badges). */
+export function isMultiSource(cfg: SourceConfig): boolean {
+  return new Set(cfg.sources.filter((s) => s.status === "scanned").map((s) => s.connectorId)).size > 1;
 }
 
 // ── Sample scan (#source-pane) — the discovered inventory a connect surfaces. Until the native

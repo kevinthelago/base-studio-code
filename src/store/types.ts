@@ -114,6 +114,24 @@ export interface QuarantineInfo {
   at: number;
 }
 
+/** The resting state a finished fleet worker lands in, classified from plan.db owned-issue
+ *  status (#920): every owned issue terminal-good ⇒ `done`; some still open ⇒ `needs-attention`
+ *  (stopped early); any blocked/failed ⇒ `blocked`. */
+export type WorkerEndState = "done" | "needs-attention" | "blocked";
+
+/** A fleet worker auto-ended after its PTY exited (#920). Persisted so a restart never
+ *  re-opens/relaunches a finished worker; the view renders a resting card with a reopen action. */
+export interface EndedInfo {
+  /** Done / needs-attention / blocked, from the owned-issue status (not the worker's say-so). */
+  state: WorkerEndState;
+  /** The stream the worker owned. */
+  streamId: string;
+  /** One-line completeness summary (e.g. "3/3 complete · 2/3 landed"). */
+  summary: string;
+  /** Epoch ms when it ended. */
+  at: number;
+}
+
 export interface AppStore {
   // Navigation
   activeScreen: Screen;
@@ -198,6 +216,15 @@ export interface AppStore {
   quarantinedPanes: Record<string, QuarantineInfo>;
   markQuarantine: (paneId: string, info: QuarantineInfo) => void;
   clearQuarantine: (paneId: string) => void;
+  // ── Auto-end finished workers (#920) ──
+  /** Fleet workers auto-ended after their PTY exited, classified from plan.db owned-issue
+   *  status. PERSISTED + recovery-gated so a restart never re-opens a finished worker; the view
+   *  renders a resting card with a reopen action. Keyed by pane id. */
+  endedPanes: Record<string, EndedInfo>;
+  /** Mark a worker pane ended (done/needs-attention/blocked); drops its live status. */
+  markPaneEnded: (paneId: string, info: EndedInfo) => void;
+  /** Clear a pane's ended state so the user can relaunch it (reopen). */
+  reopenPane: (paneId: string) => void;
   // ── Idle session reaping (#849) ──
   /** Panes whose PTY has been reaped for idleness; the view renders a dormant placeholder
    *  and resumes on focus. Transient (not persisted) — panes relaunch on next app start. */

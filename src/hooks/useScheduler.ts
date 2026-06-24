@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
-import { dueAutomations, resolveTargetPane, dispatchPayload } from "../lib/automations/scheduler";
-import { log } from "../lib/core/log";
+import { dueAutomations } from "../lib/automations/scheduler";
+import { dispatchAutomation } from "../lib/automations/dispatch";
 
 /** How often the scheduler checks for due automations. */
 const TICK_MS = 20_000;
@@ -14,6 +14,9 @@ const TICK_MS = 20_000;
  * active screen — but only while the app is open (which is also the only time
  * the target panes exist). Each fire reschedules itself (recordAutomationRun
  * recomputes nextRunAt), so a single tick fires a due automation exactly once.
+ *
+ * The per-automation dispatch is shared with the mobile "run now" path (#937) via
+ * {@link dispatchAutomation}.
  */
 export function useScheduler() {
   useEffect(() => {
@@ -21,36 +24,17 @@ export function useScheduler() {
 
     async function tick() {
       const s = useAppStore.getState();
+      const deps = {
+        tabs: s.tabs,
+        disabledPanes: s.disabledPanes,
+        kbBlocks: s.kbBlocks,
+        write: (paneId: string, data: string) => invoke<void>("pty_write", { paneId, data }),
+        recordRun: s.recordAutomationRun,
+        now: () => Date.now(),
+      };
       for (const a of dueAutomations(s.automations, Date.now())) {
-        const at = Date.now();
-        const where = `${a.targetTab} › pane ${a.targetPaneIdx + 1}`;
-
-        const paneId = resolveTargetPane(a.targetTab, a.targetPaneIdx, s.tabs, s.disabledPanes);
-        if (!paneId) {
-          s.recordAutomationRun(a.id, { at, status: "skipped", note: `target ${where} not open` });
-          continue;
-        }
-
-        const payload = dispatchPayload(a, s.kbBlocks);
-        if (payload == null) {
-          s.recordAutomationRun(a.id, {
-            at, status: "fail",
-            note: a.action === "command" ? "empty command" : "knowledge block missing or empty",
-          });
-          continue;
-        }
-
-        try {
-          await invoke("pty_write", { paneId, data: payload + "\r" });
-          if (cancelled) return;
-          s.recordAutomationRun(a.id, {
-            at, status: "ok",
-            note: a.action === "command" ? `ran command in ${where}` : `loaded knowledge into ${where}`,
-          });
-        } catch (e) {
-          log.error(`automation ${a.id} dispatch failed: ${e}`);
-          s.recordAutomationRun(a.id, { at, status: "fail", note: String(e) });
-        }
+        if (cancelled) return;
+        await dispatchAutomation(a, deps);
       }
     }
 

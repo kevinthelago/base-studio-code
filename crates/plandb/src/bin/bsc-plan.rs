@@ -466,6 +466,62 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown context command '{other}'\n\n{USAGE}")),
             }
         }
+        "integration" => {
+            // Runtime (planner-authored) REST connector presets (#1235). These live in the
+            // connectors store (~/.base-studio-code/connectors.json) — NOT plan.db — so an
+            // authored integration is a native, app-wide connector like the built-ins. The spec
+            // is validated + secret-free on add (credentials go to the keychain, #1194).
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let path = bsc_data::runtime_store_path();
+            match sub {
+                // `integration add` reads a RuntimePreset JSON on stdin, validates, upserts by id.
+                "add" => {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+                    let preset: bsc_data::RuntimePreset = serde_json::from_str(buf.trim())
+                        .map_err(|e| format!("parsing integration JSON: {e}"))?;
+                    let id = preset.id.clone();
+                    bsc_data::upsert_runtime_preset(&path, preset)?;
+                    if args.json {
+                        println!("{}", serde_json::to_string(&id).unwrap_or_default());
+                    } else {
+                        println!("integration added: {id}");
+                    }
+                    Ok(())
+                }
+                "list" => {
+                    let presets = bsc_data::load_runtime_presets(&path).map_err(|e| e.to_string())?;
+                    if args.json {
+                        println!("{}", serde_json::to_string(&presets).unwrap_or_else(|_| "[]".into()));
+                    } else if presets.is_empty() {
+                        println!("(no runtime integrations)");
+                    } else {
+                        for p in &presets {
+                            println!("{}  {} [{}] — {} resource(s)", p.id, p.label, p.auth, p.resources.len());
+                        }
+                    }
+                    Ok(())
+                }
+                "get" => {
+                    let id = args.positional.get(2).ok_or("usage: bsc-plan integration get <id>")?;
+                    match bsc_data::find_runtime_preset(&path, id).map_err(|e| e.to_string())? {
+                        Some(p) => println!("{}", serde_json::to_string_pretty(&p).unwrap_or_default()),
+                        None if args.json => println!("null"),
+                        None => println!("(no integration '{id}')"),
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let id = args.positional.get(2).ok_or("usage: bsc-plan integration remove <id>")?;
+                    let removed = bsc_data::remove_runtime_preset(&path, id).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("{}", if removed { format!("removed {id}") } else { format!("(no integration '{id}')") });
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown integration command '{other}'\n\n{USAGE}")),
+            }
+        }
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
 }
@@ -680,5 +736,13 @@ CONTEXT (the Context stage's DYNAMIC required-set — prose lives in context/<to
   context list                  show the required topic set
   (context files gate on GENERATION — written, not confirmed)
 
+INTEGRATION (native REST connectors authored at planning time — app-wide, NOT plan.db; #1235):
+  integration add               upsert a RuntimePreset JSON on stdin (validated, secret-free)
+  integration list              list the runtime integrations
+  integration get <id>          print one integration (RuntimePreset JSON)
+  integration remove <id>       delete a runtime integration
+  (the spec carries no credentials — secrets live in the OS keychain; auth: oauth|token|apikey|basic)
+
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
+The connectors store is ~/.base-studio-code/connectors.json (BSC_CONNECTORS overrides).
 ";

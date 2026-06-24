@@ -3,7 +3,8 @@ import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
   isConnected, connectedCount, allSourcesConnected, sourceChecks, coerceSourceConfig, parseSourceConfigTag,
   deriveDataModel, migrationActive, datamodelSignals, downstreamImpact,
-  type DeclaredSource, type SourceConfig,
+  scanEntities, scanEdges, aggregatePlatform, isMultiSource, connectorColor,
+  type DeclaredSource, type SourceConfig, type PlatformScanView,
 } from "./sourceConfig";
 import { checkDataModel } from "../data/dataModel";
 
@@ -146,5 +147,114 @@ describe("sourceConfig — derive model + downstream (#1205)", () => {
     expect(imp.entities).toBe(2);
     expect(imp.fields).toBe(3); // Projects: name + budget; Tickets: id
     expect(imp.behaviors).toBe(2);
+  });
+});
+
+describe("sourceConfig — scan visualizations view-model (#1209)", () => {
+  const plat = (over: Partial<PlatformScanView>): PlatformScanView => ({ automations: [], businessProcesses: [], derivedLogic: [], ...over });
+  const vizCfg: SourceConfig = {
+    dataModelName: "Acme Core", proposed: [],
+    sources: [
+      src({
+        uid: "a", connectorId: "salesforce", status: "scanned",
+        objects: [
+          { name: "Account", count: 12431, fields: ["domain", "name"] },
+          { name: "Contact", count: 28902, fields: ["email", "account"] }, // account → ref Account
+        ],
+        platform: plat({
+          automations: [{ source: "salesforce", kind: "validation", name: "Acct type", object: "Account", active: true, trigger: "onSave", condition: "ISBLANK(Type)", actions: ["reject"] }],
+          businessProcesses: [{ source: "salesforce", name: "Discount Approval", object: "Opportunity", active: true, steps: ["Submitted", "Approved"] }],
+        }),
+      }),
+      src({
+        uid: "b", connectorId: "quickbase", status: "scanned",
+        objects: [{ name: "Project", count: 1884, fields: ["id", "account"] }], // account → ref Account
+        platform: plat({ derivedLogic: [{ source: "quickbase", kind: "formula", name: "spend_pct", object: "Project", expression: "[Spent]/[Budget]" }] }),
+      }),
+    ],
+  };
+
+  it("scanEntities carries counts + source + inferred refs", () => {
+    const ents = scanEntities(vizCfg);
+    expect(ents.map((e) => e.key).sort()).toEqual(["account", "contact", "project"]);
+    const account = ents.find((e) => e.key === "account")!;
+    expect(account.count).toBe(12431);
+    expect(account.source).toBe("salesforce");
+    expect(account.srcColor).toBe(connectorColor("salesforce"));
+    const contact = ents.find((e) => e.key === "contact")!;
+    const acctField = contact.fields.find((f) => f.key === "account")!;
+    expect(acctField.type).toBe("ref");
+    expect(acctField.ref).toBe("account");
+    expect(acctField.refLabel).toBe("Account");
+  });
+
+  it("scanEdges resolves the ref relationships into edges", () => {
+    const edges = scanEdges(scanEntities(vizCfg));
+    // Contact.account → Account and Project.account → Account
+    expect(edges.length).toBe(2);
+    expect(edges.every((e) => e.to === "account")).toBe(true);
+    expect(edges.some((e) => e.from === "contact")).toBe(true);
+    expect(edges.some((e) => e.from === "project")).toBe(true);
+  });
+
+  it("aggregatePlatform merges behaviors across sources; isMultiSource detects ≥2 sources", () => {
+    const p = aggregatePlatform(vizCfg);
+    expect(p.automations.length).toBe(1);
+    expect(p.businessProcesses.length).toBe(1);
+    expect(p.derivedLogic.length).toBe(1);
+    expect(isMultiSource(vizCfg)).toBe(true);
+    expect(isMultiSource({ ...vizCfg, sources: [vizCfg.sources[0]] })).toBe(false);
+  });
+
+  it("honors typed discovered fields — real types + enum values flow to the model + view (#1219)", () => {
+    const cfg: SourceConfig = {
+      dataModelName: "M", proposed: [],
+      sources: [src({
+        uid: "x", connectorId: "sql", status: "scanned",
+        objects: [{ name: "Account", count: 5, fields: [
+          { name: "id", type: "string" },
+          { name: "revenue", type: "money" },
+          { name: "tier", type: "enum", enumValues: ["A", "B", "C"] },
+        ] }],
+      })],
+    };
+    const acct = deriveDataModel(cfg).entities[0];
+    const byKey = Object.fromEntries(acct.fields.map((f) => [f.key, f]));
+    expect(byKey.revenue.type).toBe("money");
+    expect(byKey.tier.type).toBe("enum");
+    expect(byKey.tier.enum_values).toEqual(["A", "B", "C"]);
+
+    const tier = scanEntities(cfg)[0].fields.find((f) => f.key === "tier")!;
+    expect(tier.type).toBe("enum");
+    expect(tier.enumValues).toEqual(["A", "B", "C"]);
+  });
+
+  it("resolves connector-declared lookups into refs (target by object name), drops dangling ones (#1219)", () => {
+    const cfg: SourceConfig = {
+      dataModelName: "M", proposed: [],
+      sources: [src({
+        uid: "sf", connectorId: "salesforce", status: "scanned",
+        objects: [
+          { name: "Account", count: 3, fields: [
+            { name: "Id", type: "string" },
+            { name: "OwnerId", type: "ref", ref: "User" },   // declared lookup → scanned object
+            { name: "TerritoryId", type: "ref", ref: "Territory" }, // lookup to an un-scanned object
+          ] },
+          { name: "User", count: 2, fields: [{ name: "Id", type: "string" }] },
+        ],
+      })],
+    };
+    const model = deriveDataModel(cfg);
+    const account = model.entities.find((e) => e.key === "account")!;
+    const byKey = Object.fromEntries(account.fields.map((f) => [f.key, f]));
+    // declared lookup resolves to the target entity's key — name-matching never would (ownerid≠user)
+    expect(byKey.ownerid.type).toBe("ref");
+    expect(byKey.ownerid.ref).toBe("user");
+    // lookup to an object that wasn't scanned: dangling link dropped, left a plain field
+    expect(byKey.territoryid.ref).toBeUndefined();
+    expect(byKey.territoryid.type).toBe("string");
+    // the resolved lookup becomes a graph edge
+    const edges = scanEdges(scanEntities(cfg));
+    expect(edges).toContainEqual({ from: "account", to: "user", label: "ownerid → User" });
   });
 });

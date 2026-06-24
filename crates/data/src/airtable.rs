@@ -7,10 +7,13 @@
 //! - **Data:** tables → objects, fields → columns, records → rows.
 //! - **Behavior:** **formula** (and rollup) fields → [`DerivedKind::Formula`] derived logic.
 
+use std::collections::HashMap;
+
 use serde_json::Value;
 
 use crate::behavior::{DerivedKind, DerivedLogic, PlatformScan};
-use crate::connector::{Connector, RowSet, SourceObject};
+use crate::connector::{Connector, RowSet, SourceField, SourceObject};
+use crate::schema::FieldType;
 use crate::{DataError, Result};
 
 /// A path → parsed-JSON closure. Owns the access token; the connector never sees it.
@@ -67,6 +70,38 @@ fn cell_to_string(v: &Value) -> String {
     }
 }
 
+/// Map an Airtable field's declared `type` to a vendor-neutral [`SourceField`] (#1230):
+/// currency → money, numeric kinds → number, date kinds → date, checkbox → bool, single/multiple
+/// selects → enum + their choice names, record links → ref (resolving `linkedTableId` to the
+/// table name via `id_to_name`, falling back to a plain field when unresolved), else string.
+fn at_field(f: &Value, id_to_name: &HashMap<&str, &str>) -> Option<SourceField> {
+    let name = f["name"].as_str()?.to_string();
+    let (ty, enum_values, ref_target) = match f["type"].as_str().unwrap_or("singleLineText") {
+        "currency" => (FieldType::Money, vec![], None),
+        "number" | "percent" | "duration" | "rating" | "count" | "autoNumber" => {
+            (FieldType::Number, vec![], None)
+        }
+        "date" | "dateTime" | "createdTime" | "lastModifiedTime" => (FieldType::Date, vec![], None),
+        "checkbox" => (FieldType::Bool, vec![], None),
+        "singleSelect" | "multipleSelects" => (
+            FieldType::Enum,
+            f["options"]["choices"]
+                .as_array()
+                .map(|c| c.iter().filter_map(|v| v["name"].as_str().map(str::to_string)).collect())
+                .unwrap_or_default(),
+            None,
+        ),
+        "multipleRecordLinks" | "singleRecordLink" => {
+            match f["options"]["linkedTableId"].as_str().and_then(|id| id_to_name.get(id).copied()) {
+                Some(target) => (FieldType::Ref, vec![], Some(target.to_string())),
+                None => (FieldType::String, vec![], None),
+            }
+        }
+        _ => (FieldType::String, vec![], None),
+    };
+    Some(SourceField { name, ty, enum_values, ref_target })
+}
+
 impl Connector for AirtableConnector {
     fn name(&self) -> &str {
         &self.name
@@ -95,6 +130,25 @@ impl Connector for AirtableConnector {
             .map(|rec| columns.iter().map(|c| cell_to_string(&rec["fields"][c])).collect())
             .collect();
         Ok(RowSet { columns, rows })
+    }
+
+    /// Declared field types from the base schema (#1230): selects carry their choices as an enum
+    /// and record links resolve to a ref on the linked table — the link target is a `tbl…` id, so
+    /// it's mapped back to the table name here using the full base schema.
+    fn describe_object(&self, object: &str) -> Result<Vec<SourceField>> {
+        let tables = self.tables()?;
+        let id_to_name: HashMap<&str, &str> = tables
+            .iter()
+            .filter_map(|t| Some((t["id"].as_str()?, t["name"].as_str()?)))
+            .collect();
+        let table = tables
+            .iter()
+            .find(|t| t["name"].as_str() == Some(object))
+            .ok_or_else(|| DataError::Schema(format!("airtable: table '{object}' not found")))?;
+        Ok(table["fields"]
+            .as_array()
+            .map(|fs| fs.iter().filter_map(|f| at_field(f, &id_to_name)).collect())
+            .unwrap_or_default())
     }
 
     /// Capture formula / rollup fields as derived logic.
@@ -168,6 +222,38 @@ mod tests {
         assert_eq!(rs.rows[0], vec!["Apollo", "50000", "0.42"]);
         // Missing formula cell on the second record is an empty string.
         assert_eq!(rs.rows[1], vec!["Zephyr", "12000", ""]);
+    }
+
+    const TYPED_TABLES: &str = r#"{ "tables": [
+        {"id": "tblP", "name": "Projects", "fields": [
+            {"id": "f1", "name": "Name",   "type": "singleLineText"},
+            {"id": "f2", "name": "Budget", "type": "currency"},
+            {"id": "f3", "name": "Due",    "type": "date"},
+            {"id": "f4", "name": "Active", "type": "checkbox"},
+            {"id": "f5", "name": "Stage",  "type": "singleSelect", "options": {"choices": [{"name": "Open"}, {"name": "Closed"}]}},
+            {"id": "f6", "name": "Owner",  "type": "multipleRecordLinks", "options": {"linkedTableId": "tblO"}}
+        ]},
+        {"id": "tblO", "name": "Owners", "fields": [
+            {"id": "o1", "name": "Name", "type": "singleLineText"}
+        ]}
+    ] }"#;
+
+    #[test]
+    fn describe_object_maps_field_types_and_resolves_links() {
+        let c = AirtableConnector::new("at", "base", move |_p| {
+            Ok(serde_json::from_str(TYPED_TABLES).unwrap())
+        });
+        let fields = c.describe_object("Projects").unwrap();
+        let by = |n: &str| fields.iter().find(|f| f.name == n).unwrap();
+        assert_eq!(by("Budget").ty, FieldType::Money);
+        assert_eq!(by("Due").ty, FieldType::Date);
+        assert_eq!(by("Active").ty, FieldType::Bool);
+        assert_eq!(by("Stage").ty, FieldType::Enum);
+        assert_eq!(by("Stage").enum_values, vec!["Open", "Closed"]);
+        // record link → ref, with the linkedTableId resolved back to the table name
+        assert_eq!(by("Owner").ty, FieldType::Ref);
+        assert_eq!(by("Owner").ref_target.as_deref(), Some("Owners"));
+        assert_eq!(by("Name").ty, FieldType::String);
     }
 
     #[test]
