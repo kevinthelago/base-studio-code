@@ -1,5 +1,5 @@
-import { useAppStore } from "../../store";
-import type { RunStatus } from "../../lib/automations/scheduler";
+import { useAppStore } from "@/store";
+import type { RunStatus } from "./lib/scheduler";
 import { fmtStamp } from "./format";
 
 type StatusFilter = "all" | RunStatus;

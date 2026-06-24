@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../store";
-import { dueAutomations } from "../lib/automations/scheduler";
-import { dispatchAutomation } from "../lib/automations/dispatch";
+import { useAppStore } from "@/store";
+import { dueAutomations } from "./lib/scheduler";
+import { dispatchAutomation } from "./lib/dispatch";
 
 /** How often the scheduler checks for due automations. */
 const TICK_MS = 20_000;
