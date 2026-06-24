@@ -1,0 +1,11 @@
+{
+  "name": "Integrations",
+  "glyph": "⊹",
+  "gate": "needed integrations surfaced",
+  "deps": [
+    "context"
+  ],
+  "optional": true,
+  "blurb": "The tools, connectors, and credentials the plan implies — assigned, available, or missing.",
+  "prompt": "Review the INTEGRATIONS the plan implies — the MCP servers, source connectors, and credentials the\nfleet's agents need outside the repo. The Integrations pane scans the confirmed stack, features, and\ndeclared sources and marks each one **assigned** (already wired), **available** (one-click to add), or\n**missing** (needs setup). Resolve the gaps in-session: assign an available MCP server, queue a\nconnector for the Source stage, or have the user enter a credential (stored on-device, never in the\nplan). If a source has no connector at all, author a native one with `bsc-plan integration add`\n(#1235) — it becomes a native connector like the built-ins. Assign only what the agents actually need.\n\nGate (optional): the integrations the plan implies are surfaced; the user resolves the ones they want."
+}

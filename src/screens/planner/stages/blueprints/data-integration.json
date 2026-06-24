@@ -19,6 +19,7 @@
     { "key": "destination" },
     { "key": "sync" },
     { "key": "dataClean" },
+    { "key": "integrations" },
     { "key": "structure" },
     { "key": "permissions" },
     { "key": "deploy" }

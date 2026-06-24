@@ -31,6 +31,7 @@ import { FocusedAcquireBody } from "../bodies/FocusedAcquireBody";
 import { FocusedExtractBody } from "../bodies/FocusedExtractBody";
 import { FocusedModelBody } from "../bodies/FocusedModelBody";
 import { FocusedDestinationBody, FocusedSyncBody } from "../bodies/IntegrationBodies";
+import { FocusedIntegrationsBody } from "../bodies/FocusedIntegrationsBody";
 import { FocusedMappingBody } from "../bodies/FocusedMappingBody";
 import { FocusedCleaningBody } from "../bodies/FocusedCleaningBody";
 import { FocusedLoadBody } from "../bodies/FocusedLoadBody";
@@ -1253,6 +1254,8 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, repos
       return <FocusedDestinationBody projectId={projectId} />;
     case "sync":
       return <FocusedSyncBody projectId={projectId} />;
+    case "integrations":
+      return <FocusedIntegrationsBody projectId={projectId} />;
     case "repos":
       return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} />;
     case "deploy":
