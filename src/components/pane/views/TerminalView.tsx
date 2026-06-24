@@ -9,6 +9,7 @@ import { resolveLlmConfig, bscAgentEnv } from "../../../lib/core/llmConfig";
 import { recordPtyData, bumpTerminals } from "../../../lib/core/perf";
 import { gateClaudeLaunch } from "../../../lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "../../../lib/console/terminal";
+import { nudgeSizes } from "../../../lib/console/terminalNudge";
 import { composeStartupPrompt } from "../../../lib/session/checkpoint";
 import { composeReferenceContext } from "../../../lib/session/assignments";
 import { resolveMcpServers, toBscAgentMcp } from "../../../lib/session/mcpServers";
@@ -79,6 +80,8 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // #799 — true when this console's assigned profile was edited while it's running, so it
   // shows a "relaunch to apply" nudge (settings.json is read at session start).
   const permsStale = useAppStore((s) => !!s.panePermsStale[paneId]);
+  // Resize-nudge redraw (#1221): the pane menu / hotkey bumps this counter to force a TUI repaint.
+  const redrawNonce = useAppStore((s) => s.paneRedrawNonce[paneId] ?? 0);
   const termRef    = useRef<Terminal | null>(null);
   const fitRef     = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
@@ -118,6 +121,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const inClaudeRef  = useRef(false);               // true between __bsc_state run/idle
   const claudeActiveRef = useRef<"run" | "idle">("idle"); // current within-session status
   const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // resize-nudge restore (#1221)
   // Drives the native ConsoleInput (#1158): true while a Claude session is the running program in
   // this pane. Lifted to the store (transient) so PaneShell can also read it — it hides the pane's
   // status footer and shows the input bar in its place. The OSC/reconnect handlers below set it.
@@ -623,6 +627,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     return () => {
       destroyed = true;
       if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
+      if (nudgeTimerRef.current) { clearTimeout(nudgeTimerRef.current); nudgeTimerRef.current = null; }
       el.removeEventListener("focusin", onFocusIn);
       disposeOnData.dispose();
       unlistenRef.current?.();
@@ -717,6 +722,38 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
     });
   }, [terminalFontSize, paneId]);
+
+  // Resize-nudge redraw (#1221): force the Claude CLI's TUI to repaint by transiently shrinking the
+  // PTY by one COLUMN — a guaranteed SIGWINCH — then settling back to the true fitted size on the
+  // next tick. This reproduces, per-pane, the recompute a window resize triggers (the manual
+  // workaround for the CLI's jumbled-redraw bug) without touching the OS window. A column delta (not
+  // rows) avoids interacting with the #1158 growing-host input clip box. Non-destructive: a resize
+  // preserves typed input + scrollback. Debounced: while a cycle is in flight (`nudgeTimerRef`),
+  // extra triggers coalesce so rapid taps don't thrash the PTY. The restore re-fits and resizes to
+  // the real dims, so the net size — and the #586 pane_size streamed to mobile — settles correct.
+  function nudgeResize() {
+    const term = termRef.current;
+    if (!term || !openedRef.current || nudgeTimerRef.current) return;
+    fitRef.current?.fit();
+    const sizes = nudgeSizes(term.cols, term.rows);
+    if (!sizes) return; // nothing safe to shrink
+    invoke("pty_resize", { paneId, ...sizes.transient }).catch(console.error);
+    nudgeTimerRef.current = setTimeout(() => {
+      nudgeTimerRef.current = null;
+      const t = termRef.current;
+      if (!t || !openedRef.current) return;
+      fitRef.current?.fit();
+      invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(console.error);
+    }, 60);
+  }
+
+  // Fire a nudge whenever the pane menu / hotkey bumps this pane's redraw counter (#1221). Skip the
+  // initial 0 so a freshly-mounted pane isn't nudged.
+  useEffect(() => {
+    if (redrawNonce === 0) return;
+    nudgeResize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [redrawNonce]);
 
   // Derive critical + warning lists from the verdict for rendering.
   const criticalChecks = readinessVerdict?.failed.filter((c) => c.severity === "critical") ?? [];

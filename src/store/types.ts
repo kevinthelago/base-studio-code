@@ -321,6 +321,11 @@ export interface AppStore {
    *  nudge (Claude Code reads settings.json at session start). Transient; cleared on relaunch (#799). */
   panePermsStale: Record<string, boolean>;
   clearPanePermsStale: (paneId: string) => void;
+  /** Monotonic per-pane counter that drives the resize-nudge redraw (#1221) — a SIGWINCH that
+   *  un-jumbles the Claude CLI's TUI the way a window resize does. Bumped by `requestPaneRedraw`
+   *  (the pane menu / hotkey); the pane's terminal watches its own count and nudges on each bump. */
+  paneRedrawNonce: Record<string, number>;
+  requestPaneRedraw: (paneId: string) => void;
   // Worker write boundary: the stream's owned globs, fed to the role gate as
   // writeGlobs so a worker auto-approves edits within its lane (bsc-confine bounds the repo).
   paneRoleGlobs: Record<string, string[]>;
