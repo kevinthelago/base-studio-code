@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>ArXiv Query</title>
+  <opensearch:totalResults xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">2</opensearch:totalResults>
+  <entry>
+    <id>http://arxiv.org/abs/2401.01234v2</id>
+    <published>2024-01-03T12:00:00Z</published>
+    <updated>2024-01-09T12:00:00Z</updated>
+    <title>Real-Time Path Tracing
+      with Neural Denoising</title>
+    <summary>  We present a method for real-time path tracing
+      using a learned neural denoiser that runs on commodity GPUs.  </summary>
+    <author><name>Ada Lovelace</name></author>
+    <author><name>Alan Turing</name></author>
+    <arxiv:doi>10.1145/3592433</arxiv:doi>
+    <link href="http://arxiv.org/abs/2401.01234v2" rel="alternate" type="text/html"/>
+    <link title="pdf" href="http://arxiv.org/pdf/2401.01234v2" rel="related" type="application/pdf"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2312.09999v1</id>
+    <published>2023-12-20T00:00:00Z</published>
+    <title>A Survey of GPU Ray Tracing</title>
+    <summary>A concise survey of GPU ray tracing techniques.</summary>
+    <author><name>Grace Hopper</name></author>
+    <link href="http://arxiv.org/abs/2312.09999v1" rel="alternate" type="text/html"/>
+  </entry>
+</feed>
