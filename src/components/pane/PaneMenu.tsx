@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Maximize2, Minimize2, Power, PowerOff } from "lucide-react";
+import { Maximize2, Minimize2, Power, PowerOff, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
 import { type ModelId, MODELS } from "../../lib/console/models";
@@ -26,6 +26,8 @@ interface PaneMenuProps {
   disabled?: boolean;
   onToggleFullscreen?: () => void;
   onToggleDisable?: () => void;
+  /** Force a TUI repaint of this pane via a resize nudge (#1221) — un-jumbles the Claude CLI. */
+  onRedraw?: () => void;
   /** Open the directory picker to change this pane's working dir (moved here from the header). */
   onPickDirectory?: () => void;
   onClose?: () => void;
@@ -37,7 +39,7 @@ interface PaneMenuProps {
 
 export function PaneMenu({
   agent, model, runningModel, active, available, maxHeight, fullscreen, disabled,
-  onToggleFullscreen, onToggleDisable, onClose, onRename, onViewChange, onModel,
+  onToggleFullscreen, onToggleDisable, onRedraw, onClose, onRename, onViewChange, onModel,
 }: PaneMenuProps) {
   // The highlighted row reflects what's ACTUALLY running when known (#1181), else the
   // configured model. Selecting a different row still sets the model for the next launch.
@@ -111,6 +113,12 @@ export function PaneMenu({
 
       {/* Pane actions */}
       <MenuSection label="pane" last>
+        <ActionRow
+          Icon={RefreshCw}
+          label="redraw / fix display"
+          sub="repaint a jumbled terminal"
+          onClick={() => { onRedraw?.(); onClose?.(); }}
+        />
         <ActionRow
           Icon={fullscreen ? Minimize2 : Maximize2}
           label={fullscreen ? "minimize pane" : "maximize pane"}

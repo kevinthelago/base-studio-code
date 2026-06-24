@@ -1,11 +1,16 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./";
 import type { FleetPlan } from "../screens/planner/stages/planSections";
+import { directorPaneId, fleetPaneId, triagePaneId } from "../lib/console/paneIdentity";
+import { sanitizeProjectKey } from "../lib/core/projectPaths";
 
 // Launch-time resolution of reference context (#326): the store lifts its flat
 // refContext* assignment fields into the assignments-module cascade and stamps
 // each launched pane's resolved reference docs into paneReferenceDocs, which
 // TerminalView then reads + injects. These tests drive the real store actions.
+//
+// Panes are keyed by their STABLE identity id (#1176): director ⇒ <key>:director,
+// worker ⇒ <key>:<streamId>, triage ⇒ <key>:<repo>:triage.
 
 const fleet: FleetPlan = {
   recommended: 2,
@@ -38,11 +43,10 @@ describe("fleetStartProject — reference context delivery", () => {
     useAppStore.setState({ refContextDefault: ["documents/global.md"] });
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("proj-key");
     // director + both workers all see the global block
-    expect(st.paneReferenceDocs[`t${idx}p0`]).toEqual(["documents/global.md"]);
-    expect(st.paneReferenceDocs[`t${idx}p1`]).toEqual(["documents/global.md"]);
-    expect(st.paneReferenceDocs[`t${idx}p2`]).toEqual(["documents/global.md"]);
+    expect(st.paneReferenceDocs[directorPaneId("proj-key")]).toEqual(["documents/global.md"]);
+    expect(st.paneReferenceDocs[fleetPaneId("proj-key", "auth-ui")]).toEqual(["documents/global.md"]);
+    expect(st.paneReferenceDocs[fleetPaneId("proj-key", "api")]).toEqual(["documents/global.md"]);
   });
 
   it("accumulates project-level docs (keyed by the sanitized project key) onto the default", () => {
@@ -52,8 +56,7 @@ describe("fleetStartProject — reference context delivery", () => {
     });
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("proj-key");
-    expect(st.paneReferenceDocs[`t${idx}p1`]).toEqual(["documents/global.md", "documents/proj.md"]);
+    expect(st.paneReferenceDocs[fleetPaneId("proj-key", "auth-ui")]).toEqual(["documents/global.md", "documents/proj.md"]);
   });
 
   it("adds repo-scoped docs only to that repo's worker", () => {
@@ -62,17 +65,15 @@ describe("fleetStartProject — reference context delivery", () => {
     });
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("proj-key");
-    expect(st.paneReferenceDocs[`t${idx}p1`]).toEqual(["documents/web.md"]); // own/web worker
-    expect(st.paneReferenceDocs[`t${idx}p2`]).toBeUndefined();               // own/api worker — none
+    expect(st.paneReferenceDocs[fleetPaneId("proj-key", "auth-ui")]).toEqual(["documents/web.md"]); // own/web worker
+    expect(st.paneReferenceDocs[fleetPaneId("proj-key", "api")]).toBeUndefined();                   // own/api worker — none
   });
 
   it("leaves paneReferenceDocs unset when nothing is assigned", () => {
     useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("proj-key");
-    expect(st.paneReferenceDocs[`t${idx}p0`]).toBeUndefined();
-    expect(st.paneReferenceDocs[`t${idx}p1`]).toBeUndefined();
+    expect(st.paneReferenceDocs[directorPaneId("proj-key")]).toBeUndefined();
+    expect(st.paneReferenceDocs[fleetPaneId("proj-key", "auth-ui")]).toBeUndefined();
   });
 });
 
@@ -84,7 +85,6 @@ describe("triageStartProject — reference context delivery", () => {
     });
     useAppStore.getState().triageStartProject("Proj", ["own/web"]);
     const st = useAppStore.getState();
-    const idx = st.tabs.findIndex(t => t.name === "Proj · triage");
-    expect(st.paneReferenceDocs[`t${idx}p0`]).toEqual(["documents/global.md", "documents/proj.md"]);
+    expect(st.paneReferenceDocs[triagePaneId(sanitizeProjectKey("Proj"), "own/web")]).toEqual(["documents/global.md", "documents/proj.md"]);
   });
 });

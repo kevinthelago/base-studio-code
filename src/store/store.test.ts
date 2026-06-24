@@ -8,6 +8,12 @@ import type { McpServer } from "../lib/session/mcpServers";
 import type { Hook } from "../lib/session/hooks";
 import { defaultStageConfig } from "../screens/planner/stages/planStages";
 import { makeBlueprints } from "../screens/planner/stages/blueprints";
+import { directorPaneId, fleetPaneId, triagePaneId } from "../lib/console/paneIdentity";
+import { sanitizeProjectKey } from "../lib/core/projectPaths";
+
+// Stable pane identity ids (#1176): triage panes key by `<projKey>:<repo>:triage`,
+// fleet director by `<key>:director`, workers by `<key>:<streamId>`.
+const tri = (name: string, repo: string) => triagePaneId(sanitizeProjectKey(name), repo);
 
 const RESET_STATE = {
   tabs: [
@@ -829,33 +835,31 @@ describe("triageStartProject", () => {
     const { paneRepos } = useAppStore.getState();
     // The 5 real repos are wired up (clone path) and left enabled.
     for (let i = 0; i < repos.length; i++) {
-      const key = `t${before}p${i}`;
+      const key = tri("proj", repos[i]);
       expect(paneCwds[key]).toBe(`/base/projects/proj/${repos[i].split("/")[1]}`);
       expect(paneInitCmds[key]).toContain("claude");
       expect(disabledPanes[key]).toBeUndefined();
       // Bound to its repo so the triage session's GH_TOKEN is repo-scoped (#158).
       expect(paneRepos[key]).toBe(repos[i]);
     }
-    // The single empty cell starts disabled (no shell spawned).
+    // The single empty cell keeps a positional id and starts disabled (no shell spawned).
     expect(disabledPanes[`t${before}p5`]).toBe(true);
     expect(paneCwds[`t${before}p5`]).toBeUndefined();
     expect(paneRepos[`t${before}p5`]).toBeUndefined();
   });
 
   it("marks each real-repo pane to resume its prior conversation (--continue)", () => {
-    const before = useAppStore.getState().tabs.length;
     useAppStore.getState().triageStartProject("cont", ["o/a", "o/b"]);
     const { paneContinue } = useAppStore.getState();
-    expect(paneContinue[`t${before}p0`]).toBe(true);
-    expect(paneContinue[`t${before}p1`]).toBe(true);
+    expect(paneContinue[tri("cont", "o/a")]).toBe(true);
+    expect(paneContinue[tri("cont", "o/b")]).toBe(true);
   });
 
   it("assigns a per-repo triage checkpoint doc to each real-repo pane", () => {
-    const before = useAppStore.getState().tabs.length;
     useAppStore.getState().triageStartProject("ckpt", ["o/web", "o/api"]);
     const { paneCheckpointDocs } = useAppStore.getState();
-    expect(paneCheckpointDocs[`t${before}p0`]).toBe("projects/ckpt/prompts/web-checkpoint.md");
-    expect(paneCheckpointDocs[`t${before}p1`]).toBe("projects/ckpt/prompts/api-checkpoint.md");
+    expect(paneCheckpointDocs[tri("ckpt", "o/web")]).toBe("projects/ckpt/prompts/web-checkpoint.md");
+    expect(paneCheckpointDocs[tri("ckpt", "o/api")]).toBe("projects/ckpt/prompts/api-checkpoint.md");
   });
 
   it("re-runs in place: reuses the existing triage tab and bumps its runId", () => {
@@ -874,43 +878,39 @@ describe("triageStartProject", () => {
   });
 
   it("disables no cells when the grid is exactly filled", () => {
-    const before = useAppStore.getState().tabs.length;
     // 4 repos → 2×2 grid = 4 cells, no empties.
-    useAppStore.getState().triageStartProject("full", ["o/a", "o/b", "o/c", "o/d"]);
+    const repos = ["o/a", "o/b", "o/c", "o/d"];
+    useAppStore.getState().triageStartProject("full", repos);
 
     const { disabledPanes } = useAppStore.getState();
     for (let i = 0; i < 4; i++) {
-      expect(disabledPanes[`t${before}p${i}`]).toBeUndefined();
+      expect(disabledPanes[tri("full", repos[i])]).toBeUndefined();
     }
   });
 
-  it("clears stale disabled state on the reused tab index for real repos", () => {
-    const before = useAppStore.getState().tabs.length;
-    // Simulate a leftover disabled flag on a pane id this triage tab will reuse.
-    useAppStore.setState({ disabledPanes: { [`t${before}p0`]: true } });
+  it("clears stale disabled state on the reused tab for real repos", () => {
+    // Simulate a leftover disabled flag on the identity id this triage tab will reuse.
+    useAppStore.setState({ disabledPanes: { [tri("reuse", "o/a")]: true } });
     useAppStore.getState().triageStartProject("reuse", ["o/a", "o/b"]);
 
-    expect(useAppStore.getState().disabledPanes[`t${before}p0`]).toBeUndefined();
+    expect(useAppStore.getState().disabledPanes[tri("reuse", "o/a")]).toBeUndefined();
   });
 
   it("sets the verbatim triage prompt text on every triage pane", () => {
-    const before = useAppStore.getState().tabs.length;
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneStartupPromptText } = useAppStore.getState();
-    expect(paneStartupPromptText[`t${before}p0`]).toBe(TRIAGE_PROMPT);
-    expect(paneStartupPromptText[`t${before}p1`]).toBe(TRIAGE_PROMPT);
+    expect(paneStartupPromptText[tri("proj", "o/a")]).toBe(TRIAGE_PROMPT);
+    expect(paneStartupPromptText[tri("proj", "o/b")]).toBe(TRIAGE_PROMPT);
   });
 
   it("defaults every triage pane's doc prompt to the built-in default ('')", () => {
-    const before = useAppStore.getState().tabs.length;
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneStartupPromptDocs } = useAppStore.getState();
-    expect(paneStartupPromptDocs[`t${before}p0`]).toBe("");
-    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("");
+    expect(paneStartupPromptDocs[tri("proj", "o/a")]).toBe("");
+    expect(paneStartupPromptDocs[tri("proj", "o/b")]).toBe("");
   });
 
   it("resolves each pane's doc startup prompt (repo override > project default)", () => {
-    const before = useAppStore.getState().tabs.length;
     useAppStore.setState({
       projectStartupPromptDoc: { P1: "user/p1.md" },
       repoStartupPromptDoc: { "P1::o/b": "user/b.md" },
@@ -918,25 +918,23 @@ describe("triageStartProject", () => {
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneStartupPromptDocs } = useAppStore.getState();
     // o/a → project default; o/b → its repo override.
-    expect(paneStartupPromptDocs[`t${before}p0`]).toBe("user/p1.md");
-    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("user/b.md");
+    expect(paneStartupPromptDocs[tri("proj", "o/a")]).toBe("user/p1.md");
+    expect(paneStartupPromptDocs[tri("proj", "o/b")]).toBe("user/b.md");
   });
 
   it("uses a per-repo triage script (doc) and skips the verbatim prompt for that pane", () => {
-    const before = useAppStore.getState().tabs.length;
     useAppStore.setState({
       repoTriagePromptDoc: { "P1::o/b": "projects/P1/prompts/b-triage.md" },
     });
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneStartupPromptDocs, paneStartupPromptText } = useAppStore.getState();
     // o/a has no triage doc → verbatim prompt; o/b → its triage doc, no verbatim text.
-    expect(paneStartupPromptText[`t${before}p0`]).toBe(TRIAGE_PROMPT);
-    expect(paneStartupPromptDocs[`t${before}p1`]).toBe("projects/P1/prompts/b-triage.md");
-    expect(paneStartupPromptText[`t${before}p1`]).toBeUndefined();
+    expect(paneStartupPromptText[tri("proj", "o/a")]).toBe(TRIAGE_PROMPT);
+    expect(paneStartupPromptDocs[tri("proj", "o/b")]).toBe("projects/P1/prompts/b-triage.md");
+    expect(paneStartupPromptText[tri("proj", "o/b")]).toBeUndefined();
   });
 
   it("resolves each triage pane's allowed commands as global ∪ project ∪ repo", () => {
-    const before = useAppStore.getState().tabs.length;
     useAppStore.setState({
       allowedCommands: ["docker"],
       projectAllowedCommands: { P1: ["cargo"] },
@@ -945,8 +943,8 @@ describe("triageStartProject", () => {
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneAllowedCommands } = useAppStore.getState();
     // o/a: global + project; o/b: global + project + its own repo command.
-    expect(paneAllowedCommands[`t${before}p0`]).toEqual(["docker", "cargo"]);
-    expect(paneAllowedCommands[`t${before}p1`]).toEqual(["docker", "cargo", "npm"]);
+    expect(paneAllowedCommands[tri("proj", "o/a")]).toEqual(["docker", "cargo"]);
+    expect(paneAllowedCommands[tri("proj", "o/b")]).toEqual(["docker", "cargo", "npm"]);
   });
 });
 
@@ -1108,48 +1106,48 @@ describe("agent fleet store", () => {
     expect(st.tabs[idx].layout).toBe("2×2"); // director + 2 workers = 3 panes
 
     // pane 0 = director at the project hub, doc-based kickoff
-    expect(st.paneCwds["t3p0"]).toBe("/base/projects/proj-key");
-    expect(st.paneStartupPromptDocs["t3p0"]).toBe("projects/proj-key/prompts/director-kickoff.md");
+    expect(st.paneCwds[directorPaneId("proj-key")]).toBe("/base/projects/proj-key");
+    expect(st.paneStartupPromptDocs[directorPaneId("proj-key")]).toBe("projects/proj-key/prompts/director-kickoff.md");
     expect(st.paneNames[idx][0]).toBe("director");
 
     // pane 1 = first worker in its OWN git worktree (outside the hub, #844), planner-authored kickoff doc
-    expect(st.paneCwds["t3p1"]).toBe("/base/worktrees/proj-key/web--auth-ui");
-    expect(st.paneStartupPromptDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-kickoff.md");
+    expect(st.paneCwds[fleetPaneId("proj-key", "auth-ui")]).toBe("/base/worktrees/proj-key/web--auth-ui");
+    expect(st.paneStartupPromptDocs[fleetPaneId("proj-key", "auth-ui")]).toBe("projects/proj-key/prompts/auth-ui-kickoff.md");
     expect(st.paneNames[idx][1]).toBe("Auth UI");
 
     // pane 2 = second worker (own worktree) with no kickoff doc → generated text
-    expect(st.paneCwds["t3p2"]).toBe("/base/worktrees/proj-key/api--api");
-    expect(st.paneStartupPromptText["t3p2"]).toContain("API");
+    expect(st.paneCwds[fleetPaneId("proj-key", "api")]).toBe("/base/worktrees/proj-key/api--api");
+    expect(st.paneStartupPromptText[fleetPaneId("proj-key", "api")]).toContain("API");
 
     // worker write boundary (#354): the stream's owned globs feed the role gate so
     // edits in its lane auto-approve; the director (code:none) gets none.
-    expect(st.paneRoleGlobs["t3p1"]).toEqual(["src/auth/**"]);
-    expect(st.paneRoleGlobs["t3p0"]).toBeUndefined();
-    expect(st.paneRoleGlobs["t3p2"]).toBeUndefined();
+    expect(st.paneRoleGlobs[fleetPaneId("proj-key", "auth-ui")]).toEqual(["src/auth/**"]);
+    expect(st.paneRoleGlobs[directorPaneId("proj-key")]).toBeUndefined();
+    expect(st.paneRoleGlobs[fleetPaneId("proj-key", "api")]).toBeUndefined();
 
     // repo-scoped session credentials (#158): each worker pane is bound to its repo
     // so TerminalView scopes its GH_TOKEN to that repo; the director spans every repo
     // and stays on the global token (no binding).
-    expect(st.paneRepos["t3p1"]).toBe("own/web");
-    expect(st.paneRepos["t3p2"]).toBe("own/api");
-    expect(st.paneRepos["t3p0"]).toBeUndefined();
+    expect(st.paneRepos[fleetPaneId("proj-key", "auth-ui")]).toBe("own/web");
+    expect(st.paneRepos[fleetPaneId("proj-key", "api")]).toBe("own/api");
+    expect(st.paneRepos[directorPaneId("proj-key")]).toBeUndefined();
 
     // per-agent checkpoint docs, keyed by stream id (director gets its own)
-    expect(st.paneCheckpointDocs["t3p0"]).toBe("projects/proj-key/prompts/director-checkpoint.md");
-    expect(st.paneCheckpointDocs["t3p1"]).toBe("projects/proj-key/prompts/auth-ui-checkpoint.md");
-    expect(st.paneCheckpointDocs["t3p2"]).toBe("projects/proj-key/prompts/api-checkpoint.md");
+    expect(st.paneCheckpointDocs[directorPaneId("proj-key")]).toBe("projects/proj-key/prompts/director-checkpoint.md");
+    expect(st.paneCheckpointDocs[fleetPaneId("proj-key", "auth-ui")]).toBe("projects/proj-key/prompts/auth-ui-checkpoint.md");
+    expect(st.paneCheckpointDocs[fleetPaneId("proj-key", "api")]).toBe("projects/proj-key/prompts/api-checkpoint.md");
     // first launch starts fresh — no --continue
-    expect(st.paneContinue["t3p1"]).toBe(false);
+    expect(st.paneContinue[fleetPaneId("proj-key", "auth-ui")]).toBe(false);
 
     // empty grid cell starts disabled
     expect(st.disabledPanes["t3p3"]).toBe(true);
 
     // fleetPaneStreams bridges pane id → stream for the coordinator (#199 AC#7):
     // worker panes are recorded by their stream; the director + empty cells are not.
-    expect(st.fleetPaneStreams["t3p1"].id).toBe("auth-ui");
-    expect(st.fleetPaneStreams["t3p1"].owns).toEqual(["src/auth/**"]);
-    expect(st.fleetPaneStreams["t3p2"].id).toBe("api");
-    expect(st.fleetPaneStreams["t3p0"]).toBeUndefined(); // director pane
+    expect(st.fleetPaneStreams[fleetPaneId("proj-key", "auth-ui")].id).toBe("auth-ui");
+    expect(st.fleetPaneStreams[fleetPaneId("proj-key", "auth-ui")].owns).toEqual(["src/auth/**"]);
+    expect(st.fleetPaneStreams[fleetPaneId("proj-key", "api")].id).toBe("api");
+    expect(st.fleetPaneStreams[directorPaneId("proj-key")]).toBeUndefined(); // director pane
     expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
   });
 
@@ -1158,17 +1156,15 @@ describe("agent fleet store", () => {
     useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub", fleetHarness: "claude" });
     useAppStore.getState().fleetStartProject("HC", fleet, "hc-key");
     let st = useAppStore.getState();
-    let i = st.findFleetTabIdx("hc-key");
-    expect(st.paneProviders[`t${i}p0`]).toBe("claude"); // director
-    expect(st.paneProviders[`t${i}p1`]).toBe("claude"); // worker
+    expect(st.paneProviders[directorPaneId("hc-key")]).toBe("claude"); // director
+    expect(st.paneProviders[fleetPaneId("hc-key", "auth-ui")]).toBe("claude"); // worker
 
     // bsc-agent harness ⇒ director + workers launch on bsc-agent.
     useAppStore.setState({ fleetHarness: "bsc-agent" });
     useAppStore.getState().fleetStartProject("HB", fleet, "hb-key");
     st = useAppStore.getState();
-    i = st.findFleetTabIdx("hb-key");
-    expect(st.paneProviders[`t${i}p0`]).toBe("bsc-agent");
-    expect(st.paneProviders[`t${i}p1`]).toBe("bsc-agent");
+    expect(st.paneProviders[directorPaneId("hb-key")]).toBe("bsc-agent");
+    expect(st.paneProviders[fleetPaneId("hb-key", "auth-ui")]).toBe("bsc-agent");
   });
 
   it("prefers Rust-provided hub + worktree paths over the bscBaseDir mirror (#905)", () => {
@@ -1181,10 +1177,9 @@ describe("agent fleet store", () => {
       worktreePaths: { "auth-ui": "/abs/wt/web--auth-ui", "api": "/abs/wt/api--api" },
     });
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("rp-key");
-    expect(st.paneCwds[`t${idx}p0`]).toBe("/abs/hub/rp-key");        // director → hub path
-    expect(st.paneCwds[`t${idx}p1`]).toBe("/abs/wt/web--auth-ui");   // worker → its worktree
-    expect(st.paneCwds[`t${idx}p2`]).toBe("/abs/wt/api--api");
+    expect(st.paneCwds[directorPaneId("rp-key")]).toBe("/abs/hub/rp-key");        // director → hub path
+    expect(st.paneCwds[fleetPaneId("rp-key", "auth-ui")]).toBe("/abs/wt/web--auth-ui");   // worker → its worktree
+    expect(st.paneCwds[fleetPaneId("rp-key", "api")]).toBe("/abs/wt/api--api");
   });
 
   it("falls back to bscBaseDir-derived paths per pane when a Rust path is absent (#905)", () => {
@@ -1195,10 +1190,9 @@ describe("agent fleet store", () => {
       worktreePaths: { "auth-ui": "/abs/wt/web--auth-ui" },
     });
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("fb-key");
-    expect(st.paneCwds[`t${idx}p0`]).toBe("/abs/hub/fb-key");                  // provided
-    expect(st.paneCwds[`t${idx}p1`]).toBe("/abs/wt/web--auth-ui");             // provided
-    expect(st.paneCwds[`t${idx}p2`]).toBe("/base/worktrees/fb-key/api--api");  // fallback
+    expect(st.paneCwds[directorPaneId("fb-key")]).toBe("/abs/hub/fb-key");                  // provided
+    expect(st.paneCwds[fleetPaneId("fb-key", "auth-ui")]).toBe("/abs/wt/web--auth-ui");             // provided
+    expect(st.paneCwds[fleetPaneId("fb-key", "api")]).toBe("/base/worktrees/fb-key/api--api");  // fallback
   });
 
   it("gives the director AND every worker the project's MCP servers (#876)", () => {
@@ -1213,8 +1207,8 @@ describe("agent fleet store", () => {
     });
     useAppStore.getState().fleetStartProject("McpProj", fleet, "mcp-proj");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("mcp-proj");
-    const names = (p: number) => (st.paneMcpServers[`t${idx}p${p}`] ?? []).map((e) => e.name);
+    const paneKey = (p: number) => p === 0 ? directorPaneId("mcp-proj") : fleetPaneId("mcp-proj", ["auth-ui", "api"][p - 1]);
+    const names = (p: number) => (st.paneMcpServers[paneKey(p)] ?? []).map((e) => e.name);
     expect(names(0)).toContain("Compliance"); // director (pane 0)
     expect(names(1)).toContain("Compliance"); // worker 1
     expect(names(2)).toContain("Compliance"); // worker 2
@@ -1238,8 +1232,8 @@ describe("agent fleet store", () => {
     };
     useAppStore.getState().fleetStartProject("Multi", f, "multi-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("multi-key");
-    const names = (p: number) => (st.paneMcpServers[`t${idx}p${p}`] ?? []).map((e) => e.name).sort();
+    const paneKey = (p: number) => p === 0 ? directorPaneId("multi-key") : fleetPaneId("multi-key", ["sci", "ui"][p - 1]);
+    const names = (p: number) => (st.paneMcpServers[paneKey(p)] ?? []).map((e) => e.name).sort();
     // Every session also gets the always-available built-in Research server (#1196).
     // Director (pane 0) sees ALL installed servers — including the disabled and other-project ones.
     expect(names(0)).toEqual(["Disabled", "Glob", "Research", "SciTool"]);
@@ -1258,9 +1252,8 @@ describe("agent fleet store", () => {
     };
     useAppStore.getState().fleetStartProject("DirN", dirFleet, "k");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("k");
-    // trailing-slash dir -> subtree glob; a file path is left as-is
-    expect(st.paneRoleGlobs[`t${idx}p0`]).toEqual(["src/x/**", "src/y.ts"]);
+    // director disabled ⇒ pane 0 is the worker "w".
+    expect(st.paneRoleGlobs[fleetPaneId("k", "w")]).toEqual(["src/x/**", "src/y.ts"]);
   });
 
   it("generateFleetProfiles materializes unassigned and dangling-reference profiles", () => {
@@ -1296,24 +1289,25 @@ describe("agent fleet store", () => {
       ],
     };
     useAppStore.getState().fleetStartProject("Co", coFleet, "k");
-    const idx = useAppStore.getState().findFleetTabIdx("k");
     const st1 = useAppStore.getState();
+    // director disabled ⇒ panes are the three workers in order.
+    const kA = fleetPaneId("k", "web-a"), kB = fleetPaneId("k", "web-b"), kApi = fleetPaneId("k", "api");
     // Two agents in own/web get separate worktree cwds — no shared working tree.
-    expect(st1.paneCwds[`t${idx}p0`]).toBe("/base/worktrees/k/web--web-a");
-    expect(st1.paneCwds[`t${idx}p1`]).toBe("/base/worktrees/k/web--web-b");
-    expect(st1.paneCwds[`t${idx}p2`]).toBe("/base/worktrees/k/api--api");
+    expect(st1.paneCwds[kA]).toBe("/base/worktrees/k/web--web-a");
+    expect(st1.paneCwds[kB]).toBe("/base/worktrees/k/web--web-b");
+    expect(st1.paneCwds[kApi]).toBe("/base/worktrees/k/api--api");
     // …and distinct per-agent checkpoint docs.
-    expect(st1.paneCheckpointDocs[`t${idx}p0`]).toBe("projects/k/prompts/web-a-checkpoint.md");
-    expect(st1.paneCheckpointDocs[`t${idx}p1`]).toBe("projects/k/prompts/web-b-checkpoint.md");
-    expect(st1.paneCheckpointDocs[`t${idx}p2`]).toBe("projects/k/prompts/api-checkpoint.md");
+    expect(st1.paneCheckpointDocs[kA]).toBe("projects/k/prompts/web-a-checkpoint.md");
+    expect(st1.paneCheckpointDocs[kB]).toBe("projects/k/prompts/web-b-checkpoint.md");
+    expect(st1.paneCheckpointDocs[kApi]).toBe("projects/k/prompts/api-checkpoint.md");
 
     // Re-run → resume. Distinct worktree cwds make --continue unambiguous, so even
     // co-located agents resume (no co-location exception needed any more).
     useAppStore.getState().fleetStartProject("Co", coFleet, "k");
     const st2 = useAppStore.getState();
-    expect(st2.paneContinue[`t${idx}p0`]).toBe(true);
-    expect(st2.paneContinue[`t${idx}p1`]).toBe(true);
-    expect(st2.paneContinue[`t${idx}p2`]).toBe(true);
+    expect(st2.paneContinue[kA]).toBe(true);
+    expect(st2.paneContinue[kB]).toBe(true);
+    expect(st2.paneContinue[kApi]).toBe(true);
   });
 
   it("spreads a fleet larger than one tab across multiple build tabs", () => {
@@ -1332,7 +1326,7 @@ describe("agent fleet store", () => {
     expect(st.tabs[idx + 1].layout).toBe("2×2");
     // tab 2's first pane is the 17th worker (s16), in its own worktree.
     expect(st.paneNames[idx + 1][0]).toBe("S16");
-    expect(st.paneCwds[`t${idx + 1}p0`]).toBe("/base/worktrees/big/web--s16");
+    expect(st.paneCwds[fleetPaneId("big", "s16")]).toBe("/base/worktrees/big/web--s16");
   });
 
   // #479 — no silent drop: ALL workers launch regardless of the recommended count.
@@ -1371,7 +1365,7 @@ describe("agent fleet store", () => {
     const workers = rows.filter((c) => c[4] === "worker");
     expect(workers.length).toBe(fleet.streams.length);
     expect(workers[0][2]).toContain("/"); // repo "owner/name"
-    expect(workers[0][0]).toMatch(/^t\d+p\d+$/); // a console/pane id
+    expect(workers[0][0]).toBe(fleetPaneId("roster-key", "auth-ui")); // stable identity pane id (#1176)
   });
 
   // #457 — the "two directors" bug: a project rename froze tab.name, so the
@@ -1533,9 +1527,9 @@ describe("mcp servers store", () => {
       streams: [{ id: "s0", name: "S0", repo: "own/web", owns: [], issues: [], dependsOn: [] }],
     };
     useAppStore.getState().fleetStartProject("ExtP", fleet, "proj-key");
-    const idx = useAppStore.getState().findFleetTabIdx("proj-key");
-    // Filter the always-present built-in server (#1196) to keep this focused on user-server scoping.
-    const ids = (useAppStore.getState().paneMcpServers[`t${idx}p0`] ?? []).map(e => e.id).filter(id => id !== "builtin-research");
+    // director disabled ⇒ pane 0 is the single worker "s0". Filter the always-present built-in
+    // server (#1196) to keep this focused on user-server scoping.
+    const ids = (useAppStore.getState().paneMcpServers[fleetPaneId("proj-key", "s0")] ?? []).map(e => e.id).filter(id => id !== "builtin-research");
     expect(ids).toEqual(["g", "p"]);
   });
 });
