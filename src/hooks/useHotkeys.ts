@@ -115,6 +115,14 @@ export function useHotkeys() {
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // #1218: the hotkeys are Console-only. Don't attach the document listeners at all unless the
+    // Console page is active AND no pane is maximized — so every other screen, and a maximized
+    // terminal, gets unobstructed native copy/paste, text selection, and browser shortcuts (the
+    // capture-phase listener used to sit in front of all of them). Both gating values are in this
+    // effect's dep array, so changing screen or maximizing/restoring re-runs the effect to
+    // attach/detach. Exit maximize via the pane header button (the keyboard toggle is off here too).
+    if (activeScreen !== "console" || fullscreenPaneIdx >= 0) return;
+
     // Resolve the accumulated pane-number buffer and run the focus → fullscreen →
     // restore cycle on it. State is read fresh (the timer fires later) so a stale
     // closure can't mis-target.
@@ -152,7 +160,6 @@ export function useHotkeys() {
       // ── Ctrl+Shift+C: toggle broadcast mode ───────────────────────────────
       // Must come before the broadcast intercept and the inInput guard.
       if (matchesBinding(e, bindings, "broadcast-toggle")) {
-        if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
         setConsoleBroadcast(!consoleBroadcast);
@@ -163,7 +170,6 @@ export function useHotkeys() {
       // Before the broadcast intercept so it works in broadcast mode too, and
       // before the inInput guard so it fires while typing in a pane's terminal.
       if (matchesBinding(e, bindings, "fullscreen-toggle")) {
-        if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
         const next = nextFullscreen(focusedPaneIdx, fullscreenPaneIdx);
@@ -191,7 +197,6 @@ export function useHotkeys() {
       // Steps through agents that finished a turn. If a pane is maximized it
       // swaps the maximized pane to the next one, so you stay full-screen.
       if (matchesBinding(e, bindings, "focus-next-waiting")) {
-        if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
         advanceFocus();
@@ -206,7 +211,6 @@ export function useHotkeys() {
       // directly rather than via xterm.onData, so there's no double-write to
       // worry about (#192).
       if (matchesBinding(e, bindings, "clear-input")) {
-        if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
         if (consoleBroadcast) {
@@ -221,13 +225,13 @@ export function useHotkeys() {
         return;
       }
 
-      // ── Zoom the console terminal font (global, all panes) ─────────────────
+      // ── Zoom the console terminal font (all panes) ─────────────────────────
       // Before the broadcast intercept so it isn't mirrored as a literal key, and
       // before the inInput guard so it works while typing in a terminal. Rebindable
       // (#773): once a zoom action is overridden it matches its captured chord;
       // otherwise it keeps the default key-based match so BOTH Ctrl++ and Ctrl+=
       // zoom in (the "+" key is Shift+= on most layouts), and numpad +/-/0 fold in
-      // via e.key. Off the console screen we let the browser have the event.
+      // via e.key.
       {
         const ctrlOnly = e.ctrlKey && !e.metaKey && !e.altKey;
         // Default zoom matches by e.key; an override matches its captured chord.
@@ -237,7 +241,6 @@ export function useHotkeys() {
         const zoomOut   = zoom("zoom-out",   ctrlOnly && (e.key === "-" || e.key === "_"));
         const zoomIn    = zoom("zoom-in",    ctrlOnly && (e.key === "+" || e.key === "="));
         if (zoomReset || zoomOut || zoomIn) {
-          if (activeScreen !== "console") return;
           e.preventDefault();
           e.stopPropagation();
           const cur = useAppStore.getState().terminalFontSize;
@@ -255,7 +258,7 @@ export function useHotkeys() {
       // excluded. computeBroadcastTargets reconstructs pane ids strictly from the
       // active tab, and only excludes a focus index that is actually within this
       // tab (a stale index from another tab must not skip one of these consoles).
-      if (consoleBroadcast && activeScreen === "console") {
+      if (consoleBroadcast) {
         // Navigation hotkeys (switch tab / pane / view by number) must NOT be
         // broadcast as text — skip them here so they fall through to their handlers
         // below and keep working in broadcast mode (e.g. while driving a fleet).
@@ -317,7 +320,6 @@ export function useHotkeys() {
       //   focus → fullscreen → restore, exactly as a direct press did before.
       const paneDigit = e.code.match(/^Digit(\d)$/);
       if (paneDigit && matchesLeader(e, bindings, "pane-select")) {
-        if (activeScreen !== "console") return;
         e.stopPropagation();
         e.preventDefault();
         digitBufferRef.current += paneDigit[1];
@@ -330,7 +332,6 @@ export function useHotkeys() {
 
       // Alt+Shift+Enter: broadcast Enter to every pane (one-shot, regardless of broadcast mode)
       if (matchesBinding(e, bindings, "send-all-enter")) {
-        if (activeScreen !== "console") return;
         e.preventDefault();
         e.stopPropagation();
         const activeTab = tabs[activeTabIdx];
@@ -350,7 +351,6 @@ export function useHotkeys() {
         const allMatch = matchesLeader(e, bindings, "view-switch-all");
         const oneMatch = matchesLeader(e, bindings, "view-switch");
         if (allMatch || oneMatch) {
-          if (activeScreen !== "console") return;
           // Digits map 1:1 onto VIEW_ORDER (console…telemetry); a digit past the last view is a
           // no-op rather than switching to `undefined`.
           const view = VIEW_ORDER[parseInt(viewDigit[1], 10) - 1];
