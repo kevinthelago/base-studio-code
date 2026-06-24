@@ -1,9 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 import { startupLog, teeLogger } from "./vite-startup-log";
 
 export default defineConfig(async ({ command }) => ({
   plugins: [react(), startupLog()],
+  // `@/…` → `src/…` (#1309) so the feature-first reorg doesn't churn deep-relative imports.
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   // Dev-only startup diagnostics (#1031): timestamp + tee Vite's own messages (optimizeDeps
   // re-bundle / full-reload — the cold-start stalls) to `.vite-dev.log`. Off for `vite build`.
   ...(command === "serve" ? { customLogger: teeLogger() } : {}),
