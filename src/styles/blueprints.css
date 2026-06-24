@@ -127,8 +127,6 @@
   .seq .more { font-family: var(--mono); font-size: 10px; color: var(--fg-dim); padding-left: 3px; }
 
   .bp-foot { display: flex; align-items: center; gap: 12px; margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--border-soft); font-family: var(--mono); font-size: 10px; color: var(--fg-dim); }
-  .bp-foot .gsync { display: inline-flex; align-items: center; gap: 5px; }
-  .bp-foot .gsync i { width: 6px; height: 6px; border-radius: 50%; }
   .bp-foot .sp { flex: 1; }
 
   .bp-actions { position: absolute; top: 12px; right: 12px; display: flex; gap: 4px; opacity: 0; transition: opacity .12s; }

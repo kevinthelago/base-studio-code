@@ -152,6 +152,7 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 - **Pull data from enterprise systems** — ERP, CRM, BPM, and other software solutions — into canonical **data models** via MCP connectors
 - **Migrate off an existing solution to bespoke generated software** — map the imported data into your own custom app, generated and run by the fleet
 - **Compliance** — a user-updatable Compliance MCP server (regulations, accessibility, user-protection) integrated into the planner, so generated software is compliant by default
+- **Research** — a **built-in** literature MCP server (arXiv · Semantic Scholar · PubMed/PMC · Crossref, native PDF extraction, citation-grounded search), so the planner can ground plans and skills in the latest real sources with no download, build, or Docker
 
 **🗺️ Then — `1.0.5` · the UI release**
 - An in-app, **Claude-Design-like** way to define each **page, component, and animation** — generate, preview, and iterate UI inside the planner (closing the external Claude Design round-trip), rendered live by the render-preview

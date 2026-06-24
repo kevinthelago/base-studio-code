@@ -32,6 +32,13 @@ describe("buildProjectPaneData", () => {
     expect(d.context).toEqual([]);
   });
 
+  it("forwards the project's skills to the focused Skills body (#1056)", () => {
+    const d = buildProjectPaneData(base({
+      skills: [{ name: "Real-time path tracing", kind: "skill", desc: "grounded denoiser notes" }],
+    }));
+    expect(d.skills).toEqual([{ name: "Real-time path tracing", kind: "skill", desc: "grounded denoiser notes" }]);
+  });
+
   it("hides empty section files so ghost 0.0k context files don't show (#654)", () => {
     const d = buildProjectPaneData(base({ sections: [
       { k: "goal", title: "Goal", content: "   ", state: "confirmed" } as unknown as Section,

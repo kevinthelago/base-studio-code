@@ -1074,6 +1074,7 @@ export function ProjectsList() {
           token={githubToken}
           importedById={Object.fromEntries(blueprints.filter(b => b.gist?.id).map(b => [b.gist!.id!, { updatedAt: b.gist!.updatedAt }]))}
           onImport={(gistId, updatedAt) => resolveBlueprintImport(gistId).then(p => importBlueprintPreview(p, { updatedAt }))}
+          onPreview={resolveBlueprintImport}
           onManualImport={() => { setCatalogOpen(false); setImportOpen(true); }}
           onClose={() => setCatalogOpen(false)}
         />

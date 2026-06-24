@@ -6,10 +6,11 @@
 // `onImport` (resolve + dedupe-by-gist-id). Replaces the page-oriented CatalogView in a modal.
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { Download, Cloud, RefreshCw, Link2, X, Search, Check, ArrowUpCircle, AlertTriangle, Inbox, Loader2 } from "lucide-react";
+import { Download, Cloud, RefreshCw, Link2, X, Search, Check, ArrowUpCircle, AlertTriangle, Inbox, Loader2, Eye, FileJson } from "lucide-react";
 import "../../../styles/blueprintImport.css";
 import { hue, tint, gistUpdateAvailable } from "./blueprintCatalog";
 import { listBlueprintGists, type BlueprintGistItem } from "../../../lib/planner/gist/gist";
+import { StageSummary, type PreviewBlueprint } from "./BlueprintModals";
 
 export interface BlueprintImportModalProps {
   /** GitHub account to pull blueprint gists from (the user's own login). */
@@ -22,6 +23,9 @@ export interface BlueprintImportModalProps {
   /** Import (or update-in-place) a gist by id; the current `updatedAt` is recorded for freshness.
    *  May be async — a rejection is surfaced to the user (the import never fails silently, #1042). */
   onImport: (gistId: string, updatedAt?: string) => void | Promise<void>;
+  /** Resolve a gist to its blueprint contents WITHOUT importing — drives the per-row preview so the
+   *  user can see what's in the JSON they're about to download before committing to it (#1037). */
+  onPreview: (gistId: string) => Promise<PreviewBlueprint>;
   /** Fall back to the manual paste-a-URL / ID dialog. */
   onManualImport: () => void;
   onClose: () => void;
@@ -47,7 +51,48 @@ const shimmer: CSSProperties = {
   backgroundSize: "260px 100%", animation: "bim-shimmer 1.1s linear infinite",
 };
 
-export function BlueprintImportModal({ source, token = "", importedById = {}, onImport, onManualImport, onClose }: BlueprintImportModalProps) {
+/** A fetched blueprint-preview cache entry for a gist row (#1037). */
+type PreviewEntry = { loading?: boolean; data?: PreviewBlueprint; error?: string };
+
+/** The expanded preview under a gist row: what the user is about to download — the blueprint's
+ *  stages (the structured view that drives the decision) + the raw JSON file itself. */
+function GistPreview({ entry }: { entry?: PreviewEntry }) {
+  const [raw, setRaw] = useState(false);
+  const box: CSSProperties = {
+    margin: "-3px 0 9px", padding: "11px 13px", borderRadius: "var(--r-md)",
+    background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+    fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
+  };
+  if (!entry || entry.loading) {
+    return <div style={{ ...box, display: "flex", alignItems: "center", gap: 8 }}><Loader2 size={12} style={spin} />reading the blueprint…</div>;
+  }
+  if (entry.error) {
+    return <div style={{ ...box, color: "var(--danger)", display: "flex", alignItems: "flex-start", gap: 8 }}><AlertTriangle size={13} style={{ flex: "0 0 auto", marginTop: 1 }} />couldn't read this blueprint: {entry.error}</div>;
+  }
+  const p = entry.data!;
+  const bp = p.blueprint;                          // the fully-coerced blueprint, when present
+  const sections = bp?.sections ?? p.sections;     // top-level sections always exist
+  const caps = sections.reduce((n, s) => n + (s.skills?.length ?? 0) + (s.mcp?.length ?? 0), 0);
+  return (
+    <div style={box}>
+      <div style={{ color: "var(--fg-dim)", marginBottom: 8 }}>
+        {bp?.category ?? "greenfield"}{bp?.mode ? ` · ${bp.mode}` : ""} · {sections.length} stage{sections.length === 1 ? "" : "s"}{caps > 0 ? ` · ${caps} attached` : ""}
+      </div>
+      <StageSummary sections={sections} />
+      <button
+        onClick={() => setRaw((r) => !r)}
+        style={{ marginTop: 9, background: "none", border: 0, padding: 0, cursor: "pointer", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10, display: "inline-flex", alignItems: "center", gap: 5 }}
+      ><FileJson size={11} />{raw ? "hide" : "view"} raw JSON</button>
+      {raw && (
+        <pre style={{ marginTop: 7, maxHeight: 220, overflow: "auto", padding: 10, borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 10, lineHeight: 1.5, whiteSpace: "pre" }}>
+          {JSON.stringify(bp ?? { name: p.name, sections }, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+export function BlueprintImportModal({ source, token = "", importedById = {}, onImport, onPreview, onManualImport, onClose }: BlueprintImportModalProps) {
   const [items, setItems] = useState<BlueprintGistItem[] | null>(null); // null = loading
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
@@ -58,6 +103,19 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
   // being swallowed — the user must know an import didn't land and why (#1042).
   const [importError, setImportError] = useState<string | null>(null);
   const timers = useRef<number[]>([]);
+  // Per-row blueprint preview (#1037): which gist row is expanded + a fetch cache of the resolved
+  // blueprint JSON, so the user sees what's in the file before importing it.
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previews, setPreviews] = useState<Record<string, PreviewEntry>>({});
+  const togglePreview = (it: BlueprintGistItem) => {
+    if (previewId === it.id) { setPreviewId(null); return; }
+    setPreviewId(it.id);
+    if (previews[it.id]?.data) return; // already fetched
+    setPreviews((m) => ({ ...m, [it.id]: { loading: true } }));
+    onPreview(it.id)
+      .then((data) => setPreviews((m) => ({ ...m, [it.id]: { data } })))
+      .catch((e) => setPreviews((m) => ({ ...m, [it.id]: { error: e instanceof Error ? e.message : String(e) } })));
+  };
 
   const load = useCallback(() => {
     setItems(null); setError(false);
@@ -229,9 +287,10 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                 const busy = busyId === it.id;
                 const h = hueFor(it.id);
                 const isHover = hover === it.id;
+                const expanded = previewId === it.id;
                 return (
+                  <div key={it.id}>
                   <div
-                    key={it.id}
                     onMouseEnter={() => setHover(it.id)}
                     onMouseLeave={() => setHover((cur) => (cur === it.id ? null : cur))}
                     style={{
@@ -257,7 +316,13 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                       </div>
                       {it.description && <div style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.description.replace(/^blueprint:\s*/i, "")}</div>}
                     </div>
-                    <span style={{ flex: "0 0 auto" }}>
+                    <span style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <button
+                        onClick={() => togglePreview(it)}
+                        aria-expanded={expanded}
+                        title="Preview the blueprint's contents before importing"
+                        style={{ height: 26, padding: "0 10px", borderRadius: "var(--r-md)", background: expanded ? "var(--bg-elev2)" : "transparent", border: "1px solid var(--border-soft)", color: expanded ? "var(--fg)" : "var(--fg-muted)", fontFamily: "var(--mono)", fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}
+                      ><Eye size={13} />Preview</button>
                       {busy ? (
                         <button disabled style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontFamily: "var(--mono)", fontSize: 10.5, cursor: "default", display: "inline-flex", alignItems: "center", gap: 6, opacity: 0.85 }}>
                           <Loader2 size={12} style={spin} />importing…
@@ -276,6 +341,8 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                         </button>
                       )}
                     </span>
+                  </div>
+                  {expanded && <GistPreview entry={previews[it.id]} />}
                   </div>
                 );
               })}

@@ -204,6 +204,8 @@ pub(crate) fn kill_all_pty_sessions(state: &PtyState) {
         // Dropping `session` runs `PtyJob::drop`, which closes the job handle
         // and tells the kernel to terminate every descendant still in the job.
     }
+    // Clean exit: clear this instance's ledger entries (#1049) so the next boot has nothing to reap.
+    crate::pty_ledger::forget_all_owned();
     log::info!("killed {n} PTY session(s) on exit");
 }
 
@@ -235,6 +237,16 @@ fn bsc_plan_bin_path() -> Option<std::path::PathBuf> {
 /// for the `bsc-agent` shell helper to exec when a session runs on the bsc-agent harness (#1078 P3).
 fn bsc_agent_bin_path() -> Option<std::path::PathBuf> {
     let exe = if cfg!(windows) { "bsc-agent.exe" } else { "bsc-agent" };
+    let p = std::env::current_exe().ok()?.with_file_name(exe);
+    p.exists().then_some(p)
+}
+
+/// The absolute path of the bundled `bsc-research-mcp` server — the sidecar beside the running app
+/// exe (cargo target dir in dev; bundled sidecar in a release), or None if absent (#1196). Used to
+/// rewrite the Research server's `.mcp.json` command to the real binary path, since Claude Code
+/// spawns `.mcp.json` commands directly (no PATH/shell-rc), unlike the `$BSC_*_BIN` shell helpers.
+pub(crate) fn bsc_research_mcp_bin_path() -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) { "bsc-research-mcp.exe" } else { "bsc-research-mcp" };
     let p = std::env::current_exe().ok()?.with_file_name(exe);
     p.exists().then_some(p)
 }
@@ -497,6 +509,10 @@ pub(crate) async fn pty_create(
     // won't have a row for this pane (it already logged the warning above).
     if let Some(pid) = child.process_id() {
         app.state::<perf::PerfState>().register(&pane_id, pid);
+        // Author this spawn in the crash-recovery ledger (#1049): if the app dies ungracefully
+        // (skipping the Job Object's clean drop), the next boot reconciles the ledger and tree-kills
+        // this orphan. Removed on a clean pty_kill / app exit.
+        crate::pty_ledger::record(pid, &pane_id);
     }
 
     let mut writer = pair.master.take_writer()
@@ -767,6 +783,8 @@ pub(crate) async fn pty_kill(
 ) -> Result<(), String> {
     // Remove from perf tracker before killing the process.
     perf_state.unregister(&pane_id);
+    // Drop the ledger entry (#1049) — a clean kill means there's nothing for the next boot to reap.
+    crate::pty_ledger::forget_pane(&pane_id);
     let session = state.0.lock().unwrap().remove(&pane_id);
     match session {
         Some(mut s) => {

@@ -21,14 +21,32 @@ export interface McpServer {
 }
 
 /**
+ * Built-in MCP servers (#1196) — shipped compiled in the app bundle (native sidecars), so they're
+ * **always available** with no download/build/Docker and need no store entry. `command` is a marker
+ * the Rust side rewrites to the bundled binary's absolute path when writing `.mcp.json` (Claude Code
+ * spawns `.mcp.json` commands directly, with no PATH/shell-rc). They behave like a global, enabled
+ * server: the planner/director see them, and every session (incl. workers) gets them by default.
+ */
+export const BUILTIN_MCP_SERVERS: McpServer[] = [
+  { id: "builtin-research", name: "Research", enabled: true, projects: [], transport: "stdio", command: "bsc-research-mcp", args: "" },
+];
+
+/** Prepend the built-in servers, skipping any a user entry already shadows by name (case-insensitive). */
+function withBuiltins(servers: McpServer[]): McpServer[] {
+  const taken = new Set(servers.map(s => s.name.toLowerCase()));
+  return [...BUILTIN_MCP_SERVERS.filter(b => !taken.has(b.name.toLowerCase())), ...servers];
+}
+
+/**
  * The enabled servers that apply to a session in `projectId`: a server applies when it is
  * enabled AND either global (`projects` empty) or scoped to this project. An empty
- * `projectId` (no project) yields only global servers.
+ * `projectId` (no project) yields only global servers. The built-in servers (#1196) are always
+ * included (they're global + enabled by construction).
  */
 export function resolveMcpServers(all: McpServer[], projectId: string): McpServer[] {
-  return all.filter(
+  return withBuiltins(all.filter(
     e => e.enabled && (e.projects.length === 0 || (!!projectId && e.projects.includes(projectId))),
-  );
+  ));
 }
 
 /**
@@ -40,7 +58,8 @@ export function resolveMcpServers(all: McpServer[], projectId: string): McpServe
  * entries are skipped so a broken `.mcp.json` line never reaches a session.
  */
 export function resolveAllInstalledMcp(all: McpServer[]): McpServer[] {
-  return all.filter(e => toMcpPayload(e) !== null);
+  // Built-in servers (#1196) are always "installed" — the planner/director see them by default.
+  return withBuiltins(all).filter(e => toMcpPayload(e) !== null);
 }
 
 /**
@@ -126,10 +145,11 @@ const MCP_CATALOG_TEMPLATES: Record<string, Partial<McpServer>> = {
   "Dependency Graph":    { transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
   // Python/uv like Compliance — console-script `plan-grader-mcp` (#897).
   "Plan Grader":         { transport: "stdio", command: "python", args: "-m uv run --directory {dir} plan-grader-mcp" },
-  // Node/tsup → dist/index.js, like Dependency Graph (#1056). Runs offline by default (arXiv/
-  // Semantic Scholar/PubMed/Crossref need no key; local embeddings); optional API keys + GROBID
-  // are env/Docker config the user adds, so no required env here.
-  "Research":            { transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
+  // Built-in native server (#1196): no download/build/Docker. `bsc-research-mcp` is a marker the
+  // Rust side rewrites to the bundled binary's absolute path when writing .mcp.json. Kept here so the
+  // planner's `<mcp_assign name="Research" />` path also resolves to the native binary. Offline +
+  // key-less by default (optional API keys raise rate limits).
+  "Research":            { transport: "stdio", command: "bsc-research-mcp", args: "" },
   // Well-known third-party servers — pruned from the browse catalog (#870) but kept here so the
   // planner's `<mcp_assign name="…" />` (planExtensions.ts) still resolves them to a working config.
   "Postgres":     { transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres", env: [["POSTGRES_CONNECTION_STRING", ""]] },

@@ -13,6 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { PlanIssue } from "../../screens/planner/issues/planIssues";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../../lib/session/checkpoint";
 import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, canonicalProjectKey, findProjectTabIdx, worktreeSlug } from "../../lib/core/projectPaths";
+import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "../../lib/console/paneIdentity";
 import { clearTabStatuses as clearTabStatusesPure } from "../../lib/console/paneStatus";
 import { repoPromptKey } from "../../lib/session/startupPrompt";
 import { resolveAllowedCommands } from "../../lib/session/allowedCommands";
@@ -278,10 +279,14 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const projKey = sanitizeProjectKey(projectName);
           const newDisabledPanes = { ...s.disabledPanes };
           const tabPaneNames: Record<number, string> = {};
+          const paneIds: string[] = [];
           const paneCount = cols * rows;
           const assignments = buildAssignments(s);
           for (let i = 0; i < paneCount; i++) {
-            const key = `t${newTabIdx}p${i}`;
+            // Stable pane identity (#1176): each triage pane is `<projKey>:<repo>:triage`, so a
+            // re-run resumes the exact repo's session; an empty cell keeps a positional id.
+            const key = i >= count ? positionalPaneId(newTabIdx, i) : triagePaneId(projKey, repos[i] ?? `p${i}`);
+            paneIds[i] = key;
             if (i < count) {
               const fullName = repos[i];
               // A real repo — launch claude in its clone, ensure it's enabled. Draft projects
@@ -341,7 +346,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               delete newPaneRepos[key];
             }
           }
-          const newTab: Tab = { id: newTabId(), name: tabName, layout, state: "idle", runId, projectKey: tabKey, kind: "triage", seq: 0 };
+          const newTab: Tab = { id: newTabId(), name: tabName, layout, state: "idle", runId, projectKey: tabKey, kind: "triage", seq: 0, paneIds };
           return {
             tabs: existingIdx >= 0
               ? s.tabs.map((t, i) => (i === existingIdx ? newTab : t))
@@ -469,10 +474,18 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             const layout = `${cols}×${rows}`;
             const paneCount = cols * rows;
             const tabPaneNames: Record<number, string> = {};
+            const paneIds: string[] = [];
 
             for (let i = 0; i < paneCount; i++) {
-              const key = `t${tabIdx}p${i}`;
-              // Clear any stale wiring from a prior run of this slot.
+              // Stable pane identity (#1176): director / worker get a project-scoped id so state +
+              // recovery bind to the exact session, not the grid slot; an empty cell keeps a
+              // positional id.
+              const sess0 = i < count ? chunk[i] : undefined;
+              const key = sess0 === undefined ? positionalPaneId(tabIdx, i)
+                : sess0 === null ? directorPaneId(safeKey) : fleetPaneId(safeKey, sess0.id);
+              paneIds[i] = key;
+              // Clear any stale wiring (and status) from a prior run of this session.
+              delete newPaneStatus[key];
               delete newPaneStartupPromptText[key];
               delete newPaneStartupPromptDocs[key];
               delete newPaneReferenceDocs[key];
@@ -572,7 +585,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               }
             }
 
-            const newTab: Tab = { id: newTabId(), name: tabName, layout, state: "idle", runId, projectKey: safeKey, kind: "build", seq: t };
+            const newTab: Tab = { id: newTabId(), name: tabName, layout, state: "idle", runId, projectKey: safeKey, kind: "build", seq: t, paneIds };
             tabs = existingIdx >= 0
               ? tabs.map((tb, i) => (i === existingIdx ? newTab : tb))
               : [...tabs, newTab];

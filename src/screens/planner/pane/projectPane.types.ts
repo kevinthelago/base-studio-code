@@ -128,7 +128,7 @@ export interface PhaseGroup {
 export interface ContextFile { name: string; kind: string; tok: string; pinned: boolean; scope: string; content: string }
 
 export interface PaneAutomation { name: string; command: string; schedule?: string }
-export interface PaneSkill { name: string; kind: "skill" | "kb"; desc?: string }
+export interface PaneSkill { name: string; kind: "skill" | "kb"; desc?: string; /** Authored by the current planning session (#1056) — rendered first + highlighted. */ isNew?: boolean }
 
 export interface ProjectPaneData {
   agents: Agent[];
