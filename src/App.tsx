@@ -12,7 +12,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useAppStore } from "./store";
 import { useHotkeys } from "./hooks/useHotkeys";
 import { useScheduler } from "@/features/automations";
-import { useTunnelSync } from "./hooks/useTunnelSync";
+import { useTunnelSync, useTunnelAutomations, useTunnelCoordControl } from "@/features/tunnel";
 import { startPerfMonitor, recordStoreWrite } from "./lib/core/perf";
 import { log } from "./lib/core/log";
 import { ConsoleScreen } from "./screens/Console";
@@ -25,8 +25,6 @@ import { CrashRecoveryBanner } from "./components/CrashRecoveryBanner";
 import { QuarantineBanner } from "./components/QuarantineBanner";
 import { useWarden } from "./lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "./lib/fleet/useWorkerAutoEnd";
-import { useTunnelAutomations } from "./lib/tunnel/useTunnelAutomations";
-import { useTunnelCoordControl } from "./lib/tunnel/useTunnelCoordControl";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/console/detachWindow";
 import { accentVars } from "./lib/settings/appearance";
 

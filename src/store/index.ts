@@ -17,6 +17,7 @@ import { createAutomationsSlice } from "@/features/automations/store";
 import { createCoreSlice } from "./slices/core";
 import { createGithubSlice } from "@/features/github/store";
 import { createShellSlice } from "./slices/shell";
+import { createTunnelSlice } from "@/features/tunnel/store";
 import { createConsoleSlice } from "./slices/console";
 
 // Re-export the public store API so existing `from "../store"` imports keep resolving.
@@ -31,6 +32,7 @@ export const useAppStore = create<AppStore>()(
       ...createConsoleSlice(set, get, store),
       ...createGithubSlice(set, get, store),
       ...createShellSlice(set, get, store),
+      ...createTunnelSlice(set, get, store),
 
       ...createCoreSlice(set, get, store),
       ...createAutomationsSlice(set, get, store),

@@ -21,9 +21,9 @@ import {
   buildProducerOf,
   producesFromPaneStreams,
 } from "./coordination";
-import type { SessionMeta } from "../tunnel/tunnel";
+import type { SessionMeta } from "@/features/tunnel/lib/tunnel";
 import { injectWake } from "./coordinatorActuate";
-import { tunnelStatus, tunnelSetSessions } from "../tunnel/tunnelClient";
+import { tunnelStatus, tunnelSetSessions } from "@/features/tunnel/lib/tunnelClient";
 import { log } from "../core/log";
 
 const POLL_MS = 1000;  // snappy: a director answer should wake the worker within ~1s

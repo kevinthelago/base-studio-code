@@ -2,15 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { QRCodeSVG } from "qrcode.react";
-import { useAppStore } from "../../store";
-import { pairingPayload, type TunnelStatus } from "../../lib/tunnel/tunnel";
+import { useAppStore } from "@/store";
+import { pairingPayload, type TunnelStatus } from "./lib/tunnel";
 import {
   tunnelStart,
   tunnelStop,
   tunnelStatus,
   tunnelSetInputGranted,
   tunnelUnpair,
-} from "../../lib/tunnel/tunnelClient";
+} from "./lib/tunnelClient";
 import {
   runRelayProbe,
   emptyLegs,
@@ -18,11 +18,11 @@ import {
   type ProbeLegs,
   type ProbeLeg,
   type MinimalSocket,
-} from "../../lib/tunnel/relayProbe";
+} from "./lib/relayProbe";
 
 // `relayHealthUrl` now lives with the probe orchestration; re-exported here so existing
 // importers (and tests) keep resolving it from this module.
-export { relayHealthUrl } from "../../lib/tunnel/relayProbe";
+export { relayHealthUrl } from "./lib/relayProbe";
 
 // A "Deploy to Cloudflare" link prefilled with the relay workspace, so a user can
 // stand up their own zero-knowledge relay in their own account (BYO).
