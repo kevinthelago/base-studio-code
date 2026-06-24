@@ -2,26 +2,30 @@ use std::collections::HashMap;
 use tauri::{Manager, RunEvent};
 
 mod tunnel;
-mod fcm;
-mod perf;
-mod logs;
-mod docstore;
-mod plan_db;
-mod tokens;
-mod githooks;
-mod oauth;
-mod config;
-mod github;
-mod platform;
-mod pty;
-mod pty_ledger;
-mod session_discovery;
-mod bsc;
 mod planner;
-mod data;
-mod credentials;
-mod source_oauth;
-mod harness;
+mod platform;
+
+// Domain modules (#1300): each folder is one subsystem. Their submodules are re-exported under
+// their pre-restructure names below, so existing `crate::<name>` paths + invoke-handler entries
+// resolve unchanged after the move. Each domain's call sites get rewritten to `crate::<domain>::…`
+// when that domain is fully built out in a later stage.
+mod console;
+mod agent;
+mod github;
+mod sources;
+mod knowledge;
+mod observability;
+mod mobile;
+mod project;
+
+pub(crate) use console::{pty, ledger as pty_ledger, discovery as session_discovery, shell_rc as bsc};
+pub(crate) use agent::{harness, claude_config as config};
+pub(crate) use github::{oauth, git_hooks as githooks};
+pub(crate) use sources::{data, oauth as source_oauth, credentials};
+pub(crate) use knowledge::docstore;
+pub(crate) use observability::{logs, perf, tokens};
+pub(crate) use mobile::push as fcm;
+pub(crate) use project::plan_db;
 
 // Shared platform primitives (#1300), re-exported at the crate root so existing call sites resolve
 // unchanged after the move: `crate::NAME` from sibling modules, bare names within lib.rs, and the
