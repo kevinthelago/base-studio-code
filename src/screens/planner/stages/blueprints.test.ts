@@ -324,9 +324,16 @@ describe("data-integration blueprint (#1207)", () => {
     expect(b.category).toBe("data");
     expect(b.mode).toBe("create");
     expect(b.sections.map((s) => s.key)).toEqual(
-      ["context", "dataSource", "dataModel", "dataMap", "destination", "sync", "dataClean", "structure", "permissions", "deploy"],
+      ["context", "dataSource", "dataModel", "dataMap", "destination", "sync", "dataClean", "integrations", "structure", "permissions", "deploy"],
     );
     expect(b.mcp).toContain("Compliance"); // #1005 Compliance MCP attached
+  });
+
+  it("surfaces an optional, non-blocking Integrations stage (#1200)", () => {
+    const intg = bp().sections.find((s) => s.key === "integrations")!;
+    expect(intg).toBeTruthy();
+    expect(intg.optional).toBe(true); // inherited from the section def — shown, never blocks
+    expect(intg.gateRule).toBeUndefined(); // soft/informational, no gate signal
   });
 
   it("destination + sync sections gate on their own signals (#1207)", () => {
