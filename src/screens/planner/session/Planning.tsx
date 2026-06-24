@@ -25,7 +25,7 @@ import {
   ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, SKILLS_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
 } from "../stages/planSections";
-import { parseSkillsFile } from "../../../lib/session/skills";
+import { parseSkillsFile, resolveSkills } from "../../../lib/session/skills";
 import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
 import { parseDependencyManifest, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
@@ -361,6 +361,13 @@ export function Planning({ visible }: { visible: boolean }) {
   const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
   const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
+  // The skills that apply to THIS project (#1056) — the global library filtered to enabled global +
+  // project-scoped, mapped to the focused Skills body's shape. This is how a planner-authored
+  // skills.json (ingested into the library) becomes visible in the planner pane's Skills stage.
+  const paneSkills = useMemo(
+    () => resolveSkills(skillDefs, effectiveProjectId).map(s => ({ name: s.name, kind: "skill" as const, desc: s.desc })),
+    [skillDefs, effectiveProjectId],
+  );
   // A project is bound to the blueprint it was CREATED with (#647/#923): `projectBlueprintId`
   // records it, set at creation (handleStartPlanning) — NOT here on open. Opening a project must
   // never adopt the transient global `activeBlueprintId` (the library selection the user changes
@@ -748,12 +755,13 @@ export function Planning({ visible }: { visible: boolean }) {
       registries: depManifest.registries,
       pinned:   pinnedContext[effectiveProjectId],
       mcpServers,
+      skills: paneSkills,
       projectKey: effectiveProjectId,
       mcpInstallState,
       topologyOverride: planFleetTopology[effectiveProjectId],
       directorDriveOverride: planFleetDirectorDrive[effectiveProjectId],
     }),
-    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, mcpInstallState],
+    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, paneSkills, mcpInstallState],
   );
 
   // Per-repo visibility overrides for THIS project (#1227): the `repoPublic` slice re-keyed by
