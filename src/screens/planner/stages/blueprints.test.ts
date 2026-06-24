@@ -84,31 +84,31 @@ describe("blueprints — seed library", () => {
     expect(isAuthoringBlueprint(makeBlueprints().find((b) => b.id === "default"))).toBe(false);
   });
 
-  it("canChangeBlueprint: only greenfield projects can switch; others + blueprint-author locked (#923)", () => {
+  it("canChangeBlueprint: any project blueprint can switch; only the blueprint-author lifecycle is locked (#1281)", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
-    expect(canChangeBlueprint(by("default"))).toBe(true);       // greenfield → switchable
-    expect(canChangeBlueprint(by("refactor"))).toBe(false);     // transform → locked
-    expect(canChangeBlueprint(by("harden"))).toBe(false);       // harden → locked
+    expect(canChangeBlueprint(by("default"))).toBe(true);           // greenfield → switchable
+    expect(canChangeBlueprint(by("refactor"))).toBe(true);          // transform → switchable (was locked)
+    expect(canChangeBlueprint(by("harden"))).toBe(true);            // harden → switchable (was locked)
     expect(canChangeBlueprint(by("blueprint-author"))).toBe(false); // authoring → locked
   });
 
-  it("canSwitchBlueprint: greenfield → transform | harden | maintain (#923)", () => {
+  it("canSwitchBlueprint: any project blueprint → any OTHER, except authoring + self (#1281)", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
-    // a maintain-category blueprint (no built-in yet — synthesize from an existing one)
-    const maintain = { ...by("harden"), id: "maint", category: "maintain" as const };
-    // greenfield can move on to transform, harden, or maintain
-    expect(canSwitchBlueprint(by("default"), by("refactor"))).toBe(true);   // → transform
-    expect(canSwitchBlueprint(by("default"), by("harden"))).toBe(true);     // → harden
-    expect(canSwitchBlueprint(by("default"), maintain)).toBe(true);         // → maintain
-    // greenfield → another greenfield / data / itself is NOT allowed
-    expect(canSwitchBlueprint(by("default"), by("complete"))).toBe(false); // → greenfield
-    expect(canSwitchBlueprint(by("default"), by("data-migration"))).toBe(false); // → data
-    // a non-greenfield origin can't switch at all
-    expect(canSwitchBlueprint(by("refactor"), by("harden"))).toBe(false);
-    // anything touching the authoring lifecycle is refused
+    // greenfield → transform / harden — still allowed
+    expect(canSwitchBlueprint(by("default"), by("refactor"))).toBe(true);        // → transform
+    expect(canSwitchBlueprint(by("default"), by("harden"))).toBe(true);          // → harden
+    // previously-refused targets are now allowed (the over-restriction is gone)
+    expect(canSwitchBlueprint(by("default"), by("complete"))).toBe(true);        // → another greenfield
+    expect(canSwitchBlueprint(by("default"), by("data-migration"))).toBe(true);  // → data
+    // a non-greenfield origin can switch now — no more soft-lock (the #1281 bug)
+    expect(canSwitchBlueprint(by("refactor"), by("harden"))).toBe(true);
+    expect(canSwitchBlueprint(by("refactor"), by("default"))).toBe(true);        // transform → back to greenfield
+    // refused: switching to the SAME blueprint (a no-op)
+    expect(canSwitchBlueprint(by("default"), by("default"))).toBe(false);
+    // refused: anything touching the authoring lifecycle
     expect(canSwitchBlueprint(by("blueprint-author"), by("refactor"))).toBe(false);
     expect(canSwitchBlueprint(by("default"), by("blueprint-author"))).toBe(false);
-    // unbound (no current) can't "switch"
+    // refused: unbound (no current) can't "switch"
     expect(canSwitchBlueprint(undefined, by("refactor"))).toBe(false);
   });
 

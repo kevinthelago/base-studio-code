@@ -188,26 +188,23 @@ export function isAuthoringBlueprint(bp: Blueprint | undefined): boolean {
   return bp?.deliverable === "blueprint";
 }
 
-/** The lifecycle categories a GREENFIELD project may switch INTO (#923) — the natural progression
- *  once it's been built: restructure (transform), secure in place (harden), or move into ongoing
- *  maintenance (maintain). */
-export const GREENFIELD_SWITCH_TARGETS: BlueprintCategory[] = ["transform", "harden", "maintain"];
-
-/** Whether a project bound to this blueprint may switch to a different one AT ALL (#923) — only a
- *  GREENFIELD project can (it can move on to a transform/harden lifecycle once built). Every other
- *  lifecycle — transform, harden, maintain, data, and the locked blueprint-author — stays put.
- *  Drives whether a "switch blueprint" affordance is offered. */
+/** Whether a project bound to this blueprint may switch to a different one AT ALL (#1281). ANY
+ *  project-lifecycle blueprint can switch now — the confirmation modal (reset / keep / export) is the
+ *  safety, not a category rule. Only the locked blueprint-AUTHORING lifecycle stays put (it designs a
+ *  blueprint, it doesn't seed a project). Drives whether a "switch blueprint" affordance is offered.
+ *  (Replaces the #923 greenfield-only rule, which soft-locked a project the moment it left greenfield.) */
 export function canChangeBlueprint(bp: Blueprint | undefined): boolean {
-  return !!bp && !isAuthoringBlueprint(bp) && blueprintCategory(bp) === "greenfield";
+  return !!bp && !isAuthoringBlueprint(bp);
 }
 
-/** Whether a project currently on `from` may switch to a `to` blueprint (#923). Only greenfield →
- *  transform | harden | maintain is allowed; everything else (other origins, other targets, anything
- *  touching the locked blueprint-author lifecycle) is refused. This is the authoritative switch gate. */
+/** Whether a project currently on `from` may switch to a `to` blueprint (#1281). ANY project blueprint
+ *  → any OTHER project blueprint is allowed; the user confirms each switch via the reset/keep/export
+ *  modal. Refused only when: either side is missing, either is the blueprint-authoring lifecycle, or
+ *  it's the same blueprint (a no-op). This is the authoritative switch gate. */
 export function canSwitchBlueprint(from: Blueprint | undefined, to: Blueprint | undefined): boolean {
   if (!from || !to) return false;
   if (isAuthoringBlueprint(from) || isAuthoringBlueprint(to)) return false;
-  return blueprintCategory(from) === "greenfield" && GREENFIELD_SWITCH_TARGETS.includes(blueprintCategory(to));
+  return from.id !== to.id;
 }
 
 /** The gate signals the blueprint-authoring stages read, derived from the in-progress blueprint the

@@ -72,14 +72,24 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
   });
 
-  it("won't switch greenfield outside transform/harden, nor switch a non-greenfield origin (#923)", () => {
-    // greenfield → data is not an allowed target
+  it("now allows any project blueprint → any other, re-seeding on switch (#1281)", () => {
+    // greenfield → data is allowed now (was refused under the #923 one-way rule)
     useAppStore.getState().setProjectBlueprintId("p", "default");
     useAppStore.getState().applyBlueprintToProject("p", "data-migration");
-    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("default"); // refused
-    // a transform-origin project can't switch at all
+    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("data-migration"); // switched
+    expect(useAppStore.getState().sectionGrades["p"]).toBeUndefined();             // progress wiped on switch
+    // a transform-origin project can switch too — the soft-lock is gone (#1281)
     useAppStore.getState().setProjectBlueprintId("p", "refactor");
     useAppStore.getState().applyBlueprintToProject("p", "harden");
-    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("refactor"); // refused
+    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("harden");         // switched
+  });
+
+  it("is a no-op when switching to the SAME blueprint (#1281)", () => {
+    useAppStore.getState().setProjectBlueprintId("p", "default");
+    useAppStore.getState().applyBlueprintToProject("p", "default");
+    const s = useAppStore.getState();
+    expect(s.projectBlueprintId["p"]).toBe("default");
+    expect(s.sectionGrades["p"]).toBeTruthy();                 // progress NOT wiped (refused no-op)
+    expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
   });
 });
