@@ -3,8 +3,8 @@
 // points at. Pure (no React/Tauri) so the Extensions screen, the planner-assign path,
 // and the planning-page panel all resolve `{dir}` the same way.
 
-import { MCP_CATALOG } from "../../data/mcpCatalog";
-import { mcpInstallDir } from "../core/projectPaths";
+import { MCP_CATALOG } from "@/data/mcpCatalog";
+import { mcpInstallDir } from "@/lib/core/projectPaths";
 
 /** Repo slug from a GitHub link: the last non-empty path segment. */
 export function repoNameFromLink(link: string): string {

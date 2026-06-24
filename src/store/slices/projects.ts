@@ -18,8 +18,8 @@ import { clearTabStatuses as clearTabStatusesPure } from "../../lib/console/pane
 import { repoPromptKey } from "../../lib/session/startupPrompt";
 import { resolveAllowedCommands } from "../../lib/session/allowedCommands";
 import { resolveDirectorDrive } from "../../screens/planner/fleet/directorDrive";
-import { resolveHooks } from "../../lib/session/hooks";
-import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "../../lib/session/mcpServers";
+import { resolveHooks } from "@/features/extensions/lib/hooks";
+import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "@/features/extensions/lib/mcpServers";
 import { resolveReferenceContext, resolveStartupPrompt } from "../../lib/session/assignments";
 import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
 import { resolveStrategy, strategySettings } from "../../screens/planner/shared/integrationStrategy";

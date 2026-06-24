@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { resolveMcpInstallDir, repoNameFromLink, catalogLink, mcpRepoName } from "../../lib/session/mcpInstall";
-import { useAppStore } from "../../store";
-import { TabBar, type TabItem } from "../../components/chrome/TabBar";
+import { resolveMcpInstallDir, repoNameFromLink, catalogLink, mcpRepoName } from "./lib/mcpInstall";
+import { useAppStore } from "@/store";
+import { TabBar, type TabItem } from "@/components/chrome/TabBar";
 import { McpAnalyticsTab } from "./McpAnalytics";
-import { usePageTabs } from "../../hooks/usePageTabs";
-import { MCP_CATALOG, SCOPE_COPY, type CatalogItem } from "../../data/mcpCatalog";
-import { HOOK_CATALOG } from "../../data/hookCatalog";
-import { mcpFromCatalog, blankMcpServer, BUILTIN_MCP_SERVERS, type McpServer, type McpTransport } from "../../lib/session/mcpServers";
-import { hookFromCatalog, blankHook, type Hook } from "../../lib/session/hooks";
+import { usePageTabs } from "@/hooks/usePageTabs";
+import { MCP_CATALOG, SCOPE_COPY, type CatalogItem } from "@/data/mcpCatalog";
+import { HOOK_CATALOG } from "@/data/hookCatalog";
+import { mcpFromCatalog, blankMcpServer, BUILTIN_MCP_SERVERS, type McpServer, type McpTransport } from "./lib/mcpServers";
+import { hookFromCatalog, blankHook, type Hook } from "./lib/hooks";
 import {
   useGhProjects, scopeChips, DrawerBody, DrawerSlideOver, InstalledRow, CatalogCard, type Scope,
 } from "./shared";
