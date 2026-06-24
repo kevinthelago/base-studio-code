@@ -27,6 +27,8 @@ export function IntegrationsSettings() {
   const { claudeApiKey, setClaudeApiKey, autoPlanWithClaude, setAutoPlanWithClaude } = useAppStore();
   const autoCompleteGates = useAppStore(s => s.autoCompleteGates);
   const setAutoCompleteGates = useAppStore(s => s.setAutoCompleteGates);
+  const allowGateOverride = useAppStore(s => s.allowGateOverride);
+  const setAllowGateOverride = useAppStore(s => s.setAllowGateOverride);
   const llmProvider = useAppStore(s => s.llmProvider);
   const setLlmProvider = useAppStore(s => s.setLlmProvider);
   const llmModel = useAppStore(s => s.llmModel);
@@ -159,6 +161,15 @@ export function IntegrationsSettings() {
           automatically instead of clicking <b>approve &amp; continue</b> each time. You still drive
           the conversation — only the per-gate approval is automated. Off by default; steps aside
           while Auto-plan is running.
+        </ToggleRow>
+        <ToggleRow
+          on={allowGateOverride}
+          onToggle={() => setAllowGateOverride(!allowGateOverride)}
+          title="Allow gate override"
+        >
+          Lets you <b>advance past a planning stage whose gate isn't satisfied</b>. When on, a
+          blocked stage's advance button becomes a cautionary <b>override gate &amp; continue</b> you
+          can click to move on anyway. Off by default — only the user can override, never the planner.
         </ToggleRow>
       </div>
 
