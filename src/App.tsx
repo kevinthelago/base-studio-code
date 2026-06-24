@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { LayoutGrid } from "lucide-react";
 import { Titlebar } from "./components/chrome/Titlebar";
 import { Rail } from "./components/chrome/Rail";
+import { screenLabel } from "./screens/registry";
 import { Tabstrip } from "./components/chrome/Tabstrip";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { Dialog } from "./components/Dialog";
@@ -266,42 +267,28 @@ export default function App() {
     return () => { clearTimeout(id); unsub?.(); };
   }, [hasHydrated]);
 
+  // The "you are here" position crumb: the screen's canonical name (from the registry — the same
+  // source the rail nav uses, so they can't drift) followed by any in-screen detail (the active
+  // tab/agent, repo, sub-section). Only the DETAIL lives here; the page NAME is never hardcoded.
   const titleWorkspace = (() => {
-    const parts: string[] = [];
+    const parts: string[] = [screenLabel(activeScreen)];
     switch (activeScreen) {
       case "console":
-        parts.push("Console");
         if (tabs[activeTabIdx]?.name) parts.push(tabs[activeTabIdx].name);
         if (focusedAgentName) parts.push(focusedAgentName);
         break;
-        break;
       case "github":
-        parts.push("GitHub");
         if (activeRepoName) parts.push(activeRepoName);
         break;
       case "automation":
-        parts.push("Automations");
         parts.push(automationsTab);
         break;
-      case "mcp":
-        parts.push("MCP");
-        break;
       case "projects":
-        parts.push("Projects");
         if (projectsView === "planning") parts.push("planning");
         break;
-      case "skills":
-        parts.push("Skills");
-        break;
-      case "agents":
-        parts.push("Permissions");
-        break;
       case "settings":
-        parts.push("Settings");
         parts.push(settingsSection);
         break;
-      default:
-        parts.push(activeScreen);
     }
     return parts.filter(Boolean).join(" — ");
   })();
