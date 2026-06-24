@@ -13,7 +13,8 @@ import { type AppStore } from "./types";
 import { createSessionSlice } from "./slices/session";
 import { createPlanSlice } from "./slices/plan";
 import { createProjectsSlice } from "./slices/projects";
-import { createAutomationsSlice } from "./slices/automations";
+import { createAutomationsSlice } from "@/features/automations/store";
+import { createCoreSlice } from "./slices/core";
 import { createGithubSlice } from "./slices/github";
 import { createConsoleSlice } from "./slices/console";
 
@@ -29,6 +30,7 @@ export const useAppStore = create<AppStore>()(
       ...createConsoleSlice(set, get, store),
       ...createGithubSlice(set, get, store),
 
+      ...createCoreSlice(set, get, store),
       ...createAutomationsSlice(set, get, store),
       ...createProjectsSlice(set, get, store),
 
