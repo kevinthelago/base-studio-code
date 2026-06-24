@@ -77,29 +77,50 @@ base-studio-code/
 │   ├── llm/                 #   model-agnostic LlmProvider abstraction
 │   ├── research/            #   literature research + bsc-research-mcp server
 │   └── bsc-agent/           #   model-agnostic agent runtime
-├── src/                     # React frontend (TypeScript)
+├── src/                     # React frontend (TS) — migrating to FEATURE-FIRST vertical slices (#1309)
 │   ├── main.tsx             # Vite entry; imports tokens.css
-│   ├── App.tsx              # Shell (Titlebar + Rail + screen switcher)
-│   ├── styles/
-│   │   └── tokens.css       # Design tokens, base component styles
-│   ├── components/
-│   │   ├── chrome/          # Titlebar, Rail, Tabstrip, StatusBar
-│   │   └── pane/            # PaneShell, ViewTabs, HamburgerMenu
-│   │       └── views/       # ConsoleView, FilesView, BranchesView, ChangesView, LogView
-│   ├── screens/
-│   │   ├── Console.tsx
-│   │   ├── KnowledgeStore.tsx
-│   │   ├── github/          # index (GitHubShell), Empty, Overview, Actions, Hooks
-│   │   ├── automations/     # index (AutomationShell), Schedules, Commands
-│   │   └── settings/        # index (SettingsShell), GitHub, Integrations
-│   ├── data/
-│   │   └── mock.ts          # All typed sample data extracted from design files
-│   └── store/
-│       └── index.ts         # Zustand store
+│   ├── App.tsx              # app shell: Titlebar + Rail + screen switcher; composes feature screens
+│   ├── features/            # ONE FOLDER PER FEATURE = UI + lib/ (pure domain) + store.ts (its slice)
+│   │   │                    #   + index.ts (public API barrel). Imports use the `@/…` → src alias.
+│   │   ├── skills/          #   library + task groups + per-session (SkillsScreen, SessionSkillsModal)
+│   │   ├── extensions/      #   MCP servers + hooks (McpScreen)
+│   │   ├── automations/     #   schedules / commands / cron (AutomationsScreen, useScheduler)
+│   │   └── github/          #   GitHub screen + API client (GitHubScreen, lib/github)
+│   ├── screens/             # not-yet-migrated screens + the nav registry
+│   │   ├── registry.ts      #   canonical Screen → {label, icon}; the rail + titlebar both read it
+│   │   └── Console.tsx · agents/ · settings/ · planner/   # migrate next; planner LAST (the big one)
+│   ├── components/          # shared chrome (Rail/Titlebar/Tabstrip/StatusBar) + the console pane system
+│   ├── lib/                 # shared + not-yet-migrated domain libs (core, console, fleet, planner,
+│   │                        #   session, tunnel, settings, security, cleanup)
+│   ├── hooks/  ·  data/     # shared hooks · typed sample data (mock.ts)
+│   ├── styles/tokens.css    # design tokens + base component styles
+│   └── store/               # Zustand store COMPOSITION
+│       ├── index.ts         #   create() composes feature slices + persist
+│       ├── types.ts         #   AppStore = feature slice interfaces (`extends …Slice`) + residual fields
+│       └── slices/          #   console, plan, projects, session + residual core/shell (being
+│                            #   decomposed into per-feature store.ts as features migrate)
 ├── design/                  # ⚠️  REFERENCE ONLY — do not edit
 │   └── *.jsx / styles.css   # Browser-rendered design prototype (Babel standalone)
 └── package.json
 ```
+
+### Frontend conventions (feature-first reorg, #1309)
+
+The frontend is migrating from layer-first (`components/ · lib/ · screens/ · store/`) to **feature-first
+vertical slices**, one slice at a time behind the test suite. Rules:
+
+- **A feature owns everything it needs:** `features/<x>/` holds the UI, a `lib/` of pure (React-free)
+  domain logic, a `store.ts` (its Zustand slice + slice interface), colocated tests, and an `index.ts`
+  barrel that is the feature's public API. Import a feature's UI via `@/features/<x>`; import its pure
+  domain directly via `@/features/<x>/lib/...` (so non-UI modules never pull in React).
+- **Path alias:** use `@/…` (→ `src/…`), never deep `../../..` relatives, so moves don't churn importers.
+- **Store:** `store/index.ts` composes the feature slices; `AppStore` is `extends`-ed from each
+  feature's slice interface. The old monolithic slices were grab-bags — they're being split per feature,
+  leaving labelled residuals (`core.ts`, `shell.ts`) to split later.
+- **Migrated so far:** `skills`, `extensions`, `automations`, `github`. **Not yet:** the app shell
+  (`app/`) + a `shared/` layer, and the `console`, `agents`, `settings`, `tunnel` features, with
+  `planner` last (the largest — where the `Planning.tsx`/`ProjectPane.tsx` splits land). When touching a
+  not-yet-migrated area, prefer moving it into its feature slice as part of the change.
 
 ## Architecture
 
