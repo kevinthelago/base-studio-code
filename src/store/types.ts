@@ -22,6 +22,7 @@ import type { GradeResult } from "../screens/planner/grading/grading";
 import type { Blueprint, BlueprintSection } from "../screens/planner/stages/blueprints";
 import type { DeployConfig } from "../screens/planner/shared/deployConfig";
 import type { SourceConfig } from "../screens/planner/shared/sourceConfig";
+import type { IntegrationConfig } from "../screens/planner/shared/integrationConfig";
 import type { DataModel } from "../screens/planner/data/dataModel";
 import type { PaneDescriptor } from "../lib/tunnel/tunnel";
 import type { DirectorMode, IntegrationStrategy } from "../screens/planner/shared/integrationStrategy";
@@ -638,6 +639,11 @@ export interface AppStore {
    *  signal derives from it. Secret credentials are NEVER stored here (they live in the OS keychain). */
   planSourceConfig: Record<string, SourceConfig>;
   setPlanSourceConfig: (projectId: string, cfg: SourceConfig) => void;
+  /** Per-project Integration config (#1207) — the destination/sink + sync strategy the Integration
+   *  blueprint's Destination and Sync stages edit; the `destinationDefined` / `syncDefined` gate
+   *  signals derive from it. */
+  planIntegrationConfig: Record<string, IntegrationConfig>;
+  setPlanIntegrationConfig: (projectId: string, cfg: IntegrationConfig) => void;
   /** Per-project GitHub repository visibility for publish (#…). Absent ⇒ false ⇒ repos are created
    *  PRIVATE (the default); set true to create them public. Applied by `handlePublish` when it
    *  creates a missing repo. */

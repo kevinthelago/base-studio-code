@@ -1,0 +1,26 @@
+{
+  "order": 9,
+  "id": "data-integration",
+  "name": "Data integration",
+  "desc": "Build an app that extracts from an enterprise system and delivers it to a destination on a schedule",
+  "origin": "built-in",
+  "icon": "↻",
+  "h": 260,
+  "category": "data",
+  "mode": "create",
+  "mcp": [
+    "Compliance"
+  ],
+  "sections": [
+    { "key": "context" },
+    { "key": "dataSource" },
+    { "key": "dataModel" },
+    { "key": "dataMap" },
+    { "key": "destination" },
+    { "key": "sync" },
+    { "key": "dataClean" },
+    { "key": "structure" },
+    { "key": "permissions" },
+    { "key": "deploy" }
+  ]
+}
