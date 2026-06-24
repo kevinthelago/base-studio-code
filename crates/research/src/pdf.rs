@@ -72,7 +72,7 @@ fn is_section_header(line: &str) -> Option<String> {
     // Numbered headers: "1 Introduction", "2. Related Work", "3.1 Method".
     if let Some(rest) = strip_leading_number(t) {
         let words = rest.split_whitespace().count();
-        if words >= 1 && words <= 8 && rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+        if (1..=8).contains(&words) && rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
             return Some(t.to_string());
         }
     }

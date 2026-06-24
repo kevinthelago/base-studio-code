@@ -13,6 +13,10 @@ export interface CatalogItem {
   link?: string;
   /** One-line setup hint shown with the download link (clone + build/run). */
   install?: string;
+  /** Built-in/always-available server (#1196) — ships compiled in the app bundle (a native sidecar),
+   *  so it has NO download/build step and is exposed to the planner by default. The MCP screen shows
+   *  it as built-in instead of a download card. */
+  builtIn?: boolean;
 }
 
 /** Scope copy shared by the MCP + Hooks scope pickers. */
@@ -32,8 +36,8 @@ export const MCP_CATALOG: CatalogItem[] = [
     link: "https://github.com/kevinthelago/dependency-graph-mcp-server", install: "Downloads to ~/.base-studio-code/mcp/dependency-graph-mcp-server. Run `pnpm install && pnpm build` there, then Add." },
   { name: "Plan Grader",         by: "kevinthelago", icon: "◎", desc: "Grade a generated plan's agent-readiness — score its issues, milestones, and repos against the readiness rubric and surface prioritized fixes (the planner's grading as a tool, #897).",
     link: "https://github.com/kevinthelago/plan-grader-mcp-server",     install: "Downloads to ~/.base-studio-code/mcp/plan-grader-mcp-server, then builds with `python -m uv sync`." },
-  { name: "Research",            by: "kevinthelago", icon: "⌕", desc: "Search and retrieve scientific literature — arXiv, Semantic Scholar, PubMed/PMC, Crossref — with structured extraction and citation-grounded semantic search, so the planner can ground plans and skills in real sources (#1056).",
-    link: "https://github.com/kevinthelago/research-mcp-server",        install: "Downloads to ~/.base-studio-code/mcp/research-mcp-server. Run `pnpm install && pnpm build` there, then Add. (GROBID full-text extraction is optional, via Docker.)" },
+  { name: "Research",            by: "base-studio-code", icon: "⌕", desc: "Search and retrieve scientific literature — arXiv, Semantic Scholar, PubMed/PMC, Crossref — with native PDF full-text extraction and citation-grounded semantic search, so the planner can ground plans and skills in real sources (#1056). Built in — no download, build, or Docker (#1196).",
+    builtIn: true },
   // Generic third-party servers (Sentry/Linear/Postgres/Slack/Stripe/Brave/SQLite/Notion) were
   // pruned from the browse list (#870) so the catalog features our first-party servers. Their
   // templates (lib/mcpServers.ts) stay — the planner's `<mcp_assign name="…" />` path still wires

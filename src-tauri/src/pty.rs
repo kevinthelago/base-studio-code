@@ -239,6 +239,16 @@ fn bsc_agent_bin_path() -> Option<std::path::PathBuf> {
     p.exists().then_some(p)
 }
 
+/// The absolute path of the bundled `bsc-research-mcp` server — the sidecar beside the running app
+/// exe (cargo target dir in dev; bundled sidecar in a release), or None if absent (#1196). Used to
+/// rewrite the Research server's `.mcp.json` command to the real binary path, since Claude Code
+/// spawns `.mcp.json` commands directly (no PATH/shell-rc), unlike the `$BSC_*_BIN` shell helpers.
+pub(crate) fn bsc_research_mcp_bin_path() -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) { "bsc-research-mcp.exe" } else { "bsc-research-mcp" };
+    let p = std::env::current_exe().ok()?.with_file_name(exe);
+    p.exists().then_some(p)
+}
+
 /// Build the environment for a session shell.
 ///
 /// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`

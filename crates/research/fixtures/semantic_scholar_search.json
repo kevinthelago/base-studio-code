@@ -1,0 +1,36 @@
+{
+  "total": 2,
+  "offset": 0,
+  "data": [
+    {
+      "paperId": "649def34f8be52c8b66281af98ae884c09aef38b",
+      "title": "Attention Is All You Need",
+      "abstract": "We propose a new network architecture, the Transformer.",
+      "year": 2017,
+      "venue": "NeurIPS",
+      "citationCount": 100000,
+      "authors": [
+        { "authorId": "1", "name": "Ashish Vaswani" },
+        { "authorId": "2", "name": "Noam Shazeer" }
+      ],
+      "externalIds": {
+        "DOI": "10.5555/3295222.3295349",
+        "ArXiv": "1706.03762"
+      },
+      "openAccessPdf": { "url": "https://arxiv.org/pdf/1706.03762.pdf" }
+    },
+    {
+      "paperId": "abcdef0000000000000000000000000000000000",
+      "title": "A Minimal Paper",
+      "abstract": null,
+      "year": null,
+      "venue": "",
+      "citationCount": 0,
+      "authors": [
+        { "authorId": "3", "name": "Jane Researcher" }
+      ],
+      "externalIds": {},
+      "openAccessPdf": null
+    }
+  ]
+}

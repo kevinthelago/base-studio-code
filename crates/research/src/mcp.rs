@@ -181,13 +181,9 @@ fn call_tool(engine: &Engine, name: &str, args: &Value) -> Result<Value, String>
 /// handshake can be unit-tested without constructing a live engine; tool calls require it.
 pub fn handle(engine: Option<&Engine>, req: &Value) -> Option<Value> {
     let method = req.get("method").and_then(|m| m.as_str()).unwrap_or_default();
-    let id = req.get("id").cloned();
 
     // Notifications have no id and expect no response.
-    if id.is_none() {
-        return None;
-    }
-    let id = id.unwrap();
+    let id = req.get("id").cloned()?;
 
     match method {
         "initialize" => {
