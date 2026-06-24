@@ -12,6 +12,8 @@ pub enum Source {
     SemanticScholar,
     Pubmed,
     Crossref,
+    /// Encyclopedic backbone (#1298) — seeds a skill with broad coverage; the scientific sources refine it.
+    Wikipedia,
 }
 
 impl Source {
@@ -22,6 +24,7 @@ impl Source {
             Source::SemanticScholar => "semantic_scholar",
             Source::Pubmed => "pubmed",
             Source::Crossref => "crossref",
+            Source::Wikipedia => "wikipedia",
         }
     }
 
@@ -32,6 +35,7 @@ impl Source {
             "semantic_scholar" | "semanticscholar" | "s2" => Some(Source::SemanticScholar),
             "pubmed" | "pmc" | "pubmed/pmc" => Some(Source::Pubmed),
             "crossref" => Some(Source::Crossref),
+            "wikipedia" | "wiki" | "wp" => Some(Source::Wikipedia),
             _ => None,
         }
     }
@@ -43,6 +47,7 @@ impl Source {
             Source::SemanticScholar,
             Source::Pubmed,
             Source::Crossref,
+            Source::Wikipedia,
         ]
     }
 }

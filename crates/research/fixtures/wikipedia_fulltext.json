@@ -1,0 +1,13 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "pageid": 100135,
+        "ns": 0,
+        "title": "Ray tracing (graphics)",
+        "extract": "In 3D computer graphics, ray tracing is a technique for modeling light transport.\n\n\n== History ==\nThe idea of ray tracing comes from the 16th century, when artists studied the projection of a scene onto a surface.\n\n\n== Algorithm ==\nRay tracing follows a path from an imaginary eye through each pixel in a virtual screen, and calculates the color of the object visible through it.\n"
+      }
+    ]
+  }
+}

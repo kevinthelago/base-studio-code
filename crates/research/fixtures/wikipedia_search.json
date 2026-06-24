@@ -1,0 +1,22 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "searchinfo": { "totalhits": 1234 },
+    "search": [
+      {
+        "ns": 0,
+        "title": "Ray tracing (graphics)",
+        "pageid": 100135,
+        "snippet": "In 3D <span class=\"searchmatch\">computer</span> graphics, <span class=\"searchmatch\">ray tracing</span> is a technique for modeling light transport.",
+        "timestamp": "2024-03-01T12:00:00Z"
+      },
+      {
+        "ns": 0,
+        "title": "Path tracing",
+        "pageid": 2335027,
+        "snippet": "<span class=\"searchmatch\">Path tracing</span> is a Monte Carlo method of rendering images.",
+        "timestamp": "2023-11-15T09:30:00Z"
+      }
+    ]
+  }
+}

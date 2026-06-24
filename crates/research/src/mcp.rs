@@ -18,12 +18,12 @@ pub fn tool_schemas() -> Value {
     json!([
         {
             "name": "search",
-            "description": "Search scientific literature across arXiv, Semantic Scholar, PubMed/PMC, and Crossref. Returns normalized records (title, authors, year, abstract, ids, urls), newest first, deduped across sources. Use this to find the latest work on a topic before grounding a plan or skill.",
+            "description": "Search across arXiv, Semantic Scholar, PubMed/PMC, Crossref, and Wikipedia. Returns normalized records (title, authors, year, abstract, ids, urls), deduped across sources. To SEED a skill, search `sources:[\"wikipedia\"]` for broad encyclopedic grounding, then refine with the scientific sources for depth + recency before grounding a plan or skill.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Search terms, e.g. 'real-time path tracing denoising'." },
-                    "sources": { "type": "array", "items": { "type": "string", "enum": ["arxiv", "semantic_scholar", "pubmed", "crossref"] }, "description": "Which sources to query; omit for all." },
+                    "sources": { "type": "array", "items": { "type": "string", "enum": ["arxiv", "semantic_scholar", "pubmed", "crossref", "wikipedia"] }, "description": "Which sources to query; omit for all. Use ['wikipedia'] to seed a skill, then the scientific sources to refine it." },
                     "limit": { "type": "integer", "description": "Max results per source (default 10)." },
                     "year_from": { "type": "integer", "description": "Only include papers published in/after this year." }
                 },
@@ -41,10 +41,10 @@ pub fn tool_schemas() -> Value {
         },
         {
             "name": "get_fulltext",
-            "description": "Download and natively extract a paper's full text from its PDF (arXiv/PMC-OA/publisher). Returns the extracted text; falls back are the caller's (use the abstract from get_paper if a paper has no text layer).",
+            "description": "Get a record's full text: papers are downloaded + natively extracted from their PDF (arXiv/PMC-OA/publisher); Wikipedia articles (wikipedia:<Title>) return their full plain text directly. Returns the extracted text; fallbacks are the caller's (use the abstract from get_paper if a paper has no text layer).",
             "inputSchema": {
                 "type": "object",
-                "properties": { "id": { "type": "string", "description": "Canonical id of a paper with a known PDF." } },
+                "properties": { "id": { "type": "string", "description": "Canonical id: a paper with a known PDF, or a wikipedia:<Title> article." } },
                 "required": ["id"]
             }
         },
