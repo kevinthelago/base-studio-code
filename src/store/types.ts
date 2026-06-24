@@ -24,7 +24,7 @@ import type { DeployConfig } from "../screens/planner/shared/deployConfig";
 import type { SourceConfig } from "../screens/planner/shared/sourceConfig";
 import type { IntegrationConfig } from "../screens/planner/shared/integrationConfig";
 import type { DataModel } from "../screens/planner/data/dataModel";
-import type { PaneDescriptor } from "../lib/tunnel/tunnel";
+import type { TunnelSlice } from "@/features/tunnel/store";
 import type { DirectorMode, IntegrationStrategy } from "../screens/planner/shared/integrationStrategy";
 import type { DirectorDrive } from "../screens/planner/fleet/directorDrive";
 import type { ExtensionsSlice } from "@/features/extensions/store";
@@ -131,7 +131,7 @@ export interface EndedInfo {
   at: number;
 }
 
-export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice, GithubSlice {
+export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice, GithubSlice, TunnelSlice {
   // Navigation
   activeScreen: Screen;
   setScreen: (screen: Screen) => void;
@@ -398,17 +398,8 @@ export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice
   logConfig: LogConfig;
   setLogConfig: (config: LogConfig) => void;
 
-  // Mobile tunnel (#243). The relay Worker URL is persisted (the user's BYO relay);
-  // `tunnelRunning` mirrors the Rust client's connected state (transient — NOT
-  // persisted) so ConsoleScreen knows whether to push live pane metadata.
-  tunnelRelayUrl: string;
-  setTunnelRelayUrl: (url: string) => void;
-  tunnelRunning: boolean;
-  setTunnelRunning: (v: boolean) => void;
-  /** Ad-hoc panes (e.g. the active planner pane) mirrored over the relay alongside the
-   *  Console panes (#801). Transient — not persisted. */
-  tunnelExtraPanes: PaneDescriptor[];
-  setTunnelExtraPanes: (panes: PaneDescriptor[]) => void;
+  // Mobile tunnel connection state lives in the Tunnel feature slice (`TunnelSlice`,
+  // `@/features/tunnel/store`, #1309) — merged via `extends`.
 
   // Knowledge Store
   kbBlocks: KbBlock[];

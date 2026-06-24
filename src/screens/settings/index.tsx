@@ -6,7 +6,7 @@ import { GitHubSettings } from "./GitHub";
 import { IntegrationsSettings } from "./Integrations";
 import { AgentsSettings } from "./Agents";
 import { ClaudeConfigSettings } from "./ClaudeConfig";
-import { TunnelSettings } from "./Tunnel";
+import { TunnelSettings } from "@/features/tunnel";
 import { DeveloperSettings } from "./Developer";
 import { AchievementsSettings } from "./Achievements";
 import { DiagnosticsSettings } from "./Diagnostics";

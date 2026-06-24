@@ -11,8 +11,8 @@
 // contract is `tunnelProtocol.fixtures.json` (asserted in `src/__tests__/tunnel.test.ts`).
 
 // The desktop's canonical per-pane status (#435), the input this module maps FROM.
-import type { PaneStatus as DesktopPaneStatus } from "../console/paneStatus";
-import type { CanonicalFile } from "../planner/plannerCore";
+import type { PaneStatus as DesktopPaneStatus } from "@/lib/console/paneStatus";
+import type { CanonicalFile } from "@/lib/planner/plannerCore";
 
 /** Pane status as the mobile client models it (`PaneStatus`) — a distinct wire
  *  vocabulary the desktop's `DesktopPaneStatus` is mapped into by `mapStatus`. */
