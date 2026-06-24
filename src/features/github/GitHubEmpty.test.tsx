@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { GitHubEmpty } from "./Empty";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 
 describe("GitHubEmpty — Connect with GitHub", () => {
   it("renders the showcase and navigates to Settings → GitHub on connect", () => {

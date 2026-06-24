@@ -33,7 +33,7 @@ import { accentVars } from "./lib/settings/appearance";
 // Lazy-loaded screens (#perf): only the Console is needed at boot. Each other screen's chunk
 // loads on first navigation, keeping the heavy module graph (esp. the planner) off the cold
 // startup path — both the dev transform and the production bundle.
-const GitHubScreen      = lazy(() => import("./screens/github").then((m) => ({ default: m.GitHubScreen })));
+const GitHubScreen      = lazy(() => import("@/features/github").then((m) => ({ default: m.GitHubScreen })));
 const AutomationsScreen = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsScreen })));
 const McpScreen         = lazy(() => import("@/features/extensions").then((m) => ({ default: m.McpScreen })));
 const SettingsScreen    = lazy(() => import("./screens/settings").then((m) => ({ default: m.SettingsScreen })));

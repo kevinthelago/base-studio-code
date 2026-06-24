@@ -20,7 +20,7 @@ import { useCoordinator } from "../lib/fleet/useCoordinator";
 import { useWorkflowConductor } from "../lib/fleet/useWorkflowConductor";
 import { useDirectorPump } from "../lib/fleet/useDirectorPump";
 import { useIdleReaper } from "../lib/console/useIdleReaper";
-import { useCiWatcher } from "../lib/github/useCiWatcher";
+import { useCiWatcher } from "@/features/github/lib/useCiWatcher";
 
 function resolvePaneName(
   tabIdx: number,

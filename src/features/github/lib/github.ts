@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 import { resolveGithubToken } from "./repoCredentials";
 
 /**
