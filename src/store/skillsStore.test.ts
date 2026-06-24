@@ -72,3 +72,86 @@ describe("skills store slice", () => {
     expect(useAppStore.getState().skills[0].projects).toEqual(["keep"]);
   });
 });
+
+describe("per-session skill overrides (#1056)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ sessionSkillOverrides: {} });
+  });
+  const SESS = "proj:checkout"; // a stable session identity id
+
+  it("setSessionSkill records on/off choices keyed by session", () => {
+    useAppStore.getState().setSessionSkill(SESS, "sk1", "on");
+    useAppStore.getState().setSessionSkill(SESS, "sk2", "off");
+    expect(useAppStore.getState().sessionSkillOverrides[SESS]).toEqual({ add: ["sk1"], remove: ["sk2"] });
+  });
+
+  it("re-choosing the same skill flips it (never in both lists)", () => {
+    useAppStore.getState().setSessionSkill(SESS, "sk1", "on");
+    useAppStore.getState().setSessionSkill(SESS, "sk1", "off");
+    expect(useAppStore.getState().sessionSkillOverrides[SESS]).toEqual({ add: [], remove: ["sk1"] });
+  });
+
+  it("prunes the session entry once its last override is cleared (inherit)", () => {
+    useAppStore.getState().setSessionSkill(SESS, "sk1", "on");
+    useAppStore.getState().setSessionSkill(SESS, "sk1", "inherit");
+    expect(useAppStore.getState().sessionSkillOverrides[SESS]).toBeUndefined();
+  });
+
+  it("resetSessionSkills drops every override for that session only", () => {
+    useAppStore.getState().setSessionSkill(SESS, "sk1", "on");
+    useAppStore.getState().setSessionSkill("proj:other", "sk9", "off");
+    useAppStore.getState().resetSessionSkills(SESS);
+    expect(useAppStore.getState().sessionSkillOverrides[SESS]).toBeUndefined();
+    expect(useAppStore.getState().sessionSkillOverrides["proj:other"]).toEqual({ add: [], remove: ["sk9"] });
+  });
+
+  it("resetSessionSkills also clears the session's group toggles", () => {
+    useAppStore.getState().setSessionSkillGroup(SESS, "grpA", true);
+    useAppStore.getState().setSessionSkill(SESS, "sk1", "on");
+    useAppStore.getState().resetSessionSkills(SESS);
+    expect(useAppStore.getState().sessionSkillGroups[SESS]).toBeUndefined();
+  });
+});
+
+describe("task groups (#skills-groups)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ skillGroups: [], sessionSkillGroups: {} });
+  });
+
+  it("addSkillGroup creates an empty group; toggleSkillGroupMember adds then removes a member", () => {
+    const id = useAppStore.getState().addSkillGroup("Release day", "var(--accent)");
+    expect(useAppStore.getState().skillGroups).toHaveLength(1);
+    useAppStore.getState().toggleSkillGroupMember(id, "sk1");
+    expect(useAppStore.getState().skillGroups[0].skillIds).toEqual(["sk1"]);
+    useAppStore.getState().toggleSkillGroupMember(id, "sk1");
+    expect(useAppStore.getState().skillGroups[0].skillIds).toEqual([]);
+  });
+
+  it("removeSkillGroup deletes it and prunes it from every session toggle", () => {
+    const id = useAppStore.getState().addSkillGroup("X");
+    useAppStore.getState().setSessionSkillGroup("sessA", id, true);
+    useAppStore.getState().removeSkillGroup(id);
+    expect(useAppStore.getState().skillGroups).toHaveLength(0);
+    expect(useAppStore.getState().sessionSkillGroups["sessA"]).toBeUndefined(); // dangling ref pruned
+  });
+
+  it("upsertSkillGroups refines by name-slug and inserts new (planner channel)", () => {
+    useAppStore.getState().addSkillGroup("Release day");
+    useAppStore.getState().upsertSkillGroups([
+      { name: "Release day", hue: "var(--danger)", skillIds: ["a"] }, // matches by slug → update
+      { name: "Security sweep", hue: "var(--danger)", skillIds: ["b"] }, // new
+    ]);
+    const g = useAppStore.getState().skillGroups;
+    expect(g).toHaveLength(2);
+    expect(g.find((x) => x.name === "Release day")!.skillIds).toEqual(["a"]);
+  });
+
+  it("setSessionSkillGroup toggles a group on/off per session and prunes an emptied entry", () => {
+    useAppStore.getState().setSessionSkillGroup("sessA", "g1", true);
+    useAppStore.getState().setSessionSkillGroup("sessA", "g2", true);
+    expect(useAppStore.getState().sessionSkillGroups["sessA"]).toEqual(["g1", "g2"]);
+    useAppStore.getState().setSessionSkillGroup("sessA", "g1", false);
+    useAppStore.getState().setSessionSkillGroup("sessA", "g2", false);
+    expect(useAppStore.getState().sessionSkillGroups["sessA"]).toBeUndefined();
+  });
+});

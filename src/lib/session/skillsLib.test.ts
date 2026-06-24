@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   seedSkills, resolveSkills, toSkillCfgs, skillSlug, defFromCatalog, blankSkill,
-  parseSkillsFile, deriveSkillKpis, refreshPackagedSkills, type SkillDef,
+  parseSkillsFile, deriveSkillKpis, refreshPackagedSkills,
+  sessionSkillState, effectiveSessionSkills, applySessionSkillChoice,
+  expandGroups, groupSkillCount, parseSkillGroupsFile, type SkillDef, type SkillGroup,
 } from "./skills";
 
 function def(p: Partial<SkillDef> = {}): SkillDef {
@@ -47,6 +49,123 @@ describe("resolveSkills", () => {
   });
   it("with no project yields only global", () => {
     expect(resolveSkills(all, "").map(s => s.id)).toEqual(["a"]);
+  });
+});
+
+describe("per-session assignment (#1056)", () => {
+  const all = [
+    def({ id: "g",  enabled: true,  projects: [] }),                 // global
+    def({ id: "gp", enabled: true,  projects: [], pinned: true }),   // global + pinned
+    def({ id: "p1", enabled: true,  projects: ["proj1"] }),          // this project
+    def({ id: "p2", enabled: true,  projects: ["proj2"] }),          // other project
+    def({ id: "off", enabled: false, projects: [] }),                // disabled
+  ];
+
+  describe("effectiveSessionSkills", () => {
+    it("with no override equals resolveSkills (inherited set)", () => {
+      const eff = effectiveSessionSkills(all, "proj1").map(s => s.id).sort();
+      const res = resolveSkills(all, "proj1").map(s => s.id).sort();
+      expect(eff).toEqual(res);
+      expect(eff).toEqual(["g", "gp", "p1"]);
+    });
+    it("an `add` override pulls in an out-of-scope (other-project) skill", () => {
+      const eff = effectiveSessionSkills(all, "proj1", { add: ["p2"], remove: [] }).map(s => s.id);
+      expect(eff).toContain("p2");
+    });
+    it("a `remove` override drops an inherited skill", () => {
+      const eff = effectiveSessionSkills(all, "proj1", { add: [], remove: ["g"] }).map(s => s.id);
+      expect(eff).not.toContain("g");
+      expect(eff).toContain("p1");
+    });
+    it("a disabled skill is never written, even when explicitly added", () => {
+      const eff = effectiveSessionSkills(all, "proj1", { add: ["off"], remove: [] }).map(s => s.id);
+      expect(eff).not.toContain("off");
+    });
+  });
+
+  describe("sessionSkillState", () => {
+    const state = (id: string, proj: string, o?: { add: string[]; remove: string[] }) =>
+      sessionSkillState(all.find(s => s.id === id)!, proj, o);
+
+    it("labels inherited reasons (global / pinned / project / out-of-scope / disabled)", () => {
+      expect(state("g", "proj1")).toMatchObject({ on: true, reason: "global", overridden: false });
+      expect(state("gp", "proj1")).toMatchObject({ on: true, reason: "pinned" });
+      expect(state("p1", "proj1")).toMatchObject({ on: true, reason: "project" });
+      expect(state("p2", "proj1")).toMatchObject({ on: false, reason: "out-of-scope", overridden: false });
+      expect(state("off", "proj1")).toMatchObject({ on: false, reason: "disabled", overridden: false });
+    });
+    it("flags a genuine override as added / removed", () => {
+      expect(state("p2", "proj1", { add: ["p2"], remove: [] })).toMatchObject({ on: true, reason: "added", overridden: true });
+      expect(state("g", "proj1", { add: [], remove: ["g"] })).toMatchObject({ on: false, reason: "removed", overridden: true });
+    });
+    it("treats a redundant choice (matches inheritance) as NOT overridden", () => {
+      // adding an already-in-scope skill keeps its natural reason, not "added"
+      expect(state("g", "proj1", { add: ["g"], remove: [] })).toMatchObject({ on: true, reason: "global", overridden: false });
+      // removing an already-out-of-scope skill stays "out-of-scope"
+      expect(state("p2", "proj1", { add: [], remove: ["p2"] })).toMatchObject({ on: false, reason: "out-of-scope", overridden: false });
+    });
+  });
+
+  describe("applySessionSkillChoice", () => {
+    it("on/off record the deviation; inherit clears it; choices are mutually exclusive", () => {
+      let o = applySessionSkillChoice(undefined, "x", "on");
+      expect(o).toEqual({ add: ["x"], remove: [] });
+      o = applySessionSkillChoice(o, "x", "off");          // flips, never both
+      expect(o).toEqual({ add: [], remove: ["x"] });
+      o = applySessionSkillChoice(o, "x", "inherit");      // clears
+      expect(o).toEqual({ add: [], remove: [] });
+    });
+  });
+});
+
+describe("task groups (#skills-groups)", () => {
+  const all = [
+    def({ id: "g",  enabled: true,  projects: [] }),
+    def({ id: "p2", enabled: true,  projects: ["proj2"] }),   // out of scope for proj1
+    def({ id: "off", enabled: false, projects: [] }),         // disabled
+  ];
+  const groups: SkillGroup[] = [
+    { id: "grpA", name: "Release day", hue: "var(--accent)", skillIds: ["p2", "off"] },
+    { id: "grpB", name: "Empty", hue: "var(--info)", skillIds: [] },
+  ];
+
+  it("expandGroups dedupes member ids across enabled groups; unknown ids contribute nothing", () => {
+    expect(expandGroups(["grpA"], groups).sort()).toEqual(["off", "p2"]);
+    expect(expandGroups(["grpA", "grpA"], groups).sort()).toEqual(["off", "p2"]); // de-duped
+    expect(expandGroups(["nope"], groups)).toEqual([]);
+  });
+
+  it("groupSkillCount counts only members that still exist in the library", () => {
+    expect(groupSkillCount(groups[0], all)).toBe(2);
+    expect(groupSkillCount({ ...groups[0], skillIds: ["p2", "ghost"] }, all)).toBe(1);
+  });
+
+  it("a toggled-on group enables an out-of-scope member (reason 'group') but never a disabled one", () => {
+    const gids = new Set(expandGroups(["grpA"], groups));
+    expect(sessionSkillState(all[1], "proj1", undefined, gids)).toMatchObject({ on: true, reason: "group" });
+    expect(sessionSkillState(all[2], "proj1", undefined, gids)).toMatchObject({ on: false, reason: "disabled" });
+    const eff = effectiveSessionSkills(all, "proj1", undefined, gids).map(s => s.id);
+    expect(eff).toContain("g");    // still inherited (global)
+    expect(eff).toContain("p2");   // pulled in by the group
+    expect(eff).not.toContain("off");
+  });
+
+  it("a per-skill remove override still beats a group-enabled skill", () => {
+    const gids = new Set(expandGroups(["grpA"], groups));
+    const st = sessionSkillState(all[1], "proj1", { add: [], remove: ["p2"] }, gids);
+    expect(st).toMatchObject({ on: false, reason: "removed", overridden: true });
+  });
+
+  it("parseSkillGroupsFile resolves member refs by id OR name-slug, defaults the hue, drops nameless rows", () => {
+    const lib = [def({ id: "sk1", name: "Open a clean PR" }), def({ id: "sk2", name: "Cut a release" })];
+    const out = parseSkillGroupsFile(JSON.stringify([
+      { name: "Release", skills: ["sk1", "cut-a-release", "ghost"] }, // id, slug, unknown
+      { hue: "x" },                                                   // no name → dropped
+    ]), lib);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe("Release");
+    expect(out[0].hue).toBe("var(--accent)");                         // defaulted
+    expect(out[0].skillIds.sort()).toEqual(["sk1", "sk2"]);          // resolved + unknown dropped
   });
 });
 

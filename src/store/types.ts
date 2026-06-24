@@ -29,7 +29,7 @@ import type { DirectorMode, IntegrationStrategy } from "../screens/planner/share
 import type { DirectorDrive } from "../screens/planner/fleet/directorDrive";
 import type { McpServer } from "../lib/session/mcpServers";
 import type { Hook } from "../lib/session/hooks";
-import type { SkillDef } from "../lib/session/skills";
+import type { SkillDef, SessionSkillOverride, SkillGroup } from "../lib/session/skills";
 import type { Automation, AutomationRun } from "../lib/automations/scheduler";
 import type { SkillPayload } from "../screens/planner/blueprints/blueprintSkills";
 
@@ -837,8 +837,37 @@ export interface AppStore {
    *  rather than duplicating. */
   upsertSkills:    (defs: Array<Omit<SkillDef, "id"> & { id?: string }>) => void;
   // Resolved per-pane skills (transient): set at session creation, read by
-  // TerminalView before launch (mirrors paneExtensions).
+  // TerminalView before launch (mirrors paneExtensions). Computed via
+  // effectiveSessionSkills so it already reflects any per-session override.
   paneSkills: Record<string, SkillDef[]>;
+  // Per-session skill choices, keyed by the session's STABLE identity id (the same key
+  // as paneSkills — `<proj>:<stream>` / `<proj>:<repo>:triage` for fleet/triage, the
+  // positional id for a manual console). Layered over the inherited resolution so a user
+  // can force a skill on/off for ONE session; persisted so the choice survives relaunch.
+  // The launch path resolves it via effectiveSessionSkills (#1056 follow-up).
+  sessionSkillOverrides: Record<string, SessionSkillOverride>;
+  /** Choose a skill's state for one session: "on" forces it in, "off" forces it out,
+   *  "inherit" clears the override (back to project-resolved). Prunes an empty override. */
+  setSessionSkill: (sessionKey: string, skillId: string, choice: "on" | "off" | "inherit") => void;
+  /** Drop ALL per-session overrides AND group toggles for a session — back to pure inheritance. */
+  resetSessionSkills: (sessionKey: string) => void;
+
+  // Task groups (#skills-groups) — named, reusable skill bundles toggled as one. Many-to-many with
+  // skills (by id). Persisted; authored by the user (library) or the planner (skill_groups.json).
+  skillGroups: SkillGroup[];
+  addSkillGroup: (name: string, hue?: string) => string;
+  updateSkillGroup: (id: string, patch: Partial<Omit<SkillGroup, "id">>) => void;
+  removeSkillGroup: (id: string) => void;
+  /** Add/remove a skill from a group (membership toggle). */
+  toggleSkillGroupMember: (groupId: string, skillId: string) => void;
+  /** Upsert groups (planner `skill_groups.json` channel), by id then by name, refining in place. */
+  upsertSkillGroups: (groups: Array<Omit<SkillGroup, "id"> & { id?: string }>) => void;
+  // Per-session enabled groups, keyed by the session's STABLE identity id (same key space as
+  // sessionSkillOverrides). A toggled-on group enables all its (live) member skills for the session;
+  // the launch path expands these via expandGroups into effectiveSessionSkills. Persisted.
+  sessionSkillGroups: Record<string, string[]>;
+  /** Toggle a task group on/off for one session. */
+  setSessionSkillGroup: (sessionKey: string, groupId: string, on: boolean) => void;
 
   // Agent settings — the GLOBAL allowed-command tier (auto-approved in every
   // session). Per-project / per-repo tiers below combine additively with it.
