@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 import { SchedulesTab } from "./Schedules";
 import { HistoryTab } from "./History";
 import { HooksView } from "@/features/extensions";
 import { HookAnalyticsTab } from "./HookAnalytics";
 import { fmtClock } from "./format";
-import { TabBar, type TabItem } from "../../components/chrome/TabBar";
-import { usePageTabs } from "../../hooks/usePageTabs";
-import type { RunStatus, Every } from "../../lib/automations/scheduler";
+import { TabBar, type TabItem } from "@/components/chrome/TabBar";
+import { usePageTabs } from "@/hooks/usePageTabs";
+import type { RunStatus, Every } from "./lib/scheduler";
 import "./automations.css";
 
 /**
