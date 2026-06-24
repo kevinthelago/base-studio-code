@@ -4,14 +4,17 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "../lib/core/storage";
 import {       deriveTabIdentity } from "../lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "../screens/planner/stages/blueprints";
-import { migrateLegacyExtensions } from "../lib/session/migrateExtensions";
-import {  refreshPackagedSkills } from "../lib/session/skills";
+import { migrateLegacyExtensions } from "@/features/extensions/lib/migrateExtensions";
+import { createExtensionsSlice } from "@/features/extensions/store";
+import { refreshPackagedSkills } from "@/features/skills/lib/skills";
+import { createSkillsSlice } from "@/features/skills/store";
 
 import { type AppStore } from "./types";
 import { createSessionSlice } from "./slices/session";
 import { createPlanSlice } from "./slices/plan";
 import { createProjectsSlice } from "./slices/projects";
-import { createAutomationsSlice } from "./slices/automations";
+import { createAutomationsSlice } from "@/features/automations/store";
+import { createCoreSlice } from "./slices/core";
 import { createGithubSlice } from "./slices/github";
 import { createConsoleSlice } from "./slices/console";
 
@@ -27,11 +30,14 @@ export const useAppStore = create<AppStore>()(
       ...createConsoleSlice(set, get, store),
       ...createGithubSlice(set, get, store),
 
+      ...createCoreSlice(set, get, store),
       ...createAutomationsSlice(set, get, store),
       ...createProjectsSlice(set, get, store),
 
       ...createPlanSlice(set, get, store),
       ...createSessionSlice(set, get, store),
+      ...createSkillsSlice(set, get, store),
+      ...createExtensionsSlice(set, get, store),
     }),
     {
       name: "app-state",
@@ -139,6 +145,12 @@ export const useAppStore = create<AppStore>()(
         mcpServers:            s.mcpServers,
         hooks:                 s.hooks,
         skills:                s.skills,
+        // Per-session skill choices keyed by stable identity (#1056) — persist so a
+        // worker/triage session keeps its assigned skills across a restart.
+        sessionSkillOverrides: s.sessionSkillOverrides,
+        // Task groups + per-session group toggles (#skills-groups) — reusable skill bundles.
+        skillGroups:           s.skillGroups,
+        sessionSkillGroups:    s.sessionSkillGroups,
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint

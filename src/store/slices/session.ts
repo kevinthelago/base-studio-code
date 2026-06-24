@@ -2,104 +2,17 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
-import { seedSkills, skillFromPayload, type SkillDef } from "../../lib/session/skills";
-import type { KbBlock } from "../../data/mock";
 import { repoPromptKey } from "../../lib/session/startupPrompt";
 import { DEFAULT_AUTO_FOCUS_MODE } from "../../lib/console/focusQueue";
 
+// NOTE: skills moved to the Skills feature slice (@/features/skills/store) and MCP servers + hooks
+// to the Extensions feature slice (@/features/extensions/store) (#1309). This slice keeps the
+// command tiers and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,
-  "mcpServers" | "addMcpServer" | "updateMcpServer" | "removeMcpServer" | "toggleMcpServer" | "setMcpServerProjects" | "hooks" | "addHook" | "updateHook" | "removeHook" | "toggleHook" | "setHookProjects" | "paneMcpServers" | "paneHooks" | "skills" | "addSkill" | "installBundledSkills" | "updateSkill" | "removeSkill" | "toggleSkill" | "toggleSkillPin" | "setSkillProjects" | "upsertSkills" | "paneSkills" | "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
+  "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
-      mcpServers: [],
-      addMcpServer: (def) =>
-        set((s) => ({
-          mcpServers: [...s.mcpServers, { ...def, id: `mcp_${Math.random().toString(36).slice(2, 8)}` }],
-        })),
-      updateMcpServer: (id, patch) =>
-        set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
-      removeMcpServer: (id) =>
-        set((s) => ({ mcpServers: s.mcpServers.filter((e) => e.id !== id) })),
-      toggleMcpServer: (id) =>
-        set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)) })),
-      setMcpServerProjects: (id, projects) =>
-        set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, projects } : e)) })),
-      hooks: [],
-      addHook: (def) =>
-        set((s) => ({
-          hooks: [...s.hooks, { ...def, id: `hook_${Math.random().toString(36).slice(2, 8)}` }],
-        })),
-      updateHook: (id, patch) =>
-        set((s) => ({ hooks: s.hooks.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
-      removeHook: (id) =>
-        set((s) => ({ hooks: s.hooks.filter((e) => e.id !== id) })),
-      toggleHook: (id) =>
-        set((s) => ({ hooks: s.hooks.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)) })),
-      setHookProjects: (id, projects) =>
-        set((s) => ({ hooks: s.hooks.map((e) => (e.id === id ? { ...e, projects } : e)) })),
-      paneMcpServers: {},
-      paneHooks: {},
-
-      skills: seedSkills(),
-      addSkill: (def) => {
-        const id = `skill_${Math.random().toString(36).slice(2, 8)}`;
-        set((s) => ({ skills: [...s.skills, { ...def, id }] }));
-        return id;
-      },
-      installBundledSkills: (payloads) =>
-        set((s) => {
-          const haveSkill = new Set(s.skills.map((x) => x.id));
-          const haveKb = new Set(s.kbBlocks.map((x) => x.id));
-          const newSkills: SkillDef[] = [];
-          const newKb: KbBlock[] = [];
-          for (const p of payloads) {
-            if (p.kind === "kb") {
-              if (haveKb.has(p.id) || !p.id) continue;
-              haveKb.add(p.id);
-              newKb.push({ id: p.id, title: p.name, tags: p.tags ?? [], updated: "imported", lines: (p.content ?? "").split("\n").length, content: p.content });
-            } else {
-              if (haveSkill.has(p.id) || !p.id) continue;
-              haveSkill.add(p.id);
-              newSkills.push(skillFromPayload(p));
-            }
-          }
-          if (newSkills.length === 0 && newKb.length === 0) return {};
-          return { skills: [...s.skills, ...newSkills], kbBlocks: [...s.kbBlocks, ...newKb] };
-        }),
-      updateSkill: (id, patch) =>
-        set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, ...patch } : sk)) })),
-      removeSkill: (id) =>
-        set((s) => ({ skills: s.skills.filter((sk) => sk.id !== id) })),
-      toggleSkill: (id) =>
-        set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, enabled: !sk.enabled } : sk)) })),
-      toggleSkillPin: (id) =>
-        set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, pinned: !sk.pinned } : sk)) })),
-      setSkillProjects: (id, projects) =>
-        set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, projects } : sk)) })),
-      upsertSkills: (defs) =>
-        set((s) => {
-          const skills = [...s.skills];
-          for (const def of defs) {
-            // Match by explicit id first, then by name-slug, so a re-emitted
-            // definition refines the existing skill in place.
-            const slug = def.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
-            const idx = skills.findIndex(
-              (sk) => (def.id && sk.id === def.id) ||
-                sk.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") === slug,
-            );
-            if (idx >= 0) {
-              const rest = { ...def };
-              delete rest.id;
-              skills[idx] = { ...skills[idx], ...rest };
-            } else {
-              skills.push({ ...def, id: def.id ?? `skill_${Math.random().toString(36).slice(2, 8)}` });
-            }
-          }
-          return { skills };
-        }),
-      paneSkills: {},
-
       allowedCommands: [],
       addAllowedCommand: (cmd) =>
         set((s) => ({
