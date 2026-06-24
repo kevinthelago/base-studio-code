@@ -5,9 +5,9 @@
 //
 // `McpServerDef` is the stored data model (lib/mcpServers); `McpServer` is the pane view-model.
 
-import type { McpServer as McpServerDef } from "../../../lib/session/mcpServers";
+import type { McpServer as McpServerDef } from "@/features/extensions/lib/mcpServers";
 import { MCP_CATALOG } from "../../../data/mcpCatalog";
-import { catalogLink } from "../../../lib/session/mcpInstall";
+import { catalogLink } from "@/features/extensions/lib/mcpInstall";
 import type { McpServer } from "../pane/projectPane.types";
 import type { FleetPlan } from "../stages/planSections";
 

@@ -27,8 +27,7 @@ import type { DataModel } from "../screens/planner/data/dataModel";
 import type { PaneDescriptor } from "../lib/tunnel/tunnel";
 import type { DirectorMode, IntegrationStrategy } from "../screens/planner/shared/integrationStrategy";
 import type { DirectorDrive } from "../screens/planner/fleet/directorDrive";
-import type { McpServer } from "../lib/session/mcpServers";
-import type { Hook } from "../lib/session/hooks";
+import type { ExtensionsSlice } from "@/features/extensions/store";
 import type { SkillsSlice } from "@/features/skills/store";
 import type { Automation, AutomationRun } from "../lib/automations/scheduler";
 
@@ -131,7 +130,7 @@ export interface EndedInfo {
   at: number;
 }
 
-export interface AppStore extends SkillsSlice {
+export interface AppStore extends SkillsSlice, ExtensionsSlice {
   // Navigation
   activeScreen: Screen;
   setScreen: (screen: Screen) => void;
@@ -796,26 +795,8 @@ export interface AppStore extends SkillsSlice {
   clearPlanFleet:        (projectId: string) => void;
   clearPlan:             (key: string) => void;
 
-  // MCP servers the user configures, each scoped via its `projects` ([] = global).
-  // Written into a launched session's .mcp.json so the agent actually gets them. Persisted.
-  mcpServers: McpServer[];
-  addMcpServer:          (def: Omit<McpServer, "id">) => void;
-  updateMcpServer:       (id: string, patch: Partial<McpServer>) => void;
-  removeMcpServer:       (id: string) => void;
-  toggleMcpServer:       (id: string) => void;
-  setMcpServerProjects:  (id: string, projects: string[]) => void;
-  // Lifecycle hooks the user configures, each scoped via its `projects` ([] = global).
-  // Written into a launched session's .claude/settings.json so the agent gets them. Persisted.
-  hooks: Hook[];
-  addHook:          (def: Omit<Hook, "id">) => void;
-  updateHook:       (id: string, patch: Partial<Hook>) => void;
-  removeHook:       (id: string) => void;
-  toggleHook:       (id: string) => void;
-  setHookProjects:  (id: string, projects: string[]) => void;
-  // Resolved per-pane servers + hooks (transient): set at session creation, read by
-  // TerminalView before launch (mirrors paneAllowedCommands).
-  paneMcpServers: Record<string, McpServer[]>;
-  paneHooks: Record<string, Hook[]>;
+  // MCP servers + hooks live in the Extensions feature slice (`ExtensionsSlice`,
+  // `@/features/extensions/store`, #1309) — merged into AppStore via `extends`.
 
   // Skills (library, per-session overrides, task groups) live in the Skills feature slice
   // (`SkillsSlice`, `@/features/skills/store`, #1309) — merged into AppStore via `extends`.

@@ -7,7 +7,7 @@ import {
   isDownloadableMcp,
   type McpStoreLike,
 } from "./planExtensions";
-import type { McpServer } from "../../../lib/session/mcpServers";
+import type { McpServer } from "@/features/extensions/lib/mcpServers";
 
 describe("parseMcpAssigns", () => {
   it("extracts catalog names, deduped and order-preserving, across straight/curly quotes", () => {
