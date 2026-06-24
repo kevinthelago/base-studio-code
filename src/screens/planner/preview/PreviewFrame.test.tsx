@@ -15,17 +15,27 @@ describe("PreviewFrame", () => {
     expect(f.getAttribute("srcdoc")).toContain("<body>hi</body>");
   });
 
-  it("relays {__preview} error messages to onStatus", () => {
+  it("relays {__preview} error messages from the preview iframe to onStatus", () => {
     const onStatus = vi.fn();
-    render(<PreviewFrame srcDoc="<html></html>" onStatus={onStatus} />);
-    window.dispatchEvent(new MessageEvent("message", { data: { __preview: "error", message: "boom" } }));
+    const { container } = render(<PreviewFrame srcDoc="<html></html>" onStatus={onStatus} />);
+    const frame = container.querySelector("iframe")!;
+    window.dispatchEvent(new MessageEvent("message", { data: { __preview: "error", message: "boom" }, source: frame.contentWindow }));
     expect(onStatus).toHaveBeenCalledWith({ status: "error", message: "boom" });
   });
 
-  it("relays the ready signal", () => {
+  it("relays the ready signal from the preview iframe", () => {
+    const onStatus = vi.fn();
+    const { container } = render(<PreviewFrame srcDoc="<html></html>" onStatus={onStatus} />);
+    const frame = container.querySelector("iframe")!;
+    window.dispatchEvent(new MessageEvent("message", { data: { __preview: "ready" }, source: frame.contentWindow }));
+    expect(onStatus).toHaveBeenCalledWith({ status: "ready" });
+  });
+
+  it("ignores a {__preview} message that isn't from the preview iframe (#1011)", () => {
     const onStatus = vi.fn();
     render(<PreviewFrame srcDoc="<html></html>" onStatus={onStatus} />);
+    // No `source` ⇒ a different window (e.g. another frame / the opener). Must be dropped.
     window.dispatchEvent(new MessageEvent("message", { data: { __preview: "ready" } }));
-    expect(onStatus).toHaveBeenCalledWith({ status: "ready" });
+    expect(onStatus).not.toHaveBeenCalled();
   });
 });
