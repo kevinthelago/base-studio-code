@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   paneIdFor, manualPaneId, fleetPaneId, directorPaneId, triagePaneId, isManualPaneId, positionalPaneId,
+  parsePaneIdentity,
 } from "./paneIdentity";
 
 describe("paneIdentity (#1176)", () => {
@@ -43,6 +44,45 @@ describe("paneIdentity (#1176)", () => {
     it("falls back to positional for an id-less legacy tab", () => {
       expect(paneIdFor({}, 1, 1)).toBe("t1p1");
       expect(paneIdFor(undefined, 0, 0)).toBe("t0p0");
+    });
+  });
+
+  describe("parsePaneIdentity — recover meaning from the name alone (#1266)", () => {
+    it("classifies each id kind with its parts", () => {
+      expect(parsePaneIdentity("man:tab-abc:p2")).toEqual({ kind: "manual", raw: "man:tab-abc:p2", tabId: "tab-abc", paneIdx: 2 });
+      expect(parsePaneIdentity("t1p0")).toEqual({ kind: "positional", raw: "t1p0", tabIdx: 1, paneIdx: 0 });
+      expect(parsePaneIdentity("payments:director")).toEqual({ kind: "director", raw: "payments:director", projectKey: "payments" });
+      expect(parsePaneIdentity("payments:checkout-stream")).toEqual({ kind: "worker", raw: "payments:checkout-stream", projectKey: "payments", streamId: "checkout-stream" });
+      expect(parsePaneIdentity("payments:owner/web:triage")).toEqual({ kind: "triage", raw: "payments:owner/web:triage", projectKey: "payments", repo: "owner/web" });
+    });
+
+    it("round-trips every minting helper (mint → parse recovers the inputs)", () => {
+      const dir = parsePaneIdentity(directorPaneId("my-proj"));
+      expect(dir).toMatchObject({ kind: "director", projectKey: "my-proj" });
+
+      const worker = parsePaneIdentity(fleetPaneId("my-proj", "auth-ui-v2"));
+      expect(worker).toMatchObject({ kind: "worker", projectKey: "my-proj", streamId: "auth-ui-v2" });
+
+      const triage = parsePaneIdentity(triagePaneId("my-proj", "owner/my-web"));
+      expect(triage).toMatchObject({ kind: "triage", projectKey: "my-proj", repo: "owner/my-web" });
+
+      const manual = parsePaneIdentity(manualPaneId("tab-xyz", 3));
+      expect(manual).toMatchObject({ kind: "manual", tabId: "tab-xyz", paneIdx: 3 });
+
+      const pos = parsePaneIdentity(positionalPaneId(4, 2));
+      expect(pos).toMatchObject({ kind: "positional", tabIdx: 4, paneIdx: 2 });
+    });
+
+    it("keeps hyphens inside keys, stream ids, and repos (split is on the FIRST colon only)", () => {
+      expect(parsePaneIdentity("my-proj:auth-ui")).toMatchObject({ projectKey: "my-proj", streamId: "auth-ui" });
+      expect(parsePaneIdentity("my-proj:owner/my-web:triage")).toMatchObject({ projectKey: "my-proj", repo: "owner/my-web" });
+    });
+
+    it("returns null for an unrecognized or malformed id", () => {
+      expect(parsePaneIdentity("")).toBeNull();
+      expect(parsePaneIdentity("garbage")).toBeNull();   // no colon, not positional/manual
+      expect(parsePaneIdentity("key:")).toBeNull();      // empty stream id
+      expect(parsePaneIdentity(":director")).toBeNull(); // empty project key
     });
   });
 });
