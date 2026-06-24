@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { McpScreen, HooksView } from "./";
-import { MCP_CATALOG } from "../../data/mcpCatalog";
-import { useAppStore } from "../../store";
-import type { McpServer } from "../../lib/session/mcpServers";
-import type { Hook } from "../../lib/session/hooks";
+import { MCP_CATALOG } from "@/data/mcpCatalog";
+import { useAppStore } from "@/store";
+import type { McpServer } from "./lib/mcpServers";
+import type { Hook } from "./lib/hooks";
 
 // Two MCP servers (one enabled, one off) → 1 enabled on the MCP page.
 const MCP_SEED: McpServer[] = [
