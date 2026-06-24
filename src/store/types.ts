@@ -6,7 +6,7 @@ import type { Screen } from "../components/chrome/Rail";
 import type { Tab } from "../components/chrome/Tabstrip";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { ModelId } from "../components/pane/PaneMenu";
-import type { KbBlock, Schedule, Command } from "../data/mock";
+import type { KbBlock } from "../data/mock";
 import type { LlmProvider } from "../lib/core/llmConfig";
 import type { ReaperConfig } from "../lib/console/idleReaper";
 import type { QueuedPane, FocusTarget, ConsoleAutoFocusMode } from "../lib/console/focusQueue";
@@ -27,11 +27,9 @@ import type { DataModel } from "../screens/planner/data/dataModel";
 import type { PaneDescriptor } from "../lib/tunnel/tunnel";
 import type { DirectorMode, IntegrationStrategy } from "../screens/planner/shared/integrationStrategy";
 import type { DirectorDrive } from "../screens/planner/fleet/directorDrive";
-import type { McpServer } from "../lib/session/mcpServers";
-import type { Hook } from "../lib/session/hooks";
-import type { SkillDef } from "../lib/session/skills";
-import type { Automation, AutomationRun } from "../lib/automations/scheduler";
-import type { SkillPayload } from "../screens/planner/blueprints/blueprintSkills";
+import type { ExtensionsSlice } from "@/features/extensions/store";
+import type { SkillsSlice } from "@/features/skills/store";
+import type { AutomationsSlice } from "@/features/automations/store";
 
 export interface GithubUser {
   login: string;
@@ -132,7 +130,7 @@ export interface EndedInfo {
   at: number;
 }
 
-export interface AppStore {
+export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice {
   // Navigation
   activeScreen: Screen;
   setScreen: (screen: Screen) => void;
@@ -448,25 +446,8 @@ export interface AppStore {
   localBaseUrl: string;
   setLocalBaseUrl: (u: string) => void;
 
-  // Automations
-  schedules: Schedule[];
-  addSchedule: () => void;
-  updateSchedule: (id: string, patch: Partial<Schedule>) => void;
-  removeSchedule: (id: string) => void;
-  commands: Command[];
-  addCommand: () => void;
-  updateCommand: (id: string, patch: Partial<Command>) => void;
-  removeCommand: (id: string) => void;
-
-  // Scheduled automations (#142) — the real, fired-on-a-tick model (a frontend
-  // scheduler ticks and dispatches via pty_write). Distinct from the legacy
-  // `schedules`/`commands` above, which are planner-suggested and read by Planning.
-  automations: Automation[];
-  addAutomation: (input: Omit<Automation, "id" | "lastRunAt" | "nextRunAt" | "runs">) => void;
-  updateAutomation: (id: string, patch: Partial<Automation>) => void;
-  removeAutomation: (id: string) => void;
-  setAutomationArmed: (id: string, armed: boolean) => void;
-  recordAutomationRun: (id: string, run: AutomationRun) => void;
+  // Automations (schedules, commands, fired-on-a-tick automations) live in the Automations feature
+  // slice (`AutomationsSlice`, `@/features/automations/store`, #1309) — merged via `extends`.
 
   // Projects (transient)
   projectsPageMode: "projects" | "fleet" | "dataModels";
@@ -797,48 +778,11 @@ export interface AppStore {
   clearPlanFleet:        (projectId: string) => void;
   clearPlan:             (key: string) => void;
 
-  // MCP servers the user configures, each scoped via its `projects` ([] = global).
-  // Written into a launched session's .mcp.json so the agent actually gets them. Persisted.
-  mcpServers: McpServer[];
-  addMcpServer:          (def: Omit<McpServer, "id">) => void;
-  updateMcpServer:       (id: string, patch: Partial<McpServer>) => void;
-  removeMcpServer:       (id: string) => void;
-  toggleMcpServer:       (id: string) => void;
-  setMcpServerProjects:  (id: string, projects: string[]) => void;
-  // Lifecycle hooks the user configures, each scoped via its `projects` ([] = global).
-  // Written into a launched session's .claude/settings.json so the agent gets them. Persisted.
-  hooks: Hook[];
-  addHook:          (def: Omit<Hook, "id">) => void;
-  updateHook:       (id: string, patch: Partial<Hook>) => void;
-  removeHook:       (id: string) => void;
-  toggleHook:       (id: string) => void;
-  setHookProjects:  (id: string, projects: string[]) => void;
-  // Resolved per-pane servers + hooks (transient): set at session creation, read by
-  // TerminalView before launch (mirrors paneAllowedCommands).
-  paneMcpServers: Record<string, McpServer[]>;
-  paneHooks: Record<string, Hook[]>;
+  // MCP servers + hooks live in the Extensions feature slice (`ExtensionsSlice`,
+  // `@/features/extensions/store`, #1309) — merged into AppStore via `extends`.
 
-  // Skills — reusable capability bundles (prompt + bundled tools + profile
-  // guardrails) the fleet can invoke, each scoped via its `projects` ([] = global).
-  // Written into a launched session's .claude/skills/<slug>/SKILL.md so agents
-  // actually get them. Seeded from the sample library; persisted. (#404)
-  skills: SkillDef[];
-  /** Reconstitute a shared blueprint's embedded skills/KB into the libraries (#897 Phase 5b),
-   *  upserting by id (skip an id already present) so the blueprint's refs resolve. */
-  installBundledSkills: (payloads: SkillPayload[]) => void;
-  addSkill:        (def: Omit<SkillDef, "id">) => string;
-  updateSkill:     (id: string, patch: Partial<SkillDef>) => void;
-  removeSkill:     (id: string) => void;
-  toggleSkill:     (id: string) => void;
-  toggleSkillPin:  (id: string) => void;
-  setSkillProjects: (id: string, projects: string[]) => void;
-  /** Upsert planner-authored skills (from skills.json) into the global library,
-   *  keyed by id then by name-slug, so re-emitted definitions refine in place
-   *  rather than duplicating. */
-  upsertSkills:    (defs: Array<Omit<SkillDef, "id"> & { id?: string }>) => void;
-  // Resolved per-pane skills (transient): set at session creation, read by
-  // TerminalView before launch (mirrors paneExtensions).
-  paneSkills: Record<string, SkillDef[]>;
+  // Skills (library, per-session overrides, task groups) live in the Skills feature slice
+  // (`SkillsSlice`, `@/features/skills/store`, #1309) — merged into AppStore via `extends`.
 
   // Agent settings — the GLOBAL allowed-command tier (auto-approved in every
   // session). Per-project / per-repo tiers below combine additively with it.

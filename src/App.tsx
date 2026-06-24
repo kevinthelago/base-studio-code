@@ -4,20 +4,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { LayoutGrid } from "lucide-react";
 import { Titlebar } from "./components/chrome/Titlebar";
 import { Rail } from "./components/chrome/Rail";
+import { screenLabel } from "./screens/registry";
 import { Tabstrip } from "./components/chrome/Tabstrip";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { Dialog } from "./components/Dialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useAppStore } from "./store";
 import { useHotkeys } from "./hooks/useHotkeys";
-import { useScheduler } from "./hooks/useScheduler";
+import { useScheduler } from "@/features/automations";
 import { useTunnelSync } from "./hooks/useTunnelSync";
 import { startPerfMonitor, recordStoreWrite } from "./lib/core/perf";
 import { log } from "./lib/core/log";
 import { ConsoleScreen } from "./screens/Console";
 import { paneIdFor } from "./lib/console/paneIdentity";
-import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
-import { SkillsStatus } from "./screens/skills/SkillsStatus";
+import { AutomationsStatus } from "@/features/automations";
+import { SkillsStatus } from "@/features/skills";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
 import { CrashRecoveryBanner } from "./components/CrashRecoveryBanner";
@@ -33,11 +34,11 @@ import { accentVars } from "./lib/settings/appearance";
 // loads on first navigation, keeping the heavy module graph (esp. the planner) off the cold
 // startup path — both the dev transform and the production bundle.
 const GitHubScreen      = lazy(() => import("./screens/github").then((m) => ({ default: m.GitHubScreen })));
-const AutomationsScreen = lazy(() => import("./screens/automations").then((m) => ({ default: m.AutomationsScreen })));
-const McpScreen         = lazy(() => import("./screens/mcp").then((m) => ({ default: m.McpScreen })));
+const AutomationsScreen = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsScreen })));
+const McpScreen         = lazy(() => import("@/features/extensions").then((m) => ({ default: m.McpScreen })));
 const SettingsScreen    = lazy(() => import("./screens/settings").then((m) => ({ default: m.SettingsScreen })));
 const ProjectsScreen    = lazy(() => import("./screens/planner").then((m) => ({ default: m.ProjectsScreen })));
-const SkillsScreen      = lazy(() => import("./screens/skills").then((m) => ({ default: m.SkillsScreen })));
+const SkillsScreen      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsScreen })));
 const AgentsScreen      = lazy(() => import("./screens/agents").then((m) => ({ default: m.AgentsScreen })));
 
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
@@ -266,42 +267,28 @@ export default function App() {
     return () => { clearTimeout(id); unsub?.(); };
   }, [hasHydrated]);
 
+  // The "you are here" position crumb: the screen's canonical name (from the registry — the same
+  // source the rail nav uses, so they can't drift) followed by any in-screen detail (the active
+  // tab/agent, repo, sub-section). Only the DETAIL lives here; the page NAME is never hardcoded.
   const titleWorkspace = (() => {
-    const parts: string[] = [];
+    const parts: string[] = [screenLabel(activeScreen)];
     switch (activeScreen) {
       case "console":
-        parts.push("Console");
         if (tabs[activeTabIdx]?.name) parts.push(tabs[activeTabIdx].name);
         if (focusedAgentName) parts.push(focusedAgentName);
         break;
-        break;
       case "github":
-        parts.push("GitHub");
         if (activeRepoName) parts.push(activeRepoName);
         break;
       case "automation":
-        parts.push("Automations");
         parts.push(automationsTab);
         break;
-      case "mcp":
-        parts.push("MCP");
-        break;
       case "projects":
-        parts.push("Projects");
         if (projectsView === "planning") parts.push("planning");
         break;
-      case "skills":
-        parts.push("Skills");
-        break;
-      case "agents":
-        parts.push("Permissions");
-        break;
       case "settings":
-        parts.push("Settings");
         parts.push(settingsSection);
         break;
-      default:
-        parts.push(activeScreen);
     }
     return parts.filter(Boolean).join(" — ");
   })();

@@ -5,7 +5,7 @@
 // the static catalogue the Rust setup used to write. Pure (no React/Tauri) so it's unit-testable
 // and shared by the launch path; the counterpart to blueprintSkills.buildSkillContext.
 
-import { type McpServer } from "../../../lib/session/mcpServers";
+import { type McpServer } from "@/features/extensions/lib/mcpServers";
 import { MCP_CATALOG, type CatalogItem } from "../../../data/mcpCatalog";
 import { writeProjectFile } from "../../../lib/core/projectFiles";
 

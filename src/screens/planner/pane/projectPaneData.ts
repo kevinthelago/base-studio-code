@@ -28,7 +28,7 @@ import type { Blueprint } from "../stages/blueprints";
 import type { DeployConfig } from "../shared/deployConfig";
 import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 import { buildMcpServers, type McpInstallState } from "../shared/mcpPaneData";
-import type { McpServer as McpServerDef } from "../../../lib/session/mcpServers";
+import type { McpServer as McpServerDef } from "@/features/extensions/lib/mcpServers";
 
 export type {
   Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone, PhaseGroup,

@@ -1,18 +1,8 @@
-import { TerminalSquare, Zap, Server, GitFork, FolderKanban, ShieldCheck, Sparkles, Settings } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { SCREENS, type Screen } from "@/screens/registry";
 
-export type Screen = "console" | "automation" | "mcp" | "github" | "projects" | "skills" | "agents" | "settings";
-
-const NAV: Array<{ key: Screen; Icon: LucideIcon; title: string }> = [
-  { key: "console",    Icon: TerminalSquare, title: "Console"         },
-  { key: "projects",   Icon: FolderKanban,   title: "Projects"        },
-  { key: "github",     Icon: GitFork,        title: "GitHub"          },
-  { key: "agents",     Icon: ShieldCheck,    title: "Permissions"     },
-  { key: "mcp",        Icon: Server,         title: "MCP"             },
-  { key: "skills",     Icon: Sparkles,       title: "Skills"          },
-  { key: "automation", Icon: Zap,            title: "Automations"     },
-  { key: "settings",   Icon: Settings,       title: "Settings"        },
-];
+// Re-export so existing `import type { Screen } from ".../components/chrome/Rail"` keeps resolving
+// (the type's home is now the screen registry — the single source of truth for screens).
+export type { Screen } from "@/screens/registry";
 
 interface RailProps {
   active: Screen;
@@ -23,11 +13,11 @@ export function Rail({ active, onNavigate }: RailProps) {
   return (
     <div className="rail">
       <div className="logo">b.</div>
-      {NAV.map(({ key, Icon, title }) => (
+      {SCREENS.map(({ key, Icon, label }) => (
         <button
           key={key}
           className={key === active ? "active" : ""}
-          title={title}
+          title={label}
           onClick={() => onNavigate(key)}
         >
           <Icon size={18} />
