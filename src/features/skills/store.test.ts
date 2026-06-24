@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useAppStore } from "./";
-import { blankSkill, parseSkillsFile } from "../lib/session/skills";
+import { useAppStore } from "@/store";
+import { blankSkill, parseSkillsFile } from "./lib/skills";
 
 describe("skills store slice", () => {
   beforeEach(() => {

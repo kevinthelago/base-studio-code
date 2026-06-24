@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SkillsScreen } from "./";
-import { useAppStore } from "../../store";
-import { blankSkill } from "../../lib/session/skills";
+import { useAppStore } from "@/store";
+import { blankSkill } from "./lib/skills";
 
 const ROW = ".skill-row";
 

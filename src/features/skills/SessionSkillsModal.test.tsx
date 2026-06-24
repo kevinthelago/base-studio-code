@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SessionSkillsModal } from "./SessionSkillsModal";
-import { useAppStore } from "../../store";
-import { blankSkill } from "../../lib/session/skills";
+import { useAppStore } from "@/store";
+import { blankSkill } from "./lib/skills";
 
 const SESS = "proj:checkout";
 
