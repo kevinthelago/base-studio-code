@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { resolveSkillContent, buildSkillContext, collectBlueprintSkillIds } from "./blueprintSkills";
 import { mkStageSection } from "./blueprintEdit";
-import type { SkillDef } from "../../../lib/session/skills";
+import type { SkillDef } from "@/features/skills/lib/skills";
 import type { KbBlock } from "../../../data/mock";
 import type { Blueprint } from "../stages/blueprints";
 
