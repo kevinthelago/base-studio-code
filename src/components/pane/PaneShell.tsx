@@ -67,6 +67,8 @@ interface PaneShellProps {
   onMenuToggle?: () => void;
   onToggleFullscreen?: () => void;
   onToggleDisable?: () => void;
+  /** Force a TUI repaint of this pane via a resize nudge (#1221). */
+  onRedraw?: () => void;
   onFocus?: () => void;
   onRename?: (name: string) => void;
   onPickDirectory?: () => void;
@@ -97,6 +99,7 @@ export function PaneShell({
   onMenuToggle,
   onToggleFullscreen,
   onToggleDisable,
+  onRedraw,
   onFocus,
   onRename,
   onPickDirectory,
@@ -322,6 +325,7 @@ export function PaneShell({
             disabled={disabled}
             onToggleFullscreen={onToggleFullscreen}
             onToggleDisable={onToggleDisable}
+            onRedraw={onRedraw}
             onPickDirectory={onPickDirectory}
             onClose={onMenuToggle}
             onRename={() => { setDraftName(agent); setEditingName(true); onMenuToggle?.(); }}

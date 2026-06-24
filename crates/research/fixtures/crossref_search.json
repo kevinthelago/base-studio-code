@@ -1,0 +1,32 @@
+{
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 2,
+    "items": [
+      {
+        "DOI": "10.1145/3592433",
+        "title": ["Real-Time Path Tracing with Neural Denoising"],
+        "author": [
+          { "given": "Ada", "family": "Lovelace" },
+          { "given": "Alan", "family": "Turing" }
+        ],
+        "issued": { "date-parts": [[2024, 1, 3]] },
+        "abstract": "<jats:p>We present a <jats:italic>method</jats:italic> for real-time path tracing.</jats:p>",
+        "URL": "https://doi.org/10.1145/3592433",
+        "container-title": ["ACM Transactions on Graphics"],
+        "is-referenced-by-count": 42
+      },
+      {
+        "DOI": "10.1000/xyz123",
+        "title": ["A Survey of GPU Ray Tracing"],
+        "author": [
+          { "family": "Hopper" }
+        ],
+        "issued": { "date-parts": [[2023]] },
+        "container-title": ["Journal of Graphics"],
+        "is-referenced-by-count": 7
+      }
+    ]
+  }
+}

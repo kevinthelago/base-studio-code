@@ -14,6 +14,8 @@ mod config;
 mod github;
 mod shell;
 mod pty;
+mod pty_ledger;
+mod session_discovery;
 mod bsc;
 mod planner;
 mod data;
@@ -2164,13 +2166,34 @@ fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Resul
         .map_err(|e| e.to_string())
 }
 
+/// The sentinel command the frontend sets for the built-in Research server (#1196). It carries no
+/// real path (the frontend can't know where the app exe lives), so `mcp_server_value` rewrites it to
+/// the bundled `bsc-research-mcp` binary's absolute path at write time.
+const RESEARCH_MCP_MARKER: &str = "bsc-research-mcp";
+
+/// Resolve a stdio MCP command, substituting the bundled-binary absolute path for the built-in
+/// Research marker (#1196). A non-marker command passes through unchanged; the marker falls back to
+/// the bare name when the bundled binary can't be located (e.g. a dev build without the sidecar).
+fn resolve_mcp_command(command: &str, bundled: Option<std::path::PathBuf>) -> String {
+    if command == RESEARCH_MCP_MARKER {
+        if let Some(p) = bundled {
+            return p.to_string_lossy().to_string();
+        }
+    }
+    command.to_string()
+}
+
 /// One MCP server's `.mcp.json` value: stdio `{command,args,env?}` or http `{type,url}`.
 fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
     if m.transport == "http" {
         return serde_json::json!({ "type": "http", "url": m.url.clone().unwrap_or_default() });
     }
     let mut v = serde_json::Map::new();
-    v.insert("command".into(), serde_json::Value::String(m.command.clone().unwrap_or_default()));
+    let command = resolve_mcp_command(
+        &m.command.clone().unwrap_or_default(),
+        pty::bsc_research_mcp_bin_path(),
+    );
+    v.insert("command".into(), serde_json::Value::String(command));
     v.insert("args".into(), serde_json::Value::Array(
         m.args.iter().map(|a| serde_json::Value::String(a.clone())).collect(),
     ));
@@ -2330,6 +2353,14 @@ pub fn run() {
         log::warn!("[startup] previous shutdown was UNCLEAN (session-lock survived) — offering session restore");
     }
 
+    // Reap PTY children leaked by a prior run that never reached RunEvent::Exit (#1049). The ledger is
+    // authoritative about what THIS app spawned, so this only ever kills our own orphans (owner gone +
+    // same process) — never the user's terminals. Runs before any session launches.
+    let reaped = pty_ledger::reconcile_on_boot();
+    if reaped > 0 {
+        log::warn!("[startup] reaped {reaped} orphaned PTY child process(es) from a prior unclean run");
+    }
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -2371,9 +2402,18 @@ pub fn run() {
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
-            // Cap unbounded log files once at startup to reclaim disk space. Config-driven (#1060):
-            // uses the LogState default here (10k lines) until the frontend pushes the user's value.
-            logs::cap_logs(&bsc_base_dir(), &app.state::<logs::LogState>().get());
+            // Cap unbounded log files to reclaim disk space — OFF the synchronous boot path
+            // (#1047). A full read/rewrite of audit.log (≈520 KB) + the other TSV streams is
+            // housekeeping, not first-paint work; doing it inline blocked every startup. Defer
+            // past the cold-start window, then run the blocking I/O on a worker thread so it
+            // never stalls first paint or the async runtime. Config-driven (#1060): uses the
+            // LogState default (10k lines) until the frontend pushes the user's value.
+            let cap_base = bsc_base_dir();
+            let cap_cfg = app.state::<logs::LogState>().get();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(perf::STARTUP_GRACE_SECS)).await;
+                tauri::async_runtime::spawn_blocking(move || logs::cap_logs(&cap_base, &cap_cfg));
+            });
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
@@ -2490,6 +2530,7 @@ pub fn run() {
             perf::perf_record_frontend_sample,
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
+            session_discovery::discover_sessions,
             logs::list_log_files,
             logs::read_log_tail,
             logs::clear_log,
@@ -3002,6 +3043,22 @@ mod tests {
         assert_eq!(settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "format.sh");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_mcp_command_substitutes_research_marker(){
+        use std::path::PathBuf;
+        // A normal command is untouched.
+        assert_eq!(super::resolve_mcp_command("npx", None), "npx");
+        assert_eq!(
+            super::resolve_mcp_command("npx", Some(PathBuf::from("/x/bsc-research-mcp"))),
+            "npx",
+        );
+        // The Research marker resolves to the bundled binary's absolute path when present…
+        let bin = PathBuf::from("/opt/app/bsc-research-mcp");
+        assert_eq!(super::resolve_mcp_command("bsc-research-mcp", Some(bin.clone())), bin.to_string_lossy());
+        // …and falls back to the bare marker when the bundled binary can't be located (dev build).
+        assert_eq!(super::resolve_mcp_command("bsc-research-mcp", None), "bsc-research-mcp");
     }
 
     #[test]

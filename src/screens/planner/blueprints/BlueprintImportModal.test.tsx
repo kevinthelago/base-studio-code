@@ -2,8 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { BlueprintImportModal, type BlueprintImportModalProps } from "./BlueprintImportModal";
 import { listBlueprintGists, type BlueprintGistItem } from "../../../lib/planner/gist/gist";
+import { type PreviewBlueprint } from "./BlueprintModals";
+import { type Blueprint, type BlueprintSection } from "../stages/blueprints";
 
 vi.mock("../../../lib/planner/gist/gist", () => ({ listBlueprintGists: vi.fn() }));
+
+const SECTIONS = [
+  { uid: "u1", key: "context", name: "Context", glyph: "◆", gate: "", deps: [], blurb: "", prompt: "Establish the goal, users, and scope.", enabled: true, expanded: false },
+  { uid: "u2", key: "repos", name: "Repos", glyph: "▦", gate: "", deps: [], blurb: "", prompt: "Decide the repositories the project needs.", enabled: true, expanded: false },
+] as BlueprintSection[];
+const PREVIEW: PreviewBlueprint = {
+  name: "Fresh BP", icon: "F", h: 70, sections: SECTIONS,
+  blueprint: { id: "fresh", name: "Fresh BP", desc: "", category: "greenfield", sections: SECTIONS } as Blueprint,
+};
 
 function gist(over: Partial<BlueprintGistItem>): BlueprintGistItem {
   return { id: "g", name: "G", description: "blueprint: G", owner: "me", htmlUrl: "", updatedAt: "2026-01-01T00:00:00Z", ...over };
@@ -21,14 +32,15 @@ function renderModal(props: Partial<React.ComponentProps<typeof BlueprintImportM
   const onImport = vi.fn();
   const onManualImport = vi.fn();
   const onClose = vi.fn();
+  const onPreview = vi.fn(async () => PREVIEW);
   render(
     <BlueprintImportModal
       source="me" token="tok" importedById={IMPORTED}
-      onImport={onImport} onManualImport={onManualImport} onClose={onClose}
+      onImport={onImport} onPreview={onPreview} onManualImport={onManualImport} onClose={onClose}
       {...props}
     />,
   );
-  return { onImport, onManualImport, onClose };
+  return { onImport, onManualImport, onClose, onPreview };
 }
 
 describe("BlueprintImportModal", () => {
@@ -46,6 +58,20 @@ describe("BlueprintImportModal", () => {
     expect(screen.getByText("Import")).toBeTruthy();
     expect(screen.getByText("Imported")).toBeTruthy();
     expect(screen.getByText("Update")).toBeTruthy();
+  });
+
+  it("previews a gist's blueprint contents before importing (#1037)", async () => {
+    vi.mocked(listBlueprintGists).mockResolvedValue(ITEMS);
+    const { onPreview, onImport } = renderModal();
+    await screen.findByText("Fresh BP");
+    // Each row has a Preview button; expanding the first resolves + renders its blueprint.
+    fireEvent.click(screen.getAllByRole("button", { name: /^preview$/i })[0]);
+    expect(onPreview).toHaveBeenCalledWith("g-fresh");
+    expect(await screen.findByText("Context")).toBeTruthy(); // the blueprint's stages render
+    expect(screen.getByText("Repos")).toBeTruthy();
+    expect(screen.getByText("Establish the goal, users, and scope.")).toBeTruthy(); // the stage PROMPT, under its row (#1268)
+    expect(screen.getByText(/view raw JSON/i)).toBeTruthy();  // the literal file is one click away
+    expect(onImport).not.toHaveBeenCalled();                  // previewing never imports
   });
 
   it("filters by the search query", async () => {
@@ -102,7 +128,7 @@ describe("BlueprintImportModal", () => {
     render(
       <BlueprintImportModal
         source="me" token="tok" importedById={IMPORTED}
-        onImport={onImport} onManualImport={vi.fn()} onClose={vi.fn()}
+        onImport={onImport} onPreview={vi.fn(async () => PREVIEW)} onManualImport={vi.fn()} onClose={vi.fn()}
       />,
     );
   }

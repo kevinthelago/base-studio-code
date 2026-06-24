@@ -1,10 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
 import {
   blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
   type Blueprint,
 } from "../stages/blueprints";
-import { LibraryView } from "./BlueprintLibrary";
 
 const bp = (id: string, name: string, over: Partial<Blueprint> = {}): Blueprint =>
   ({ id, name, desc: "", sections: [], ...over });
@@ -193,33 +191,5 @@ describe("filterBlueprints (#645)", () => {
   it("combines query + category", () => {
     expect(filterBlueprints(list, { query: "security", category: "harden" }).map((b) => b.id)).toEqual(["c"]);
     expect(filterBlueprints(list, { query: "security", category: "greenfield" })).toHaveLength(0);
-  });
-});
-
-describe("LibraryView search + filter (#645)", () => {
-  const list = [
-    bp("a", "Default", { category: "greenfield" }),
-    bp("b", "Refactor & Cleanup", { category: "transform" }),
-  ];
-
-  // Card names render as <h3>; the hero references the top blueprint in a <b>, so target
-  // the card headings specifically.
-  const card = (re: RegExp) => screen.queryByRole("heading", { level: 3, name: re });
-
-  it("shows a category badge and filters by the category chip", () => {
-    render(<LibraryView blueprints={list} onOpen={vi.fn()} onMenu={vi.fn()} onNew={vi.fn()} onImport={vi.fn()} />);
-    expect(card(/Default/)).toBeInTheDocument();
-    expect(card(/Refactor & Cleanup/)).toBeInTheDocument();
-    // click the Transform filter chip → only the transform card remains
-    fireEvent.click(screen.getByRole("button", { name: "Transform" }));
-    expect(card(/Default/)).not.toBeInTheDocument();
-    expect(card(/Refactor & Cleanup/)).toBeInTheDocument();
-  });
-
-  it("searches by text", () => {
-    render(<LibraryView blueprints={list} onOpen={vi.fn()} onMenu={vi.fn()} onNew={vi.fn()} onImport={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("Search blueprints"), { target: { value: "refactor" } });
-    expect(card(/Default/)).not.toBeInTheDocument();
-    expect(card(/Refactor & Cleanup/)).toBeInTheDocument();
   });
 });

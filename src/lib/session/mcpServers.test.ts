@@ -7,6 +7,9 @@ const mk = (over: Partial<McpServer>): McpServer => ({
   id: "e", name: over.id ?? "e", enabled: true, projects: [], transport: "stdio", ...over,
 });
 
+// Drop the always-present built-in servers (#1196) so the user-server assertions stay focused.
+const noBuiltins = (servers: McpServer[]) => servers.map(e => e.id).filter(id => id !== "builtin-research");
+
 describe("resolveMcpServers", () => {
   it("includes enabled globals + this-project matches; drops disabled and other projects", () => {
     const all = [
@@ -15,10 +18,14 @@ describe("resolveMcpServers", () => {
       mk({ id: "q", projects: ["P2"] }),
       mk({ id: "off", projects: [], enabled: false }),
     ];
-    expect(resolveMcpServers(all, "P1").map(e => e.id)).toEqual(["g", "p"]);
-    expect(resolveMcpServers(all, "P2").map(e => e.id)).toEqual(["g", "q"]);
+    expect(noBuiltins(resolveMcpServers(all, "P1"))).toEqual(["g", "p"]);
+    expect(noBuiltins(resolveMcpServers(all, "P2"))).toEqual(["g", "q"]);
     // No project (ad-hoc console) → globals only.
-    expect(resolveMcpServers(all, "").map(e => e.id)).toEqual(["g"]);
+    expect(noBuiltins(resolveMcpServers(all, ""))).toEqual(["g"]);
+  });
+
+  it("always includes the built-in Research server (#1196)", () => {
+    expect(resolveMcpServers([], "").map(e => e.name)).toContain("Research");
   });
 });
 
@@ -31,7 +38,11 @@ describe("resolveAllInstalledMcp", () => {
       mk({ id: "http", transport: "http", url: "https://h/sse" }),   // complete http
       mk({ id: "broken" }),                                          // stdio without a command → dropped
     ];
-    expect(resolveAllInstalledMcp(all).map(e => e.id)).toEqual(["g", "off", "scoped", "http"]);
+    expect(noBuiltins(resolveAllInstalledMcp(all))).toEqual(["g", "off", "scoped", "http"]);
+  });
+
+  it("exposes the built-in Research server to the planner by default (#1196)", () => {
+    expect(resolveAllInstalledMcp([]).map(e => e.name)).toContain("Research");
   });
 });
 
@@ -40,15 +51,19 @@ describe("resolveStreamMcp", () => {
     mk({ id: "g", name: "g", command: "x", projects: [] }),                                   // global enabled → baseline
     mk({ id: "p", name: "p", command: "x", projects: ["P1"] }),                                // this-project → baseline
     mk({ id: "off", name: "off", command: "x", enabled: false }),                             // disabled global → not baseline
-    mk({ id: "res", name: "Research", command: "x", enabled: false, projects: ["zzz"] }),     // assignable extra
+    mk({ id: "ex", name: "Extra", command: "x", enabled: false, projects: ["zzz"] }),         // assignable extra
   ];
   it("is the #876 baseline (enabled global + this-project) plus stream-assigned extras", () => {
     // No assignment → just the baseline.
-    expect(resolveStreamMcp(all, [], "P1").map(e => e.id)).toEqual(["g", "p"]);
-    // Assign Research by name (disabled + other-project) → included as an extra, baseline first.
-    expect(resolveStreamMcp(all, ["research"], "P1").map(e => e.id)).toEqual(["g", "p", "res"]);
+    expect(noBuiltins(resolveStreamMcp(all, [], "P1"))).toEqual(["g", "p"]);
+    // Assign Extra by name (disabled + other-project) → included as an extra, baseline first.
+    expect(noBuiltins(resolveStreamMcp(all, ["extra"], "P1"))).toEqual(["g", "p", "ex"]);
     // Assigning a server already in the baseline doesn't duplicate it.
-    expect(resolveStreamMcp(all, ["g"], "P1").map(e => e.id)).toEqual(["g", "p"]);
+    expect(noBuiltins(resolveStreamMcp(all, ["g"], "P1"))).toEqual(["g", "p"]);
+  });
+
+  it("rides the worker baseline with the built-in Research server (#1196)", () => {
+    expect(resolveStreamMcp(all, [], "P1").map(e => e.name)).toContain("Research");
   });
 });
 
@@ -77,8 +92,8 @@ describe("catalog templates + blank", () => {
     expect(mcpFromCatalog("Nope")).toMatchObject({ transport: "stdio", command: "", name: "Nope" });
   });
 
-  it("includes the first-party MCP servers with download links + run configs (#858)", () => {
-    const firstParty = ["Compliance", "Complexity Analyzer", "Dependency Graph", "Plan Grader", "Research"];
+  it("includes the first-party downloadable MCP servers with download links + run configs (#858)", () => {
+    const firstParty = ["Compliance", "Complexity Analyzer", "Dependency Graph", "Plan Grader"];
     for (const name of firstParty) {
       const item = MCP_CATALOG.find((c) => c.name === name);
       expect(item, `${name} in catalog`).toBeDefined();
@@ -91,9 +106,16 @@ describe("catalog templates + blank", () => {
     expect(mcpFromCatalog("Complexity Analyzer")).toMatchObject({ command: "node", args: "{dir}/dist/mcp/index.js" });
     expect(mcpFromCatalog("Dependency Graph")).toMatchObject({ command: "node", args: "{dir}/dist/index.js" });
     expect(mcpFromCatalog("Plan Grader")).toMatchObject({ transport: "stdio", command: "python", args: "-m uv run --directory {dir} plan-grader-mcp" });
-    // Research is a Node server (tsup → dist/index.js); offline-capable, so no required env (#1056).
-    expect(mcpFromCatalog("Research")).toMatchObject({ transport: "stdio", command: "node", args: "{dir}/dist/index.js" });
-    expect(mcpFromCatalog("Research").env).toBeUndefined();
+  });
+
+  it("presents Research as a built-in server — no download/build, native binary (#1196)", () => {
+    const item = MCP_CATALOG.find((c) => c.name === "Research");
+    expect(item?.builtIn).toBe(true);
+    expect(item?.link).toBeUndefined();
+    expect(item?.install).toBeUndefined();
+    // Its template points at the bundled native binary marker (the Rust side rewrites it to the
+    // absolute path when writing .mcp.json), not a downloaded Node entrypoint.
+    expect(mcpFromCatalog("Research")).toMatchObject({ transport: "stdio", command: "bsc-research-mcp", args: "" });
   });
 
   it("blankMcpServer produces an empty stdio shape", () => {

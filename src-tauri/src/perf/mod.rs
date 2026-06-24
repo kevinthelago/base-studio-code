@@ -73,7 +73,7 @@ const RETENTION_EVERY: u64 = 100;
 /// Don't sample during the cold-start window (#1033). Agent metrics have no value before the app is
 /// up (no agents are even running at a fresh launch), and the 2s disk writes + IPC just pile
 /// contention onto the slowest moment of a launch.
-const STARTUP_GRACE_SECS: u64 = 20;
+pub const STARTUP_GRACE_SECS: u64 = 20;
 
 struct PerfInner {
     config: PerfConfig,
@@ -81,10 +81,33 @@ struct PerfInner {
     tracked: HashMap<String, u32>,
     /// In-memory ring buffer for the live UI.
     ring: Vec<PerfSample>,
+    /// Where the metrics DB lives. The connection itself is opened lazily (#1047) — see
+    /// `db_conn` — so the boot path only stores the path, never a `Connection::open`.
+    db_path: PathBuf,
+    /// Lazily-opened metrics DB. `None` until first use; `db_opened` tells `None` "not yet
+    /// tried" apart from "tried and failed" so a bad path isn't re-opened every tick.
     db: Option<Connection>,
+    db_opened: bool,
     /// Persistent `System` so CPU delta accumulates across ticks (first tick = 0 %).
     sys: System,
     ingest_count: u64,
+}
+
+impl PerfInner {
+    /// Open the metrics DB on first use and cache it (#1047). Keeps `Connection::open` +
+    /// `CREATE TABLE IF NOT EXISTS` off the synchronous boot path: the first sample only
+    /// fires after the `STARTUP_GRACE_SECS` window, and command handlers open on demand.
+    /// Opened at most once — a failed open is remembered (stays `None`) so we don't retry
+    /// every tick.
+    fn db_conn(&mut self) -> Option<&Connection> {
+        if !self.db_opened {
+            self.db_opened = true;
+            self.db = open_db(&self.db_path)
+                .map_err(|e| log::warn!("perf: cannot open DB {}: {e}", self.db_path.display()))
+                .ok();
+        }
+        self.db.as_ref()
+    }
 }
 
 // ── Public state ──────────────────────────────────────────────────────────────
@@ -96,11 +119,9 @@ pub struct PerfState(pub Mutex<PerfInner>);
 
 impl PerfState {
     pub fn new(db_path: PathBuf) -> Self {
-        let db = open_db(&db_path)
-            .map_err(|e| log::warn!("perf: cannot open DB {}: {e}", db_path.display()))
-            .ok();
         // Measure the metrics DB at boot (#1033) — a growing perf.db is a suspect in the
         // cold-start-time variance (more for the OS file scanner to chew on every write).
+        // Stat only: a metadata read, never an open (#1047 keeps the open off the boot path).
         if let Ok(meta) = std::fs::metadata(&db_path) {
             log::info!("[perf] perf.db {} KB at startup", meta.len() / 1024);
         }
@@ -108,7 +129,9 @@ impl PerfState {
             config: PerfConfig::default(),
             tracked: HashMap::new(),
             ring: Vec::with_capacity(RING_CAP),
-            db,
+            db_path,
+            db: None,
+            db_opened: false,
             sys: System::new(),
             ingest_count: 0,
         }))
@@ -226,8 +249,8 @@ fn ingest(g: &mut PerfInner, samples: Vec<PerfSample>) {
         g.ring.push(s.clone());
     }
 
-    // Flush to SQLite.
-    if let Some(conn) = &g.db {
+    // Flush to SQLite (opens the DB lazily on the first sample — #1047).
+    if let Some(conn) = g.db_conn() {
         for s in &samples {
             let _ = conn.execute(
                 "INSERT INTO perf_samples (ts, session_id, pid, rss_bytes, cpu_pct, threads) \
@@ -253,7 +276,7 @@ fn ingest(g: &mut PerfInner, samples: Vec<PerfSample>) {
 fn apply_retention(g: &mut PerfInner) {
     if g.config.retention_hours > 0 {
         let cutoff = now_ms() - g.config.retention_hours as i64 * 3_600_000;
-        if let Some(conn) = &g.db {
+        if let Some(conn) = g.db_conn() {
             let _ = conn.execute("DELETE FROM perf_samples WHERE ts < ?1", params![cutoff]);
         }
         g.ring.retain(|s| s.ts >= cutoff);
@@ -267,19 +290,22 @@ fn apply_retention(g: &mut PerfInner) {
 /// on every write small. Cheap: the size is read via PRAGMA (no filesystem stat) and only crosses the
 /// cap rarely, so the VACUUM is infrequent.
 fn enforce_size_cap(g: &mut PerfInner) {
-    if g.config.max_db_mb == 0 { return; }
-    let Some(conn) = &g.db else { return };
+    // Snapshot the cap before borrowing the connection: `db_conn` borrows all of `g`, so
+    // `g.config` can't be read while `conn` is live.
+    let max_db_mb = g.config.max_db_mb;
+    if max_db_mb == 0 { return; }
+    let Some(conn) = g.db_conn() else { return };
     let page_count: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0)).unwrap_or(0);
     let page_size: i64 = conn.query_row("PRAGMA page_size", [], |r| r.get(0)).unwrap_or(0);
     let bytes = page_count * page_size;
-    if bytes <= g.config.max_db_mb as i64 * 1_048_576 { return; }
+    if bytes <= max_db_mb as i64 * 1_048_576 { return; }
     let _ = conn.execute(
         "DELETE FROM perf_samples WHERE id IN \
          (SELECT id FROM perf_samples ORDER BY ts LIMIT (SELECT COUNT(*) / 4 FROM perf_samples))",
         [],
     );
     let _ = conn.execute("VACUUM", []);
-    log::info!("[perf] perf.db exceeded {}MB cap — pruned oldest 25% + vacuumed", g.config.max_db_mb);
+    log::info!("[perf] perf.db exceeded {max_db_mb}MB cap — pruned oldest 25% + vacuumed");
 }
 
 fn now_ms() -> i64 {
@@ -371,7 +397,7 @@ pub fn perf_record_frontend_sample(
 pub fn perf_clear_history(state: tauri::State<PerfState>) -> Result<(), String> {
     let mut g = state.0.lock().unwrap_or_else(|e| e.into_inner());
     g.ring.clear();
-    if let Some(conn) = &g.db {
+    if let Some(conn) = g.db_conn() {
         conn.execute("DELETE FROM perf_samples", []).map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -439,7 +465,7 @@ mod tests {
         apply_retention(&mut g);
         assert!(!g.ring.iter().any(|s| s.session_id == "old"), "old sample pruned from ring");
         assert!(g.ring.iter().any(|s| s.session_id == "new"), "new sample kept in ring");
-        if let Some(conn) = &g.db {
+        if let Some(conn) = g.db_conn() {
             let count: i64 = conn
                 .query_row("SELECT COUNT(*) FROM perf_samples WHERE session_id = 'old'", [], |r| r.get(0))
                 .unwrap_or(1);
@@ -457,7 +483,7 @@ mod tests {
         g.config.max_db_mb = 1;       // tiny cap
         // Bulk-insert directly (one transaction) past 1 MB — far faster than driving the ring.
         {
-            let conn = g.db.as_ref().unwrap();
+            let conn = g.db_conn().unwrap();
             conn.execute_batch("BEGIN").unwrap();
             let mut stmt = conn
                 .prepare("INSERT INTO perf_samples (ts, session_id, rss_bytes, cpu_pct) VALUES (?1, 's', 1048576, 5.0)")
@@ -470,13 +496,37 @@ mod tests {
         }
         enforce_size_cap(&mut g);
         let rows: i64 = g
-            .db
-            .as_ref()
+            .db_conn()
             .unwrap()
             .query_row("SELECT COUNT(*) FROM perf_samples", [], |r| r.get(0))
             .unwrap();
         assert!(rows < 60_000, "size cap pruned the oldest rows (kept {rows})");
         let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn db_open_is_deferred_off_the_boot_path() {
+        // #1047: constructing PerfState must not open the DB — no Connection::open, no
+        // CREATE TABLE, not even the file on disk. The open happens lazily on first use.
+        let path = tmp_db_path();
+        let _ = std::fs::remove_file(&path);
+        let state = PerfState::new(path.clone());
+        {
+            let g = state.0.lock().unwrap();
+            assert!(g.db.is_none(), "DB must not be opened at construction");
+            assert!(!g.db_opened, "DB open must not even be attempted at construction");
+        }
+        assert!(!path.exists(), "perf.db must not be created on the boot path");
+
+        // First sample opens it.
+        {
+            let mut g = state.0.lock().unwrap();
+            g.config.retention_hours = 0;
+            ingest(&mut g, vec![sample("s", 1)]);
+            assert!(g.db_opened && g.db.is_some(), "DB opens lazily on the first ingest");
+        }
+        assert!(path.exists(), "perf.db is created on the first sample");
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
