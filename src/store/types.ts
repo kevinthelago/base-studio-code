@@ -6,7 +6,7 @@ import type { Screen } from "../components/chrome/Rail";
 import type { Tab } from "../components/chrome/Tabstrip";
 import type { ViewKey } from "../components/pane/ViewTabs";
 import type { ModelId } from "../components/pane/PaneMenu";
-import type { KbBlock, Schedule, Command } from "../data/mock";
+import type { KbBlock } from "../data/mock";
 import type { LlmProvider } from "../lib/core/llmConfig";
 import type { ReaperConfig } from "../lib/console/idleReaper";
 import type { QueuedPane, FocusTarget, ConsoleAutoFocusMode } from "../lib/console/focusQueue";
@@ -29,7 +29,7 @@ import type { DirectorMode, IntegrationStrategy } from "../screens/planner/share
 import type { DirectorDrive } from "../screens/planner/fleet/directorDrive";
 import type { ExtensionsSlice } from "@/features/extensions/store";
 import type { SkillsSlice } from "@/features/skills/store";
-import type { Automation, AutomationRun } from "../lib/automations/scheduler";
+import type { AutomationsSlice } from "@/features/automations/store";
 
 export interface GithubUser {
   login: string;
@@ -130,7 +130,7 @@ export interface EndedInfo {
   at: number;
 }
 
-export interface AppStore extends SkillsSlice, ExtensionsSlice {
+export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice {
   // Navigation
   activeScreen: Screen;
   setScreen: (screen: Screen) => void;
@@ -446,25 +446,8 @@ export interface AppStore extends SkillsSlice, ExtensionsSlice {
   localBaseUrl: string;
   setLocalBaseUrl: (u: string) => void;
 
-  // Automations
-  schedules: Schedule[];
-  addSchedule: () => void;
-  updateSchedule: (id: string, patch: Partial<Schedule>) => void;
-  removeSchedule: (id: string) => void;
-  commands: Command[];
-  addCommand: () => void;
-  updateCommand: (id: string, patch: Partial<Command>) => void;
-  removeCommand: (id: string) => void;
-
-  // Scheduled automations (#142) — the real, fired-on-a-tick model (a frontend
-  // scheduler ticks and dispatches via pty_write). Distinct from the legacy
-  // `schedules`/`commands` above, which are planner-suggested and read by Planning.
-  automations: Automation[];
-  addAutomation: (input: Omit<Automation, "id" | "lastRunAt" | "nextRunAt" | "runs">) => void;
-  updateAutomation: (id: string, patch: Partial<Automation>) => void;
-  removeAutomation: (id: string) => void;
-  setAutomationArmed: (id: string, armed: boolean) => void;
-  recordAutomationRun: (id: string, run: AutomationRun) => void;
+  // Automations (schedules, commands, fired-on-a-tick automations) live in the Automations feature
+  // slice (`AutomationsSlice`, `@/features/automations/store`, #1309) — merged via `extends`.
 
   // Projects (transient)
   projectsPageMode: "projects" | "fleet" | "dataModels";

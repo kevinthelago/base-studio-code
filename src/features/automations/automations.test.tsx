@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AutomationsScreen } from "./";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 
 beforeEach(() => {
   useAppStore.setState({

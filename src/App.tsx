@@ -11,13 +11,13 @@ import { Dialog } from "./components/Dialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useAppStore } from "./store";
 import { useHotkeys } from "./hooks/useHotkeys";
-import { useScheduler } from "./hooks/useScheduler";
+import { useScheduler } from "@/features/automations";
 import { useTunnelSync } from "./hooks/useTunnelSync";
 import { startPerfMonitor, recordStoreWrite } from "./lib/core/perf";
 import { log } from "./lib/core/log";
 import { ConsoleScreen } from "./screens/Console";
 import { paneIdFor } from "./lib/console/paneIdentity";
-import { AutomationsStatus } from "./screens/automations/AutomationsStatus";
+import { AutomationsStatus } from "@/features/automations";
 import { SkillsStatus } from "@/features/skills";
 import type { Tab } from "./components/chrome/Tabstrip";
 import { SuperUserAchievement } from "./components/SuperUserAchievement";
@@ -34,7 +34,7 @@ import { accentVars } from "./lib/settings/appearance";
 // loads on first navigation, keeping the heavy module graph (esp. the planner) off the cold
 // startup path — both the dev transform and the production bundle.
 const GitHubScreen      = lazy(() => import("./screens/github").then((m) => ({ default: m.GitHubScreen })));
-const AutomationsScreen = lazy(() => import("./screens/automations").then((m) => ({ default: m.AutomationsScreen })));
+const AutomationsScreen = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsScreen })));
 const McpScreen         = lazy(() => import("@/features/extensions").then((m) => ({ default: m.McpScreen })));
 const SettingsScreen    = lazy(() => import("./screens/settings").then((m) => ({ default: m.SettingsScreen })));
 const ProjectsScreen    = lazy(() => import("./screens/planner").then((m) => ({ default: m.ProjectsScreen })));
