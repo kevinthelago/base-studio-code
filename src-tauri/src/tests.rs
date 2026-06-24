@@ -1,12 +1,9 @@
 use crate::*;
-use crate::app::recovery::*;
 use crate::project::{hub::*, plan_files::*, blueprints::*, inspect::*};
 use crate::fleet::{staging::*, worktree::*, director::*};
-use crate::agent::launch::*;
-use crate::knowledge::{chat::*, workspace::*};
-use crate::observability::{audit::*, perf::*};
-use crate::github::{repos::*, readiness::*};
-use crate::extensions::{mcp::*, hooks::*, skills::*, cfg::*};
+use crate::observability::audit::*;
+use crate::github::readiness::*;
+use crate::extensions::{mcp::*, cfg::*};
 use crate::console::settings::*;
 
     use crate::testutil::{ENV_LOCK, temp_home, write_file};
@@ -76,8 +73,6 @@ use crate::console::settings::*;
         assert_eq!(to_native_path("/usr/local/bin"), "/usr/local/bin");
         assert_eq!(to_native_path("C:/already/native"), "C:/already/native");
     }
-
-    use {bash_ansi_c_quote, sanitize_project_key, claude_launch, claude_project_dir_name};
 
     #[test]
     fn read_skeleton_dir_collects_source_files_recursively() {

@@ -410,6 +410,28 @@ pub fn perf_get_recent_samples(limit: usize, state: tauri::State<PerfState>) -> 
     g.ring[g.ring.len() - n..].to_vec()
 }
 
+/// RAII timer: logs how long a scope took when it drops, but only if the elapsed
+/// time crosses `threshold_ms` — so it surfaces slow operations without noise.
+/// Lives across `.await` points, so wrapping an async command times the whole call.
+pub(crate) struct PerfSpan {
+    label: &'static str,
+    start: std::time::Instant,
+    threshold_ms: u128,
+}
+impl PerfSpan {
+    pub(crate) fn new(label: &'static str) -> Self {
+        Self { label, start: std::time::Instant::now(), threshold_ms: 50 }
+    }
+}
+impl Drop for PerfSpan {
+    fn drop(&mut self) {
+        let ms = self.start.elapsed().as_millis();
+        if ms >= self.threshold_ms {
+            log::info!("perf · {} took {}ms", self.label, ms);
+        }
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -544,28 +566,6 @@ mod tests {
             let g = state.0.lock().unwrap();
             assert!(!g.tracked.contains_key("p1"));
             assert_eq!(g.tracked.get("p2"), Some(&2222));
-        }
-    }
-}
-
-/// RAII timer: logs how long a scope took when it drops, but only if the elapsed
-/// time crosses `threshold_ms` — so it surfaces slow operations without noise.
-/// Lives across `.await` points, so wrapping an async command times the whole call.
-pub(crate) struct PerfSpan {
-    label: &'static str,
-    start: std::time::Instant,
-    threshold_ms: u128,
-}
-impl PerfSpan {
-    pub(crate) fn new(label: &'static str) -> Self {
-        Self { label, start: std::time::Instant::now(), threshold_ms: 50 }
-    }
-}
-impl Drop for PerfSpan {
-    fn drop(&mut self) {
-        let ms = self.start.elapsed().as_millis();
-        if ms >= self.threshold_ms {
-            log::info!("perf · {} took {}ms", self.label, ms);
         }
     }
 }
