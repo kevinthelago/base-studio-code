@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildMcpLibrary, resolveBlueprintMcp, collectBlueprintMcp, applyBlueprintMcp } from "./blueprintMcp";
 import { addMcpServer, removeMcpServer } from "./blueprintEdit";
 import { type McpStoreLike } from "../shared/planExtensions";
-import type { McpServer } from "../../../lib/session/mcpServers";
+import type { McpServer } from "@/features/extensions/lib/mcpServers";
 import type { Blueprint, BlueprintSection } from "../stages/blueprints";
 
 const sec = (over: Partial<BlueprintSection>): BlueprintSection => ({

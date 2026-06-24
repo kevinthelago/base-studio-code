@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
-import { parseMcpLog, aggregateMcpTelemetry, type McpAnalytics, type McpCall } from "../../lib/session/mcpTelemetry";
+import { useAppStore } from "@/store";
+import { parseMcpLog, aggregateMcpTelemetry, type McpAnalytics, type McpCall } from "./lib/mcpTelemetry";
 
 // MCP Analytics tab (#879) — KPI cards + 3 charts + a call-results log over the MCP tool-call
 // telemetry (~/.base-studio-code/mcp.log via read_mcp_log + mcpTelemetry.ts). Charts are

@@ -5,43 +5,14 @@ import type { AppStore } from "../types";
 import { repoPromptKey } from "../../lib/session/startupPrompt";
 import { DEFAULT_AUTO_FOCUS_MODE } from "../../lib/console/focusQueue";
 
-// NOTE: the skill library / per-session overrides / task groups moved to the Skills feature slice
-// (@/features/skills/store, #1309). This slice keeps MCP servers, hooks, command tiers, and the
-// session-wide flags/models.
+// NOTE: skills moved to the Skills feature slice (@/features/skills/store) and MCP servers + hooks
+// to the Extensions feature slice (@/features/extensions/store) (#1309). This slice keeps the
+// command tiers and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,
-  "mcpServers" | "addMcpServer" | "updateMcpServer" | "removeMcpServer" | "toggleMcpServer" | "setMcpServerProjects" | "hooks" | "addHook" | "updateHook" | "removeHook" | "toggleHook" | "setHookProjects" | "paneMcpServers" | "paneHooks" | "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
+  "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
-      mcpServers: [],
-      addMcpServer: (def) =>
-        set((s) => ({
-          mcpServers: [...s.mcpServers, { ...def, id: `mcp_${Math.random().toString(36).slice(2, 8)}` }],
-        })),
-      updateMcpServer: (id, patch) =>
-        set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
-      removeMcpServer: (id) =>
-        set((s) => ({ mcpServers: s.mcpServers.filter((e) => e.id !== id) })),
-      toggleMcpServer: (id) =>
-        set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)) })),
-      setMcpServerProjects: (id, projects) =>
-        set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, projects } : e)) })),
-      hooks: [],
-      addHook: (def) =>
-        set((s) => ({
-          hooks: [...s.hooks, { ...def, id: `hook_${Math.random().toString(36).slice(2, 8)}` }],
-        })),
-      updateHook: (id, patch) =>
-        set((s) => ({ hooks: s.hooks.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
-      removeHook: (id) =>
-        set((s) => ({ hooks: s.hooks.filter((e) => e.id !== id) })),
-      toggleHook: (id) =>
-        set((s) => ({ hooks: s.hooks.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)) })),
-      setHookProjects: (id, projects) =>
-        set((s) => ({ hooks: s.hooks.map((e) => (e.id === id ? { ...e, projects } : e)) })),
-      paneMcpServers: {},
-      paneHooks: {},
-
       allowedCommands: [],
       addAllowedCommand: (cmd) =>
         set((s) => ({

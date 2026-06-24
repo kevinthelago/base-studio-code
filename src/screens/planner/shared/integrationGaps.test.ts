@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { integrationGaps } from "./integrationGaps";
-import type { McpServer } from "../../../lib/session/mcpServers";
+import type { McpServer } from "@/features/extensions/lib/mcpServers";
 import type { DeclaredSource } from "./sourceConfig";
 
 const mcp = (name: string, over: Partial<McpServer> = {}): McpServer => ({

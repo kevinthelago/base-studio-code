@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { CatalogItem } from "../../data/mcpCatalog";
+import type { CatalogItem } from "@/data/mcpCatalog";
 
 export type Scope = "global" | "project";
 
