@@ -6,7 +6,7 @@ import { type Automation, appendRun, computeNextRun } from "../../lib/automation
 import type { Schedule, Command } from "../../data/mock";
 
 type AutomationsSlice = Pick<AppStore,
-  "kbBlocks" | "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "schedules" | "addSchedule" | "updateSchedule" | "removeSchedule" | "commands" | "addCommand" | "updateCommand" | "removeCommand" | "automations" | "addAutomation" | "updateAutomation" | "removeAutomation" | "setAutomationArmed" | "recordAutomationRun" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "removeDraftProject"
+  "kbBlocks" | "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "schedules" | "addSchedule" | "updateSchedule" | "removeSchedule" | "commands" | "addCommand" | "updateCommand" | "removeCommand" | "automations" | "addAutomation" | "updateAutomation" | "removeAutomation" | "setAutomationArmed" | "recordAutomationRun" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
 >;
 
 export const createAutomationsSlice: StateCreator<AppStore, [], [], AutomationsSlice> = (set) => ({
@@ -118,6 +118,15 @@ export const createAutomationsSlice: StateCreator<AppStore, [], [], AutomationsS
         set((s) => (!id || s.hiddenProjectIds.includes(id) ? {} : { hiddenProjectIds: [...s.hiddenProjectIds, id] })),
       addDraftProject: (key, draft) =>
         set((s) => ({ localDraftProjects: { ...s.localDraftProjects, [key]: draft } })),
+      // Patch a draft record in place (#1222) — used to persist a title edit so it survives a
+      // reopen. Keyed by the FROZEN key (not re-derived from the new title), so the on-disk folder
+      // stays put. No-ops if the draft is gone.
+      updateDraftProject: (key, patch) =>
+        set((s) => {
+          const cur = s.localDraftProjects[key];
+          if (!cur) return {};
+          return { localDraftProjects: { ...s.localDraftProjects, [key]: { ...cur, ...patch } } };
+        }),
       removeDraftProject: (key) =>
         set((s) => {
           const next = { ...s.localDraftProjects };
