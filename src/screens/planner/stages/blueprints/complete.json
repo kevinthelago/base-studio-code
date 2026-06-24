@@ -6,6 +6,7 @@
   "origin": "built-in",
   "category": "greenfield",
   "mode": "create",
+  "skills": ["web-seo"],
   "sections": [
     {
       "key": "context"
