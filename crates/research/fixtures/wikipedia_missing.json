@@ -1,0 +1,12 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "ns": 0,
+        "title": "Nonexistent Zzz Article",
+        "missing": true
+      }
+    ]
+  }
+}

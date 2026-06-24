@@ -1,0 +1,130 @@
+{
+  "manifest": 1,
+  "kind": "blueprint",
+  "id": "bsc-reskin",
+  "name": "base-studio-code Reskin",
+  "version": "1.0.0",
+  "description": "Re-theme base-studio-code to your taste by editing its design tokens.",
+  "payload": {
+    "id": "bsc-reskin",
+    "name": "base-studio-code Reskin",
+    "desc": "Re-theme base-studio-code to your taste — palette, fonts, roundness, density, light/dark — by pointing a planning session at your own clone and letting the fleet edit the design tokens.",
+    "category": "transform",
+    "mode": "operate",
+    "pitch": "Make the app yours. Describe a vibe and the fleet rewrites src/styles/tokens.css (the oklch palette, fonts, radii) plus the light/dark [data-theme] block to match — never touching design/.",
+    "audience": "base-studio-code users with a local clone/fork who want to restyle the app itself.",
+    "tags": ["theme", "ui", "tokens", "reskin", "transform"],
+    "icon": "🎨",
+    "skills": ["reskin-bsc"],
+    "mcp": [],
+    "sections": [
+      {
+        "key": "context",
+        "name": "The look",
+        "glyph": "🎨",
+        "gate": "aesthetic captured",
+        "deps": [],
+        "blurb": "Capture the desired vibe before touching any code.",
+        "skills": ["reskin-bsc"],
+        "prompt": "You are restyling **base-studio-code itself** by rewriting its design tokens. First, capture the desired aesthetic — one topic at a time, each a short `context/<topic>.md` — and confirm with the user:\n- **palette / brand** — the accent hue + overall color feel (e.g. warm amber, cool indigo, high-contrast mono).\n- **mode** — dark, light, or both (the app ships dark by default with a `[data-theme=\"light\"]` override).\n- **typography** — the feel for the sans + mono families (and any specific fonts to load).\n- **shape & density** — rounded vs. sharp, airy vs. compact.\n- **mood** — a sentence or two; if the user has **Claude Design** files, accept them as references.\nDo NOT propose concrete token values yet — that's the Theme tokens stage. Read the **Reskin base-studio-code** skill now; it is the source of truth for the token system and the guardrails (especially: `design/` is REFERENCE-ONLY — never edit it)."
+      },
+      {
+        "key": "repos",
+        "name": "Repos",
+        "glyph": "▤",
+        "gate": "clone linked",
+        "deps": ["context"],
+        "blurb": "Link the user's base-studio-code clone/fork.",
+        "prompt": "Link the user's **base-studio-code clone or fork** as the target repo — emit `<repo_link owner/repo>` for it. This blueprint edits that repo's `src/styles/tokens.css` (and, if needed, the fonts wired in `index.html`). It is self-referential: it is only useful against a base-studio-code checkout."
+      },
+      {
+        "key": "theme-tokens",
+        "name": "Theme tokens",
+        "glyph": "◧",
+        "gate": "token map defined",
+        "deps": ["repos"],
+        "skills": ["reskin-bsc"],
+        "blurb": "Translate the look into concrete oklch values for every :root token.",
+        "prompt": "Translate the captured look into **concrete oklch values for every `:root` token** in `src/styles/tokens.css`, and matching values in the `[data-theme=\"light\"]` block (and/or the dark default). Cover the full catalog: backgrounds `--bg-canvas/-panel/-elev/-elev2`, borders `--border/-border-soft`, foreground `--fg/-muted/-dim`, accent `--accent/-dim` (+ any `--accent-soft/-text`), and state colors `--success/-info/-violet/-danger`. Keep values in **oklch** (lightness, chroma, hue) — adjust hue for the brand, keep enough lightness/chroma separation that text stays readable and surfaces stay layered. Present the proposed token map (dark + light) as a table and get the user's confirmation. Per the skill: keep contrast accessible and never edit `design/`."
+      },
+      {
+        "key": "typography",
+        "name": "Typography",
+        "glyph": "𝐀",
+        "gate": "fonts chosen + wired",
+        "deps": ["theme-tokens"],
+        "skills": ["reskin-bsc"],
+        "blurb": "Pick + wire --sans / --mono and load the fonts.",
+        "prompt": "Choose the sans + mono families and wire them: set `--sans` and `--mono` in `:root`, and **load the fonts** (the Google Fonts `<link>` in `index.html`, or a self-hosted `@font-face`). Keep a robust system-font fallback stack on each var. If the user wants a size scale change, note it but prefer leaving base sizes alone unless asked. Confirm the picks with the user."
+      },
+      {
+        "key": "shape-density",
+        "name": "Shape & density",
+        "glyph": "▢",
+        "gate": "radii + density set",
+        "deps": ["theme-tokens"],
+        "skills": ["reskin-bsc"],
+        "blurb": "Tune --r-* radii and spacing/density.",
+        "prompt": "Tune the corner radii — `--r-sm` / `--r-md` / `--r-lg` (defaults 4 / 6 / 10px) — toward the desired roundness (sharper or softer), and adjust any spacing/density the look calls for. Keep changes token-driven where possible. Confirm with the user."
+      },
+      {
+        "key": "scope-strategy",
+        "name": "Scope & light/dark",
+        "glyph": "◐",
+        "gate": "scope decided",
+        "deps": ["theme-tokens"],
+        "skills": ["reskin-bsc"],
+        "blurb": "Global retheme vs. scoped per-surface overrides; how light/dark resolves.",
+        "prompt": "Decide the scope: a **global** retheme (rewrite the `:root` + `[data-theme=\"light\"]` tokens) vs. **scoped per-surface** overrides using the proven `.console-theme` pattern (override the tokens only under a surface's class). Confirm how light/dark resolves — the `[data-theme]` attribute wired through the Appearance settings page — and that both modes are covered. Keep the two-mode contract intact."
+      },
+      {
+        "key": "preview-verify",
+        "name": "Preview & verify",
+        "glyph": "◉",
+        "gate": "look confirmed",
+        "deps": ["typography", "shape-density", "scope-strategy"],
+        "skills": ["reskin-bsc"],
+        "blurb": "Run the app / render-preview and confirm the look holds everywhere.",
+        "prompt": "Verify the reskin holds together: run the app (or the render-preview) and check the new look across the **chrome (titlebar/rail), console, planner, and settings** surfaces, in **both light and dark**. Confirm contrast/readability and that nothing reads broken. Capture any fixes as follow-up notes for the fleet."
+      },
+      {
+        "key": "structure",
+        "name": "Plan the change",
+        "glyph": "≡",
+        "gate": "plan sequenced",
+        "deps": ["preview-verify"],
+        "blurb": "Sequence the reskin into an executable plan.",
+        "prompt": "Sequence the reskin into a concrete, executable plan for the fleet: the token rewrite (dark + light), the font wiring, the radii/density changes, and any scoped overrides — as ordered work items against `src/styles/tokens.css` (and `index.html` for fonts). Keep it to the minimum set of edits; do not refactor unrelated styles, and do not touch `design/`."
+      },
+      {
+        "key": "permissions",
+        "name": "Permissions",
+        "glyph": "⚿",
+        "gate": "fleet planned",
+        "deps": ["structure"],
+        "blurb": "Plan the least-privilege agent that executes the reskin.",
+        "prompt": "Plan the agent fleet that executes the reskin — typically a single worker scoped to `src/styles/**` (+ `index.html` for fonts), least-privilege, with `design/` explicitly out of its write boundary. Pipe the FleetPlan to `bsc-plan fleet set`."
+      },
+      {
+        "key": "deploy",
+        "name": "Land it",
+        "glyph": "⤳",
+        "gate": "branch/PR opened",
+        "deps": ["permissions"],
+        "blurb": "The fleet lands the reskin on a branch / PR.",
+        "prompt": "Have the fleet land the reskin on a feature branch and open a PR against the user's clone — the token edits, font wiring, and radii/density changes — so the user can review the new look before merging. No production deploy; this is a local repo restyle."
+      }
+    ],
+    "bundledSkills": [
+      {
+        "id": "reskin-bsc",
+        "name": "Reskin base-studio-code",
+        "kind": "skill",
+        "skillKind": "workflow",
+        "desc": "How to re-theme base-studio-code safely: the design-token catalog, oklch palette conventions, the [data-theme] light/dark mechanism, scoped per-surface overrides, font swaps, and the design/=reference-only guardrail.",
+        "tools": ["Read", "Edit", "Grep"],
+        "content": "# Reskin base-studio-code\n\nThe app's entire look is **design tokens** in `src/styles/tokens.css`. To reskin it you rewrite token values (and optionally add scoped overrides + swap fonts) — you almost never touch component code.\n\n## Hard guardrail\n- **`design/` is REFERENCE-ONLY — never edit anything under `design/`.** It's the browser-rendered prototype, not the live app. The live styles are `src/styles/tokens.css`.\n\n## The token catalog (`:root` in `tokens.css`)\n- **Backgrounds (layering, darkest→lightest):** `--bg-canvas`, `--bg-panel`, `--bg-elev`, `--bg-elev2`\n- **Borders:** `--border`, `--border-soft`\n- **Foreground:** `--fg`, `--fg-muted`, `--fg-dim`\n- **Accent:** `--accent`, `--accent-dim` (some surfaces also use `--accent-soft`, `--accent-text`)\n- **State:** `--success`, `--info`, `--violet`, `--danger`\n- **Typography:** `--sans` (Inter), `--mono` (JetBrains Mono)\n- **Radii:** `--r-sm` (4px), `--r-md` (6px), `--r-lg` (10px)\n\n## oklch conventions\n- All colors are **oklch** — `oklch(L C H)`: L = lightness (0–1), C = chroma (~0–0.4), H = hue (deg). Keep this format.\n- **Rebrand = shift the hue** (and tune chroma) consistently across `--accent*` and the tinted surfaces; keep the **lightness ramp** of the `--bg-*` set so panels stay layered.\n- Preserve **contrast**: `--fg` on `--bg-canvas` must stay readable; keep state colors distinguishable.\n\n## Light / dark\n- The app ships **dark by default** (`:root`), with a **`[data-theme=\"light\"]`** block that overrides the same tokens for light mode. The mode is toggled via the `data-theme` attribute, wired through the **Appearance settings** page.\n- Reskin **both**: update the `:root` (dark) values AND the `[data-theme=\"light\"]` values. Don't leave one mode stale.\n\n## Scoped per-surface overrides\n- To retheme just one surface (not the whole app), follow the existing **`.console-theme`** pattern: redeclare the tokens inside a surface-scoped selector so they cascade only there. Use this for accent surfaces; use the global `:root`/`[data-theme]` rewrite for an app-wide reskin.\n\n## Font swap\n1. Set `--sans` / `--mono` in `:root`, keeping a system fallback stack (e.g. `\"YourFont\", -apple-system, system-ui, sans-serif`).\n2. **Load the font** — add/replace the Google Fonts `<link>` in `index.html`, or self-host with `@font-face`.\n3. Don't hard-code font names in components; everything reads `var(--sans)` / `var(--mono)`.\n\n## Verify\n- Run the app (or render-preview) and check **chrome, console, planner, settings** in **both light and dark**. Confirm readability/contrast and that surfaces stay layered.\n\n## Scope discipline\n- Keep edits to `src/styles/tokens.css` (+ `index.html` for fonts). Don't refactor unrelated CSS, and never edit `design/`."
+      }
+    ]
+  }
+}
