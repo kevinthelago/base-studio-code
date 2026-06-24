@@ -125,6 +125,9 @@ export interface FooterAction {
   /** The active phase is an OPTIONAL stage the user can deliberately skip past — the advance bar
    *  shows a secondary "Skip stage" control alongside the primary action (#921). */
   canSkip?: boolean;
+  /** The primary action is a user GATE OVERRIDE (#1285): the active stage's gate is NOT satisfied,
+   *  but the "allow gate override" setting lets the user force past it. Rendered cautionary. */
+  override?: boolean;
 }
 
 /**
@@ -145,6 +148,22 @@ export function footerAction(
   if (selectedIdx < activeIdx) return { kind: "jump-to-current", enabled: true };
   if (planComplete) return { kind: "publish", enabled: true };
   return { kind: "approve-continue", enabled: currentGateReady, canSkip: activeSkippable };
+}
+
+/**
+ * Resolve the final advance-bar action from the raw {@link footerAction} (#1285). For a blocking
+ * "approve & continue" (gate not ready), it lights up in priority order:
+ *   1. `pendingCount > 0` — there are drafted-but-unconfirmed sections; clicking confirms them (the
+ *      normal one-click approval, NOT an override).
+ *   2. `allowOverride` — the user enabled gate override in Settings; force-enable + flag `override`
+ *      so the footer renders a cautionary "override gate & continue" that bypasses the gate.
+ * Otherwise the action passes through unchanged (button stays disabled). Pure + unit-tested.
+ */
+export function resolveFooter(raw: FooterAction, pendingCount: number, allowOverride: boolean): FooterAction {
+  if (raw.kind !== "approve-continue" || raw.enabled) return raw;
+  if (pendingCount > 0) return { ...raw, enabled: true };
+  if (allowOverride) return { ...raw, enabled: true, override: true };
+  return raw;
 }
 
 /** Whether the active phase's gate is satisfied — enables "approve & continue". */
