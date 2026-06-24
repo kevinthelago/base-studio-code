@@ -3,6 +3,7 @@ import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
   isConnected, connectedCount, allSourcesConnected, sourceChecks, coerceSourceConfig, parseSourceConfigTag,
   deriveDataModel, migrationActive, datamodelSignals, downstreamImpact,
+  presetToConnector, registerPresetConnectors,
   scanEntities, scanEdges, aggregatePlatform, isMultiSource, connectorColor,
   type DeclaredSource, type SourceConfig, type PlatformScanView,
 } from "./sourceConfig";
@@ -256,5 +257,27 @@ describe("sourceConfig — scan visualizations view-model (#1209)", () => {
     // the resolved lookup becomes a graph edge
     const edges = scanEdges(scanEntities(cfg));
     expect(edges).toContainEqual({ from: "account", to: "user", label: "ownerid → User" });
+  });
+});
+
+describe("packaged vendor presets (#1288)", () => {
+  it("presetToConnector builds a generic-REST connector (base URL + token)", () => {
+    const c = presetToConnector({ id: "shopify", name: "Shopify", category: "ecommerce", contributes: "products · orders" });
+    expect(c).toMatchObject({ id: "shopify", name: "Shopify", category: "ecommerce", preset: true, authLabel: "token" });
+    expect(c.spec.auth).toBe("token");
+    expect(c.spec.fields.map((f) => f.key)).toEqual(["baseUrl", "token"]);
+    expect(c.spec.fields.find((f) => f.key === "token")?.secret).toBe(true);
+    expect(c.spec.contributes).toContain("products");
+  });
+
+  it("registerPresetConnectors lets connector(id) resolve a declared preset's spec", () => {
+    // Unknown id → bare fallback (no fields) before registration.
+    expect(connector("acme-preset").spec.fields).toEqual([]);
+    registerPresetConnectors([presetToConnector({ id: "acme-preset", name: "Acme", category: "crm", contributes: "deals" })]);
+    const resolved = connector("acme-preset");
+    expect(resolved.name).toBe("Acme");
+    expect(resolved.spec.fields.map((f) => f.key)).toEqual(["baseUrl", "token"]);
+    // A dedicated connector still wins over any same-id preset.
+    expect(connector("salesforce").name).toBe("Salesforce");
   });
 });
