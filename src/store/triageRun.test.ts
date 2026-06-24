@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "./";
+import { triagePaneId } from "../lib/console/paneIdentity";
+import { sanitizeProjectKey } from "../lib/core/projectPaths";
 
 // #1004: prepareTriageRun reads plan.db (last-run marker + changed-since delta), renders the resume
 // lead, and stamps a fresh marker; triageStartProject leads each pane's prompt with that delta.
@@ -56,7 +58,7 @@ describe("triageStartProject deltas (#1004)", () => {
       "o/web": "RESUME: since your last triage, 1 issue(s) changed.",
     });
     const st = useAppStore.getState();
-    const text = st.paneStartupPromptText[`t${st.activeTabIdx}p0`];
+    const text = st.paneStartupPromptText[triagePaneId(sanitizeProjectKey("dproj"), "o/web")];
     expect(text.startsWith("RESUME: since your last triage")).toBe(true);
     expect(text).toContain("You are triaging"); // the full prompt still follows the lead
   });
