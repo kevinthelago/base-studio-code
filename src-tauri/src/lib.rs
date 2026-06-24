@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use tauri::{Manager, RunEvent};
 
-mod tunnel;
 mod planner;
 mod platform;
 
@@ -24,7 +23,7 @@ pub(crate) use github::{oauth, git_hooks as githooks};
 pub(crate) use sources::{data, oauth as source_oauth, credentials};
 pub(crate) use knowledge::docstore;
 pub(crate) use observability::{logs, perf, tokens};
-pub(crate) use mobile::push as fcm;
+pub(crate) use mobile::{push as fcm, tunnel};
 pub(crate) use project::plan_db;
 
 // Shared platform primitives (#1300), re-exported at the crate root so existing call sites resolve
