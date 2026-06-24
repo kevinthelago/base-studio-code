@@ -19,7 +19,29 @@
       "lastActivity": "2026-05-29T00:00:00.000Z",
       "prompt": "Apply this change? (y/n)"
     },
-    "user_request": { "type": "user_request", "paneId": "t0p0", "prompt": "Apply this change? (y/n)" }
+    "user_request": { "type": "user_request", "paneId": "t0p0", "prompt": "Apply this change? (y/n)" },
+    "plan_state": {
+      "type": "plan_state",
+      "projectId": "proj-bf9cf968",
+      "currentStage": "goal",
+      "confirmedSections": ["goal"],
+      "files": [{ "relpath": "goal.md", "content": "# Goal\nShip it." }],
+      "messages": [{ "role": "assistant", "text": "Here's the goal.", "at": 1748476800000 }],
+      "pipelineRuns": [{ "id": "build", "stage": "test", "status": "running" }]
+    },
+    "plan_event": {
+      "type": "plan_event",
+      "projectId": "proj-bf9cf968",
+      "kind": "section_confirmed",
+      "section": "goal",
+      "at": 1748476800000
+    },
+    "plan_status": {
+      "type": "plan_status",
+      "projectId": "proj-bf9cf968",
+      "currentStage": "scope",
+      "status": "in_progress"
+    }
   },
   "clientToServer": {
     "auth": { "type": "auth", "token": "0123456789abcdef", "fcmToken": "fcm-token-xyz" },
@@ -28,6 +50,9 @@
     "pane_set_state": { "type": "pane_set_state", "paneId": "t0p0", "state": "streaming" },
     "pane_focus": { "type": "pane_focus", "paneId": "t0p0" },
     "pane_input": { "type": "pane_input", "paneId": "t0p0", "data": "ls\n" },
-    "pane_resize": { "type": "pane_resize", "paneId": "t0p0", "cols": 80, "rows": 24 }
+    "pane_resize": { "type": "pane_resize", "paneId": "t0p0", "cols": 80, "rows": 24 },
+    "plan_advance": { "type": "plan_advance", "projectId": "proj-bf9cf968", "stageKey": "scope" },
+    "plan_confirm": { "type": "plan_confirm", "projectId": "proj-bf9cf968", "section": "goal" },
+    "plan_chat": { "type": "plan_chat", "projectId": "proj-bf9cf968", "text": "make the goal more specific" }
   }
 }

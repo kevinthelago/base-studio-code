@@ -12,6 +12,7 @@
 
 // The desktop's canonical per-pane status (#435), the input this module maps FROM.
 import type { PaneStatus as DesktopPaneStatus } from "../console/paneStatus";
+import type { CanonicalFile } from "../planner/plannerCore";
 
 /** Pane status as the mobile client models it (`PaneStatus`) — a distinct wire
  *  vocabulary the desktop's `DesktopPaneStatus` is mapped into by `mapStatus`. */
@@ -67,6 +68,94 @@ export interface PairingPayload {
 export function pairingPayload(s: TunnelStatus): PairingPayload | null {
   if (!s.running || !s.relayUrl || !s.room || !s.hostPubKey || !s.psk) return null;
   return { relayUrl: s.relayUrl, room: s.room, hostPubKey: s.hostPubKey, psk: s.psk };
+}
+
+// ── Planner-session frames (#934 / #985 / #986 / #987) ──────────────────────────
+//
+// The LIVE planning session projected to a paired phone, distinct from the async
+// `plan_sync_*` file-reconciliation path (which stays as-is). The desktop is the single
+// source of truth: it emits `plan_state` (full snapshot, replayed on connect), `plan_event`
+// (transient deltas, fire-and-forget), and `plan_status` (cheap header, replayed); the phone
+// mirrors them read-only and DRIVES via the inbound `plan_advance` / `plan_confirm` /
+// `plan_chat` frames. Wire shapes are pinned in tunnelProtocol.fixtures.json and mirrored in
+// mobile-studio-code; field names are camelCase, the `type` tag is snake_case.
+
+/** One chat turn in the planning session, as the phone renders it. */
+export interface PlanMessage {
+  role: "user" | "assistant";
+  text: string;
+  /** Epoch ms. */
+  at: number;
+}
+
+/** A pipeline run's live state (#220), projected to the phone. */
+export interface PlanPipelineRun {
+  id: string;
+  stage: string;
+  status: string;
+}
+
+/** Full live planning-session snapshot (server → phone). Replayed to a freshly-paired
+ *  client, so it must stand alone. `files` is the canonical section set (via hubToCanonical). */
+export interface PlanStateFrame {
+  type: "plan_state";
+  projectId: string;
+  currentStage: string;
+  confirmedSections: string[];
+  files: CanonicalFile[];
+  messages: PlanMessage[];
+  pipelineRuns: PlanPipelineRun[];
+}
+
+export type PlanEventKind = "section_confirmed" | "stage_advanced" | "message_appended" | "pipeline_run";
+
+/** A transient planning delta (server → phone). Fire-and-forget — NOT replayed (a late
+ *  client gets the full picture from the replayed plan_state instead). The detail fields are
+ *  populated per `kind`. */
+export interface PlanEventFrame {
+  type: "plan_event";
+  projectId: string;
+  kind: PlanEventKind;
+  /** Epoch ms. */
+  at: number;
+  /** kind === "section_confirmed". */
+  section?: string;
+  /** kind === "stage_advanced". */
+  stage?: string;
+  /** kind === "message_appended". */
+  message?: PlanMessage;
+  /** kind === "pipeline_run". */
+  run?: PlanPipelineRun;
+}
+
+/** Cheap header update (server → phone): the active stage + a short plan-status label.
+ *  Replayed on connect. */
+export interface PlanStatusFrame {
+  type: "plan_status";
+  projectId: string;
+  currentStage: string;
+  status: string;
+}
+
+/** Phone → desktop: advance to (or jump to) a stage. */
+export interface PlanAdvanceFrame {
+  type: "plan_advance";
+  projectId: string;
+  stageKey: string;
+}
+
+/** Phone → desktop: confirm a plan section. */
+export interface PlanConfirmFrame {
+  type: "plan_confirm";
+  projectId: string;
+  section: string;
+}
+
+/** Phone → desktop: send a chat message into the live planner session. */
+export interface PlanChatFrame {
+  type: "plan_chat";
+  projectId: string;
+  text: string;
 }
 
 // ── Store → wire mapping (pure) ─────────────────────────────────────────────────
