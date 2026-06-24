@@ -63,6 +63,7 @@ import { findPlanGaps } from "../grading/lintPlan";
 import { findPlanInjections, injectionGate } from "../grading/planInjection";
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
+import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { Ic } from "../blueprints/blueprintIcons";
 import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
 import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "../blueprints/blueprintSkills";
@@ -1095,8 +1096,6 @@ export function Planning({ visible }: { visible: boolean }) {
   const apLastSnapLen  = useRef(0);
   const apLastAnswered = useRef(0);
   // Tracks whether the auto-send of the initial pitch has fired this session
-  const initSentRef    = useRef(false);
-  const initSendTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
   // ── Planning autopilot (#746) ───────────────────────────────────────────────
@@ -1258,8 +1257,6 @@ export function Planning({ visible }: { visible: boolean }) {
     const projNumberSnap  = activeProjectNumber;
     const pitchSnap       = planningPitch;
     const projIdSnap      = effectiveProjectId;
-    // True only for brand-new sessions — no prior plan sections saved for this project
-    const isFreshSession  = !isExisting && Object.keys(planSections[effectiveProjectId] ?? {}).length === 0;
     const ghLoginSnap     = useAppStore.getState().githubUser?.login ?? "";
     const ghNameSnap      = useAppStore.getState().githubUser?.name  ?? "";
     const automationsSnap = [
@@ -1510,29 +1507,28 @@ export function Planning({ visible }: { visible: boolean }) {
         denyToolRules:   plannerWrite.deny,
         replacePermissions: true,
       }).catch((e: unknown) => console.error("planner session settings failed:", e));
+      // Planner introduction (#1240): a user-facing kickoff that has the planner OPEN the
+      // conversation (introduce itself, sketch the stage journey, summarize capabilities, ask one
+      // orienting question) instead of launching into a quiet terminal. Baked into the claude launch
+      // arg as a FRESH-ONLY startup prompt — the backend (which knows the conversation history)
+      // delivers it only on a genuinely new session and drops it on `--continue` resume, so a
+      // returning user isn't re-greeted. For a new project the user's pitch rides along so the
+      // planner acknowledges it rather than asking what they're building (replaces the old
+      // idle-detection pitch-typing). On failure it's undefined → the launch falls back to initCmd.
+      const introMode = plannerIntroMode({ isAuthoring, isExisting });
+      const introText = await invoke<string>("planner_intro_prompt", { mode: introMode })
+        .catch((e: unknown) => { console.error("planner intro prompt failed:", e); return ""; });
+      const startupPrompt = composePlannerIntro(introText, introMode, pitchSnap ?? "") || undefined;
       await invoke("pty_create", {
         paneId:  paneId,
         cols:    term.cols,
         rows:    term.rows,
         cwd:     paths?.planning_dir ?? "",
         initCmd: "claude --continue 2>/dev/null || claude",
+        startupPrompt,
+        startupPromptFreshOnly: true,
         env:     ghEnv,
       }).catch(console.error);
-
-      // For brand-new sessions, send the pitch automatically once Claude has
-      // had time to finish its startup banner and reach the input prompt.
-      // The 3-second delay is intentionally generous — bytes written to a PTY
-      // are buffered by the kernel, so they arrive at Claude regardless of
-      // whether we race with its banner. We just want to avoid sending before
-      // Claude switches the terminal into raw (interactive) mode.
-      if (isFreshSession && pitchSnap && !initSentRef.current) {
-        initSendTimer.current = setTimeout(() => {
-          if (!initSentRef.current) {
-            initSentRef.current = true;
-            invoke("pty_write", { paneId, data: `${pitchSnap}\r` }).catch(console.error);
-          }
-        }, 3000);
-      }
     });
 
     const ro = new ResizeObserver(() => {
@@ -1548,7 +1544,6 @@ export function Planning({ visible }: { visible: boolean }) {
     ro.observe(el);
 
     return () => {
-      if (initSendTimer.current !== null) clearTimeout(initSendTimer.current);
       unlistenData.current?.();
       unlistenExit.current?.();
       ro.disconnect();
@@ -1793,12 +1788,19 @@ export function Planning({ visible }: { visible: boolean }) {
     const paths = await regenerateWorkspace();
     const token = useAppStore.getState().githubToken;
     const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
+    // A deliberate restart launches a brand-new `claude` — re-greet with the intro (#1240). No
+    // fresh-only guard here: the user explicitly restarted, so fire it even though history exists.
+    const introMode = plannerIntroMode({ isAuthoring, isExisting });
+    const introText = await invoke<string>("planner_intro_prompt", { mode: introMode })
+      .catch((e: unknown) => { console.error("planner intro prompt failed:", e); return ""; });
+    const startupPrompt = composePlannerIntro(introText, introMode, planningPitch ?? "") || undefined;
     await invoke("pty_create", {
       paneId: paneId,
       cols: term.cols,
       rows: term.rows,
       cwd: paths?.planning_dir ?? "",
       initCmd: "claude",
+      startupPrompt,
       env: ghEnv,
     }).catch(console.error);
     setRestarting(false);

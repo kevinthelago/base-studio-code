@@ -2413,6 +2413,7 @@ pub fn run() {
             credentials::source_delete_secret,
             source_oauth::source_oauth_begin,
             planner::setup_workspaces,
+            planner::planner_intro_prompt,
             setup_kb_workspace,
             clone_repo,
             mcp_clone,

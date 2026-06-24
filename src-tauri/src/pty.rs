@@ -261,6 +261,40 @@ pub(crate) fn session_env(caller: &HashMap<String, String>) -> Vec<(String, Stri
     env
 }
 
+/// What a session should auto-launch (#1240). Pure so the fresh-only intro suppression is testable
+/// without a PTY or a harness.
+#[derive(Debug, PartialEq)]
+pub(crate) enum LaunchPlan {
+    /// Bake the startup prompt as claude's initial message (`resume` ⇒ launch with `--continue`).
+    Prompt { resume: bool },
+    /// Run a literal init command (e.g. `claude --continue || claude`).
+    Init(String),
+    /// Nothing to auto-launch — a bare shell.
+    None,
+}
+
+/// Decide what a session launches. A non-empty `startup_prompt` wins and is baked as claude's first
+/// message — UNLESS it is `fresh_only` and a prior conversation exists, in which case a resumed
+/// session must NOT be re-greeted (#1240): fall through to `init_cmd` (e.g. `claude --continue ||
+/// claude`) so the user resumes quietly. `resume` (add `--continue`) holds only when the caller
+/// opted in AND there's actually history to continue.
+pub(crate) fn plan_launch(
+    startup_prompt: Option<&str>,
+    init_cmd: Option<&str>,
+    has_history: bool,
+    continue_session: bool,
+    fresh_only: bool,
+) -> LaunchPlan {
+    let suppress = fresh_only && has_history;
+    match startup_prompt.filter(|s| !s.is_empty() && !suppress) {
+        Some(_) => LaunchPlan::Prompt { resume: continue_session && has_history },
+        None => match init_cmd.filter(|s| !s.is_empty()) {
+            Some(s) => LaunchPlan::Init(s.to_string()),
+            None => LaunchPlan::None,
+        },
+    }
+}
+
 /// Returns `true` when a new session is created, `false` when reconnecting to
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
@@ -275,6 +309,10 @@ pub(crate) async fn pty_create(
     env: Option<std::collections::HashMap<String, String>>,
     startup_prompt: Option<String>,
     continue_session: Option<bool>,
+    // A FRESH-ONLY startup prompt (#1240): deliver `startup_prompt` only when there's no prior
+    // conversation for this cwd; on a resume, drop it and fall through to `init_cmd` so a returning
+    // user isn't re-greeted. None/false ⇒ the prompt always fires (triage/fleet behavior).
+    startup_prompt_fresh_only: Option<bool>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     // Console provider id (e.g. "claude", "gemini") — informational; logged so traces
@@ -482,10 +520,17 @@ pub(crate) async fn pty_create(
     // still delivers the prompt.
     // The session harness (#1078 P0): ClaudeCodeAdapter is the only impl today; it reproduces the
     // exact launch behavior this block had inline. bsc-agent becomes a second adapter (P2).
-    let resume = continue_session.unwrap_or(false) && harness.detect_history(&cwd);
-    let launch = match startup_prompt.as_deref().filter(|s| !s.is_empty()) {
-        Some(p) => Some(harness.launch_command(p, resume)),
-        None => init_cmd.as_deref().filter(|s| !s.is_empty()).map(|s| s.to_string()),
+    let has_history = harness.detect_history(&cwd);
+    let launch = match plan_launch(
+        startup_prompt.as_deref(),
+        init_cmd.as_deref(),
+        has_history,
+        continue_session.unwrap_or(false),
+        startup_prompt_fresh_only.unwrap_or(false),
+    ) {
+        LaunchPlan::Prompt { resume } => Some(harness.launch_command(startup_prompt.as_deref().unwrap_or(""), resume)),
+        LaunchPlan::Init(s) => Some(s),
+        LaunchPlan::None => None,
     };
     // Whether the launch would start `claude` — the only command the degraded
     // non-bash path replays (an arbitrary bash init_cmd would be invalid there).
@@ -791,6 +836,47 @@ pub(crate) fn tunnel_set_pane_size(app: &AppHandle, pane_id: &str, cols: u16, ro
 mod tests {
     use super::session_env;
     use super::plan_db_for_cwd;
+    use super::{plan_launch, LaunchPlan};
+
+    const INIT: &str = "claude --continue 2>/dev/null || claude";
+
+    #[test]
+    fn plan_launch_fresh_only_fires_the_prompt_when_there_is_no_history() {
+        // #1240 planner intro: fresh session (no prior conversation) ⇒ bake the intro, no --continue.
+        assert_eq!(
+            plan_launch(Some("intro"), Some(INIT), false, false, true),
+            LaunchPlan::Prompt { resume: false },
+        );
+    }
+
+    #[test]
+    fn plan_launch_fresh_only_is_suppressed_on_resume_and_falls_to_init() {
+        // History exists ⇒ a returning user must NOT be re-greeted; fall to init_cmd (resume quietly).
+        assert_eq!(
+            plan_launch(Some("intro"), Some(INIT), true, false, true),
+            LaunchPlan::Init(INIT.to_string()),
+        );
+    }
+
+    #[test]
+    fn plan_launch_non_fresh_only_prompt_always_fires() {
+        // Triage/fleet (fresh_only = false): the prompt fires regardless of history, with --continue
+        // when the caller opted into continuation and there's history to continue.
+        assert_eq!(
+            plan_launch(Some("triage"), Some(INIT), true, true, false),
+            LaunchPlan::Prompt { resume: true },
+        );
+        assert_eq!(
+            plan_launch(Some("triage"), Some(INIT), false, true, false),
+            LaunchPlan::Prompt { resume: false },
+        );
+    }
+
+    #[test]
+    fn plan_launch_no_prompt_uses_init_then_bare_shell() {
+        assert_eq!(plan_launch(None, Some(INIT), true, false, false), LaunchPlan::Init(INIT.to_string()));
+        assert_eq!(plan_launch(Some(""), None, false, false, true), LaunchPlan::None);
+    }
     use crate::bsc_base_dir;
     #[cfg(any(windows, unix))]
     use super::PtyJob;
