@@ -96,6 +96,7 @@ export function PreviewPaneShell({ projectKey, onClose }: PipelineScreenProps) {
 
   const loadSkeleton = async () => {
     try {
+      await invoke('sync_design_to_skeleton', { projectKey }).catch(() => {}); // #1373: pull dropped design into the skeleton first
       const files = await invoke<[string, string][]>('read_ui_skeleton', { projectKey });
       if (files.length > 0) {
         await dispatchRenderPreview({
