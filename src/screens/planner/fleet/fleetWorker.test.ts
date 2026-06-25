@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { permissionRows, flowRows, paneCoords, TOOL_ORDER } from "./fleetWorker";
-import type { AgentProfile } from "../../agents/agentProfiles";
+import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
 import { DEFAULT_FLOW } from "./agentFlow";
 
 const profile: AgentProfile = {

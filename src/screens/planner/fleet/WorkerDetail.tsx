@@ -11,7 +11,7 @@ import { useAppStore } from "../../../store";
 import { STATUS } from "../../../data/fleet";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
-import { parseAuditLog, type AuditRecord } from "../../agents/auditLog";
+import { parseAuditLog, type AuditRecord } from "@/features/agents/lib/auditLog";
 import { loadDoneAudit, type DoneAudit } from "../../../lib/fleet/workerAudit";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { LiveWorker } from "../../../lib/fleet/fleetLive";

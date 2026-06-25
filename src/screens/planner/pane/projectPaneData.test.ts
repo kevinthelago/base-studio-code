@@ -5,7 +5,7 @@ import { emptyFleet } from "../stages/planSections";
 import type { FleetPlan } from "../stages/planSections";
 import type { PlanIssue } from "../issues/planIssues";
 import type { Section } from "../github/ghStructure";
-import { PROFILES } from "../../agents/agentProfiles";
+import { PROFILES } from "@/features/agents/lib/agentProfiles";
 
 function base(over: Partial<BuildProjectPaneInput> = {}): BuildProjectPaneInput {
   return {
