@@ -488,7 +488,11 @@
    focused planner pane (#652) — one phase at a time. Scoped under .fp.
    Ported from design/bsc project planner focused/planner/planner.css.
    ===================================================================== */
-.fp { display: flex; flex-direction: column; height: 100%; background: var(--bg-panel);
+/* flex:1 (not just height:100%) so the pane shares the aside column with the InjectionGateBanner
+   above it — it takes the height LEFT after the banner instead of demanding the full aside and
+   overflowing its slot, which clipped tall stages like Source off-screen (#1422). min-height:0 lets
+   the inner .pp-scroll actually scroll. */
+.fp { display: flex; flex-direction: column; flex: 1 1 0; height: 100%; background: var(--bg-panel);
   min-height: 0; overflow: hidden; }
 
 /* pane identity header */
