@@ -25,6 +25,11 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+// Self-correction lessons (#1362) — their own concern, in their own module (mirrors how `crates/data`
+// keeps one file per concern). The module hangs its `lesson_*` methods off `Store` and owns its schema.
+mod lessons;
+pub use lessons::Lesson;
+
 /// The execution-status lifecycle (#plan-db). The DB is the coordination substrate: a worker moves
 /// its issue open → in_progress → complete (pushed/PR'd, awaiting verification); the director then
 /// checks the CI pipeline and moves complete → verified (green) or failed (red → rework). `blocked`
@@ -754,6 +759,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             last_run    INTEGER NOT NULL DEFAULT 0
          );",
     )?;
+    // Self-correction lessons (#1362) own their schema in the `lessons` module.
+    conn.execute_batch(lessons::LESSONS_DDL)?;
     // Additive migrations for a plan.db created before a column existed (each errors if the column is
     // already present — ignored).
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN status TEXT NOT NULL DEFAULT 'open'", []);
