@@ -17,7 +17,7 @@ import {
   groupSkillCount, type SkillDef, type SkillGroup,
 } from "./lib/skills";
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
-import { Spark } from "./SkillsCharts";
+import { Spark, HBars } from "./SkillsCharts";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import "./skills.css";
@@ -75,6 +75,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const removeSkill = useAppStore((s) => s.removeSkill);
   const toggleSkill = useAppStore((s) => s.toggleSkill);
   const toggleSkillPin = useAppStore((s) => s.toggleSkillPin);
+  const setSkillProjects = useAppStore((s) => s.setSkillProjects);
   const upsertSkills = useAppStore((s) => s.upsertSkills);
   const githubToken = useAppStore((s) => s.githubToken);
   const skillGroups = useAppStore((s) => s.skillGroups);
@@ -98,6 +99,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const [draft, setDraft] = useState<SkillDef | null>(null);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [addGroupOpen, setAddGroupOpen] = useState(false);
+  const [scopePickerOpen, setScopePickerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [projects, setProjects] = useState<GhProject[]>([]);
@@ -137,6 +139,12 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
 
   const kpis = useMemo(() => deriveSkillKpis(merged), [merged]);
   const invToday = useMemo(() => Object.values(stats).reduce((a, s) => a + s.today, 0), [stats]);
+  // Expanded digest: the "Most invoked" leaderboard (top 5 by invocations, actually run).
+  const leaders = useMemo(
+    () => [...merged].filter((s) => s.invocations > 0).sort((a, b) => b.invocations - a.invocations).slice(0, 5),
+    [merged],
+  );
+  const neverRun = useMemo(() => merged.filter((s) => s.invocations === 0).length, [merged]);
 
   // ── facets ──────────────────────────────────────────────────────────────────
   const facetDefs = useMemo(() => {
@@ -196,10 +204,23 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   // ── selection / bulk ──────────────────────────────────────────────────────────
   const toggleSel = (id: string) => setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const selectAllMatching = () => setSelected(new Set(filtered.map((s) => s.id)));
-  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); };
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); setScopePickerOpen(false); };
   const bulk = (fn: (id: string) => void) => { selected.forEach(fn); };
   const bulkAddToGroup = (groupId: string) => { selected.forEach((id) => { const g = skillGroups.find((x) => x.id === groupId); if (g && !g.skillIds.includes(id)) toggleSkillGroupMember(groupId, id); }); };
   const bulkDelete = () => { selected.forEach((id) => removeSkill(id)); exitSelect(); };
+  /** Set the selected skills' scope: [] = global, [projectNumber] = a single GitHub project. */
+  const bulkSetScope = (projects: string[]) => { selected.forEach((id) => setSkillProjects(id, projects)); setScopePickerOpen(false); };
+  /** Export the selected skills as a downloaded JSON array (the same shape `import` ingests). */
+  const bulkExport = () => {
+    const defs = skills.filter((s) => selected.has(s.id));
+    if (!defs.length) return;
+    const blob = new Blob([JSON.stringify(defs, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `skills-export-${defs.length}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // ── drawer ────────────────────────────────────────────────────────────────────
   const selectedSkill = selectedId ? skills.find((s) => s.id === selectedId) ?? null : null;
@@ -292,6 +313,38 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
               <span><b style={{ fontFamily: "var(--mono)", color: "var(--fg)" }}>{invToday}</b> today</span>
               <span><b style={{ fontFamily: "var(--mono)", color: "var(--success)" }}>{kpis.invWeek ? kpis.avgSuccess + "%" : "—"}</b> avg success</span>
             </div>
+            {digestOpen && (
+              <div className="skills-digest" style={{ display: "flex", gap: 14, padding: "0 18px 14px 18px", alignItems: "stretch" }}>
+                {[
+                  { label: "Invoked 7d", value: fmtCount(kpis.invWeek), sub: leaders.length + " active skills" },
+                  { label: "Avg success", value: kpis.invWeek ? kpis.avgSuccess + "%" : "—", sub: "across active" },
+                  { label: "Never run", value: String(neverRun), sub: "candidates to prune" },
+                ].map((t) => (
+                  <div key={t.label} style={{ flex: "0 0 auto", width: 150, padding: "11px 13px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)" }}>
+                    <div style={{ fontSize: 10, color: "var(--fg-dim)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: ".06em" }}>{t.label}</div>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600, color: "var(--fg)", marginTop: 5 }}>{t.value}</div>
+                    <div style={{ fontSize: 10.5, color: "var(--fg-muted)", marginTop: 2 }}>{t.sub}</div>
+                  </div>
+                ))}
+                <div className="skills-leaderboard" style={{ flex: 1, padding: "10px 14px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)" }}>
+                  <div style={{ fontSize: 10, color: "var(--fg-dim)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 7 }}>Most invoked</div>
+                  {leaders.length === 0 ? (
+                    <div style={{ fontSize: 11, color: "var(--fg-dim)" }}>No invocations yet — run the fleet to populate the leaderboard.</div>
+                  ) : (
+                    <HBars
+                      rows={leaders.map((s, i) => ({
+                        label: `${i + 1}  ${s.name}`,
+                        value: s.invocations,
+                        color: KIND[s.kind].color,
+                        strong: true,
+                        tag: <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: successColor(s.success) }}>{s.success}%</span>,
+                      }))}
+                      fmtV={(v) => fmtCount(v) + "×"}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Command bar */}
@@ -366,12 +419,24 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
                   <button className="btn" onClick={() => bulk((id) => { const s = skills.find((x) => x.id === id); if (s && !s.enabled) toggleSkill(id); })}>Enable</button>
                   <button className="btn" onClick={() => bulk((id) => { const s = skills.find((x) => x.id === id); if (s && s.enabled) toggleSkill(id); })}>Disable</button>
                   <button className="btn" onClick={() => bulk((id) => { const s = skills.find((x) => x.id === id); if (s && !s.pinned) toggleSkillPin(id); })}>★ Pin</button>
+                  <div style={{ position: "relative", display: "inline-flex" }}>
+                    <button className="btn" disabled={selected.size === 0} onClick={() => setScopePickerOpen((v) => !v)}>Set scope…</button>
+                    {scopePickerOpen && (
+                      <div style={{ position: "absolute", top: 32, left: 0, zIndex: 50, minWidth: 200, maxHeight: 240, overflowY: "auto", background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", boxShadow: "0 14px 36px rgba(0,0,0,.45)", padding: 4 }}>
+                        <div onClick={() => bulkSetScope([])} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: "var(--fg)" }}>Global (all projects)</div>
+                        {projects.length === 0
+                          ? <div style={{ padding: "6px 9px", fontSize: 10.5, color: "var(--fg-dim)" }}>Connect GitHub in Settings to scope per project.</div>
+                          : projects.map((p) => <div key={p.id} onClick={() => bulkSetScope([String(p.number)])} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: "var(--fg-muted)" }}>{p.title} <span style={{ color: "var(--fg-dim)" }}>#{p.number}</span></div>)}
+                      </div>
+                    )}
+                  </div>
                   {skillGroups.length > 0 && (
                     <select className="input" style={{ height: 26, fontSize: 11 }} value="" onChange={(e) => { if (e.target.value) bulkAddToGroup(e.target.value); e.target.value = ""; }}>
                       <option value="">⬡ Add to group…</option>
                       {skillGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </select>
                   )}
+                  <button className="btn" disabled={selected.size === 0} onClick={bulkExport}>Export</button>
                   <button className="btn" style={{ borderColor: tintBg("var(--danger)", 60), color: "var(--danger)" }} onClick={bulkDelete}>Delete</button>
                 </div>
               )}

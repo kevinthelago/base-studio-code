@@ -495,6 +495,49 @@ export function sampleScan(connectorId: string): { objects: DiscoveredObject[]; 
   };
 }
 
+// ── Propose sources from the pitch (#1349) ───────────────────────────────────────────────────────
+// The Source stage's "Confirm N sources" banner is seeded from the planner's pitch BEFORE any live
+// `<source_config>` tag arrives: a keyword scan over the pitch prose maps mentioned legacy systems to
+// catalog connector ids. This makes the stage open with the user CONFIRMING the obvious migration
+// sources rather than hunting the catalog. The match is conservative (word-boundary aliases) so an
+// unrelated mention doesn't propose a source; the user can always edit the selection or add more.
+
+/** Per-connector aliases matched (case-insensitive, word-boundary) against the pitch prose. */
+const PITCH_ALIASES: Record<string, string[]> = {
+  quickbooks: ["quickbooks", "qbo", "quick books"],
+  quickbase: ["quickbase", "quick base"],
+  salesforce: ["salesforce", "sfdc"],
+  hubspot: ["hubspot", "hub spot"],
+  monday: ["monday.com", "monday com", "monday"],
+  dynamics365: ["dynamics 365", "dynamics365", "dynamics", "d365"],
+  netsuite: ["netsuite", "net suite"],
+  "sap-odata": ["sap odata", "sap"],
+  sql: ["postgres", "postgresql", "mysql", "mariadb", "sql server", "sqlserver", "oracle db", "sql database"],
+  rest: ["openapi", "swagger", "rest api"],
+  csv: ["csv export", "csv file", "spreadsheet export"],
+};
+
+/** Escape a literal alias for use inside a RegExp. */
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Connector ids to propose from a planner pitch: any catalog connector whose alias appears in the
+ *  prose (word-boundary, case-insensitive), deduped and in catalog order. Empty for an empty/blank
+ *  pitch or one that mentions no known system. */
+export function proposeFromPitch(pitch: string | undefined): string[] {
+  const text = (pitch ?? "").toLowerCase();
+  if (!text.trim()) return [];
+  const ids: string[] = [];
+  for (const c of CONNECTORS) {
+    const aliases = PITCH_ALIASES[c.id];
+    if (!aliases) continue;
+    const hit = aliases.some((a) => new RegExp(`(^|[^a-z0-9])${escapeRe(a)}([^a-z0-9]|$)`, "i").test(text));
+    if (hit) ids.push(c.id);
+  }
+  return ids;
+}
+
 /** A redacted handle the planner may see for a connected source — instance + env, never a credential. */
 export function redactedHandle(s: DeclaredSource): string {
   const c = connector(s.connectorId);

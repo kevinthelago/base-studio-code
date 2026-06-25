@@ -9,6 +9,7 @@
 
 import type { AgentStream } from "../stages/planSections";
 import { buildWorkerDependencyBlock, type PlanDependency } from "../issues/dependencies";
+import { COMMONS_STREAM_ID } from "./commonsGate";
 
 /**
  * Render a stream's owned globs / issues / dependencies into the scope block that leads
@@ -29,7 +30,11 @@ export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = [
     ? stream.owns.map((g) => `\`${g}\``).join(", ")
     : "(none assigned — confirm your lane with the director before writing)";
   const issues = stream.issues.length ? stream.issues.join(", ") : "(none yet — ask the director)";
-  const streamDeps = stream.dependsOn.length ? stream.dependsOn.join(", ") : "none";
+  // The commons-landed sentinel (#851) is a Phase-0 gate, not a peer contract; surface it as the
+  // commons note below rather than in the contracts line so it doesn't read as another stream's seam.
+  const gatedOnCommons = stream.dependsOn.includes(COMMONS_STREAM_ID);
+  const contractDeps = stream.dependsOn.filter((d) => d !== COMMONS_STREAM_ID);
+  const streamDeps = contractDeps.length ? contractDeps.join(", ") : "none";
 
   const lines = [
     `# Your scope — ${stream.name}`,
@@ -47,6 +52,11 @@ export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = [
     "source of truth. Build to the contract now; if one is unclear or must change, ask the director",
     "(`bsc-ask`) rather than guessing or parking. For the high-level project context you don't have",
     "here, defer to the director.",
+    "",
+    "**Repo-root commons are the director's, not yours** — `.gitignore`, `package.json`/lockfile,",
+    "`tsconfig*`, `.github/workflows/**`, `.env.example`, formatter/linter config" + (gatedOnCommons ? " (already scaffolded on develop)" : "") + ". Do NOT",
+    "edit them: for a new dependency, ignore entry, CI tweak, or env key, ask the director (`bsc-ask`)",
+    "and pause (`bsc-wait`) — it lands the change and wakes you. (The scope hook blocks the write anyway.)",
     "",
     "Issue lifecycle is the director's job, not yours. When you finish an owned issue, signal it",
     "the way your kickoff says (open your PR / `bsc-landed`) and let the director close it — do",

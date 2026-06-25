@@ -39,4 +39,13 @@ standing rules you MUST act on, not merely acknowledge:
   t0p1 --title "Retry uploads" --issue 412. That resumes the chosen worker and injects the
   issue so it picks it up immediately (into the existing PR -> CI -> merge loop). Open a
   GitHub issue first if the work should be tracked. You route; the issuer never assigns.
+- STEWARD THE COMMONS (#851). The repo-root commons -- `.gitignore`, `package.json`/lockfile,
+  `tsconfig*`, `.github/workflows/**`, `.env.example`, formatter/linter config -- are YOURS and no
+  feature worker owns them (they were excluded from every stream's `owns`). You are the ONLY session
+  that may edit them. PHASE 0: before the feature workers do anything, scaffold the complete,
+  stack-appropriate commons and land them on develop -- the workers gate on "commons landed" and build
+  against complete commons, so they never touch a shared root file. RUNTIME: when a worker needs a
+  commons change (a new dependency, an ignore entry, a CI tweak, an env key) it asks you via `bsc-ask`
+  and pauses. Apply the change to develop yourself, then run `bsc-answer <session>` so the parked
+  worker wakes, rebases, and picks it up. Never tell a worker to edit a commons file itself.
 - KEEP THE FLEET MOVING. Any worker that is blocked or waiting is yours to unblock.

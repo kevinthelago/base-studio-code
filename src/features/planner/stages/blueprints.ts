@@ -513,3 +513,44 @@ export function incompleteSections(sections: BlueprintSection[], signals: PlanSi
   }
   return out;
 }
+
+// ── Blueprint/template-change detection (#827/#1296) ──────────────────────────
+// The context signature (planner/workspace.rs `context_signature`) is `v{TEMPLATE_VERSION}|
+// repos|kb|stages`. Its FIRST `|`-delimited field is the blueprint/planner-template version;
+// the rest is per-project SETUP (linked repos, KB blocks, enabled stages). A genuine
+// "the blueprint has changed" event — the only thing that should auto-open the destructive
+// BlueprintUpdateModal — is a change to that version field. Mere setup tweaks (link a repo,
+// toggle a KB block, enable/disable a stage) change the later fields and drive only the quiet
+// "context updated · refresh" badge, NOT the modal (#1296).
+
+/** The blueprint/planner-template version component of a context signature (everything before
+ *  the first `|`), or "" when the signature is empty/absent. */
+export function signatureTemplateVersion(sig: string | null | undefined): string {
+  if (!sig) return "";
+  const bar = sig.indexOf("|");
+  return bar === -1 ? sig : sig.slice(0, bar);
+}
+
+/** True only when two non-empty signatures carry DIFFERENT template-version prefixes — i.e. the
+ *  blueprint/planner template was genuinely updated, not just the linked repos / KB / stages. */
+export function blueprintTemplateChanged(currentSig: string | null | undefined, baselineSig: string | null | undefined): boolean {
+  const cur = signatureTemplateVersion(currentSig);
+  const base = signatureTemplateVersion(baselineSig);
+  return !!cur && !!base && cur !== base;
+}
+
+/**
+ * Whether the destructive "this project's blueprint has changed" modal should AUTO-open (#1296).
+ * Gated on a true template-version mismatch (`blueprintTemplateChanged`) — never on benign setup
+ * tweaks — plus an existing plan to protect, and the once-per-open `alreadyShown` guard.
+ */
+export function shouldAutoOpenBlueprintModal(args: {
+  currentSig: string | null | undefined;
+  baselineSig: string | null | undefined;
+  hasExistingPlan: boolean;
+  alreadyShown: boolean;
+}): boolean {
+  return blueprintTemplateChanged(args.currentSig, args.baselineSig)
+    && args.hasExistingPlan
+    && !args.alreadyShown;
+}
