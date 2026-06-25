@@ -45,17 +45,12 @@ pub(crate) fn delete_project_dir(project_key: String) -> Result<(), String> {
         std::fs::remove_dir_all(&dir).map_err(|e| format!("delete_project_dir: {e}"))?;
         log::info!("deleted project hub {:?}", dir);
     }
-    // The fleet's worktrees now live outside the hub (see `worktrees_dir`, #844), so the
-    // hub delete above no longer reaches them — remove them explicitly. Best-effort: a
-    // missing dir is fine, and an orphaned worktree dir must not block deleting the hub.
-    let wts = worktrees_dir(&project_key);
-    if wts.exists() {
-        #[cfg(windows)]
-        clear_readonly_recursive(&wts);
-        if let Err(e) = std::fs::remove_dir_all(&wts) {
-            log::warn!("delete_project_dir: leftover worktrees {:?}: {e}", wts);
-        }
-    }
+    // The fleet's worktrees now live outside the hub (see `worktrees_dir`, #844), so the hub delete
+    // above no longer reaches them — reclaim them explicitly (#1080). This runs git's worktree
+    // teardown per worktree (dropping the owning clones' admin records too) and, crucially, detaches
+    // any `node_modules` JUNCTION first so the recursive delete can't follow it into the shared
+    // main-clone node_modules. (A bare `remove_dir_all` here previously risked exactly that.)
+    fleet::teardown::reclaim_project_worktrees(&project_key);
     Ok(())
 }
 /// Recursively clear the read-only attribute on every file under `dir`. Best-effort:
