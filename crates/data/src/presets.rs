@@ -818,6 +818,63 @@ pub const CATALOG: &[VendorPreset] = &[
         category: "forms",
         resources: &[("forms", "user/forms", Some("content")), ("submissions", "user/submissions", Some("content"))],
     },
+    // ── Finance / accounting (#1313) ──────────────────────────────────────
+    // Read-only ledgers, invoices, parties, and bank/transaction feeds → the canonical
+    // Data Model. PCI posture: metadata only, no card data (#1313). OAuth (QuickBooks/Xero),
+    // token/key (NetSuite/Plaid) carried in the fetch closure, secrets to the OS keychain (#1194).
+    VendorPreset {
+        id: "quickbooks",
+        label: "QuickBooks Online",
+        category: "accounting",
+        // QBO v3 query API: GET /v3/company/<realmId>/query?query=select * from <Entity>;
+        // records arrive under QueryResponse.<Entity>.
+        resources: &[
+            ("accounts", "query?query=select%20*%20from%20Account", Some("QueryResponse.Account")),
+            ("invoices", "query?query=select%20*%20from%20Invoice", Some("QueryResponse.Invoice")),
+            ("bills", "query?query=select%20*%20from%20Bill", Some("QueryResponse.Bill")),
+            ("payments", "query?query=select%20*%20from%20Payment", Some("QueryResponse.Payment")),
+            ("customers", "query?query=select%20*%20from%20Customer", Some("QueryResponse.Customer")),
+            ("vendors", "query?query=select%20*%20from%20Vendor", Some("QueryResponse.Vendor")),
+        ],
+    },
+    VendorPreset {
+        id: "xero",
+        label: "Xero",
+        category: "accounting",
+        // Xero Accounting API: GET /api.xro/2.0/<Resource>; records under the resource key.
+        resources: &[
+            ("accounts", "Accounts", Some("Accounts")),
+            ("invoices", "Invoices", Some("Invoices")),
+            ("contacts", "Contacts", Some("Contacts")),
+            ("payments", "Payments", Some("Payments")),
+            ("bank-transactions", "BankTransactions", Some("BankTransactions")),
+        ],
+    },
+    VendorPreset {
+        id: "netsuite",
+        label: "NetSuite",
+        category: "accounting",
+        // SuiteTalk REST record service: GET /services/rest/record/v1/<recordType>; the
+        // collection lives under `items`.
+        resources: &[
+            ("customer", "customer", Some("items")),
+            ("invoice", "invoice", Some("items")),
+            ("transaction", "transaction", Some("items")),
+            ("account", "account", Some("items")),
+        ],
+    },
+    VendorPreset {
+        id: "plaid",
+        label: "Plaid",
+        category: "banking",
+        // Plaid banking aggregation: POST /accounts/get, /transactions/get, /accounts/balance/get
+        // (access_token carried in the fetch closure); records under the named array.
+        resources: &[
+            ("accounts", "accounts/get", Some("accounts")),
+            ("transactions", "transactions/get", Some("transactions")),
+            ("balances", "accounts/balance/get", Some("accounts")),
+        ],
+    },
     // ── POS / commerce (#1312) ──
     // Square and Shopify already ship above (billing / ecommerce). Stripe (payments) lives here
     // by this issue's assignment. POS systems group under the `pos` category.
@@ -908,6 +965,24 @@ mod tests {
         ids.dedup();
         assert_eq!(ids.len(), len, "vendor ids must be unique");
         assert!(find("does-not-exist").is_none());
+    }
+
+    #[test]
+    fn catalog_includes_finance_accounting_presets() {
+        // #1313 — finance / accounting source connectors.
+        for id in ["quickbooks", "xero", "netsuite", "plaid"] {
+            let p = find(id).unwrap_or_else(|| panic!("{id} preset present out of the box"));
+            assert!(!p.resources().is_empty(), "{id} must declare read resources");
+        }
+
+        // QuickBooks reads the accounting ledger surface; Plaid groups under `banking`.
+        let qbo = find("quickbooks").unwrap();
+        assert_eq!(qbo.category, "accounting");
+        let qbo_names = qbo.resource_names();
+        for obj in ["accounts", "invoices", "bills", "payments", "customers", "vendors"] {
+            assert!(qbo_names.contains(&obj), "QuickBooks missing {obj}");
+        }
+        assert_eq!(find("plaid").unwrap().category, "banking");
     }
 
     #[test]
