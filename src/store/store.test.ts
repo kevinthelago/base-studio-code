@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, TRIAGE_PROMPT } from "./";
 import { fleetProfilesComplete } from "@/shared/lib/session/profileGen";
 import type { ViewKey } from "@/app/console/panes/ViewTabs";
@@ -1091,6 +1092,32 @@ describe("agent fleet store", () => {
     s.setPlanDirector("p", false);
     expect(useAppStore.getState().planFleet["p"].director.enabled).toBe(false);
     expect(useAppStore.getState().planFleet["p"].director.role).toBe("integrator");
+  });
+
+  it("in-app fleet edits write back to plan.db; the poll read path does not (#1317)", () => {
+    useAppStore.getState().setPlanFleet("p", fleet);
+
+    // setPlanFleet is the poll's READ path (plan.db → store) — it must NOT persist, or
+    // every poll tick would write back and we'd loop.
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().setPlanFleet("p", fleet);
+    expect(vi.mocked(invoke).mock.calls.some(([c]) => c === "plan_set_fleet")).toBe(false);
+
+    // A stream edit persists the whole updated fleet to plan.db.
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().setPlanAgentStreamModel("p", "auth-ui", "opus-4.5");
+    const edit = vi.mocked(invoke).mock.calls.find(([c]) => c === "plan_set_fleet");
+    expect(edit).toBeTruthy();
+    expect((edit![1] as { projectKey: string }).projectKey).toBe("p");
+    expect((edit![1] as { fleet: FleetPlan }).fleet.streams.find(x => x.id === "auth-ui")!.model)
+      .toBe("opus-4.5");
+
+    // Removal persists the post-removal fleet (plan_set_fleet is a full replace).
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().removePlanAgentStream("p", "api");
+    const rm = vi.mocked(invoke).mock.calls.find(([c]) => c === "plan_set_fleet");
+    expect(rm).toBeTruthy();
+    expect((rm![1] as { fleet: FleetPlan }).fleet.streams.some(x => x.id === "api")).toBe(false);
   });
 
   it("fleetStartProject opens a build tab with the director and worker panes", () => {
