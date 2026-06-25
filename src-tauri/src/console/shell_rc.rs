@@ -279,7 +279,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(b"left off: step 3\n").unwrap();
+        let _ = child.stdin.take().unwrap().write_all(b"left off: step 3\n");
         assert!(child.wait().unwrap().success(), "bsc-checkpoint should run in the subshell");
 
         assert_eq!(std::fs::read_to_string(&doc).unwrap(), "left off: step 3\n");
@@ -346,7 +346,7 @@ mod tests {
                 .env("BSC_AUDIT_PANE", "t0p3")
                 .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
                 .spawn().unwrap();
-            child.stdin.take().unwrap().write_all(body.as_bytes()).unwrap();
+            let _ = child.stdin.take().unwrap().write_all(body.as_bytes());
             assert!(child.wait().unwrap().success(), "{cmd} should run in the subshell");
         };
         run("bsc-issue --title 'Retry uploads' --suggested owner/web --id 412", "add a retry to the upload path");
@@ -501,7 +501,7 @@ mod tests {
                 .env("BSC_AUDIT_PANE", "t0p1") // provenance (#1167): the writing session
                 .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
                 .spawn().unwrap();
-            child.stdin.take().unwrap().write_all(msg.as_bytes()).unwrap();
+            let _ = child.stdin.take().unwrap().write_all(msg.as_bytes());
             assert!(child.wait().unwrap().success(), "bsc-note should run in the subshell");
         };
         run("chose cursor pagination");
@@ -602,8 +602,8 @@ mod tests {
                 .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
                 .spawn().unwrap();
             // Write hook JSON the helper must drain (it doesn't parse it — the state arg is the signal).
-            child.stdin.take().unwrap()
-                .write_all(br#"{"hook_event_name":"UserPromptSubmit","session_id":"abc"}"#).unwrap();
+            let _ = child.stdin.take().unwrap()
+                .write_all(br#"{"hook_event_name":"UserPromptSubmit","session_id":"abc"}"#);
             assert!(child.wait().unwrap().success(), "bsc-activity {state} should run + exit 0");
         };
         fire("run");
@@ -708,7 +708,8 @@ mod tests {
                 .env("BSC_SCOPE_GLOBS", globs)
                 .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
                 .spawn().unwrap();
-            child.stdin.take().unwrap().write_all(json.as_bytes()).unwrap();
+            // Tolerate EPIPE: the gated hook may exit (block) before we finish writing stdin.
+            let _ = child.stdin.take().unwrap().write_all(json.as_bytes());
             child.wait().unwrap()
         };
 
@@ -765,7 +766,8 @@ mod tests {
                 .env("BSC_AUDIT_PANE", "t0p1")
                 .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
                 .spawn().unwrap();
-            child.stdin.take().unwrap().write_all(json.as_bytes()).unwrap();
+            // Tolerate EPIPE: the gated hook may exit (block) before we finish writing stdin.
+            let _ = child.stdin.take().unwrap().write_all(json.as_bytes());
             child.wait().unwrap()
         };
 
@@ -825,7 +827,8 @@ mod tests {
                 .env("BSC_AUDIT_PANE", "t0p0")
                 .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
                 .spawn().unwrap();
-            child.stdin.take().unwrap().write_all(json.as_bytes()).unwrap();
+            // Tolerate EPIPE: the gated hook may exit (block) before we finish writing stdin.
+            let _ = child.stdin.take().unwrap().write_all(json.as_bytes());
             child.wait().unwrap();
         };
 
