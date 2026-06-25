@@ -1,31 +1,23 @@
-// Repositories & Deployment — the merged "Deployment" stage pane (#1399). One cohesive surface that
-// replaces the old stacked FocusedReposBody + FocusedDeployBody (#1383): a plain `⎇ Repositories &
-// Deployment` header, then card 01 "Repositories" where each repo's git identity is merged with its
-// deploy target (click a repo to expand its target editor inline), then the rest of the ship flow
-// (pipeline · environments · config+secrets · dependencies · release/health · readiness) reused from
-// FocusedDeployBody in "tail" view. Design: design/Streams Pane Design/ReposDeployPane.dc.html.
+// Repositories & Deployment — the merged "Deployment" stage pane (#1399), rebuilt to the per-repo
+// card design (#1421, design/Claude design_ deployment section/Deployment.dc.html). The Default
+// blueprint folds Deploy INTO Repos (#1383), so THIS is the deployment surface every project lands
+// on — it must BE the design. One collapsible RepoDeployCard per repo, with the repo's git identity
+// (branch · ahead/behind · language · agents · visibility) folded into the card's collapsed row and
+// its full ship plan (target & build · pipeline · environments · config & secrets · rollout) inside.
+// The header carries the "N of M repos deploy-ready" counter; the project-wide locked dependency
+// manifest follows as a tail (it gates separately, #1127).
 //
-// Controlled like FocusedDeployBody — reads a DeployConfig + the linked repos and calls
-// onDeployChange / onLinkRepo / per-repo visibility. Reuses shared/deployConfig.ts (no model change).
-// Shipping is governed by the blueprint (this pane only renders when deploy is folded in), so there's
-// no header gate/ship pill, no global visibility toggle, and no readiness banner (#1403) — the
-// per-stage gate + the D · READINESS checklist already carry that signal.
+// Controlled — reads a DeployConfig + the linked repos and calls onDeployChange / onLinkRepo /
+// per-repo visibility. Reuses RepoDeployCard + ServiceDeploySections from DeployView (one design,
+// shared with the standalone Deploy stage), so there's no header gate/ship pill (#1403).
 
 import { useState } from "react";
-import {
-  platform, serviceMode, serviceTargetDefined, deploymentDefined,
-  type DeployConfig, type DeployService,
-} from "../shared/deployConfig";
-import { Card, Divider, ServiceTargetEditor, ServiceDeploySections, DependenciesCard } from "./DeployView";
+import { readyServiceCount, type DeployConfig, type DeployService } from "../shared/deployConfig";
+import { Divider, DependenciesCard, RepoDeployCard } from "./DeployView";
 import type { Repo } from "../pane/projectPane.types";
 import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 
 const MONO = "var(--mono)";
-
-/** Branch pill color by review state — matches FocusedReposBody + the design. */
-function branchStateColor(st: string): string {
-  return st === "review" ? "var(--success)" : st === "draft" ? "var(--fg-dim)" : "var(--info)";
-}
 
 /** A stream avatar — initial + a deterministic hue from the stream id (agents are arbitrary stream
  *  ids here, not the design's fixed roster). */
@@ -127,158 +119,98 @@ export function FocusedReposDeployBody({
     )
   );
 
-  // ── card 01: one row per repo, git identity merged with its deploy target ──
-  const repoTargetRow = (r: Repo) => {
-    const svc = serviceForRepo(r.id);
-    const sel = !!svc && openRepo === r.id;
-    const targeted = !!svc && serviceTargetDefined(svc);
-    const local = !!svc && serviceMode(svc) === "local";
-    const p = svc?.platform ? platform(svc.platform) : null;
+  // ── per-repo git identity shown in the collapsed card row (branch · ahead/behind · language · agents) ──
+  const repoMeta = (r: Repo) => (
+    <>
+      <span style={{ fontFamily: MONO, fontSize: 8.5, padding: "1px 7px", borderRadius: 99, color: "var(--info)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)" }}>⎇ {r.branch}</span>
+      {(r.ahead > 0 || r.behind > 0) && (
+        <span style={{ fontFamily: MONO, fontSize: 8.5 }}>
+          {r.ahead > 0 && <span style={{ color: "var(--success)" }}>↑{r.ahead} </span>}
+          {r.behind > 0 && <span style={{ color: "var(--info)" }}>↓{r.behind}</span>}
+        </span>
+      )}
+      {r.lang && <span style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)" }}>{r.lang}</span>}
+      {r.agents.length > 0 && (
+        <span style={{ display: "inline-flex", alignItems: "center" }}>
+          {r.agents.map((id, i) => <span key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={14} /></span>)}
+        </span>
+      )}
+    </>
+  );
 
-    let targetChip: React.ReactNode = null;
-    if (svc) {
-      if (p) {
-        targetChip = (
-          <span style={{
-            display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: 99, fontFamily: MONO, fontSize: 9,
-            color: targeted ? "var(--accent)" : "var(--fg-muted)",
-            background: `color-mix(in oklch, var(--accent), transparent ${targeted ? "86%" : "92%"})`,
-            border: "1px solid " + (targeted ? "var(--accent-dim)" : "var(--border-soft)"),
-          }}>
-            <span style={{ color: `oklch(0.78 0.12 ${p.h})` }}>{p.glyph}</span>{p.name}
-            <span style={{ fontSize: 9, color: "var(--fg-dim)", marginLeft: 1, transform: sel ? "rotate(180deg)" : "none", display: "inline-block" }}>▾</span>
-          </span>
-        );
-      } else if (local) {
-        targetChip = (
-          <span style={{
-            display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: 99, fontFamily: MONO, fontSize: 9,
-            color: targeted ? "var(--violet)" : "var(--fg-muted)",
-            background: `color-mix(in oklch, var(--violet), transparent ${targeted ? "86%" : "92%"})`,
-            border: "1px solid " + (targeted ? "color-mix(in oklch, var(--violet), transparent 60%)" : "var(--border-soft)"),
-          }}>
-            ⬢ {svc.localKind === "library" ? "library" : "app"}
-            <span style={{ fontSize: 9, color: "var(--fg-dim)", marginLeft: 1, transform: sel ? "rotate(180deg)" : "none", display: "inline-block" }}>▾</span>
-          </span>
-        );
-      } else {
-        targetChip = (
-          <span style={{ padding: "2px 8px", borderRadius: 99, fontFamily: MONO, fontSize: 9, color: "var(--warn)", background: "color-mix(in oklch, var(--warn), transparent 88%)", border: "1px dashed color-mix(in oklch, var(--warn), transparent 55%)" }}>set target →</span>
-        );
-      }
-    }
-
-    return (
-      <div key={r.id} style={{
-        borderRadius: 9, overflow: "hidden",
-        border: "1px solid " + (sel ? "var(--accent-dim)" : r.primary ? "color-mix(in oklch, var(--accent), transparent 72%)" : "var(--border-soft)"),
-        // Background stays constant whether or not the card is expanded — only the border reflects
-        // the open state (the accent border + chevron are affordance enough).
-        background: "var(--bg-canvas)",
-      }}>
-        <div
-          onClick={svc ? () => setOpenRepo(openRepo === r.id ? null : r.id) : undefined}
-          style={{ padding: "11px 12px", cursor: svc ? "pointer" : "default" }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 auto", background: r.cloned ? "var(--success)" : "var(--fg-dim)" }} />
-            <span style={{ fontFamily: MONO, fontSize: 12.5, color: "var(--fg)" }}>{r.id}</span>
-            {r.primary && <span style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--accent)", border: "1px solid var(--accent-dim)", background: "color-mix(in oklch, var(--accent), transparent 86%)" }}>primary</span>}
-            <span style={{ flex: 1 }} />
-            {targetChip}
-            {repoVisToggle(r.id)}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-            <span style={{ fontFamily: MONO, fontSize: 8.5, padding: "1px 7px", borderRadius: 99, color: "var(--info)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)" }}>⎇ {r.branch}</span>
-            <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--success)" }}>↑{r.ahead}</span>
-            <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--info)" }}>↓{r.behind}</span>
-            {r.lang && <span style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)" }}>{r.lang}</span>}
-            <span style={{ flex: 1 }} />
-            {r.agents.length > 0 && (
-              <span style={{ display: "inline-flex", alignItems: "center" }}>
-                {r.agents.map((id, i) => <span key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} /></span>)}
-              </span>
-            )}
-          </div>
-          {r.branches.length > 0 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
-              {r.branches.map((b) => (
-                <span key={b.n} style={{ fontFamily: MONO, fontSize: 8.5, padding: "1px 6px", borderRadius: 3, background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: branchStateColor(b.state) }}>
-                  ⎇ {b.n} <span style={{ color: "var(--fg-dim)" }}>#{b.issue}</span>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-        {sel && svc && (
-          <div style={{ padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: 12 }}>
-            <ServiceTargetEditor svc={svc} setSvc={(patch) => setSvcFor(svc.id, patch)} />
-            {/* Every repo is a self-contained deployable unit (#1421): its own pipeline / envs /
-                config & secrets / rollout, shown once a target is set. */}
-            {serviceTargetDefined(svc) && <ServiceDeploySections svc={svc} setSvc={(patch) => setSvcFor(svc.id, patch)} />}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const reposCard = (done: boolean) => {
-    const cloned = list.filter((r) => r.cloned).length;
-    const right = list.length > 0
-      ? <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)" }}>{list.length} linked · {cloned} cloned</span>
-      : undefined;
-    const body = list.length === 0 ? (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, padding: "22px 12px", color: "var(--fg-dim)" }}>
-        <span style={{ fontSize: 26, opacity: 0.5 }}>⎇</span>
-        <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)" }}>No repositories linked yet</span>
-        <span style={{ fontSize: 10.5, textAlign: "center", maxWidth: 250, lineHeight: 1.5 }}>Link the repos this project spans — Claude clones each and tracks its branches.</span>
-      </div>
-    ) : (
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map((r) => repoTargetRow(r))}</div>
-    );
-    return (
-      <Card n="01" title="Repositories" hint="→ deploy targets" done={done} right={right}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {body}
-          {linkAffordance}
-        </div>
-      </Card>
-    );
-  };
-
-  // ── header — just the icon + title (no gate/ship pills, #1403) ──
+  // ── header — title + the design's "N of M repos deploy-ready" counter (#1421) ──
+  const total = list.length;
+  const ready = readyServiceCount(d);
   const header = (
-    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <span style={{
         width: 19, height: 19, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12,
         color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 84%)", border: "1px solid var(--accent-dim)",
       }}>⎇</span>
-      <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: ".13em", textTransform: "uppercase", color: "var(--fg-dim)" }}>Repositories &amp; Deployment</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Repositories &amp; Deployment</span>
+        <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-muted)" }}>how each repository ships — defined per repo</span>
+      </div>
+      <span style={{ flex: 1 }} />
+      {total > 0 && (
+        <span style={{ fontFamily: MONO, fontSize: 10.5, color: ready === total ? "var(--success)" : "var(--fg-muted)" }}>
+          <span style={{ color: "var(--fg)" }}>{ready}</span> of {total} repos deploy-ready
+        </span>
+      )}
     </div>
   );
 
-  // ── body ──
+  // ── body — one per-repo card (RepoDeployCard) with the repo's git identity folded into its row;
+  //    each repo is a self-contained deployable unit (#1421). Project-wide locked deps as a tail. ──
   let body: React.ReactNode;
-  if (list.length === 0) {
-    // Nothing to deploy until a repo is linked.
+  if (total === 0) {
     body = (
       <>
-        {reposCard(false)}
-        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "13px 14px", borderRadius: "var(--r-lg)", background: "var(--bg-canvas)", border: "1px dashed var(--border)" }}>
-          <span style={{ fontSize: 15, color: "var(--fg-dim)" }}>⏻</span>
-          <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)", lineHeight: 1.5 }}>Deployment unlocks once at least one repository is linked.</span>
+        <div style={{ border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", padding: "40px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center", background: "var(--bg-canvas)" }}>
+          <span style={{ fontSize: 26, opacity: 0.5 }}>⎇</span>
+          <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>No repositories linked</span>
+          <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)", maxWidth: 380, lineHeight: 1.6 }}>Deployment is configured per repository — each repo carries its own pipeline, environments and secrets. Link one to define how it ships.</span>
         </div>
+        {linkAffordance}
       </>
     );
   } else {
-    // Each repo carries its OWN full deploy plan inside its card (#1421) — pipeline / envs / config /
-    // rollout expand inline per repo. The project-wide locked dependency manifest follows as a tail
-    // (it gates separately, #1127).
     body = (
       <>
-        <Divider label="A · HOW IT SHIPS" color="var(--accent)" />
-        {reposCard(deploymentDefined(d))}
-        <Divider label="B · WHAT IT DEPENDS ON" color="var(--violet)" />
+        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+          {list.map((r) => {
+            const svc = serviceForRepo(r.id);
+            if (!svc) {
+              // A linked repo whose deploy service isn't seeded yet (config out of sync) — show its
+              // identity so it's not dropped; the service seeds when the plan is next saved.
+              return (
+                <div key={r.id} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "11px 13px", display: "flex", alignItems: "center", gap: 9 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: r.cloned ? "var(--success)" : "var(--fg-dim)" }} />
+                  <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{r.id}</span>
+                  {r.primary && <span style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--accent)", border: "1px solid var(--accent-dim)", background: "color-mix(in oklch, var(--accent), transparent 86%)" }}>primary</span>}
+                  {repoMeta(r)}
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>deploy seeds on save</span>
+                </div>
+              );
+            }
+            return (
+              <RepoDeployCard
+                key={r.id}
+                svc={svc}
+                setSvc={(patch) => setSvcFor(svc.id, patch)}
+                open={openRepo === r.id}
+                onToggle={() => setOpenRepo(openRepo === r.id ? null : r.id)}
+                primary={r.primary}
+                meta={repoMeta(r)}
+                trailing={repoVisToggle(r.id)}
+              />
+            );
+          })}
+          {linkAffordance}
+        </div>
+        {/* The locked dependency manifest is project-wide (#1127) — it gates separately. */}
+        <Divider label="DEPENDENCIES" color="var(--violet)" />
         <DependenciesCard deps={dependencies} registries={registries} done={dependencies.length > 0} />
       </>
     );
