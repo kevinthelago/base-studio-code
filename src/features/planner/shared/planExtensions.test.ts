@@ -45,24 +45,26 @@ describe("mcpAssignToServer", () => {
   });
 
   it("resolves {dir} to the on-disk install path for a downloadable first-party server", () => {
-    const def = mcpAssignToServer("Compliance", "p1", "/home/u/.base-studio-code");
+    const def = mcpAssignToServer("Plan Grader", "p1", "/home/u/.base-studio-code");
     expect(def.command).toBe("python"); // `python -m uv …` — no PATH dependency (#887)
     // The literal {dir} placeholder must NOT survive into a launched config (#876).
     expect(def.args).not.toContain("{dir}");
-    expect(def.args).toContain("/home/u/.base-studio-code/mcp/compliance-mcp-server");
+    expect(def.args).toContain("/home/u/.base-studio-code/mcp/plan-grader-mcp-server");
     expect(def).toMatchObject({ enabled: true, projects: ["p1"] });
   });
 
   it("keeps {dir} when no baseDir is supplied (resolved later, never throws)", () => {
-    expect(mcpAssignToServer("Compliance", "p1").args).toContain("{dir}");
+    expect(mcpAssignToServer("Plan Grader", "p1").args).toContain("{dir}");
   });
 });
 
 describe("isDownloadableMcp", () => {
-  it("is true for the first-party catalog servers, false for others", () => {
-    expect(isDownloadableMcp("Compliance")).toBe(true);
+  it("is true for the downloadable first-party catalog servers, false for built-in/others", () => {
+    expect(isDownloadableMcp("Plan Grader")).toBe(true);
     expect(isDownloadableMcp("Complexity Analyzer")).toBe(true);
     expect(isDownloadableMcp("Dependency Graph")).toBe(true);
+    expect(isDownloadableMcp("Compliance")).toBe(false); // built-in native server (#1005)
+    expect(isDownloadableMcp("Research")).toBe(false);    // built-in native server (#1196)
     expect(isDownloadableMcp("Postgres")).toBe(false); // pruned from the browse catalog
     expect(isDownloadableMcp("Nope")).toBe(false);
   });

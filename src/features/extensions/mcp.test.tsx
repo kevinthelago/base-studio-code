@@ -18,6 +18,10 @@ const HOOK_SEED: Hook[] = [
 
 const MCP_ENABLED = MCP_SEED.filter(e => e.enabled).length; // 1
 
+// The first browsable catalog entry — built-in servers (Research #1196, Compliance #1005) live in
+// the "Built-in tools" section, not the downloadable browse list, so they're filtered out here.
+const FIRST_BROWSABLE = MCP_CATALOG.find(c => !c.builtIn)!.name;
+
 function installedCount(container: HTMLElement): string {
   const installedTab = container.querySelectorAll(".tabstrip .tab")[0];
   return installedTab.querySelector(".count")!.textContent ?? "";
@@ -39,9 +43,10 @@ describe("McpScreen + HooksView", () => {
     expect(screen.getByText("MCP servers")).toBeTruthy();
     expect(screen.getByText("GitHub")).toBeTruthy();
     expect(screen.getByText("Filesystem")).toBeTruthy();
-    // Built-in tools section (#1196) lists the always-available native servers (e.g. Research).
+    // Built-in tools section (#1196 / #1005) lists the always-available native servers.
     expect(screen.getByText("Built-in tools")).toBeTruthy();
     expect(screen.getByText("Research")).toBeTruthy();
+    expect(screen.getByText("Compliance")).toBeTruthy();
     // The hook is NOT on the MCP page.
     expect(screen.queryByText("Guard lockfiles")).toBeNull();
   });
@@ -68,7 +73,7 @@ describe("McpScreen + HooksView", () => {
     const { container } = render(<McpScreen />);
     fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]);
     expect(screen.getByText("Browse")).toBeTruthy();
-    expect(screen.getByText(MCP_CATALOG[0].name)).toBeTruthy(); // Compliance (first-party)
+    expect(screen.getByText(FIRST_BROWSABLE)).toBeTruthy(); // first downloadable first-party server
   });
 
   it("filters the catalog by the search input", () => {
@@ -83,29 +88,29 @@ describe("McpScreen + HooksView", () => {
   it("downloads a catalog server: one 'download' action (no 'add'), clones + adds to Installed silently (#885)", async () => {
     const { container } = render(<McpScreen />);
     fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]); // catalog
-    const card = screen.getByText("Compliance").closest(".cat-card") as HTMLElement;
+    const card = screen.getByText("Dependency Graph").closest(".cat-card") as HTMLElement;
     // A downloadable first-party server shows only "download" — the "add" button is gone.
     expect(within(card).queryByText("add")).toBeNull();
     fireEvent.click(within(card).getByText("download"));
     // Clone (mock resolves) → added to Installed; build runs after. No drawer opens.
-    await waitFor(() => expect(useAppStore.getState().mcpServers.some(e => e.name === "Compliance")).toBe(true));
+    await waitFor(() => expect(useAppStore.getState().mcpServers.some(e => e.name === "Dependency Graph")).toBe(true));
     expect((container.querySelector(".drawer") as HTMLElement).className).not.toContain("on");
   });
 
   it("hides catalog entries that are already installed (#885)", () => {
     useAppStore.setState({
-      mcpServers: [{ id: "c", name: "Compliance", enabled: true, projects: [], transport: "stdio", command: "uv", args: "x", env: [] }],
+      mcpServers: [{ id: "c", name: "Dependency Graph", enabled: true, projects: [], transport: "stdio", command: "node", args: "x", env: [] }],
       githubToken: "",
     });
     const { container } = render(<McpScreen />);
     fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]); // catalog
-    expect(screen.queryByText("Compliance")).toBeNull();          // installed → not in the catalog
+    expect(screen.queryByText("Dependency Graph")).toBeNull();    // installed → not in the catalog
     expect(screen.getByText("Complexity Analyzer")).toBeTruthy(); // not installed → still listed
   });
 
   it("shows a version/update control on an installed downloadable server (#885)", async () => {
     useAppStore.setState({
-      mcpServers: [{ id: "c", name: "Compliance", enabled: true, projects: [], transport: "stdio", command: "uv", args: "x", env: [] }],
+      mcpServers: [{ id: "c", name: "Dependency Graph", enabled: true, projects: [], transport: "stdio", command: "node", args: "x", env: [] }],
       githubToken: "",
     });
     render(<McpScreen />); // opens on the Installed tab
@@ -168,6 +173,6 @@ describe("McpScreen + HooksView", () => {
     // The CTA switches to the catalog tab.
     fireEvent.click(screen.getByText("Browse the catalog →"));
     expect(container.querySelectorAll(".tabstrip .tab")[1].className).toContain("active");
-    expect(screen.getByText(MCP_CATALOG[0].name)).toBeTruthy();
+    expect(screen.getByText(FIRST_BROWSABLE)).toBeTruthy();
   });
 });

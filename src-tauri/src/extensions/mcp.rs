@@ -190,11 +190,15 @@ pub(crate) fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg
 /// real path (the frontend can't know where the app exe lives), so `mcp_server_value` rewrites it to
 /// the bundled `bsc-research-mcp` binary's absolute path at write time.
 pub(crate) const RESEARCH_MCP_MARKER: &str = "bsc-research-mcp";
-/// Resolve a stdio MCP command, substituting the bundled-binary absolute path for the built-in
-/// Research marker (#1196). A non-marker command passes through unchanged; the marker falls back to
-/// the bare name when the bundled binary can't be located (e.g. a dev build without the sidecar).
+/// The same sentinel for the built-in Compliance server (#1005) — rewritten to the bundled
+/// `bsc-compliance-mcp` binary's absolute path at write time.
+pub(crate) const COMPLIANCE_MCP_MARKER: &str = "bsc-compliance-mcp";
+/// Resolve a stdio MCP command, substituting the bundled-binary absolute path for a built-in MCP
+/// marker (Research #1196, Compliance #1005). A non-marker command passes through unchanged; a
+/// marker falls back to the bare name when its bundled binary can't be located (e.g. a dev build
+/// without the sidecar). Each marker resolves through its own bundled-path lookup.
 pub(crate) fn resolve_mcp_command(command: &str, bundled: Option<std::path::PathBuf>) -> String {
-    if command == RESEARCH_MCP_MARKER {
+    if command == RESEARCH_MCP_MARKER || command == COMPLIANCE_MCP_MARKER {
         if let Some(p) = bundled {
             return p.to_string_lossy().to_string();
         }
@@ -207,10 +211,13 @@ pub(crate) fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
         return serde_json::json!({ "type": "http", "url": m.url.clone().unwrap_or_default() });
     }
     let mut v = serde_json::Map::new();
-    let command = resolve_mcp_command(
-        &m.command.clone().unwrap_or_default(),
-        pty::bsc_research_mcp_bin_path(),
-    );
+    let raw = m.command.clone().unwrap_or_default();
+    // Each built-in marker rewrites to its own bundled sidecar's absolute path.
+    let bundled = match raw.as_str() {
+        COMPLIANCE_MCP_MARKER => pty::bsc_compliance_mcp_bin_path(),
+        _ => pty::bsc_research_mcp_bin_path(),
+    };
+    let command = resolve_mcp_command(&raw, bundled);
     v.insert("command".into(), serde_json::Value::String(command));
     v.insert("args".into(), serde_json::Value::Array(
         m.args.iter().map(|a| serde_json::Value::String(a.clone())).collect(),

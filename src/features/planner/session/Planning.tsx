@@ -67,7 +67,7 @@ import { derivePlanStageState, planStateToSignals, stageConfirmKeys, CONTEXT_BAS
 import { findPlanGaps } from "../grading/lintPlan";
 import { findPlanInjections, injectionGate } from "../grading/planInjection";
 import { InjectionGateBanner } from "./InjectionGateBanner";
-import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, shouldAutoOpenBlueprintModal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { Ic } from "../blueprints/blueprintIcons";
 import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
@@ -1115,20 +1115,26 @@ export function Planning({ visible }: { visible: boolean }) {
   useEffect(() => { refreshSetupSig(); }, [refreshSetupSig]);
   const contextStale = !!currentSig && !!lastSetupSig && currentSig !== lastSetupSig;
 
-  // Blueprint-update modal (#827): when a project is opened whose blueprint/template version
-  // differs from the one it was seeded with (contextStale) AND it already has a plan, surface a
-  // modal so the user explicitly chooses go-back / restart / keep — rather than the old silent
-  // refresh, which restarted the planner into a destructive reconciliation that deleted plan files.
+  // Blueprint-update modal (#827): when a project is opened whose blueprint/planner-template
+  // VERSION differs from the one it was seeded with AND it already has a plan, surface a modal so
+  // the user explicitly chooses go-back / restart / keep — rather than the old silent refresh,
+  // which restarted the planner into a destructive reconciliation that deleted plan files.
+  //
+  // #1296: gate the auto-open on a true template-version mismatch (`shouldAutoOpenBlueprintModal`,
+  // which compares only the `v{version}` prefix of the two signatures), NOT the broad `contextStale`
+  // flag. `contextStale` also flips on benign setup tweaks (link a repo, toggle a KB block, enable/
+  // disable a stage) — those must keep driving only the quiet "context updated · refresh" badge
+  // below, never this destructive restart dialog.
   const [showBlueprintModal, setShowBlueprintModal] = useState(false);
   const [bpModalAutoShown, setBpModalAutoShown] = useState(false);
   const hasExistingPlan = Object.keys(savedSections).length > 0;
   useEffect(() => { setBpModalAutoShown(false); setShowBlueprintModal(false); }, [effectiveProjectId]);
   useEffect(() => {
-    if (contextStale && hasExistingPlan && !bpModalAutoShown) {
+    if (shouldAutoOpenBlueprintModal({ currentSig, baselineSig: lastSetupSig, hasExistingPlan, alreadyShown: bpModalAutoShown })) {
       setShowBlueprintModal(true);
       setBpModalAutoShown(true);
     }
-  }, [contextStale, hasExistingPlan, bpModalAutoShown]);
+  }, [currentSig, lastSetupSig, hasExistingPlan, bpModalAutoShown]);
 
   const autopilotDeps: AutopilotDeps = {
     pitch: planningPitch,

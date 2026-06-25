@@ -251,6 +251,16 @@ pub(crate) fn bsc_research_mcp_bin_path() -> Option<std::path::PathBuf> {
     p.exists().then_some(p)
 }
 
+/// The absolute path of the bundled `bsc-compliance-mcp` server — the sidecar beside the running app
+/// exe (cargo target dir in dev; bundled sidecar in a release), or None if absent (#1005). Used to
+/// rewrite the built-in Compliance server's `.mcp.json` command to the real binary path, since Claude
+/// Code spawns `.mcp.json` commands directly (no PATH/shell-rc), like `bsc_research_mcp_bin_path`.
+pub(crate) fn bsc_compliance_mcp_bin_path() -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) { "bsc-compliance-mcp.exe" } else { "bsc-compliance-mcp" };
+    let p = std::env::current_exe().ok()?.with_file_name(exe);
+    p.exists().then_some(p)
+}
+
 /// Build the environment for a session shell.
 ///
 /// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
