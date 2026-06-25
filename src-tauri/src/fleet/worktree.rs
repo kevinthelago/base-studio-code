@@ -58,6 +58,12 @@ pub(crate) async fn ensure_worktree(project_key: String, repo: String, agent_id:
     // app-owned scratch, so the warden never quarantines a worker for an artifact it didn't author
     // and the teardown path can drop them wholesale (#1080). Idempotent — safe on a reused worktree.
     crate::fleet::teardown::exclude_build_artifacts(&wt);
+    // Union-merge the additive commons (#851): seed `.gitattributes` in the repo CLONE so the
+    // line-additive root files (.gitignore, .env.example) carry `merge=union` — git concatenates
+    // both sides on merge instead of conflicting, so any residual concurrent append auto-resolves.
+    // Seeded into the clone (not the worktree) so the director can commit it as part of the Phase-0
+    // commons and the attribute takes effect on develop merges. Idempotent + additive.
+    seed_union_merge_gitattributes(&clone);
     // Copy the repo's own (tracked) CLAUDE.md only when the worktree lacks one, so a
     // checked-out CLAUDE.md isn't clobbered. (The hub's planner CLAUDE.md is no longer an
     // ancestor — that's the whole point of relocating the worktree — so this is just the
@@ -69,6 +75,52 @@ pub(crate) async fn ensure_worktree(project_key: String, repo: String, agent_id:
     write_worker_context(&wt, &clone, &project_dir(&project_key), scope_md.as_deref());
     Ok(wt_str)
 }
+/// The line-additive repo-root commons whose merges use git's `merge=union` driver (#851): files
+/// streams only ever APPEND lines to, so concatenating both sides on merge is the correct resolution
+/// and any residual concurrent append auto-resolves without a conflict. Mirrors the TS
+/// `UNION_MERGE_COMMONS` set (`src/shared/lib/session/commons.ts`). Deliberately NOT the structured
+/// commons (package.json/tsconfig/Cargo.toml) — a blind union of those would produce invalid
+/// JSON/TOML.
+pub(crate) const UNION_MERGE_COMMONS: &[&str] = &[".gitignore", ".env.example"];
+
+/// The exact `.gitattributes` lines this app manages for the union-merge commons (#851), wrapped in
+/// a marker block so the seed is idempotent and a hand-edited `.gitattributes` is preserved.
+const GITATTR_MARKER_START: &str = "# >>> base-studio-code: union-merge commons (#851)";
+const GITATTR_MARKER_END: &str = "# <<< base-studio-code: union-merge commons";
+
+/// Seed (idempotently, additively) a repo's `.gitattributes` with `merge=union` for the additive
+/// commons ({@link UNION_MERGE_COMMONS}), so concurrent appends to `.gitignore` / `.env.example`
+/// auto-resolve on merge instead of conflicting (#851 step 5). Writes a marked block; if the marked
+/// block is already present it's a no-op, otherwise the block is appended (existing content,
+/// including any hand-authored attributes, is preserved). Best-effort — a write failure must not
+/// abort a launch. `dir` is the repo clone (so the director commits it as part of the commons).
+pub(crate) fn seed_union_merge_gitattributes(dir: &std::path::Path) {
+    if !dir.join(".git").exists() {
+        return; // not a repo — nothing to seed
+    }
+    let path = dir.join(".gitattributes");
+    let cur = std::fs::read_to_string(&path).unwrap_or_default();
+    if cur.contains(GITATTR_MARKER_START) {
+        return; // already seeded
+    }
+    let mut block = String::new();
+    block.push_str(GITATTR_MARKER_START);
+    block.push('\n');
+    for f in UNION_MERGE_COMMONS {
+        block.push_str(&format!("{f} merge=union\n"));
+    }
+    block.push_str(GITATTR_MARKER_END);
+    block.push('\n');
+    let out = if cur.is_empty() {
+        block
+    } else if cur.ends_with('\n') {
+        format!("{cur}{block}")
+    } else {
+        format!("{cur}\n{block}")
+    };
+    let _ = std::fs::write(&path, out);
+}
+
 /// Assemble a fleet worker's `CLAUDE.local.md` in its worktree (`wt`): its own `scope_md`
 /// (owned globs / issues / dependencies) first, then the planner's app-managed per-repo
 /// context (`CLAUDE.local.md` in the `clone`, which is git-excluded and so absent from a
@@ -132,4 +184,69 @@ pub(crate) fn inject_skills(hub: &std::path::Path, wt_local: &std::path::Path) {
         return; // already injected
     }
     let _ = std::fs::write(wt_local, format!("{}\n\n{}\n", cur.trim_end(), trimmed));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn unique_dir(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("bsc-wt-{tag}-{}-{nanos}", std::process::id()))
+    }
+
+    /// Stand up a real git repo so `seed_union_merge_gitattributes` (which gates on `.git`) runs.
+    fn init_repo(dir: &std::path::Path) {
+        fs::create_dir_all(dir).unwrap();
+        let mut c = std::process::Command::new("git");
+        c.args(["-C", &dir.to_string_lossy(), "init", "-q", "-b", "main"]);
+        assert!(no_window(&mut c).status().unwrap().success());
+    }
+
+    /// #851: seeds `.gitignore`/`.env.example` with merge=union so concurrent appends auto-resolve.
+    #[test]
+    fn seeds_union_merge_for_the_additive_commons() {
+        let dir = unique_dir("seed");
+        init_repo(&dir);
+        seed_union_merge_gitattributes(&dir);
+        let attrs = fs::read_to_string(dir.join(".gitattributes")).unwrap();
+        for f in UNION_MERGE_COMMONS {
+            assert!(attrs.contains(&format!("{f} merge=union")), "missing union line for {f}: {attrs}");
+        }
+        // Only the additive subset — NOT the structured manifests (a blind union breaks JSON/TOML).
+        assert!(!attrs.contains("package.json merge=union"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Idempotent + additive: re-running writes nothing new and preserves hand-authored attributes.
+    #[test]
+    fn seed_is_idempotent_and_preserves_existing_content() {
+        let dir = unique_dir("idem");
+        init_repo(&dir);
+        fs::write(dir.join(".gitattributes"), "*.png binary\n").unwrap();
+        seed_union_merge_gitattributes(&dir);
+        let after_first = fs::read_to_string(dir.join(".gitattributes")).unwrap();
+        seed_union_merge_gitattributes(&dir); // second run is a no-op
+        let after_second = fs::read_to_string(dir.join(".gitattributes")).unwrap();
+        assert_eq!(after_first, after_second, "second seed must be a no-op");
+        assert!(after_second.contains("*.png binary"), "existing content preserved");
+        assert!(after_second.contains(".gitignore merge=union"));
+        // The marker appears exactly once.
+        assert_eq!(after_second.matches("union-merge commons (#851)").count(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A non-repo directory is skipped (best-effort; nothing to seed without a `.git`).
+    #[test]
+    fn seed_skips_a_non_repo_dir() {
+        let dir = unique_dir("norepo");
+        fs::create_dir_all(&dir).unwrap();
+        seed_union_merge_gitattributes(&dir);
+        assert!(!dir.join(".gitattributes").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

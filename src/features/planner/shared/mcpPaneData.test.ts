@@ -26,11 +26,11 @@ describe("buildMcpServers", () => {
   });
 
   it("joins catalog metadata and resolves the launch command for stdio + http", () => {
-    const stdio = buildMcpServers([mcp({ id: "c", name: "Compliance", command: "uv", args: "run --directory /b/mcp/compliance-mcp-server compliance-mcp" })], "p", fleet)[0];
-    expect(stdio.desc).toMatch(/compliance/i);
+    const stdio = buildMcpServers([mcp({ id: "c", name: "Dependency Graph", command: "node", args: "/b/mcp/dependency-graph-mcp-server/dist/index.js" })], "p", fleet)[0];
+    expect(stdio.desc).toMatch(/dependency/i);
     expect(stdio.official).toBe(false);     // first-party, not @modelcontextprotocol
     expect(stdio.downloadable).toBe(true);
-    expect(stdio.cmd).toBe("uv run --directory /b/mcp/compliance-mcp-server compliance-mcp");
+    expect(stdio.cmd).toBe("node /b/mcp/dependency-graph-mcp-server/dist/index.js");
 
     const http = buildMcpServers([mcp({ id: "u", name: "Remote", transport: "http", url: "https://x/sse" })], "p", fleet)[0];
     expect(http.cmd).toBe("https://x/sse");
@@ -51,7 +51,7 @@ describe("buildMcpServers", () => {
   });
 
   it("downloadable status follows the install-state map; defaults to 'available'", () => {
-    const exts = [mcp({ id: "c", name: "Compliance" }), mcp({ id: "d", name: "Dependency Graph" })];
+    const exts = [mcp({ id: "c", name: "Complexity Analyzer" }), mcp({ id: "d", name: "Dependency Graph" })];
     const built = buildMcpServers(exts, "p", fleet, { c: "ready" });
     expect(built.find((s) => s.id === "c")!.status).toBe("ready");
     expect(built.find((s) => s.id === "d")!.status).toBe("available");

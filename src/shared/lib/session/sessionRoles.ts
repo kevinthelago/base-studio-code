@@ -105,15 +105,32 @@ export function roleCapability(role: SessionRole, override: Partial<RoleCapabili
 }
 
 /**
+ * Whether a capability has the director's explicit, scoped write carve-out (#851): the **director**
+ * keeps `code: "none"` (no feature-code writes) yet is allowed to write EXACTLY the commons globs it
+ * owns (`.gitignore`, manifests, CI config, …) when they're assigned to it. This mirrors the #304
+ * precedent of a scoped role-gate carve-out — a narrow, explicit allow layered onto an
+ * otherwise-denied capability. Scoped to the director role on purpose: every OTHER `code: "none"`
+ * role (triage, tester, reviewer, …) stays fully write-denied even if handed globs, so the commons
+ * stewardship can't be accidentally granted to a non-integrator. An empty `writeGlobs` (the default)
+ * ⇒ no carve-out, full deny stands.
+ */
+export function hasScopedWriteCarveOut(cap: RoleCapability): boolean {
+  return cap.role === "director" && cap.code === "none" && cap.writeGlobs.length > 0;
+}
+
+/**
  * The effective write-scope globs for a pane's role (#1297) — what the `bsc-scope` PreToolUse hook
  * hard-limits writes to. Uses the pane's assigned owned globs when it has them, else the role's
  * default boundary, so the planner falls back to {@link PLANNER_WRITE_GLOBS} rather than being
- * overridden to `[]`. Empty ⇒ the role has no write boundary (a `code: "none"` role, or a worker
- * with no lane yet) and so gets no scope hook.
+ * overridden to `[]`. Empty ⇒ the role has no write boundary (a `code: "none"` role with no
+ * carve-out, or a worker with no lane yet) and so gets no scope hook. A `code: "none"` role WITH an
+ * explicit carve-out (the director's commons, #851) is scoped to exactly those globs — so the
+ * scope hook hard-blocks any director write outside the commons.
  */
 export function scopeWriteGlobs(role: SessionRole, ownGlobs: string[]): string[] {
   const cap = roleCapability(role, ownGlobs.length ? { writeGlobs: ownGlobs } : {});
-  return cap.code === "write" ? cap.writeGlobs : [];
+  if (cap.code === "write") return cap.writeGlobs;
+  return hasScopedWriteCarveOut(cap) ? cap.writeGlobs : [];
 }
 
 // ── Command classification ──────────────────────────────────────────────────────
@@ -217,9 +234,13 @@ export function matchGlob(glob: string, path: string): boolean {
  * Whether a role may write `path`: it needs `code` access AND the path must fall
  * inside one of its `writeGlobs`. No globs ⇒ no boundary ⇒ no code writes (a worker
  * must be assigned its ownership boundary first).
+ *
+ * The one exception is the scoped carve-out (#851): a `code: "none"` role that carries explicit
+ * `writeGlobs` (the director's commons) may write paths inside those globs and nothing else — the
+ * carve-out grants exactly the listed paths while every other write stays denied.
  */
 export function canWritePath(cap: RoleCapability, path: string): boolean {
-  if (cap.code === "none") return false;
+  if (cap.code === "none" && !hasScopedWriteCarveOut(cap)) return false;
   return cap.writeGlobs.some((g) => matchGlob(g, path));
 }
 
@@ -254,6 +275,15 @@ export interface ToolPermissionRules {
  */
 export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
   if (cap.code === "none") {
+    // Scoped carve-out (#851): a `code: "none"` role WITH explicit writeGlobs (the director's
+    // commons) auto-approves the write tools for EXACTLY those globs. Claude Code's precedence is
+    // deny > allow, so the whole-tool deny would mask any narrower allow — instead of denying the
+    // bare tools we emit only the per-glob allows. Any write OUTSIDE the commons falls through to
+    // the default prompt and is hard-blocked by the bsc-scope hook ({@link scopeWriteGlobs}), so
+    // the director can write the commons and is denied all other code writes.
+    if (hasScopedWriteCarveOut(cap)) {
+      return { allow: cap.writeGlobs.flatMap((g) => WRITE_TOOLS.map((t) => `${t}(${g})`)), deny: [] };
+    }
     return { allow: [], deny: [...WRITE_TOOLS] };
   }
   const allow = cap.writeGlobs.flatMap((g) => WRITE_TOOLS.map((t) => `${t}(${g})`));
@@ -347,9 +377,12 @@ export interface BscAgentPerms {
  *  bsc-agent worker (github:read) can open its own PR. Everything else the role denies stays
  *  denied. With no flow grant (the default), behavior is unchanged. */
 export function bscAgentPerms(cap: RoleCapability, granted: string[] = []): BscAgentPerms {
+  // The scoped carve-out (#851) applies here too: a `code: "none"` director WITH commons writeGlobs
+  // keeps its write tools (scoped to the commons) rather than having them denied outright.
+  const carveOut = hasScopedWriteCarveOut(cap);
   return {
-    deny_tools: cap.code === "none" ? ["write_file", "edit_file"] : [],
+    deny_tools: cap.code === "none" && !carveOut ? ["write_file", "edit_file"] : [],
     deny_bash: roleDeniedCommands(cap).filter((d) => !granted.includes(d)),
-    write_globs: cap.code === "write" ? cap.writeGlobs : [],
+    write_globs: cap.code === "write" || carveOut ? cap.writeGlobs : [],
   };
 }
