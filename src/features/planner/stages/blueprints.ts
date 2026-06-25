@@ -252,15 +252,35 @@ export const DEFAULT_BLUEPRINT_ID = "default";
 /** Build a section instance from a def key + per-blueprint overrides. */
 export function mkSection(
   key: string,
-  { enabled = true, expanded = false, optional }:
-    { enabled?: boolean; expanded?: boolean; optional?: boolean } = {},
+  { enabled = true, expanded = false, optional, ship }:
+    { enabled?: boolean; expanded?: boolean; optional?: boolean; ship?: boolean } = {},
 ): BlueprintSection {
   const def = SECTION_DEFS[key];
-  return {
+  const base: BlueprintSection = {
     uid: uid("sec"), key, ...def, enabled, expanded,
     // explicit `optional` overrides the def's; otherwise inherit it
     optional: optional ?? def.optional,
   };
+  // #1383: a blueprint can fold Deploy INTO this stage as a "ship" substep — one
+  // "Repositories & Deployment" stage gated on repos linked AND (only where the blueprint opted in
+  // via `ship`) the deploy config. The `deploy` SectionDef stays the single source of the ship
+  // prompt + gate; non-ship blueprints (a library, a refactor) are untouched, so there's no
+  // behavior change for them.
+  const dep = ship ? SECTION_DEFS.deploy : undefined;
+  if (dep) {
+    return {
+      ...base,
+      name: "Repositories & Deployment",
+      gate: `${def.gate} · ${dep.gate}`,
+      gateRule: { require: [...(def.gateRule?.require ?? []), ...(dep.gateRule?.require ?? [])] },
+      output: dep.output ?? base.output,
+      substeps: [
+        { key: "link", label: "Link repositories", prompt: def.prompt },
+        { key: "ship", label: "Define deployment", prompt: dep.prompt },
+      ],
+    };
+  }
+  return base;
 }
 
 /** Seed blueprints — the starter library, depicting every section/pipeline state. */
@@ -289,8 +309,9 @@ export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
 export interface BlueprintDef extends Omit<Blueprint, "sections"> {
   /** Display order within the built-in library. */
   order?: number;
-  /** Ordered section refs: a key into SECTION_DEFS + an optional per-blueprint `optional` flag. */
-  sections: { key: string; optional?: boolean }[];
+  /** Ordered section refs: a key into SECTION_DEFS + an optional per-blueprint `optional` flag, plus
+   *  `ship` (#1383) — on the `repos` ref, folds Deploy into the stage as a "ship" substep. */
+  sections: { key: string; optional?: boolean; ship?: boolean }[];
 }
 
 // The built-in blueprints live as one JSON file per blueprint under ./blueprints/ — each is just
@@ -305,7 +326,7 @@ export function makeBlueprints(): Blueprint[] {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map(({ order: _order, sections, ...meta }) => ({
       ...meta,
-      sections: sections.map((s) => mkSection(s.key, { optional: s.optional })),
+      sections: sections.map((s) => mkSection(s.key, { optional: s.optional, ship: s.ship })),
     }));
 }
 
