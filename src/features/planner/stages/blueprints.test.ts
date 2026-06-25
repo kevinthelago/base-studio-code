@@ -3,6 +3,7 @@ import {
   makeBlueprints, mkSection, computeStatus, reorder, cloneSections, blueprintToStageConfig,
   sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal, skippedSignal,
   isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, sectionDone,
+  signatureTemplateVersion, blueprintTemplateChanged, shouldAutoOpenBlueprintModal,
   SECTION_DEFS, type BlueprintSection, type Blueprint,
 } from "./blueprints";
 import { SKILLS } from "@/shared/data/skills";
@@ -388,5 +389,67 @@ describe("Web SEO capability (#1293)", () => {
         expect(ids.has(sid), `blueprint '${bp.id}' references unknown skill '${sid}'`).toBe(true);
       }
     }
+  });
+});
+
+// Regression for #1296: the destructive "blueprint has changed" modal must auto-open ONLY on a
+// genuine blueprint/planner-template version change — never on benign mid-project setup tweaks
+// (linking a repo, toggling a KB block, enabling/disabling a stage), which merely change the
+// repos/kb/stages fields of the context signature and should only drive the silent stale badge.
+describe("blueprint-changed modal trigger (#1296)", () => {
+  // Signature format mirrors planner/workspace.rs context_signature: v{ver}|repos|kb|stages.
+  const sigFor = (ver: string, repos = "", kb = "", stages = "") => `v${ver}|${repos}|${kb}|${stages}`;
+
+  it("signatureTemplateVersion extracts the version prefix (and tolerates empty/partial input)", () => {
+    expect(signatureTemplateVersion("v7|a,b|k1|s1")).toBe("v7");
+    expect(signatureTemplateVersion("v7")).toBe("v7"); // no inputs after the version
+    expect(signatureTemplateVersion("")).toBe("");
+    expect(signatureTemplateVersion(null)).toBe("");
+    expect(signatureTemplateVersion(undefined)).toBe("");
+  });
+
+  it("blueprintTemplateChanged is false when only repos/kb/stages differ (benign setup tweak)", () => {
+    const baseline = sigFor("7", "owner/a", "kb1", "goal");
+    // Mid-project: linked a repo, toggled a KB block, enabled a stage — version unchanged.
+    expect(blueprintTemplateChanged(sigFor("7", "owner/a,owner/b", "kb1", "goal"), baseline)).toBe(false);
+    expect(blueprintTemplateChanged(sigFor("7", "owner/a", "", "goal"), baseline)).toBe(false);
+    expect(blueprintTemplateChanged(sigFor("7", "owner/a", "kb1", "goal,scope"), baseline)).toBe(false);
+  });
+
+  it("blueprintTemplateChanged is true only when the template version differs", () => {
+    const baseline = sigFor("7", "owner/a", "kb1", "goal");
+    expect(blueprintTemplateChanged(sigFor("8", "owner/a", "kb1", "goal"), baseline)).toBe(true);
+    // Empty/absent signatures never count as a change (avoids spurious open before sigs load).
+    expect(blueprintTemplateChanged("", baseline)).toBe(false);
+    expect(blueprintTemplateChanged(baseline, null)).toBe(false);
+  });
+
+  it("does NOT auto-open the modal on a benign setup tweak (the #1296 bug)", () => {
+    const baseline = sigFor("7", "owner/a", "kb1", "goal");
+    const afterRepoLink = sigFor("7", "owner/a,owner/b", "kb1", "goal");
+    expect(shouldAutoOpenBlueprintModal({
+      currentSig: afterRepoLink, baselineSig: baseline, hasExistingPlan: true, alreadyShown: false,
+    })).toBe(false);
+  });
+
+  it("DOES auto-open the modal on a real blueprint/template-version change", () => {
+    const baseline = sigFor("7", "owner/a", "kb1", "goal");
+    const afterTemplateBump = sigFor("8", "owner/a", "kb1", "goal");
+    expect(shouldAutoOpenBlueprintModal({
+      currentSig: afterTemplateBump, baselineSig: baseline, hasExistingPlan: true, alreadyShown: false,
+    })).toBe(true);
+  });
+
+  it("respects the existing-plan and once-per-open guards even on a real version change", () => {
+    const baseline = sigFor("7", "owner/a", "kb1", "goal");
+    const bumped = sigFor("8", "owner/a", "kb1", "goal");
+    // No plan to protect → no modal.
+    expect(shouldAutoOpenBlueprintModal({
+      currentSig: bumped, baselineSig: baseline, hasExistingPlan: false, alreadyShown: false,
+    })).toBe(false);
+    // Already shown once this open → don't re-fire.
+    expect(shouldAutoOpenBlueprintModal({
+      currentSig: bumped, baselineSig: baseline, hasExistingPlan: true, alreadyShown: true,
+    })).toBe(false);
   });
 });
