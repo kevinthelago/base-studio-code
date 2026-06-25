@@ -127,6 +127,13 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
   for further splitting later.
 - The big `planner` files (`Planning.tsx` ~3k, `ProjectPane.tsx` ~1.5k) moved as-is; **splitting them
   into focused modules is a remaining quality pass** (not a structural move).
+- **Cross-repo contract fixtures** (`tunnelProtocol.fixtures.json`, `plannerCore.fixtures.json`) live in
+  their feature's `lib/` but are byte-exact wire contracts ALSO consumed by the Rust tests and
+  mobile-studio-code. The Rust tests resolve them **by filename** (`find_fixture` in
+  `src-tauri/src/mobile/tunnel/mod.rs`), so moving a feature slice does **not** break Rust CI — but
+  **renaming a fixture file** means updating the Rust `find_fixture("…")` call (and mobile-studio-code)
+  in lockstep. (This is the one place Rust reaches into the frontend tree; everything else it reads is
+  backend-owned — `src-tauri/templates/`, `src-tauri/tests/`.)
 
 ## Architecture
 

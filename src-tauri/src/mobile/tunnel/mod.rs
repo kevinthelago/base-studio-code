@@ -1023,13 +1023,37 @@ fn decode_room_msg(tx: &mut snow::TransportState, frame: &[u8]) -> Result<Client
 mod tests {
     use super::*;
 
+    /// Resolve a shared cross-repo contract fixture by FILENAME, walking the frontend `src/` tree.
+    ///
+    /// `tunnelProtocol.fixtures.json` / `plannerCore.fixtures.json` are byte-exact wire contracts
+    /// shared by these Rust tests, the TS tests, and mobile-studio-code. The frontend reorg (#1309)
+    /// relocates them within `src/`, so we find them by name instead of a brittle fixed path — a
+    /// move no longer reds the Rust CI. Test-only, so the recursive walk's cost is irrelevant.
+    fn find_fixture(name: &str) -> std::path::PathBuf {
+        fn walk(dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+            for entry in std::fs::read_dir(dir).ok()?.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Some(found) = walk(&path, name) {
+                        return Some(found);
+                    }
+                } else if path.file_name().and_then(|n| n.to_str()) == Some(name) {
+                    return Some(path);
+                }
+            }
+            None
+        }
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        walk(&src, name)
+            .unwrap_or_else(|| panic!("contract fixture '{name}' not found under {}", src.display()))
+    }
+
     /// Validate the plannerCore fixture: FNV-1a hash vectors + plan-sync wire frame serde.
     /// Shared with mobile-studio-code and the TS tests; any drift is a breaking protocol
     /// change (#588).
     #[test]
     fn planner_core_fixture_matches_hash_and_serde() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../src/lib/planner/plannerCore/plannerCore.fixtures.json");
+        let path = find_fixture("plannerCore.fixtures.json");
         let raw = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read plannerCore fixture {}: {e}", path.display()));
         let fx: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -1109,8 +1133,7 @@ mod tests {
     /// must coordinate (#46).
     #[test]
     fn shared_fixture_matches_serde() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../src/features/tunnel/lib/tunnelProtocol.fixtures.json");
+        let path = find_fixture("tunnelProtocol.fixtures.json");
         let raw = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()));
         let fx: serde_json::Value = serde_json::from_str(&raw).unwrap();
