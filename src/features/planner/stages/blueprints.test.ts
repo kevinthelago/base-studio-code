@@ -50,22 +50,24 @@ describe("blueprints — seed library", () => {
       const bp = makeBlueprints().find((b) => b.id === id)!;
       const keys = bp.sections.map((s) => s.key);
       expect(keys, `${id} has an mcp stage`).toContain("mcp");
-      expect(keys.indexOf("mcp"), `${id}: mcp after permissions`).toBeGreaterThan(keys.indexOf("permissions"));
+      // Permissions is folded into the `structure` (Streams) stage (#1383-streams); mcp comes after it.
+      expect(keys.indexOf("mcp"), `${id}: mcp after structure`).toBeGreaterThan(keys.indexOf("structure"));
     }
   });
 
   it("keeps the Default blueprint minimal; the advanced stages live on Complete (#1003)", () => {
     const bp = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     const keysOf = (id: string) => bp(id).sections.map((s) => s.key);
-    // Default is the simplest greenfield path — no source/mcp/automations/skills. Deploy is folded
-    // into the `repos` stage as a ship substep (#1383), so it's no longer a separate section key.
-    expect(keysOf("default")).toEqual(["context", "repos", "features", "ui", "structure", "permissions"]);
-    for (const k of ["source", "mcp", "automations", "skills", "deploy"]) {
+    // Default is the simplest greenfield path — no source/mcp/automations/skills. Deploy folds into
+    // `repos` (#1383) and Permissions folds into `structure` (the "Streams" stage, #1383-streams), so
+    // neither is a separate section key.
+    expect(keysOf("default")).toEqual(["context", "repos", "features", "ui", "structure"]);
+    for (const k of ["source", "mcp", "automations", "skills", "deploy", "permissions"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }
     // Complete is the thorough greenfield path — the trimmed Default flow plus source + the advanced stages.
     expect(keysOf("complete")).toEqual(
-      ["context", "repos", "source", "features", "ui", "structure", "permissions", "mcp", "automations", "skills"],
+      ["context", "repos", "source", "features", "ui", "structure", "mcp", "automations", "skills"],
     );
     // Complete sorts right after Default in the greenfield group.
     const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
@@ -347,6 +349,37 @@ describe("Deploy folds in dependencies (#1127)", () => {
     expect(di.sections.map((s) => s.key)).toContain("deploy");
     expect(di.sections.find((s) => s.key === "repos")).toBeUndefined();
   });
+
+  it("folds Permissions into the Structure stage as a fleet substep — the 'Streams' stage (#1383-streams)", () => {
+    // fleet:true → one "Streams" stage with plan+fleet substeps; the gate is the UNION (every feature
+    // phased AND the fleet streams scoped + profiled). Non-fleet structure is plain, unchanged.
+    const merged = mkSection("structure", { fleet: true });
+    expect(merged.name).toBe("Streams");
+    // Structure's own substep(s) are preserved; the "fleet" marker substep is appended last.
+    expect(merged.substeps?.some((s) => s.key === "sequence")).toBe(true);
+    const subKeys = merged.substeps?.map((s) => s.key) ?? [];
+    expect(subKeys[subKeys.length - 1]).toBe("fleet"); // the fold marker is appended last
+    const sig = merged.gateRule!.require.map((r) => r.signal);
+    expect(sig).toEqual(expect.arrayContaining(["featuresPhased", "fleetStreams", "profilesComplete"]));
+
+    const plain = mkSection("structure");
+    expect(plain.name).toBe("Plan");
+    // Plain Structure keeps its own substep(s) but gains NO fleet marker, and its gate is plan-only.
+    expect(plain.substeps?.some((s) => s.key === "fleet")).toBeFalsy();
+    expect(plain.gateRule!.require.map((r) => r.signal)).not.toContain("fleetStreams"); // plan-only, unchanged
+  });
+
+  it("greenfield/transform blueprints opt structure into fleet; refactor keeps Permissions standalone (#1383-streams)", () => {
+    const structRef = (id: string) => makeBlueprints().find((b) => b.id === id)!.sections.find((s) => s.key === "structure");
+    for (const id of ["default", "complete", "migrate", "harden"]) {
+      expect(structRef(id)?.substeps?.some((s) => s.key === "fleet"), `${id} fleets via structure`).toBe(true);
+      expect(makeBlueprints().find((b) => b.id === id)!.sections.map((s) => s.key)).not.toContain("permissions");
+    }
+    // refactor has Permissions but no Structure stage → keeps Permissions standalone (unchanged).
+    const refactor = makeBlueprints().find((b) => b.id === "refactor")!;
+    expect(refactor.sections.map((s) => s.key)).toContain("permissions");
+    expect(refactor.sections.find((s) => s.key === "structure")).toBeUndefined();
+  });
 });
 
 describe("data-integration blueprint (#1207)", () => {
@@ -357,8 +390,9 @@ describe("data-integration blueprint (#1207)", () => {
     expect(b).toBeTruthy();
     expect(b.category).toBe("data");
     expect(b.mode).toBe("create");
+    // Permissions folds into `structure` (the Streams stage, #1383-streams) — no separate key.
     expect(b.sections.map((s) => s.key)).toEqual(
-      ["context", "dataSource", "dataModel", "dataMap", "destination", "sync", "dataClean", "integrations", "structure", "permissions", "deploy"],
+      ["context", "dataSource", "dataModel", "dataMap", "destination", "sync", "dataClean", "integrations", "structure", "deploy"],
     );
     expect(b.mcp).toContain("Compliance"); // #1005 Compliance MCP attached
   });

@@ -22,10 +22,8 @@
       "key": "testing"
     },
     {
-      "key": "structure"
-    },
-    {
-      "key": "permissions"
+      "key": "structure",
+      "fleet": true
     }
   ]
 }
