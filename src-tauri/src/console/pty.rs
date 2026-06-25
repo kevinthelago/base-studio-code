@@ -7,7 +7,7 @@ use crate::{
 };
 use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
-    BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_TAINT_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
+    BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_SCOPE_RC, BSC_TAINT_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
 };
 use crate::{perf, tunnel};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -416,7 +416,7 @@ pub(crate) async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_SCOPE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
