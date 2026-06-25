@@ -599,6 +599,8 @@ pub fn data_platform_scan(
         "monday" => scan_monday(MONDAY_API, &secret),
         "quickbooks" => scan_quickbooks(QUICKBOOKS_API, &fields, &secret),
         "dynamics365" => scan_dynamics(&fields, &secret),
+        // FHIR is `auth: Open` (no keychain secret) — its base URL arrives via `fields`.
+        "fhir" => scan_fhir(&fields),
         other => Ok(ScanResult::pending(format!("no live transport for {other}"))),
     }
 }
@@ -728,6 +730,28 @@ const HUBSPOT_API: &str = "https://api.hubapi.com";
 const MONDAY_API: &str = "https://api.monday.com/v2";
 #[cfg(feature = "source-stage")]
 const QUICKBOOKS_API: &str = "https://quickbooks.api.intuit.com";
+
+/// HL7 FHIR (R4): read-only over an OPEN sandbox/public test server (#1311). The FHIR service root
+/// arrives in the `baseUrl` field; there's no auth (SMART-on-FHIR bearer auth for live PHI endpoints
+/// is a gated follow-up). Asks for `application/fhir+json` and lets the connector walk Bundle pages.
+#[cfg(feature = "source-stage")]
+fn scan_fhir(fields: &std::collections::HashMap<String, String>) -> Result<ScanResult, String> {
+    let base = match fields.get("baseUrl").filter(|s| !s.is_empty()) {
+        Some(b) => b.clone(),
+        None => return Ok(ScanResult::pending("missing baseUrl — the FHIR server root (e.g. a public sandbox)")),
+    };
+    let client = reqwest::blocking::Client::new();
+    let fetch = move |url: &str| -> bsc_data::Result<serde_json::Value> {
+        client
+            .get(url)
+            .header("Accept", "application/fhir+json")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json())
+            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+    };
+    run_scan(&bsc_data::FhirConnector::new(host_of(&base), base.clone(), fetch), host_of(&base))
+}
 
 /// Salesforce: bearer token over the org's instance URL (from the OAuth token response).
 #[cfg(feature = "source-stage")]

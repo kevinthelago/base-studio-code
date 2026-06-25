@@ -23,6 +23,9 @@ pub enum SourceAuth {
     Basic,
     /// An API key in a header.
     ApiKey,
+    /// An open endpoint with no auth — e.g. a public FHIR sandbox / test server. Network, but no
+    /// secret. (SMART-on-FHIR bearer auth for live PHI endpoints is a gated follow-up, #1311.)
+    Open,
     /// A local file upload (CSV) — no network, no secret.
     Upload,
 }
@@ -67,6 +70,10 @@ pub const SOURCE_CONNECTORS: &[SourceConnectorMeta] = &[
     SourceConnectorMeta { id: "sap-odata", label: "SAP OData", auth: Basic, secret_field: Some("password"), live: Live },
     SourceConnectorMeta { id: "sql", label: "SQL database", auth: Password, secret_field: Some("password"), live: Pending("database driver not yet wired") },
     SourceConnectorMeta { id: "rest", label: "REST / OpenAPI", auth: ApiKey, secret_field: Some("apiKey"), live: Pending("OpenAPI resource discovery not yet wired") },
+    // Healthcare (#1311): HL7 FHIR R4 over an open sandbox base URL (public test server). Read-only;
+    // the live transport reads the FHIR root from the `baseUrl` field. SMART-on-FHIR bearer auth +
+    // DICOMweb are gated follow-ups (live PHI is held behind the compliance bar).
+    SourceConnectorMeta { id: "fhir", label: "HL7 FHIR (R4)", auth: Open, secret_field: None, live: Live },
     SourceConnectorMeta { id: "csv", label: "CSV export", auth: Upload, secret_field: None, live: Pending("uses the file-upload path") },
 ];
 
@@ -104,8 +111,8 @@ mod tests {
                 SourceAuth::Token | SourceAuth::Password | SourceAuth::ApiKey | SourceAuth::Basic | SourceAuth::OAuth => {
                     assert!(c.secret_field.is_some(), "{} must declare a secret field", c.id);
                 }
-                // upload (CSV) carries no secret.
-                SourceAuth::Upload => assert!(c.secret_field.is_none()),
+                // open (FHIR sandbox) + upload (CSV) carry no secret.
+                SourceAuth::Open | SourceAuth::Upload => assert!(c.secret_field.is_none()),
             }
         }
     }
@@ -113,5 +120,13 @@ mod tests {
     #[test]
     fn at_least_one_connector_has_live_transport() {
         assert!(SOURCE_CONNECTORS.iter().any(|c| c.live == LiveSupport::Live));
+    }
+
+    #[test]
+    fn fhir_is_an_open_live_connector_with_no_secret() {
+        let fhir = source_connector("fhir").expect("FHIR connector registered (#1311)");
+        assert_eq!(fhir.auth, SourceAuth::Open);
+        assert_eq!(fhir.secret_field, None);
+        assert_eq!(fhir.live, LiveSupport::Live);
     }
 }
