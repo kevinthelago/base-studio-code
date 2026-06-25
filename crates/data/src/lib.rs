@@ -44,7 +44,11 @@ pub mod registry;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
+#[cfg(feature = "duckdb-store")]
+pub mod meta;
 
+#[cfg(feature = "duckdb-store")]
+pub use meta::MetaStore;
 pub use error::{DataError, Result};
 pub use schema::{DataModel, Entity, Field, FieldType};
 pub use connector::{Connector, CsvConnector, RowSet, SourceField, SourceObject};

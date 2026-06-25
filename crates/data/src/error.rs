@@ -13,6 +13,8 @@ pub enum DataError {
     Csv(String),
     /// DuckDB failure.
     Db(String),
+    /// JSON (de)serialization failure — persisting/reading the Data Model or PlatformScan metadata.
+    Serde(String),
 }
 
 impl fmt::Display for DataError {
@@ -22,7 +24,14 @@ impl fmt::Display for DataError {
             DataError::Io(m) => write!(f, "io error: {m}"),
             DataError::Csv(m) => write!(f, "csv error: {m}"),
             DataError::Db(m) => write!(f, "db error: {m}"),
+            DataError::Serde(m) => write!(f, "serde error: {m}"),
         }
+    }
+}
+
+impl From<serde_json::Error> for DataError {
+    fn from(e: serde_json::Error) -> Self {
+        DataError::Serde(e.to_string())
     }
 }
 
