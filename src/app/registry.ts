@@ -22,10 +22,10 @@ export interface ScreenMeta {
 export const SCREENS: ScreenMeta[] = [
   { key: "console",    label: "Console",     Icon: TerminalSquare },
   { key: "projects",   label: "Projects",    Icon: FolderKanban },
+  { key: "skills",     label: "Skills",      Icon: Sparkles },
   { key: "github",     label: "GitHub",      Icon: GitFork },
   { key: "agents",     label: "Permissions", Icon: ShieldCheck },
   { key: "mcp",        label: "MCP",         Icon: Server },
-  { key: "skills",     label: "Skills",      Icon: Sparkles },
   { key: "automation", label: "Automations", Icon: Zap },
   { key: "settings",   label: "Settings",    Icon: Settings },
 ];
