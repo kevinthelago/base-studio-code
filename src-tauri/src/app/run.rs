@@ -210,6 +210,7 @@ pub fn run() {
             observability::audit::read_mcp_log,
             tokens::read_token_usage,
             tokens::read_pane_messages,
+            tokens::read_pane_activity,
             observability::audit::read_coord_log,
             project::inspect::read_ui_skeleton,
             project::hub::project_dir_path,
