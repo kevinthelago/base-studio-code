@@ -14,9 +14,7 @@ function Harness({ repos, initial }: { repos?: Repo[]; initial?: DeployConfig })
   const [cfg, setCfg] = useState(initial ?? defaultDeployConfig((repos ?? []).map((r) => r.id)));
   return (
     <FocusedReposDeployBody
-      repos={repos} deploy={cfg} onDeployChange={setCfg}
-      onLinkRepo={() => {}} reposPublic={false}
-      repoOverrides={{}} onSetRepoPublic={() => {}}
+      repos={repos} deploy={cfg} onDeployChange={setCfg} onLinkRepo={() => {}}
     />
   );
 }
@@ -55,9 +53,8 @@ describe("FocusedReposDeployBody — per-repo cards (#1421)", () => {
     expect(screen.queryByText("A · HOW IT SHIPS")).not.toBeInTheDocument();
     // the "N/X defined" readiness banner is gone (#1403)
     expect(screen.queryByText(/\d+\/\d+ defined/)).not.toBeInTheDocument();
-    // the global default Private/Public toggle is gone (#1403); per-repo toggles remain
-    expect(screen.queryByRole("button", { name: /Private/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Make acme/web public" })).toBeInTheDocument();
+    // the per-repo visibility lock/globe toggle was removed from the deploy card headers (#1432)
+    expect(screen.queryByRole("button", { name: /Make acme\/web (public|private)/ })).not.toBeInTheDocument();
   });
 
   it("starts with every repo collapsed, and a click toggles its target editor open then closed", () => {
