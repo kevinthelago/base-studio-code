@@ -2,7 +2,21 @@
 // composition are unit-testable; the Rust `planner_intro_prompt` command returns the per-mode
 // template text, and the launch bakes the composed result as a fresh-only startup prompt.
 
+import type { BlueprintMode } from "../stages/blueprints";
+
 export type PlannerIntroMode = "new" | "existing" | "blueprint";
+
+/**
+ * Whether the planner should take the "existing repos" orientation — for BOTH the intro greeting
+ * and the generated CLAUDE.md spec (`setup_workspaces`). True when the project is already saved OR
+ * the blueprint's lifecycle is `operate` (transform / harden / maintain — work against existing
+ * repos). #1286: keying off the blueprint **mode**, not just save-state, fixes an operate-mode
+ * project on a fresh draft — or right after a greenfield→transform lifecycle switch — being
+ * mis-oriented as a new greenfield one. (A saved greenfield project is unchanged: still "existing".)
+ */
+export function plannerTreatAsExisting({ isSaved, mode }: { isSaved: boolean; mode?: BlueprintMode }): boolean {
+  return isSaved || mode === "operate";
+}
 
 /** Pick the intro mode from the session signals — mirrors the planner.rs CLAUDE.md branch
  *  (authoring wins, then an existing project, else a new greenfield project). */
