@@ -23,6 +23,15 @@ pub(crate) fn delete_project_dir(project_key: String) -> Result<(), String> {
     if sanitize_project_key(&project_key).is_empty() {
         return Err("delete_project_dir: empty project_key".to_string());
     }
+    // Reap the project's still-running shells first (#1279): kill any live PTY child whose ledger
+    // pane id is `<key>:…` and forget all of its ledger entries. Otherwise a shell still running at
+    // delete time survives as an orphaned pid the deleted-project key can no longer resolve, which
+    // discovery would surface as an unrestorable "running" session. The on-disk hub keys off the
+    // SANITIZED slug, so match the ledger on the same value.
+    let killed = crate::pty_ledger::reap_project_shells(&sanitize_project_key(&project_key));
+    if killed > 0 {
+        log::info!("delete_project_dir: reaped {killed} running shell(s) of {project_key:?}");
+    }
     // The hub lives under projects/<key> (#922). Also remove any legacy draft/<key> copy left by a
     // pre-migration build so a stale half-moved hub can't linger and reappear in the list.
     for dir in [project_dir(&project_key), legacy_draft_dir(&project_key)] {

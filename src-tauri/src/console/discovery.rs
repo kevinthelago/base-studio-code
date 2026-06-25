@@ -27,7 +27,9 @@ pub struct DiscoveredSession {
     pub sources: Vec<String>,
     /// The live shell pid, when a running process currently owns this pane.
     pub live_pid: Option<u32>,
-    /// "running" (a live pid) · "dormant" (on disk, not running) · "planned" (in the plan.db fleet, never launched).
+    /// "running" (a live pid) · "dormant" (on disk, not running) · "planned" (in the plan.db fleet,
+    /// never launched) · "orphaned" (a live pid whose project was deleted — no hub, no known
+    /// project; unrestorable, so recovery reaps it rather than opening a console for it, #1279).
     pub status: String,
     /// The owning project key, when derivable from a hub. (The frontend re-parses `pane_id` authoritatively.)
     pub project_key: Option<String>,
@@ -40,6 +42,23 @@ pub struct DiscoveredSession {
 const RUNNING: &str = "running";
 const DORMANT: &str = "dormant";
 const PLANNED: &str = "planned";
+const ORPHANED: &str = "orphaned";
+
+/// Whether a live ledger pane id is an **orphan of a deleted project** (#1279): a project-keyed
+/// session (`<key>:…`, not a manual/positional id) whose project no longer exists — its hub dir is
+/// gone **and** its key maps to no known plan.db fleet. Such a shell can't be restored (nothing to
+/// rehydrate) nor attributed (the key resolves to no project), so recovery must reap it.
+fn is_orphaned(
+    pane_id: &str,
+    base_dir: &Path,
+    fleet_for: &dyn Fn(&str) -> Option<serde_json::Value>,
+) -> bool {
+    let Some(key) = crate::pty_ledger::project_key_of(pane_id) else {
+        return false; // manual / positional panes are never project orphans
+    };
+    let hub_gone = !base_dir.join("projects").join(key).is_dir();
+    hub_gone && fleet_for(key).is_none()
+}
 
 fn push_source(sources: &mut Vec<String>, s: &str) {
     if !sources.iter().any(|x| x == s) {
@@ -68,7 +87,9 @@ pub fn discover_sessions_impl(
         let d = map.entry(pane_id.clone()).or_insert_with(|| blank(pane_id));
         push_source(&mut d.sources, "ledger");
         d.live_pid = Some(*pid);
-        d.status = RUNNING.into();
+        // A live shell whose project was deleted (no hub, no known fleet) is an orphan, not a
+        // restorable running session — recovery reaps it (#1279). Everything else is running.
+        d.status = if is_orphaned(pane_id, base_dir, fleet_for) { ORPHANED } else { RUNNING }.into();
     }
 
     // 2) Hub pass — dormant/planned director + workers from each project's plan.db fleet + worktrees.
@@ -264,6 +285,42 @@ mod tests {
         assert_eq!(man.live_pid, Some(200));
         assert_eq!(man.project_key, None);
         assert_eq!(man.sources, vec!["ledger".to_string()]);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// #1279: a live ledger entry whose project was deleted — no `projects/<key>/` hub AND the key
+    /// maps to no plan.db fleet — is classified `orphaned`, never `running`. Recovery reaps it
+    /// rather than trying (and failing) to restore an unrestorable session.
+    #[test]
+    fn forgotten_key_ledger_entry_is_orphaned_not_running() {
+        let base = tmp_base();
+        // Only one live hub ("proj"); the deleted project "gone" has NO hub dir and NO fleet.
+        fs::create_dir_all(base.join("projects").join("proj")).unwrap();
+        let mut fleets = std::collections::HashMap::new();
+        fleets.insert("proj".to_string(), fleet_json());
+        let fleet_for = |k: &str| fleets.get(k).cloned();
+
+        let ledger = vec![
+            ("proj:director".to_string(), 100u32), // live, hub present → running
+            ("gone:auth-ui".to_string(), 300u32),  // live, project deleted → orphaned
+            ("man:scratch:p0".to_string(), 200u32), // manual scratch → running (reap-only via frontend)
+        ];
+        let alive = |_: u32| true;
+
+        let out = discover_sessions_impl(&base, &ledger, &alive, &fleet_for);
+
+        let orphan = find(&out, "gone:auth-ui").expect("forgotten-key entry surfaces");
+        assert_eq!(orphan.status, "orphaned");
+        assert_eq!(orphan.live_pid, Some(300));
+        assert_eq!(orphan.sources, vec!["ledger".to_string()]);
+        // It is NOT enriched from any hub (there is none) — no project key/cwd to attribute it to.
+        assert_eq!(orphan.project_key, None);
+
+        // A live session with a real hub is still plain "running".
+        assert_eq!(find(&out, "proj:director").unwrap().status, "running");
+        // A manual scratch shell is never a project orphan.
+        assert_eq!(find(&out, "man:scratch:p0").unwrap().status, "running");
 
         let _ = fs::remove_dir_all(&base);
     }
