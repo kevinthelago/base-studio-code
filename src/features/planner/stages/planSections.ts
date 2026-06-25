@@ -90,10 +90,11 @@ export const FLEET_KEY = "fleet";
  *  as a plan section. See {@link parseReposFile}. */
 export const REPOS_KEY = "repos";
 
-/** The reusable-skills file (JSON: `skills.json` — an array of skill objects).
- *  The planner's CRUD channel into the global Skills library. Surfaced by the
- *  poll like `commands.json`; not rendered as a plan section — upserted into the
- *  skills store. See {@link parseSkillsFile} in lib/skills. (#404) */
+/** Legacy reusable-skills file (`skills.json`). The planner used to write it as its CRUD
+ *  channel into the global Skills library, but now authors skills with `bsc-skill add`
+ *  straight into the skills.db (#1412), and the file-poll → library sync was retired (#1417).
+ *  This key is kept only so a stray `skills.json` left on disk by a pre-#1412 project is still
+ *  skipped by the section parser (never rendered as a raw-JSON plan section). */
 export const SKILLS_KEY = "skills";
 
 /** The feature list file (JSON: `features.json` — an array of feature objects). The
