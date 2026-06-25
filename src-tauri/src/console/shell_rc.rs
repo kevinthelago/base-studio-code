@@ -42,15 +42,25 @@ pub(crate) const BSC_AUDIT_RC: &str = concat!(
     "\n",
 );
 
-/// The `bsc-skill` helper (#406): a PreToolUse/PostToolUse hook for the Skill tool on a
-/// gated pane pipes Claude Code's hook JSON into this; it extracts ONLY the skill name
-/// (`skill_name`) and the hook event (`hook_event_name`) and appends one TAB-separated
-/// line — `ts \t pane \t event \t skill` — to the app-wide `$BSC_SKILL_LOG`, tagged with
-/// `$BSC_AUDIT_PANE`. The name/event are sanitized like bsc-audit's target (strip tabs/
-/// newlines, cap length) so a stray char can't corrupt the TSV. Best-effort + always
-/// exits 0 so it never blocks a tool. A raw string keeps the embedded quotes/regex readable.
+/// The `bsc-skill` helper — one name, two roles, dispatched on argument count:
+///
+/// * **With a subcommand** (`bsc-skill list` / `add` / `group …` / `resolve …`, #1338): the global
+///   skills-library CLI. Runs the `$BSC_SKILL_BIN` sidecar (an absolute path — invoking it directly,
+///   NOT the bare name, so it never recurses into this function) against the one global skills.db
+///   (`$BSC_SKILL_DB`). This is the #1325 runtime surface: any live session can read/author skills +
+///   task-groups from its own shell. If `$BSC_SKILL_BIN` is unset (no sidecar staged) it errors
+///   rather than falling back to a bare `bsc-skill` (which would re-enter this function).
+/// * **With no arguments** (#406): the original Skill-tool telemetry hook. A PreToolUse/PostToolUse
+///   hook pipes Claude Code's hook JSON into this on stdin; it extracts ONLY the skill name
+///   (`skill_name`) + the hook event (`hook_event_name`) and appends one TAB-separated line —
+///   `ts \t pane \t event \t skill` — to the app-wide `$BSC_SKILL_LOG`, tagged with `$BSC_AUDIT_PANE`.
+///   The name/event are sanitized like bsc-audit's target (strip tabs/newlines, cap length) so a
+///   stray char can't corrupt the TSV. Best-effort + always exits 0 so it never blocks a tool.
+///
+/// Claude Code always fires the hook with NO args (data arrives on stdin), so argc is a reliable
+/// discriminator. A raw string keeps the embedded quotes/regex readable.
 pub(crate) const BSC_SKILL_RC: &str = concat!(
-    r#"bsc-skill() { l="${BSC_SKILL_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; sn="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"skill_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$sn" >> "$l"; return 0; }"#,
+    r#"bsc-skill() { if [ "$#" -gt 0 ]; then b="${BSC_SKILL_BIN:-}"; if [ -n "$b" ]; then "$b" "$@"; return $?; fi; echo "bsc-skill: library CLI unavailable (BSC_SKILL_BIN unset)" >&2; return 127; fi; l="${BSC_SKILL_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; sn="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"skill_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$sn" >> "$l"; return 0; }"#,
     "\n",
 );
 
