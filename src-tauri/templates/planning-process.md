@@ -214,6 +214,20 @@ files and rarely need a human.
    config, a contract) must be owned by exactly ONE stream; any stream that needs it
    lists that stream in `depends_on` (interface-first: the owner lands it, then the
    dependents build on it).
+   - **The repo-root commons belong to the DIRECTOR, never a feature stream (#851).**
+     These are the shared root files every stream depends on and decomposition can't
+     split: `.gitignore`, `.gitattributes`, `package.json` + its lockfile, `tsconfig*.json`
+     (and the equivalent manifests/locks for the stack — `Cargo.toml`/`Cargo.lock`,
+     `pyproject.toml`/`requirements.txt`, `go.mod`/`go.sum`), `.github/workflows/**`,
+     `.env.example`, and formatter/linter config (`.editorconfig`, `.prettier*`,
+     `.eslintrc*`/`eslint.config.*`). **Never list any of these in a feature stream's
+     `owns`.** They are the director's lane: it scaffolds and lands the complete commons
+     on develop in **Phase 0** (the feature workers gate on "commons landed" and build
+     against a complete root), and a worker that later needs a commons change asks the
+     director (`bsc-ask`) instead of editing the shared file. The app derives this exact
+     set from the stack and enforces the exclusion, but keep your `owns` globs
+     feature-directory-shaped (`src/auth/**`, not a bare root file) so the boundaries
+     stay clean.
 3. **Assign each stream the issues it owns** — the deliverables from `phases`/scope
    for its area.
 4. **Decide the optimal concurrent session count.** There is **no hard limit** on how

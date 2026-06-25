@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
   isConnected, connectedCount, allSourcesConnected, sourceChecks, coerceSourceConfig, parseSourceConfigTag,
-  deriveDataModel, migrationActive, datamodelSignals, downstreamImpact,
+  deriveDataModel, migrationActive, datamodelSignals, downstreamImpact, proposeFromPitch,
   presetToConnector, registerPresetConnectors,
   scanEntities, scanEdges, aggregatePlatform, isMultiSource, connectorColor,
   type DeclaredSource, type SourceConfig, type PlatformScanView,
@@ -279,5 +279,36 @@ describe("packaged vendor presets (#1288)", () => {
     expect(resolved.spec.fields.map((f) => f.key)).toEqual(["baseUrl", "token"]);
     // A dedicated connector still wins over any same-id preset.
     expect(connector("salesforce").name).toBe("Salesforce");
+  });
+});
+
+describe("proposeFromPitch (#1349)", () => {
+  it("returns [] for an empty / blank pitch", () => {
+    expect(proposeFromPitch("")).toEqual([]);
+    expect(proposeFromPitch("   ")).toEqual([]);
+    expect(proposeFromPitch(undefined)).toEqual([]);
+  });
+
+  it("proposes connectors named in the pitch, in catalog order, deduped", () => {
+    const ids = proposeFromPitch("We're migrating off QuickBooks and Salesforce into one app.");
+    // catalog order: quickbooks precedes salesforce
+    expect(ids).toEqual(["quickbooks", "salesforce"]);
+  });
+
+  it("is case-insensitive and matches common aliases", () => {
+    expect(proposeFromPitch("everything lives in SFDC today")).toEqual(["salesforce"]);
+    expect(proposeFromPitch("Replace our QBO bookkeeping")).toEqual(["quickbooks"]);
+    expect(proposeFromPitch("our data is in postgres")).toEqual(["sql"]);
+  });
+
+  it("matches on word boundaries — an unrelated substring does not propose a source", () => {
+    // "sapling" contains "sap" but is not the SAP system.
+    expect(proposeFromPitch("a fast-growing sapling of a startup")).toEqual([]);
+    // "summons" / "monsoon" must not trip the "monday" alias by substring.
+    expect(proposeFromPitch("a monsoon of summons paperwork")).toEqual([]);
+  });
+
+  it("returns no duplicates when an alias appears multiple times", () => {
+    expect(proposeFromPitch("Salesforce here, Salesforce there, all Salesforce")).toEqual(["salesforce"]);
   });
 });
