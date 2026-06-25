@@ -10,8 +10,10 @@
 import { useState } from "react";
 import {
   PLATFORMS, platform, WORKLOAD, PIPE_TRIGGERS, RELEASE_STRATEGIES, ORCHESTRATORS, REPLICA_OPTIONS,
-  hostMeta, deployChecks, deployIssues,
+  PUBLISH_REGISTRIES, PUBLISH_TRIGGERS, PORT_FORWARD_METHODS,
+  hostMeta, deployChecks, deployIssues, serviceMode, finalStageName,
   type DeployConfig, type DeployService, type Workload, type ReleaseStrategy,
+  type DeployMode, type LocalKind, type PublishRegistry, type PublishTrigger, type PortForwardMethod,
 } from "../shared/deployConfig";
 import { groupDependenciesBySource, type PlanDependency, type DependencyRegistry } from "../issues/dependencies";
 
@@ -107,12 +109,9 @@ function Toggle({ on, onClick, label, value }: { on: boolean; onClick: () => voi
   );
 }
 
-/** Target & hosting — service tabs (host badge + status dot), platform dropdown, workload, fields,
- *  and the containerization/orchestration sub-card for container workloads. */
-function TargetCard({ d, svc, set, setSvc, done }: {
-  d: DeployConfig; svc: DeployService | undefined;
-  set: (patch: Partial<DeployConfig>) => void; setSvc: (patch: Partial<DeployService>) => void; done: boolean;
-}) {
+/** Cloud body (#1192) — today's card: platform dropdown → workload → region/build/runtime →
+ *  containerization & orchestration for container workloads. Unchanged from the original. */
+function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partial<DeployService>) => void }) {
   const [open, setOpen] = useState(false);
   const pickPlatform = (pid: string) => {
     setOpen(false);
@@ -121,57 +120,12 @@ function TargetCard({ d, svc, set, setSvc, done }: {
     const wl: Workload = svc && p.kinds.includes(svc.workload) ? svc.workload : (p.kinds[0] ?? "static");
     setSvc({ platform: pid, proposed: false, workload: wl });
   };
-  const right = <span style={monoSm}>{d.services.length} service{d.services.length !== 1 ? "s" : ""}</span>;
-  const selPlat = svc?.platform ? platform(svc.platform) : null;
-  const isContainer = svc?.workload === "container";
-  const canContainerize = !!svc && platform(svc.platform).kinds.includes("container");
+  const selPlat = svc.platform ? platform(svc.platform) : null;
+  const isContainer = svc.workload === "container";
+  const canContainerize = platform(svc.platform).kinds.includes("container");
 
   return (
-    <Card n="01" title="Target & hosting" hint="per service" right={right} done={done}>
-      {/* service tabs */}
-      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 11 }}>
-        {d.services.map((s) => {
-          const p = platform(s.platform);
-          const on = svc && s.id === svc.id;
-          const host = hostMeta(s.host);
-          return (
-            <button key={s.id} onClick={() => set({ selService: s.id })} style={{
-              flex: 1, minWidth: 120, display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start", padding: "8px 11px", cursor: "pointer",
-              borderRadius: "var(--r-md)", border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
-              background: on ? "color-mix(in oklch, var(--accent), transparent 90%)" : "var(--bg-elev)",
-            }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
-                <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{s.id}</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ width: 6, height: 6, borderRadius: 99, background: s.platform ? "var(--success)" : "var(--fg-dim)" }} />
-              </span>
-              <span style={{ fontFamily: MONO, fontSize: 9, color: on ? "var(--accent)" : "var(--fg-dim)" }}>{s.platform ? `${p.glyph} ${p.name}` : "no target yet"}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: MONO, fontSize: 8, color: host.color }}>
-                <span style={{ width: 5, height: 5, borderRadius: 99, background: host.color }} />{host.domain}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {svc && (
-        <>
-          {/* selected service meta */}
-          <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 11 }}>
-            {(() => { const h = hostMeta(svc.host); return (
-              <span style={{ ...chip, display: "inline-flex", alignItems: "center", gap: 5, color: h.color }}>
-                <span style={{ width: 6, height: 6, borderRadius: 99, background: h.color }} />{h.domain}
-              </span>
-            ); })()}
-            {hostMeta(svc.host).kind !== "cloud" && (
-              <span style={{ ...chip, color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 72%)", background: "color-mix(in oklch, var(--violet), transparent 86%)" }}>self-hosted</span>
-            )}
-            <span style={{ ...chip, color: "var(--info)" }}>⎇ {svc.repo || "—"}/{svc.path}</span>
-            <span style={chip}>{svc.stack}</span>
-            <span style={{ flex: 1 }} />
-            {svc.proposed && <span style={prop}>✦ proposed</span>}
-          </div>
-
+    <>
           {/* platform dropdown */}
           <div style={{ ...grpLabel, marginBottom: 8 }}>platform</div>
           <div style={{ position: "relative" }}>
@@ -287,6 +241,160 @@ function TargetCard({ d, svc, set, setSvc, done }: {
               <span>↑</span><span>no target for <b>{svc.id}</b> yet — choose a platform from the list above</span>
             </div>
           )}
+    </>
+  );
+}
+
+/** A small native <select>, styled to match the card's fields (#1192). */
+function Select<T extends string>({ label, value, options, onChange }: { label: string; value: T | ""; options: readonly T[]; onChange: (v: T) => void }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
+      <span style={grpLabel}>{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value as T)} style={{
+        height: 28, padding: "0 8px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+        borderRadius: "var(--r-sm)", outline: "none", fontFamily: MONO, fontSize: 11, color: "var(--fg)",
+      }}>
+        <option value="" disabled>—</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </label>
+  );
+}
+
+/** Local body (#1192) — a Library (publish to a registry) or an Application (build + run here),
+ *  with an optional port-forward for a locally-running app. No cloud-host / region fields. */
+function LocalBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partial<DeployService>) => void }) {
+  const kind: LocalKind = svc.localKind ?? "application";
+  const pf = svc.portForward ?? { enabled: false, port: "", method: "cloudflared" as PortForwardMethod };
+  const setPf = (patch: Partial<typeof pf>) => setSvc({ portForward: { ...pf, ...patch } });
+  return (
+    <>
+      {/* Kind sub-toggle */}
+      <div style={{ ...grpLabel, marginBottom: 8 }}>kind</div>
+      <div style={{ marginBottom: 11 }}>
+        <Seg<LocalKind> value={kind} options={["library", "application"] as const}
+          onChange={(v) => setSvc({ localKind: v, proposed: false })} />
+      </div>
+
+      {kind === "library" ? (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 9 }}>
+            <Select label="publish registry" value={svc.publishRegistry ?? ""} options={PUBLISH_REGISTRIES}
+              onChange={(v) => setSvc({ publishRegistry: v as PublishRegistry })} />
+            <Field label="package name" value={svc.packageName ?? ""} onChange={(v) => setSvc({ packageName: v })} />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Field label="build cmd" value={svc.build === "—" ? "" : svc.build} onChange={(v) => setSvc({ build: v })} />
+            <Select label="publish trigger" value={svc.publishTrigger ?? ""} options={PUBLISH_TRIGGERS}
+              onChange={(v) => setSvc({ publishTrigger: v as PublishTrigger })} />
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 9 }}>
+            <Field label="build target(s)" value={svc.buildTargets ?? ""} onChange={(v) => setSvc({ buildTargets: v })} />
+            <Field label="build cmd" value={svc.build === "—" ? "" : svc.build} onChange={(v) => setSvc({ build: v })} />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Field label="output artifact" value={svc.artifact ?? ""} onChange={(v) => setSvc({ artifact: v })} />
+            <Field label="run command" value={svc.runCmd ?? ""} onChange={(v) => setSvc({ runCmd: v })} />
+          </div>
+
+          {/* Port forwarding — expose a locally-running app remotely */}
+          <div style={{
+            marginTop: 11, borderRadius: "var(--r-md)", padding: "11px 12px",
+            border: "1px solid " + (pf.enabled ? "color-mix(in oklch, var(--info), transparent 78%)" : "var(--border-soft)"),
+            background: pf.enabled ? "color-mix(in oklch, var(--info), transparent 94%)" : "var(--bg-canvas)",
+          }}>
+            <Toggle on={pf.enabled} onClick={() => setPf({ enabled: !pf.enabled })}
+              label="Port forwarding" value={pf.enabled ? `:${pf.port || "NNNN"} via ${pf.method}` : "expose this app remotely"} />
+            {pf.enabled && (
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <Field label="port" value={pf.port} onChange={(v) => setPf({ port: v })} />
+                <Select label="method" value={pf.method} options={PORT_FORWARD_METHODS}
+                  onChange={(v) => setPf({ method: v as PortForwardMethod })} />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/** Target & hosting — service tabs (host badge + status dot), a Cloud · Local mode toggle (#1192),
+ *  then either the cloud platform card or the local library/application card. */
+function TargetCard({ d, svc, set, setSvc, done }: {
+  d: DeployConfig; svc: DeployService | undefined;
+  set: (patch: Partial<DeployConfig>) => void; setSvc: (patch: Partial<DeployService>) => void; done: boolean;
+}) {
+  const right = <span style={monoSm}>{d.services.length} service{d.services.length !== 1 ? "s" : ""}</span>;
+  const mode: DeployMode = svc ? serviceMode(svc) : "cloud";
+  return (
+    <Card n="01" title="Target & hosting" hint="per service" right={right} done={done}>
+      {/* service tabs */}
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 11 }}>
+        {d.services.map((s) => {
+          const p = platform(s.platform);
+          const on = svc && s.id === svc.id;
+          const host = hostMeta(s.host);
+          const local = serviceMode(s) === "local";
+          const sub = local
+            ? (s.localKind === "library" ? `⬢ library${s.publishRegistry ? ` · ${s.publishRegistry}` : ""}` : `⬢ app${s.buildTargets ? ` · ${s.buildTargets}` : ""}`)
+            : (s.platform ? `${p.glyph} ${p.name}` : "no target yet");
+          const targeted = local
+            ? (s.localKind === "library" ? !!s.publishRegistry && !!s.packageName?.trim() : !!s.buildTargets?.trim() && !!s.artifact?.trim())
+            : !!s.platform;
+          return (
+            <button key={s.id} onClick={() => set({ selService: s.id })} style={{
+              flex: 1, minWidth: 120, display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start", padding: "8px 11px", cursor: "pointer",
+              borderRadius: "var(--r-md)", border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
+              background: on ? "color-mix(in oklch, var(--accent), transparent 90%)" : "var(--bg-elev)",
+            }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
+                <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{s.id}</span>
+                <span style={{ flex: 1 }} />
+                <span style={{ width: 6, height: 6, borderRadius: 99, background: targeted ? "var(--success)" : "var(--fg-dim)" }} />
+              </span>
+              <span style={{ fontFamily: MONO, fontSize: 9, color: on ? "var(--accent)" : "var(--fg-dim)" }}>{sub}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: MONO, fontSize: 8, color: local ? "var(--violet)" : host.color }}>
+                <span style={{ width: 5, height: 5, borderRadius: 99, background: local ? "var(--violet)" : host.color }} />{local ? "local" : host.domain}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {svc && (
+        <>
+          {/* selected service meta */}
+          <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 11 }}>
+            {(() => { const h = hostMeta(svc.host); return (
+              <span style={{ ...chip, display: "inline-flex", alignItems: "center", gap: 5, color: h.color }}>
+                <span style={{ width: 6, height: 6, borderRadius: 99, background: h.color }} />{h.domain}
+              </span>
+            ); })()}
+            {hostMeta(svc.host).kind !== "cloud" && (
+              <span style={{ ...chip, color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 72%)", background: "color-mix(in oklch, var(--violet), transparent 86%)" }}>self-hosted</span>
+            )}
+            <span style={{ ...chip, color: "var(--info)" }}>⎇ {svc.repo || "—"}/{svc.path}</span>
+            <span style={chip}>{svc.stack}</span>
+            <span style={{ flex: 1 }} />
+            {svc.proposed && <span style={prop}>✦ proposed</span>}
+          </div>
+
+          {/* Cloud · Local mode toggle (#1192) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+            <span style={grpLabel}>mode</span>
+            <Seg<DeployMode> value={mode} options={["cloud", "local"] as const}
+              onChange={(v) => setSvc({ mode: v, proposed: false })} />
+            <span style={{ flex: 1 }} />
+            <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>
+              {mode === "cloud" ? "ships to a hosted platform" : "a library or a build-and-run-here app"}
+            </span>
+          </div>
+
+          {mode === "cloud" ? <CloudBody svc={svc} setSvc={setSvc} /> : <LocalBody svc={svc} setSvc={setSvc} />}
         </>
       )}
     </Card>
@@ -406,12 +514,18 @@ export function FocusedDeployBody({ deploy, onChange, dependencies = [], registr
       <Card n="02" title="CI / CD pipeline" accent="var(--accent)" done={ck("pipeline")}
         right={<span style={chip}>{d.pipeline.provider}</span>}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {d.pipeline.stages.map((st, i) => (
+          {d.pipeline.stages.map((st, i) => {
+            // The final stage's label adapts to the selected service's mode (#1192) when it's a
+            // default ship-stage name; a planner-renamed stage is shown verbatim.
+            const isFinal = i === d.pipeline.stages.length - 1;
+            const stageName = isFinal && (["deploy", "publish", "package"] as string[]).includes(st.name)
+              ? finalStageName(svc) : st.name;
+            return (
             <div key={st.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "11px 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid " + (st.gate ? "var(--accent-dim)" : "var(--border-soft)") }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ width: 7, height: 7, borderRadius: 99, background: st.gate ? "var(--accent)" : i === 0 ? "var(--info)" : "var(--success)" }} />
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", textTransform: "uppercase", letterSpacing: ".04em" }}>{st.name}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", textTransform: "uppercase", letterSpacing: ".04em" }}>{stageName}</span>
                   <span style={{ flex: 1 }} />
                   {st.gate && <span style={{ ...chip, fontSize: 7.5, color: "var(--accent)", borderColor: "var(--accent-dim)", background: "color-mix(in oklch, var(--accent), transparent 85%)" }}>⛒ gate</span>}
                 </div>
@@ -423,7 +537,8 @@ export function FocusedDeployBody({ deploy, onChange, dependencies = [], registr
                 <span style={{ alignSelf: "center", fontFamily: MONO, fontSize: 13, color: d.pipeline.stages[i + 1].gate ? "var(--accent)" : "var(--fg-dim)" }}>{d.pipeline.stages[i + 1].gate ? "⟱" : "↓"}</span>
               )}
             </div>
-          ))}
+          );
+          })}
         </div>
       </Card>
 

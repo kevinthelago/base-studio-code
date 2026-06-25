@@ -65,6 +65,32 @@ export const ORCHESTRATORS: { id: string; label: string }[] = [
 /** Replica-count options for a container workload (string so "auto" fits the same control). */
 export const REPLICA_OPTIONS = ["1", "3", "5", "auto"] as const;
 
+/** How a service ships (#1192). `cloud` = a hosted platform; `local` = a published library or a
+ *  build-and-run-here application (CLI / desktop / local server). A monorepo can mix the two. */
+export type DeployMode = "cloud" | "local";
+/** A local service is either a published library or a built application (#1192). */
+export type LocalKind = "library" | "application";
+
+/** Package registries a local LIBRARY can publish to (#1192). */
+export const PUBLISH_REGISTRIES = ["npm", "crates.io", "PyPI", "internal"] as const;
+export type PublishRegistry = (typeof PUBLISH_REGISTRIES)[number];
+/** When a library's publish workflow fires (#1192). */
+export const PUBLISH_TRIGGERS = ["on-tag", "manual"] as const;
+export type PublishTrigger = (typeof PUBLISH_TRIGGERS)[number];
+
+/** How a locally-running deployment is exposed remotely (#1192). `cloudflared` is the default —
+ *  we already run a Cloudflare relay for the mobile tunnel. */
+export const PORT_FORWARD_METHODS = ["cloudflared", "ngrok", "tailscale", "LAN"] as const;
+export type PortForwardMethod = (typeof PORT_FORWARD_METHODS)[number];
+
+/** Optional remote exposure for a local Application / server (#1192). */
+export interface PortForward {
+  enabled: boolean;
+  /** Port to expose (string so the field stays free-form, e.g. "8080"). */
+  port: string;
+  method: PortForwardMethod;
+}
+
 /** A deployable unit — one per linked repo (or sub-path). */
 export interface DeployService {
   id: string;
@@ -87,6 +113,43 @@ export interface DeployService {
   orchestrator?: string;
   /** Replica count for a container workload — a {@link REPLICA_OPTIONS} value ("auto" allowed). */
   replicas?: string;
+  // ── Local mode (#1192) — a library or a build-and-run-here app. Absent `mode` ⇒ "cloud". ──
+  /** Whether the service ships to a cloud platform or as a local artifact. Defaults to "cloud". */
+  mode?: DeployMode;
+  /** For a local service: library (published) vs application (built + run). */
+  localKind?: LocalKind;
+  /** Library: the registry it publishes to. */
+  publishRegistry?: PublishRegistry;
+  /** Library: the published package name. */
+  packageName?: string;
+  /** Library: when the publish workflow fires. */
+  publishTrigger?: PublishTrigger;
+  /** Application: target platform(s) to build for (OS/arch or "desktop installer"). */
+  buildTargets?: string;
+  /** Application: the produced artifact (e.g. a binary or installer name). */
+  artifact?: string;
+  /** Application: how to run the built artifact. */
+  runCmd?: string;
+  /** Optional remote exposure for a locally-running application. */
+  portForward?: PortForward;
+}
+
+/** Default mode for a service whose `mode` is unset (legacy configs) — cloud. */
+export function serviceMode(s: DeployService): DeployMode {
+  return s.mode ?? "cloud";
+}
+
+/** A local service's `target` check passes once its mode-appropriate fields are set: a library needs
+ *  a publish registry + package name; an application needs build targets + an artifact (#1192). */
+export function localTargetDefined(s: DeployService): boolean {
+  if (s.localKind === "library") return !!s.publishRegistry && !!(s.packageName && s.packageName.trim());
+  if (s.localKind === "application") return !!(s.buildTargets && s.buildTargets.trim()) && !!(s.artifact && s.artifact.trim());
+  return false;
+}
+
+/** A service has a defined deploy target — a cloud platform, or its local fields (#1192). */
+export function serviceTargetDefined(s: DeployService): boolean {
+  return serviceMode(s) === "local" ? localTargetDefined(s) : !!s.platform;
 }
 
 export interface DeployEnvironment {
@@ -164,6 +227,7 @@ export function defaultDeployConfig(repos: string[]): DeployConfig {
       id: short, repo, path: ".", stack: "—",
       platform: "", workload: "static", proposed: true,
       region: "—", build: "—", output: "dist", runtime: "—", host: "github",
+      mode: "cloud" as DeployMode,
     };
   });
   return {
@@ -188,13 +252,21 @@ export function defaultDeployConfig(repos: string[]): DeployConfig {
   };
 }
 
+/** The pipeline's final stage label adapts to a service's mode (#1192): cloud ships (`deploy`), a
+ *  library publishes (`publish`), a local app packages (`package`). The gating `test` stays put. */
+export function finalStageName(s: DeployService | undefined): "deploy" | "publish" | "package" {
+  if (s && serviceMode(s) === "local") return s.localKind === "library" ? "publish" : "package";
+  return "deploy";
+}
+
 export interface DeployCheck { id: string; label: string; ok: boolean; detail: string }
 
 /** The readiness checks that drive the stage gate — every one `ok` ⇒ the gate is met. */
 export function deployChecks(d: DeployConfig): DeployCheck[] {
   const prodSecrets = d.config.secrets.length === 0 || d.config.secrets.every((s) => !!s.prod);
+  const targeted = d.services.filter(serviceTargetDefined).length;
   return [
-    { id: "target",   label: "Deploy target per service", ok: d.services.length > 0 && d.services.every((s) => !!s.platform), detail: `${d.services.filter((s) => s.platform).length}/${d.services.length} services` },
+    { id: "target",   label: "Deploy target per service", ok: d.services.length > 0 && d.services.every(serviceTargetDefined), detail: `${targeted}/${d.services.length} services` },
     { id: "envs",     label: "Environment ladder defined", ok: d.envs.length >= 2, detail: `${d.envs.length} environments` },
     { id: "pipeline", label: "CI/CD pipeline staged",      ok: d.pipeline.stages.length >= 2, detail: d.pipeline.provider },
     { id: "secrets",  label: "Secrets wired for every env", ok: prodSecrets, detail: prodSecrets ? "all set" : "missing prod" },
@@ -216,7 +288,13 @@ export interface DeployIssue { text: string; tag: string; blocking: boolean }
 export function deployIssues(d: DeployConfig): DeployIssue[] {
   const out: DeployIssue[] = [];
   for (const s of d.services) {
-    if (!s.platform) continue;
+    if (!serviceTargetDefined(s)) continue;
+    if (serviceMode(s) === "local") {
+      out.push(s.localKind === "library"
+        ? { text: `Add ${s.publishRegistry ?? "registry"} publish workflow for ${s.id} (${s.packageName || s.id})`, tag: "all", blocking: false }
+        : { text: `Add package + build workflow for ${s.id} → ${s.buildTargets || "local artifact"}`, tag: "all", blocking: false });
+      continue;
+    }
     out.push({ text: `Add ${platform(s.platform).name} deploy workflow for ${s.id} → ${WORKLOAD[s.workload].label}`, tag: "all", blocking: false });
   }
   for (const e of d.envs.filter((e) => e.id !== "prod" && e.name !== "prod" && e.id !== "dev" && e.name !== "dev")) {
@@ -226,7 +304,8 @@ export function deployIssues(d: DeployConfig): DeployIssue[] {
   if (unwired.length) {
     out.push({ text: `Wire prod secrets (${unwired.map((r) => r.key).join(", ")})`, tag: "prod", blocking: true });
   }
-  if (d.services.some((s) => s.platform)) {
+  // a prod health check fits anything that RUNS — a cloud service or a local app, but not a library
+  if (d.services.some((s) => serviceTargetDefined(s) && !(serviceMode(s) === "local" && s.localKind === "library"))) {
     out.push({ text: "Add prod health check + auto-rollback", tag: "prod", blocking: false });
   }
   return out;
@@ -255,6 +334,19 @@ export function coerceDeployConfig(raw: unknown, repos: string[] = []): DeployCo
     const wl = asStr(s.workload) as Workload;
     const workload: Workload = plat.kinds.includes(wl) ? wl : (plat.kinds[0] ?? "static");
     const reps = typeof s.replicas === "number" ? String(s.replicas) : asStr(s.replicas);
+    // local mode (#1192) — only coerce the local sub-shape when the planner asked for it
+    const mode: DeployMode = asStr(s.mode) === "local" ? "local" : "cloud";
+    const rawKind = asStr(s.localKind);
+    const localKind: LocalKind | undefined = rawKind === "library" || rawKind === "application" ? rawKind : (mode === "local" ? "application" : undefined);
+    const rawReg = asStr(s.publishRegistry);
+    const publishRegistry = (PUBLISH_REGISTRIES as readonly string[]).includes(rawReg) ? (rawReg as PublishRegistry) : undefined;
+    const rawTrig = asStr(s.publishTrigger);
+    const publishTrigger = (PUBLISH_TRIGGERS as readonly string[]).includes(rawTrig) ? (rawTrig as PublishTrigger) : undefined;
+    const pf = (s.portForward && typeof s.portForward === "object" ? s.portForward : null) as Raw | null;
+    const rawMethod = pf ? asStr(pf.method) : "";
+    const portForward: PortForward | undefined = pf
+      ? { enabled: asBool(pf.enabled, false), port: asStr(pf.port), method: (PORT_FORWARD_METHODS as readonly string[]).includes(rawMethod) ? (rawMethod as PortForwardMethod) : "cloudflared" }
+      : undefined;
     return {
       id, repo, path: asStr(s.path, "."), stack: asStr(s.stack, "—"),
       platform: asStr(s.platform), workload, proposed: false,
@@ -264,6 +356,15 @@ export function coerceDeployConfig(raw: unknown, repos: string[] = []): DeployCo
       registry: asStr(s.registry) || undefined,
       orchestrator: asStr(s.orchestrator) || undefined,
       replicas: reps || undefined,
+      mode,
+      localKind: mode === "local" ? localKind : (localKind || undefined),
+      publishRegistry,
+      packageName: asStr(s.packageName) || undefined,
+      publishTrigger,
+      buildTargets: asStr(s.buildTargets) || undefined,
+      artifact: asStr(s.artifact) || undefined,
+      runCmd: asStr(s.runCmd) || undefined,
+      portForward,
     };
   });
 
