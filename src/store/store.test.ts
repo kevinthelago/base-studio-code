@@ -1261,14 +1261,15 @@ describe("agent fleet store", () => {
     const st = useAppStore.getState();
     const paneKey = (p: number) => p === 0 ? directorPaneId("multi-key") : fleetPaneId("multi-key", ["sci", "ui"][p - 1]);
     const names = (p: number) => (st.paneMcpServers[paneKey(p)] ?? []).map((e) => e.name).sort();
-    // Every session also gets the always-available built-in Research server (#1196).
+    // Every session also gets the always-available built-in servers — Research (#1196) +
+    // Compliance (#1005).
     // Director (pane 0) sees ALL installed servers — including the disabled and other-project ones.
-    expect(names(0)).toEqual(["Disabled", "Glob", "Research", "SciTool"]);
-    // The science worker gets the global baseline + built-in Research + its assigned SciTool
+    expect(names(0)).toEqual(["Compliance", "Disabled", "Glob", "Research", "SciTool"]);
+    // The science worker gets the global baseline + built-ins + its assigned SciTool
     // (disabled/other-project, pulled in by the explicit assignment).
-    expect(names(1)).toEqual(["Glob", "Research", "SciTool"]);
-    // The UI worker, with nothing assigned, gets the global baseline + the built-in Research.
-    expect(names(2)).toEqual(["Glob", "Research"]);
+    expect(names(1)).toEqual(["Compliance", "Glob", "Research", "SciTool"]);
+    // The UI worker, with nothing assigned, gets the global baseline + the built-ins.
+    expect(names(2)).toEqual(["Compliance", "Glob", "Research"]);
   });
 
   it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
@@ -1555,8 +1556,8 @@ describe("mcp servers store", () => {
     };
     useAppStore.getState().fleetStartProject("ExtP", fleet, "proj-key");
     // director disabled ⇒ pane 0 is the single worker "s0". Filter the always-present built-in
-    // server (#1196) to keep this focused on user-server scoping.
-    const ids = (useAppStore.getState().paneMcpServers[fleetPaneId("proj-key", "s0")] ?? []).map(e => e.id).filter(id => id !== "builtin-research");
+    // servers (#1196 Research, #1005 Compliance) to keep this focused on user-server scoping.
+    const ids = (useAppStore.getState().paneMcpServers[fleetPaneId("proj-key", "s0")] ?? []).map(e => e.id).filter(id => id !== "builtin-research" && id !== "builtin-compliance");
     expect(ids).toEqual(["g", "p"]);
   });
 });

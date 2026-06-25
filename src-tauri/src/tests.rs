@@ -442,6 +442,10 @@ use crate::console::settings::*;
         assert_eq!(resolve_mcp_command("bsc-research-mcp", Some(bin.clone())), bin.to_string_lossy());
         // …and falls back to the bare marker when the bundled binary can't be located (dev build).
         assert_eq!(resolve_mcp_command("bsc-research-mcp", None), "bsc-research-mcp");
+        // The Compliance marker (#1005) resolves the same way through its own bundled path.
+        let comp = PathBuf::from("/opt/app/bsc-compliance-mcp");
+        assert_eq!(resolve_mcp_command("bsc-compliance-mcp", Some(comp.clone())), comp.to_string_lossy());
+        assert_eq!(resolve_mcp_command("bsc-compliance-mcp", None), "bsc-compliance-mcp");
     }
 
     #[test]
