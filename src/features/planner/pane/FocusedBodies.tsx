@@ -1283,6 +1283,10 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGen
           </button>
         </div>
       )}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0 9px" }}>
+        <span style={{ fontFamily: "var(--mono)", fontWeight: 600, fontSize: 9.5, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--fg-dim)" }}>permissions</span>
+        <span style={{ fontFamily: "var(--mono)", fontWeight: 500, fontSize: 9, color: "var(--fg-dim)" }}>least-privilege · per stream</span>
+      </div>
       <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} focusedStream={focusedStream} onSelect={onSelectStream} />
     </div>
   );
