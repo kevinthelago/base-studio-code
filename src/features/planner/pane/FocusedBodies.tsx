@@ -1144,18 +1144,32 @@ function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
       {phases.length > 0 && (
         <div>
           <div className="ulabel" style={{ paddingBottom: 6 }}>phases</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {phases.map((p) => (
-              <div key={p.id} style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "6px 10px", borderRadius: 6,
-                background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
-              }}>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{p.name}</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{p.total} issue{p.total === 1 ? "" : "s"}</span>
-              </div>
-            ))}
+          {/* Numbered roadmap (#1429 reskin): a circle per phase + its done-when, foundations first. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {phases.map((p, i) => {
+              const first = i === 0;
+              return (
+                <div key={p.id}>
+                  <div style={{ display: "flex", gap: 11, padding: "8px 4px" }}>
+                    <span style={{
+                      flexShrink: 0, width: 20, height: 20, borderRadius: "50%",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontFamily: "var(--mono)", fontSize: 10, fontWeight: 600,
+                      color: first ? "var(--accent)" : "var(--fg-muted)",
+                      background: first ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev2)",
+                      border: "1px solid " + (first ? "color-mix(in oklch, var(--accent), transparent 65%)" : "var(--border)"),
+                    }}>{i + 1}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, fontWeight: 600, color: "var(--fg)" }}>{p.name}</div>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>
+                        {p.doneWhen ? `done when · ${p.doneWhen}` : `${p.total} issue${p.total === 1 ? "" : "s"}`}
+                      </div>
+                    </div>
+                  </div>
+                  {i < phases.length - 1 && <div style={{ height: 1, background: "var(--border-soft)", marginLeft: 31 }} />}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
