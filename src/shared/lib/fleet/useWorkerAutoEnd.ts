@@ -118,6 +118,7 @@ export function useWorkerAutoEnd(): void {
   // re-arms when its turn reopens. A worker paused for the user (coord.waiting) is left alone, and
   // an outstanding director question routes to the resurface path (stage 4), never a close.
   const nudgedRef = useRef<Set<string>>(new Set());
+  const resurfacedRef = useRef<Set<string>>(new Set()); // lost-ask resurfaces, one per stale ask
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -130,8 +131,9 @@ export function useWorkerAutoEnd(): void {
       for (const paneId of Object.keys(s.fleetPaneStreams)) {
         if (s.endedPanes[paneId] || (s.paneRoles[paneId] ?? "worker") !== "worker") continue;
         const act = activity.find((a) => a.pane === paneId);
-        if (act?.state === "run") { nudgedRef.current.delete(paneId); continue; } // working → re-arm
+        if (act?.state === "run") { nudgedRef.current.delete(paneId); resurfacedRef.current.delete(paneId); continue; } // working → re-arm
         if (coord.waiting.some((w) => w.session === paneId)) continue;             // paused for the user → leave it
+        if (!coord.asking.some((a) => a.session === paneId)) resurfacedRef.current.delete(paneId); // ask answered → re-arm resurface
         const stream = s.fleetPaneStreams[paneId];
         const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
         if (!projectKey || !stream) continue;
@@ -148,8 +150,21 @@ export function useWorkerAutoEnd(): void {
           nudgedRef.current.add(paneId); // once per idle period; cleared when the turn reopens
           log.info(`auto-end: nudging ${paneId} (${stream.id}) to self-close — idle + work complete`);
           await invoke("pty_write", { paneId, data: `${CLOSE_NUDGE}\r` }).catch(() => {});
+        } else if (action === "resurface-question" && !resurfacedRef.current.has(paneId)) {
+          // Lost-question resurface (#1379 stage 4): the worker has waited too long on a director
+          // answer — its ask may have been missed. Re-surface it to the live director ONCE so it
+          // handles it when ready (never close it, never make the worker repeat itself). Re-arms
+          // once the ask is answered (it drops out of coord.asking; cleared above).
+          const ask = coord.asking.find((a) => a.session === paneId);
+          const directorPane = `${projectKey}:director`;
+          if (ask && s.paneRoles[directorPane] === "director") {
+            resurfacedRef.current.add(paneId);
+            const waited = Math.max(1, Math.round((now - ask.at) / 60_000));
+            const msg = `Worker ${stream.id} (${paneId}) asked "${ask.question}" ~${waited}m ago and is still waiting with no answer — it may have been missed. Answer it when ready: echo "<answer>" | bsc-answer ${paneId} (or reassign). Don't leave it parked.`;
+            log.info(`auto-end: resurfacing ${paneId}'s lost question to the director`);
+            await invoke("pty_write", { paneId: directorPane, data: `${msg}\r` }).catch(() => {});
+          }
         }
-        // "resurface-question" is wired in stage 4.
       }
     };
     void tick();

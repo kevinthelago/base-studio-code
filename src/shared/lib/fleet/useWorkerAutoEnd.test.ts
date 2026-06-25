@@ -130,4 +130,22 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     expect(dirMsg, "director should be nudged to close issues").toBeTruthy();
     expect((dirMsg?.[1] as { data: string }).data).toContain("gh issue close");
   });
+
+  it("resurfaces a lost director question to the director after the long wait (#1379 stage 4)", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "read_pane_activity") return Promise.resolve([{ pane: WORKER, state: "idle", at: 1 }]); // idle ages ago
+      // An outstanding bsc-ask for the worker, never answered.
+      if (cmd === "read_coord_log") return Promise.resolve([`2020-01-01T00:00:00Z\t${WORKER}\task\tWhich pagination?\t`]);
+      if (cmd === "plan_list_issues") return Promise.resolve([{ ref: "#1", status: "in_progress" }]);
+      return Promise.resolve(undefined);
+    });
+    renderHook(() => useWorkerAutoEnd());
+
+    await waitFor(() => expect(
+      vi.mocked(invoke).mock.calls.some(([c, a]) => c === "pty_write" && (a as { paneId: string }).paneId === DIRECTOR),
+    ).toBe(true));
+    const m = vi.mocked(invoke).mock.calls.find(([c, a]) => c === "pty_write" && (a as { paneId: string }).paneId === DIRECTOR);
+    expect((m?.[1] as { data: string }).data).toContain(`bsc-answer ${WORKER}`); // routes the answer back to the worker
+    expect(useAppStore.getState().endedPanes[WORKER]).toBeUndefined();           // never closes a waiting worker
+  });
 });
