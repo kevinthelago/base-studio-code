@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { IntegrationsSettings } from "./Integrations";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 
 describe("IntegrationsSettings — LLM provider (#1085)", () => {
   beforeEach(() => {

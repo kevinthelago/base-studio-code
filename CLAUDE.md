@@ -117,10 +117,11 @@ vertical slices**, one slice at a time behind the test suite. Rules:
 - **Store:** `store/index.ts` composes the feature slices; `AppStore` is `extends`-ed from each
   feature's slice interface. The old monolithic slices were grab-bags — they're being split per feature,
   leaving labelled residuals (`core.ts`, `shell.ts`) to split later.
-- **Migrated so far:** `skills`, `extensions`, `automations`, `github`, `tunnel`. **Not yet:** the app
-  shell (`app/`) + a `shared/` layer, and the `console`, `agents`, `settings` features, with `planner`
-  last (the largest — where the `Planning.tsx`/`ProjectPane.tsx` splits land). When touching a
-  not-yet-migrated area, prefer moving it into its feature slice as part of the change.
+- **Migrated so far:** `skills`, `extensions`, `automations`, `github`, `tunnel`, `agents`, `settings`.
+  **Not yet:** the app shell (`app/`) + a `shared/` layer — which absorbs the **console** pane system
+  (its state is the core ~110-field store slice, not a separable feature) — and `planner` last (the
+  largest — where the `Planning.tsx`/`ProjectPane.tsx` splits land). When touching a not-yet-migrated
+  area, prefer moving it into its feature slice as part of the change.
 
 ## Architecture
 

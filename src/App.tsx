@@ -26,7 +26,7 @@ import { QuarantineBanner } from "./components/QuarantineBanner";
 import { useWarden } from "./lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "./lib/fleet/useWorkerAutoEnd";
 import { openDetachedTab, detachedTabId, detachedSection } from "./lib/console/detachWindow";
-import { accentVars } from "./lib/settings/appearance";
+import { accentVars } from "@/features/settings/lib/appearance";
 
 // Lazy-loaded screens (#perf): only the Console is needed at boot. Each other screen's chunk
 // loads on first navigation, keeping the heavy module graph (esp. the planner) off the cold
@@ -34,7 +34,7 @@ import { accentVars } from "./lib/settings/appearance";
 const GitHubScreen      = lazy(() => import("@/features/github").then((m) => ({ default: m.GitHubScreen })));
 const AutomationsScreen = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsScreen })));
 const McpScreen         = lazy(() => import("@/features/extensions").then((m) => ({ default: m.McpScreen })));
-const SettingsScreen    = lazy(() => import("./screens/settings").then((m) => ({ default: m.SettingsScreen })));
+const SettingsScreen    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsScreen })));
 const ProjectsScreen    = lazy(() => import("./screens/planner").then((m) => ({ default: m.ProjectsScreen })));
 const SkillsScreen      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsScreen })));
 const AgentsScreen      = lazy(() => import("@/features/agents").then((m) => ({ default: m.AgentsScreen })));

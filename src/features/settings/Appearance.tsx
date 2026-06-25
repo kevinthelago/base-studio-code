@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 import {
   MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE, DEFAULT_TERMINAL_FONT_SIZE,
   adjustFontSize,
-} from "../../lib/console/terminal";
-import { ACCENT_PRESETS, accentVars } from "../../lib/settings/appearance";
+} from "@/lib/console/terminal";
+import { ACCENT_PRESETS, accentVars } from "./lib/appearance";
 
 const THEME_KEY = "bsc-theme";
 type Theme = "dark" | "light";
