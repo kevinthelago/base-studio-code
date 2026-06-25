@@ -32,17 +32,72 @@ describe("PaneShell", () => {
     expect(onFocus).toHaveBeenCalled();
   });
 
-  it("opens the consolidated menu from the model button (#1181)", () => {
+  it("opens the consolidated menu from the compact trigger (#1181/#1319)", () => {
     const onMenuToggle = vi.fn();
     render(
       <PaneShell agent="test" onMenuToggle={onMenuToggle}>
         <div>content</div>
       </PaneShell>
     );
-    // The model pill is now the single menu trigger (the ⋯ button is gone).
+    // The compact glyph trigger is the single menu opener (the ⋯ button is gone).
     expect(screen.queryByTitle("Pane menu")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTitle("Model, screens & pane options"));
     expect(onMenuToggle).toHaveBeenCalled();
+  });
+
+  it("the menu trigger sits at the FAR LEFT of the header, before the agent name (#1319)", () => {
+    render(
+      <PaneShell agent="lead-agent">
+        <div>content</div>
+      </PaneShell>
+    );
+    const trigger = screen.getByTitle("Model, screens & pane options");
+    const name = screen.getByText("lead-agent");
+    // DOCUMENT_POSITION_FOLLOWING (4) ⇒ name comes AFTER the trigger in document order.
+    expect(trigger.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("renders NO standalone status dot — liveness lives on the trigger glyph (#1319)", () => {
+    const { container } = render(
+      <PaneShell agent="test" status="run" claudeActive>
+        <div>content</div>
+      </PaneShell>
+    );
+    const header = container.querySelector(".pane > div") as HTMLElement;
+    const trigger = screen.getByTitle("Model, screens & pane options");
+    // The only header descendants that animate (pulse) belong to the trigger — there is no
+    // separate leftmost status dot sibling.
+    const pulsing = Array.from(header.querySelectorAll<HTMLElement>("*")).filter(
+      (el) => el.style.animation && el.style.animation.includes("pulse")
+    );
+    expect(pulsing.length).toBeGreaterThan(0);
+    expect(pulsing.every((el) => trigger.contains(el))).toBe(true);
+  });
+
+  it("the trigger glyph reflects the ACTIVE view + tints by status (#1319)", () => {
+    // Live + a non-default active view ⇒ that view's icon, tinted accent (running).
+    const { container, rerender } = render(
+      <PaneShell agent="test" active="branches" available={["console", "branches"]} status="run" claudeActive>
+        <div>content</div>
+      </PaneShell>
+    );
+    const trigger = () => screen.getByTitle("Model, screens & pane options");
+    let svg = trigger().querySelector("svg") as SVGElement;
+    expect(svg.getAttribute("class") ?? "").toContain("lucide-git-branch"); // branches view glyph
+    expect(svg.style.color).toBe("var(--accent)");                          // running ⇒ accent
+    expect(svg.style.animation).toContain("pulse");                         // running ⇒ pulses
+
+    // Idle console pane ⇒ console (terminal) glyph, the idle state color, no pulse.
+    rerender(
+      <PaneShell agent="test" active="console" available={["console", "branches"]} status="idle">
+        <div>content</div>
+      </PaneShell>
+    );
+    svg = trigger().querySelector("svg") as SVGElement;
+    expect(svg.getAttribute("class") ?? "").toContain("lucide-terminal");
+    expect(svg.style.color).toBe("var(--state-idle)");
+    expect(svg.style.animation === "none" || svg.style.animation === "").toBe(true);
+    expect(container).toBeTruthy();
   });
 
   it("no longer renders a directory button in the header", () => {
@@ -105,50 +160,39 @@ describe("PaneShell", () => {
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
-  it("a RUNNING pane shows the harness + model in the pill (#1181)", () => {
+  it("keeps repo + role badges in the header (#1319 — harness/model text removed)", () => {
     render(
       <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" claudeActive>
         <div>content</div>
       </PaneShell>
     );
     expect(screen.getByText("· checkout")).toBeInTheDocument();
-    expect(screen.getByText("WORKER")).toBeInTheDocument();       // role badge
-    expect(screen.getByText("bsc-agent")).toBeInTheDocument();    // openai ⇒ bsc-agent harness
-    expect(screen.getByText("sonnet-4.5")).toBeInTheDocument();   // running model
-    expect(screen.queryByText("undetected")).not.toBeInTheDocument();
-  });
-
-  it("prefers the actual runningModel from the CLI over the configured one (#1181)", () => {
-    render(
-      <PaneShell agent="worker-A" provider="claude" model="sonnet-4.5" runningModel="opus-4.5" claudeActive>
-        <div>content</div>
-      </PaneShell>
-    );
-    expect(screen.getByText("opus-4.5")).toBeInTheDocument();      // transcript-reported model wins
+    expect(screen.getByText("WORKER")).toBeInTheDocument();          // role badge
+    // The header no longer spells out the harness or model — that moved into the menu (#1319).
+    expect(screen.queryByText("bsc-agent")).not.toBeInTheDocument();
     expect(screen.queryByText("sonnet-4.5")).not.toBeInTheDocument();
-  });
-
-  it("an IDLE pane shows the CONFIGURED model in the pill (not 'undetected') (#…)", () => {
-    render(
-      <PaneShell agent="worker-A" repo="checkout" role="worker" provider="openai" model="sonnet-4.5" branch="wt/checkout" status="run">
-        <div>content</div>
-      </PaneShell>
-    );
-    // The chosen model is always legible — shown even when no live session is detected.
-    expect(screen.getByText("sonnet-4.5")).toBeInTheDocument();
     expect(screen.queryByText("undetected")).not.toBeInTheDocument();
-    expect(screen.getByText("· checkout")).toBeInTheDocument(); // repo still shown in the header
-    // The footer was removed entirely (#1181) — no branch/state strip.
-    expect(screen.queryByText("⎇ wt/checkout")).not.toBeInTheDocument();
   });
 
-  it("labels a claude-provider pane as the Claude Code harness when running", () => {
+  it("surfaces the harness + provider inside the opened menu, not the header (#1319)", () => {
     render(
-      <PaneShell agent="director" provider="claude" role="director" claudeActive>
+      <PaneShell agent="worker-A" provider="openai" model="sonnet-4.5" menuOpen claudeActive>
         <div>content</div>
       </PaneShell>
     );
-    expect(screen.getByText("Claude Code")).toBeInTheDocument();
-    expect(screen.getByText("DIRECTOR")).toBeInTheDocument();
+    // openai ⇒ bsc-agent harness, now shown inside PaneMenu's header.
+    expect(screen.getByText("bsc-agent")).toBeInTheDocument();
+    // The configured model is offered as a row inside the menu (model selection lives there).
+    expect(screen.getByText("sonnet-4.5")).toBeInTheDocument();
+  });
+
+  it("labels a claude-provider pane as the Claude Code harness inside the menu", () => {
+    render(
+      <PaneShell agent="director" provider="claude" role="director" menuOpen claudeActive>
+        <div>content</div>
+      </PaneShell>
+    );
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();   // in the menu header
+    expect(screen.getByText("DIRECTOR")).toBeInTheDocument();      // role badge (header)
   });
 });
