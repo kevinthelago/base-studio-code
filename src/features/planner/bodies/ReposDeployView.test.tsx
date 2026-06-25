@@ -21,14 +21,14 @@ function Harness({ repos, initial }: { repos?: Repo[]; initial?: DeployConfig })
   );
 }
 
-describe("FocusedReposDeployBody — header (cleaned up, #1403)", () => {
-  it("shows just the icon + title — no gate pill, no ship toggle", () => {
+describe("FocusedReposDeployBody — no in-body header (#1430)", () => {
+  it("renders no in-body header — the focused pane's phase header titles the stage", () => {
     render(<Harness repos={[repo("acme/web"), repo("acme/api")]} />);
-    expect(screen.getByText("Repositories & Deployment")).toBeInTheDocument();
-    // the two header pills are gone
-    expect(screen.queryByText(/gate blocked/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/repos? linked/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "ships" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Repositories & Deployment")).not.toBeInTheDocument(); // duplicate header removed
+    expect(screen.queryByText(/repos deploy-ready/)).not.toBeInTheDocument();        // counter removed with it
+    // the cards still render
+    expect(screen.getByText("acme/web")).toBeInTheDocument();
+    expect(screen.getByText("acme/api")).toBeInTheDocument();
   });
 
   it("renders the per-repo empty state with no repos", () => {
@@ -36,11 +36,6 @@ describe("FocusedReposDeployBody — header (cleaned up, #1403)", () => {
     expect(screen.getByText("No repositories linked")).toBeInTheDocument();
     expect(screen.getByText(/configured per repository/)).toBeInTheDocument();
     expect(screen.queryByText("CI / CD pipeline")).not.toBeInTheDocument();
-  });
-
-  it("shows the N-of-M ready counter in the header", () => {
-    render(<Harness repos={[repo("acme/web"), repo("acme/api")]} />);
-    expect(screen.getByText((_, el) => el?.textContent === "0 of 2 repos deploy-ready")).toBeTruthy();
   });
 });
 
