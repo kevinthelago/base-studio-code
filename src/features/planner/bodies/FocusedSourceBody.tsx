@@ -22,6 +22,7 @@ import { useAppStore } from "@/store";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
   isConnected, sourceChecks, allSourcesConnected, deriveDataModel, presetToConnector, registerPresetConnectors,
+  proposeFromPitch,
   type SourceConfig, type DeclaredSource, type SpecField, type SourceStatus, type PlatformScanView, type DiscoveredField,
   type Connector, type ConnectorCatalogEntry,
 } from "../shared/sourceConfig";
@@ -321,7 +322,27 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
   const pid = projectId ?? "";
   const stored = useAppStore((s) => s.planSourceConfig[pid]);
   const setPlanSourceConfig = useAppStore((s) => s.setPlanSourceConfig);
+  const planningPitch = useAppStore((s) => s.planningPitch);
   const cfg: SourceConfig = stored ?? defaultSourceConfig();
+
+  // Seed the "Confirm N sources" banner from the planner's pitch (#1349): on first open of a fresh
+  // config (nothing declared, nothing already proposed), scan the pitch for mentioned legacy systems
+  // and stage them as `proposed`. The existing banner + `confirmProposed` then declare them on a
+  // single click. Guarded per-project so re-renders and a later user edit (clearing `proposed`)
+  // don't re-seed.
+  const seededRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!pid || seededRef.current.has(pid)) return;
+    if ((stored?.sources.length ?? 0) > 0 || (stored?.proposed.length ?? 0) > 0) {
+      seededRef.current.add(pid); // already declared/proposed — don't override
+      return;
+    }
+    const ids = proposeFromPitch(planningPitch);
+    seededRef.current.add(pid);
+    if (ids.length === 0) return;
+    const base = stored ?? defaultSourceConfig();
+    setPlanSourceConfig(pid, { ...base, proposed: ids });
+  }, [pid, planningPitch, stored, setPlanSourceConfig]);
 
   const [query, setQuery] = useState("");
   const [catalogOpen, setCatalogOpen] = useState(false);
