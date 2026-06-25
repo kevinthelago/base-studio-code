@@ -54,6 +54,10 @@ pub(crate) async fn ensure_worktree(project_key: String, repo: String, agent_id:
         }
         log::info!("ensure_worktree: {repo} agent {agent_id} → {wt_str}");
     }
+    // Keep the worktree's build outputs (target/, node_modules/, …) out of git status and mark them
+    // app-owned scratch, so the warden never quarantines a worker for an artifact it didn't author
+    // and the teardown path can drop them wholesale (#1080). Idempotent — safe on a reused worktree.
+    crate::fleet::teardown::exclude_build_artifacts(&wt);
     // Copy the repo's own (tracked) CLAUDE.md only when the worktree lacks one, so a
     // checked-out CLAUDE.md isn't clobbered. (The hub's planner CLAUDE.md is no longer an
     // ancestor — that's the whole point of relocating the worktree — so this is just the

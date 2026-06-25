@@ -23,6 +23,15 @@ pub(crate) fn delete_project_dir(project_key: String) -> Result<(), String> {
     if sanitize_project_key(&project_key).is_empty() {
         return Err("delete_project_dir: empty project_key".to_string());
     }
+    // Reap the project's still-running shells first (#1279): kill any live PTY child whose ledger
+    // pane id is `<key>:…` and forget all of its ledger entries. Otherwise a shell still running at
+    // delete time survives as an orphaned pid the deleted-project key can no longer resolve, which
+    // discovery would surface as an unrestorable "running" session. The on-disk hub keys off the
+    // SANITIZED slug, so match the ledger on the same value.
+    let killed = crate::pty_ledger::reap_project_shells(&sanitize_project_key(&project_key));
+    if killed > 0 {
+        log::info!("delete_project_dir: reaped {killed} running shell(s) of {project_key:?}");
+    }
     // The hub lives under projects/<key> (#922). Also remove any legacy draft/<key> copy left by a
     // pre-migration build so a stale half-moved hub can't linger and reappear in the list.
     for dir in [project_dir(&project_key), legacy_draft_dir(&project_key)] {
@@ -36,17 +45,12 @@ pub(crate) fn delete_project_dir(project_key: String) -> Result<(), String> {
         std::fs::remove_dir_all(&dir).map_err(|e| format!("delete_project_dir: {e}"))?;
         log::info!("deleted project hub {:?}", dir);
     }
-    // The fleet's worktrees now live outside the hub (see `worktrees_dir`, #844), so the
-    // hub delete above no longer reaches them — remove them explicitly. Best-effort: a
-    // missing dir is fine, and an orphaned worktree dir must not block deleting the hub.
-    let wts = worktrees_dir(&project_key);
-    if wts.exists() {
-        #[cfg(windows)]
-        clear_readonly_recursive(&wts);
-        if let Err(e) = std::fs::remove_dir_all(&wts) {
-            log::warn!("delete_project_dir: leftover worktrees {:?}: {e}", wts);
-        }
-    }
+    // The fleet's worktrees now live outside the hub (see `worktrees_dir`, #844), so the hub delete
+    // above no longer reaches them — reclaim them explicitly (#1080). This runs git's worktree
+    // teardown per worktree (dropping the owning clones' admin records too) and, crucially, detaches
+    // any `node_modules` JUNCTION first so the recursive delete can't follow it into the shared
+    // main-clone node_modules. (A bare `remove_dir_all` here previously risked exactly that.)
+    fleet::teardown::reclaim_project_worktrees(&project_key);
     Ok(())
 }
 /// Recursively clear the read-only attribute on every file under `dir`. Best-effort:
