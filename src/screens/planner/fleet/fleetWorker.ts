@@ -2,7 +2,7 @@
 // AgentFlow into the render rows the page shows. Free of React/Tauri so the
 // mapping is unit-testable and shared with the component.
 
-import type { AgentProfile, ToolKey, Tier } from "../../agents/agentProfiles";
+import type { AgentProfile, ToolKey, Tier } from "@/features/agents/lib/agentProfiles";
 import type { AgentFlow } from "./agentFlow";
 
 /** Tool display order, matching the design's two-column Permissions card. */

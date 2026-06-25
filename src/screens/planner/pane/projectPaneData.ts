@@ -5,7 +5,7 @@
 // module is the single source of truth for the pane data contract; the pane
 // falls back to its own sample consts when a project has none of this yet.
 
-import type { AgentProfile, Tier, ToolKey } from "../../agents/agentProfiles";
+import type { AgentProfile, Tier, ToolKey } from "@/features/agents/lib/agentProfiles";
 import type { FleetPlan, AgentStream } from "../stages/planSections";
 import type { AgentRelationship } from "../relationship/relationshipGraph";
 import type { PlanIssue } from "../issues/planIssues";

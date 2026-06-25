@@ -21,7 +21,7 @@ import { PendingPtyData } from "../../../lib/console/pendingPtyData";
 import { resolveInitCmd } from "../../../lib/console/resumeClaude";
 import { isManualPaneId } from "../../../lib/console/paneIdentity";
 import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms } from "../../../lib/session/sessionRoles";
-import { resolveProfileSettings } from "../../../screens/agents/profileEnforcement";
+import { resolveProfileSettings } from "@/features/agents/lib/profileEnforcement";
 import { flowPermissionRules, flowGrantedPushCommands } from "../../../screens/planner/fleet/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "../../../store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus, type SessionVerdict } from "../../../lib/core/diagnostics";

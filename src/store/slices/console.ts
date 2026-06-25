@@ -3,7 +3,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { unlock } from "../../lib/core/achievements";
-import { type AgentProfile, PROFILES } from "../../screens/agents/agentProfiles";
+import { type AgentProfile, PROFILES } from "@/features/agents/lib/agentProfiles";
 import { DEFAULT_ACCENT } from "../../lib/settings/appearance";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET } from "../../lib/console/focusQueue";
 import { DEFAULT_REAPER_CONFIG } from "../../lib/console/idleReaper";
