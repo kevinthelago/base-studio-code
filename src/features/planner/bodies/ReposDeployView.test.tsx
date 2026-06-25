@@ -31,27 +31,33 @@ describe("FocusedReposDeployBody — header (cleaned up, #1403)", () => {
     expect(screen.queryByRole("button", { name: "ships" })).not.toBeInTheDocument();
   });
 
-  it("renders the empty state with no repos (no gate pill)", () => {
+  it("renders the per-repo empty state with no repos", () => {
     render(<Harness repos={[]} />);
-    expect(screen.getByText("No repositories linked yet")).toBeInTheDocument();
-    expect(screen.getByText(/Deployment unlocks once/)).toBeInTheDocument();
+    expect(screen.getByText("No repositories linked")).toBeInTheDocument();
+    expect(screen.getByText(/configured per repository/)).toBeInTheDocument();
     expect(screen.queryByText("CI / CD pipeline")).not.toBeInTheDocument();
+  });
+
+  it("shows the N-of-M ready counter in the header", () => {
+    render(<Harness repos={[repo("acme/web"), repo("acme/api")]} />);
+    expect(screen.getByText((_, el) => el?.textContent === "0 of 2 repos deploy-ready")).toBeTruthy();
   });
 });
 
-describe("FocusedReposDeployBody — ship flow", () => {
-  it("renders card 01 + the project-wide dependency tail, with no readiness banner or global visibility toggle", () => {
-    render(<Harness repos={[repo("acme/web", { primary: true })]} />);
-    // card 01 repositories with its repo row
-    expect(screen.getByText("Repositories")).toBeInTheDocument();
+describe("FocusedReposDeployBody — per-repo cards (#1421)", () => {
+  it("renders one per-repo card (with git identity) + the project-wide dependency tail, no global visibility toggle", () => {
+    render(<Harness repos={[repo("acme/web", { primary: true, lang: "TypeScript" })]} />);
     expect(screen.getByText("acme/web")).toBeInTheDocument();
     expect(screen.getByText("primary")).toBeInTheDocument();
-    // the per-repo deploy sections (CI/CD pipeline etc.) live INSIDE each card now (#1421) — not a
-    // shared tail — so they're absent until a card is expanded with a target set.
-    expect(screen.getByText("A · HOW IT SHIPS")).toBeInTheDocument();
-    expect(screen.getByText("B · WHAT IT DEPENDS ON")).toBeInTheDocument();
+    expect(screen.getByText("TypeScript")).toBeInTheDocument();   // git identity folded into the card row
+    expect(screen.getByText("set target →")).toBeInTheDocument(); // untargeted repo's collapsed-row chip
+    // the per-repo deploy sections (CI/CD pipeline etc.) live INSIDE each card now (#1421) — absent
+    // until the card is expanded with a target set.
+    expect(screen.queryByText("CI / CD pipeline")).not.toBeInTheDocument();
+    // the project-wide dependency manifest is the only tail
+    expect(screen.getByText("DEPENDENCIES")).toBeInTheDocument();
     expect(screen.getByText("Dependencies")).toBeInTheDocument();
-    expect(screen.queryByText("CI / CD pipeline")).not.toBeInTheDocument(); // collapsed → no per-repo sections
+    expect(screen.queryByText("A · HOW IT SHIPS")).not.toBeInTheDocument();
     // the "N/X defined" readiness banner is gone (#1403)
     expect(screen.queryByText(/\d+\/\d+ defined/)).not.toBeInTheDocument();
     // the global default Private/Public toggle is gone (#1403); per-repo toggles remain
