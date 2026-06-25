@@ -68,7 +68,7 @@ import { findPlanGaps } from "../grading/lintPlan";
 import { findPlanInjections, injectionGate } from "../grading/planInjection";
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, shouldAutoOpenBlueprintModal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
-import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
+import { plannerIntroMode, composePlannerIntro, plannerTreatAsExisting } from "./plannerIntro";
 import { Ic } from "../blueprints/blueprintIcons";
 import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
 import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "../blueprints/blueprintSkills";
@@ -796,6 +796,12 @@ export function Planning({ visible }: { visible: boolean }) {
   // than building software. The in-progress blueprint arrives via the planner's <blueprint> tag.
   const activeBlueprint = useMemo(() => blueprints.find(b => b.id === effectiveBlueprintId), [blueprints, effectiveBlueprintId]);
   const isAuthoring = isAuthoringBlueprint(activeBlueprint);
+  // #1286: the planner's orientation (its intro greeting AND its generated CLAUDE.md spec) follows
+  // the blueprint's lifecycle MODE — an operate-mode blueprint (transform/harden/maintain) takes the
+  // "existing repos" orientation even on a fresh draft or right after a lifecycle switch, where the
+  // bare `isExisting` (saved-project) proxy would mis-greet it as a new greenfield project. Plain
+  // `isExisting` stays for the drafting/expanding UI labels (genuinely about save-state).
+  const treatAsExisting = plannerTreatAsExisting({ isSaved: isExisting, mode: activeBlueprint?.mode });
   // Blueprint switching (#1281): any project blueprint may switch to any OTHER one — the
   // reset/keep/export confirmation modal is the safety, not a category rule (only the blueprint-
   // authoring lifecycle is excluded). Offer every other blueprint as a target.
@@ -1223,7 +1229,7 @@ export function Planning({ visible }: { visible: boolean }) {
     // Capture state at mount time for workspace sync.
     const kbSnapshot      = kbBlocks;
     const repoSnapshot    = linkedRepos;  // string[] of full_names
-    const isExistingSnap  = isExisting;
+    const treatAsExistingSnap = treatAsExisting;
     const isAuthoringSnap = isAuthoring;
     const projNameSnap    = activeProjectName;
     const projNumberSnap  = activeProjectNumber;
@@ -1433,7 +1439,7 @@ export function Planning({ visible }: { visible: boolean }) {
           })),
           repoFullNames: repoSnapshot,
           automations:   automationsSnap,
-          isExisting:    isExistingSnap,
+          isExisting:    treatAsExistingSnap,
           projectName:   projNameSnap,
           projectNumber: projNumberSnap,
           pitch:         pitchSnap,
@@ -1487,7 +1493,7 @@ export function Planning({ visible }: { visible: boolean }) {
       // returning user isn't re-greeted. For a new project the user's pitch rides along so the
       // planner acknowledges it rather than asking what they're building (replaces the old
       // idle-detection pitch-typing). On failure it's undefined → the launch falls back to initCmd.
-      const introMode = plannerIntroMode({ isAuthoring, isExisting });
+      const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExistingSnap });
       const introText = await invoke<string>("planner_intro_prompt", { mode: introMode })
         .catch((e: unknown) => { console.error("planner intro prompt failed:", e); return ""; });
       const startupPrompt = composePlannerIntro(introText, introMode, pitchSnap ?? "") || undefined;
@@ -1735,7 +1741,7 @@ export function Planning({ visible }: { visible: boolean }) {
         ...cmds.map(c => ({ id: c.id, name: c.name, command: c.cmd, schedule: null })),
         ...scheds.map(sc => ({ id: sc.id, name: sc.name, command: sc.detail, schedule: sc.when })),
       ],
-      isExisting:    isExisting,
+      isExisting:    treatAsExisting,
       projectName:   activeProjectName,
       projectNumber: activeProjectNumber,
       pitch:         planningPitch,
@@ -1765,7 +1771,7 @@ export function Planning({ visible }: { visible: boolean }) {
         kbBlocks: kbBlocks.map(b => ({ id: b.id, title: b.title, tags: b.tags, content: b.content })),
         repoFullNames: linkedRepos,
         automations: currentAutomations,
-        isExisting,
+        isExisting: treatAsExisting,
         projectName: activeProjectName,
         projectNumber: activeProjectNumber,
         pitch: planningPitch,
@@ -1792,7 +1798,7 @@ export function Planning({ visible }: { visible: boolean }) {
     const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
     // A deliberate restart launches a brand-new `claude` — re-greet with the intro (#1240). No
     // fresh-only guard here: the user explicitly restarted, so fire it even though history exists.
-    const introMode = plannerIntroMode({ isAuthoring, isExisting });
+    const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExisting });
     const introText = await invoke<string>("planner_intro_prompt", { mode: introMode })
       .catch((e: unknown) => { console.error("planner intro prompt failed:", e); return ""; });
     const startupPrompt = composePlannerIntro(introText, introMode, planningPitch ?? "") || undefined;
