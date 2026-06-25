@@ -357,7 +357,8 @@ describe("Deploy folds in dependencies (#1127)", () => {
     expect(merged.name).toBe("Streams");
     // Structure's own substep(s) are preserved; the "fleet" marker substep is appended last.
     expect(merged.substeps?.some((s) => s.key === "sequence")).toBe(true);
-    expect(merged.substeps?.at(-1)?.key).toBe("fleet");
+    const subKeys = merged.substeps?.map((s) => s.key) ?? [];
+    expect(subKeys[subKeys.length - 1]).toBe("fleet"); // the fold marker is appended last
     const sig = merged.gateRule!.require.map((r) => r.signal);
     expect(sig).toEqual(expect.arrayContaining(["featuresPhased", "fleetStreams", "profilesComplete"]));
 
