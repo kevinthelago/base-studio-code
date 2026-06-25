@@ -29,6 +29,7 @@ import { SessionReadinessBanner } from "@/app/SessionReadinessBanner";
 import { SessionFailure } from "@/app/SessionFailure";
 import { tokenForRepo } from "@/features/github/lib/repoCredentials";
 import { getProvider } from "@/app/console/lib/providers";
+import { type PaneActivity, isTurnOpen, paneActivityFor } from "@/app/console/lib/paneActivity";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -128,6 +129,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   const inClaudeRef  = useRef(false);               // true between __bsc_state run/idle
   const claudeActiveRef = useRef<"run" | "idle">("idle"); // current within-session status
   const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Turn-open gate (#1184): true while this pane's latest Claude-Code hook event is a
+  // UserPromptSubmit with no following Stop — i.e. the agent is working, even if SILENT. Fed by the
+  // activity poller below; read by the silence-timer callback to AVOID a wrongful mid-turn idle.
+  // Authoritative idle still comes only from a real Stop (which flips this back via the poll) or,
+  // for non-bash / never-launched panes that emit no activity, from the silence timer unchanged.
+  const turnOpenRef = useRef(false);
   const nudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // resize-nudge restore (#1221)
   const autoNudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // post-launch auto-redraw (#1221)
   const jumbleStrikesRef = useRef(0); // consecutive malformed probes (#1250)
@@ -262,6 +269,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       quietTimerRef.current = setTimeout(() => {
         quietTimerRef.current = null;
         if (inClaudeRef.current && claudeActiveRef.current === "run") {
+          // Turn-open gate (#1184): if the agent's turn is still OPEN per the activity hooks
+          // (a UserPromptSubmit with no Stop yet), it's working-but-silent — thinking, a long
+          // silent tool call, backoff — so DON'T false-idle. Re-arm and keep watching; idle only
+          // lands once the real Stop closes the turn (turnOpenRef flips false) or the quiet timer
+          // fires for a pane with no activity signal at all (non-bash / never-launched — unchanged).
+          if (turnOpenRef.current) { armQuietTimer(); return; }
           onClaudeIdle();
         }
       }, QUIET_MS);
@@ -575,12 +588,27 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // skills written invokes them, so install the bsc-skill Pre/Post hooks whenever skills
         // are present — incl. an ungated console with a per-session skill (#1056). Without this,
         // skill runs on a non-role/profile pane were never tallied in the Skills "Runs" view.
-        const sessionHooks = skills.length > 0
+        const skillHooks = skills.length > 0
           ? [...gatedHooks,
              // one PreToolUse line per invocation + one PostToolUse line per success → skills.log
              { event: "PreToolUse", matcher: "Skill", command: "bsc-skill" },
              { event: "PostToolUse", matcher: "Skill", command: "bsc-skill" }]
           : gatedHooks;
+        // Turn-activity hooks (#1184): authoritative turn boundaries for the status dot. Installed on
+        // EVERY claude-launching pane (this whole block is already Claude-gated) — the false-idle bug
+        // hits ungated consoles too, not just gated workers. `bsc-activity run` on UserPromptSubmit
+        // (turn opens) + `bsc-activity idle` on Stop/SubagentStop (turn closes) → activity.log, which
+        // `read_pane_activity` reads and the silence-timer gate above consults. The helper self-gates
+        // on $BSC_ACTIVITY_LOG (always set by pty_create) and is bash-only, so non-bash sessions
+        // cleanly fall back to the silence timer. Listed AFTER bsc-defer so a worker's Stop records
+        // idle even though bsc-defer blocks the stop — the next turn's UserPromptSubmit reopens run
+        // (and the gate's re-arm debounces the brief flicker).
+        const sessionHooks = [
+          ...skillHooks,
+          { event: "UserPromptSubmit", matcher: "", command: "bsc-activity run" },
+          { event: "Stop", matcher: "", command: "bsc-activity idle" },
+          { event: "SubagentStop", matcher: "", command: "bsc-activity idle" },
+        ];
         await invoke("ensure_session_settings", {
           cwd: initialCwd, allowedCommands, deniedCommands: denied,
           mcpServers: mcp, hooks: sessionHooks,
@@ -729,6 +757,24 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // first per React's effect-ordering rules: by the time the buffer-flush /
   // fit / resize logic below runs, visibleRef already reflects the new value.
   useEffect(() => { visibleRef.current = visible; }, [visible]);
+
+  // Turn-open gating poller (#1184): poll the `bsc-activity` hook log for THIS pane's latest
+  // turn-boundary state and keep `turnOpenRef` in sync, so the silence-timer callback above can
+  // tell "working but silent" from "done". `read_pane_activity` returns every pane's latest state;
+  // we read off our own. Empty/missing (a non-bash session, or a pane that hasn't taken a turn)
+  // leaves the ref false — the silence timer stays authoritative, so there's no regression. Polled
+  // every 1s (faster than the 4s token poll) so the gate re-arms promptly when a new turn opens.
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      const rows = await invoke<PaneActivity[]>("read_pane_activity").catch(() => [] as PaneActivity[]);
+      if (cancelled) return;
+      turnOpenRef.current = isTurnOpen(paneActivityFor(rows, paneId));
+    };
+    poll();
+    const id = setInterval(poll, 1000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [paneId]);
 
   // Re-fit when this view becomes visible again (e.g. switching back from
   // files view, or coming back to a background tab). Also flush anything the

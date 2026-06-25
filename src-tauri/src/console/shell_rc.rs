@@ -98,6 +98,23 @@ pub(crate) const BSC_TOKENS_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-activity` helper (#1184): turn-boundary signal for the console status dot. Wired as
+/// two hooks on every claude-launching pane — `bsc-activity run` on `UserPromptSubmit` (a turn
+/// opens) and `bsc-activity idle` on `Stop` / `SubagentStop` (the turn closes). It drains the hook
+/// JSON from stdin (so the hook never blocks on an unread pipe), then appends one TAB-separated
+/// line — `ts \t pane \t state` — to the app-wide `$BSC_ACTIVITY_LOG`, tagged with `$BSC_AUDIT_PANE`.
+/// `ts` is epoch ms (so `read_pane_activity` orders prompt-vs-stop without timezone parsing). The
+/// frontend polls the latest state per pane and GATES the silence timer: a pane whose last event is
+/// `run` (turn still open) does not false-idle while a worker is thinking / running a long silent
+/// tool call / backing off. Authoritative idle only ever comes from `Stop`. The state arg is
+/// constrained to `run`/`idle` so a stray value can't corrupt the TSV (any other arg is dropped).
+/// Best-effort + always exits 0 so it never blocks a prompt or a stop. A raw string keeps the
+/// embedded quotes readable.
+pub(crate) const BSC_ACTIVITY_RC: &str = concat!(
+    r#"bsc-activity() { st="$1"; cat >/dev/null 2>&1; l="${BSC_ACTIVITY_LOG:-}"; [ -z "$l" ] && return 0; case "$st" in run|idle) ;; *) return 0 ;; esac; ts="$(date +%s%3N 2>/dev/null)"; case "$ts" in ''|*[!0-9]*) ts="$(( $(date -u +%s) * 1000 ))" ;; esac; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$st" >> "$l"; return 0; }"#,
+    "\n",
+);
+
 /// The `bsc-confine` helper (#158): a PreToolUse hook for the file tools on a gated
 /// pane. It reads Claude Code's tool JSON, extracts the target `file_path` /
 /// `notebook_path`, and BLOCKS (return 2 + stderr) when the path escapes the session's
@@ -416,7 +433,7 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
@@ -424,6 +441,7 @@ mod tests {
             super::BSC_HOOK_RC,
             super::BSC_MCP_RC,
             super::BSC_TOKENS_RC,
+            super::BSC_ACTIVITY_RC,
             super::BSC_CONFINE_RC,
             super::BSC_SCOPE_RC,
             super::BSC_TAINT_RC,
@@ -543,6 +561,62 @@ mod tests {
         assert_eq!(fields[1], "t0p1", "pane field should be the BSC_AUDIT_PANE tag");
         assert_eq!(fields[2], "PreToolUse", "event field should be hook_event_name");
         assert_eq!(fields[3], "open-a-clean-pr", "skill field should be skill_name");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bsc_activity_appends_run_and_idle_lines_and_drains_stdin() {
+        // bsc-activity (#1184) must run from the agent's own `bash -c` subshells (rc + BASH_ENV)
+        // and append ONE TSV line — `ts(epoch-ms) \t pane \t state` — to $BSC_ACTIVITY_LOG per call.
+        // It must drain the hook JSON on stdin (so Claude Code's hook pipe never blocks), accept
+        // only run/idle (dropping anything else), and tag the line with $BSC_AUDIT_PANE. Skips where
+        // bash isn't on PATH (same gating as the other helper-run tests).
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = crate::shell::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_activity subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-activity-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_ACTIVITY_RC).unwrap();
+        // Nested path exercises the helper's `mkdir -p` of the log's parent.
+        let log = dir.join("nested").join("activity.log");
+
+        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
+        let log_bash = crate::to_bash_path(&log.to_string_lossy());
+
+        // Fire bsc-activity <state> with hook JSON on stdin, exactly as Claude Code invokes it.
+        let fire = |state: &str| {
+            let mut child = Command::new(&shell)
+                .arg("-c").arg(format!("bsc-activity {state}"))
+                .env("BASH_ENV", &rc_bash)
+                .env("BSC_ACTIVITY_LOG", &log_bash)
+                .env("BSC_AUDIT_PANE", "t0p2")
+                .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+                .spawn().unwrap();
+            // Write hook JSON the helper must drain (it doesn't parse it — the state arg is the signal).
+            child.stdin.take().unwrap()
+                .write_all(br#"{"hook_event_name":"UserPromptSubmit","session_id":"abc"}"#).unwrap();
+            assert!(child.wait().unwrap().success(), "bsc-activity {state} should run + exit 0");
+        };
+        fire("run");
+        fire("idle");
+        fire("bogus"); // not run/idle → dropped, no line
+
+        let body = std::fs::read_to_string(&log).unwrap();
+        let lines: Vec<Vec<&str>> = body.lines().filter(|l| !l.is_empty()).map(|l| l.split('\t').collect()).collect();
+        assert_eq!(lines.len(), 2, "only run + idle are recorded; a bogus state is dropped: {body:?}");
+        // ts is epoch ms (all digits); pane is the BSC_AUDIT_PANE tag; state is run then idle.
+        assert!(lines[0][0].chars().all(|c| c.is_ascii_digit()), "ts is epoch ms: {:?}", lines[0][0]);
+        assert_eq!((lines[0][1], lines[0][2]), ("t0p2", "run"));
+        assert_eq!((lines[1][1], lines[1][2]), ("t0p2", "idle"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
