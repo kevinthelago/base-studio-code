@@ -7,7 +7,7 @@ use crate::{
 };
 use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
-    BSC_TOKENS_RC, BSC_CONFINE_RC, BSC_SCOPE_RC, BSC_TAINT_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
+    BSC_TOKENS_RC, BSC_ACTIVITY_RC, BSC_CONFINE_RC, BSC_SCOPE_RC, BSC_TAINT_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC,
 };
 use crate::{perf, tunnel};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -416,7 +416,7 @@ pub(crate) async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_CONFINE_RC}{BSC_SCOPE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_ACTIVITY_RC}{BSC_CONFINE_RC}{BSC_SCOPE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -449,6 +449,13 @@ pub(crate) async fn pty_create(
     // whose settings install the hook actually write). Claude Code hooks don't expose
     // token usage as a field, so the transcript is the only per-session source.
     cmd.env("BSC_TOKENS_LOG", to_bash_path(&base.join("tokens.log").to_string_lossy()));
+    // Turn-activity log (#1184): the `bsc-activity` UserPromptSubmit/Stop/SubagentStop hooks (added
+    // to claude-launching panes' settings.json by the frontend) append one TSV line per turn boundary
+    // — `ts \t pane \t run|idle` — to this app-wide log, tagged with the pane id via BSC_AUDIT_PANE.
+    // The frontend polls the latest state per pane (`read_pane_activity`) and gates the status dot's
+    // silence timer so a worker that's working-but-silent doesn't false-idle. Set for every pane
+    // (harmless — only panes whose settings install the hooks actually write).
+    cmd.env("BSC_ACTIVITY_LOG", to_bash_path(&base.join("activity.log").to_string_lossy()));
     // Coordination log (#199): `bsc-blocked --on <ref>` appends a structured
     // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
     // merge/close append satisfy events later. Set for every pane; only --on writes.
