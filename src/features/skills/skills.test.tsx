@@ -48,15 +48,15 @@ describe("SkillsScreen — library at scale (#skills-groups)", () => {
     useAppStore.setState({ skillGroups: [{ id: "g1", name: "Release day", hue: "var(--accent)", skillIds: ["w1", "w2"] }] });
     render(<SkillsScreen />);
     fireEvent.click(screen.getByText("⬡ Group"));
-    // "Release day" appears as both the quick-filter chip and the section header.
+    // "Release day" appears as both the left-nav Groups row and the section header.
     expect(screen.getAllByText("Release day").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Ungrouped")).toBeTruthy();
   });
 
-  it("a task-group chip filters the library to that group's members", () => {
+  it("a left-nav group row filters the library to that group's members", () => {
     useAppStore.setState({ skillGroups: [{ id: "g1", name: "Release day", hue: "var(--accent)", skillIds: ["w1", "w2"] }] });
     const { container } = render(<SkillsScreen />);
-    // The chip carries the group name + member count.
+    // In list density "Release day" only renders in the left-nav Groups section.
     fireEvent.click(screen.getByText("Release day"));
     expect(container.querySelectorAll(ROW).length).toBe(2);
   });
