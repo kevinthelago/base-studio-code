@@ -14,7 +14,7 @@
 import type { DataModel, Entity, Field, FieldType } from "@/features/planner/data/dataModel";
 
 /** How a connector authenticates — drives which card the per-source ConnectionSpec renders. */
-export type AuthMethod = "oauth" | "token" | "password" | "basic" | "apiKey" | "upload";
+export type AuthMethod = "oauth" | "token" | "password" | "basic" | "apiKey" | "open" | "upload";
 
 /** One input a connector's form collects. A `secret` field is masked, kept on-device, and never
  *  written into {@link DeclaredSource.fields}. */
@@ -171,6 +171,16 @@ export const CONNECTORS: Connector[] = [
         { key: "apiKey", label: "API key", secret: true },
       ],
       contributes: "resources discovered from the OpenAPI spec",
+    },
+  },
+  {
+    id: "fhir", name: "HL7 FHIR (R4)", badge: "FH", authLabel: "open / SMART",
+    spec: {
+      auth: "open",
+      fields: [
+        { key: "baseUrl", label: "FHIR base URL", placeholder: "https://hapi.fhir.org/baseR4" },
+      ],
+      contributes: "patients, encounters, observations/labs, conditions, medications, procedures, reports",
     },
   },
   {

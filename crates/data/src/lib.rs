@@ -36,6 +36,7 @@ pub mod jira;
 pub mod odoo;
 pub mod pipefy;
 pub mod linear;
+pub mod fhir;
 pub mod rest;
 pub mod presets;
 pub mod runtime;
@@ -72,6 +73,7 @@ pub use jira::JiraConnector;
 pub use odoo::OdooConnector;
 pub use pipefy::PipefyConnector;
 pub use linear::LinearConnector;
+pub use fhir::{FhirConnector, FHIR_RESOURCE_TYPES};
 pub use rest::{RestConnector, RestResource};
 pub use presets::{VendorPreset, CATALOG as VENDOR_PRESETS};
 pub use runtime::{
