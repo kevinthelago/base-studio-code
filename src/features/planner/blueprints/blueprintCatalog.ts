@@ -15,7 +15,7 @@ export const STAGE_KINDS: Record<string, StageKindMeta> = {
   context:       { title: "Context",          glyph: "flag",            h: 70,  blurb: "Pitch, goals & house rules the agents read first." },
   repos:         { title: "Repositories",     glyph: "account_tree",    h: 230, blurb: "Which repos this project spans + linking." },
   users:         { title: "Users & personas", glyph: "group",           h: 295, blurb: "Who it's for and the jobs they need done." },
-  ui:            { title: "UI design",        glyph: "design_services", h: 350, blurb: "Screen skeletons & flows — feeds render-preview." },
+  ui:            { title: "UI design",        glyph: "design_services", h: 350, blurb: "Claude Design kickoff + route the user's design files." },
   stack:         { title: "Tech stack",       glyph: "layers",          h: 195, blurb: "Languages, frameworks & runtime choices." },
   architecture:  { title: "Architecture",     glyph: "hub",             h: 230, blurb: "Services, boundaries & how pieces fit." },
   schema:        { title: "Data model",       glyph: "database",        h: 145, blurb: "Entities, relations & migrations." },
