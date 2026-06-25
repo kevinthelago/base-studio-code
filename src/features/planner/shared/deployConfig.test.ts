@@ -1,27 +1,32 @@
 import { describe, it, expect } from "vitest";
 import {
-  defaultDeployConfig, deployChecks, deploymentDefined, coerceDeployConfig, parseDeployConfigTag, deployIssues,
+  defaultDeployConfig, serviceChecks, serviceReady, deploymentDefined, readyServiceCount,
+  coerceDeployConfig, parseDeployConfigTag, deployIssues,
   serviceMode, serviceTargetDefined, localTargetDefined, finalStageName,
+  type DeployService,
 } from "./deployConfig";
 import { makeBlueprints } from "../stages/blueprints";
 
-describe("deployIssues (#1167 — Deploy pane)", () => {
+// Per-repo rework (#1421): every repo carries its OWN envs/pipeline/config/release/health, so the
+// checks + issues are per-service and the gate is `services.every(serviceReady)`.
+
+describe("deployIssues (per-repo, #1421)", () => {
   it("previews one deploy workflow per targeted service + env provisioning + a prod health check", () => {
     const d = defaultDeployConfig(["acme/web"]);
     d.services[0].platform = "vercel";
     d.services[0].workload = "static";
     const issues = deployIssues(d);
     expect(issues.some((i) => i.text.includes("Vercel deploy workflow for web → static"))).toBe(true);
-    expect(issues.some((i) => i.text.includes("Provision staging environment"))).toBe(true);
-    expect(issues.some((i) => i.text === "Add prod health check + auto-rollback")).toBe(true);
+    expect(issues.some((i) => i.text.includes("staging environment"))).toBe(true);
+    expect(issues.some((i) => i.text.includes("prod health check + auto-rollback"))).toBe(true);
   });
 
   it("flags unwired prod secrets as a blocking issue", () => {
     const d = defaultDeployConfig(["acme/web"]);
     d.services[0].platform = "vercel";
-    d.config.secrets = [{ key: "DATABASE_URL", dev: true, staging: true, prod: false }];
+    d.services[0].config.secrets = [{ key: "DATABASE_URL", dev: true, staging: true, prod: false }];
     const issues = deployIssues(d);
-    const sec = issues.find((i) => i.text.includes("Wire prod secrets"));
+    const sec = issues.find((i) => i.text.includes("prod secrets"));
     expect(sec).toBeDefined();
     expect(sec!.blocking).toBe(true);
     expect(sec!.text).toContain("DATABASE_URL");
@@ -32,48 +37,51 @@ describe("deployIssues (#1167 — Deploy pane)", () => {
   });
 });
 
-describe("deployConfig (#919)", () => {
-  it("seeds one proposed service per repo + a default env/pipeline ladder", () => {
+describe("deployConfig (per-repo, #1421)", () => {
+  it("seeds one proposed service per repo, each with its own env/pipeline ladder", () => {
     const d = defaultDeployConfig(["acme/web", "acme/api"]);
     expect(d.services.map((s) => s.id)).toEqual(["web", "api"]);
     expect(d.services.every((s) => s.proposed && s.platform === "")).toBe(true);
-    expect(d.envs.length).toBe(3);            // dev / staging / prod
-    expect(d.pipeline.stages.length).toBe(3); // build / test / deploy
-    expect(d.release.strategy).toBe("");
+    expect(d.services.every((s) => s.envs.length === 3)).toBe(true);            // dev / staging / prod
+    expect(d.services.every((s) => s.pipeline.stages.length === 3)).toBe(true); // build / test / deploy
+    expect(d.services.every((s) => s.release.strategy === "")).toBe(true);
   });
 
-  it("is not gate-ready out of the box (no target, no release strategy)", () => {
-    const d = defaultDeployConfig(["acme/web"]);
-    const checks = deployChecks(d);
+  it("a fresh service is not ready (no target, no release strategy) but its env/pipeline/secrets pass", () => {
+    const s = defaultDeployConfig(["acme/web"]).services[0];
+    const checks = serviceChecks(s);
     expect(checks.find((c) => c.id === "target")!.ok).toBe(false);
     expect(checks.find((c) => c.id === "release")!.ok).toBe(false);
-    // envs / pipeline / secrets are satisfied by the seed
     expect(checks.find((c) => c.id === "envs")!.ok).toBe(true);
     expect(checks.find((c) => c.id === "pipeline")!.ok).toBe(true);
     expect(checks.find((c) => c.id === "secrets")!.ok).toBe(true);
-    expect(deploymentDefined(d)).toBe(false);
+    expect(serviceReady(s)).toBe(false);
+    expect(deploymentDefined(defaultDeployConfig(["acme/web"]))).toBe(false);
   });
 
-  it("deploymentDefined becomes true once every service has a target and a release strategy is chosen", () => {
-    const base = defaultDeployConfig(["acme/web"]);
-    const d = {
-      ...base,
-      services: base.services.map((s) => ({ ...s, platform: "vercel" })),
-      release: { ...base.release, strategy: "rolling" as const },
-    };
-    expect(deploymentDefined(d)).toBe(true);
+  it("deploymentDefined becomes true once EVERY repo has a target + release strategy", () => {
+    const base = defaultDeployConfig(["acme/web", "acme/api"]);
+    const ship = (s: DeployService): DeployService => ({ ...s, platform: "vercel", release: { ...s.release, strategy: "rolling" } });
+    // one repo ready, the other not → still blocked
+    const partial = { services: [ship(base.services[0]), base.services[1]] };
+    expect(deploymentDefined(partial)).toBe(false);
+    expect(readyServiceCount(partial)).toBe(1);
+    // both ready → gate clears
+    const all = { services: base.services.map(ship) };
+    expect(deploymentDefined(all)).toBe(true);
+    expect(readyServiceCount(all)).toBe(2);
   });
 
-  it("blocks while a prod secret is unwired", () => {
+  it("blocks while a repo's prod secret is unwired", () => {
     const base = defaultDeployConfig(["acme/web"]);
     const d = {
-      ...base,
-      services: base.services.map((s) => ({ ...s, platform: "vercel" })),
-      release: { ...base.release, strategy: "rolling" as const },
-      config: { ...base.config, secrets: [{ key: "DATABASE_URL", dev: true, staging: true, prod: false }] },
+      services: base.services.map((s) => ({
+        ...s, platform: "vercel", release: { ...s.release, strategy: "rolling" as const },
+        config: { ...s.config, secrets: [{ key: "DATABASE_URL", dev: true, staging: true, prod: false }] },
+      })),
     };
     expect(deploymentDefined(d)).toBe(false);
-    expect(deployChecks(d).find((c) => c.id === "secrets")!.ok).toBe(false);
+    expect(serviceChecks(d.services[0]).find((c) => c.id === "secrets")!.ok).toBe(false);
   });
 
   it("undefined config is not gate-ready", () => {
@@ -81,53 +89,53 @@ describe("deployConfig (#919)", () => {
   });
 });
 
-describe("coerceDeployConfig — the planner <deploy_config> channel (#919)", () => {
-  it("clears the gate from a planner-style payload", () => {
+describe("coerceDeployConfig — the planner deploy channel (per-repo, #1421)", () => {
+  it("clears the gate from a planner-style payload (per-service envs/pipeline/secrets/release)", () => {
     const d = coerceDeployConfig({
-      services: [{ id: "web", repo: "o/web", platform: "vercel", workload: "static" }],
-      environments: [{ name: "dev", branch: "feature/*" }, { name: "staging", branch: "develop" }, { name: "prod", branch: "main" }],
-      pipeline: { provider: "GitHub Actions", stages: [{ name: "build" }, { name: "test", gate: true }, { name: "deploy" }] },
-      secrets: [{ key: "DATABASE_URL", envs: ["dev", "staging", "prod"] }],
-      release: { strategy: "blue-green", autoRollback: true },
+      services: [{
+        id: "web", repo: "o/web", platform: "vercel", workload: "static",
+        environments: [{ name: "dev", branch: "feature/*" }, { name: "staging", branch: "develop" }, { name: "prod", branch: "main" }],
+        pipeline: { provider: "GitHub Actions", stages: [{ name: "build" }, { name: "test", gate: true }, { name: "deploy" }] },
+        secrets: [{ key: "DATABASE_URL", envs: ["dev", "staging", "prod"] }],
+        release: { strategy: "blue-green", autoRollback: true },
+      }],
     });
     expect(deploymentDefined(d)).toBe(true);
     expect(d.services[0].platform).toBe("vercel");
-    expect(d.envs.length).toBe(3);
-    expect(d.release.strategy).toBe("blue-green");
+    expect(d.services[0].envs.length).toBe(3);
+    expect(d.services[0].release.strategy).toBe("blue-green");
   });
 
   it("blocks when a service has no platform", () => {
-    const d = coerceDeployConfig({ services: [{ id: "web" }], release: { strategy: "rolling" } });
+    const d = coerceDeployConfig({ services: [{ id: "web", release: { strategy: "rolling" } }] });
     expect(deploymentDefined(d)).toBe(false);
-    expect(deployChecks(d).find((c) => c.id === "target")!.ok).toBe(false);
+    expect(serviceChecks(d.services[0]).find((c) => c.id === "target")!.ok).toBe(false);
   });
 
   it("blocks when a secret omits prod from its envs", () => {
     const d = coerceDeployConfig({
-      services: [{ id: "web", repo: "o/web", platform: "vercel" }],
-      release: { strategy: "rolling" },
-      secrets: [{ key: "X", envs: ["dev", "staging"] }],
+      services: [{ id: "web", repo: "o/web", platform: "vercel", release: { strategy: "rolling" }, secrets: [{ key: "X", envs: ["dev", "staging"] }] }],
     });
-    expect(deployChecks(d).find((c) => c.id === "secrets")!.ok).toBe(false);
+    expect(serviceChecks(d.services[0]).find((c) => c.id === "secrets")!.ok).toBe(false);
     expect(deploymentDefined(d)).toBe(false);
   });
 
   it("coerces an invalid release strategy to empty (blocks) and bad input to a safe default", () => {
-    const bad = coerceDeployConfig({ services: [{ id: "web", platform: "fly" }], release: { strategy: "yolo" } });
-    expect(bad.release.strategy).toBe("");
+    const bad = coerceDeployConfig({ services: [{ id: "web", platform: "fly", release: { strategy: "yolo" } }] });
+    expect(bad.services[0].release.strategy).toBe("");
     expect(coerceDeployConfig(null).services.length).toBeGreaterThan(0); // never throws on garbage
   });
 
   it("parseDeployConfigTag survives stray content around the JSON (e.g. a leaked </parameter>)", () => {
-    // The real-world payload that wasn't clearing the gate: 2 envs, Fly containers, secrets wired
-    // for prod — but with junk inside the tag body that broke a raw JSON.parse.
     const body = `
 {
-  "services": [{"id":"user","repo":"o/user","platform":"fly","workload":"container"}],
-  "environments": [{"name":"staging","branch":"develop"},{"name":"prod","branch":"main"}],
-  "pipeline": {"provider":"GitHub Actions","stages":[{"name":"test","gate":true},{"name":"deploy"}]},
-  "secrets": [{"key":"DATABASE_URL","envs":["staging","prod"]}],
-  "release": {"strategy":"rolling","autoRollback":true}
+  "services": [{
+    "id":"user","repo":"o/user","platform":"fly","workload":"container",
+    "environments": [{"name":"staging","branch":"develop"},{"name":"prod","branch":"main"}],
+    "pipeline": {"provider":"GitHub Actions","stages":[{"name":"test","gate":true},{"name":"deploy"}]},
+    "secrets": [{"key":"DATABASE_URL","envs":["staging","prod"]}],
+    "release": {"strategy":"rolling","autoRollback":true}
+  }]
 }
 </parameter>`;
     const cfg = parseDeployConfigTag(body);
@@ -146,11 +154,11 @@ describe("coerceDeployConfig — the planner <deploy_config> channel (#919)", ()
       '<deploy_config>\n  {\n' +
       '    "services": [{"id": "user", "repo": "o/user", "platform": "fly", "workload":\n' +
       '  "container", "region": "iad", "build": "docker build", "output": "fly\n' +
-      '  app chirp-user-{env}"}],\n' +
+      '  app chirp-user-{env}",\n' +
       '    "environments": [{"name":"staging","branch":"develop"},{"name":"prod","branch":"main"}],\n' +
       '    "pipeline": {"provider":"GitHub Actions","stages":[{"name":"test","gate":true},{"name":"deploy"}]},\n' +
       '    "secrets": [{"key":"DATABASE_URL","envs":["staging","prod"]}],\n' +
-      '    "release": {"strategy":"rolling","autoRollback":true}\n' +
+      '    "release": {"strategy":"rolling","autoRollback":true}}]\n' +
       '  }\n</deploy_config>';
     const body = wrapped.replace(/^<deploy_config>/, "").replace(/<\/deploy_config>$/, "");
     const cfg = parseDeployConfigTag(body);
@@ -172,7 +180,6 @@ describe("local vs cloud deploy modes (#1192)", () => {
     const legacy = { ...d.services[0] };
     delete (legacy as { mode?: string }).mode;
     expect(serviceMode(legacy)).toBe("cloud");
-    // a legacy cloud service still satisfies `target` via its platform
     legacy.platform = "vercel";
     expect(serviceTargetDefined(legacy)).toBe(true);
   });
@@ -180,15 +187,14 @@ describe("local vs cloud deploy modes (#1192)", () => {
   it("a local LIBRARY satisfies `target` via publish registry + package name, not a cloud platform", () => {
     const base = defaultDeployConfig(["acme/sdk"]);
     const lib = { ...base.services[0], mode: "local" as const, localKind: "library" as const, platform: "" };
-    expect(localTargetDefined(lib)).toBe(false);          // nothing set yet
+    expect(localTargetDefined(lib)).toBe(false);
     expect(serviceTargetDefined(lib)).toBe(false);
     const ready = { ...lib, publishRegistry: "npm" as const, packageName: "@acme/sdk" };
     expect(localTargetDefined(ready)).toBe(true);
     expect(serviceTargetDefined(ready)).toBe(true);
-    // and the whole gate clears with a release strategy, no cloud platform needed
-    const d = { ...base, services: [ready], release: { ...base.release, strategy: "rolling" as const } };
-    expect(deployChecks(d).find((c) => c.id === "target")!.ok).toBe(true);
-    expect(deploymentDefined(d)).toBe(true);
+    const shipped = { ...ready, release: { ...ready.release, strategy: "rolling" as const } };
+    expect(serviceChecks(shipped).find((c) => c.id === "target")!.ok).toBe(true);
+    expect(deploymentDefined({ services: [shipped] })).toBe(true);
   });
 
   it("a local APPLICATION satisfies `target` via build targets + artifact", () => {
@@ -201,7 +207,7 @@ describe("local vs cloud deploy modes (#1192)", () => {
 
   it("finalStageName adapts to the service mode: deploy · publish · package", () => {
     const base = defaultDeployConfig(["acme/web"]).services[0];
-    expect(finalStageName(base)).toBe("deploy");                                  // cloud
+    expect(finalStageName(base)).toBe("deploy");
     expect(finalStageName({ ...base, mode: "local", localKind: "library" })).toBe("publish");
     expect(finalStageName({ ...base, mode: "local", localKind: "application" })).toBe("package");
     expect(finalStageName(undefined)).toBe("deploy");
@@ -210,11 +216,10 @@ describe("local vs cloud deploy modes (#1192)", () => {
   it("coerceDeployConfig accepts a local library service + port forwarding", () => {
     const d = coerceDeployConfig({
       services: [
-        { id: "sdk", repo: "o/sdk", mode: "local", localKind: "library", publishRegistry: "npm", packageName: "@o/sdk", publishTrigger: "on-tag" },
+        { id: "sdk", repo: "o/sdk", mode: "local", localKind: "library", publishRegistry: "npm", packageName: "@o/sdk", publishTrigger: "on-tag", release: { strategy: "rolling" } },
         { id: "cli", repo: "o/cli", mode: "local", localKind: "application", buildTargets: "linux/amd64", artifact: "cli", runCmd: "./cli",
-          portForward: { enabled: true, port: "8080", method: "cloudflared" } },
+          portForward: { enabled: true, port: "8080", method: "cloudflared" }, release: { strategy: "rolling" } },
       ],
-      release: { strategy: "rolling" },
     });
     expect(d.services[0].mode).toBe("local");
     expect(d.services[0].localKind).toBe("library");
@@ -222,30 +227,27 @@ describe("local vs cloud deploy modes (#1192)", () => {
     expect(d.services[0].packageName).toBe("@o/sdk");
     expect(d.services[1].localKind).toBe("application");
     expect(d.services[1].portForward).toEqual({ enabled: true, port: "8080", method: "cloudflared" });
-    // both targets defined ⇒ gate clears with a release strategy and no cloud platform
     expect(deploymentDefined(d)).toBe(true);
   });
 
   it("coerce falls back to cloudflared for an unknown port-forward method", () => {
     const d = coerceDeployConfig({
       services: [{ id: "cli", repo: "o/cli", mode: "local", localKind: "application", buildTargets: "x", artifact: "y",
-        portForward: { enabled: true, port: "9000", method: "bogus" } }],
-      release: { strategy: "rolling" },
+        portForward: { enabled: true, port: "9000", method: "bogus" }, release: { strategy: "rolling" } }],
     });
     expect(d.services[0].portForward!.method).toBe("cloudflared");
   });
 
   it("deployIssues emits a publish workflow for a library and a package workflow for a local app", () => {
     const base = defaultDeployConfig(["o/sdk"]);
-    const lib = deployIssues({ ...base, services: [{ ...base.services[0], mode: "local", localKind: "library", publishRegistry: "crates.io", packageName: "acme" }] });
+    const lib = deployIssues({ services: [{ ...base.services[0], mode: "local", localKind: "library", publishRegistry: "crates.io", packageName: "acme" }] });
     expect(lib.some((i) => i.text.includes("crates.io publish workflow"))).toBe(true);
     expect(lib.some((i) => i.text.includes("deploy workflow"))).toBe(false);
-    // a library does NOT get a prod health check
-    expect(lib.some((i) => i.text === "Add prod health check + auto-rollback")).toBe(false);
+    expect(lib.some((i) => i.text.includes("prod health check"))).toBe(false); // a library has nothing running
 
-    const app = deployIssues({ ...base, services: [{ ...base.services[0], mode: "local", localKind: "application", buildTargets: "linux/amd64", artifact: "cli" }] });
+    const app = deployIssues({ services: [{ ...base.services[0], mode: "local", localKind: "application", buildTargets: "linux/amd64", artifact: "cli" }] });
     expect(app.some((i) => i.text.includes("package + build workflow"))).toBe(true);
-    expect(app.some((i) => i.text === "Add prod health check + auto-rollback")).toBe(true);
+    expect(app.some((i) => i.text.includes("prod health check"))).toBe(true);
   });
 });
 

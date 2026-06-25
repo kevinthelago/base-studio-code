@@ -11,7 +11,7 @@ import { useState } from "react";
 import {
   PLATFORMS, platform, WORKLOAD, PIPE_TRIGGERS, RELEASE_STRATEGIES, ORCHESTRATORS, REPLICA_OPTIONS,
   PUBLISH_REGISTRIES, PUBLISH_TRIGGERS, PORT_FORWARD_METHODS,
-  hostMeta, deployChecks, deployIssues, serviceMode, finalStageName,
+  hostMeta, serviceChecks, serviceReady, readyServiceCount, serviceMode, serviceTargetDefined, finalStageName,
   type DeployConfig, type DeployService, type Workload, type ReleaseStrategy,
   type DeployMode, type LocalKind, type PublishRegistry, type PublishTrigger, type PortForwardMethod,
 } from "../shared/deployConfig";
@@ -322,50 +322,162 @@ function LocalBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
   );
 }
 
-/** Target & hosting — service tabs (host badge + status dot), a Cloud · Local mode toggle (#1192),
- *  then either the cloud platform card or the local library/application card. */
-function TargetCard({ d, svc, set, setSvc, done }: {
-  d: DeployConfig; svc: DeployService | undefined;
-  set: (patch: Partial<DeployConfig>) => void; setSvc: (patch: Partial<DeployService>) => void; done: boolean;
+/** The per-repo ship sections (#1421) — every repo owns its OWN pipeline, environments,
+ *  config/secrets, and rollout. Rendered inside each {@link RepoDeployCard} once a target is set. */
+export function ServiceDeploySections({ svc, setSvc }: {
+  svc: DeployService; setSvc: (patch: Partial<DeployService>) => void;
 }) {
-  const right = <span style={monoSm}>{d.services.length} service{d.services.length !== 1 ? "s" : ""}</span>;
+  const ck = (id: string) => serviceChecks(svc).find((c) => c.id === id)?.ok ?? false;
   return (
-    <Card n="01" title="Target & hosting" hint="per service" right={right} done={done}>
-      {/* service tabs */}
-      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 11 }}>
-        {d.services.map((s) => {
-          const p = platform(s.platform);
-          const on = svc && s.id === svc.id;
-          const host = hostMeta(s.host);
-          const local = serviceMode(s) === "local";
-          const sub = local
-            ? (s.localKind === "library" ? `⬢ library${s.publishRegistry ? ` · ${s.publishRegistry}` : ""}` : `⬢ app${s.buildTargets ? ` · ${s.buildTargets}` : ""}`)
-            : (s.platform ? `${p.glyph} ${p.name}` : "no target yet");
-          const targeted = local
-            ? (s.localKind === "library" ? !!s.publishRegistry && !!s.packageName?.trim() : !!s.buildTargets?.trim() && !!s.artifact?.trim())
-            : !!s.platform;
-          return (
-            <button key={s.id} onClick={() => set({ selService: s.id })} style={{
-              flex: 1, minWidth: 120, display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start", padding: "8px 11px", cursor: "pointer",
-              borderRadius: "var(--r-md)", border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
-              background: on ? "color-mix(in oklch, var(--accent), transparent 90%)" : "var(--bg-elev)",
-            }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
-                <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{s.id}</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ width: 6, height: 6, borderRadius: 99, background: targeted ? "var(--success)" : "var(--fg-dim)" }} />
-              </span>
-              <span style={{ fontFamily: MONO, fontSize: 9, color: on ? "var(--accent)" : "var(--fg-dim)" }}>{sub}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: MONO, fontSize: 8, color: local ? "var(--violet)" : host.color }}>
-                <span style={{ width: 5, height: 5, borderRadius: 99, background: local ? "var(--violet)" : host.color }} />{local ? "local" : host.domain}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+    <>
+      {/* 2 · CI/CD pipeline */}
+      <Card n="02" title="CI / CD pipeline" accent="var(--accent)" done={ck("pipeline")} right={<span style={chip}>{svc.pipeline.provider}</span>}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {svc.pipeline.stages.map((st, i) => {
+            const isFinal = i === svc.pipeline.stages.length - 1;
+            const stageName = isFinal && (["deploy", "publish", "package"] as string[]).includes(st.name) ? finalStageName(svc) : st.name;
+            return (
+              <div key={st.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "11px 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid " + (st.gate ? "var(--accent-dim)" : "var(--border-soft)") }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 99, background: st.gate ? "var(--accent)" : i === 0 ? "var(--info)" : "var(--success)" }} />
+                    <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", textTransform: "uppercase", letterSpacing: ".04em" }}>{stageName}</span>
+                    <span style={{ flex: 1 }} />
+                    {st.gate && <span style={{ ...chip, fontSize: 7.5, color: "var(--accent)", borderColor: "var(--accent-dim)", background: "color-mix(in oklch, var(--accent), transparent 85%)" }}>⛒ gate</span>}
+                  </div>
+                  <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)", lineHeight: 1.35 }}>{st.cmd || "—"}</span>
+                  <Seg value={st.trigger} options={PIPE_TRIGGERS}
+                    onChange={(v) => setSvc({ pipeline: { ...svc.pipeline, stages: svc.pipeline.stages.map((x) => x.id === st.id ? { ...x, trigger: v } : x) } })} />
+                </div>
+                {i < svc.pipeline.stages.length - 1 && (
+                  <span style={{ alignSelf: "center", fontFamily: MONO, fontSize: 13, color: svc.pipeline.stages[i + 1].gate ? "var(--accent)" : "var(--fg-dim)" }}>{svc.pipeline.stages[i + 1].gate ? "⟱" : "↓"}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
 
-      {svc && <ServiceTargetEditor svc={svc} setSvc={setSvc} />}
-    </Card>
+      {/* 3 · Environments */}
+      <Card n="03" title="Environments" hint="branch → env" done={ck("envs")}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {svc.envs.map((e, i) => (
+            <div key={e.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>
+                <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: e.id === "prod" ? "var(--success)" : "var(--fg-dim)" }} />
+                <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", width: 52 }}>{e.name}</span>
+                <span style={{ ...chip, fontSize: 7.5, ...(e.auto ? {} : { color: "var(--accent)", borderColor: "var(--accent-dim)" }) }}>{e.auto ? "auto" : "manual"}</span>
+                <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--info)", padding: "1px 6px", borderRadius: 3, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⎇ {e.branch}</span>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "42%" }}>{e.url || "—"}</span>
+              </div>
+              {i < svc.envs.length - 1 && <span style={{ alignSelf: "center", fontFamily: MONO, fontSize: 11, color: "var(--fg-dim)" }}>↓</span>}
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* 4 · Config & secrets */}
+      <Card n="04" title="Config & secrets" hint={svc.config.vault} done={ck("secrets")}>
+        {svc.config.config.length === 0 && svc.config.secrets.length === 0 ? (
+          <span style={monoSm}>No config or secrets yet — the planner proposes them per environment.</span>
+        ) : (
+          <>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: MONO, fontSize: 10.5 }}>
+              <thead><tr style={{ color: "var(--fg-dim)", textAlign: "left" }}><th style={{ padding: "3px 6px", fontWeight: 400 }}>variable</th>{svc.envs.map((e) => <th key={e.id} style={{ padding: "3px 6px", fontWeight: 400 }}>{e.name}</th>)}</tr></thead>
+              <tbody>
+                {svc.config.config.map((row) => (
+                  <tr key={row.key} style={{ borderTop: "1px solid var(--border-soft)" }}>
+                    <td style={{ padding: "4px 6px", color: "var(--fg)" }}><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: 2, background: "var(--info)", marginRight: 6 }} />{row.key}</td>
+                    {svc.envs.map((e) => <td key={e.id} style={{ padding: "4px 6px", color: "var(--fg-muted)" }}>{row[e.id] || "—"}</td>)}
+                  </tr>
+                ))}
+                {svc.config.secrets.map((row) => (
+                  <tr key={row.key} style={{ borderTop: "1px solid var(--border-soft)" }}>
+                    <td style={{ padding: "4px 6px", color: "var(--fg)" }}><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: 2, background: "var(--violet)", marginRight: 6 }} />{row.key}</td>
+                    {svc.envs.map((e) => (
+                      <td key={e.id} style={{ padding: "4px 6px" }}>
+                        {row[e.id]
+                          ? <span style={{ color: "var(--violet)" }}>••••✓</span>
+                          : <button onClick={() => setSvc({ config: { ...svc.config, secrets: svc.config.secrets.map((s) => s.key === row.key ? { ...s, [e.id]: true } : s) } })}
+                              style={{ padding: "1px 7px", borderRadius: 99, cursor: "pointer", fontFamily: MONO, fontSize: 9, color: "var(--danger)", background: "transparent", border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)" }}>+ wire</button>}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)", marginTop: 8 }}>🔒 secret values live in the vault, never here — only wiring state is shown.</div>
+          </>
+        )}
+      </Card>
+
+      {/* Rollout (release strategy + auto-rollback) + a compact health row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "9px 12px", flexWrap: "wrap" }}>
+        <span style={{ ...grpLabel }}>rollout</span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+          {RELEASE_STRATEGIES.map((s) => {
+            const on = svc.release.strategy === s.id;
+            return (
+              <button key={s.id} onClick={() => setSvc({ release: { ...svc.release, strategy: s.id as ReleaseStrategy } })} style={{
+                fontFamily: MONO, fontSize: 9, padding: "3px 8px", borderRadius: 99, cursor: "pointer",
+                background: on ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev)",
+                border: "1px solid " + (on ? "var(--accent)" : "var(--border-soft)"), color: on ? "var(--accent)" : "var(--fg-dim)",
+              }}>{s.label}</button>
+            );
+          })}
+        </div>
+        <span style={{ flex: 1 }} />
+        <Toggle on={svc.release.autoRollback} onClick={() => setSvc({ release: { ...svc.release, autoRollback: !svc.release.autoRollback } })} label="auto-rollback" />
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "2px 4px" }}>
+        <Toggle on={svc.health.probeOn} onClick={() => setSvc({ health: { ...svc.health, probeOn: !svc.health.probeOn } })} label="health probe" value={svc.health.probe} />
+        <Toggle on={svc.release.migrateWithDeploy} onClick={() => setSvc({ release: { ...svc.release, migrateWithDeploy: !svc.release.migrateWithDeploy } })} label="migrate with deploy" />
+      </div>
+    </>
+  );
+}
+
+/** One collapsible per-repo deployment card (#1421) — the unit of the new design. Collapsed row =
+ *  status · id · target · workload · ready/✓ · chevron; expanded = the target editor + (once a
+ *  target is set) the repo's ship sections. `lead` lets the merged Repos & Deployment pane inject
+ *  the repo's git identity row. */
+export function RepoDeployCard({ svc, setSvc, open, onToggle, lead }: {
+  svc: DeployService; setSvc: (patch: Partial<DeployService>) => void;
+  open: boolean; onToggle: () => void; lead?: React.ReactNode;
+}) {
+  const targeted = serviceTargetDefined(svc);
+  const ready = serviceReady(svc);
+  const local = serviceMode(svc) === "local";
+  const p = svc.platform ? platform(svc.platform) : null;
+  const dot = ready ? "var(--success)" : targeted ? "var(--accent)" : "var(--warn)";
+  return (
+    <div style={{ background: "var(--bg-elev)", border: "1px solid " + (open ? "var(--accent-dim)" : "var(--border-soft)"), borderRadius: "var(--r-lg)", overflow: "hidden" }}>
+      <div onClick={onToggle} style={{ display: "flex", alignItems: "center", gap: 9, padding: "11px 13px", cursor: "pointer", userSelect: "none" }}>
+        <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: dot, boxShadow: ready ? `0 0 7px color-mix(in oklch, ${dot}, transparent 60%)` : undefined }} />
+        <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{svc.repo || svc.id}</span>
+        <span style={{ flex: 1 }} />
+        {targeted ? (
+          <>
+            <span style={{ ...chip, color: local ? "var(--violet)" : "var(--accent)", borderColor: local ? "color-mix(in oklch, var(--violet), transparent 60%)" : "var(--accent-dim)", background: `color-mix(in oklch, ${local ? "var(--violet)" : "var(--accent)"}, transparent 86%)` }}>
+              {local ? `⬢ ${svc.localKind ?? "local"}` : <>{p && <span style={{ color: `oklch(0.78 0.12 ${p.h})` }}>{p.glyph} </span>}{p?.name}</>}
+            </span>
+            {!local && <span style={{ ...chip, fontSize: 8, color: WORKLOAD[svc.workload].c, borderColor: `color-mix(in oklch, ${WORKLOAD[svc.workload].c}, transparent 60%)` }}>{WORKLOAD[svc.workload].label}</span>}
+            <span style={{ width: 18, height: 18, borderRadius: 99, display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: MONO, fontSize: 10, color: ready ? "var(--success)" : "var(--fg-dim)", background: ready ? "color-mix(in oklch, var(--success), transparent 84%)" : "var(--bg-elev2)" }}>{ready ? "✓" : "·"}</span>
+          </>
+        ) : (
+          <span style={{ ...chip, color: "var(--warn)", borderColor: "color-mix(in oklch, var(--warn), transparent 55%)", background: "transparent", borderStyle: "dashed" }}>set target →</span>
+        )}
+        <span style={{ color: "var(--fg-dim)", fontFamily: MONO, fontSize: 11, width: 12, textAlign: "center" }}>{open ? "▾" : "▸"}</span>
+      </div>
+      {open && (
+        <div style={{ borderTop: "1px solid var(--border-soft)", padding: "12px 13px", display: "flex", flexDirection: "column", gap: 12 }}>
+          {lead}
+          <ServiceTargetEditor svc={svc} setSvc={setSvc} />
+          {targeted && <ServiceDeploySections svc={svc} setSvc={setSvc} />}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -411,7 +523,7 @@ export function ServiceTargetEditor({ svc, setSvc }: {
 }
 
 /** Dependencies grouped by the source each package is pulled from (#1127). */
-function DependenciesCard({ deps, registries, done }: {
+export function DependenciesCard({ deps, registries, done }: {
   deps: PlanDependency[]; registries: Record<string, DependencyRegistry>; done: boolean;
 }) {
   const groups = groupDependenciesBySource(deps, registries);
@@ -477,225 +589,71 @@ function DependenciesCard({ deps, registries, done }: {
   );
 }
 
-export function FocusedDeployBody({ deploy, onChange, dependencies = [], registries = {}, view = "full" }: {
+/** The Deployment pane header — title + the "N of M repos deploy-ready" counter (#1421). */
+function DeployHeader({ ready, total }: { ready: number; total: number }) {
+  const allReady = total > 0 && ready === total;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ width: 19, height: 19, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 84%)", border: "1px solid var(--accent-dim)" }}>⎇</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Deployment</span>
+        <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-muted)" }}>how each repository ships — defined per repo</span>
+      </div>
+      <span style={{ flex: 1 }} />
+      {total > 0 && (
+        <span style={{ fontFamily: MONO, fontSize: 10.5, color: allReady ? "var(--success)" : "var(--fg-muted)" }}>
+          <span style={{ color: "var(--fg)" }}>{ready}</span> of {total} repos deploy-ready
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** The Deployment stage body (#1421) — one collapsible card per repo, each a self-contained
+ *  deployable unit (target & build · pipeline · environments · config & secrets · rollout). The
+ *  project-wide locked dependency manifest follows as a tail (it gates separately, #1127). */
+export function FocusedDeployBody({ deploy, onChange, dependencies = [], registries = {} }: {
   deploy?: DeployConfig;
   onChange?: (next: DeployConfig) => void;
   dependencies?: PlanDependency[];
   registries?: Record<string, DependencyRegistry>;
-  /** "full" — the standalone Deploy stage (banner + Target & hosting card + the rest). "tail" —
-   *  the merged Repositories & Deployment pane (#1399) renders the header + repo-target card itself,
-   *  so this skips the readiness banner, the "HOW IT SHIPS" divider, and the Target card, picking up
-   *  at the CI/CD pipeline. The shared `deploy.selService` keeps both halves in sync. */
-  view?: "full" | "tail";
 }) {
+  const [openId, setOpenId] = useState<string | null>(null);
   if (!deploy) {
     return <div style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg-dim)", padding: "8px 2px" }}>Deployment config loads once the repos are linked.</div>;
   }
   const d = deploy;
-  const set = (patch: Partial<DeployConfig>) => onChange?.({ ...d, ...patch });
-  const svc = d.services.find((s) => s.id === d.selService) ?? d.services[0];
-  const setSvc = (patch: Partial<DeployService>) => svc && set({ services: d.services.map((s) => s.id === svc.id ? { ...s, ...patch } : s) });
-
-  const checks = deployChecks(d);
-  const ck = (id: string) => checks.find((c) => c.id === id)?.ok ?? false;
-  const ready = checks.filter((c) => c.ok).length;
-  // The Deploy GATE needs both shipping AND ≥1 locked dependency (#1127).
+  const setSvcFor = (id: string, patch: Partial<DeployService>) =>
+    onChange?.({ ...d, services: d.services.map((s) => s.id === id ? { ...s, ...patch } : s) });
+  const ready = readyServiceCount(d);
   const depsOk = dependencies.length > 0;
-  const allReady = ready === checks.length && depsOk;
-  const missing = [...checks.filter((c) => !c.ok).map((c) => c.id), ...(depsOk ? [] : ["dependencies"])];
-  const issues = deployIssues(d);
+
+  if (d.services.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <DeployHeader ready={0} total={0} />
+        <div style={{ border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", padding: "40px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center", background: "var(--bg-canvas)" }}>
+          <span style={{ fontSize: 26, opacity: 0.5 }}>⎇</span>
+          <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>No repositories linked</span>
+          <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)", maxWidth: 380, lineHeight: 1.6 }}>Deployment is configured per repository — each repo carries its own pipeline, environments and secrets. Link one to define how it ships.</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {view === "full" && (
-        <>
-          {/* readiness banner */}
-          <div style={{
-            display: "flex", alignItems: "center", gap: 9, padding: "9px 13px", borderRadius: "var(--r-md)",
-            background: `color-mix(in oklch, ${allReady ? "var(--success)" : "var(--accent)"}, transparent 90%)`,
-            border: `1px solid color-mix(in oklch, ${allReady ? "var(--success)" : "var(--accent)"}, transparent 72%)`,
-          }}>
-            <span style={{ width: 7, height: 7, borderRadius: 99, background: allReady ? "var(--success)" : "var(--accent)" }} />
-            <span style={{ fontFamily: MONO, fontSize: 11, color: allReady ? "var(--success)" : "var(--accent)" }}>{allReady ? "Ready to ship" : `${ready}/${checks.length} defined`}</span>
-            <span style={{ flex: 1 }} />
-            <span style={monoSm}>{allReady ? "deployment issues ready to generate" : "missing: " + missing.join(", ")}</span>
-          </div>
+      <DeployHeader ready={ready} total={d.services.length} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        {d.services.map((svc) => (
+          <RepoDeployCard key={svc.id} svc={svc} setSvc={(patch) => setSvcFor(svc.id, patch)}
+            open={openId === svc.id} onToggle={() => setOpenId((cur) => (cur === svc.id ? null : svc.id))} />
+        ))}
+      </div>
 
-          {/* ───────── A · HOW IT SHIPS ───────── */}
-          <Divider label="A · HOW IT SHIPS" color="var(--accent)" />
-
-          <TargetCard d={d} svc={svc} set={set} setSvc={setSvc} done={ck("target")} />
-        </>
-      )}
-
-      {/* CI/CD pipeline */}
-      <Card n="02" title="CI / CD pipeline" accent="var(--accent)" done={ck("pipeline")}
-        right={<span style={chip}>{d.pipeline.provider}</span>}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {d.pipeline.stages.map((st, i) => {
-            // The final stage's label adapts to the selected service's mode (#1192) when it's a
-            // default ship-stage name; a planner-renamed stage is shown verbatim.
-            const isFinal = i === d.pipeline.stages.length - 1;
-            const stageName = isFinal && (["deploy", "publish", "package"] as string[]).includes(st.name)
-              ? finalStageName(svc) : st.name;
-            return (
-            <div key={st.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "11px 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid " + (st.gate ? "var(--accent-dim)" : "var(--border-soft)") }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 99, background: st.gate ? "var(--accent)" : i === 0 ? "var(--info)" : "var(--success)" }} />
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", textTransform: "uppercase", letterSpacing: ".04em" }}>{stageName}</span>
-                  <span style={{ flex: 1 }} />
-                  {st.gate && <span style={{ ...chip, fontSize: 7.5, color: "var(--accent)", borderColor: "var(--accent-dim)", background: "color-mix(in oklch, var(--accent), transparent 85%)" }}>⛒ gate</span>}
-                </div>
-                <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)", lineHeight: 1.35 }}>{st.cmd || "—"}</span>
-                <Seg value={st.trigger} options={PIPE_TRIGGERS}
-                  onChange={(v) => set({ pipeline: { ...d.pipeline, stages: d.pipeline.stages.map((x) => x.id === st.id ? { ...x, trigger: v } : x) } })} />
-              </div>
-              {i < d.pipeline.stages.length - 1 && (
-                <span style={{ alignSelf: "center", fontFamily: MONO, fontSize: 13, color: d.pipeline.stages[i + 1].gate ? "var(--accent)" : "var(--fg-dim)" }}>{d.pipeline.stages[i + 1].gate ? "⟱" : "↓"}</span>
-              )}
-            </div>
-          );
-          })}
-        </div>
-      </Card>
-
-      {/* Environments */}
-      <Card n="03" title="Environments" hint="branch → env" done={ck("envs")}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {d.envs.map((e, i) => (
-            <div key={e.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>
-                <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: e.id === "prod" ? "var(--success)" : "var(--fg-dim)" }} />
-                <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", width: 52 }}>{e.name}</span>
-                <span style={{ ...chip, fontSize: 7.5, ...(e.auto ? {} : { color: "var(--accent)", borderColor: "var(--accent-dim)" }) }}>{e.auto ? "auto" : "manual"}</span>
-                <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--info)", padding: "1px 6px", borderRadius: 3, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⎇ {e.branch}</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "42%" }}>{e.url || "—"}</span>
-              </div>
-              {i < d.envs.length - 1 && <span style={{ alignSelf: "center", fontFamily: MONO, fontSize: 11, color: "var(--fg-dim)" }}>↓</span>}
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Config & secrets */}
-      <Card n="04" title="Config & secrets" hint={d.config.vault} done={ck("secrets")}>
-        {d.config.config.length === 0 && d.config.secrets.length === 0 ? (
-          <span style={monoSm}>No config or secrets yet — the planner proposes them per environment.</span>
-        ) : (
-          <>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: MONO, fontSize: 10.5 }}>
-              <thead><tr style={{ color: "var(--fg-dim)", textAlign: "left" }}><th style={{ padding: "3px 6px", fontWeight: 400 }}>variable</th>{d.envs.map((e) => <th key={e.id} style={{ padding: "3px 6px", fontWeight: 400 }}>{e.name}</th>)}</tr></thead>
-              <tbody>
-                {d.config.config.map((row) => (
-                  <tr key={row.key} style={{ borderTop: "1px solid var(--border-soft)" }}>
-                    <td style={{ padding: "4px 6px", color: "var(--fg)" }}><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: 2, background: "var(--info)", marginRight: 6 }} />{row.key}</td>
-                    {d.envs.map((e) => <td key={e.id} style={{ padding: "4px 6px", color: "var(--fg-muted)" }}>{row[e.id] || "—"}</td>)}
-                  </tr>
-                ))}
-                {d.config.secrets.map((row) => (
-                  <tr key={row.key} style={{ borderTop: "1px solid var(--border-soft)" }}>
-                    <td style={{ padding: "4px 6px", color: "var(--fg)" }}><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: 2, background: "var(--violet)", marginRight: 6 }} />{row.key}</td>
-                    {d.envs.map((e) => (
-                      <td key={e.id} style={{ padding: "4px 6px" }}>
-                        {row[e.id]
-                          ? <span style={{ color: "var(--violet)" }}>••••✓</span>
-                          : <button onClick={() => set({ config: { ...d.config, secrets: d.config.secrets.map((s) => s.key === row.key ? { ...s, [e.id]: true } : s) } })}
-                              style={{ padding: "1px 7px", borderRadius: 99, cursor: "pointer", fontFamily: MONO, fontSize: 9, color: "var(--danger)", background: "transparent", border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)" }}>+ wire</button>}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10, fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>
-              <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: 2, marginRight: 5, background: "var(--info)" }} />config</span>
-              <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: 2, marginRight: 5, background: "var(--violet)" }} />secret</span>
-              <span style={{ flex: 1 }} />
-              <span>values live in the vault, never here</span>
-            </div>
-          </>
-        )}
-      </Card>
-
-      {/* ───────── B · WHAT IT DEPENDS ON ───────── */}
-      <Divider label="B · WHAT IT DEPENDS ON" color="var(--violet)" />
+      {/* The locked dependency manifest is project-wide (#1127) — it gates separately and renders here. */}
+      <Divider label="DEPENDENCIES" color="var(--violet)" />
       <DependenciesCard deps={dependencies} registries={registries} done={depsOk} />
-
-      {/* ───────── C · RELEASE & HEALTH ───────── */}
-      <Divider label="C · RELEASE & HEALTH" color="var(--fg-muted)" />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
-        <Card n="06" title="Release" done={ck("release")}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 11 }}>
-            {RELEASE_STRATEGIES.map((s) => {
-              const on = d.release.strategy === s.id;
-              return (
-                <button key={s.id} onClick={() => set({ release: { ...d.release, strategy: s.id as ReleaseStrategy } })} style={{
-                  fontFamily: MONO, fontSize: 9, padding: "3px 8px", borderRadius: 99, cursor: "pointer",
-                  background: on ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev)",
-                  border: "1px solid " + (on ? "var(--accent)" : "var(--border-soft)"), color: on ? "var(--accent)" : "var(--fg-dim)",
-                }}>{s.label}</button>
-              );
-            })}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <Toggle on={d.release.autoRollback} onClick={() => set({ release: { ...d.release, autoRollback: !d.release.autoRollback } })} label="Auto-rollback on failed health check" />
-            <Toggle on={d.release.migrateWithDeploy} onClick={() => set({ release: { ...d.release, migrateWithDeploy: !d.release.migrateWithDeploy } })} label="Run migrations with deploy" />
-          </div>
-        </Card>
-        <Card n="07" title="Health" done>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <Toggle on={d.health.probeOn} onClick={() => set({ health: { ...d.health, probeOn: !d.health.probeOn } })} label="Health probe" value={d.health.probe} />
-            <Toggle on={d.health.sloOn} onClick={() => set({ health: { ...d.health, sloOn: !d.health.sloOn } })} label="SLO / uptime" value={d.health.slo || "—"} />
-            <Toggle on={d.health.alertsOn} onClick={() => set({ health: { ...d.health, alertsOn: !d.health.alertsOn } })} label="Alerts route to" value={d.health.alerts || "—"} />
-          </div>
-        </Card>
-      </div>
-
-      {/* ───────── D · READINESS ───────── */}
-      <Divider label="D · READINESS" color="var(--fg-muted)" />
-      <div style={{ borderRadius: "var(--r-lg)", border: "1px solid var(--border-soft)", background: "var(--bg-canvas)", padding: "13px 14px" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 14 }}>
-          {checks.map((c) => (
-            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: "var(--r-sm)", background: "var(--bg-elev)" }}>
-              <span style={{ width: 15, textAlign: "center", fontFamily: MONO, fontSize: 11, color: c.ok ? "var(--success)" : "var(--fg-dim)" }}>{c.ok ? "✓" : "○"}</span>
-              <span style={{ fontFamily: "var(--sans)", fontSize: 11, color: c.ok ? "var(--fg)" : "var(--fg-muted)" }}>{c.label}</span>
-              <span style={{ flex: 1 }} />
-              <span style={{ fontFamily: MONO, fontSize: 9, color: c.ok ? "var(--fg-muted)" : "var(--fg-dim)" }}>{c.detail}</span>
-            </div>
-          ))}
-          {/* dependencies isn't in deployChecks (it gates separately, #1127) — show it here too */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: "var(--r-sm)", background: "var(--bg-elev)" }}>
-            <span style={{ width: 15, textAlign: "center", fontFamily: MONO, fontSize: 11, color: depsOk ? "var(--success)" : "var(--fg-dim)" }}>{depsOk ? "✓" : "○"}</span>
-            <span style={{ fontFamily: "var(--sans)", fontSize: 11, color: depsOk ? "var(--fg)" : "var(--fg-muted)" }}>Dependencies locked</span>
-            <span style={{ flex: 1 }} />
-            <span style={{ fontFamily: MONO, fontSize: 9, color: depsOk ? "var(--fg-muted)" : "var(--fg-dim)" }}>{depsOk ? `${dependencies.length} locked` : "none yet"}</span>
-          </div>
-        </div>
-        <div style={{ ...grpLabel, marginBottom: 9, display: "flex", alignItems: "center", gap: 6 }}>
-          deployment issues at publish
-          <span style={{ flex: 1 }} />
-          <span style={{ textTransform: "none", letterSpacing: 0 }}>stream</span>
-          <span style={{ ...chip, color: "var(--accent)", borderColor: "var(--accent-dim)", background: "color-mix(in oklch, var(--accent), transparent 86%)" }}>deploy</span>
-        </div>
-        {issues.length === 0 ? (
-          <span style={monoSm}>Issues generate once a deploy target is set — one workflow per service, env provisioning, secret wiring, and a prod health check.</span>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {issues.map((iss, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: "var(--r-sm)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>
-                <span style={{ fontFamily: MONO, fontSize: 11, color: iss.blocking ? "var(--fg-dim)" : "var(--success)" }}>＋</span>
-                <span style={{ fontFamily: MONO, fontSize: 9.5, color: iss.blocking ? "var(--fg-muted)" : "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{iss.text}</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ fontFamily: MONO, fontSize: 7.5, padding: "1px 6px", borderRadius: 99, background: "var(--bg-canvas)",
-                  color: iss.blocking ? "var(--danger)" : "var(--fg-dim)",
-                  border: "1px solid " + (iss.blocking ? "color-mix(in oklch, var(--danger), transparent 60%)" : "var(--border-soft)") }}>{iss.blocking ? "blocking" : iss.tag}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
