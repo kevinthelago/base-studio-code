@@ -18,6 +18,8 @@ import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/pane
 import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
 import { resolveAllowedCommands } from "@/shared/lib/session/allowedCommands";
 import { resolveDirectorDrive } from "@/features/planner/fleet/directorDrive";
+import { applyCommonsGate } from "@/features/planner/fleet/commonsGate";
+import { commonsGlobsForStack, stackTagsFromSection } from "@/shared/lib/session/commons";
 import { resolveHooks } from "@/features/extensions/lib/hooks";
 import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "@/features/extensions/lib/mcpServers";
 import { resolveReferenceContext, resolveStartupPrompt } from "@/shared/lib/session/assignments";
@@ -398,6 +400,16 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // caller kills the old panes first), like triageStartProject.
           const baseTabName = `${projectName} · build`;
           const hasDirector = fleet.director.enabled;
+
+          // Director-owned commons (#851): derive the repo-root commons set from the project's stack
+          // (`stack.md`), then (a) strip those paths from every feature stream's `owns` so no worker
+          // owns `.gitignore`/`package.json`/CI config, and (b) gate every feature stream on the
+          // commons-landed sentinel so the director scaffolds + lands them first (Phase 0). The
+          // commons globs also become the director's scoped writeGlobs below (its only code writes).
+          const commonsGlobs = hasDirector
+            ? commonsGlobsForStack(stackTagsFromSection(s.planSections[projectKey]?.stack ?? ""))
+            : [];
+          const plan = commonsGlobs.length ? applyCommonsGate(fleet, commonsGlobs) : fleet;
           const newPaneDirectorDrive     = { ...s.paneDirectorDrive };
           const newPaneDirectorMode      = { ...s.paneDirectorMode };
           const newPaneStream            = { ...s.paneStream };
@@ -405,7 +417,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // Independents first so the launched wave is what can run now.
           // ALL intended workers are launched across however many build tabs are needed
           // (#479 — no silent drop past the recommended count; recommended is advisory).
-          const ordered = [...fleet.streams].sort(
+          const ordered = [...plan.streams].sort(
             (a, b) => (a.dependsOn.length ? 1 : 0) - (b.dependsOn.length ? 1 : 0),
           );
           const workers = ordered;
@@ -526,8 +538,14 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                     if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
                   }
                   tabPaneNames[i] = "director";
-                  newPaneDirectorDrive[key] = resolveDirectorDrive(fleet.director.drive);
-                  newPaneDirectorMode[key] = strategySettings(resolveStrategy(undefined, fleet.strategy)).director;
+                  newPaneDirectorDrive[key] = resolveDirectorDrive(plan.director.drive);
+                  newPaneDirectorMode[key] = strategySettings(resolveStrategy(undefined, plan.strategy)).director;
+                  // Director-owned commons (#851): the director's scoped write boundary is the
+                  // commons set. With role `code: "none"` this is the carve-out (sessionRoles
+                  // `hasScopedWriteCarveOut`) — it may write EXACTLY these globs (.gitignore,
+                  // manifests, CI config) and is denied every other code write; the bsc-scope hook
+                  // hard-blocks anything outside them. Empty ⇒ no carve-out, full code:none deny.
+                  if (commonsGlobs.length) newPaneRoleGlobs[key] = commonsGlobs;
                 } else {
                   // Worker runs in its own git worktree on its own branch. Prefer the
                   // absolute path ensure_worktree returned (#905) over the bscBaseDir-derived
@@ -537,7 +555,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   if (sess.prompt) {
                     newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
                   } else {
-                    newPaneStartupPromptText[key] = buildStreamPrompt(sess, resolveStrategy(sess.strategy, fleet.strategy));
+                    newPaneStartupPromptText[key] = buildStreamPrompt(sess, resolveStrategy(sess.strategy, plan.strategy));
                   }
                   newPaneAllowedCommands[key] = resolveAllowedCommands(
                     s.allowedCommands,

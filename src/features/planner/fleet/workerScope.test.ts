@@ -27,8 +27,9 @@ describe("buildWorkerScope (#844)", () => {
     const md = buildWorkerScope(stream());
     expect(md).toContain("not the full plan");
     expect(md).toContain("defer to the director");
-    // Sanity: it stays short (a lane, not a spec).
-    expect(md.length).toBeLessThan(1400);
+    // Sanity: it stays short (a lane, not a spec). The commons-ownership note (#851) is part of
+    // the lane, so the budget accommodates it while still being far shy of the full plan.
+    expect(md.length).toBeLessThan(1700);
   });
 
   it("tells the worker the director closes issues — not to run gh issue close (#906)", () => {
@@ -59,5 +60,20 @@ describe("buildWorkerScope (#844)", () => {
   it("omits the dependency block entirely when the repo has no locked deps", () => {
     expect(buildWorkerScope(stream())).not.toContain("Dependencies (locked");
     expect(buildWorkerScope(stream(), [])).not.toContain("Dependencies (locked");
+  });
+
+  it("tells the worker the commons are the director's and to request changes (#851)", () => {
+    const md = buildWorkerScope(stream());
+    expect(md).toContain("Repo-root commons are the director's, not yours");
+    expect(md).toContain("`bsc-ask`");
+  });
+
+  it("surfaces the commons-landed gate as a note, NOT as a peer contract dependency (#851)", () => {
+    const md = buildWorkerScope(stream({ dependsOn: ["api", "commons"] }));
+    // The contracts line lists real seams only — the commons sentinel is filtered out of it.
+    expect(md).toMatch(/build against the contracts of:\*\* api\b/i);
+    expect(md).not.toMatch(/contracts of:\*\* [^\n]*commons/i);
+    // …and the commons note acknowledges it's already scaffolded.
+    expect(md).toContain("already scaffolded on develop");
   });
 });
