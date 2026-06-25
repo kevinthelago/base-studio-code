@@ -8,8 +8,24 @@ import { type ModelId, MODELS } from "@/app/console/lib/models";
 // now that the catalog lives in the shared module (#…).
 export type { ModelId };
 
+// LLM-provider → its themed hue + the harness it runs under. Moved here from the header pill
+// (#1319): the compact header trigger is tinted by session STATUS, so the provider identity now
+// surfaces inside the menu. Absent / "claude" ⇒ Claude Code (anthropic); else the bsc-agent shell.
+const PROV_COLOR: Record<string, string> = {
+  claude: "var(--prov-anthropic)", anthropic: "var(--prov-anthropic)",
+  openai: "var(--prov-openai)", codex: "var(--prov-openai)",
+  gemini: "var(--prov-google)", google: "var(--prov-google)",
+  local: "var(--prov-local)", ollama: "var(--prov-local)",
+};
+const harnessOf = (provider?: string) =>
+  !provider || provider === "claude" || provider === "anthropic" ? "Claude Code" : "bsc-agent";
+
 interface PaneMenuProps {
   agent: string;
+  /** LLM provider id — drives the harness label + provider-hue dot in the menu header (#1319). */
+  provider?: string;
+  /** A session is live in this pane (`claudeActive`) — the menu header shows running vs idle. */
+  running?: boolean;
   /** The model configured for this pane (what `claude --model` launches next). */
   model: ModelId;
   /** The model the CLI is ACTUALLY running right now (mapped from the transcript, #1181), when
@@ -38,9 +54,11 @@ interface PaneMenuProps {
 }
 
 export function PaneMenu({
-  agent, model, runningModel, active, available, maxHeight, fullscreen, disabled,
+  agent, provider, running, model, runningModel, active, available, maxHeight, fullscreen, disabled,
   onToggleFullscreen, onToggleDisable, onRedraw, onClose, onRename, onViewChange, onModel,
 }: PaneMenuProps) {
+  const provColor = PROV_COLOR[provider ?? "claude"] ?? "var(--prov-local)";
+  const harness = harnessOf(provider);
   // The highlighted row reflects what's ACTUALLY running when known (#1181), else the
   // configured model. Selecting a different row still sets the model for the next launch.
   const selected = runningModel ?? model;
@@ -69,6 +87,16 @@ export function PaneMenu({
             style={{ color: "var(--fg-dim)", fontSize: 10, cursor: "pointer" }}
             onClick={onRename}
           >rename</span>
+        </div>
+        {/* Harness + provider (#1319) — moved here from the header pill. The provider-hue dot + the
+            harness label that once sat in the header now identify the runtime inside the menu. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: provColor }} />
+          <span style={{ fontSize: 10, color: "var(--fg-muted)" }}>{harness}</span>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: 9.5, color: running ? "var(--accent)" : "var(--fg-dim)" }}>
+            {running ? "running" : "idle"}
+          </span>
         </div>
       </div>
 
