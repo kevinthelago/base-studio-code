@@ -169,6 +169,44 @@ pub(crate) fn write_worker_context(
     // context the planner had. skills.md lives at the hub (not in the worktree), so the
     // planner's "read skills.md" note doesn't help a worker — inline it instead.
     inject_skills(hub, &wt_local);
+    // Point UI workers at the user's dropped Claude Design (#1373) — the agent self-selects relevance.
+    inject_design_context(hub, &wt_local);
+}
+
+/// Marker for the dropped-design section, used to keep `inject_design_context` idempotent.
+const DESIGN_CONTEXT_MARKER: &str = "## UI design (dropped by the user)";
+
+/// Append a CLAUDE.local.md section pointing a worker at the user's dropped Claude Design (#1373):
+/// given the screen/component file names, tell the worker to build the REAL components from them.
+/// Pure (file names → markdown), `None` when there's no dropped design.
+pub(crate) fn design_context_block(screens: &[String]) -> Option<String> {
+    if screens.is_empty() {
+        return None;
+    }
+    let list = screens.iter().map(|s| format!("- `{s}`")).collect::<Vec<_>>().join("\n");
+    Some(format!(
+        "\n{DESIGN_CONTEXT_MARKER}\n\nThe user provided a Claude Design for this project. Its screens / \
+         components live in the project hub's `design/` (raw exports) and `.ui-skeleton/` (the \
+         render-preview's copy):\n\n{list}\n\nIf your stream owns UI / screen work, BUILD THE REAL \
+         components from these — match the provided design rather than inventing your own; treat the \
+         skeleton as the source of truth for the layout and structure.\n"
+    ))
+}
+
+/// Inline a dropped-design reference into a worker's CLAUDE.local.md (#1373): reads the hub's
+/// `.ui-skeleton/` (populated from `design/`) for the screen names and appends `design_context_block`.
+/// Idempotent; a no-op when there's no dropped design.
+pub(crate) fn inject_design_context(hub: &std::path::Path, wt_local: &std::path::Path) {
+    let screens: Vec<String> = crate::project::inspect::read_skeleton_dir(&hub.join(".ui-skeleton"))
+        .into_iter()
+        .map(|(rel, _)| rel)
+        .collect();
+    let Some(block) = design_context_block(&screens) else { return };
+    let cur = std::fs::read_to_string(wt_local).unwrap_or_default();
+    if cur.contains(DESIGN_CONTEXT_MARKER) {
+        return; // already injected
+    }
+    let _ = std::fs::write(wt_local, format!("{}\n{}", cur.trim_end(), block));
 }
 /// Inline the hub's attached skills (`skills.md`, #636) into a worker's CLAUDE.local.md
 /// so the worker auto-loads the same skill context the planner had. Idempotent; a no-op
@@ -219,6 +257,48 @@ mod tests {
         }
         // Only the additive subset — NOT the structured manifests (a blind union breaks JSON/TOML).
         assert!(!attrs.contains("package.json merge=union"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// #1373: the dropped-design block lists the screens + points at design/ & .ui-skeleton/.
+    #[test]
+    fn design_context_block_lists_screens_or_returns_none() {
+        assert!(design_context_block(&[]).is_none(), "no dropped design ⇒ no block");
+        let block = design_context_block(&["Login.jsx".into(), "components/Button.tsx".into()]).unwrap();
+        assert!(block.contains(DESIGN_CONTEXT_MARKER));
+        assert!(block.contains("Login.jsx") && block.contains("components/Button.tsx"));
+        assert!(block.contains(".ui-skeleton"));
+    }
+
+    /// #1373: inject reads the hub's .ui-skeleton/ for screen names and appends the block once.
+    #[test]
+    fn inject_design_context_appends_once_from_the_skeleton() {
+        let dir = unique_dir("design-ctx");
+        let hub = dir.join("hub");
+        fs::create_dir_all(hub.join(".ui-skeleton")).unwrap();
+        fs::write(hub.join(".ui-skeleton").join("Login.jsx"), "export default () => null").unwrap();
+        let wt_local = dir.join("CLAUDE.local.md");
+        fs::write(&wt_local, "# worker scope\n").unwrap();
+
+        inject_design_context(&hub, &wt_local);
+        let after = fs::read_to_string(&wt_local).unwrap();
+        assert!(after.contains(DESIGN_CONTEXT_MARKER) && after.contains("Login.jsx"));
+
+        inject_design_context(&hub, &wt_local); // idempotent
+        assert_eq!(fs::read_to_string(&wt_local).unwrap().matches(DESIGN_CONTEXT_MARKER).count(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// #1373: no dropped design (empty/absent .ui-skeleton/) ⇒ no block, no churn.
+    #[test]
+    fn inject_design_context_is_a_noop_without_dropped_design() {
+        let dir = unique_dir("no-design");
+        let hub = dir.join("hub");
+        fs::create_dir_all(&hub).unwrap();
+        let wt_local = dir.join("CLAUDE.local.md");
+        fs::write(&wt_local, "# worker scope\n").unwrap();
+        inject_design_context(&hub, &wt_local);
+        assert!(!fs::read_to_string(&wt_local).unwrap().contains(DESIGN_CONTEXT_MARKER));
         let _ = fs::remove_dir_all(&dir);
     }
 
