@@ -1298,7 +1298,19 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
     case "integrations":
       return <FocusedIntegrationsBody projectId={projectId} />;
     case "repos":
-      return <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} />;
+      // #1383: one "Repositories & Deployment" pane. The link section always shows; the deploy
+      // ("ship") section folds in below it when the blueprint opted into ship (phase.ship). A
+      // blueprint that still lists Deploy as its own stage uses `case "deploy"` below (unchanged).
+      return (
+        <>
+          <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} />
+          {phase.ship && (
+            <div style={{ marginTop: 18 }}>
+              <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} dependencies={data?.dependencies} registries={data?.registries} />
+            </div>
+          )}
+        </>
+      );
     case "deploy":
       return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} dependencies={data?.dependencies} registries={data?.registries} />;
     case "context":
