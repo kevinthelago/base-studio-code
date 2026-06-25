@@ -18,6 +18,7 @@ import { PurposeView, StagesView, CapabilitiesView, PublishView } from "../bluep
 import type { BlueprintSkillItem } from "../blueprints/blueprintSkills";
 import type { McpLibraryItem } from "../blueprints/blueprintMcp";
 import { FocusedSourceBody } from "../bodies/FocusedSourceBody";
+import { SharedDependenciesSection } from "../bodies/SharedDependencies";
 import { FocusedTargetsBody } from "../bodies/FocusedTargetsBody";
 import { FocusedLegitimacyBody } from "../bodies/FocusedLegitimacyBody";
 import { FocusedAcquireBody } from "../bodies/FocusedAcquireBody";
@@ -1295,6 +1296,12 @@ function StreamsBody({ data, fleet, onPerm, onPreset, onFlow, onModel, onGenerat
             focusedStream={focusedStream}
             onSelectStream={(id) => setFocus(id ? { type: "agent", id } : null)}
           />
+        </div>
+      )}
+      {/* Shared dependencies (#1429): per-repo → per-stream lock for repos 2+ streams build. */}
+      {fleet && (
+        <div style={{ marginTop: 18 }}>
+          <SharedDependenciesSection agents={data?.agents} dependencies={data?.dependencies} registries={data?.registries} />
         </div>
       )}
     </>
