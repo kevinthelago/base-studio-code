@@ -1,7 +1,7 @@
 {
   "name": "Permissions",
   "glyph": "⛉",
-  "gate": "every stream scoped",
+  "gate": "every stream scoped + shared deps locked",
   "deps": [
     "structure"
   ],
@@ -25,5 +25,5 @@
     ]
   },
   "blurb": "Least-privilege profile per work stream.",
-  "prompt": "For every work stream, derive a least-privilege profile: allowed commands, write-path globs,\nnetwork access, and a git/gh push policy. Map each to a role (worker / director / triage).\n\nRecord the whole fleet IN THE PLAN DB — pipe a FleetPlan JSON to `bsc-plan fleet set` (do NOT write\nfleet.json):\n  `echo '{\"recommended\":<n>,\"reasoning\":\"…\",\"director\":{\"enabled\":true,\"drive\":\"…\"},\"topology\":\"director|peer|hybrid\",\"streams\":[{\"id\":\"…\",\"repo\":\"…\",\"owns\":[…],\"issues\":[…],\"dependsOn\":[…],\"profile\":\"…\",\"perm\":{…},\"flow\":{…}}]}' | bsc-plan fleet set`\n(`bsc-plan fleet get` shows the stored fleet.)\n\nChoose the coordination TOPOLOGY (`topology`): \"director\" (hub-and-spoke — every relationship routes\nthrough the director), \"peer\" (mesh — agents hand off directly), or \"hybrid\" (per-edge, using each\nedge's `via`). Set the director `drive` when one is enabled. The user can flip this in the Permissions\npane and the Structure relationship graph re-routes live.\n\nGate: every stream has a scoped profile and a role."
+  "prompt": "For every work stream, derive a least-privilege profile: allowed commands, write-path globs,\nnetwork access, and a git/gh push policy. Map each to a role (worker / director / triage).\n\nRecord the whole fleet IN THE PLAN DB — pipe a FleetPlan JSON to `bsc-plan fleet set` (do NOT write\nfleet.json):\n  `echo '{\"recommended\":<n>,\"reasoning\":\"…\",\"director\":{\"enabled\":true,\"drive\":\"…\"},\"topology\":\"director|peer|hybrid\",\"streams\":[{\"id\":\"…\",\"repo\":\"…\",\"owns\":[…],\"issues\":[…],\"dependsOn\":[…],\"profile\":\"…\",\"perm\":{…},\"flow\":{…}}]}' | bsc-plan fleet set`\n(`bsc-plan fleet get` shows the stored fleet.)\n\nChoose the coordination TOPOLOGY (`topology`): \"director\" (hub-and-spoke — every relationship routes\nthrough the director), \"peer\" (mesh — agents hand off directly), or \"hybrid\" (per-edge, using each\nedge's `via`). Set the director `drive` when one is enabled. The user can flip this in the Permissions\npane and the Structure relationship graph re-routes live.\n\nGate: every stream has a scoped profile and a role.\n\n**Shared dependencies** (#1429) — for any repo that 2+ streams build, each stream declares its libraries and you reconcile them ONCE into the repo's lock so the parallel fleet never redefines them (which collides at integration). Record the manifest with `bsc-plan deps set` (JSON on stdin: a `dependencies` array — each `{repo, ecosystem: npm|cargo, name, version, dev?, why, source?, stream}`, tagging the declaring `stream` — plus a `registries` map defining any non-public `source` with its `url`, `scope`, and `auth` secret NAME). A repo with a SINGLE owning stream needs no pre-lock — its deps stay agent-managed. `bsc-plan deps get` shows the manifest."
 }
