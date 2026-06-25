@@ -13,12 +13,6 @@ import { ingestCoordLog, emptyCoordState } from "./coordination";
 import { classifyWorkerEnd, type OwnedIssue } from "./workerEnd";
 import { log } from "../core/log";
 
-/** The pane's owning tab index, from its positional id (fleet panes are `t{tab}p{pane}`). */
-function tabIdxOf(paneId: string): number | null {
-  const m = /^t(\d+)p\d+$/.exec(paneId);
-  return m ? Number(m[1]) : null;
-}
-
 /** Evaluate a worker's owned issues on PTY exit and mark the pane ended accordingly. */
 async function evaluateExit(paneId: string): Promise<void> {
   const s = useAppStore.getState();
@@ -27,8 +21,10 @@ async function evaluateExit(paneId: string): Promise<void> {
   const stream = s.fleetPaneStreams[paneId];
   if (!stream) return;
 
-  const tabIdx = tabIdxOf(paneId);
-  const projectKey = tabIdx != null ? s.tabs[tabIdx]?.projectKey : undefined;
+  // The owning project key, from the tab that minted this pane id. The old positional
+  // `t{tab}p{pane}` parse broke for fleet workers (#1379): #1176 gave them stable
+  // `<projectKey>:<streamId>` ids, so look the pane up in its tab's `paneIds` instead.
+  const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
   if (!projectKey) return; // can't query the DB without the project
 
   const issues = await invoke<OwnedIssue[]>("plan_list_issues", { projectKey, stream: stream.id })

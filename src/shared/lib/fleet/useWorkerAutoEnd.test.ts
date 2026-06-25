@@ -6,6 +6,12 @@ import { useAppStore } from "@/store";
 import { useWorkerAutoEnd } from "./useWorkerAutoEnd";
 import type { AgentStream } from "@/features/planner/stages/planSections";
 
+// Fleet workers carry STABLE pane ids (#1176): `<projectKey>:<streamId>`, not positional `t{n}p{n}`.
+// The project key is resolved from the owning tab's `paneIds` (#1379 regression fix) — these ids +
+// the tab's `paneIds` mirror what fleetStartProject actually mints.
+const WORKER = "demo:api";
+const DIRECTOR = "demo:director";
+
 const handlers: Record<string, () => void> = {};
 
 const stream = (id: string): AgentStream => ({ id, name: id, repo: "me/app", owns: [], issues: [], dependsOn: [] });
@@ -24,27 +30,28 @@ beforeEach(() => {
     return Promise.resolve(undefined);
   });
   useAppStore.setState({
-    endedPanes: {}, paneStatus: {}, paneRoles: { t0p0: "worker", t0p1: "director" },
-    fleetPaneStreams: { t0p0: stream("api"), t0p1: stream("director") },
-    tabs: [{ id: "t", name: "build", layout: "2×1", state: "idle", runId: 0, projectKey: "demo" }] as never,
+    endedPanes: {}, paneStatus: {}, paneRoles: { [WORKER]: "worker", [DIRECTOR]: "director" },
+    fleetPaneStreams: { [WORKER]: stream("api"), [DIRECTOR]: stream("director") },
+    tabs: [{ id: "t", name: "build", layout: "2×1", state: "idle", runId: 0, projectKey: "demo", paneIds: [DIRECTOR, WORKER] }] as never,
   });
 });
 
-describe("useWorkerAutoEnd (#920)", () => {
+describe("useWorkerAutoEnd (#920 / #1379)", () => {
   it("subscribes to pty_exit for worker panes only (not the director)", async () => {
     renderHook(() => useWorkerAutoEnd());
-    await waitFor(() => expect(handlers["pty_exit_t0p0"]).toBeTypeOf("function"));
-    expect(handlers["pty_exit_t0p1"]).toBeUndefined(); // director is not auto-ended
+    await waitFor(() => expect(handlers[`pty_exit_${WORKER}`]).toBeTypeOf("function"));
+    expect(handlers[`pty_exit_${DIRECTOR}`]).toBeUndefined(); // director is not auto-ended
   });
 
   it("marks a worker done when all owned issues are complete on PTY exit", async () => {
     renderHook(() => useWorkerAutoEnd());
-    await waitFor(() => expect(handlers["pty_exit_t0p0"]).toBeTypeOf("function"));
+    await waitFor(() => expect(handlers[`pty_exit_${WORKER}`]).toBeTypeOf("function"));
 
-    handlers["pty_exit_t0p0"]();
+    handlers[`pty_exit_${WORKER}`]();
 
-    await waitFor(() => expect(useAppStore.getState().endedPanes["t0p0"]).toBeTruthy());
-    expect(useAppStore.getState().endedPanes["t0p0"]).toMatchObject({ state: "done", streamId: "api" });
+    await waitFor(() => expect(useAppStore.getState().endedPanes[WORKER]).toBeTruthy());
+    expect(useAppStore.getState().endedPanes[WORKER]).toMatchObject({ state: "done", streamId: "api" });
+    // The project key resolves from the tab's paneIds (the #1176/#1379 regression guard) — not a positional id.
     expect(invoke).toHaveBeenCalledWith("plan_list_issues", { projectKey: "demo", stream: "api" });
   });
 
@@ -55,22 +62,23 @@ describe("useWorkerAutoEnd (#920)", () => {
       return Promise.resolve(undefined);
     });
     renderHook(() => useWorkerAutoEnd());
-    await waitFor(() => expect(handlers["pty_exit_t0p0"]).toBeTypeOf("function"));
+    await waitFor(() => expect(handlers[`pty_exit_${WORKER}`]).toBeTypeOf("function"));
 
-    handlers["pty_exit_t0p0"]();
+    handlers[`pty_exit_${WORKER}`]();
 
-    await waitFor(() => expect(useAppStore.getState().endedPanes["t0p0"]?.state).toBe("needs-attention"));
+    await waitFor(() => expect(useAppStore.getState().endedPanes[WORKER]?.state).toBe("needs-attention"));
   });
 
-  it("does nothing when the project key can't be resolved (no DB query)", async () => {
+  it("does nothing when the project key can't be resolved (no paneIds → no DB query)", async () => {
+    // A tab with no paneIds can't map the pane to a project — evaluateExit must bail (no #1176 fallback).
     useAppStore.setState({ tabs: [{ id: "t", name: "build", layout: "2×1", state: "idle", runId: 0 }] as never });
     renderHook(() => useWorkerAutoEnd());
-    await waitFor(() => expect(handlers["pty_exit_t0p0"]).toBeTypeOf("function"));
+    await waitFor(() => expect(handlers[`pty_exit_${WORKER}`]).toBeTypeOf("function"));
 
-    handlers["pty_exit_t0p0"]();
+    handlers[`pty_exit_${WORKER}`]();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(useAppStore.getState().endedPanes["t0p0"]).toBeUndefined();
+    expect(useAppStore.getState().endedPanes[WORKER]).toBeUndefined();
     expect(invoke).not.toHaveBeenCalledWith("plan_list_issues", expect.anything());
   });
 });
