@@ -153,6 +153,19 @@ pub fn plan_get_deploy(project_key: String) -> Result<Option<serde_json::Value>,
     open(&project_key)?.deploy_get().map_err(|e| e.to_string())
 }
 
+// ── dependency manifest (#1191) — the locked library manifest as one blob (was `dependencies.json`).
+//    The poll coerces it into the DEPENDENCIES section + the one-time legacy-file import writes here. ──
+
+#[tauri::command]
+pub fn plan_set_deps(project_key: String, manifest: serde_json::Value) -> Result<(), String> {
+    open(&project_key)?.deps_set(&manifest).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn plan_get_deps(project_key: String) -> Result<Option<serde_json::Value>, String> {
+    open(&project_key)?.deps_get().map_err(|e| e.to_string())
+}
+
 // ── MCP assignments (#1021) — catalog server names scoped to the project; the poll resolves each. ──
 
 #[tauri::command]

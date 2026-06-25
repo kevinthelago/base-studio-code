@@ -45,7 +45,7 @@ export interface DerivePlanStageInput {
   uiRouted?: boolean;
   /** User-facing capabilities defined in the Features stage (each becomes a stream). */
   features: { count: number; allConfirmed: boolean };
-  /** Libraries locked in the dependency manifest (#1111) — `dependencies.json` entry count. */
+  /** Libraries locked in the dependency manifest (#1111/#1191) — plan.db `deps` entry count. */
   dependencies?: { count: number };
   /** Whether a data migration source pipeline is active for this project. Absent ⇒ false. */
   migrationSourceEnabled?: boolean;

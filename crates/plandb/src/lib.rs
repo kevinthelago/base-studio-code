@@ -6,6 +6,17 @@
 //! This crate is Tauri-free on purpose: the desktop app (`src-tauri`) and the `bsc-plan` agent CLI
 //! both depend on it, so the CLI stays a tiny binary instead of relinking the whole app.
 //!
+//! ## The file-vs-plan.db boundary (#1191)
+//! plan.db is the single store for every STRUCTURED planning artifact the planner produces — issues,
+//! features, phases, the fleet, the deploy config, MCP assignments, the authored blueprint, the
+//! Context required-SET, and the locked dependency manifest (`deps`, this issue — was a raw
+//! `dependencies.json`). The ONLY planning artifacts that stay as flat files are CONTEXT documents
+//! loaded as session context: the Context-stage section files (`goal.md`, `scope.md`, `stack.md`,
+//! `architecture.md`, … — their required-set is in `context`, their PROSE in `context/<topic>.md`),
+//! plus the planner/app-authored context surfaces (`kb_index.md`, `automations.md`,
+//! `github_context.md`, the `prompts/*-kickoff.md` briefs, `.ui-skeleton/`). Those are prose context,
+//! not interactive structured records — they belong on the file side of the line.
+//!
 //! Increment 1 (issues-first): the `issues` table + CRUD + a render to the `issues.json` shape the
 //! frontend `parseIssuesFile` expects. Value-list fields are stored as JSON text for now; the
 //! relational `dependsOn` can normalize into a join table later if graph queries want it.
@@ -315,8 +326,8 @@ impl Store {
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.conn.execute_batch(
             "DELETE FROM issues; DELETE FROM features; DELETE FROM repos; DELETE FROM phases; \
-             DELETE FROM fleet_streams; DELETE FROM fleet_meta; DELETE FROM deploy; DELETE FROM mcp; \
-             DELETE FROM blueprint; DELETE FROM context; DELETE FROM triage_runs;",
+             DELETE FROM fleet_streams; DELETE FROM fleet_meta; DELETE FROM deploy; DELETE FROM deps; \
+             DELETE FROM mcp; DELETE FROM blueprint; DELETE FROM context; DELETE FROM triage_runs;",
         )
     }
 
@@ -493,6 +504,30 @@ impl Store {
     /// The stored deploy config, or None if unset.
     pub fn deploy_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
         let mut stmt = self.conn.prepare("SELECT data FROM deploy WHERE id = 1")?;
+        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        match rows.next() {
+            Some(s) => Ok(serde_json::from_str(&s?).ok()),
+            None => Ok(None),
+        }
+    }
+
+    // ── dependency manifest (#1191) — the locked library manifest (the Deploy stage's OTHER half) as
+    //    one JSON blob (single row): `{ dependencies: PlanDependency[], registries: {key→…} }`. Was a
+    //    raw `dependencies.json` file outside plan.db; now durable here like the deploy config, so the
+    //    plan.db ⇄ GitHub recovery path round-trips it and the planner has a `bsc-plan` verb for it. ──
+
+    /// Replace the project's dependency manifest (a single JSON blob — the full DependencyManifest shape).
+    pub fn deps_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO deps (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+            params![data.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// The stored dependency manifest, or None if unset.
+    pub fn deps_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM deps WHERE id = 1")?;
         let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
         match rows.next() {
             Some(s) => Ok(serde_json::from_str(&s?).ok()),
@@ -693,6 +728,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             data        TEXT NOT NULL DEFAULT '{}'
          );
          CREATE TABLE IF NOT EXISTS deploy (
+            id          INTEGER PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}'
+         );
+         CREATE TABLE IF NOT EXISTS deps (
             id          INTEGER PRIMARY KEY,
             data        TEXT NOT NULL DEFAULT '{}'
          );
@@ -1087,6 +1126,29 @@ mod tests {
         assert_eq!(s.deploy_get().unwrap().unwrap()["services"].as_array().unwrap().len(), 0);
         s.clear().unwrap();
         assert!(s.deploy_get().unwrap().is_none());
+    }
+
+    #[test]
+    fn deps_set_get_round_trips_and_clears() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.deps_get().unwrap().is_none());
+        let manifest = serde_json::json!({
+            "dependencies": [
+                { "repo": "owner/app", "ecosystem": "npm", "name": "zod", "version": "^3.23", "why": "schema validation" },
+                { "repo": "owner/app", "ecosystem": "npm", "name": "@acme/ui", "version": "^2", "source": "internal", "why": "design system" }
+            ],
+            "registries": { "internal": { "url": "https://npm.internal/", "scope": "@acme", "auth": "INTERNAL_NPM_TOKEN" } }
+        });
+        s.deps_set(&manifest).unwrap();
+        let got = s.deps_get().unwrap().unwrap();
+        assert_eq!(got["dependencies"].as_array().unwrap().len(), 2);
+        assert_eq!(got["dependencies"][0]["name"], serde_json::json!("zod"));
+        assert_eq!(got["registries"]["internal"]["scope"], serde_json::json!("@acme"));
+        // a fresh set replaces the whole blob (single row)
+        s.deps_set(&serde_json::json!({ "dependencies": [], "registries": {} })).unwrap();
+        assert_eq!(s.deps_get().unwrap().unwrap()["dependencies"].as_array().unwrap().len(), 0);
+        s.clear().unwrap();
+        assert!(s.deps_get().unwrap().is_none());
     }
 
     #[test]
