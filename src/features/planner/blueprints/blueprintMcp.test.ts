@@ -20,8 +20,9 @@ describe("buildMcpLibrary", () => {
     // Hook catalog templates (Block PII / Auto-format) are not MCP servers.
     expect(names).not.toContain("Block PII");
     expect(names).not.toContain("Auto-format");
-    // First-party servers are flagged downloadable.
-    expect(lib.find((i) => i.name === "Compliance")!.downloadable).toBe(true);
+    // Downloadable first-party servers are flagged; the built-in Compliance (#1005) is not.
+    expect(lib.find((i) => i.name === "Dependency Graph")!.downloadable).toBe(true);
+    expect(lib.find((i) => i.name === "Compliance")!.downloadable).toBe(false);
   });
 
   it("adds installed MCP servers not already in the catalog, deduped by name", () => {
@@ -74,18 +75,19 @@ describe("applyBlueprintMcp (#897 Phase 2)", () => {
 
   it("scopes every attached server to the project (enabled) and returns the downloadable ones", () => {
     const bp = {
-      mcp: ["Compliance"],
-      sections: [sec({ uid: "a", mcp: ["Dependency Graph"] })],
+      mcp: ["Compliance"], // built-in native server (#1005) — scoped but not cloned
+      sections: [sec({ uid: "a", mcp: ["Dependency Graph"] })], // downloadable first-party
     } as unknown as Blueprint;
     const store = makeStore();
     const downloadable = applyBlueprintMcp(store, bp, "proj", "/base");
     // Both servers added, enabled, scoped to the project.
     expect(store.mcpServers.map((e) => e.name).sort()).toEqual(["Compliance", "Dependency Graph"]);
     expect(store.mcpServers.every((e) => e.enabled && e.projects.includes("proj"))).toBe(true);
-    // First-party (catalog-linked) servers are returned for the caller to clone.
-    expect(downloadable.sort()).toEqual(["Compliance", "Dependency Graph"]);
-    // {dir} resolved for the first-party server.
-    expect(store.mcpServers.find((e) => e.name === "Compliance")!.args).not.toContain("{dir}");
+    // Only catalog-linked (downloadable) servers are returned for the caller to clone — the
+    // built-in Compliance is not.
+    expect(downloadable.sort()).toEqual(["Dependency Graph"]);
+    // {dir} resolved for the downloadable first-party server.
+    expect(store.mcpServers.find((e) => e.name === "Dependency Graph")!.args).not.toContain("{dir}");
   });
 
   it("is idempotent — re-applying enables + scopes without duplicating", () => {
