@@ -7,8 +7,8 @@
 // (The Activity feed is still sample data — a real audit log is a follow-up.)
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { TabBar, type TabItem } from "@/components/chrome/TabBar";
-import { usePageTabs } from "@/hooks/usePageTabs";
+import { TabBar, type TabItem } from "@/app/chrome/TabBar";
+import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import {
   APP_ROLES, TOOL_DEFS, GUARANTEED,
   MODE_LABEL, resolveAllowlistFrom, paneCount, consoleCount,
@@ -16,13 +16,13 @@ import {
 import type { AgentProfile, ConsoleSession, ConsolePane, Tier, ToolKey } from "./lib/agentProfiles";
 import { resolveProfileSettings } from "./lib/profileEnforcement";
 import { parseAuditLog, toRow, decideAudit, type AuditDecision, type AuditKind, type ResolvedGate } from "./lib/auditLog";
-import { roleCapability, roleWriteRules } from "@/lib/session/sessionRoles";
+import { roleCapability, roleWriteRules } from "@/shared/lib/session/sessionRoles";
 import {
   ingestCoordLog, coordinationSummary, wakePromptFor, emptyCoordState,
   type BlockedView, type Waiter, type CoordState,
-} from "@/lib/fleet/coordination";
-import { actuateWake } from "@/lib/fleet/coordinatorActuate";
-import type { WorkflowRun } from "@/lib/fleet/conductor";
+} from "@/shared/lib/fleet/coordination";
+import { actuateWake } from "@/shared/lib/fleet/coordinatorActuate";
+import type { WorkflowRun } from "@/shared/lib/fleet/conductor";
 import { useAppStore } from "@/store";
 import "./agents.css";
 

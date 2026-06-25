@@ -1,6 +1,6 @@
 import { useAppStore } from "@/store";
 import { ToggleRow } from "./General";
-import type { LlmProvider } from "@/lib/core/llmConfig";
+import type { LlmProvider } from "@/shared/lib/core/llmConfig";
 
 const LLM_PROVIDERS: [LlmProvider, string][] = [
   ["anthropic", "Anthropic Claude"],

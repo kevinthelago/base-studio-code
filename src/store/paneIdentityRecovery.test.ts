@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { useAppStore } from "./";
-import { directorPaneId, fleetPaneId, triagePaneId, manualPaneId } from "../lib/console/paneIdentity";
+import { directorPaneId, fleetPaneId, triagePaneId, manualPaneId } from "@/app/console/lib/paneIdentity";
 
 // Stage 3 of stable pane identity (#1176): crash recovery walks identity ids, not grid
 // positions. It locates a pane's owning tab via `tab.paneIds`, skips manual consoles

@@ -38,7 +38,7 @@ export default defineConfig(async ({ command }) => ({
     // WebView pull it module-by-module in a serial waterfall on first load. This overlaps with
     // the native/WebView2 launch, so by the time the page loads the boot modules are cached.
     warmup: {
-      clientFiles: ["./src/main.tsx", "./src/App.tsx", "./src/store/index.ts", "./src/screens/Console.tsx"],
+      clientFiles: ["./src/app/main.tsx", "./src/app/App.tsx", "./src/store/index.ts", "./src/app/console/ConsoleScreen.tsx"],
     },
     watch: {
       // Vite watches the project root, but this is a Cargo *workspace* — all Rust build output

@@ -15,7 +15,7 @@ import { useAppStore } from "@/store";
 import { dispatchAutomation } from "@/features/automations/lib/dispatch";
 import { automationToFrame, planArm } from "./automationControl";
 import { tunnelSetAutomations, tunnelAutomationFailed } from "./tunnelClient";
-import { log } from "@/lib/core/log";
+import { log } from "@/shared/lib/core/log";
 
 export function useTunnelAutomations(): void {
   const tunnelRunning = useAppStore((s) => s.tunnelRunning);

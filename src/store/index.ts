@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { persistStorage } from "../lib/core/storage";
-import {       deriveTabIdentity } from "../lib/core/projectPaths";
-import {  refreshBuiltIns, type Blueprint } from "../screens/planner/stages/blueprints";
+import { persistStorage } from "@/shared/lib/core/storage";
+import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
+import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";
 import { migrateLegacyExtensions } from "@/features/extensions/lib/migrateExtensions";
 import { createExtensionsSlice } from "@/features/extensions/store";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
@@ -20,7 +20,7 @@ import { createShellSlice } from "./slices/shell";
 import { createTunnelSlice } from "@/features/tunnel/store";
 import { createConsoleSlice } from "./slices/console";
 
-// Re-export the public store API so existing `from "../store"` imports keep resolving.
+// Re-export the public store API so existing `from "@/store"` imports keep resolving.
 export { PROJECT_INIT_PROMPT, TRIAGE_PROMPT, buildTriagePrompt } from "./constants";
 export type { GithubUser, PerfConfig, LogConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "./types";
 

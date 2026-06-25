@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import type { ModelId } from "@/components/pane/PaneMenu";
+import type { ModelId } from "@/app/console/panes/PaneMenu";
 
 const MODELS: { id: ModelId; label: string }[] = [
   { id: "haiku-4.5",  label: "haiku-4.5 · fast"     },

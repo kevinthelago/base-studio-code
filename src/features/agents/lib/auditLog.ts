@@ -12,7 +12,7 @@
 // internal permission outcome — they agree because the settings are generated from
 // these same rules, but treat it as advisory. Pure + unit-testable.
 
-import { checkCommand, matchGlob, type RoleCapability } from "@/lib/session/sessionRoles";
+import { checkCommand, matchGlob, type RoleCapability } from "@/shared/lib/session/sessionRoles";
 
 export type AuditDecision = "allow" | "ask" | "block";
 export type AuditKind = "cmd" | "tool" | "net";

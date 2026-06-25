@@ -8,7 +8,7 @@
 // which toggles the same groups onto a stream.
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
-import { KIND, SOURCE_TAG } from "@/data/skills";
+import { KIND, SOURCE_TAG } from "@/shared/data/skills";
 import {
   sessionSkillState, expandGroups, groupSkillCount,
   type SkillDef, type SessionSkillReason,
