@@ -20,9 +20,12 @@ function routeInvoke(opts: { localProjects?: unknown; deleteRejects?: boolean } 
 }
 
 // Drafts are now compact chips (Planner two-pane redesign): the chip carries a ✕ titled
-// "delete draft" — click it directly (no ⋯ menu).
+// "delete draft". Clicking it now opens a confirmation modal (#1216) — confirm with the
+// modal's "delete draft" button to actually destroy the folder.
 function clickDeleteDraft() {
   fireEvent.click(screen.getByTitle("delete draft"));
+  // The modal's confirm button is the one inside a <button> ("delete draft" text).
+  fireEvent.click(screen.getByRole("button", { name: /delete draft/i }));
 }
 
 describe("ProjectsList — draft delete", () => {
