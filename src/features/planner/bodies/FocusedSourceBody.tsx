@@ -560,7 +560,7 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
           {total === 0 ? "Declare your sources" : ready ? "✓ sources connected" : `${scanned} / ${total} connected`}
         </span>
         <span style={{ flex: 1 }} />
-        <span style={monoSm}>{ready ? `both feed «${dataModelName}»` : "read-only · credentials never leave this device"}</span>
+        <span style={monoSm}>{ready ? `both feed «${dataModelName}»` : "read-only integrations · credentials never leave this device"}</span>
       </div>
 
       {/* planner-proposed sources */}
