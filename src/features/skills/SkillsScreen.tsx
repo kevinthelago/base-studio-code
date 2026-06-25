@@ -50,9 +50,13 @@ function pill(hue: string, plain = false): CSSProperties {
   if (plain) return { ...base, background: tintBg("var(--fg-dim)"), border: "1px solid " + tintBg("var(--fg-dim)", 80), color: "var(--fg-muted)" };
   return { ...base, background: tintBg(hue), border: `1px solid ${tintBg(hue, 74)}`, color: hue };
 }
-function glyphTile(kind: SkillKind, lg = false): CSSProperties {
-  const c = KIND[kind].color; const d = lg ? 30 : 22;
+/** A square glyph tile in an arbitrary hue (a `--token` ref or oklch literal). */
+function hueTile(c: string, lg = false): CSSProperties {
+  const d = lg ? 30 : 22;
   return { width: d, height: d, flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, fontFamily: "var(--mono)", fontSize: lg ? 15 : 12, color: c, background: `color-mix(in oklch, ${c} 22%, var(--bg-elev))`, border: `1px solid ${tintBg(c, 70)}` };
+}
+function glyphTile(kind: SkillKind, lg = false): CSSProperties {
+  return hueTile(KIND[kind].color, lg);
 }
 function Toggle({ on, onClick }: { on: boolean; onClick?: (e: React.MouseEvent) => void }) {
   return (
@@ -269,6 +273,9 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
     if (ungrouped.length) sections.push({ id: "__ungrouped__", label: "Ungrouped", glyph: "·", hue: "var(--fg-dim)", items: ungrouped });
     return sections;
   }, [density, filtered, skillGroups]);
+  // Grouped density with no task groups at all → everything lands in one "Ungrouped"
+  // section; surface a hint to create groups rather than reading as a broken single bucket.
+  const groupedNoGroups = density === "grouped" && skillGroups.length === 0;
 
   // ── catalog ─────────────────────────────────────────────────────────────────
   const existingNames = useMemo(() => new Set(skills.map((s) => s.name)), [skills]);
@@ -359,23 +366,35 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
             <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} style={{ height: 28, padding: "0 12px", borderRadius: "var(--r-md)", fontSize: 11.5, cursor: "pointer", border: "1px solid " + (selectMode ? "var(--accent-dim)" : "var(--border)"), background: selectMode ? tintBg("var(--accent)", 86) : "var(--bg-canvas)", color: selectMode ? "var(--accent)" : "var(--fg)" }}>{selectMode ? "✓ Selecting" : "☑ Select"}</button>
           </div>
 
-          {/* Task-group quick-filter bar */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border-soft)", overflowX: "auto" }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)", flex: "0 0 auto" }}>⬡ Task groups</span>
-            {(() => { const active = !groupFilter; return (
-              <button onClick={() => setGroupFilter(null)} style={groupChip("var(--accent)", active)}><span style={{ opacity: 0.75 }}>≡</span>All<span style={{ fontFamily: "var(--mono)", fontSize: 9.5, opacity: 0.7 }}>{merged.length}</span></button>
-            ); })()}
-            {skillGroups.map((g) => { const active = groupFilter === g.id; return (
-              <button key={g.id} onClick={() => setGroupFilter((v) => (v === g.id ? null : g.id))} style={groupChip(g.hue, active)}><span style={{ opacity: 0.75 }}>⬡</span>{g.name}<span style={{ fontFamily: "var(--mono)", fontSize: 9.5, opacity: 0.7 }}>{groupSkillCount(g, skills)}</span></button>
-            ); })}
-            <button onClick={() => setAddGroupOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 24, padding: "0 10px", borderRadius: 99, border: "1px dashed var(--border)", background: "transparent", color: "var(--fg-dim)", fontSize: 11, cursor: "pointer", flex: "0 0 auto" }}>＋ New group</button>
-            {groupFilter && <button onClick={() => { if (confirm("Delete this group? Skills are not deleted.")) { removeSkillGroup(groupFilter); setGroupFilter(null); } }} style={{ fontSize: 10.5, color: "var(--danger)", background: "none", border: "none", cursor: "pointer", flex: "0 0 auto" }}>delete group</button>}
-          </div>
-
           {/* Body */}
           <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "stretch", overflow: "hidden" }}>
             {/* Facet column */}
             <div style={{ flex: "0 0 200px", overflowY: "auto", borderRight: "1px solid var(--border-soft)", background: "var(--bg-canvas)", padding: "14px 14px 40px 18px" }}>
+              {/* Groups — the task-group selector (single-select, like the old quick-filter). */}
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>⬡ Groups</span>
+                  <span style={{ flex: 1 }} />
+                  <button onClick={() => setAddGroupOpen(true)} title="New group" style={{ background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>＋ New group</button>
+                </div>
+                {/* "All" / clear row */}
+                <div onClick={() => setGroupFilter(null)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+                  <span style={{ width: 13, textAlign: "center", color: !groupFilter ? "var(--accent)" : "var(--fg-dim)", fontSize: 11 }}>≡</span>
+                  <span style={{ fontSize: 12, color: !groupFilter ? "var(--fg)" : "var(--fg-muted)", fontWeight: !groupFilter ? 600 : 400 }}>All</span>
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{merged.length}</span>
+                </div>
+                {skillGroups.map((g) => { const active = groupFilter === g.id; return (
+                  <div key={g.id} data-group-id={g.id} onClick={() => setGroupFilter((v) => (v === g.id ? null : g.id))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+                    <span style={{ width: 13, textAlign: "center", color: g.hue, fontSize: 11 }}>⬡</span>
+                    <span style={{ fontSize: 12, color: active ? g.hue : "var(--fg)", fontWeight: active ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span>
+                    {active && <span title="Delete group" onClick={(e) => { e.stopPropagation(); if (confirm("Delete this group? Skills are not deleted.")) { removeSkillGroup(g.id); setGroupFilter(null); } }} style={{ color: "var(--danger)", fontSize: 11, cursor: "pointer" }}>✕</span>}
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{groupSkillCount(g, skills)}</span>
+                  </div>
+                ); })}
+                {skillGroups.length === 0 && <div style={{ fontSize: 10.5, color: "var(--fg-dim)", padding: "2px 0", lineHeight: 1.4 }}>No groups yet — bundle related skills into a group.</div>}
+              </div>
               {facetDefs.map((f) => (
                 <div key={f.key} style={{ marginBottom: 18 }}>
                   <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)", marginBottom: 8 }}>{f.title}</div>
@@ -447,15 +466,29 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
                   {filtered.map((s) => <SkillCard key={s.id} s={s} groups={groupsBySkill.get(s.id) ?? []} onOpen={() => { setSelectedId(s.id); setDraft(null); }} onPin={() => toggleSkillPin(s.id)} onToggle={() => toggleSkill(s.id)} />)}
                 </div>
               ) : (
-                <div>
-                  {groupedSections.map((sec) => (
-                    <div key={sec.id}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 18px", position: "sticky", top: 0, zIndex: 5, background: "var(--bg-elev)", borderTop: "1px solid var(--border-soft)", borderBottom: "1px solid var(--border-soft)" }}>
-                        <span style={{ ...glyphTile("workflow"), color: sec.hue, background: `color-mix(in oklch, ${sec.hue} 22%, var(--bg-elev))`, border: `1px solid ${tintBg(sec.hue, 70)}` }}>{sec.glyph}</span>
+                <div style={{ padding: "12px 18px 0" }}>
+                  {groupedNoGroups && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 12px", padding: "9px 13px", background: tintBg("var(--fg-dim)", 90), border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg-muted)" }}>
+                      <span style={{ color: "var(--fg-dim)" }}>⬡</span>
+                      <span>No task groups yet — every skill falls under <b style={{ color: "var(--fg)" }}>Ungrouped</b>. Create a group to bundle related skills.</span>
+                      <span style={{ flex: 1 }} />
+                      <button className="btn" onClick={() => setAddGroupOpen(true)}>＋ New group</button>
+                    </div>
+                  )}
+                  {groupedSections.map((sec, si) => (
+                    <div key={sec.id} className="skill-section" data-section-id={sec.id}
+                      style={{ marginBottom: 14, border: `1px solid ${tintBg(sec.hue, 78)}`, borderRadius: "var(--r-lg)", overflow: "hidden", background: "var(--bg-panel)" }}>
+                      {/* Section header — sticky; its own hue tile + a left accent rail ties the rows below to it.
+                          Later sections sit above earlier ones as they scroll under (descending z, opaque bg). */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 16px", position: "sticky", top: 0, zIndex: groupedSections.length - si + 4, background: `color-mix(in oklch, ${sec.hue} 8%, var(--bg-elev))`, borderBottom: `1px solid ${tintBg(sec.hue, 74)}`, boxShadow: `inset 3px 0 0 ${sec.hue}` }}>
+                        <span style={hueTile(sec.hue)}>{sec.glyph}</span>
                         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)", textTransform: "capitalize" }}>{sec.label}</span>
-                        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", background: "var(--bg-elev2)", borderRadius: 99, padding: "1px 7px" }}>{sec.items.length}</span>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: sec.hue, background: tintBg(sec.hue, 84), borderRadius: 99, padding: "1px 7px" }}>{sec.items.length}</span>
                       </div>
-                      {sec.items.map((s, i) => <SkillRow key={s.id} s={s} i={i} />)}
+                      {/* Member rows, indented under the header so they clearly belong to this section. */}
+                      <div style={{ paddingLeft: 10, borderLeft: `2px solid ${tintBg(sec.hue, 70)}` }}>
+                        {sec.items.map((s, i) => <SkillRow key={s.id} s={s} i={i} />)}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -526,10 +559,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
       )}
     </div>
   );
-}
-
-function groupChip(hue: string, active: boolean): CSSProperties {
-  return { display: "inline-flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", borderRadius: 99, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", flex: "0 0 auto", border: "1px solid " + (active ? hue : "var(--border)"), background: active ? tintBg(hue, 85) : "transparent", color: active ? hue : "var(--fg-muted)" };
 }
 
 function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef; groups: SkillGroup[]; onOpen: () => void; onPin: () => void; onToggle: () => void }) {
