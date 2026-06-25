@@ -1,0 +1,22 @@
+[package]
+name = "skilldb"
+version = "0.1.0"
+edition = "2021"
+description = "Global skills + task-groups store (SQLite) for base-studio-code (#1338, instance of #1325) — shared by the Tauri app and the `bsc-skill` CLI."
+
+# The core lib (no Tauri) so a tiny CLI can reuse it without dragging the whole desktop app in.
+[lib]
+name = "skilldb"
+
+# The session-facing CLI: injected into EVERY console session (B-global), pointed at the global
+# skills.db via the BSC_SKILL_DB env var (default ~/.base-studio-code/skills.db). Authoring +
+# resolution of skills and groups, addressable from any live session's own shell.
+[[bin]]
+name = "bsc-skill"
+path = "src/bin/bsc-skill.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# `bundled` compiles SQLite from source (matches src-tauri / plandb) for cross-platform reliability.
+rusqlite = { version = "0.40", features = ["bundled"] }
