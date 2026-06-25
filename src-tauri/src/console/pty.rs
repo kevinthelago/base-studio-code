@@ -210,11 +210,16 @@ pub(crate) fn kill_all_pty_sessions(state: &PtyState) {
 }
 
 /// Which of `pane_ids` belong to project `key` — the identity panes `<key>:…` (director / worker /
-/// triage). Manual (`man:…`) and other projects' panes never match (a sanitized key carries no `:`,
-/// so the prefix match is exact). Pure for testing.
+/// triage) PLUS the planner pane `planning_<key>`. Manual (`man:…`) and other projects' panes never
+/// match (a sanitized key carries no `:`, so the prefix match is exact). Pure for testing.
 pub(crate) fn project_session_ids(pane_ids: &[String], key: &str) -> Vec<String> {
+    // The PLANNER pane is the exception to the `<key>:<stream>` identity scheme: its id is
+    // `planning_<key>` (Planning.tsx), so the prefix alone misses it and its claude shell keeps the
+    // hub as its cwd — which blocked the Windows draft-hub delete with a sharing violation (#1401).
+    // The frontend sanitizer and `sanitize_project_key` are byte-identical, so the suffix matches.
     let prefix = format!("{key}:");
-    pane_ids.iter().filter(|id| id.starts_with(&prefix)).cloned().collect()
+    let planner = format!("planning_{key}");
+    pane_ids.iter().filter(|id| id.starts_with(&prefix) || id.as_str() == planner).cloned().collect()
 }
 
 /// Tear down one project's LIVE PTY sessions before its hub is deleted (#1387): drain the sessions
@@ -936,13 +941,15 @@ mod tests {
 
     #[test]
     fn project_session_ids_matches_only_the_project_panes() {
-        // #1387: pick exactly the project's identity panes for the pre-delete teardown.
-        let panes: Vec<String> = ["proj:director", "proj:auth-ui", "proj:own/web:triage", "other:api", "man:t0:p1", "proj"]
+        // #1387: pick exactly the project's identity panes for the pre-delete teardown — incl. the
+        // planner pane `planning_<key>` (#1401), which the `<key>:` prefix alone would miss.
+        let panes: Vec<String> = ["proj:director", "proj:auth-ui", "proj:own/web:triage", "planning_proj", "other:api", "man:t0:p1", "proj", "planning_other"]
             .iter().map(|s| s.to_string()).collect();
         let got = super::project_session_ids(&panes, "proj");
-        assert_eq!(got, vec!["proj:director", "proj:auth-ui", "proj:own/web:triage"]);
-        // a different project, a manual pane, and a bare same-name (no `:`) never match.
-        for miss in ["other:api", "man:t0:p1", "proj"] {
+        assert_eq!(got, vec!["proj:director", "proj:auth-ui", "proj:own/web:triage", "planning_proj"]);
+        // another project's panes (incl. its planner), a manual pane, and a bare same-name (no `:`)
+        // never match.
+        for miss in ["other:api", "planning_other", "man:t0:p1", "proj"] {
             assert!(!got.contains(&miss.to_string()), "{miss} must not match");
         }
     }
