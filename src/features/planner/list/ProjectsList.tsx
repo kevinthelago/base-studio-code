@@ -32,12 +32,6 @@ const CAT_ICON: Record<BlueprintCategory, typeof Layers> = {
 function catHue(cat: BlueprintCategory): string {
   return `oklch(0.75 0.13 ${CATEGORY_META[cat]?.h ?? 70})`;
 }
-type Visibility = "draft" | "private" | "public";
-const VIS_META: Record<Visibility, { label: string; color: string }> = {
-  draft:   { label: "draft",        color: "var(--accent)" },
-  private: { label: "private gist", color: "var(--info)" },
-  public:  { label: "public gist",  color: "var(--success)" },
-};
 function prettyGist(g?: BlueprintGist): string | undefined {
   if (!g) return undefined;
   if (g.url) {
@@ -60,7 +54,6 @@ interface BpItem {
   category: BlueprintCategory;
   stages: number;
   sections: BlueprintSection[];   // the blueprint's sections — drives the gate-row preview
-  vis: Visibility;
   builtIn?: boolean;   // a code-owned app template (can't be deleted)
   gistLabel?: string;
   updatedLabel: string;
@@ -294,10 +287,10 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
 
   const hue = catHue(b.category);
   const Icon = CAT_ICON[b.category] ?? Layers;
-  const vis = VIS_META[b.vis];
 
   return (
     <div
+      className="bp-rail-card"
       onClick={() => onUse(b.id)}
       title={isActive ? "Selected — new projects use this blueprint" : "Select this blueprint for new projects"}
       style={{
@@ -305,13 +298,19 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
         border: "1px solid " + (isActive ? "var(--accent)" : "var(--border-soft)"),
         borderRadius: 9, cursor: "pointer", position: "relative",
       }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 9 }}>
-        <span style={{
+      <div className="bp-rail-card-head" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <span className="bp-rail-card-icon" style={{
           width: 30, height: 30, flex: "0 0 30px", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
           background: `color-mix(in oklch, ${hue}, transparent 88%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 70%)`, color: hue,
         }}><Icon size={15} /></span>
-        <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
-        <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
+        <div className="bp-rail-card-titlewrap" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
+          <span className="bp-rail-card-title" style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
+          <span className="bp-rail-card-cat" style={{
+            flex: "0 0 auto", padding: "1px 6px", borderRadius: 99, fontFamily: "var(--mono)", fontSize: 9, color: hue,
+            background: `color-mix(in oklch, ${hue}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
+          }}>{b.category}</span>
+        </div>
+        <div ref={menuRef} className="bp-rail-card-menu" style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
           <button
             className="btn ghost"
             style={{ height: 22, width: 22, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -342,21 +341,13 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
           )}
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
-        <span style={{
-          padding: "1px 6px", borderRadius: 99, color: hue,
-          background: `color-mix(in oklch, ${hue}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
-        }}>{b.category}</span>
-        <span><b style={{ color: "var(--fg-muted)", fontWeight: 600 }}>{b.stages}</b> stage{b.stages !== 1 ? "s" : ""}</span>
-        <span style={{ color: vis.color }}>{vis.label}</span>
-        {b.builtIn && <span style={{ color: "var(--fg-dim)" }}>built-in</span>}
-        {isActive && <span style={{ color: "var(--accent)", fontWeight: 600 }}>✓ selected</span>}
-      </div>
       {/* Gated-stage progression (#blueprints): one segment per enabled, applicable section,
           colored by gate status — a preview of the lifecycle this blueprint walks through. */}
-      <PlanGateRow sections={b.sections} signals={{}} />
+      <div className="bp-rail-card-gates" style={{ marginTop: 9 }}>
+        <PlanGateRow sections={b.sections} signals={{}} />
+      </div>
       {b.gistLabel && (
-        <div style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5 }}>
+        <div className="bp-rail-card-gist" style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5 }}>
           <Link2 size={10} />{b.gistLabel}
         </div>
       )}
@@ -712,13 +703,12 @@ export function ProjectsList() {
     for (const b of blueprints) {
       seen.add(b.name.toLowerCase());
       const hasGist = !!b.gist?.id;
-      const vis: Visibility = hasGist ? (b.gist?.public ? "public" : "private") : "draft";
       const sortMs = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
       items.push({
         id: b.id, kind: "library", name: b.name,
         pitch: b.pitch ?? b.desc ?? "",
         category: b.category ?? "greenfield",
-        stages: b.sections.length, sections: b.sections, vis,
+        stages: b.sections.length, sections: b.sections,
         builtIn: b.origin === "built-in",
         gistLabel: hasGist ? prettyGist(b.gist) : undefined,
         updatedLabel: timeAgoMs(sortMs), sort: sortMs,
@@ -732,7 +722,7 @@ export function ProjectsList() {
         id: "draft:" + d.key, kind: "draft", draftKey: d.key, draftTitle: d.title, draftPitch: d.pitch,
         name, pitch: bp?.pitch ?? bp?.desc ?? d.pitch ?? "",
         category: bp?.category ?? "greenfield",
-        stages: bp?.sections?.length ?? 0, sections: bp?.sections ?? [], vis: "draft",
+        stages: bp?.sections?.length ?? 0, sections: bp?.sections ?? [],
         updatedLabel: timeAgoMs(d.sort), sort: d.sort,
       });
     }
