@@ -1,14 +1,15 @@
 // Repositories & Deployment — the merged "Deployment" stage pane (#1399). One cohesive surface that
-// replaces the old stacked FocusedReposBody + FocusedDeployBody (#1383): a header (gate pill + ship
-// toggle), then card 01 "Repositories" where each repo's git identity is merged with its deploy
-// target (click a repo to expand its target editor inline), then the rest of the ship flow
+// replaces the old stacked FocusedReposBody + FocusedDeployBody (#1383): a plain `⎇ Repositories &
+// Deployment` header, then card 01 "Repositories" where each repo's git identity is merged with its
+// deploy target (click a repo to expand its target editor inline), then the rest of the ship flow
 // (pipeline · environments · config+secrets · dependencies · release/health · readiness) reused from
 // FocusedDeployBody in "tail" view. Design: design/Streams Pane Design/ReposDeployPane.dc.html.
 //
 // Controlled like FocusedDeployBody — reads a DeployConfig + the linked repos and calls
-// onDeployChange / onLinkRepo / the visibility handlers. Reuses shared/deployConfig.ts (no model
-// change). The ship toggle is local view state (defaults on for a ship blueprint): turning it off
-// collapses the deploy half without touching the stored config.
+// onDeployChange / onLinkRepo / per-repo visibility. Reuses shared/deployConfig.ts (no model change).
+// Shipping is governed by the blueprint (this pane only renders when deploy is folded in), so there's
+// no header gate/ship pill, no global visibility toggle, and no readiness banner (#1403) — the
+// per-stage gate + the D · READINESS checklist already carry that signal.
 
 import { useState } from "react";
 import {
@@ -42,7 +43,7 @@ function Avatar({ id, sz = 16 }: { id: string; sz?: number }) {
 
 export function FocusedReposDeployBody({
   repos, deploy, onDeployChange, dependencies = [], registries = {},
-  onLinkRepo, reposPublic, onSetReposPublic, repoOverrides, onSetRepoPublic,
+  onLinkRepo, reposPublic, repoOverrides, onSetRepoPublic,
 }: {
   repos?: Repo[];
   deploy?: DeployConfig;
@@ -50,15 +51,12 @@ export function FocusedReposDeployBody({
   dependencies?: PlanDependency[];
   registries?: Record<string, DependencyRegistry>;
   onLinkRepo?: (r: string) => void;
-  /** Project-level default GitHub visibility for new repos (#1227); false ⇒ private. */
+  /** Project-level default GitHub visibility — the per-repo toggle's fallback (#1227); false ⇒ private. */
   reposPublic?: boolean;
-  onSetReposPublic?: (isPublic: boolean) => void;
   /** Per-repo visibility overrides keyed by repo full-name; absent ⇒ inherits the default. */
   repoOverrides?: Record<string, boolean>;
   onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
 }) {
-  // ship is local view state (the blueprint already folded deploy in); off collapses the deploy half.
-  const [ship, setShip] = useState(true);
   const [linking, setLinking] = useState(false);
   const [linkInput, setLinkInput] = useState("");
   const list = repos ?? [];
@@ -68,43 +66,6 @@ export function FocusedReposDeployBody({
   const serviceForRepo = (repoId: string) => d?.services.find((s) => s.repo === repoId);
   const setSvcFor = (svcId: string, patch: Partial<DeployService>) =>
     d && set({ services: d.services.map((s) => (s.id === svcId ? { ...s, ...patch } : s)) });
-
-  // ── header: gate pill ──
-  const repoGate = list.length === 0 ? (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 9px", borderRadius: 99,
-      fontFamily: MONO, fontSize: 9.5, color: "var(--danger)",
-      background: "color-mix(in oklch, var(--danger), transparent 88%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 62%)",
-    }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--danger)", animation: "pulse 1.1s ease-in-out infinite" }} />
-      gate blocked · link a repository
-    </span>
-  ) : (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 9px", borderRadius: 99,
-      fontFamily: MONO, fontSize: 9.5, color: "var(--success)",
-      background: "color-mix(in oklch, var(--success), transparent 88%)", border: "1px solid color-mix(in oklch, var(--success), transparent 64%)",
-    }}>✓ {list.length} repo{list.length === 1 ? "" : "s"} linked</span>
-  );
-
-  // ── header: ship toggle (local) ──
-  const shipToggle = (
-    <button onClick={() => setShip((v) => !v)} style={{
-      display: "inline-flex", alignItems: "center", gap: 7, height: 22, padding: "0 4px 0 9px", borderRadius: 99, cursor: "pointer",
-      background: ship ? "color-mix(in oklch, var(--violet), transparent 86%)" : "var(--bg-elev)",
-      border: "1px solid " + (ship ? "color-mix(in oklch, var(--violet), transparent 58%)" : "var(--border-soft)"),
-      color: ship ? "var(--violet)" : "var(--fg-dim)", fontFamily: MONO, fontSize: 9.5,
-    }}>
-      {ship ? "ships" : "no ship"}
-      <span style={{
-        width: 22, height: 13, borderRadius: 99, position: "relative",
-        background: ship ? "color-mix(in oklch, var(--violet), transparent 45%)" : "var(--bg-elev2)",
-        border: "1px solid " + (ship ? "var(--violet)" : "var(--border-soft)"),
-      }}>
-        <span style={{ position: "absolute", top: 1, left: ship ? 10 : 1, width: 9, height: 9, borderRadius: 99, background: ship ? "var(--violet)" : "var(--fg-dim)", transition: "left .12s" }} />
-      </span>
-    </button>
-  );
 
   // ── per-repo visibility toggle (override → project default, #1227) ──
   const repoVisToggle = (repoId: string) => {
@@ -136,26 +97,6 @@ export function FocusedReposDeployBody({
     );
   };
 
-  // ── project-level default visibility ──
-  const visibilityControl = onSetReposPublic && (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-      <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>default</span>
-      <div style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
-        {([[false, "🔒 Private"], [true, "🌐 Public"]] as const).map(([val, label], i) => {
-          const on = !!reposPublic === val;
-          return (
-            <button key={label} onClick={() => { if (!on) onSetReposPublic(val); }} aria-pressed={on} style={{
-              height: 24, padding: "0 11px", border: 0, borderLeft: i ? "1px solid var(--border-soft)" : "none", cursor: on ? "default" : "pointer",
-              fontFamily: MONO, fontSize: 10.5, background: on ? "var(--bg-elev2)" : "transparent", color: on ? "var(--fg)" : "var(--fg-dim)",
-            }}>{label}</button>
-          );
-        })}
-      </div>
-      <span style={{ flex: 1 }} />
-      <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>new repos · override per repo</span>
-    </div>
-  );
-
   // ── link affordance ──
   const submitLink = () => { const v = linkInput.trim(); if (v.includes("/")) { onLinkRepo?.(v); setLinkInput(""); setLinking(false); } };
   const linkAffordance = onLinkRepo && (
@@ -185,13 +126,13 @@ export function FocusedReposDeployBody({
   // ── card 01: one row per repo, git identity merged with its deploy target ──
   const repoTargetRow = (r: Repo) => {
     const svc = serviceForRepo(r.id);
-    const sel = ship && !!svc && svc.id === d?.selService;
+    const sel = !!svc && svc.id === d?.selService;
     const targeted = !!svc && serviceTargetDefined(svc);
     const local = !!svc && serviceMode(svc) === "local";
     const p = svc?.platform ? platform(svc.platform) : null;
 
     let targetChip: React.ReactNode = null;
-    if (ship && svc) {
+    if (svc) {
       if (p) {
         targetChip = (
           <span style={{
@@ -230,8 +171,8 @@ export function FocusedReposDeployBody({
         background: sel ? "color-mix(in oklch, var(--accent), transparent 93%)" : "var(--bg-canvas)",
       }}>
         <div
-          onClick={ship && svc ? () => set({ selService: svc.id }) : undefined}
-          style={{ padding: "11px 12px", cursor: ship && svc ? "pointer" : "default" }}
+          onClick={svc ? () => set({ selService: svc.id }) : undefined}
+          style={{ padding: "11px 12px", cursor: svc ? "pointer" : "default" }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 auto", background: r.cloned ? "var(--success)" : "var(--fg-dim)" }} />
@@ -287,9 +228,8 @@ export function FocusedReposDeployBody({
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map((r) => repoTargetRow(r))}</div>
     );
     return (
-      <Card n="01" title="Repositories" hint={ship ? "→ deploy targets" : undefined} done={done} right={right}>
+      <Card n="01" title="Repositories" hint="→ deploy targets" done={done} right={right}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {visibilityControl}
           {body}
           {linkAffordance}
         </div>
@@ -297,7 +237,7 @@ export function FocusedReposDeployBody({
     );
   };
 
-  // ── header ──
+  // ── header — just the icon + title (no gate/ship pills, #1403) ──
   const header = (
     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
       <span style={{
@@ -305,9 +245,6 @@ export function FocusedReposDeployBody({
         color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 84%)", border: "1px solid var(--accent-dim)",
       }}>⎇</span>
       <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: ".13em", textTransform: "uppercase", color: "var(--fg-dim)" }}>Repositories &amp; Deployment</span>
-      <span style={{ flex: 1 }} />
-      {repoGate}
-      {shipToggle}
     </div>
   );
 
@@ -324,40 +261,12 @@ export function FocusedReposDeployBody({
         </div>
       </>
     );
-  } else if (!ship || !d) {
-    // Shipping off (or no config yet) — repos only.
-    body = (
-      <>
-        {reposCard(list.length > 0)}
-        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "14px 15px", borderRadius: "var(--r-lg)", background: "var(--bg-canvas)", border: "1px dashed var(--border)" }}>
-          <span style={{ fontSize: 16, color: "var(--fg-dim)" }}>⏻</span>
-          <div>
-            <div style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)" }}>Shipping is off for this project.</div>
-            <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)", marginTop: 3 }}>Toggle ships above to define how each repo deploys.</div>
-          </div>
-        </div>
-      </>
-    );
   } else {
-    // Shipping on — repos+targets in card 01, then the rest of the deploy flow (tail).
-    const checks = deployChecks(d);
-    const ck = (id: string) => checks.find((c) => c.id === id)?.ok ?? false;
-    const ready = checks.filter((c) => c.ok).length;
-    const depsOk = dependencies.length > 0;
-    const allReady = ready === checks.length && depsOk;
-    const missing = [...checks.filter((c) => !c.ok).map((c) => c.id), ...(depsOk ? [] : ["dependencies"])];
+    // Repos + their deploy targets in card 01, then the rest of the deploy flow (tail). No readiness
+    // banner — the D · READINESS checklist below carries that signal (#1403).
+    const ck = (id: string) => (d ? deployChecks(d).find((c) => c.id === id)?.ok ?? false : false);
     body = (
       <>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 9, padding: "9px 13px", borderRadius: "var(--r-md)",
-          background: `color-mix(in oklch, ${allReady ? "var(--success)" : "var(--accent)"}, transparent 90%)`,
-          border: `1px solid color-mix(in oklch, ${allReady ? "var(--success)" : "var(--accent)"}, transparent 72%)`,
-        }}>
-          <span style={{ width: 7, height: 7, borderRadius: 99, background: allReady ? "var(--success)" : "var(--accent)" }} />
-          <span style={{ fontFamily: MONO, fontSize: 11, color: allReady ? "var(--success)" : "var(--accent)" }}>{allReady ? "Ready to ship" : `${ready}/${checks.length} defined`}</span>
-          <span style={{ flex: 1 }} />
-          <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)" }}>{allReady ? "deployment issues ready to generate" : "missing: " + missing.join(", ")}</span>
-        </div>
         <Divider label="A · HOW IT SHIPS" color="var(--accent)" />
         {reposCard(ck("target"))}
         <FocusedDeployBody deploy={d} onChange={onDeployChange} dependencies={dependencies} registries={registries} view="tail" />
