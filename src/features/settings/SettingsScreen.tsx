@@ -1,4 +1,4 @@
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 import { GeneralSettings } from "./General";
 import { AppearanceSettings } from "./Appearance";
 import { KeyboardSettings } from "./Keyboard";

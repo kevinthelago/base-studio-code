@@ -7,11 +7,11 @@ import { nextFullscreen } from "../lib/console/consoleFocus";
 import { CLEAR_INPUT_BYTES } from "../lib/console/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "../lib/console/paneSelect";
 import { paneIdFor } from "../lib/console/paneIdentity";
-import { SCREEN_HOTKEYS } from "../lib/settings/shortcuts";
+import { SCREEN_HOTKEYS } from "@/features/settings/lib/shortcuts";
 import {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,
-} from "../lib/settings/keybindings";
+} from "@/features/settings/lib/keybindings";
 import { VIEW_ORDER } from "../components/pane/ViewTabs";
 
 export interface ShortcutDef {

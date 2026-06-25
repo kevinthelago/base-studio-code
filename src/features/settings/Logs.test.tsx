@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { LogsSettings } from "./Logs";
-import { useAppStore } from "../../store";
-import { DEFAULT_LOG_CONFIG } from "../../store/types";
+import { useAppStore } from "@/store";
+import { DEFAULT_LOG_CONFIG } from "@/store/types";
 
 const FILES = [
   { stream: "app", label: "Application log", path: "/p/app.log", sizeBytes: 2048, mtimeMs: Date.now(), exists: true, text: true },
