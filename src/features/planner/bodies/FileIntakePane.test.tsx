@@ -28,6 +28,7 @@ describe("FileIntakePane (#604)", () => {
   });
 
   it("the Route button queues the route prompt for the planner (#604 slice 2)", async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined as never); // un-mocked calls (sync_design_to_skeleton) still return a promise
     vi.mocked(invoke).mockResolvedValueOnce([
       ["intake.json", JSON.stringify([{ name: "hero.png", kind: "image", size: 1 }])],
     ]);
@@ -36,6 +37,8 @@ describe("FileIntakePane (#604)", () => {
     expect(useAppStore.getState().pendingPlannerPrompt["proj-x"]).toBe(ROUTE_PROMPT);
     // routing also completes the UI stage by confirming the `ui` section (#837)
     expect(useAppStore.getState().planConfirmedSections["proj-x"]).toContain("ui");
+    // …and promotes the dropped design into .ui-skeleton/ so the preview shows it (#1373)
+    expect(invoke).toHaveBeenCalledWith("sync_design_to_skeleton", { projectKey: "proj-x" });
   });
 });
 

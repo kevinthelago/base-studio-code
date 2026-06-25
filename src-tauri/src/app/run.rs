@@ -221,6 +221,7 @@ pub fn run() {
             tokens::read_done_panes,
             observability::audit::read_coord_log,
             project::inspect::read_ui_skeleton,
+            project::inspect::sync_design_to_skeleton,
             project::hub::project_dir_path,
             observability::audit::append_coord_woke,
             githooks::read_git_hooks,
