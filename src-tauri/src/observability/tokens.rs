@@ -301,6 +301,45 @@ pub(crate) fn read_pane_activity() -> Vec<PaneActivity> {
         .collect()
 }
 
+// ── Worker self-close (#1379) ──────────────────────────────────────────────────
+//
+// A finished worker calls `bsc-done`, appending `ts \t pane` to `done.log`. The frontend polls the
+// set of self-reported panes and reaps each (classify the resting state from plan.db, `markPaneEnded`,
+// `pty_kill`) — the worker says "I'm done"; the verdict + the resting card still come from plan.db.
+
+/// The deduped set of panes that have self-reported `done` (via `bsc-done`), newest first. The log
+/// is `ts \t pane` per line; blank/short lines and empty pane fields are dropped. Pure (no fs).
+fn done_panes(log_text: &str) -> Vec<String> {
+    use std::collections::HashMap;
+    let mut latest: HashMap<String, usize> = HashMap::new();
+    for (i, line) in log_text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 2 {
+            continue;
+        }
+        let pane = f[1].trim().to_string();
+        if pane.is_empty() {
+            continue;
+        }
+        latest.insert(pane, i);
+    }
+    let mut rows: Vec<(usize, String)> = latest.into_iter().map(|(p, i)| (i, p)).collect();
+    rows.sort_by_key(|r| std::cmp::Reverse(r.0)); // newest line first
+    rows.into_iter().map(|(_, p)| p).collect()
+}
+
+/// The panes a finished worker self-reported via `bsc-done` (#1379). Missing log ⇒ empty (no worker
+/// has asked to close yet), so the frontend simply reaps nothing.
+#[tauri::command]
+pub(crate) fn read_done_panes() -> Vec<String> {
+    let path = bsc_base_dir().join("done.log");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    done_panes(&text)
+}
+
 // ── Transcript → conversation (#934) ─────────────────────────────────────────────
 //
 // The live planning session is projected to a paired phone as structured `plan_state.messages`.
@@ -539,6 +578,22 @@ mod tests {
         assert_eq!(p1.state, "run", "an open turn reads as run (gates the silence timer)");
         let p2 = rows.iter().find(|r| r.pane == "t0p2").unwrap();
         assert_eq!(p2.state, "idle", "a closed turn reads as idle (silence timer stays authoritative)");
+    }
+
+    #[test]
+    fn done_panes_dedupes_and_drops_malformed() {
+        // done.log is `ts \t pane` per line; the result is the deduped pane set, newest line first.
+        // Short/blank lines and empty pane fields are dropped (#1379).
+        let log = concat!(
+            "100\tproj:api\n",
+            "150\tproj:web\n",
+            "noTabHere\n",      // dropped: too few fields
+            "200\tproj:api\n",  // p:api seen again — newer line wins for ordering
+            "250\t\n",          // dropped: empty pane
+        );
+        let panes = super::done_panes(log);
+        assert_eq!(panes, vec!["proj:api".to_string(), "proj:web".to_string()], "newest first; bad lines dropped");
+        assert_eq!(super::done_panes(""), Vec::<String>::new(), "empty log ⇒ no panes");
     }
 }
 
