@@ -5,8 +5,8 @@ import { HistoryTab } from "./History";
 import { HooksView } from "@/features/extensions";
 import { HookAnalyticsTab } from "./HookAnalytics";
 import { fmtClock } from "./format";
-import { TabBar, type TabItem } from "@/components/chrome/TabBar";
-import { usePageTabs } from "@/hooks/usePageTabs";
+import { TabBar, type TabItem } from "@/app/chrome/TabBar";
+import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import type { RunStatus, Every } from "./lib/scheduler";
 import "./automations.css";
 

@@ -3,14 +3,14 @@
 import type { StateCreator } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppStore } from "../types";
-import { makeBlueprints, mkSection, cloneSections, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "../../screens/planner/stages/blueprints";
-import { canonicalSectionKey, emptyFleet } from "../../screens/planner/stages/planSections";
-import { defaultStageConfig } from "../../screens/planner/stages/planStages";
-import { seedDataModels, emptyDataModel } from "../../screens/planner/data/dataModel";
-import { generateAgentProfile } from "../../lib/session/profileGen";
-import { normalizeFlow, resolveFlow } from "../../screens/planner/fleet/agentFlow";
-import { repoPromptKey } from "../../lib/session/startupPrompt";
-import { resolveAllowedCommands } from "../../lib/session/allowedCommands";
+import { makeBlueprints, mkSection, cloneSections, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
+import { canonicalSectionKey, emptyFleet } from "@/features/planner/stages/planSections";
+import { defaultStageConfig } from "@/features/planner/stages/planStages";
+import { seedDataModels, emptyDataModel } from "@/features/planner/data/dataModel";
+import { generateAgentProfile } from "@/shared/lib/session/profileGen";
+import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
+import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
+import { resolveAllowedCommands } from "@/shared/lib/session/allowedCommands";
 
 /** The `repoPublic` key for one repo within a project (#1227): `<projectKey>::<repoFullName>`,
  *  the repo-scoped convention used elsewhere (e.g. repoAllowedCommands). */

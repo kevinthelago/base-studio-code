@@ -3,8 +3,8 @@
 // the single app store by store/index.ts.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
-import type { KbBlock } from "@/data/mock";
-import type { SkillPayload } from "@/screens/planner/blueprints/blueprintSkills";
+import type { KbBlock } from "@/shared/data/mock";
+import type { SkillPayload } from "@/features/planner/blueprints/blueprintSkills";
 import {
   seedSkills, skillFromPayload, applySessionSkillChoice, skillSlug,
   type SkillDef, type SessionSkillOverride, type SkillGroup,

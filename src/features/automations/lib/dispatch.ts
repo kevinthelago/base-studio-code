@@ -4,7 +4,7 @@
 // (PTY write, store record, clock) is injected so it's unit-testable.
 
 import { resolveTargetPane, dispatchPayload, type Automation, type AutomationRun, type TabLike, type BlockLike } from "./scheduler";
-import { log } from "@/lib/core/log";
+import { log } from "@/shared/lib/core/log";
 
 export interface DispatchDeps {
   tabs: TabLike[];

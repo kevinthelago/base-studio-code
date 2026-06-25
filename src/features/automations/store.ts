@@ -4,7 +4,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import { type Automation, type AutomationRun, appendRun, computeNextRun } from "./lib/scheduler";
-import type { Schedule, Command } from "@/data/mock";
+import type { Schedule, Command } from "@/shared/data/mock";
 
 export interface AutomationsSlice {
   schedules: Schedule[];

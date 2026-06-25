@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AppearanceSettings } from "./Appearance";
 import { useAppStore } from "@/store";
-import { MAX_TERMINAL_FONT_SIZE, DEFAULT_TERMINAL_FONT_SIZE } from "@/lib/console/terminal";
+import { MAX_TERMINAL_FONT_SIZE, DEFAULT_TERMINAL_FONT_SIZE } from "@/app/console/lib/terminal";
 
 describe("AppearanceSettings", () => {
   beforeEach(() => {

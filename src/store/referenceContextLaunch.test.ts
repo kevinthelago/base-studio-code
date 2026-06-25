@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./";
-import type { FleetPlan } from "../screens/planner/stages/planSections";
-import { directorPaneId, fleetPaneId, triagePaneId } from "../lib/console/paneIdentity";
-import { sanitizeProjectKey } from "../lib/core/projectPaths";
+import type { FleetPlan } from "@/features/planner/stages/planSections";
+import { directorPaneId, fleetPaneId, triagePaneId } from "@/app/console/lib/paneIdentity";
+import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 
 // Launch-time resolution of reference context (#326): the store lifts its flat
 // refContext* assignment fields into the assignments-module cascade and stamps

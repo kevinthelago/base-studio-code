@@ -3,8 +3,8 @@ import { render, fireEvent, waitFor, within } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { AgentsScreen } from "./";
 import { useAppStore } from "@/store";
-import { startRun } from "@/lib/fleet/conductor";
-import { WORKFLOW_PRESETS } from "@/lib/fleet/workflow";
+import { startRun } from "@/shared/lib/fleet/conductor";
+import { WORKFLOW_PRESETS } from "@/shared/lib/fleet/workflow";
 
 /**
  * #199/#220 — the Agents-screen "Flow" tab surfaces the fleet's coordination + workflow

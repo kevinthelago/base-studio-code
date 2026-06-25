@@ -8,7 +8,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { injectPrompt } from "@/lib/fleet/paneInject";
+import { injectPrompt } from "@/shared/lib/fleet/paneInject";
 import {
   rollupChecks, isTerminalCi, ciWorkerPrompt, ciDirectorMergePrompt, ciDevelopRedPrompt,
   type CheckRun, type CiState,
