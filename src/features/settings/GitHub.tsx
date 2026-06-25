@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useAppStore, type GithubUser, type GithubRepo } from "../../store";
+import { useAppStore, type GithubUser, type GithubRepo } from "@/store";
 import { clearGithubCache } from "@/features/github/lib/github";
 import { runDeviceFlow, type DeviceStartInfo, type DevicePollResult } from "@/features/github/lib/githubDeviceFlow";
 import { ToggleRow } from "./General";

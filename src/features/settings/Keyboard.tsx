@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { SHORTCUT_GROUPS } from "../../lib/settings/shortcuts";
-import { useAppStore } from "../../store";
+import { SHORTCUT_GROUPS } from "./lib/shortcuts";
+import { useAppStore } from "@/store";
 import {
   REBINDABLE_IDS,
   chordToCaps,
@@ -17,7 +17,7 @@ import {
   findLeaderConflict,
   type RebindableId,
   type LeaderId,
-} from "../../lib/settings/keybindings";
+} from "./lib/keybindings";
 
 const REBINDABLE_SET = new Set<string>(REBINDABLE_IDS);
 const LEADER_SET = new Set<string>(LEADER_IDS);

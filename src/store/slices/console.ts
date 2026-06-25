@@ -4,7 +4,7 @@ import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { unlock } from "../../lib/core/achievements";
 import { type AgentProfile, PROFILES } from "@/features/agents/lib/agentProfiles";
-import { DEFAULT_ACCENT } from "../../lib/settings/appearance";
+import { DEFAULT_ACCENT } from "@/features/settings/lib/appearance";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET } from "../../lib/console/focusQueue";
 import { DEFAULT_REAPER_CONFIG } from "../../lib/console/idleReaper";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../../lib/console/terminal";
