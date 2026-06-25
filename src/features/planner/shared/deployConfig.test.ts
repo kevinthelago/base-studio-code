@@ -72,6 +72,27 @@ describe("deployConfig (per-repo, #1421)", () => {
     expect(readyServiceCount(all)).toBe(2);
   });
 
+  it("migrates a legacy top-level config (pre-#1421) so each service stays deploy-ready (#1438)", () => {
+    // The pre-rework shape: environments/pipeline/release/secrets at the TOP LEVEL, services without
+    // their own. Before the fix each service reset to release.strategy "" and the gate stuck.
+    const legacy = {
+      environments: [{ name: "dev", branch: "feature/*", auto: true }, { name: "staging", branch: "develop", auto: true }, { name: "prod", branch: "main", auto: false }],
+      pipeline: { provider: "GitHub Actions", stages: [{ name: "build", trigger: "push" }, { name: "test", trigger: "on-green", gate: true }, { name: "deploy", trigger: "on-green" }] },
+      release: { strategy: "rolling", autoRollback: true, keep: 3, migrateWithDeploy: true },
+      secrets: [{ key: "DATABASE_URL", envs: ["dev", "staging", "prod"] }],
+      services: [
+        { id: "widget", repo: "acme/services", platform: "railway", workload: "container", build: "pnpm build" },
+        { id: "ui", repo: "acme/ui", platform: "vercel", workload: "static", build: "pnpm build", output: "dist" },
+      ],
+    };
+    const cfg = coerceDeployConfig(legacy, ["acme/services", "acme/ui"]);
+    expect(cfg.services.every((s) => s.release.strategy === "rolling")).toBe(true); // top-level release folded in
+    expect(cfg.services.every((s) => s.envs.length === 3)).toBe(true);              // top-level envs folded in
+    expect(cfg.services.every((s) => s.pipeline.stages.length === 3)).toBe(true);   // top-level pipeline folded in
+    expect(deploymentDefined(cfg)).toBe(true);                                      // the gate now clears
+    expect(deploymentDefined(normalizeDeployConfig(cfg, []))).toBe(true);           // and survives normalize
+  });
+
   it("blocks while a repo's prod secret is unwired", () => {
     const base = defaultDeployConfig(["acme/web"]);
     const d = {
