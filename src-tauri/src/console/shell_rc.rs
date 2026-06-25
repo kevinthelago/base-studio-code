@@ -125,6 +125,17 @@ pub(crate) const BSC_ACTIVITY_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-done` helper (#1379): a fleet WORKER calls this to CLOSE its own console once its owned
+/// work is complete (the close-nudge tells it to). It appends one line — `ts \t pane` — to the
+/// app-wide `$BSC_DONE_LOG`, tagged with `$BSC_AUDIT_PANE`. The frontend polls it (`read_done_panes`)
+/// and, for a worker that self-reported done, classifies the resting state from plan.db (NOT this
+/// say-so) and reaps the pane (`markPaneEnded` + `pty_kill`). Drains stdin so a piped reason can't
+/// block; best-effort + always exits 0.
+pub(crate) const BSC_DONE_RC: &str = concat!(
+    r#"bsc-done() { cat >/dev/null 2>&1; l="${BSC_DONE_LOG:-}"; [ -z "$l" ] && return 0; ts="$(date +%s%3N 2>/dev/null)"; case "$ts" in ''|*[!0-9]*) ts="$(( $(date -u +%s) * 1000 ))" ;; esac; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" >> "$l"; return 0; }"#,
+    "\n",
+);
+
 /// The `bsc-confine` helper (#158): a PreToolUse hook for the file tools on a gated
 /// pane. It reads Claude Code's tool JSON, extracts the target `file_path` /
 /// `notebook_path`, and BLOCKS (return 2 + stderr) when the path escapes the session's
@@ -456,7 +467,7 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
@@ -465,6 +476,7 @@ mod tests {
             super::BSC_MCP_RC,
             super::BSC_TOKENS_RC,
             super::BSC_ACTIVITY_RC,
+            super::BSC_DONE_RC,
             super::BSC_CONFINE_RC,
             super::BSC_SCOPE_RC,
             super::BSC_TAINT_RC,
@@ -750,6 +762,47 @@ mod tests {
         assert!(lines[0][0].chars().all(|c| c.is_ascii_digit()), "ts is epoch ms: {:?}", lines[0][0]);
         assert_eq!((lines[0][1], lines[0][2]), ("t0p2", "run"));
         assert_eq!((lines[1][1], lines[1][2]), ("t0p2", "idle"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bsc_done_appends_pane_line_and_drains_stdin() {
+        // bsc-done (#1379) must run from the agent's own `bash -c` subshell and append ONE line —
+        // `ts(epoch-ms) \t pane` — to $BSC_DONE_LOG, tagged with $BSC_AUDIT_PANE, draining any stdin.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = crate::shell::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_done subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-done-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_DONE_RC).unwrap();
+        let log = dir.join("nested").join("done.log"); // nested ⇒ exercises mkdir -p
+
+        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
+        let log_bash = crate::to_bash_path(&log.to_string_lossy());
+
+        let mut child = Command::new(&shell)
+            .arg("-c").arg("bsc-done")
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_DONE_LOG", &log_bash)
+            .env("BSC_AUDIT_PANE", "proj:api")
+            .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().unwrap();
+        let _ = child.stdin.take().unwrap().write_all(b"all owned issues complete"); // drained, not parsed
+        assert!(child.wait().unwrap().success(), "bsc-done should run + exit 0");
+
+        let body = std::fs::read_to_string(&log).unwrap();
+        let fields: Vec<&str> = body.lines().next().unwrap().split('\t').collect();
+        assert!(fields[0].chars().all(|c| c.is_ascii_digit()), "ts is epoch ms: {:?}", fields[0]);
+        assert_eq!(fields[1], "proj:api", "the pane is the BSC_AUDIT_PANE tag");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

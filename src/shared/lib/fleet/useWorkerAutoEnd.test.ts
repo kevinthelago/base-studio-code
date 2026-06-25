@@ -69,6 +69,21 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     await waitFor(() => expect(useAppStore.getState().endedPanes[WORKER]?.state).toBe("needs-attention"));
   });
 
+  it("self-closes a worker that reported done via bsc-done — ends it AND kills the PTY (#1379)", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "read_done_panes") return Promise.resolve([WORKER]);
+      if (cmd === "plan_list_issues") return Promise.resolve([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]);
+      if (cmd === "read_coord_log") return Promise.resolve([] as string[]);
+      return Promise.resolve(undefined);
+    });
+    renderHook(() => useWorkerAutoEnd());
+
+    // The done poller reaps the self-reported worker on its first tick.
+    await waitFor(() => expect(useAppStore.getState().endedPanes[WORKER]).toBeTruthy());
+    expect(useAppStore.getState().endedPanes[WORKER]).toMatchObject({ state: "done", streamId: "api" });
+    expect(invoke).toHaveBeenCalledWith("pty_kill", { paneId: WORKER }); // the live shell is actually killed
+  });
+
   it("does nothing when the project key can't be resolved (no paneIds → no DB query)", async () => {
     // A tab with no paneIds can't map the pane to a project — evaluateExit must bail (no #1176 fallback).
     useAppStore.setState({ tabs: [{ id: "t", name: "build", layout: "2×1", state: "idle", runId: 0 }] as never });
