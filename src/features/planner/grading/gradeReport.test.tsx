@@ -78,7 +78,7 @@ describe("GradeReportPane (#615 slice b)", () => {
     expect(screen.getByRole("button", { name: /Agent readiness/i })).toBeInTheDocument();
   });
 
-  it("is registered as a pipeline screen", () => {
+  it("is registered as a stage screen", () => {
     expect(GRADE_RUBRIC_ID).toBe("grade-rubric");
   });
 });

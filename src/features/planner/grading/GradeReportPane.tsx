@@ -1,17 +1,17 @@
-// Grade report-card pipeline screen (#615 slice b). Renders the GradeResult(s) for the
+// Grade report-card stage screen (#615 slice b). Renders the GradeResult(s) for the
 // current section — overall letter/score, per-dimension bars, and findings. A section
 // can carry MULTIPLE graders, shown as tabs. A "Grade" action runs the section's rubric
 // grader on its content. Mirrors render-preview/file-intake: planner chrome via
-// PipelineScreenFrame, state from the store.
+// StageScreenFrame, state from the store.
 
 import { useState } from "react";
-import { PipelineScreenFrame } from "./PipelineScreenFrame";
+import { StageScreenFrame } from "./StageScreenFrame";
 import { useAppStore } from "@/store";
 import { resolveLlmConfig, hasLlmKey } from "@/shared/lib/core/llmConfig";
 import { runSectionGrade } from "./gradeDispatch";
 import { runSectionGradeLLM } from "./gradeLLM";
 import type { GradeResult, Severity } from "./grading";
-import type { PipelineScreenProps } from "./pipelineScreens";
+import type { StageScreenProps } from "./stageScreens";
 import { letterColor, gradeColor } from "@/features/planner/lib/planGrade";
 
 const EMPTY: GradeResult[] = [];
@@ -63,7 +63,7 @@ function GradeCard({ g }: { g: GradeResult }) {
   );
 }
 
-export function GradeReportPane({ projectKey, sectionKey, sectionContent, onClose }: PipelineScreenProps) {
+export function GradeReportPane({ projectKey, sectionKey, sectionContent, onClose }: StageScreenProps) {
   const grades = useAppStore((s) => (sectionKey ? s.sectionGrades[projectKey]?.[sectionKey] : undefined)) ?? EMPTY;
   const hasKey = useAppStore((s) => hasLlmKey(resolveLlmConfig(s)));
   const [tab, setTab] = useState(0);
@@ -81,7 +81,7 @@ export function GradeReportPane({ projectKey, sectionKey, sectionContent, onClos
   };
 
   return (
-    <PipelineScreenFrame
+    <StageScreenFrame
       label="grade"
       statusLabel={active ? `${active.letter} · ${active.score}` : "not graded"}
       statusColor={active ? letterColor(active.letter) : "var(--fg-dim)"}
@@ -119,6 +119,6 @@ export function GradeReportPane({ projectKey, sectionKey, sectionContent, onClos
           </>
         )}
       </div>
-    </PipelineScreenFrame>
+    </StageScreenFrame>
   );
 }
