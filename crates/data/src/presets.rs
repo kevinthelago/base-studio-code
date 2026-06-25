@@ -875,6 +875,55 @@ pub const CATALOG: &[VendorPreset] = &[
             ("balances", "accounts/balance/get", Some("accounts")),
         ],
     },
+    // ── POS / commerce (#1312) ──
+    // Square and Shopify already ship above (billing / ecommerce). Stripe (payments) lives here
+    // by this issue's assignment. POS systems group under the `pos` category.
+    VendorPreset {
+        id: "toast",
+        label: "Toast",
+        category: "pos",
+        resources: &[
+            ("orders", "orders/v2/orders", None),
+            ("restaurants", "config/v2/restaurants", None),
+            ("menus", "menus/v2/menus", None),
+            ("employees", "labor/v1/employees", None),
+        ],
+    },
+    VendorPreset {
+        id: "clover",
+        label: "Clover",
+        category: "pos",
+        resources: &[
+            ("orders", "orders", Some("elements")),
+            ("items", "items", Some("elements")),
+            ("customers", "customers", Some("elements")),
+            ("payments", "payments", Some("elements")),
+            ("employees", "employees", Some("elements")),
+        ],
+    },
+    VendorPreset {
+        id: "lightspeed",
+        label: "Lightspeed",
+        category: "pos",
+        resources: &[
+            ("sales", "sales", Some("data")),
+            ("products", "products", Some("data")),
+            ("customers", "customers", Some("data")),
+            ("outlets", "outlets", Some("data")),
+        ],
+    },
+    VendorPreset {
+        id: "stripe",
+        label: "Stripe",
+        category: "payments",
+        resources: &[
+            ("charges", "charges", Some("data")),
+            ("payment_intents", "payment_intents", Some("data")),
+            ("refunds", "refunds", Some("data")),
+            ("customers", "customers", Some("data")),
+            ("balance_transactions", "balance_transactions", Some("data")),
+        ],
+    },
 ];
 
 /// Look up a packaged preset by vendor id.
@@ -934,6 +983,23 @@ mod tests {
             assert!(qbo_names.contains(&obj), "QuickBooks missing {obj}");
         }
         assert_eq!(find("plaid").unwrap().category, "banking");
+    }
+
+    #[test]
+    fn catalog_includes_pos_commerce_connectors() {
+        // POS / commerce additions (#1312). Square + Shopify ship elsewhere; these are the new ids.
+        for id in ["toast", "clover", "lightspeed", "stripe"] {
+            let p = find(id).unwrap_or_else(|| panic!("{id} preset present out of the box"));
+            assert!(!p.resources().is_empty(), "{id} must declare read resources");
+            assert!(!p.label.is_empty(), "{id} must have a label");
+        }
+        // Stripe is assigned to this issue (#1312) and sits in `payments`.
+        assert_eq!(find("stripe").unwrap().category, "payments");
+        // resource_names() reflects the declared objects for one of the new presets.
+        let stripe = find("stripe").unwrap();
+        let names = stripe.resource_names();
+        assert!(names.contains(&"charges") && names.contains(&"refunds"));
+        assert_eq!(names.len(), stripe.resources().len());
     }
 
     #[test]
