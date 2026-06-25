@@ -249,11 +249,34 @@ export function filterBlueprints(blueprints: Blueprint[], opts: { query?: string
 
 export const DEFAULT_BLUEPRINT_ID = "default";
 
+/** Fold an adjacent SectionDef INTO `base` as a second substep — one merged stage gated on BOTH
+ *  halves, with the folded def's prompt as the second substep. The folded SectionDef stays the
+ *  single source (gate + prompt); a blueprint that doesn't opt in is untouched. Shared by the
+ *  Deploy→Repos ("ship", #1383) and Permissions→Structure ("fleet", #1383-streams) merges. */
+function foldInto(
+  base: BlueprintSection, def: SectionDef, folded: SectionDef | undefined,
+  name: string, subs: [string, string][],
+): BlueprintSection {
+  if (!folded) return base;
+  // Preserve the base section's OWN substeps (e.g. Structure's "sequence"); a base with none gets a
+  // synthesized first substep from its prompt. Then append the folded section as the marker substep
+  // (its key — "ship"/"fleet" — is what the focused-pane detects to render the merged body).
+  const baseSubs = base.substeps ?? [{ key: subs[0][0], label: subs[0][1], prompt: def.prompt }];
+  return {
+    ...base,
+    name,
+    gate: `${def.gate} · ${folded.gate}`,
+    gateRule: { require: [...(def.gateRule?.require ?? []), ...(folded.gateRule?.require ?? [])] },
+    output: folded.output ?? base.output,
+    substeps: [...baseSubs, { key: subs[1][0], label: subs[1][1], prompt: folded.prompt }],
+  };
+}
+
 /** Build a section instance from a def key + per-blueprint overrides. */
 export function mkSection(
   key: string,
-  { enabled = true, expanded = false, optional, ship }:
-    { enabled?: boolean; expanded?: boolean; optional?: boolean; ship?: boolean } = {},
+  { enabled = true, expanded = false, optional, ship, fleet }:
+    { enabled?: boolean; expanded?: boolean; optional?: boolean; ship?: boolean; fleet?: boolean } = {},
 ): BlueprintSection {
   const def = SECTION_DEFS[key];
   const base: BlueprintSection = {
@@ -261,25 +284,12 @@ export function mkSection(
     // explicit `optional` overrides the def's; otherwise inherit it
     optional: optional ?? def.optional,
   };
-  // #1383: a blueprint can fold Deploy INTO this stage as a "ship" substep — one
-  // "Repositories & Deployment" stage gated on repos linked AND (only where the blueprint opted in
-  // via `ship`) the deploy config. The `deploy` SectionDef stays the single source of the ship
-  // prompt + gate; non-ship blueprints (a library, a refactor) are untouched, so there's no
-  // behavior change for them.
-  const dep = ship ? SECTION_DEFS.deploy : undefined;
-  if (dep) {
-    return {
-      ...base,
-      name: "Repositories & Deployment",
-      gate: `${def.gate} · ${dep.gate}`,
-      gateRule: { require: [...(def.gateRule?.require ?? []), ...(dep.gateRule?.require ?? [])] },
-      output: dep.output ?? base.output,
-      substeps: [
-        { key: "link", label: "Link repositories", prompt: def.prompt },
-        { key: "ship", label: "Define deployment", prompt: dep.prompt },
-      ],
-    };
-  }
+  // A blueprint can fold an adjacent stage INTO this one as a substep — one merged stage gated on
+  // BOTH halves, only where the blueprint opts in. The folded SectionDef stays the single source, so
+  // blueprints that don't opt in are untouched (no behavior change).
+  // #1383: Deploy → Repos ("ship"). #1383-streams: Permissions → Structure ("fleet" → "Streams").
+  if (ship) return foldInto(base, def, SECTION_DEFS.deploy, "Repositories & Deployment", [["link", "Link repositories"], ["ship", "Define deployment"]]);
+  if (fleet) return foldInto(base, def, SECTION_DEFS.permissions, "Streams", [["plan", "Plan the roadmap"], ["fleet", "Plan the fleet"]]);
   return base;
 }
 
@@ -310,8 +320,9 @@ export interface BlueprintDef extends Omit<Blueprint, "sections"> {
   /** Display order within the built-in library. */
   order?: number;
   /** Ordered section refs: a key into SECTION_DEFS + an optional per-blueprint `optional` flag, plus
-   *  `ship` (#1383) — on the `repos` ref, folds Deploy into the stage as a "ship" substep. */
-  sections: { key: string; optional?: boolean; ship?: boolean }[];
+   *  `ship` (#1383, on the `repos` ref → folds Deploy in) and `fleet` (on the `structure` ref →
+   *  folds Permissions in, making the "Streams" stage). */
+  sections: { key: string; optional?: boolean; ship?: boolean; fleet?: boolean }[];
 }
 
 // The built-in blueprints live as one JSON file per blueprint under ./blueprints/ — each is just
@@ -326,7 +337,7 @@ export function makeBlueprints(): Blueprint[] {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map(({ order: _order, sections, ...meta }) => ({
       ...meta,
-      sections: sections.map((s) => mkSection(s.key, { optional: s.optional, ship: s.ship })),
+      sections: sections.map((s) => mkSection(s.key, { optional: s.optional, ship: s.ship, fleet: s.fleet })),
     }));
 }
 

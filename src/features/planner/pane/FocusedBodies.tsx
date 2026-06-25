@@ -1323,7 +1323,20 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
     case "features":
       return <FocusedFeaturesBody features={data?.features} />;
     case "structure":
-      return <FocusedPlanBody data={data} />;
+      // #1383-streams: one "Streams" stage. The plan + relationship graph always shows; the fleet
+      // (coordination + per-stream permissions) folds in below it when the blueprint opted into fleet
+      // (phase.fleet). A blueprint that still lists Permissions as its own stage uses `case
+      // "permissions"` below (refactor — permissions without a structure stage to fold into).
+      return (
+        <>
+          <FocusedPlanBody data={data} />
+          {phase.fleet && (
+            <div style={{ marginTop: 18 }}>
+              <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />
+            </div>
+          )}
+        </>
+      );
     case "permissions":
       return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />;
     case "mcp":

@@ -34,6 +34,9 @@ export interface Phase {
   optional?: boolean;
   /** The Repos stage folds Deploy in as a "ship" substep (#1383) — drives the combined body. */
   ship?: boolean;
+  /** The Structure stage folds Permissions in as a "fleet" substep → the "Streams" stage — drives
+   *  the combined body (graph + coordination + permissions). */
+  fleet?: boolean;
   /** The still-unmet gate requirements (label + progress detail) — drives the "why is this
    *  blocked" feedback on the gate pill (#805). Empty once the gate passes. */
   unmet?: { label: string; detail?: string }[];
@@ -68,6 +71,7 @@ export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): 
       // #1383: the Repos stage folds Deploy in as a "ship" substep when a blueprint opts in — the
       // combined body renders the deploy block only then.
       ship: s.substeps?.some((ss) => ss.key === "ship"),
+      fleet: s.substeps?.some((ss) => ss.key === "fleet"),
     };
   });
 }
