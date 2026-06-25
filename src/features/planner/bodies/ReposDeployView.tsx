@@ -172,7 +172,9 @@ export function FocusedReposDeployBody({
       <div key={r.id} style={{
         borderRadius: 9, overflow: "hidden",
         border: "1px solid " + (sel ? "var(--accent-dim)" : r.primary ? "color-mix(in oklch, var(--accent), transparent 72%)" : "var(--border-soft)"),
-        background: sel ? "color-mix(in oklch, var(--accent), transparent 93%)" : "var(--bg-canvas)",
+        // Background stays constant whether or not the card is expanded — only the border reflects
+        // the open state (the accent border + chevron are affordance enough).
+        background: "var(--bg-canvas)",
       }}>
         <div
           onClick={svc ? () => { const opening = openRepo !== r.id; setOpenRepo(opening ? r.id : null); if (opening) set({ selService: svc.id }); } : undefined}
