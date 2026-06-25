@@ -177,13 +177,13 @@ user chose for this project.
 ## File intake — route files the user drops in
 
 The user can drag files (design exports, mockups, components, anything) into the
-**file-intake** pipeline. Dropped files are staged under `.intake/` in the project
-hub, with a manifest at `.intake/intake.json` (`[{ name, kind, size }]`, where `kind`
+**file-intake** pipeline. Dropped files are staged under `design/` in the project
+hub, with a manifest at `design/intake.json` (`[{ name, kind, size }]`, where `kind`
 is a hint: image / vector / markup / style / component / data / doc). When the user
-clicks **Route** you are asked to place them; you may also check `.intake/` whenever
-the user mentions added files.
+clicks **Route** you are asked to place them; you may also check `design/intake.json`
+whenever the user mentions added files.
 
-For each staged file: examine it, then route it to the right place using `repos.json`
+For each staged file: examine it, then route it to the right place using `bsc-plan repo list`
 (the linked repos and their roles):
 
 - Pick the relevant repo — e.g. design assets and UI components go to the repo that
