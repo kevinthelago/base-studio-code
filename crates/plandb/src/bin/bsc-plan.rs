@@ -350,6 +350,33 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown deploy command '{other}'\n\n{USAGE}")),
             }
         }
+        "deps" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `deps set` reads the whole DependencyManifest JSON on stdin and replaces it (one blob).
+                "set" => {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+                    let manifest: serde_json::Value =
+                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing dependency manifest JSON: {e}"))?;
+                    s.deps_set(&manifest).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        let n = manifest.get("dependencies").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                        println!("deps set ({n} dependencies)");
+                    }
+                    Ok(())
+                }
+                "get" => {
+                    match s.deps_get().map_err(|e| e.to_string())? {
+                        Some(m) => println!("{}", serde_json::to_string_pretty(&m).unwrap_or_default()),
+                        None => println!("{}", if args.json { "null" } else { "(no dependency manifest)" }),
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown deps command '{other}'\n\n{USAGE}")),
+            }
+        }
         "mcp" => {
             let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
             let s = store()?;
@@ -720,6 +747,11 @@ FLEET (streams + per-stream permissions/flows + director/topology):
 DEPLOY (the Deploy stage's structured config — one blob):
   deploy set                replace the deploy config from a DeployConfig JSON on stdin
   deploy get                print the deploy config (DeployConfig JSON)
+
+DEPS (the Deploy stage's locked dependency manifest — one blob):
+  deps set                  replace the manifest from a DependencyManifest JSON on stdin
+  deps get                  print the manifest (DependencyManifest JSON)
+                            (shape: a `dependencies` array + a `registries` map keyed by source)
 
 MCP (catalog servers scoped to the project):
   mcp add <name>...         assign MCP server(s) by catalog name

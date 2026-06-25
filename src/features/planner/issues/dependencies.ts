@@ -1,12 +1,16 @@
-// The dependency manifest (#1111): the authoritative, planner-owned list of the libraries every
+// The dependency manifest (#1111/#1127): the authoritative, planner-owned list of the libraries every
 // repo depends on, defined ONCE during planning so the fleet doesn't each add/redefine deps in
-// parallel worktrees and collide at integration. The planner writes `dependencies.json` (surfaced
-// by the poll like `features.json`); the Dependencies gate reads its count; publish pre-populates
-// each repo's real `package.json` / `Cargo.toml` from it; and each worker's CLAUDE.local.md inlines
-// the locked set with a "don't touch the manifests" guardrail. Pure + tolerant — no React/Tauri.
+// parallel worktrees and collide at integration. The planner records it via `bsc-plan deps set` into
+// plan.db (#1191 — was a raw `dependencies.json`); the poll reflects the stored manifest into the
+// DEPENDENCIES section, the Dependencies gate reads its count, publish pre-populates each repo's real
+// `package.json` / `Cargo.toml` from it, and each worker's CLAUDE.local.md inlines the locked set with
+// a "don't touch the manifests" guardrail. This module stays a pure + tolerant manifest model (it
+// parses the same shape whether it arrives from plan.db or a legacy file) — no React/Tauri.
 
-/** The dependency manifest file stem (JSON: `dependencies.json` — an array of dependency objects).
- *  Surfaced by the poll like `features.json`; not rendered as a plan section. */
+/** The dependency-manifest section key. The stored manifest (`{ dependencies, registries }`) is
+ *  DB-owned (#1191): the poll mirrors `plan_get_deps` here. Surfaced by the poll like `features.json`;
+ *  not rendered as a plan section. The legacy `dependencies.json` file shares this key during the
+ *  one-time import. */
 export const DEPENDENCIES_KEY = "dependencies";
 
 /** A package-manager ecosystem the manifest can target. */
@@ -55,7 +59,8 @@ function str(v: unknown): string | undefined {
 }
 
 /**
- * Parse `dependencies.json` into the full manifest (#1127). Accepts a bare JSON array of dependency
+ * Parse a stored dependency manifest (the plan.db blob, or a legacy `dependencies.json`) into the
+ * full manifest (#1127). Accepts a bare JSON array of dependency
  * objects (the #1111 form, ⇒ no registries), or `{ "dependencies": [...], "registries": {...} }`.
  * Tolerant: bad JSON ⇒ empty manifest; a dependency without a name or a recognized ecosystem
  * (`npm` | `cargo`) is dropped; duplicates (same repo+ecosystem+name) are de-duped, first write
