@@ -96,4 +96,38 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     expect(useAppStore.getState().endedPanes[WORKER]).toBeUndefined();
     expect(invoke).not.toHaveBeenCalledWith("plan_list_issues", expect.anything());
   });
+
+  it("nudges an idle, complete, question-free worker to self-close (#1379 stage 3)", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      // Idle since epoch 1ms ⇒ idleMs is huge, well past the close-nudge window.
+      if (cmd === "read_pane_activity") return Promise.resolve([{ pane: WORKER, state: "idle", at: 1 }]);
+      if (cmd === "read_coord_log") return Promise.resolve([] as string[]);   // no outstanding ask / wait
+      if (cmd === "plan_list_issues") return Promise.resolve([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]);
+      return Promise.resolve(undefined); // read_done_panes ⇒ undefined ⇒ the done poller no-ops
+    });
+    renderHook(() => useWorkerAutoEnd());
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("pty_write", expect.objectContaining({ paneId: WORKER })));
+    const nudge = vi.mocked(invoke).mock.calls.find(([c, a]) => c === "pty_write" && (a as { paneId: string }).paneId === WORKER);
+    expect((nudge?.[1] as { data: string }).data).toContain("bsc-done"); // told to self-close
+    // It only NUDGES — it never ends the pane itself (the worker does, via bsc-done).
+    expect(useAppStore.getState().endedPanes[WORKER]).toBeUndefined();
+  });
+
+  it("nudges the director to close still-open issues when a worker finishes done (#1379 stage 3)", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "read_done_panes") return Promise.resolve([WORKER]); // worker self-reported done
+      if (cmd === "plan_list_issues") return Promise.resolve([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]);
+      if (cmd === "read_coord_log") return Promise.resolve([] as string[]);
+      return Promise.resolve(undefined);
+    });
+    renderHook(() => useWorkerAutoEnd());
+
+    await waitFor(() => expect(useAppStore.getState().endedPanes[WORKER]?.state).toBe("done"));
+    // The live director pane gets a close-the-open-issues prompt.
+    const dirMsg = vi.mocked(invoke).mock.calls.find(([c, a]) => c === "pty_write" && (a as { paneId: string }).paneId === DIRECTOR);
+    expect(dirMsg, "director should be nudged to close issues").toBeTruthy();
+    expect((dirMsg?.[1] as { data: string }).data).toContain("gh issue close");
+  });
 });
