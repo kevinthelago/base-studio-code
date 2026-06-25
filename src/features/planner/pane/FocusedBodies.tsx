@@ -1365,7 +1365,6 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
       return phase.ship ? (
         <FocusedReposDeployBody
           repos={data?.repos} deploy={data?.deploy} onDeployChange={onDeployChange}
-          dependencies={data?.dependencies} registries={data?.registries}
           onLinkRepo={onLinkRepo} reposPublic={reposPublic}
           repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic}
         />
@@ -1373,7 +1372,7 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
         <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} />
       );
     case "deploy":
-      return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} dependencies={data?.dependencies} registries={data?.registries} />;
+      return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} />;
     case "context":
       return <FocusedContextBody context={data?.context} onView={onView} requiredContext={requiredContext} />;
     case "ui":

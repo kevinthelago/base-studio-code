@@ -13,9 +13,8 @@
 
 import { useState } from "react";
 import { readyServiceCount, type DeployConfig, type DeployService } from "../shared/deployConfig";
-import { Divider, DependenciesCard, RepoDeployCard } from "./DeployView";
+import { RepoDeployCard } from "./DeployView";
 import type { Repo } from "../pane/projectPane.types";
-import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 
 const MONO = "var(--mono)";
 
@@ -34,14 +33,12 @@ function Avatar({ id, sz = 16 }: { id: string; sz?: number }) {
 }
 
 export function FocusedReposDeployBody({
-  repos, deploy, onDeployChange, dependencies = [], registries = {},
+  repos, deploy, onDeployChange,
   onLinkRepo, reposPublic, repoOverrides, onSetRepoPublic,
 }: {
   repos?: Repo[];
   deploy?: DeployConfig;
   onDeployChange?: (next: DeployConfig) => void;
-  dependencies?: PlanDependency[];
-  registries?: Record<string, DependencyRegistry>;
   onLinkRepo?: (r: string) => void;
   /** Project-level default GitHub visibility — the per-repo toggle's fallback (#1227); false ⇒ private. */
   reposPublic?: boolean;
@@ -209,9 +206,6 @@ export function FocusedReposDeployBody({
           })}
           {linkAffordance}
         </div>
-        {/* The locked dependency manifest is project-wide (#1127) — it gates separately. */}
-        <Divider label="DEPENDENCIES" color="var(--violet)" />
-        <DependenciesCard deps={dependencies} registries={registries} done={dependencies.length > 0} />
       </>
     );
   }

@@ -3,12 +3,11 @@ import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { FocusedDeployBody } from "./DeployView";
 import { defaultDeployConfig, type DeployConfig } from "../shared/deployConfig";
-import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 
 /** A controlled host so toggling the mode/kind actually re-renders with the new config. */
 function Harness({ initial }: { initial: DeployConfig }) {
   const [cfg, setCfg] = useState(initial);
-  return <FocusedDeployBody deploy={cfg} onChange={setCfg} dependencies={[]} />;
+  return <FocusedDeployBody deploy={cfg} onChange={setCfg} />;
 }
 
 /** Expand a repo's card by clicking its collapsed row (the repo full-name span bubbles to the
@@ -18,8 +17,8 @@ function expandRepo(fullName: string) {
 }
 
 describe("FocusedDeployBody — per-repo cards (#1421)", () => {
-  it("renders the Deployment header, one card per repo, the ready counter, and the deps tail", () => {
-    render(<FocusedDeployBody deploy={defaultDeployConfig(["acme/web", "acme/api"])} dependencies={[]} />);
+  it("renders the Deployment header, one card per repo, and the ready counter — no deps tail (#1429)", () => {
+    render(<FocusedDeployBody deploy={defaultDeployConfig(["acme/web", "acme/api"])} />);
     expect(screen.getByText("Deployment")).toBeInTheDocument();
     expect(screen.getByText("how each repository ships — defined per repo")).toBeInTheDocument();
     expect(screen.getByText("acme/web")).toBeInTheDocument();
@@ -27,51 +26,21 @@ describe("FocusedDeployBody — per-repo cards (#1421)", () => {
     expect(screen.getByText((_, el) => el?.textContent === "0 of 2 repos deploy-ready")).toBeTruthy();
     // both start untargeted
     expect(screen.getAllByText("set target →").length).toBe(2);
-    // the project-wide dependency manifest follows as a tail
-    expect(screen.getByText("DEPENDENCIES")).toBeInTheDocument();
+    // dependencies were removed from the deploy pane (#1429)
+    expect(screen.queryByText("DEPENDENCIES")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dependencies")).not.toBeInTheDocument();
   });
 
   it("shows the empty state when no repositories are linked", () => {
-    render(<FocusedDeployBody deploy={{ services: [] }} dependencies={[]} />);
+    render(<FocusedDeployBody deploy={{ services: [] }} />);
     expect(screen.getByText("No repositories linked")).toBeInTheDocument();
     expect(screen.getByText(/configured per repository/)).toBeInTheDocument();
   });
 });
 
-describe("FocusedDeployBody — dependencies, grouped by source (#1167)", () => {
-  const deploy = defaultDeployConfig(["acme/web"]);
-
-  it("groups locked deps by SOURCE — public ecosystem defaults + the private registry", () => {
-    const deps: PlanDependency[] = [
-      { repo: "acme/web", ecosystem: "npm", name: "zod", version: "^3.23" },
-      { repo: "acme/web", ecosystem: "npm", name: "@acme/ui", version: "^2", source: "internal" },
-      { ecosystem: "cargo", name: "serde", version: "1" },
-    ];
-    const registries: Record<string, DependencyRegistry> = {
-      internal: { url: "https://npm.internal/", scope: "@acme", auth: "INTERNAL_NPM_TOKEN" },
-    };
-    render(<FocusedDeployBody deploy={deploy} dependencies={deps} registries={registries} />);
-
-    expect(screen.getByText("Dependencies")).toBeInTheDocument();
-    expect(screen.getByText("npm registry")).toBeInTheDocument();
-    expect(screen.getAllByText("crates.io").length).toBeGreaterThan(0);
-    expect(screen.getByText("internal")).toBeInTheDocument();
-    expect(screen.getByText("https://npm.internal/")).toBeInTheDocument();
-    expect(screen.getByText("scope @acme")).toBeInTheDocument();
-    expect(screen.getByText("secret INTERNAL_NPM_TOKEN")).toBeInTheDocument();
-    expect(screen.getByText((_, el) => el?.textContent === "zod@^3.23")).toBeTruthy();
-    expect(screen.getByText((_, el) => el?.textContent === "@acme/ui@^2")).toBeTruthy();
-  });
-
-  it("shows the deps empty state when none are locked", () => {
-    render(<FocusedDeployBody deploy={deploy} dependencies={[]} />);
-    expect(screen.getByText(/No dependencies locked yet/)).toBeInTheDocument();
-  });
-});
-
 describe("FocusedDeployBody — a repo card's Cloud · Local target (#1192)", () => {
   it("a card is collapsed until clicked, then shows the cloud platform dropdown + mode toggle", () => {
-    render(<FocusedDeployBody deploy={defaultDeployConfig(["acme/web"])} dependencies={[]} />);
+    render(<FocusedDeployBody deploy={defaultDeployConfig(["acme/web"])} />);
     // collapsed: the editor is hidden
     expect(screen.queryByText("Select a platform…")).not.toBeInTheDocument();
     expandRepo("acme/web");

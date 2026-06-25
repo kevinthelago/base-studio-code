@@ -14,7 +14,7 @@ function Harness({ repos, initial }: { repos?: Repo[]; initial?: DeployConfig })
   const [cfg, setCfg] = useState(initial ?? defaultDeployConfig((repos ?? []).map((r) => r.id)));
   return (
     <FocusedReposDeployBody
-      repos={repos} deploy={cfg} onDeployChange={setCfg} dependencies={[]}
+      repos={repos} deploy={cfg} onDeployChange={setCfg}
       onLinkRepo={() => {}} reposPublic={false}
       repoOverrides={{}} onSetRepoPublic={() => {}}
     />
@@ -54,9 +54,9 @@ describe("FocusedReposDeployBody — per-repo cards (#1421)", () => {
     // the per-repo deploy sections (CI/CD pipeline etc.) live INSIDE each card now (#1421) — absent
     // until the card is expanded with a target set.
     expect(screen.queryByText("CI / CD pipeline")).not.toBeInTheDocument();
-    // the project-wide dependency manifest is the only tail
-    expect(screen.getByText("DEPENDENCIES")).toBeInTheDocument();
-    expect(screen.getByText("Dependencies")).toBeInTheDocument();
+    // dependencies were removed from the deployment pane (#1429)
+    expect(screen.queryByText("DEPENDENCIES")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dependencies")).not.toBeInTheDocument();
     expect(screen.queryByText("A · HOW IT SHIPS")).not.toBeInTheDocument();
     // the "N/X defined" readiness banner is gone (#1403)
     expect(screen.queryByText(/\d+\/\d+ defined/)).not.toBeInTheDocument();
