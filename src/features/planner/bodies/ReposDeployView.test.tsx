@@ -57,13 +57,27 @@ describe("FocusedReposDeployBody — ship flow", () => {
     expect(screen.getByRole("button", { name: "Make acme/web public" })).toBeInTheDocument();
   });
 
-  it("expands the selected repo's target editor inline, and switches on click", () => {
+  it("starts with every repo collapsed, and a click toggles its target editor open then closed", () => {
     render(<Harness repos={[repo("acme/web"), repo("acme/api")]} />);
-    // first service is selected by default → its target editor (meta chip + platform dropdown) shows
+    // nothing expanded initially — no target editor anywhere
+    expect(screen.queryByText("Select a platform…")).not.toBeInTheDocument();
+    expect(screen.queryByText((_, el) => el?.textContent === "⎇ acme/web/.")).not.toBeInTheDocument();
+    // click the repo → its editor expands
+    fireEvent.click(screen.getByText("acme/web"));
     expect(screen.getByText((_, el) => el?.textContent === "⎇ acme/web/.")).toBeTruthy();
     expect(screen.getByText("Select a platform…")).toBeInTheDocument();
-    // click the second repo row → selection (and the inline editor) moves to it
+    // click it again → collapses (toggleable off)
+    fireEvent.click(screen.getByText("acme/web"));
+    expect(screen.queryByText("Select a platform…")).not.toBeInTheDocument();
+  });
+
+  it("opening a different repo moves the expanded editor to it", () => {
+    render(<Harness repos={[repo("acme/web"), repo("acme/api")]} />);
+    fireEvent.click(screen.getByText("acme/web"));
+    expect(screen.getByText((_, el) => el?.textContent === "⎇ acme/web/.")).toBeTruthy();
+    // opening api collapses web and expands api (only one open at a time)
     fireEvent.click(screen.getByText("acme/api"));
     expect(screen.getByText((_, el) => el?.textContent === "⎇ acme/api/.")).toBeTruthy();
+    expect(screen.queryByText((_, el) => el?.textContent === "⎇ acme/web/.")).not.toBeInTheDocument();
   });
 });

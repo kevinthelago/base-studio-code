@@ -59,6 +59,10 @@ export function FocusedReposDeployBody({
 }) {
   const [linking, setLinking] = useState(false);
   const [linkInput, setLinkInput] = useState("");
+  // Which repo's deploy-target editor is expanded — `null` = all collapsed, the initial state (#1403).
+  // Clicking a repo toggles its own editor; opening one also points `selService` at it so the tail
+  // pipeline's final-stage label reflects the repo being edited.
+  const [openRepo, setOpenRepo] = useState<string | null>(null);
   const list = repos ?? [];
   const d = deploy;
 
@@ -126,7 +130,7 @@ export function FocusedReposDeployBody({
   // ── card 01: one row per repo, git identity merged with its deploy target ──
   const repoTargetRow = (r: Repo) => {
     const svc = serviceForRepo(r.id);
-    const sel = !!svc && svc.id === d?.selService;
+    const sel = !!svc && openRepo === r.id;
     const targeted = !!svc && serviceTargetDefined(svc);
     const local = !!svc && serviceMode(svc) === "local";
     const p = svc?.platform ? platform(svc.platform) : null;
@@ -171,7 +175,7 @@ export function FocusedReposDeployBody({
         background: sel ? "color-mix(in oklch, var(--accent), transparent 93%)" : "var(--bg-canvas)",
       }}>
         <div
-          onClick={svc ? () => set({ selService: svc.id }) : undefined}
+          onClick={svc ? () => { const opening = openRepo !== r.id; setOpenRepo(opening ? r.id : null); if (opening) set({ selService: svc.id }); } : undefined}
           style={{ padding: "11px 12px", cursor: svc ? "pointer" : "default" }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
